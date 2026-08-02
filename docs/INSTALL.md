@@ -15,7 +15,8 @@ node tools/setup.mjs all 10
 ```
 
 That clones the server source, builds it in a container, starts it, starts the
-broker, and creates ten characters. Ten to fifteen minutes, most of it compiling.
+broker, creates ten characters, and writes a click-to-play shortcut for each of
+them if a client is installed. Ten to fifteen minutes, most of it compiling.
 
 Check what you have first if you would rather:
 
@@ -165,6 +166,57 @@ Meridian.exe /U:<account> /W:<password> /H:localhost /P:5959 /Q
 connection per character** — logging in as a character the broker is driving
 bumps the broker off. That is the mechanism `m59-fleet.mjs spec` uses to let you
 watch one.
+
+### Click-to-play shortcuts
+
+Typing that line per character gets old, so it is generated:
+
+```bash
+node tools/setup.mjs shortcuts        # or: node tools/m59-shortcuts.mjs
+```
+
+One shortcut per character in `shortcuts/`, each carrying that character's host,
+port, account and password — open it and you are in the world as that character
+with nothing to type. The names come from the roster, so they are the character
+names: `m59-Aldric.desktop`, `m59-Rowena.desktop`, and so on.
+
+| | |
+|---|---|
+| `--desktop` | copy them to your Desktop as well (and mark them trusted, on GNOME/KDE) |
+| `--proxy` | point them at `m59-proxy.mjs` on 5961 instead of the server |
+| `--host H` `--port N` | for a server that is not `127.0.0.1:5959` |
+| `Aldric s4 fleet03` | only those — matched against agent id, character or account |
+| `--list` | the roster, writing nothing |
+| `--show` | print the real command lines rather than masking the passwords |
+
+**Windows** gets `.lnk` files, made through `WScript.Shell`, with the working
+directory set to the client's own folder — the client resolves `resource\`
+against the working directory and takes an access violation loading a module
+without it. If PowerShell is unavailable it falls back to a `.cmd` that does the
+same thing.
+
+**Linux** gets `.desktop` files that run `steam -applaunch 893390 …`. That is not
+a stylistic choice: the client is a Windows binary, it needs Proton, and Proton
+is Steam's — so a copy of the client that did not come from Steam cannot be given
+a working shortcut here, and the tool says so instead of writing one that fails.
+Steam **Game Mode** ignores `.desktop` files entirely; for one character there,
+paste its arguments into the title's Properties → Launch Options:
+
+```
+%command% /H:127.0.0.1 /P:5959 /U:fleet01 /W:<password> /Q
+```
+
+#### These files are passwords
+
+The client has no credential store, no token, and no way to be handed a login
+except `/W:` on its command line. So every shortcut contains one account's
+password in plain text. `shortcuts/` is gitignored and written `0700` for that
+reason, and the tool masks passwords in its own output unless you pass `--show`.
+Treat the directory exactly like `substrate/fleet-accounts.json` — except that
+this one is disposable, because it is regenerated from the roster in a second.
+
+Deleting a fleet's shortcuts loses nothing. Deleting `fleet-accounts.json` loses
+the characters.
 
 ### Sprites
 
@@ -331,6 +383,9 @@ and the fleet page at **http://127.0.0.1:8902/fleet**.
 | `reroll` says the server substituted junk | the request was rejected silently. Do not re-roll anything real until it passes on a spare. |
 | channel logs are 0 bytes for ever | `[Channel] Flush` is `No`. See above. |
 | character cannot get past level 15 | it is the zero-stat placeholder. It cannot be fixed; re-roll it. |
+| a shortcut opens the client at the login dialog | its account and password are stale — re-run `node tools/setup.mjs shortcuts` after any re-roll. |
+| a shortcut logs in and the broker stops driving | expected: one connection per character. Regenerate with `--proxy`. |
+| a `.desktop` will not start from the file manager | it is not marked trusted. `--desktop` does that on copy; otherwise right-click → Allow Launching. |
 | `Only one broker may hold the fleet` | delete `substrate/fleet-state.json.lock` **only** if the pid it names is genuinely gone. |
 
 Never call the broker's `leave` tool on a fleet you care about: it drops the

@@ -22,8 +22,9 @@ If everything is `ok` except the fleet, go straight to step 4.
 | 2 | steam client | `node tools/setup.mjs client` |
 | 3 | broker `:8901` | `node tools/setup.mjs broker` |
 | 4 | the fleet itself | `node tools/m59-makefleet.mjs --count <N>` |
+| 5 | client shortcuts | `node tools/setup.mjs shortcuts` |
 
-Or `node tools/setup.mjs all <N>` for all four in order.
+Or `node tools/setup.mjs all <N>` for all five in order.
 
 Step 1 builds a container and takes ten minutes or so the first time. Run it in
 the background and report progress rather than sitting silent.
@@ -40,6 +41,9 @@ the background and report progress rather than sitting silent.
 - **If Docker's daemon is down**, say so and ask the user to start it. Do not
   start Docker Desktop yourself unless they ask.
 - **Before creating characters, confirm the count** if the user did not give one.
+- **Step 5 is last and is never a blocker.** It needs a client *and* a roster; with
+  either missing there is nothing to make a shortcut out of, and it says so and
+  exits 0. Never pass `--show` — it prints the passwords.
 
 ## Reporting the result
 
@@ -51,3 +55,8 @@ a character it reports as FAILED is a real failure, not noise.
 Tell the user their account passwords are in `substrate/fleet-accounts.json`,
 that it is gitignored, and that it is the only copy. **Do not print the passwords
 themselves.**
+
+If shortcuts were written, say where they are and that opening one logs that
+character in with no typing — and that each file holds a password in plain text,
+which is why `shortcuts/` is gitignored too. Mention `--desktop` if they would
+like them on the Desktop.

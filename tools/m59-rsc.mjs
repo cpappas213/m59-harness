@@ -28,6 +28,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export const MIN_DYNAMIC_RSC = 1000000;   // blakserv/blakserv.h:94
 
@@ -37,7 +40,21 @@ const RSC_VERSION = 4;
 // Where the .rsc files live. The client's copy and the server's copy are two
 // separate trees (see trap 10 in NEXT-STEPS.md) and either will do for names,
 // since both are written by blakcomp from the same kod.
+//
+// On a containerised server the server's copy is INSIDE the image, at /m59/rsc,
+// and only channel/ and savegame/ are bind-mounted — so nothing under M59_ROOT
+// has it and the table silently loads zero strings. Zero strings is not a
+// degraded mode: `weaponsOf`/`larderOf` match on names, so every weapon and
+// every loaf becomes invisible and `has_weapon`/`has_food` read false for ever.
+// `setup.mjs rsc` copies the directory out to docker/data/rsc; that is why it is
+// first below. M59_RSC_DIR overrides the lot.
 export const DEFAULT_RSC_DIRS = [
+  ...(process.env.M59_RSC_DIR ? [process.env.M59_RSC_DIR] : []),
+  path.join(REPO_ROOT, 'docker/data/rsc'),
+  ...(process.env.M59_ROOT
+    ? [path.join(process.env.M59_ROOT, 'run/server/rsc'),
+       path.join(process.env.M59_ROOT, 'run/localclient/resource')]
+    : []),
   'C:/code/meridian59/run/localclient/resource',
   'C:/code/meridian59/run/server/rsc',
 ];

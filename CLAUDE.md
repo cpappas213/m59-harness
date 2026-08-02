@@ -13,7 +13,9 @@ node tools/setup.mjs all 10
 ```
 
 That clones the server source, builds it in a container, starts it, starts the
-broker, and creates ten characters. Ten to fifteen minutes, mostly compiling.
+broker, creates ten characters, and — if a client is installed — writes a
+click-to-play shortcut for each of them. Ten to fifteen minutes, mostly
+compiling.
 
 **Run `node tools/setup.mjs doctor` first** and read what it says. It reports
 each prerequisite and each port, and it is the fastest way to tell which of the
@@ -28,6 +30,41 @@ what the first run made and says so.
 | 2 | `node tools/setup.mjs client` | finds a Steam install; **cannot install one** |
 | 3 | `node tools/setup.mjs broker` | starts the MCP broker on 8901, dashboard 8902 |
 | 4 | `node tools/setup.mjs fleet 10` | creates ten characters |
+| 5 | `node tools/setup.mjs shortcuts` | one click-to-play shortcut per character |
+
+Step 5 needs both of the others: a client to launch and a roster to read. It is
+skipped harmlessly when either is missing, and `all` runs it last for that reason.
+
+## Click-to-play shortcuts
+
+`node tools/m59-shortcuts.mjs` writes one shortcut per character into
+`shortcuts/` — a `.desktop` file on Linux, a `.lnk` on Windows — carrying that
+character's **host, port, account and password** on the client's command line, so
+opening it drops you into the world as that character with no dialog:
+
+```
+Meridian.exe /H:127.0.0.1 /P:5959 /U:fleet01 /W:<password> /Q /S
+```
+
+- `--desktop` copies them to the user's Desktop as well.
+- `--proxy` points them at `m59-proxy.mjs` (5961) instead of the server, which is
+  what you want if the broker should keep driving while a human is inside.
+- `--list` shows the roster; `--show` prints the real command lines.
+
+**Each shortcut is a plaintext password**, so `shortcuts/` is gitignored and
+written `0700`, exactly like `substrate/fleet-accounts.json`. Terminal output
+masks the password unless `--show` is given — do not pass `--show` in a shared
+transcript, and do not commit or paste the files.
+
+**On Linux the shortcut can only be `steam -applaunch 893390 …`**, because the
+client is a Windows binary and Proton belongs to Steam. A non-Steam copy on Linux
+is reported honestly rather than guessed at. Steam **Game Mode** does not show
+`.desktop` files at all; there, put one character's arguments in the title's
+Properties → Launch Options.
+
+**Logging in bumps the broker off that character** — Meridian allows one
+connection per character. That is expected, and is how `m59-fleet.mjs spec`
+works; use `--proxy` when you do not want it.
 
 ## Asked to shut down, stop the server, or "we're done for now"?
 
@@ -66,9 +103,10 @@ https://store.steampowered.com/app/893390/Meridian_59/ — and carry on. Do not
 attempt to script a Steam login or download the client from anywhere else.
 
 **The client is optional for a fleet.** Agents log in over the wire; no
-`Meridian.exe` is involved. The client is for *watching* the fleet and for the
-compendium's sprite art. If the user only wants a fleet, a missing client is not
-a blocker and you should not present it as one.
+`Meridian.exe` is involved. The client is for *watching* the fleet, for the
+click-to-play shortcuts, and for the compendium's sprite art. If the user only
+wants a fleet, a missing client is not a blocker and you should not present it as
+one.
 
 **Either server tree works.** `setup.mjs` clones `Meridian59/Meridian59`
 (upstream) by default. `tpeppers/Meridian59-deck` is a public fork adding gamepad

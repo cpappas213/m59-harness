@@ -6,6 +6,8 @@
 //   node tools/setup.mjs client        find (or install) the Steam client
 //   node tools/setup.mjs broker        start the MCP broker
 //   node tools/setup.mjs fleet 10      create ten characters
+//   node tools/setup.mjs rsc           copy the resource table out of the container
+//   node tools/setup.mjs shortcuts     one click-to-play shortcut per character
 //   node tools/setup.mjs all 10        all of the above, in order
 //   node tools/setup.mjs shutdown      checkpoint the world, then stop everything
 //
@@ -29,6 +31,11 @@ import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import net from 'node:net';
+// Client discovery lives with the thing that writes shortcuts to it, so that
+// `doctor` and the shortcut writer can never disagree about where the client is.
+import { findClient, findClientExe, roster, writeShortcuts, report, SHORTCUT_DIR }
+  from './m59-shortcuts.mjs';
+import { loadResources } from './m59-rsc.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -43,16 +50,6 @@ const SERVER_REPOS = [
 ];
 
 const STEAM_APPID = '893390';
-
-const CLIENT_GUESSES = [
-  process.env.M59_CLIENT,
-  'C:/Program Files (x86)/Steam/steamapps/common/Meridian 59',
-  'C:/Program Files/Steam/steamapps/common/Meridian 59',
-  join(process.env.HOME || '', '.steam/steam/steamapps/common/Meridian 59'),
-  join(process.env.HOME || '', '.local/share/Steam/steamapps/common/Meridian 59'),
-  join(process.env.HOME || '', '.var/app/com.valvesoftware.Steam/data/Steam/steamapps/common/Meridian 59'),
-  '/run/media/mmcblk0p1/steamapps/common/Meridian 59',
-];
 
 // ------------------------------------------------------------------ helpers
 
@@ -164,17 +161,6 @@ function findServerSrc() {
   return null;
 }
 
-function findClient() {
-  for (const g of CLIENT_GUESSES) {
-    if (!g) continue;
-    const res = join(g, 'resource');
-    try {
-      if (existsSync(res) && readdirSync(res).some(f => f.toLowerCase().endsWith('.bgf'))) return g;
-    } catch { /* unreadable, keep looking */ }
-  }
-  return null;
-}
-
 // ------------------------------------------------------------------ doctor
 
 async function doctor() {
@@ -199,6 +185,23 @@ async function doctor() {
 
   const sprites = existsSync(join(REPO, 'compendium', 'assets', 'img'));
   add('compendium sprites', sprites ? 'present' : null, 'python tools/pull-client-assets.py');
+
+  // Reported because an empty table is invisible from the game side: names come
+  // back as "<rsc 29949>" and every name-matched thing — weapons, food — reads
+  // absent rather than erroring. See the note above setup.mjs's rsc step.
+  let rscFiles = 0;
+  try { rscFiles = loadResources().size; } catch { /* no table anywhere */ }
+  add('resource table', rscFiles ? `${rscFiles} strings` : null, 'node tools/setup.mjs rsc');
+
+  // Only worth reporting once there is both a client to launch and someone to log
+  // in as; before that "MISS" would be telling you off for a step you cannot take.
+  const chars = roster().length;
+  if (client && chars) {
+    let made = 0;
+    try { made = readdirSync(SHORTCUT_DIR).filter(f => /^m59-.*\.(desktop|lnk|cmd)$/.test(f)).length; }
+    catch { /* never written */ }
+    add('client shortcuts', made ? `${made} of ${chars}` : null, 'node tools/setup.mjs shortcuts');
+  }
 
   const game = await portOpen(5959);
   add('server :5959', game ? 'listening' : null, 'node tools/setup.mjs server');
@@ -305,7 +308,9 @@ function client() {
   const found = findClient();
   if (found) {
     console.log(c.ok(`steam client: ${found}`));
+    console.log(c.dim(`  ${findClientExe(found) || 'no Meridian.exe in it — is the install complete?'}`));
     console.log(`\n  watch a character:  node tools/m59-fleet.mjs spec <name>`);
+    console.log(`  click-to-play:      node tools/setup.mjs shortcuts`);
     if (!existsSync(join(REPO, 'compendium', 'assets', 'img')))
       console.log(`  decode its sprites: python tools/pull-client-assets.py`);
     return 0;
@@ -365,6 +370,57 @@ async function fleet(n) {
              { cwd: REPO }) ? 0 : 1;
 }
 
+// ------------------------------------------------------------------ rsc
+//
+// COPY THE RESOURCE TABLE OUT OF THE CONTAINER. Nothing in the protocol carries
+// an object name as text — `name_res` is an integer into this table — so without
+// it an agent perceives its own pack as a list of numbers.
+//
+// This is a step rather than a mount because the table is built into the image
+// by blakcomp and never written at runtime: only channel/ and savegame/ are bind
+// mounted, and a native build has run/server/rsc on disk already (m59-rsc.mjs
+// looks there under M59_ROOT, and stops if it finds it).
+//
+// The failure it prevents is silent and expensive. `weaponsOf` and `larderOf`
+// match on names, so an empty table makes every weapon and every loaf invisible:
+// `has_weapon` and `has_food` read false for a character holding both, autopilot
+// farms bare-fisted, and vigor never leaves the resting cap.
+function rsc() {
+  const dest = join(REPO, 'docker/data/rsc');
+  if (existsSync(dest) && readdirSync(dest).some(f => f.endsWith('.rsc'))) {
+    console.log(`  ok    resource table    ${readdirSync(dest).length} files in docker/data/rsc`);
+    return 0;
+  }
+  const found = spawnSync('docker', ['ps', '-aq', '--filter', `name=^${M59_CONTAINER}$`],
+                          { encoding: 'utf8' }).stdout.trim();
+  if (!found) {
+    console.log('  --    resource table    no container yet; run `setup.mjs server` first');
+    return 0;
+  }
+  mkdirSync(dirname(dest), { recursive: true });
+  if (!run('docker', ['cp', `${M59_CONTAINER}:/m59/rsc`, dest])) {
+    console.error('  MISS  resource table    docker cp failed');
+    return 0;               // never fail the install over it
+  }
+  console.log(`  ok    resource table    ${readdirSync(dest).length} files -> docker/data/rsc`);
+  return 0;
+}
+
+// ------------------------------------------------------------------ shortcuts
+//
+// One desktop shortcut per character, each carrying that character's host, port,
+// account and password on the client's command line. Written last because it
+// needs both halves — a client to launch and a roster to read.
+//
+// It never fails the install. No client, or no fleet yet, means there is nothing
+// to make a shortcut out of, and neither is a reason to stop: see the note in the
+// header about the client being optional.
+function shortcuts(opts = {}) {
+  const res = writeShortcuts(opts);
+  report(res, opts);
+  return 0;
+}
+
 // ------------------------------------------------------------------ main
 
 const [cmd = 'doctor', arg] = process.argv.slice(2);
@@ -376,11 +432,17 @@ const commands = {
   client: async () => client(),
   broker,
   fleet: () => fleet(n),
+  rsc: async () => rsc(),
+  shortcuts: async () => shortcuts({ desktop: process.argv.includes('--desktop') }),
   all: async () => {
     let rc = await server(); if (rc) return rc;
     client();
+    // Before the broker, so the first session it opens can already read names.
+    rsc();
     rc = await broker(); if (rc) return rc;
-    return fleet(n);
+    rc = await fleet(n); if (rc) return rc;
+    console.log('');
+    return shortcuts();
   },
   // Deliberate shutdown keeps two snapshots and then stops. A `docker stop` is a
   // hard stop with no save at all — see tools/m59-shutdown.mjs.
@@ -390,7 +452,8 @@ const commands = {
 
 if (!commands[cmd]) {
   console.error(`unknown command: ${cmd}`);
-  console.error('usage: node tools/setup.mjs [doctor|server|client|broker|fleet N|all N|shutdown]');
+  console.error('usage: node tools/setup.mjs ' +
+                '[doctor|server|client|broker|fleet N|rsc|shortcuts|all N|shutdown]');
   process.exit(2);
 }
 process.exit(await commands[cmd]());

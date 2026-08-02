@@ -20,6 +20,12 @@ node_modules/
 # commit it.
 /substrate/fleet-accounts.json
 
+# The click-to-play shortcuts written by tools/m59-shortcuts.mjs. The client has
+# no way to be handed a password except on its command line, so each of these is
+# one account's credentials in plain text — as secret as the file above, and
+# regenerated in a second by `node tools/setup.mjs shortcuts`.
+/shortcuts/
+
 # The server container's state: the world, the accounts, and the channel logs,
 # which are real player chat. Delete to start the server over.
 /docker/data/

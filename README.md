@@ -42,6 +42,12 @@ is involved in running a fleet. You need
 [the client](https://store.steampowered.com/app/893390/Meridian_59/) to watch a
 character in first person, and for the compendium's sprite art.
 
+If you do have it, `node tools/setup.mjs shortcuts` writes one shortcut per
+character — host, port, account and password already filled in, so opening
+`m59-Aldric.desktop` puts you in the world as Aldric with nothing to type. They
+hold real passwords, so `shortcuts/` is gitignored; the details are in
+[`docs/INSTALL.md`](docs/INSTALL.md#click-to-play-shortcuts).
+
 ## What you need
 
 | | |
@@ -84,6 +90,7 @@ the world, written for something that is about to play it.
 ```
 tools/setup.mjs                     doctor / server / client / broker / fleet — the bootstrapper
 tools/m59-makefleet.mjs             make N characters that are worth growing
+tools/m59-shortcuts.mjs             a click-to-play client shortcut per character
 tools/pull-client-assets.py         decode the client's sprites into the compendium
 docker/Dockerfile                   builds blakserv from either source tree, on any platform
 
