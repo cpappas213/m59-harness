@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Herbutte — Meridian 59 Compendium</title>
+<meta name="description" content="Fancying himself a connoisseur of the finer things, Herbutte is little more than a old school aristocratic snob. Within him is a dark streak of contempt for nea">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Herbutte</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/bqmerch_g1.png" alt="Herbutte" width="222" height="403"></div><div class="heroText"><h1>Herbutte</h1><p class="lede">Fancying himself a connoisseur of the finer things, Herbutte is little more than a old school aristocratic snob. Within him is a dark streak of contempt for nearly all save royalty. He will never run out of bad things to say about the other towns and the low life transients that wander between them.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Neutral</span><span class="tag ">Merchant</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 0
+                = 75
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>hit</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>1 place in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="The Sparkling Stone Shop"><a href="../zones/barmerchant.html">The Sparkling Stone Shop</a></td><td class="" data-sort="Barloque">Barloque</td><td class="" data-sort="placed">placed</td><td class="num " data-sort="-1">row 9, col 3</td><td class=""><code>barlqrm/barmerch.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_NPC</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_NOMOVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_NOFIGHT</code></td><td class="">Doesn't fight</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_BARTENDER</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_NOMOVE</code></td><td class="">Doesn't move</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_APOTHECARY</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RANDOM</code></td><td class="">Performs random actions</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_URCHIN</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_LISTEN</code></td><td class="">Responds to speech</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_TAILOR</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_BUYER</code></td><td class="">Will buy items</td></tr>
+<tr><td class=""><code class="k">MOB_SELLER</code></td><td class="">Has items for sale</td></tr>
+<tr><td class=""><code class="k">MOB_LAWFUL</code></td><td class="">Won't publicly do business with murderers</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>What it offers</h2><h3>Goods sold</h3><p><a href="../items/diamond.html">diamond</a>, <a href="../items/torch.html">torch</a>, <a href="../items/sapphire.html">sapphire</a>, <a href="../items/emerald.html">emerald</a></p><p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqmerch.kod — <code class="k">plFor_Sale</code>: element 1 goods, element 2 skills, element 3 spells (kod/object/active/holder/nomoveon/battler/monster.kod:2773, :2797)</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqmerch.kod:11</p>
+<p><code class="k">BarloqueMerchant</code> is <code class="k">BarloqueTown</code> — full chain <code class="k">BarloqueMerchant</code> ← <code class="k">BarloqueTown</code> ← <code class="k">Towns</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>barloque_merch_name_rsc</code></td><td class=""><em>Herbutte</em></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>barloque_merch_icon_rsc</code></td><td class=""><em>bqmerch.bgf</em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>barloque_merch_desc_rsc</code></td><td class=""><em>Fancying himself a connoisseur of the finer things, Herbutte is little more than a old sch</em></td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">viMerchant_markup</code></td><td class=""><code>MERCHANT_DISCOUNT</code></td><td class="">2</td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_BUYER | MOB_SELLER | MOB_NOMOVE | MOB_LAWFUL</code></td><td class="">262363</td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">viOccupation</code></td><td class=""><code>MOB_ROLE_MERCHANT</code></td><td class="">7</td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">vrUnwanted_give</code></td><td class=""><code>Bqmerch_unwanted_give</code></td><td class=""><em>~k%s%s tells you, &quot;Wherefore dost thou offer to me such common baubles?!  I have servants </em></td><td class="num " data-sort="39">39</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>WelcomeUser(who = $)</h4>
+<pre><code>{
+      local iFlags;
+      iFlags = send( who, @GetObjectFlags );
+      if iFlags &amp; PLAYER_PK
+      {
+	 send( self, @SetMood, #new_mood = piMood - 3 );
+      }
+      if iFlags &amp; PLAYER_OUTLAW
+      {
+	 send( self, @SetMood, #new_mood = piMood - 2 );
+      }
+      if( send( who, @GetHomeRoom ) = RID_BAR_INN )
+      {
+	 send( self, @SetMood, #new_mood = piMood + 1 );
+      }
+      if( send( who, @GetHomeRoom ) = RID_TOS_INN )
+      {
+	 send( self, @SetMood, #new_mood = piMood - 1 );
+      }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqmerch.kod:45</p>
+<h4>AffectMood(why = $, what = $)</h4>
+<pre><code>{
+      if( why = MOODMOD_ACCEPT_ITEM )
+      {
+	 if( Send(self,@IsObjectGem,#what=what) )
+	 {
+	    send( self, @SetMood, #new_mood = piMood + 1 );
+	 }
+	 return;
+      }
+      if( why = MOODMOD_FACTION_CHANGE )
+      {
+	 if( what = FACTION_DUKE )
+	 {
+	    send( self, @SetMood, #new_mood = piMood - 1 );
+	    return;
+	 }
+	 if( what = FACTION_PRINCESS )
+	 {
+	    send( self, @SetMood, #new_mood = piMood + 1 );
+	    return;
+	 }
+      }
+      if( why = MOODMOD_DAWN )
+      {
+	 send( self, @SetMood, #new_mood = piMood + 1 );
+	 return;
+      }
+      if( why = MOODMOD_DUSK )
+      {
+	 send( self, @SetMood, #new_mood = piMood - 1 );
+	 return;
+      }
+      if( why = MOODMOD_SELL_ITEM )
+      {
+	 if( Send(self,@IsObjectGem,#what=what) )
+	 {
+   	    send( self, @SetMood, #new_mood = piMood + 2 );
+	 }
+	 return;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqmerch.kod:68</p>
+<h4>ObjectDesired(what = $, who = $)</h4>
+<pre><code>{
+      if isClass(what,&amp;NumberItem) and
+         send(what,@GetNumber) &gt; 25
+      {
+         return FALSE;
+      }
+
+      if send(self,@IsObjectGem,#what=what) or
+         send(self,@IsObjectSundry,#what=what)
+      {
+	 return TRUE;
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqmerch.kod:113</p>
+<h4>SetForSale()</h4>
+<pre><code>{
+      plFor_sale = [ [ Create(&amp;Diamond,#number=1),
+                       Create(&amp;Torch),                       
+                       Create(&amp;Sapphire,#number=1),
+                       Create(&amp;Emerald,#number=1) ],
+                   $,$];
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqmerch.kod:130</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

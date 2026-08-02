@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>robes of the disciple — Meridian 59 Compendium</title>
+<meta name="description" content="Heavy and warm, disciple robes typically denote a fervent (and some would say unhealthy) dedication to one school or another.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › robes of the disciple</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/robe_g2.png" alt="robes of the disciple" width="63" height="109"></div><div class="heroText"><h1>robes of the disciple</h1><p class="lede">Heavy and warm, disciple robes typically denote a fervent (and some would say unhealthy) dedication to one school or another.</p><div class="tags"><span class="tag ">armour</span><span class="tag ">body</span><span class="tag ">legs</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">130</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">160</div></div><div class="fact"><div class="lbl">Value</div><div class="val">2000 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">550–650</div></div><div class="fact"><div class="lbl">Spell penalty</div><div class="val">10%</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">body, legs</div></div></div><h2>As protection</h2><div class="facts"><div class="fact"><div class="lbl">Defence bonus</div><div class="val">20</div></div><div class="fact"><div class="lbl">Flat reduction</div><div class="val sm">0</div></div></div><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Attack type</th><th class="num ">Resistance</th><th class="num ">A 20-point hit becomes</th></tr></thead>
+<tbody><tr><td class=""><code class="k">ATCK_WEAP_ALL</code></td><td class="num " data-sort="-10">-10%</td><td class="num ">22.0</td></tr></tbody></table></div><p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod <code class="k">GetResistanceModifiers</code> · applied by kod/object/active/holder/nomoveon/battler.kod:189 <code class="k">ResistanceCheck</code> and :251 <code class="k">GetDamageFromResistance</code></p><p>The "20-point hit" column assumes this is the only thing you are wearing and
+uses the average of the flat reduction, which is rolled fresh every blow. Unarmoured, the same
+hit costs you the full 20.</p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/robe_g1.png" alt="robes of the disciple on the ground" loading="lazy"><figcaption>on the ground</figcaption></figure><figure><img class="icon" src="../assets/img/robe_g2.png" alt="robes of the disciple inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/robe_g3.png" alt="robes of the disciple broken" loading="lazy"><figcaption>broken</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:11</p>
+<p><code class="k">DiscipleRobe</code> is <code class="k">Robe</code> — full chain <code class="k">DiscipleRobe</code> ← <code class="k">Robe</code> ← <code class="k">Armor</code> ← <code class="k">DefenseModifier</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>RobeInsignia_name_rsc</code></td><td class=""><em>robes of the disciple</em></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>RobeInsignia_icon_rsc</code></td><td class=""><em>Robe.bgf</em></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>RobeInsignia_desc_rsc</code></td><td class=""><em>Heavy and warm, disciple robes typically denote a fervent (and some would say unhealthy) d</em></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viInventory_group</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viBroken_group</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">viSpell_modifier</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>160</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>130</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>2000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="58">58</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viXLAT_immortal</code></td><td class=""><code>XLAT_TO_SKY</code></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">viXLAT_no_knowledge</code></td><td class=""><code>XLAT_TO_YELLOW</code></td><td class="num " data-sort="64">64</td></tr>
+<tr><td class=""><code class="k">viXLAT_level_one</code></td><td class=""><code>XLAT_TO_SKIN1</code></td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">viXLAT_level_two</code></td><td class=""><code>XLAT_TO_SKIN2</code></td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">viXLAT_level_three</code></td><td class=""><code>XLAT_TO_ORANGE</code></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">viXLAT_level_four</code></td><td class=""><code>XLAT_TO_SKIN4</code></td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">viXLAT_qor_master</code></td><td class=""><code>XLAT_TO_BLACK</code></td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">viXLAT_shalille_master</code></td><td class=""><code>XLAT_TO_GRAY</code></td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">viXLAT_faren_master</code></td><td class=""><code>XLAT_TO_RED</code></td><td class="num " data-sort="72">72</td></tr>
+<tr><td class=""><code class="k">viXLAT_kraanan_master</code></td><td class=""><code>XLAT_TO_BLUE</code></td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">viXLAT_riija_master</code></td><td class=""><code>XLAT_TO_PURPLE</code></td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">viXLAT_jala_master</code></td><td class=""><code>XLAT_TO_GREEN</code></td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">piSchool</code></td><td class=""><code>SS_RIIJA</code></td><td class="num " data-sort="77">77</td></tr>
+<tr><td class=""><code class="k">piLevel</code></td><td class=""><code>0</code></td><td class="num " data-sort="78">78</td></tr>
+<tr><td class=""><code class="k">prInsignia_male</code></td><td class=""><code>disciplerobe_riija_male</code></td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">prInsignia_female</code></td><td class=""><code>disciplerobe_riija_female</code></td><td class="num " data-sort="80">80</td></tr>
+<tr><td class=""><code class="k">piDefense_bonus</code></td><td class=""><code>5</code></td><td class="num " data-sort="81">81</td></tr>
+<tr><td class=""><code class="k">pbImmortalColor</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="83">83</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(school = -1)</h4>
+<pre><code>{
+      if school = -1
+      {  
+         school = random(1,6); 
+      }
+      
+      send(self,@SetSchool,#school=school);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:87</p>
+<h4>Constructed()</h4>
+<pre><code>{
+      Send(self, @SetPaletteTranslation, #translation=Send(SYS, @EncodeTwoColorXLAT,
+         #color1=Send(self, @GetMasterXLATBySchool), #color2=XLAT_TO_SKIN2));
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:99</p>
+<h4>GetMasterXLATBySchool()</h4>
+<pre><code>{
+      if piSchool = SS_JALA
+      {
+         return viXLAT_jala_master;
+      }
+      if piSchool = SS_RIIJA
+      {
+         return viXLAT_riija_master;
+      }
+      if piSchool = SS_SHALILLE
+      {
+         return viXLAT_shalille_master;
+      }
+      if piSchool = SS_QOR
+      {
+         return viXLAT_qor_master;
+      }
+      if piSchool = SS_KRAANAN
+      {
+         return viXLAT_kraanan_master;
+      }
+      if piSchool = SS_FAREN
+      {
+         return viXLAT_faren_master;
+      }
+
+      return viXLAT_no_knowledge;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:107</p>
+<h4>GetBaseSpellModifier(oSpell = $)</h4>
+<pre><code>{
+      if send(oSpell,@GetSchool) = piSchool
+      {
+         return bound(4*piLevel,0,20);
+      }
+
+      return 5;
+    }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:137</p>
+<h4>SetXLATTranslation(translation = $)</h4>
+<pre><code>{
+      local skin_color, XLAT;
+
+      if poOwner &lt;&gt; $
+      {
+         skin_color = send(poOwner,@GetSkinColor);      
+         skin_color = send(poOwner,@ConvertSkinColorToXLAT,#skin_color=skin_color);
+      }
+      else
+      {
+         skin_color = XLAT_TO_SKIN2;
+      }
+      
+      XLAT = send(SYS,@EncodeTwoColorXLAT,#color1=translation,#color2=skin_color);
+      send(self,@SetPaletteTranslation,#translation=XLAT);
+
+      if poOwner &lt;&gt; $
+      {
+         if isClass(poOwner,&amp;room)
+         {
+            send(send(SYS,@UtilGetRoom,#what=self),@SomethingChanged,#what=self);
+         }
+         
+         if isClass(poOwner,&amp;user)
+         {
+            send(poOwner,@SomethingChanged,#what=self);
+            send(self,@DoPlayerArt);
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:147</p>
+<h4>ResetColors()</h4>
+<pre><code>{
+      local i, oWarEvent, iSide, oSpell, iHigh_level, bFound;
+      
+      iHigh_level = 0;
+
+      oWarEvent = send(SYS,@GetWarEvent);
+      if send(oWarEvent,@IsActive)
+      {
+         iSide = send(oWarEvent,@GetPlayerSide,#who=poOwner);
+         send(self,@SetXLATTranslation,#translation=send(oWarEvent,@GetSideColor,#side=iSide));
+
+         return;
+      }      
+
+      if (isClass(poOwner,&amp;DM) and pbImmortalColor)
+      {
+         send(self,@SetXLATTranslation,#translation=viXLAT_immortal);
+
+         return;
+      }
+
+      for i in send(poOwner,@GetSpellList)
+      {         
+         oSpell = send(SYS,@FindSpellByNum,#num = send(poOwner,@DecodespellNum,#compound=i));
+         if piSchool = send(oSpell,@GetSchool)
+         {
+            if send(oSpell,@GetLevel) &gt; iHigh_level
+            {
+               iHigh_Level = send(oSpell,@GetLevel);
+            }
+         }
+      }
+
+      piLevel = iHigh_level;
+
+      bFound = FALSE;
+      
+      
+      if iHigh_level = 0
+      {
+         send(self,@SetXLATTranslation,#translation=viXLAT_no_knowledge);         
+      }
+
+      if iHigh_level = 1
+      {
+         send(self,@SetXLATTranslation,#translation=viXLAT_level_one);         
+      }
+
+      if iHigh_level = 2
+      {
+         send(self,@SetXLATTranslation,#translation=viXLAT_level_two);         
+      }
+
+      if iHigh_level = 3
+      {
+         send(self,@SetXLATTranslation,#translation=viXLAT_level_three);         
+      }
+
+      if iHigh_level = 4
+      {
+         send(self,@SetXLATTranslation,#translation=viXLAT_level_four);         
+      }
+
+      
+      if iHigh_level &gt; 4
+      {
+         Send(self, @SetXLATTranslation, #translation=Send(self, @GetMasterXLATBySchool));
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:181</p>
+<h4>ReqUse()</h4>
+<p>Called when the player tries to use the item</p>
+<pre><code>{
+      local i, oItemAtt;
+          
+      
+      for i in plItem_Attributes
+      {
+         oItemAtt = send(SYS,@FindItemAttByNum,#num=send(self,@GetNumFromCompound,#compound=first(i)));
+         if not send(oItemAtt,@ItemReqUse,#oItem=self,#oPlayer=poOwner)
+         {
+            return FALSE;
+         }
+      }
+      
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:254</p>
+<h4>NewUsed()</h4>
+<pre><code>{      
+      if prInsignia_male &lt;&gt; $
+      {
+         Send(poOwner,@SetOverlay,#what=self);
+      }
+
+      send(self,@ResetColors);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:272</p>
+<h4>NewUnused()</h4>
+<pre><code>{    
+      if prInsignia_male &lt;&gt; $
+      {
+         Send(poOwner,@RemoveOverlay,#what=self);
+      }
+
+      Send(self, @SetPaletteTranslation, #translation=Send(SYS, @EncodeTwoColorXLAT,
+         #color1=Send(self, @GetMasterXLATBySchool), #color2=XLAT_TO_SKIN2));
+      Send(poOwner, @SomethingChanged, #what=self);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:284</p>
+<h4>GetResistanceModifiers()</h4>
+<pre><code>{
+      return [ [ ATCK_WEAP_ALL, -10],
+               [-ATCK_SPELL_FIRE,-20],
+               [-ATCK_SPELL_SHOCK,15]
+             ];
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:298</p>
+<h4>GetOverlay()</h4>
+<pre><code>{
+      if send(poOwner,@GetGender) = GENDER_MALE
+      {
+         return prInsignia_male;
+      }
+
+      return prInsignia_female;       
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:306</p>
+<h4>GetOverlayHotspot()</h4>
+<pre><code>{
+      return HS_EMBLEM;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:316</p>
+<h4>SendOverlayAnimation(iAnimation = $)</h4>
+<pre><code>{      
+      if (piItem_flags &amp; ITEM_PALETTE_MASK) &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,piItem_flags &amp; ITEM_PALETTE_MASK);
+      }
+
+      if iAnimation = PANM_WEAPON_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,300,2,2,2,4,2,1);
+
+         return;
+      }
+
+      if iAnimation = PANM_FIST_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,600,2,3,2,4,2,1);
+
+         return;
+      }
+
+      if iAnimation = PANM_BOW_FIRE
+      {
+         AddPacket(1,ANIMATE_ONCE,4,1200,2,5,2,5,2,1);
+
+         return;
+      }
+
+      if iAnimation = PANM_DANCE
+      {
+         AddPacket(1,ANIMATE_CYCLE,4,150,2,6,2,21);
+
+         return;
+      }
+
+      AddPacket(1,ANIMATE_NONE,2,1);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:321</p>
+<h4>SetSchool(school = SS_RIIJA)</h4>
+<pre><code>{
+      piSchool = School;
+      
+      if school = SS_RIIJA
+      {
+         prInsignia_male =  disciplerobe_riija_male;
+         prInsignia_female = disciplerobe_riija_female;
+      }
+      
+      if school = SS_JALA
+      {
+         prInsignia_male =  disciplerobe_jala_male;
+         prInsignia_female = disciplerobe_jala_female;
+      }
+      
+      if school = SS_FAREN
+      {
+         prInsignia_male =  disciplerobe_faren_male;
+         prInsignia_female = disciplerobe_faren_female;
+      }
+      
+      if school = SS_QOR
+      {
+         prInsignia_male =  disciplerobe_qor_male;
+         prInsignia_female = disciplerobe_qor_female;
+      }
+      
+      if school = SS_SHALILLE
+      {
+         prInsignia_male =  disciplerobe_shalille_male;
+         prInsignia_female = disciplerobe_shalille_female;         
+      }
+      
+      if school = SS_KRAANAN
+      {
+         prInsignia_male =  disciplerobe_kraanan_male;
+         prInsignia_female = disciplerobe_kraanan_female;         
+      }
+
+      if poOwner &lt;&gt; $
+      {
+         send(poOwner,@SomethingChanged,#what=self);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:361</p>
+<h4>SendOverlayInformation(ianimation = $)</h4>
+<pre><code>{
+      AddPacket(4,Send(self,@GetOverlay));
+      AddPacket(1,Send(self,@GetOverlayHotspot));
+      Send(self,@SendOverlayAnimation,#iAnimation=iAnimation);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:409</p>
+<h4>DoBaseDesc()</h4>
+<pre><code>{
+      local oSpell, lData;
+
+      if Send(self,@HasAttribute,#ItemAtt=IA_NEW_DESCRIPTION)
+      {
+         lData = Send(self,@GetAttributeData,#ItemAtt=IA_NEW_DESCRIPTION);
+         AppendTempString(Nth(lData,2));
+      }
+      else
+      {
+         AppendTempString(vrDesc);
+      }
+
+      
+      oSpell = Send(SYS,@FindSpellByNum,#num=SID_BLINK);
+
+      AppendTempString(RobeInsignia_school_info1);
+      AppendTempString(Send(oSpell,@GetSchoolStr,#iSchool=piSchool));
+      AppendTempString(RobeInsignia_school_info2);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:418</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

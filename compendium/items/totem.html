@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>totem — Meridian 59 Compendium</title>
+<meta name="description" content="This feathered totem is oft the objective of quests set upon mortals by the Bards of the world of Meridian. The totem must be held when in possession, and is dr">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › totem</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/totem_g1.png" alt="totem" width="43" height="195"></div><div class="heroText"><h1>totem</h1><p class="lede">This feathered totem is oft the objective of quests set upon mortals by the Bards of the world of Meridian. The totem must be held when in possession, and is dropped when removed from use.</p><div class="tags"><span class="tag ">totem</span><span class="tag ">hand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">100</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">100</div></div><div class="fact"><div class="lbl">Value</div><div class="val">10 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">hand</div></div></div><h2>Where to buy it</h2><p><a href="../creatures/kocatanshopkeeper.html">Pacal ix'Anoak</a>, <a href="../creatures/izzio.html">Izzio</a></p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/totem_g1.png" alt="totem inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/totem_g2.png" alt="totem group 2" loading="lazy"><figcaption>group 2</figcaption></figure><figure><img class="icon" src="../assets/img/totem_g3.png" alt="totem group 3" loading="lazy"><figcaption>group 3</figcaption></figure><figure><img class="icon" src="../assets/img/totem_g4.png" alt="totem group 4" loading="lazy"><figcaption>group 4</figcaption></figure><figure><img class="icon" src="../assets/img/totem_g5.png" alt="totem group 5" loading="lazy"><figcaption>group 5</figcaption></figure><figure><img class="icon" src="../assets/img/totem_g6.png" alt="totem group 6" loading="lazy"><figcaption>group 6</figcaption></figure><figure><img class="icon" src="../assets/img/totem_g7.png" alt="totem group 7" loading="lazy"><figcaption>group 7</figcaption></figure><figure><img class="icon" src="../assets/img/totem_g8.png" alt="totem group 8" loading="lazy"><figcaption>group 8</figcaption></figure><figure><img class="icon" src="../assets/img/totem_g9.png" alt="totem group 9" loading="lazy"><figcaption>group 9</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/totem.kod:11</p>
+<p><code class="k">Totem</code> is <code class="k">DefenseModifier</code> — full chain <code class="k">Totem</code> ← <code class="k">DefenseModifier</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">TotemOne</code>, <code class="k">TotemTwo</code>, <code class="k">TotemThree</code>, <code class="k">TotemFour</code>, <code class="k">TotemFive</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>totem_name_rsc</code></td><td class=""><em>totem</em></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>totem_icon_rsc</code></td><td class=""><em>totem.bgf</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>totem_desc_rsc</code></td><td class=""><em>This feathered totem is oft the objective of quests set upon mortals by the Bards of the w</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viUse_type</code></td><td class=""><code>ITEM_USE_HAND</code></td><td class="">8</td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viUse_amount</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrposs_article</code></td><td class=""><code>object_article_cap_this_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vrTotem_overlay</code></td><td class=""><code>totem_icon_rsc</code></td><td class=""><em>totem.bgf</em></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>100</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>100</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viObject_flags</code></td><td class=""><code>GETTABLE_YES | LOOK_NO</code></td><td class="">80</td><td class="num " data-sort="50">50</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>DropSelf(what = $)</h4>
+<pre><code>{
+      local oRoom, iRow, iCol;
+   
+      oRoom = send(what,@GetOwner);
+      iRow = send(what,@GetRow);
+      iCol = send(what,@GetCol);
+
+      send(oRoom,@NewHold,#what=self,#new_col=iCol,#New_row=iRow);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/totem.kod:57</p>
+<h4>UserLogoff()</h4>
+<pre><code>{
+      if IsClass(poOwner,&amp;DM)
+      {
+         propagate;
+      }
+
+      send(poOwner,@MsgSendUser,#message_rsc=totem_drops,
+           #parm1=send(self,@GetCapDef),#parm2=vrName);
+      Send(poOwner,@TryUnuseItem,#what=self);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/totem.kod:125</p>
+<h4>DestroyDisposable()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/totem.kod:139</p>
+<h4>NewOwner(what = $)</h4>
+<pre><code>{
+      if what = $
+      {
+         propagate;
+      }
+
+      if IsClass(what,&amp;User)
+      {
+         Post(self,@TryingToUse,#what=what);
+      } 
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/totem.kod:144</p>
+<h4>TryingToUse(what = $)</h4>
+<pre><code>{
+      local i,Temp;
+
+      Temp = FALSE;
+
+      Send(what,@TryUseItem,#what=self);
+
+      for i in Send(what,@GetPlayerUsing) 
+      { 
+         if i=self
+         {
+            return;
+         } 
+      }
+
+      Send(what,@MsgSendUser,#message_rsc=totem_cantuse_rsc,
+           #parm1=send(self,@getdef),#parm2=vrName);
+      Post(Send(what,@GetOwner),@NewHold,#what=self,
+           #new_row=Send(poOwner,@GetRow),#new_col=Send(poOwner,@GetCol));
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/totem.kod:159</p>
+<h4>NewUnused(what = $, where = $, death = FALSE)</h4>
+<p>Called when the token is dropped or unused (same thing). The specialwhere flag is needed to handle guild hall enterings.</p>
+<pre><code>{
+      local oldOwner,oldrow,oldcol,oldroom;
+
+      send(poOwner,@MsgSendUser,#message_rsc=totem_unuse_rsc,
+           #parm1=send(self,@GetDef),#parm2=vrName);
+
+      if where &lt;&gt; $
+      {
+        Post(where,@NewHold,#what=self,#new_row=Send(poOwner,@GetRow),
+             #new_col=Send(poOwner,@GetCol));
+      }
+      else
+      {
+         oldOwner = poOwner;
+         oldRoom = send(poOwner,@getowner);
+         oldCol = send(poOwner,@getcol);
+         oldRow = send(poOwner,@getrow);
+         Post(self,@CheckForDrop,#owned=oldOwner,#oldroom=oldroom,
+              #oldrow=oldrow,#oldcol=oldcol);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/totem.kod:183</p>
+<h4>CheckForDrop(owned = $, old_room = $, old_row = 20, old_col = 20)</h4>
+<pre><code>{
+      if send(poOwner,@GetOwner) = $ AND old_room &lt;&gt; $
+      {
+         Send(old_room,@NewHold,#what=self,#new_row=old_row,#new_col=old_col);
+      }
+      else
+      {
+         Send(Send(poOwner,@GetOwner),@NewHold,#what=self,
+              #new_row=Send(poOwner,@GetRow),#new_col=Send(poOwner,@GetCol));
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/totem.kod:212</p>
+<h4>CanBeStoredInVault()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/totem.kod:228</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

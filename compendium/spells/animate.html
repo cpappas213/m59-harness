@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>animate — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › animate</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/ianimate_g1.png" alt="animate" width="128" height="128"></div><div class="heroText"><h1>animate</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><a class="tag school-2" href="../guides/qor.html">Qor</a><span class="tag ">Level 4</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/qor.html">Qor</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">4</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">20</div></div><div class="fact"><div class="lbl">Karma required</div><div class="val">≤ -40</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">1</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">20000 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">114</div></div></div><div class="flavor">Animates the corpse of another human, that they may do your bidding. Requires the blood of a shaman to cast.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">20</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/shamanblood.html">shaman blood</a></td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">at most -40</td><td class="">Derived, not stored: <code class="k">GetRequiredKarma</code> returns level × −10 for this school.</td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">10</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">20000 ms trance</td><td class="">You are locked in a casting trance for this long; taking damage can break it.</td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/animate.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/darkwizard.html">Maleval</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">CanPayCosts</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">DoubleCheckAfterTrance</code></li><li><code class="k">CastSpell</code></li><li><code class="k">ModifyMonsterBehavior</code></li><li><code class="k">EndEnchantment</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/ianimate_g1.png" alt="animate group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/ianimate_g2.png" alt="animate group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/animate.kod:11</p>
+<p><code class="k">Animate</code> is <code class="k">Spell</code> — full chain <code class="k">Animate</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>Animate_name_rsc</code></td><td class=""><em>animate</em></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>Animate_icon_rsc</code></td><td class=""><em>ianimate.bgf</em></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>Animate_desc_rsc</code></td><td class=""><em>Animates the corpse of another human, that they may do your bidding.  Requires the blood o</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_ANIMATE</code></td><td class="">114</td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_QOR</code></td><td class="">2</td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viCast_time</code></td><td class=""><code>20000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viChance_To_Increase</code></td><td class=""><code>75</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>Animate_sound</code></td><td class=""><em>qanimate.wav</em></td><td class="num " data-sort="49">49</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      plReagents = $;
+      plReagents = Cons([&amp;ShamanBlood,1], plReagents);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/animate.kod:56</p>
+<h4>CanPayCosts(who = $, lTargets = $)</h4>
+<pre><code>{
+      local oRoom, oTarget;
+
+      oRoom = send(who,@GetOwner);
+      oTarget = First(lTargets);
+
+      if not isclass(oTarget,&amp;DeadBody)
+      {
+         send(who,@MsgSendUser,#message_rsc=Animate_bad_target,#parm1=send(oTarget,@GetDef),#parm2=send(oTarget,@Getname));
+
+         return FALSE;
+      }
+
+      if send(send(first(lTargets),@GetOwner),@SafePlayerAttack)
+      {
+         send(who,@MsgSendUser,#message_rsc=Animate_failed_rsc,#parm1=send(oTarget,@GetCorpseName));
+
+         return FALSE;
+      }
+
+      if (send(oRoom,@CountHoldingHowMany,#class=&amp;monster) &gt; 25)
+         or (send(oRoom,@CountHoldingSummoned) &gt; 
+             Send(Send(SYS, @GetSettings), @GetPlayerSummonedObjectLimit))
+      {
+         send(who,@MsgSendUser,#message_rsc=Animate_failed_rsc,#parm1=send(oTarget,@GetCorpseName));
+
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/animate.kod:64</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 1;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/animate.kod:97</p>
+<h4>DoubleCheckAfterTrance(who = $, lTargets = $)</h4>
+<pre><code>{
+      local oRoom, oTarget;
+
+      oRoom = send(who,@GetOwner);
+      oTarget = first(lTargets);
+      if oRoom &lt;&gt; send(oTarget,@GetOwner)
+      {
+         send(who, @MsgSendUser, #message_rsc=spell_trance_break,#parm1=vrName);
+         send(who, @WaveSendUser, #wave_rsc=spell_trance_break_sound);
+
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/animate.kod:102</p>
+<h4>CastSpell(who = $, lTargets = $, iSpellPower = 1)</h4>
+<pre><code>{
+      local oRisen, oRoom, iRow, iCol, iFine_Row, iFine_Col, oTarget, iLevel, iNum, iDurationSecs;
+
+      oRoom = send(who,@GetOwner);
+      oTarget = first(lTargets);
+
+      if oRoom &lt;&gt; send(oTarget,@GetOwner)
+      {
+         send(who,@MsgSendUser,#message_rsc=spell_trance_break,#parm1=vrName);
+         send(who,@WaveSendUser,#wave_rsc=spell_trance_break_sound);
+
+         return;
+      }
+
+      iRow = send(oTarget,@GetRow);
+      iCol = send(oTarget,@GetCol);
+      iFine_Row = send(oTarget,@GetFineRow);
+      iFine_Col = send(oTarget,@GetFineCol);
+      iLevel = iSpellPower;
+      iNum = Random(iSpellPower/3,iSpellPower);
+      
+      if iNum &lt; 20 
+      {
+         iLevel = Bound(iLevel,1,25);
+         oRisen = Create(&amp;Mummy,#DropsTreasure=FALSE,#Level=iLevel);
+      }
+      else
+      {
+         if iNum &lt; 40
+         {
+            iLevel = Bound(iLevel,1,50);
+            oRisen = Create(&amp;Zombie,#DropsTreasure=FALSE,#Level=iLevel);
+         }
+         else
+         {
+            if iNum &lt; 60
+            {
+               iLevel = Bound(iLevel,1,55);
+               oRisen = Create(&amp;BatteredSkeleton,#DropsTreasure=FALSE,#Level=iLevel);
+            }
+            else
+            {
+               if iNum &lt; 75
+               {
+                  iLevel = Bound(iLevel,25,75);
+                  oRisen = Create(&amp;Skeleton,#DropsTreasure=FALSE,#Level=iLevel);
+               }
+               else
+               {
+                  if iNum &lt; 90
+                  {
+                     iLevel = Bound(iLevel,50,85);
+                     oRisen = Create(&amp;TuskedSkeleton,#DropsTreasure=FALSE,#Level=iLevel);
+                  }
+                  else
+                  {
+                     iLevel = Bound(iLevel,75,99);
+                     oRisen = Create(&amp;DaemonSkeleton,#DropsTreasure=FALSE,#Level=iLevel);
+                  }
+               }
+            }
+         }
+      }
+
+      iDurationSecs = ( ((iSpellPower/2) + random(25,50)) * MAX_RISEN_CONTROL_SECS/100 );
+      send(oRisen,@SetMaster,#oMaster=who);
+      send(oRisen,@SetSummoned,#value=TRUE);
+      Send(oRisen, @StartEnchantment, #what=self, #time=iDurationSecs * 1000);
+      Post(oRisen,@ResetBehaviorFlags);  
+
+      send(oRoom,@NewHold,#what=oRisen,#new_row=iRow,#new_col=iCol,#fine_row=iFine_Row,#fine_col=iFine_Col);
+
+      Send(who,@MsgSendUser,#message_rsc=Animate_cast_rsc,#parm1=send(oTarget,@GetCorpseName));
+      
+      post(oTarget,@Delete);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/animate.kod:119</p>
+<h4>ModifyMonsterBehavior(mob = $)</h4>
+<pre><code>{
+      send(mob,@SetBehaviorFlag,#flag=AI_MOVE_FOLLOW_MASTER,#value=TRUE);
+      send(mob,@SetBehaviorFlag,#flag=AI_FIGHT_AGGRESSIVE,#value=FALSE);
+      send(mob,@SetBehaviorFlag,#flag=AI_FIGHT_NEWBIESAFE);
+      send(mob,@SetBehaviorFlag,#flag=AI_FIGHT_MONSTERS);
+
+      return;      
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/animate.kod:199</p>
+<h4>EndEnchantment(who = $, report = TRUE)</h4>
+<pre><code>{
+      local oMaster;
+
+      oMaster = Send(who, @GetMaster);
+      if report AND IsClass(oMaster, &amp;User)
+      {
+         Send(oMaster, @MsgSendUser, #message_rsc=Animate_expire_rsc, #parm1=Send(who, @GetDef), #parm2=Send(who, @GetName));
+      }
+
+      
+      
+      if Send(who, @GetHealth) &gt; 0
+      {
+         Send(who, @RevertControl);
+         Post(who, @ResetBehaviorFlags);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/animate.kod:209</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

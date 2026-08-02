@@ -1,0 +1,101 @@
+<h1>Kraanan — the School of War</h1>
+
+<p class="lede">Kraanan is the school for people who were going to be fighting anyway. It is the only
+one whose requisite attribute is stamina — which is also your health ceiling — and the only one
+that halves the spellcasting penalty from worn armour. Its power comes from the crowd around you
+and from your own health, which means it is strongest exactly where a warrior wants to be:
+healthy, and in the middle of a battle.</p>
+
+<h2>Where Kraanan stands</h2>
+<table class="data">
+<tbody>
+<tr><td>Polarity</td><td>Neutral — no karma requirement at any level</td></tr>
+<tr><td>Requisite attribute</td><td><strong>Stamina</strong></td></tr>
+<tr><td>Learning division</td><td>Combat</td></tr>
+<tr><td>Spells</td><td>27, across levels 1–6</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:376 <code class="k">GetDivision</code>, :392 <code class="k">GetDivisionReq</code>, :482 <code class="k">GetRequiredKarma</code></p>
+
+<h2>Where its power comes from</h2>
+<p>Spell power is half your ability in the spell plus the bonuses below, on a scale of 1 to 99.
+It decides your success chance, your mana cost, your casting speed and the strength of the
+effect — see <a href="spells.html">Spells and Spellcasting</a>.</p>
+<table class="data">
+<thead><tr><th>Bonus</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td><strong>Primary, 0–30</strong></td><td>The number of active beings in the room — a crowded fight</td></tr>
+<tr><td><strong>Secondary, 0–10</strong></td><td><code class="k">health × 10 / max_health</code> — full health, full bonus</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:2168–2184</p>
+
+<h2>Why it is the fighter's school</h2>
+<p>Three separate concessions stack up, and together they make Kraanan the only school a heavily
+armoured character can carry without compromise:</p>
+<ul>
+<li><strong>Stamina is its requisite attribute</strong>, and stamina is also
+<code class="k">101 + stamina</code> — your permanent maximum health. Every other school asks you
+to buy an attribute that does nothing else. Kraanan asks you to buy the one you wanted anyway.</li>
+<li><strong>Negative item modifiers are halved.</strong> The source says why in as many words:
+"Kraanan, being a combat school, doesn't take penalties from items as much." Plate armour costs
+a Faren caster its full spell penalty and a Kraanan caster half of it.</li>
+<li><strong>Its power scales with company.</strong> Alone in a corridor, Kraanan is weak. In a
+melee with six other combatants, the primary bonus is doing real work.</li>
+</ul>
+<p class="cite">kod/object/passive/spell.kod:2168–2184</p>
+<div class="warn">The health-based secondary bonus cuts the wrong way in a losing fight. At half
+health your bonus is halved, so Kraanan gets weaker exactly as things get worse. It is a school
+for winning fights, not for surviving them.</div>
+
+<h2>Every Kraanan spell</h2>
+<table class="data">
+<thead><tr><th>Lvl</th><th>Spell</th><th>Mana</th><th>Cast time</th><th>Reagents</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><a href="../spells/createfood.html">create food</a></td><td>10</td><td>500 ms</td><td>elderberry ×2, herb ×2</td></tr>
+<tr><td>1</td><td><a href="../spells/createweapon.html">create weapon</a></td><td>15</td><td>500 ms</td><td>none</td></tr>
+<tr><td>1</td><td><a href="../spells/glowweapon.html">glow</a></td><td>15</td><td>instant</td><td>elderberry ×2, mushroom ×2</td></tr>
+<tr><td>1</td><td><a href="../spells/relay.html">relay</a></td><td>5</td><td>instant</td><td>edible mushroom</td></tr>
+<tr><td>2</td><td><a href="../spells/bless.html">bless</a></td><td>6</td><td>instant</td><td>mushroom ×2, sapphire ×2</td></tr>
+<tr><td>2</td><td><a href="../spells/enchantweapon.html">enchant weapon</a></td><td>17</td><td>30,000 ms</td><td>elderberry ×3, orc tooth</td></tr>
+<tr><td>2</td><td><a href="../spells/haste.html">haste</a></td><td>10</td><td>2,000 ms</td><td>edible mushroom ×5</td></tr>
+<tr><td>2</td><td><a href="../spells/resistpoison.html">resist poison</a></td><td>10</td><td>2,000 ms</td><td>herb ×2, red mushroom</td></tr>
+<tr><td>2</td><td><a href="../spells/superstrength.html">super strength</a></td><td>10</td><td>instant</td><td>mushroom ×2, orc tooth</td></tr>
+<tr><td>3</td><td><a href="../spells/detectinvisible.html">detect invisible</a></td><td>15</td><td>3,000 ms</td><td>vial of solagh ×2</td></tr>
+<tr><td>3</td><td><a href="../spells/freeaction.html">free action</a></td><td>10</td><td>2,000 ms</td><td>red mushroom, purple mushroom</td></tr>
+<tr><td>3</td><td><a href="../spells/magicshield.html">magic shield</a></td><td>9</td><td>instant</td><td>mushroom ×2, red mushroom</td></tr>
+<tr><td>3</td><td><a href="../spells/martyrsbattleground.html">martyr's battleground</a></td><td>10</td><td>instant</td><td>elderberry, mushroom</td></tr>
+<tr><td>3</td><td><a href="../spells/nightvision.html">night vision</a></td><td>6</td><td>instant</td><td>elderberry ×3</td></tr>
+<tr><td>3</td><td><a href="../spells/shroud.html">shroud</a></td><td>10</td><td>30,000 ms</td><td>mushroom ×3, elderberry ×3, herb ×2</td></tr>
+<tr><td>4</td><td><a href="../spells/deflect.html">deflect</a></td><td>20</td><td>3,000 ms</td><td>vial of solagh, kriipa claw</td></tr>
+<tr><td>4</td><td><a href="../spells/discordance.html">discordance</a></td><td>8</td><td>1,000 ms</td><td>sapphire ×2</td></tr>
+<tr><td>4</td><td><a href="../spells/dispelillusion.html">dispel illusion</a></td><td>20</td><td>instant</td><td>dragonfly eye, uncut seraphym, vial of solagh ×2</td></tr>
+<tr><td>4</td><td><a href="../spells/eagleeyes.html">eagle eyes</a></td><td>5</td><td>2,000 ms</td><td>mushroom ×3, purple mushroom</td></tr>
+<tr><td>4</td><td><a href="../spells/manabomb.html">mana bomb</a></td><td>0</td><td>instant</td><td>sapphire ×2</td></tr>
+<tr><td>4</td><td><a href="../spells/mend.html">mend</a></td><td>9</td><td>instant</td><td>sapphire, orc tooth</td></tr>
+<tr><td>5</td><td><a href="../spells/armorofgort.html">armor of Gort</a></td><td>10</td><td>instant</td><td>blue dragon scale ×2</td></tr>
+<tr><td>5</td><td><a href="../spells/hunt.html">hunt</a></td><td>50</td><td>10,000 ms</td><td>kriipa claw ×4</td></tr>
+<tr><td>5</td><td><a href="../spells/killingfields.html">killing fields</a></td><td>9</td><td>instant</td><td>elderberry ×3, orc tooth</td></tr>
+<tr><td>5</td><td><a href="../spells/resistmagic.html">resist magic</a></td><td>15</td><td>instant</td><td>blue dragon scale</td></tr>
+<tr><td>6</td><td><a href="../spells/antimagicaura.html">anti-magic aura</a></td><td>15</td><td>600 ms</td><td>sapphire ×2, polished seraphym</td></tr>
+<tr><td>6</td><td><a href="../spells/shatterlock.html">shatterlock</a></td><td>50</td><td>2,000 ms</td><td>kriipa claw ×4</td></tr>
+</tbody>
+</table>
+<p class="cite">Compiled from every <code class="k">Spell</code> subclass declaring this school. Per-spell citations are on each spell's own page.</p>
+
+<h2>Playing it</h2>
+<ul>
+<li>Fight in company. The primary bonus counts bodies in the room, and it is worth up to 30 of
+       the 99-point scale.</li>
+<li>Top up before you cast, not after. The secondary bonus is proportional to current health.</li>
+<li>You can wear real armour. Read <a href="armor.html">Armour</a> for the spell penalty each
+       piece carries, then halve it.</li>
+<li>Stamina does double duty here, which makes Kraanan the cheapest school in the game to
+       build for. See <a href="attributes.html">Attributes</a>.</li>
+</ul>
+
+<h2>Related</h2>
+<p><a href="schools.html">The Six Schools</a> · <a href="spells.html">How casting works</a> ·
+<a href="../spells/index.html">Every spell</a> · <a href="../reagents/index.html">Reagents</a> ·
+<a href="karma.html">Karma</a> · <a href="attributes.html">Attributes</a> ·
+<a href="advancing.html">Advancing Your Character</a></p>

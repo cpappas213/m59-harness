@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The home of the elder — Meridian 59 Compendium</title>
+<meta name="description" content="Set pieces. 0 creature types, 1 exits.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html" class="on">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Zones</a> › The home of the elder</p>
+<h1>The home of the elder</h1><p class="lede">The home of the elder is in <strong>Set pieces</strong>, city and residence terrain. Nothing spawns here and it connects to 1 other place.</p><figure class="mapfig"><svg class="roomap" viewBox="0 0 416 736" width="416" height="736" xmlns="http://www.w3.org/2000/svg" role="img"><path class="portal" d="M168.0 648.0L168.0 688.0M168.0 328.0L168.0 368.0M128.0 568.0L168.0 648.0M88.0 528.0L128.0 568.0M88.0 488.0L88.0 528.0M168.0 368.0L128.0 448.0M128.0 448.0L88.0 488.0M168.0 328.0L248.0 328.0M288.0 688.0L208.0 688.0M168.0 288.0L248.0 288.0"/><path class="solid" d="M168.0 288.0L168.0 328.0M8.0 688.0L8.0 528.0M8.0 528.0L8.0 488.0M8.0 488.0L8.0 328.0M168.0 688.0L8.0 688.0M168.0 288.0L8.0 288.0M8.0 8.0L168.0 8.0M8.0 288.0L8.0 8.0M8.0 328.0L168.0 328.0M248.0 328.0L408.0 328.0M208.0 688.0L168.0 688.0M408.0 688.0L288.0 688.0M408.0 328.0L408.0 448.0M408.0 448.0L408.0 528.0M408.0 528.0L408.0 688.0M208.0 728.0L208.0 688.0M288.0 728.0L208.0 728.0M288.0 688.0L288.0 728.0M248.0 288.0L408.0 288.0M248.0 288.0L248.0 328.0M408.0 8.0L408.0 288.0M168.0 8.0L408.0 8.0"/><g class="mk mk-entry"><circle cx="248.0" cy="568.0" r="4"/><title>Where you arrive</title></g></svg><figcaption>11 × 6 squares, 32 walls, from <code>marelder.roo</code>. <span class="mk-key"><span class="mk-entry"></span> arrival <span class="mk-gen"></span> creature generator <span class="mk-npc"></span> someone standing here <span class="mk-node"></span> mana node <span class="mk-exit"></span> exit</span></figcaption></figure><h2>The place itself</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class=""></th><th class=""></th></tr></thead>
+<tbody><tr><td class=""><strong>Region</strong></td><td class="">Set pieces</td></tr>
+<tr><td class=""><strong>Room id</strong></td><td class=""><code class="k">RID_MAR_ELDER_HUT</code> (203)</td></tr>
+<tr><td class=""><strong>Map file</strong></td><td class=""><code>marelder.roo</code></td></tr>
+<tr><td class=""><strong>Terrain</strong></td><td class="">city, residence</td></tr>
+<tr><td class=""><strong>You arrive at</strong></td><td class="">row 8, column 3</td></tr>
+<tr><td class=""><strong>Music</strong></td><td class=""><code>innmusic.mid</code></td></tr></tbody></table></div><p class="cite">kod/object/active/holder/room/monsroom/objroom/marelder.kod:11</p><p class="muted">2 pieces of scenery — trees, braziers, furniture — are also placed here.</p><h2>Ways out</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Leave by</th><th class="">Arrive at</th><th class="">Region</th></tr></thead>
+<tbody><tr><td class="">the square at row 11, col 4</td><td class=""><a href="marion.html">Marion</a></td><td class="">Marion</td></tr></tbody></table></div><p class="cite">kod/object/active/holder/room/monsroom/objroom/marelder.kod — <code class="k">plEdge_Exits</code> and <code class="k">plExits</code></p><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/room/monsroom/objroom/marelder.kod:11</p>
+<p><code class="k">MarionElderHut</code> is <code class="k">ObjectRoom</code> — full chain <code class="k">MarionElderHut</code> ← <code class="k">ObjectRoom</code> ← <code class="k">MonsterRoom</code> ← <code class="k">Room</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>room_name_MarionElderHut</code></td><td class=""><em>The home of the elder</em></td><td class="num " data-sort="26">26</td></tr>
+<tr><td class=""><code class="k">viTeleport_row</code></td><td class=""><code>8</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="28">28</td></tr>
+<tr><td class=""><code class="k">viTeleport_col</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">viTerrain_type</code></td><td class=""><code>TERRAIN_CITY | TERRAIN_RESIDENCE</code></td><td class="">10</td><td class="num " data-sort="31">31</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">prRoom</code></td><td class=""><code>room_MarionElderHut</code></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">piRoom_num</code></td><td class=""><code>RID_MAR_ELDER_HUT</code></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">piBaseLight</code></td><td class=""><code>LIGHT_NICE</code></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">piOutside_factor</code></td><td class=""><code>OUTDOORS_SOME</code></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">prMusic</code></td><td class=""><code>MarionElderHut_music</code></td><td class="num " data-sort="42">42</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>CreateStandardExits()</h4>
+<pre><code>{
+      plExits = $;
+
+      
+      plExits = Cons([ 11, 4, RID_MARION, 55, 28, ROTATE_45 ],plExits);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/monsroom/objroom/marelder.kod:46</p>
+<h4>CreateStandardObjects()</h4>
+<pre><code>{
+      local oNews;
+
+      Send(self,@NewHold,#what=Create(&amp;Table),
+	   #new_row=3,#new_col=5,#new_angle=ANGLE_SOUTH);
+      Send(self,@NewHold,#what=Create(&amp;Table),
+	   #new_row=8,#new_col=2,#new_angle=ANGLE_SOUTH);
+
+      Send(self,@NewHold,#what=Create(&amp;brazier),
+	   #new_row=7,#new_col=2,#fine_row=0,#fine_col=0);
+      Send(self,@NewHold,#what=Create(&amp;brazier),
+	   #new_row=10,#new_col=2,#fine_col=0);
+
+      oNews = Send(SYS,@FindNewsByNum,#num=NID_EVENT_SCHEDULE);
+      if oNews = $
+      {
+         oNews = Create(&amp;News,#nid=NID_EVENT_SCHEDULE);
+      }
+      Send(self,@NewHold,#what=oNews,
+	   #new_row=7,#new_col=5,#fine_row=0,#fine_col=0);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/monsroom/objroom/marelder.kod:56</p>
+<h4>SeanceCheck()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/monsroom/objroom/marelder.kod:81</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

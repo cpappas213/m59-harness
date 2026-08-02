@@ -1,0 +1,1055 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>faction troop — Meridian 59 Compendium</title>
+<meta name="description" content="This is a member of the local militia.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › faction troop</p>
+<div class="hero"><div class="heroText"><h1>faction troop</h1><p class="lede">This is a member of the local militia.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Neutral</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 0
+                = 75
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>slash</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>No room in the world declares this creature. It is summoned by another creature, placed by an
+administrator, or left over from content that is no longer reachable.</p><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_MOVE_REGROUP</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_NEWBIESAFE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:11</p>
+<p><code class="k">FactionTroop</code> is <code class="k">Monster</code> — full chain <code class="k">FactionTroop</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>. Subclasses: <code class="k">DukeTroop</code>, <code class="k">NecromancerTroop</code>, <code class="k">PrincessTroop</code>, <code class="k">RebelTroop</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>FactionTroop_name_rsc</code></td><td class=""><em>faction troop</em></td><td class="num " data-sort="155">155</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>FactionTroop_desc_rsc</code></td><td class=""><em>This is a member of the local militia.</em></td><td class="num " data-sort="156">156</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>FactionTroop_dead_name_rsc</code></td><td class=""><em>dead faction troop</em></td><td class="num " data-sort="157">157</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_NONE</code></td><td class="">1</td><td class="num " data-sort="159">159</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_AVERAGE</code></td><td class="">12</td><td class="num " data-sort="161">161</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_SLASH</code></td><td class="">128</td><td class="num " data-sort="162">162</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="163">163</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_NEWBIESAFE | AI_MOVE_REGROUP</code></td><td class="">131136</td><td class="num " data-sort="164">164</td></tr>
+<tr><td class=""><code class="k">viChanceFemale</code></td><td class=""><code>50</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="166">166</td></tr>
+<tr><td class=""><code class="k">viColorTranslate1</code></td><td class=""><code>XLAT_TO_RED</code></td><td class="">0</td><td class="num " data-sort="168">168</td></tr>
+<tr><td class=""><code class="k">viColorTranslate2</code></td><td class=""><code>XLAT_TO_BLACK</code></td><td class="">12</td><td class="num " data-sort="169">169</td></tr>
+<tr><td class=""><code class="k">vcShieldClass</code></td><td class=""><code>&amp;GuildShield</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="171">171</td></tr>
+<tr><td class=""><code class="k">viShieldColor1</code></td><td class=""><code>XLAT_TO_RED</code></td><td class="">0</td><td class="num " data-sort="172">172</td></tr>
+<tr><td class=""><code class="k">viShieldColor2</code></td><td class=""><code>XLAT_TO_RED</code></td><td class="">0</td><td class="num " data-sort="173">173</td></tr>
+<tr><td class=""><code class="k">viShieldShape</code></td><td class=""><code>SHIELDSHAPE_SLASH</code></td><td class="">1</td><td class="num " data-sort="174">174</td></tr>
+<tr><td class=""><code class="k">viInsignia</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="175">175</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piBaseLevel</code></td><td class=""><code>80</code></td><td class="num " data-sort="179">179</td></tr>
+<tr><td class=""><code class="k">piBaseDifficulty</code></td><td class=""><code>6</code></td><td class="num " data-sort="180">180</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>FactionTroop_male_icon_rsc</code></td><td class="num " data-sort="183">183</td></tr>
+<tr><td class=""><code class="k">vrDead_Icon</code></td><td class=""><code>FactionTroop_dead_male_icona_rsc</code></td><td class="num " data-sort="184">184</td></tr>
+<tr><td class=""><code class="k">vrDead_Legs</code></td><td class=""><code>FactionTroop_dead_male_iconb_rsc</code></td><td class="num " data-sort="185">185</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>80</code></td><td class="num " data-sort="186">186</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>4</code></td><td class="num " data-sort="187">187</td></tr>
+<tr><td class=""><code class="k">viGender</code></td><td class=""><code>GENDER_MALE</code></td><td class="num " data-sort="188">188</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>0</code></td><td class="num " data-sort="189">189</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>FactionTroop_sound_hit_monster_flesh2</code></td><td class="num " data-sort="191">191</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>FactionTroop_sound_swish3</code></td><td class="num " data-sort="192">192</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>FactionTroop_sound_aware</code></td><td class="num " data-sort="193">193</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>FactionTroop_male_sound_death</code></td><td class="num " data-sort="194">194</td></tr>
+<tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="196">196</td></tr>
+<tr><td class=""><code class="k">prLegs</code></td><td class=""><code>FactionTroop_legs_a_rsc</code></td><td class="num " data-sort="198">198</td></tr>
+<tr><td class=""><code class="k">prRight_arm</code></td><td class=""><code>FactionTroop_rightarm_a_rsc</code></td><td class="num " data-sort="199">199</td></tr>
+<tr><td class=""><code class="k">prLeft_arm</code></td><td class=""><code>FactionTroop_leftarm_a_rsc</code></td><td class="num " data-sort="200">200</td></tr>
+<tr><td class=""><code class="k">prHead</code></td><td class=""><code>FactionTroop_head_male_icon</code></td><td class="num " data-sort="202">202</td></tr>
+<tr><td class=""><code class="k">prEyes</code></td><td class=""><code>FactionTroop_eyes_ax_icon</code></td><td class="num " data-sort="203">203</td></tr>
+<tr><td class=""><code class="k">prMouth</code></td><td class=""><code>FactionTroop_mouth_ax_icon</code></td><td class="num " data-sort="204">204</td></tr>
+<tr><td class=""><code class="k">prNose</code></td><td class=""><code>FactionTroop_nose_ax_icon</code></td><td class="num " data-sort="205">205</td></tr>
+<tr><td class=""><code class="k">prToupee</code></td><td class=""><code>FactionTroop_hair_ac_icon</code></td><td class="num " data-sort="206">206</td></tr>
+<tr><td class=""><code class="k">plUsing</code></td><td class=""><code>$</code></td><td class="num " data-sort="208">208</td></tr>
+<tr><td class=""><code class="k">plOverlays</code></td><td class=""><code>$</code></td><td class="num " data-sort="209">209</td></tr>
+<tr><td class=""><code class="k">piBody_translations</code></td><td class=""><code>0</code></td><td class="num " data-sort="210">210</td></tr>
+<tr><td class=""><code class="k">piBody_translations2</code></td><td class=""><code>0</code></td><td class="num " data-sort="211">211</td></tr>
+<tr><td class=""><code class="k">poHair_Remove</code></td><td class=""><code>$</code></td><td class="num " data-sort="212">212</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor()</h4>
+<pre><code>{
+      plOverlays = [ ];
+      plUsing = [ ];
+      plResistances = [ ];
+      
+      send(self,@SetGender);
+      send(self,@SetHair);
+      send(self,@SetFace);
+      send(self,@SetSkinColor);
+      send(self,@SetTroopShirt,#translation=viColorTranslate1);
+      send(self,@SetTroopLegs,#translation=viColorTranslate2);
+      send(self,@SetEquipment);
+      send(self,@SetShield);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:216</p>
+<h4>SetGender()</h4>
+<pre><code>{
+      if random(1,100) &lt; viChanceFemale
+      {
+         viGender = GENDER_FEMALE;
+         vrIcon = FactionTroop_female_icon_rsc;
+         prHead = FactionTroop_head_female_icon;
+         prEyes = FactionTroop_eyes_kx_icon;
+         prMouth = FactionTroop_mouth_kx_icon;
+         prNose = FactionTroop_nose_kx_icon;
+         prToupee = FactionTroop_hair_ca_icon;
+         prLegs = FactionTroop_legs_b_rsc;
+         prRight_arm = FactionTroop_rightarm_b_rsc;
+         prLeft_arm = FactionTroop_leftarm_b_rsc;
+         vrDead_Icon = FactionTroop_dead_female_icona_rsc;
+         vrDead_Legs = FactionTroop_dead_female_iconb_rsc;
+         vrSound_death = FactionTroop_female_sound_death;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:234</p>
+<h4>SetHair()</h4>
+<pre><code>{
+      local RandomNumber,Translation,HelmetHair;
+
+      
+      if random(1,100) &lt; 30
+      {
+         HelmetHair = create(&amp;SimpleHelm);
+         send(self,@AddEquipmentObject,#what=HelmetHair);
+         poHair_Remove = HelmetHair;
+         return;
+      }
+
+      
+      if viGender = GENDER_MALE
+      {
+         RandomNumber = random(0,6);
+         
+         if RandomNumber = 1
+         {
+            prToupee = FactionTroop_hair_cd_icon;
+         }
+         else
+         {
+            if RandomNumber = 2
+            {
+               prToupee = FactionTroop_hair_bald_icon;
+            }
+            else
+            {
+               if RandomNumber = 3
+               {
+                  prToupee = FactionTroop_hair_ba_icon;
+               }
+               else
+               {
+                  if RandomNumber = 4
+                  {
+                     prToupee = FactionTroop_hair_ad_icon;
+                  }
+                  else
+                  {
+                     if RandomNumber = 5
+                     {
+                        prToupee = FactionTroop_hair_bb_icon;
+                     }
+                     else
+                     {
+                        prToupee = FactionTroop_hair_xa_icon;
+                     }
+                  }
+               }
+            }
+         }
+      } else {
+      
+         RandomNumber = random(0,8);
+         
+         if RandomNumber = 1
+         {
+            prToupee = FactionTroop_hair_cd_icon;
+         }
+         else
+         {
+            if RandomNumber = 2
+            {
+               prToupee = FactionTroop_hair_bc_icon;
+            }
+            else
+            {
+               if RandomNumber = 3
+               {
+                  prToupee = FactionTroop_hair_db_icon;
+               }
+               else
+               {
+                  if RandomNumber = 4
+                  {
+                     prToupee = FactionTroop_hair_bd_icon;
+                  }
+                  else
+                  {
+                     if RandomNumber = 5
+                     {
+                        prToupee = FactionTroop_hair_cb_icon;
+                     }
+                     else
+                     {
+                        if RandomNumber = 6
+                        {
+                           prToupee = FactionTroop_hair_dc_icon;
+                        }
+                        else
+                        {
+                           if RandomNumber = 7
+                           {
+                              prToupee = FactionTroop_hair_dr_icon;
+                           }
+                           else
+                           {
+                              prToupee = FactionTroop_hair_xb_icon;
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      
+      RandomNumber = random(0,8);
+      
+      if RandomNumber = 1
+      {
+         Translation = PT_GRAY_TO_RED;
+      }
+      else
+      {
+         if RandomNumber = 2
+         {
+            Translation = PT_GRAY_TO_KGRAY;
+         }
+         else
+         {
+            if RandomNumber = 3
+            {
+               Translation = PT_GRAY_TO_BLACK;
+            }
+            else
+            {
+               if RandomNumber = 4
+               {
+                  Translation = PT_GRAY_TO_BLOND;
+               }
+               else
+               {
+                  if RandomNumber = 5
+                  {
+                     Translation = PT_GRAY_TO_SKIN4;
+                  }
+                  else
+                  {
+                     if RandomNumber = 6
+                     {
+                        Translation = PT_GRAY_TO_SKIN5;
+                     }
+                     else
+                     {
+                        if RandomNumber = 7
+                        {
+                           Translation = PT_GRAY_TO_PLATBLOND;
+                        }
+                        else
+                        {
+                           if RandomNumber = 8
+                           {
+                              Translation = PT_GRAY_TO_KRED;
+                           }
+                           else
+                           {
+                              Translation = 0;
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+       
+      piBody_translations2 = piBody_translations2 &amp; ~FACTIONTROOP_TRANSLATION2_HAIR_MASK;
+      piBody_translations2 = piBody_translations2 | (Translation * FACTIONTROOP_TRANSLATION2_HAIR_MUL);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:256</p>
+<h4>SetFace()</h4>
+<pre><code>{
+      local RandomNumber;
+      
+
+      if viGender = GENDER_MALE
+      {
+         RandomNumber = random(0,3);
+         if RandomNumber = 1
+         {
+            prEyes = FactionTroop_eyes_bx_icon;
+         }
+         else
+         {
+            if RandomNumber = 2
+            {
+               prEyes = FactionTroop_eyes_cx_icon;
+            }
+            else
+            {
+               prEyes = FactionTroop_eyes_dx_icon;
+            }
+         }
+
+         RandomNumber = random(0,2);
+         if RandomNumber = 1
+         {
+            prNose = FactionTroop_nose_bx_icon;
+         }
+         else
+         {
+            prNose = FactionTroop_nose_cx_icon;
+         }
+
+         RandomNumber = random(0,2);
+         if RandomNumber = 1
+         {
+            prMouth = FactionTroop_mouth_bx_icon;
+         }
+         else
+         {
+            prMouth = FactionTroop_mouth_cx_icon;
+         }
+
+      }
+      else
+      {
+      
+
+         RandomNumber = random(0,2);
+         if RandomNumber = 1
+         {
+            prEyes = FactionTroop_eyes_lx_icon;
+         }
+         else
+         {
+            prEyes = FactionTroop_eyes_mx_icon;
+         }
+
+         RandomNumber = random(0,2);
+         if RandomNumber = 1
+         {
+            prNose = FactionTroop_nose_lx_icon;
+         }
+         else
+         {
+            prNose = FactionTroop_nose_mx_icon;
+         }
+
+         RandomNumber = random(0,2);
+         if RandomNumber = 1
+         {
+            prMouth = FactionTroop_mouth_lx_icon;
+         }
+         else
+         {
+            prMouth = FactionTroop_mouth_mx_icon;
+         }
+
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:434</p>
+<h4>SetSkinColor()</h4>
+<pre><code>{
+      local skin_color;
+      skin_color = random(PT_BLUE_TO_SKIN1,PT_BLUE_TO_SKIN4);
+
+      piBody_translations = piBody_translations &amp; ~FACTIONTROOP_TRANSLATION_SKIN_MASK;
+      piBody_translations = piBody_translations | (skin_color * FACTIONTROOP_TRANSLATION_SKIN_MUL);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:519</p>
+<h4>SetEquipment()</h4>
+<pre><code>{
+      local oEquipmentItem, iRandomNumber, iBonusModifier;
+
+      iRandomNumber = random(1,100);
+      if iRandomNumber &lt;= 35
+      {
+         oEquipmentItem = create(&amp;Longsword);
+         iBonusModifier = 3;
+      }
+      else
+      {
+         if iRandomNumber &lt;= 55
+         {
+            oEquipmentItem = create(&amp;Axe);
+            iBonusModifier = 2;
+         }
+         else
+         {
+            if iRandomNumber &lt;= 65
+            {
+               oEquipmentItem = create(&amp;Hammer);
+               iBonusModifier = 2;
+            }
+            else
+            {
+               if iRandomNumber &lt;= 75
+               {
+                  oEquipmentItem = create(&amp;Mace);
+                  iBonusModifier = 1;
+               }
+               else
+               {
+                  if iRandomNumber &lt;= 90
+                  {
+                     oEquipmentItem = create(&amp;ShortSword);
+                     iBonusModifier = 1;
+                  }
+                  else
+                  {
+                     oEquipmentItem = create(&amp;Scimitar);
+                     iBonusModifier = 4;
+                  }
+               }
+            }
+         }
+      }
+                  
+      viDifficulty = piBaseDifficulty + iBonusModifier;
+      send(self,@AddEquipmentObject,#what=oEquipmentItem);
+
+      iRandomNumber = random(1,100);
+
+      if iRandomNumber &lt;= 35
+      {
+         oEquipmentItem = create(&amp;LeatherArmor);
+         iBonusModifier = 20;
+      }
+      else
+      {
+         if iRandomNumber &lt;= 70
+         {
+            oEquipmentItem = create(&amp;ChainArmor);
+            iBonusModifier = 50;
+         }
+         else
+         {
+            oEquipmentItem = create(&amp;ScaleArmor);
+            iBonusModifier = 75;
+         }
+      }
+
+      viLevel = piBaseLevel + iBonusModifier;
+      send(self,@SetTroopArmor,#NewArmor=oEquipmentItem);
+
+      
+      iRandomNumber = random(1,100);
+      if iRandomNumber &lt; 20
+      {
+         oEquipmentItem = create(&amp;Gauntlet);
+         plUsing = Cons(oEquipmentItem,plUsing);
+         viDifficulty = viDifficulty +1;
+         viLevel = viLevel + 20;
+         if viGender = GENDER_MALE
+         {
+            prRight_arm = FactionTroop_rightarm_gauntlet_male;
+            prLeft_arm = FactionTroop_leftarm_gauntlet_male;
+         }
+         else
+         {
+            prRight_arm = FactionTroop_rightarm_gauntlet_female;
+            prLeft_arm = FactionTroop_leftarm_gauntlet_female;
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:531</p>
+<h4>SetShield()</h4>
+<pre><code>{
+      local oEquipmentItem;
+
+      oEquipmentItem = create(vcShieldClass,#color1=viShieldColor1,#color2=viShieldColor2,
+                              #shape=viShieldShape);
+      if viInsignia &lt;&gt; $
+      {
+         send(oEquipmentItem,@ChangeGuildInsignia,#insignia=viInsignia);
+      }
+
+      send(self,@AddEquipmentObject,#what=oEquipmentItem);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:629</p>
+<h4>GetParryAbility(stroke_obj = $)</h4>
+<pre><code>{
+      if (stroke_obj &lt;&gt; $) and not Send(stroke_obj,@CanParry)
+      {
+         return 0;
+      }
+      
+      return (viDifficulty*10)/2;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:646</p>
+<h4>GetBlockAbility(stroke_obj = $)</h4>
+<pre><code>{
+      if (stroke_obj &lt;&gt; $) and not Send(stroke_obj,@CanBlock)
+      {
+         return 0;
+      }
+      
+      return (viDifficulty*10);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:656</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      
+      Send(self,@DoSlash);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:666</p>
+<h4>DoSlash()</h4>
+<pre><code>{
+      piAnimation = PANM_WEAPON_ATTACK;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:674</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      local iBody_xlat;
+      iBody_xlat = (piBody_translations &amp; FACTIONTROOP_TRANSLATION_BODY_MASK)/FACTIONTROOP_TRANSLATION_BODY_MUL;
+      if iBody_xlat &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,iBody_xlat);
+      }
+
+      
+      AddPacket(1, ANIMATE_NONE,2,1);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:683</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      local iBody_xlat;
+      
+      iBody_xlat = (piBody_translations &amp; FACTIONTROOP_TRANSLATION_BODY_MASK)/FACTIONTROOP_TRANSLATION_BODY_MUL;
+      if (piBody_translations &amp; FACTIONTROOP_TRANSLATION_BODY_MASK) &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,iBody_xlat);
+      }
+
+      
+      if piAnimation = PANM_WEAPON_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,300,2,2,2,4,2,1);
+         
+         return;
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:698</p>
+<h4>SendMoveOverlays()</h4>
+<pre><code>{
+      local i,iOverlays,hotspot,iLeft_group,iRight_group,iSkin_xlat,iArms_xlat,iLegs_xlat;
+
+      
+      
+      iOverlays = 7;
+      
+      if poHair_remove = $
+      {
+         iOverlays = iOverlays + 1;
+      }
+
+      iLeft_group = 1;
+      iRight_group = 1;
+
+      for i in plOverlays
+      {
+         iOverlays = iOverlays + send(i,@GetNumberOverlays);  
+         hotspot = Send(i,@GetOverlayHotspot);
+         if hotspot = HS_RIGHT_WEAPON
+         {
+            iRight_group = 17;
+         }
+         else
+         {
+            if hotspot = HS_LEFT_WEAPON or hotspot = HS_BOTTOM_BOW
+            
+            {
+               iLeft_group = 7;
+            }
+         }
+      }
+      
+      AddPacket(1,iOverlays);
+      AddPacket(4,prLeft_arm,1,HS_LEFT_HAND);
+      
+      iArms_xlat = (piBody_translations2 &amp; FACTIONTROOP_TRANSLATION2_ARMS_MASK)/FACTIONTROOP_TRANSLATION2_ARMS_MUL;
+      if iArms_xlat &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,iArms_xlat);
+      }
+      
+      if iLeft_group = 1
+      {
+         AddPacket(1,ANIMATE_CYCLE,4,200,2,2,2,3);
+      }
+      else
+      {
+         AddPacket(1,ANIMATE_NONE,2,iLeft_group); 
+      }
+
+      AddPacket(4,prRight_arm,1,HS_RIGHT_HAND);
+      if iArms_xlat &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,iArms_xlat);       
+      }
+      
+      if iRight_group = 1
+      {
+         Addpacket(1,ANIMATE_CYCLE,4,200,2,2,2,3);
+      }
+      else
+      {
+         AddPacket(1,ANIMATE_NONE,2,iRight_group); 
+      }
+
+      AddPacket(4,prLegs,1,HS_LEGS);
+      iLegs_xlat = (piBody_translations &amp; FACTIONTROOP_TRANSLATION_LEGS_MASK)/FACTIONTROOP_TRANSLATION_LEGS_MUL;
+      if iLegs_xlat &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,iLegs_xlat);
+      }
+      
+      AddPacket(1,ANIMATE_CYCLE,4,100,2,2,2,5);
+
+      iSkin_xlat = (piBody_translations &amp; FACTIONTROOP_TRANSLATION_Skin_MASK)/FACTIONTROOP_TRANSLATION_SKIN_MUL;
+
+      AddPacket(4,prHead,1,HS_HEAD,1,ANIMATE_TRANSLATION,1,iSkin_xlat);
+      Addpacket(1,ANIMATE_NONE,2,1);        
+      
+      AddPacket(4,prMouth,1,HS_MOUTH,1,ANIMATE_TRANSLATION,1,iSkin_xlat,1,ANIMATE_NONE,2,NO_ACTION);
+      AddPacket(4,prEyes,1,HS_EYES,1,ANIMATE_TRANSLATION,1,iSkin_xlat,1,ANIMATE_NONE,2,NO_ACTION);
+      AddPacket(4,prNose,1,HS_NOSE,1,ANIMATE_TRANSLATION,1,iSkin_xlat,1,ANIMATE_NONE,2,1);
+
+      if poHair_remove = $
+      {  
+         AddPacket(4,prToupee,1,HS_TOUPEE,1,ANIMATE_TRANSLATION,1,
+                   (piBody_translations2 &amp; FACTIONTROOP_TRANSLATION2_HAIR_MASK)/FACTIONTROOP_TRANSLATION2_HAIR_MUL);         
+         AddPacket(1,ANIMATE_NONE,2,1); 
+      }
+
+      for i in plOverlays
+      {
+         send(i,@SendOverlayInformation,#iAnimation = $);
+      }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:719</p>
+<h4>SendOverlays()</h4>
+<pre><code>{
+      local i,iOverlays,hotspot,iLeft_group,iRight_group,iSkin_xlat, iArms_xlat, iLegs_xlat;
+
+      
+
+      
+      iOverlays = 7;
+      
+      if poHair_remove = $
+      {
+         iOverlays = iOverlays + 1;
+      }
+      
+      
+
+      iLeft_group = 1;
+      iRight_group = 1;
+
+      for i in plOverlays
+      {
+         iOverlays = iOverlays + send(i,@GetNumberOverlays,#iAnimation=piAnimation);  
+         hotspot = Send(i,@GetOverlayHotspot);
+         if hotspot = HS_RIGHT_WEAPON
+         {
+            iRight_group = 17;
+         }
+         else
+         {
+            if hotspot = HS_LEFT_WEAPON or hotspot = HS_BOTTOM_BOW
+            
+            {
+               iLeft_group = 7;
+            }
+         }
+      }
+
+      AddPacket(1, iOverlays);
+      iArms_xlat = (piBody_translations2 &amp; FACTIONTROOP_TRANSLATION2_ARMS_MASK)/FACTIONTROOP_TRANSLATION2_ARMS_MUL;
+
+      AddPacket(4,prLeft_arm,1,HS_LEFT_HAND);
+      if iArms_Xlat &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,iArms_xlat);
+      }
+      
+      if piAnimation = ANIM_CAST
+      {
+         AddPacket(1,ANIMATE_ONCE,4,300,2,8,2,8,2,iLeft_group);
+      }
+      else
+      {
+         if piAnimation = PANM_WEAPON_ATTACK
+         {
+            AddPacket(1,ANIMATE_ONCE,4,300,2,4,2,6,2,iLeft_group);
+         }
+         else
+         {
+            AddPacket(1,ANIMATE_NONE,2,iLeft_group);
+         }
+      }
+
+      AddPacket(4,prRight_arm,1,HS_RIGHT_HAND);
+      if iArms_xlat &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,iArms_xlat);
+      }
+
+      if piAnimation = ANIM_NONE
+      {    
+         AddPacket(1,ANIMATE_NONE,2,iRight_group); 
+      }
+
+      if piAnimation = ANIM_CAST
+      {
+         AddPacket(1,ANIMATE_ONCE,4,300,2,11,2,11,2,iRight_group);
+      }
+
+      if piAnimation = PANM_WEAPON_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,300,2,4,2,6,2,17);
+      }
+
+      AddPacket(4,prLegs,1,HS_LEGS);
+      iLegs_xlat = (piBody_translations &amp; FACTIONTROOP_TRANSLATION_LEGS_MASK)/FACTIONTROOP_TRANSLATION_LEGS_MUL;
+      if iLegs_xlat &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,iLegs_xlat);
+      }
+      
+      if piAnimation = PANM_WEAPON_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,900,2,6,2,6,2,1);
+      }
+      else
+      {
+         AddPacket(1,ANIMATE_NONE,2,1);
+      }
+  
+      iSkin_xlat = (piBody_translations &amp; FACTIONTROOP_TRANSLATION_Skin_MASK)/FACTIONTROOP_TRANSLATION_Skin_MUL;
+      AddPacket(4,prHead,1,HS_HEAD,1,ANIMATE_TRANSLATION,1,iSkin_xlat);
+      Addpacket(1,ANIMATE_NONE,2,1); 
+      
+      AddPacket(4,prMouth,1,HS_MOUTH,1,ANIMATE_TRANSLATION,1,iSkin_xlat,1,ANIMATE_NONE,2,NO_ACTION);
+      AddPacket(4,prEyes,1,HS_EYES,1,ANIMATE_TRANSLATION,1,iSkin_xlat,1,ANIMATE_NONE,2,NO_ACTION);
+      AddPacket(4,prNose,1,HS_NOSE,1,ANIMATE_TRANSLATION,1,iSkin_xlat,1,ANIMATE_NONE,2,1);
+      
+      if poHair_remove = $
+      {  
+         AddPacket(4,prToupee,1,HS_TOUPEE,1,ANIMATE_TRANSLATION,
+                   1,(piBody_translations2 &amp; FACTIONTROOP_TRANSLATION2_HAIR_MASK)/FACTIONTROOP_TRANSLATION2_HAIR_MUL);
+         AddPacket(1,ANIMATE_NONE,2,1); 
+      }
+      
+      for i in plOverlays
+      {
+         Send(i,@SendOverlayInformation,#iAnimation=piAnimation);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:818</p>
+<h4>SetTroopArmor(NewArmor = $)</h4>
+<pre><code>{
+      vrIcon = send(NewArmor,@GetShirtIcon,#who=self);
+      plUsing = cons(NewArmor, plUsing);
+
+      if poOwner &lt;&gt; $
+      {
+         Send(poOwner,@SomethingChanged,#what=self);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:940</p>
+<h4>SetTroopShirt(translation = 0)</h4>
+<pre><code>{
+      local iShirtXlat, iSkinColor;
+      
+      iSkinColor = (piBody_translations &amp; FACTIONTROOP_TRANSLATION_SKIN_MASK)/FACTIONTROOP_TRANSLATION_SKIN_MUL;
+      iSkinColor = send(self,@ConvertSkinColorToXLAT,#Skin_color=iSkinColor);
+      iShirtXlat = send(SYS,@EncodeTwoColorXLAT,#color1=translation,#color2=iSkinColor);
+
+      piBody_translations2 = piBody_translations2 &amp; ~FACTIONTROOP_TRANSLATION2_ARMS_MASK;
+      piBody_translations2 = piBody_translations2 | (iShirtXlat * FACTIONTROOP_TRANSLATION2_ARMS_MUL);
+
+      piBody_translations = piBody_translations &amp; ~FACTIONTROOP_TRANSLATION_BODY_MASK;
+      piBody_translations = piBody_translations | (iShirtXlat * FACTIONTROOP_TRANSLATION_BODY_MUL);
+
+      if poOwner &lt;&gt; $
+      {
+         Send(poOwner,@SomethingChanged,#what=self);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:954</p>
+<h4>SetTroopLegs(translation = 0)</h4>
+<pre><code>{
+      local iPantsXlat, iSkinColor;
+      
+      iSkinColor = (piBody_translations &amp; FACTIONTROOP_TRANSLATION_SKIN_MASK)/FACTIONTROOP_TRANSLATION_SKIN_MUL;
+      iSkinColor = send(self,@ConvertSkinColorToXLAT,#Skin_color=iSkinColor);
+
+      
+      if translation &gt;= XLAT_TO_DGREEN
+         AND (iSkinColor &lt; XLAT_TO_SKIN1
+              OR iSkinColor &gt; XLAT_TO_SKIN4)
+      {
+         iSkinColor = XLAT_TO_SKIN4;
+      }
+      
+      iPantsXlat = send(SYS,@EncodeTwoColorXLAT,#color1=translation,#color2=iSkinColor);
+
+      piBody_translations = piBody_translations &amp; ~FACTIONTROOP_TRANSLATION_LEGS_MASK;
+      piBody_translations = piBody_translations | (iPantsXlat * FACTIONTROOP_TRANSLATION_LEGS_MUL);
+
+      if poOwner &lt;&gt; $
+      {
+         Send(poOwner,@SomethingChanged,#what=self);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:978</p>
+<h4>AddEquipmentObject(what = $)</h4>
+<pre><code>{
+      local i;
+
+      for i in plOverlays
+      {
+         if i = what
+         {
+            return;
+         }
+      }
+
+      plUsing = Cons(what,plUsing);
+      plOverlays = Cons(what,plOverlays);
+
+      if poOwner &lt;&gt; $
+      {
+         Send(poOwner,@SomethingChanged,#what=self);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:1008</p>
+<h4>CreateTreasure(who = $, corpse = $)</h4>
+<pre><code>{
+      local oUsedItem, oItemAtt;
+
+      oItemAtt = send(SYS,@FindItemAttByNum,#num=IA_CORPSEPOINTER);
+
+      for oUsedItem in plUsing
+      {
+         
+         
+         if (random(1,100) &lt;= EQUIPMENT_DROP_PERCENT) AND (NOT IsClass(oUsedItem,vcShieldClass))
+         {
+            if (oItemAtt &lt;&gt; $) AND send(oItemAtt,@ReqAddToItem,#oItem=oUsedItem)
+            {
+               Send(oItemAtt,@AddToItem,#oItem=oUsedItem,#state1=corpse);
+            }       
+
+            Send(poOwner,@NewHold,#what=oUsedItem,#new_row=piRow,#new_col=piCol,
+                 #new_angle=Send(self,@GetAngle));
+         }
+         else
+         {
+            send(oUsedItem,@Delete);
+         }
+      }
+      
+      plUsing = $;
+      plOverlays = $;
+
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:1034</p>
+<h4>CreateDeadBody(killer = $)</h4>
+<pre><code>{
+      return Create(&amp;DeadBody,
+         #icon=vrDead_Icon,
+         #name=vrDead_Name,
+         #playername=send(killer,@GetTrueName),
+         #mob=TRUE,
+         #monstername=FactionTroop_name_rsc,
+         #PlayerBodyOverlay=vrDead_Legs,
+         #BodyTranslation=(piBody_translations &amp; FACTIONTROOP_TRANSLATION_BODY_MASK)/FACTIONTROOP_TRANSLATION_BODY_MUL,
+         #LegsTranslation=(piBody_translations &amp; FACTIONTROOP_TRANSLATION_LEGS_MASK)/FACTIONTROOP_TRANSLATION_LEGS_MUL);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:1068</p>
+<h4>ConvertskincolortoXLAT(Skin_color = 0)</h4>
+<pre><code>{
+      
+      
+      
+      if skin_color = PT_BLUE_TO_SKIN1  { return XLAT_TO_SKIN1; }
+      if skin_color = PT_BLUE_TO_SKIN2  { return XLAT_TO_SKIN1; }
+      if skin_color = PT_BLUE_TO_SKIN3  { return XLAT_TO_SKIN2; }
+      if skin_color = PT_BLUE_TO_SKIN4  { return XLAT_TO_SKIN4; }
+
+      if skin_color = PT_BLUE_TO_GREEN  { return XLAT_TO_SKIN1; }
+      if skin_color = PT_BLUE_TO_YELLOW  { return XLAT_TO_SKIN1; }
+      if skin_color = PT_BLUE_TO_GRAY  { return XLAT_TO_GRAY; }
+      if skin_color = PT_BLUE_TO_ASHEN  { return XLAT_TO_GRAY; }
+      if skin_color = PT_BLEND25YELLOW  { return XLAT_TO_SKY; }      
+      if skin_color = PT_BLEND25RED  { return XLAT_TO_BLUE; }
+      if skin_color = PT_BLUE_TO_LBLUE  { return XLAT_TO_SKY; }
+
+      if send(SYS,@IsTwoColorXLAT,#Xlat=skin_color)
+      {
+         return send(SYS,@DecodeSecondaryColor,#Xlat=skin_color);
+      }
+
+      return XLAT_TO_SKIN1;   
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:1081</p>
+<h4>IsAlly(target = $, regroup = FALSE)</h4>
+<pre><code>{
+      local iFaction;
+      if isClass(target,getClass(self))
+      {
+         return TRUE;
+      }
+      
+      if isClass(target,&amp;Player)
+      {
+         iFaction = send(target,@GetFaction);
+         if (not regroup) and (iFaction = FACTION_NEUTRAL)
+         {
+            return TRUE;
+         }
+         
+         if iFaction = viFaction
+         {
+            return TRUE;
+         }
+         else
+         {
+            return FALSE;
+         }
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:1108</p>
+<h4>SpecialHatredBehavior(what = $)</h4>
+<pre><code>{
+      local iFaction;
+      
+      if isClass(what,&amp;User) or isClass(what,&amp;FactionTroop)
+      {
+         iFaction=send(what,@GetFaction);
+         if iFaction = viFaction
+         {
+            return -30;
+         }
+         
+         if (iFaction &lt;&gt; FACTION_NEUTRAL) and (iFaction &lt;&gt; viFaction)
+         {
+            return 30;
+         }
+      }
+      
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:1137</p>
+<h4>Delete()</h4>
+<pre><code>{
+      local oUsedItem;
+      
+      for oUsedItem in plUsing
+      {
+         send(oUsedItem,@delete);
+      }
+      
+      plUsing = $;
+      plOverlays = $;
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:1158</p>
+<h4>CanMorphTo()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/troop.kod:1173</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

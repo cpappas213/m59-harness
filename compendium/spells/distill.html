@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>distill — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › distill</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/idistill_g1.png" alt="distill" width="128" height="128"></div><div class="heroText"><h1>distill</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><a class="tag school-6" href="../guides/jala.html">Jala</a><span class="tag ">Level 3</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/jala.html">Jala</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">3</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">20</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">30000 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">159</div></div></div><div class="flavor">Allows the caster to distill their knowledge of a spell into liquid form. After casting, simply say the name of the spell you want to turn into a potion. Requires a ruby and ingredients for the potion.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">20</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/ruby.html">ruby</a></td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">25</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">30000 ms trance</td><td class="">You are locked in a casting trance for this long; taking damage can break it.</td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/distill.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/marionhealer.html">Lady Aftyn</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">CanPayCosts</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">CastSpell</code> — Basically this spell does nothing except create a trance in which potion creation can be triggered if the person says the right thing.</li><li><code class="k">GetTranceTime</code></li><li><code class="k">PerformDistill</code> — Realistically, this will usually be called by SomethingSaidDuringTrance.</li><li><code class="k">CanPayIngredients</code> — Do we have the ingredients?</li><li><code class="k">PayIngredients</code> — Now we're making a potion so remove the ingredients.</li><li><code class="k">MakePotion</code> — Determine the potion's attributes. Make it. Hold it.</li><li><code class="k">GetIngredients</code> — Ask oTarget what its reagents are and multiply by proper factor, scale this to spellpower.</li><li><code class="k">SomethingSaidDuringTrance</code> — Check if string is a potion spell. If it is make it the target.</li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/idistill_g1.png" alt="distill group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/idistill_g2.png" alt="distill group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/distill.kod:11</p>
+<p><code class="k">Distill</code> is <code class="k">Spell</code> — full chain <code class="k">Distill</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>Distill_name_rsc</code></td><td class=""><em>distill</em></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>Distill_icon_rsc</code></td><td class=""><em>idistill.bgf</em></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>Distill_desc_rsc</code></td><td class=""><em>Allows the caster to distill their knowledge of a spell into liquid form.  After casting, </em></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>Distill_sound</code></td><td class=""><em>jala.wav</em></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_DISTILL</code></td><td class="">159</td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_JALA</code></td><td class="">6</td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">viCast_time</code></td><td class=""><code>30000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viChance_To_Increase</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="55">55</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piMultipleBase</code></td><td class=""><code>8</code></td><td class="num " data-sort="63">63</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{      
+      plReagents = $;
+      plReagents = Cons([&amp;Ruby,1], plReagents);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/distill.kod:67</p>
+<h4>CanPayCosts(who = $, lTargets = $)</h4>
+<pre><code>{ 
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/distill.kod:75</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/distill.kod:80</p>
+<h4>CastSpell(who = $)</h4>
+<p>Basically this spell does nothing except create a trance in which potion creation can be triggered if the person says the right thing.</p>
+<pre><code>{
+      Send(who,@MsgSendUser,#message_rsc=Distill_no_message);
+      
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/distill.kod:85</p>
+<h4>GetTranceTime(iSpellpower = 0, who = $)</h4>
+<pre><code>{
+      
+      
+      return viCast_time;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/distill.kod:94</p>
+<h4>PerformDistill(caster = $, oTarget = $)</h4>
+<p>Realistically, this will usually be called by SomethingSaidDuringTrance.</p>
+<pre><code>{
+      If Send(self,@CanPayIngredients,#caster=caster,#oTarget=oTarget)
+      {
+         Send(self,@PayIngredients,#caster=caster,#oTarget=oTarget);
+         Send(self,@MakePotion,#caster=caster,#oTarget=oTarget);
+
+         
+         Send(self,@ImproveAbility,#who=caster);
+         Send(Send(caster,@GetOwner),@SomethingWaveRoom,
+               #what=caster,#wave_rsc=vrSucceed_wav);
+      }
+     
+      return;      
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/distill.kod:101</p>
+<h4>CanPayIngredients(caster = $, oTarget = $)</h4>
+<p>Do we have the ingredients?</p>
+<pre><code>{
+      local lIngredients, lIngredient, cReagentClass, iNumNeeded, bFound,
+            lItems, lLists, oUserObject, iNum; 
+
+      
+      
+
+      lIngredients = Send(self,@GetIngredients,#caster=caster,
+                          #oTarget=oTarget);
+
+      
+      for lIngredient in lIngredients
+      {
+         cReagentClass = first(lIngredient);
+         iNumNeeded = Nth(lIngredient, 2);
+
+         bFound = FALSE;
+
+         lLists = [ Send(caster,@GetHolderActive),
+                    Send(caster,@GetHolderPassive)
+                  ];
+
+         
+         for lItems in lLists
+         {
+            for oUserObject in lItems
+            {
+               if isClass(oUserObject,cReagentClass)
+               {
+                  if isClass(oUserObject,&amp;NumberItem)
+                  {
+                     iNum = Send(oUserObject,@GetNumber);
+                     if iNum &gt;= iNumNeeded
+                     {
+                        iNumNeeded = 0;
+                     }
+                     else
+                     {
+                        iNumNeeded = iNumNeeded - iNum;
+                     }
+                  }
+                  else
+                  {
+                     iNumNeeded = iNumNeeded - 1;
+                  }
+
+                  if iNumNeeded = 0
+                  {
+                     bFound = TRUE;
+
+                     break;
+                  }
+               }
+            }
+            if bFound
+            {
+               break;
+            }
+         }
+
+         if not bFound
+         {
+            Send(caster,@WaveSendUser,#wave_rsc=spell_fail_wav);
+            Send(caster,@MsgSendUser,#message_rsc=distill_no_ingredient);
+
+            return FALSE;
+         }
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/distill.kod:118</p>
+<h4>PayIngredients(caster = $, oTarget = $)</h4>
+<p>Now we're making a potion so remove the ingredients.</p>
+<pre><code>{
+      local lIngredient, lIngredients,
+            cIngredientClass, iLists, lItems, iNumNeeded,oUserObject;
+
+      
+
+      lIngredients = Send(self,@GetIngredients,#caster=caster,
+                          #oTarget=oTarget);
+      
+      if NOT IsClass(caster,&amp;Player)
+      {
+         return TRUE;
+      }
+
+      
+      for lIngredient in lIngredients
+      {
+         cIngredientClass = First(lIngredient);
+         iNumNeeded = Nth(lIngredient, 2);
+         iLists = 1;
+
+         while iLists &lt;= 2 
+         {
+            if iLists = 1
+            {
+               lItems = Send(caster, @GetHolderActive);
+            }
+            else
+            {
+               lItems = Send(caster, @GetHolderPassive);
+            }
+
+            
+            for oUserObject in lItems
+            {
+               if IsClass(oUserObject,cIngredientClass)
+               {
+                  if IsClass(oUserObject,&amp;NumberItem)
+                  {
+                     Send(oUserObject,@SubtractNumber,#number=iNumNeeded);
+                     iNumNeeded = 0;
+
+                     break;
+                  }
+                  else 
+                  {
+                     Send(oUserObject,@Delete);
+                     iNumNeeded = iNumNeeded - 1;
+                     if iNumNeeded = 0
+                     {
+                        break;
+                     }
+                  }
+               }
+            }   
+
+            if iNumNeeded = 0 
+            {
+               
+               break;
+            }
+
+            iLists = iLists + 1;
+         }
+      }      
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/distill.kod:192</p>
+<h4>MakePotion(caster = $, oTarget = $)</h4>
+<p>Determine the potion's attributes.  Make it.  Hold it.</p>
+<pre><code>{
+      local oPotion, cPotionClass, iAbility, iSpellpower, iPotionPower,
+            iLevel, iSkill, iGoBadTime;
+
+      cPotionClass = Send(oTarget,@GetPotionClass);
+
+      if cPotionClass = FALSE
+      {
+         return;
+      }
+
+      iLevel = Send(oTarget,@GetLevel);
+      iAbility = Send(caster,@GetSpellAbility,
+                      #spell_num=Send(oTarget,@GetSpellNum));
+      iSkill = Send(caster,@GetSpellAbility,#spell_num=viSpell_num);
+      iSpellPower = Send(self,@GetSpellPower,#who=caster);
+
+      
+      
+      
+      
+      iPotionPower = Bound(((iAbility * (iSkill + 1)) / 100),20,99);
+      iPotionPower = iPotionPower - bound((iLevel*15)
+                     - (Send(caster,@GetBaseMaxHealth)-20),0,$);
+      iPotionPower = iPotionPower + Random(-20,(iSpellPower/10));
+      iPotionPower = Bound(iPotionPower,5,SPELLPOWER_MAXIMUM);
+
+      
+      iGoBadTime = -1;
+
+      oPotion = Create(cPotionClass,#labelled=TRUE,#iSpellPower=iPotionPower,
+                       #gobadtime=igobadtime,#maker=caster,#ability=iSkill);
+           
+      Send(caster,@NewHold,#what=oPotion);
+      Send(caster,@MsgSendUser,#message_rsc=Distill_do,
+           #parm1=Send(oPotion,@GetIndef),#parm2=Send(oPotion,@GetName));
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/distill.kod:263</p>
+<h4>GetIngredients(oTarget = $, caster = $)</h4>
+<p>Ask oTarget what its reagents are and multiply by proper factor, scale this to spellpower.</p>
+<pre><code>{
+      local iMultiple,lreagents,lIngredients,i,iNumber,cType,lList,iSpellpower;
+
+      lIngredients = $;
+      iSpellpower = Send(self,@GetSpellPower,#who=caster);
+
+      iMultiple = Bound(iSpellpower / 20,1,4);
+      iMultiple = Bound(piMultipleBase - iMultiple,3,15);
+
+      lReagents  = Send(oTarget,@GetReagents);
+
+      for i in lReagents
+      {  
+         cType  = Nth(i,1);
+         iNumber = Nth(i,2) * iMultiple;
+         lList = [ cType,iNumber ];
+         lIngredients = Cons(lList,lIngredients);
+      }
+
+      return lIngredients;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/distill.kod:305</p>
+<h4>SomethingSaidDuringTrance(who = $, string = $, lTargets = $)</h4>
+<p>Check if string is a potion spell.  If it is make it the target.</p>
+<pre><code>{
+      local lSpells, oTarget, iAbility, iRand, i;
+
+      lSpells = Send(SYS,@GetSpells);
+      iRand = Random(1,100);
+
+      
+      Send(who,@BreakTrance,#event=EVENT_STEER);  
+
+      for i in lSpells
+      {
+         if StringEqual(string,Send(i,@GetName))
+         {
+            oTarget = i;
+
+            break;
+         }
+      }
+      
+      if oTarget = $
+      {
+         return;
+      }
+      
+      if Send(oTarget,@GetPotionClass) = $
+      {
+         Send(who,@MsgSendUser,#message_rsc=Distill_bad_spell);
+
+         return;
+      }
+    
+      
+      
+      iAbility = Send(who,@GetSpellAbility,
+                      #spellnum=Send(oTarget,@GetSpellNum));
+
+      if iAbility &lt;&gt; $
+      {
+         if iRand &gt; iAbility
+         {
+            
+            Send(self,@PerformDistill,#caster=who,#oTarget=oTarget);
+         }
+         else
+         {
+            Send(who,@MsgSendUser,#message_rsc=Distill_fail_target,
+                 #parm1=Send(oTarget,@GetName));
+         }
+      }
+      else
+      {
+         Send(who,@MsgSendUser,#message_rsc=Distill_Dont_have_target,
+              #parm1=Send(oTarget,@GetName));
+      }
+      
+      return;
+   }  </code></pre>
+<p class="cite">kod/object/passive/spell/distill.kod:330</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

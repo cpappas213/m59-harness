@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Defense Modifier — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Defense Modifier</p>
+<div class="hero"><div class="heroText"><h1>Defense Modifier</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">defence modifier</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">10</div></div><div class="fact"><div class="lbl">Value</div><div class="val">10 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/defmod.kod:11</p>
+<p><code class="k">DefenseModifier</code> is <code class="k">PassiveItem</code> — full chain <code class="k">DefenseModifier</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">Armor</code>, <code class="k">Helmet</code>, <code class="k">Pants</code>, <code class="k">Shield</code>, <code class="k">Shirt</code>, <code class="k">Totem</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viItem_type</code></td><td class=""><code>ITEMTYPE_ARMOR</code></td><td class="">2</td><td class="num " data-sort="28">28</td></tr>
+<tr><td class=""><code class="k">vrItem_broken</code></td><td class=""><code>defmod_broken</code></td><td class=""><em>Your %s falls to pieces.</em></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">viDefense_base</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">viDamage_base</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="32">32</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piDefense_bonus</code></td><td class=""><code>0</code></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">piDamage_reduce</code></td><td class=""><code>0</code></td><td class="num " data-sort="37">37</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>DefaultValues()</h4>
+<pre><code>{
+      piDefense_bonus = viDefense_base;
+      piDamage_reduce = viDamage_base;
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod.kod:41</p>
+<h4>NewUsed(what = $)</h4>
+<pre><code>{
+      Send(what,@AddDefenseModifier,#what=self);
+      send(self,@AddResistances);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod.kod:49</p>
+<h4>NewUnused(what = $)</h4>
+<pre><code>{
+      Send(what,@RemoveDefenseModifier,#what=self);
+      send(self,@RemoveResistances);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod.kod:57</p>
+<h4>AddResistances()</h4>
+<pre><code>{
+      local i;
+      
+      for i in send(self,@GetResistanceModifiers)
+      {
+         Send(poOwner,@AddResistance,#what=nth(i,1),#value=nth(i,2));
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod.kod:65</p>
+<h4>RemoveResistances()</h4>
+<pre><code>{
+      local i;
+      
+      for i in send(self,@GetResistanceModifiers)
+      {
+         Send(poOwner,@RemoveResistance,#what=nth(i,1),#value=nth(i,2));
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod.kod:77</p>
+<h4>GetResistanceModifiers()</h4>
+<pre><code>{
+      
+      return [];
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod.kod:89</p>
+<h4>ModifyDefensePower(who = $, what = $, defense_power = 0)</h4>
+<pre><code>{
+      return defense_power + piDefense_bonus;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod.kod:95</p>
+<h4>ModifyDefenseDamage(who = $, what = $, damage = $, atype = 0, aspell = 0)</h4>
+<p>Increase or decrease damage done to defender.</p>
+<pre><code>{
+      local iDamageReduce;
+
+      iDamageReduce = 0;
+      if piDamage_reduce &lt;&gt; 0
+      {
+         iDamageReduce = random(piDamage_reduce/3,piDamage_reduce);
+         iDamageReduce = bound(iDamageReduce,0,(damage-1));
+      }
+
+      if aspell &lt;&gt; 0
+      {
+         
+         if atype &lt;&gt; 0
+         {
+            
+            
+            iDamageReduce = iDamageReduce * 2 / 3;
+         }
+         else
+         {
+            
+            iDamageReduce = 0;
+         }
+      }
+      
+      return damage - iDamageReduce;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod.kod:100</p>
+<h4>DefendingHit(who = $, what = $)</h4>
+<pre><code>{
+      
+      if (random(1,100) &lt; DAMAGE_CHANCE)
+      {
+         propagate;
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod.kod:133</p>
+<h4>CanMend()</h4>
+<p>For most defmods (armor and shields), mend is true.</p>
+<pre><code>{   
+      local i, oItemAtt;
+      
+      for i in plItem_Attributes
+      {
+         oItemAtt = send(SYS,@FindItemAttByNum,#num=send(self,@GetNumFromCompound,#compound=first(i)));
+         
+         if oItemAtt = $
+         {
+            DEBUG(&quot;Illegal ItemAtt in list!&quot;);
+            
+            continue;
+         }
+         
+         if NOT send(oItemAtt,@ItemCanMend,#oItem=self)
+         {
+            return FALSE;
+         }
+      }
+      
+      return TRUE; 
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod.kod:144</p>
+<h4>CanBeWornInSameSlotWith(what = $)</h4>
+<p>Returns TRUE if this item can be worn simultaneously with the given itemdespite both using overlapping equipment slots (use types). This allows specialexceptions like pants+robes (both use ITEM_USE_LEGS) or shirts+robes.Default: FALSE (items with overlapping slots cannot be worn together).</p>
+<pre><code>{
+      
+      
+      
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod.kod:169</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

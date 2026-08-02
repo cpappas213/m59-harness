@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>smite — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › smite</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/iseduce_g1.png" alt="smite" width="128" height="128"></div><div class="heroText"><h1>smite</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><span class="tag school-7">Administrative</span><span class="tag ">Level 50</span><span class="tag ">Harmful</span><span class="tag ">Outlaw cast</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><span class="muted">Administrative</span></div></div><div class="fact"><div class="lbl">Level</div><div class="val">50</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">0</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">1</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">0 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">8</div></div></div><div class="flavor">This is a god command used to strike down unruly, pathetic mortals. This is a DM only command.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">0</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><span class="muted">none</span></td><td class="">This spell needs no material component.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">0</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">instant</td><td class=""></td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">2</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/atakspel/boltspel/smite.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>No teacher in the current world data offers this spell. It may be granted by a quest, by an item, or reserved for monsters and administrators.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">CanPayCosts</code> — Checks to be sure that only DMs use this command.</li><li><code class="k">SuccessChance</code> — DMs are always successful with their spells.</li><li><code class="k">GetProjectileSpeed</code></li><li><code class="k">SendProjectileAnimation</code></li><li><code class="k">CanForget</code> — DM spells can't be forgotten.</li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/iseduce_g1.png" alt="smite group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/iseduce_g2.png" alt="smite group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/atakspel/boltspel/smite.kod:11</p>
+<p><code class="k">Smite</code> is <code class="k">BoltSpell</code> — full chain <code class="k">Smite</code> ← <code class="k">BoltSpell</code> ← <code class="k">AttackSpell</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>smite_name_rsc</code></td><td class=""><em>smite</em></td><td class="num " data-sort="28">28</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>smite_icon_rsc</code></td><td class=""><em>iseduce.bgf</em></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">vrProjectile_Icon</code></td><td class=""><code>smite_icon_rsc</code></td><td class=""><em>iseduce.bgf</em></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>smite_desc_rsc</code></td><td class=""><em>This is a god command used to strike down unruly, pathetic mortals.
+
+This is a DM only com</em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_SMITE</code></td><td class="">8</td><td class="num " data-sort="33">33</td></tr>
+<tr><td class=""><code class="k">viAttack_spell</code></td><td class=""><code>ATCK_SPELL_ALL</code></td><td class="">1</td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>50</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_DM_COMMAND</code></td><td class="">7</td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viProjectileLightFlags</code></td><td class=""><code>LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC</code></td><td class="">3</td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viProjectileLightIntensity</code></td><td class=""><code>50</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viProjectileLightColor</code></td><td class=""><code>LIGHT_BRED</code></td><td class="">31744</td><td class="num " data-sort="48">48</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piDamageMin</code></td><td class=""><code>500000</code></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">piDamageMax</code></td><td class=""><code>500000</code></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">prSpellHit</code></td><td class=""><code>smite_hit_rsc</code></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">pbAbsolute</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">plReagents</code></td><td class=""><code>$</code></td><td class="num " data-sort="58">58</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>CanPayCosts(who = $, lTargets = $)</h4>
+<p>Checks to be sure that only DMs use this command.</p>
+<pre><code>{
+      if NOT isClass(who,&amp;DM)
+      {
+         send(who,@RemoveSpell,#num=viSpell_num);
+         debug(&quot;Player&quot;,send(who,@GetName),&quot;had&quot;,send(self,@GetName),&quot;--removed&quot;);
+
+         return FALSE;
+      }
+
+      if NOT (send(who,@GreenNamed)
+              OR send(SYS,@GetChaosNight)
+              OR isClass(first(lTargets),&amp;Monster)
+              OR isClass(first(lTargets),&amp;DM))
+      {
+         send(who,@DontInterfere);
+
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/atakspel/boltspel/smite.kod:62</p>
+<h4>SuccessChance(who = $)</h4>
+<p>DMs are always successful with their spells.</p>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/atakspel/boltspel/smite.kod:86</p>
+<h4>GetProjectileSpeed()</h4>
+<pre><code>{
+      return 13;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/atakspel/boltspel/smite.kod:92</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_NONE, 2,1);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/atakspel/boltspel/smite.kod:97</p>
+<h4>SendProjectileAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_NONE, 2,2);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/atakspel/boltspel/smite.kod:104</p>
+<h4>CanForget()</h4>
+<p>DM spells can't be forgotten.</p>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/atakspel/boltspel/smite.kod:111</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

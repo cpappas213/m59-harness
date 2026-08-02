@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wand — Meridian 59 Compendium</title>
+<meta name="description" content="This is the generic spellitem and I can think of no good reason for you to have it. You have been reported to the authorities. prepare to die!!!!!">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Wand</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/wand6_g1.png" alt="Wand" width="69" height="119"></div><div class="heroText"><h1>Wand</h1><p class="lede">This is the generic spellitem and I can think of no good reason for you to have it. You have been reported to the authorities. prepare to die!!!!!</p><div class="tags"><span class="tag ">wand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">3</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">5</div></div><div class="fact"><div class="lbl">Value</div><div class="val">120 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">4–9</div></div></div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/wand6_g1.png" alt="Wand inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/wand6_g2.png" alt="Wand on the ground" loading="lazy"><figcaption>on the ground</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/spelitem/wand.kod:11</p>
+<p><code class="k">Wand</code> is <code class="k">SpellItem</code> — full chain <code class="k">Wand</code> ← <code class="k">SpellItem</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">BlindWand</code>, <code class="k">BrittleWand</code>, <code class="k">DementWand</code>, <code class="k">EnfeebleWand</code>, <code class="k">ForgetWand</code>, <code class="k">HoldWand</code>, <code class="k">HospiceWand</code>, <code class="k">IdentifyWand</code>, <code class="k">LightningWand</code>, <code class="k">MarkOfDishonorWand</code>, <code class="k">PurifyWand</code>, <code class="k">SeduceWand</code>, <code class="k">ShatterWand</code>, <code class="k">SlitherWand</code>, <code class="k">SwapWand</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrLabelName</code></td><td class=""><code>Wand_label_name_rsc</code></td><td class=""><em>generic wand</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>Wand_icon_rsc</code></td><td class=""><em>wand6.bgf</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">vrBroken</code></td><td class=""><code>Wand_broken</code></td><td class=""><em>%s%s shatters into pieces!</em></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrFails</code></td><td class=""><code>Wand_fails</code></td><td class=""><em>You point your wand but nothing happens.</em></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viSpellEffect</code></td><td class=""><code>SID_FIREBALL</code></td><td class="">5</td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viColor</code></td><td class=""><code>XLAT_TO_RED</code></td><td class="">0</td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viItem_Type</code></td><td class=""><code>ITEMTYPE_WAND</code></td><td class="">64</td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viInventory_group</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">vbNoBrokenView</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">vbShow_condition</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">vrCondition_exc</code></td><td class=""><code>Wand_condition_exc</code></td><td class=""><em> is brimming with intense power.</em></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">vrCondition_exc_mended</code></td><td class=""><code>Wand_condition_exc_mended</code></td><td class=""><em> is brimming with somewhat diminished power.</em></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">vrCondition_good</code></td><td class=""><code>Wand_condition_good</code></td><td class=""><em> shows minimal wear and is still quite potent.</em></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">vrCondition_med</code></td><td class=""><code>Wand_condition_med</code></td><td class=""><em> is starting to lose its luster.</em></td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">vrCondition_poor</code></td><td class=""><code>Wand_condition_poor</code></td><td class=""><em> is charred at the end and nearly expended.</em></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">vrCondition_broken</code></td><td class=""><code>Wand_condition_broken</code></td><td class=""><em> is now an unusable, blackened mess.</em></td><td class="num " data-sort="61">61</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>Wand_name_rsc</code></td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>Wand_desc_rsc</code></td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">piGoBadTime</code></td><td class=""><code>-1</code></td><td class="num " data-sort="69">69</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>CastSpell(what = $, apply_on = $)</h4>
+<pre><code>{
+      
+      
+      if (NOT ((send(poOwner,@GetOwner) &lt;&gt; send(apply_on,@GetOwner))
+               OR send(send(poOwner,@GetOwner),@LineOfSight,#obj1=poOwner,#obj2=apply_on)))
+         OR (IsClass(poOwner,&amp;Player)
+             AND NOT send(poOwner,@TargetWithinSightAndRange,#oTarget=apply_on))
+      {
+         send(self,@DoFailure,#what=what,#lTargets=[apply_on]);
+
+         return;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem/wand.kod:73</p>
+<h4>DoFailure(what = $, lTargets = $)</h4>
+<pre><code>{
+      Send(what,@MsgSendUser,#message_rsc=vrFails,#parm1=send(first(ltargets),@GetinDef),
+           #parm2=send(first(ltargets),@GetName));
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem/wand.kod:90</p>
+<h4>HideHiddenAttributes()</h4>
+<pre><code>{
+      vrName = Wand_name_rsc;
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem/wand.kod:98</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gold room key — Meridian 59 Compendium</title>
+<meta name="description" content="This finely-crafted golden key is used to gain access to a private room at an inn.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › gold room key</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/roomkey_g1.png" alt="gold room key" width="99" height="57"></div><div class="heroText"><h1>gold room key</h1><p class="lede">This finely-crafted golden key is used to gain access to a private room at an inn.</p><div class="tags"><span class="tag ">key</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">10</div></div><div class="fact"><div class="lbl">Value</div><div class="val">80 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div></div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/roomkey_g1.png" alt="gold room key inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/roomkey_g2.png" alt="gold room key group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:11</p>
+<p><code class="k">RoomKey</code> is <code class="k">RoomKeyCopy</code> — full chain <code class="k">RoomKey</code> ← <code class="k">RoomKeyCopy</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>RoomKey_name_rsc</code></td><td class=""><em>gold room key</em></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>RoomKey_icon_rsc</code></td><td class=""><em>roomkey.bgf</em></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>RoomKey_desc_rsc</code></td><td class=""><em>This finely-crafted golden key is used to gain access to a private room at an inn.</em></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>80</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">plCopies</code></td><td class=""><code>$</code></td><td class="num " data-sort="52">52</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>GetMasterKey()</h4>
+<p>This IS the master key!</p>
+<pre><code>{
+      return self;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:55</p>
+<h4>AppendSpecial()</h4>
+<p>Appends the number of key copies in ciculation to the key's description.</p>
+<pre><code>{
+      local iCopyCount;
+
+      iCopyCount = Send(self, @NumberOfCopies);
+      
+      
+      if iCopyCount &lt; 1
+      {
+         return;
+      }
+
+      AppendTempString(RoomKey_appendspecial_rsc);
+      AppendTempString(iCopyCount);
+      if iCopyCount = 1
+      {
+         AppendTempString(RoomKey_appendspecial_singular_rsc);
+      }
+      else
+      {
+         AppendTempString(RoomKey_appendspecial_plural_rsc);
+      }
+      AppendTempString(RoomKey_appendspecial2_rsc);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:61</p>
+<h4>UserLogOn()</h4>
+<pre><code>{
+      local oRoom;
+
+      oRoom = Send(SYS, @FindRoomByNum, #num=piRID);
+      if oRoom &lt;&gt; $
+      {
+         Send(oRoom, @RenterLoggedOn);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:89</p>
+<h4>OriginalDeleted()</h4>
+<pre><code>{
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:104</p>
+<h4>Copy(bSecure = FALSE)</h4>
+<pre><code>{
+      local oCopy;
+      
+      if bSecure
+      {
+         oCopy = Create(&amp;RoomKeySecureCopy, #iRID=piRID);
+      }
+      else
+      {
+         oCopy = Create(&amp;RoomKeyCopy, #iRID=piRID);
+      }
+
+      plCopies = cons(oCopy,plCopies);
+      
+      return oCopy;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:109</p>
+<h4>NumberOfCopies()</h4>
+<pre><code>{
+      return Length(plCopies);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:127</p>
+<h4>RemoveCopy(what = $)</h4>
+<p>Removes the specified key copy from the list of current key copies.</p>
+<pre><code>{
+      if (plCopies &lt;&gt; $)
+      {
+         plCopies = DelListElem(plCopies, what);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:132</p>
+<h4>DeleteCopies()</h4>
+<pre><code>{
+      local oKeyCopy;
+      for oKeyCopy in plCopies
+      {
+         
+         
+         Send(oKeyCopy, @OriginalDeleted);
+      }
+
+      plCopies = $;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:143</p>
+<h4>RoomExpired()</h4>
+<pre><code>{
+      if (poOwner &lt;&gt; $) and isClass(poOwner,&amp;User)
+      {
+         if Send(poOwner,@IsLoggedOn)
+         {
+            Send(poOwner,@MsgSendUser,#message_rsc=RoomKey_vanishes);
+         }
+         else
+         {
+            if Send(poOwner,@GetSaveRoom) = piRID
+            {
+               Send(poOwner,@AdminGoToSafety);
+            }
+         }
+      }
+
+      
+      
+      Post(self,@Delete);  
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:158</p>
+<h4>Delete()</h4>
+<pre><code>{
+      local i;
+      
+      for i in plCopies
+      {
+         Send(i, @OriginalDeleted);
+      }
+      
+      plCopies = $;
+      
+      i = Send(SYS,@FindRoomByNum,#num=piRID);
+      
+      if i &lt;&gt; $
+      {
+         Send(i,@Delete);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:182</p>
+<h4>IsKeyCopy()</h4>
+<p>As this is the original/master key to a room, this should be FALSE.</p>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:203</p>
+<h4>CanShatter()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:209</p>
+<h4>CanSwap()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:214</p>
+<h4>DestroyDisposable()</h4>
+<pre><code>{
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:219</p>
+<h4>ReqLeaveOwner()</h4>
+<pre><code>{
+      if (poOwner &lt;&gt; $) AND IsClass(poOwner,&amp;User)
+      {
+         Send(self,@NoDropMessage);
+
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:224</p>
+<h4>ReqNewOwner(what = $)</h4>
+<pre><code>{
+      if what &lt;&gt; $
+      {
+         if isClass(what,&amp;Room)
+         {
+            Send(self,@NoDropMessage);
+            
+            return FALSE;
+         }
+         
+         
+         if poOwner &lt;&gt; $
+            AND isClass(poOwner,&amp;User)
+         {
+            return FALSE;
+         }
+      }
+      else
+      {
+         
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:236</p>
+<h4>NewOwner(what = $)</h4>
+<p>If we have a room and aren't going to our owner, head back to our owner.</p>
+<pre><code>{
+      local oPlayerOwner, oRoom;
+
+      oRoom = Send(SYS,@FindRoomByNum,#num=piRID);
+
+      if oRoom = $
+      {
+         
+         Post(self,@Delete);
+
+         return;
+      }
+      
+      
+      oPlayerOwner = Send(oRoom,@GetRenter);
+
+      if what &lt;&gt; oPlayerOwner
+      {
+         
+         
+         Post(oPlayerOwner,@NewHold,#what=self);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/roomkeyc/roomkey.kod:263</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

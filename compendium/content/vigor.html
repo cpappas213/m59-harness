@@ -1,0 +1,529 @@
+<h1>Vigor</h1>
+
+<p class="lede">Vigor is the stamina bar: a number from 1 to 200 that you spend by moving, swinging and
+casting, and recover by resting and eating. It is not a resource you spend on anything directly —
+nothing costs "10 vigor" the way a spell costs mana. Instead it is a multiplier sitting under both
+regeneration formulas, and it is the single largest lever either of them has. Resting stops at 80.
+Only food goes past that, and the gap between 80 and 200 is worth roughly three times your health
+regeneration.</p>
+
+<div class="note">
+<p><strong>Vigor is stored as two numbers.</strong> <code class="k">piVigor</code> is the visible
+1–200 value; <code class="k">piExertion</code> is a hidden accumulator in units of 10<sup>−4</sup>
+vigor, so <strong>10 000 exertion = 1 vigor point</strong>. Everything that costs or restores vigor
+writes to the accumulator, and vigor only actually moves once the accumulator passes
+<code class="k">MIN_VIGOR_CHANGE</code> = 20 000 in either direction
+(<code>kod/object/active/holder/nomoveon/battler/player.kod:54</code>, <code>:1266–1283</code>). So
+vigor changes in lumps of two or three points at a time, never one — and small costs are banked, not
+discarded.</p>
+</div>
+
+<h2>The numbers behind the bar</h2>
+
+<table class="data">
+<thead><tr><th>Property</th><th>Value</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td><code class="k">piVigor</code></td><td>starts at 100</td><td>kod/object/active/holder/nomoveon/battler/player.kod:829</td></tr>
+<tr><td><code class="k">viMax_vigor</code></td><td>200 — the hard ceiling, applied in <code class="k">NewVigor</code></td><td>player.kod:740, :1214–1221</td></tr>
+<tr><td>Floor</td><td>1 — vigor never reaches 0</td><td>player.kod:1217</td></tr>
+<tr><td><code class="k">piExertion</code></td><td>starts at 0; 10 000 units = 1 vigor</td><td>player.kod:831; kod/object/passive/spell.kod:1282</td></tr>
+<tr><td><code class="k">MIN_VIGOR_CHANGE</code></td><td>20 000 — the dead band before vigor visibly moves</td><td>player.kod:54</td></tr>
+<tr><td><code class="k">piVigor_rest_threshold</code></td><td><strong>80</strong> by default, always bounded to 10–100</td><td>player.kod:891, :1228–1243</td></tr>
+</tbody>
+</table>
+
+<div class="warn">
+<p><strong>Two constants in this file are dead.</strong> <code class="k">ATTACK_EXERTION</code> = 5000
+("effective vigor debit per attack") and <code class="k">REST_TIME</code> = 2500 ("number of ms
+required to gain one vigor point") are declared at <code>player.kod:57</code> and <code>:60</code>
+and are never read anywhere in the tree. The real per-attack cost is the stroke's own
+<code class="k">viSkillExertion</code>, and the real rest interval is computed from Stamina. The
+header comment's claim that a full rest takes 200 seconds
+(<code>player.kod:37–41</code>) is arithmetic on those dead constants — 80 × 2500 / 1000 — and
+happens to be right only for a Stamina-1 character.</p>
+</div>
+
+<h2>What vigor actually does</h2>
+
+<p>Five things read vigor. Two of them are the regeneration formulas, and they read it very
+differently.</p>
+
+<h3>1. Health regeneration — quadratic</h3>
+
+<div class="formula">t = ((200 - Vigor) * (200 - Vigor)) / 6 + 1000     % milliseconds per hit point, before Stamina and max health
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5617</p>
+
+<p>Vigor enters as the <em>square of the shortfall</em> from 200, so its value accelerates: the last
+quarter of the bar is worth more than the first three quarters put together.</p>
+
+<table class="data">
+<thead><tr><th>Vigor</th><th>Base term</th><th>Relative to Vigor 100</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>7600 ms</td><td>2.85× slower</td></tr>
+<tr><td>25</td><td>6104 ms</td><td>2.29× slower</td></tr>
+<tr><td>50</td><td>4750 ms</td><td>1.78× slower</td></tr>
+<tr><td>80 (default rest cap)</td><td>3400 ms</td><td>1.28× slower</td></tr>
+<tr><td>100</td><td>2666 ms</td><td>—</td></tr>
+<tr><td>150</td><td>1416 ms</td><td>1.88× faster</td></tr>
+<tr><td>200</td><td>1000 ms</td><td>2.67× faster</td></tr>
+</tbody>
+</table>
+
+<p>Full detail, including the 1000 ms floor that caps the benefit for high-Stamina characters, is on
+<a href="health-regeneration.html">Health Regeneration</a>.</p>
+
+<h3>2. Mana regeneration — a straight divisor</h3>
+
+<div class="formula">t = t * 200 / bound(piVigor, 1, $)
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5657</p>
+
+<p>Here vigor is exactly linear and there is no floor worth speaking of: Vigor 200 regenerates mana
+precisely twice as fast as Vigor 100, at every pool size. See <a href="channeling.html">Channeling
+and Mana</a>.</p>
+
+<div class="note">
+<p><strong>The two formulas disagree about where vigor stops mattering.</strong> A Stamina-50
+character with 100 maximum health is already pinned at the 1000 ms health floor by Vigor 140 — past
+that, more vigor buys no health at all. Mana keeps scaling to 200 and beyond. If you are a caster,
+the top of the vigor bar is still worth eating for; if you are a Stamina-heavy fighter, it is not.</p>
+</div>
+
+<h3>3. Faren spell power</h3>
+
+<div class="formula">iSecondaryBonus = GetVigor() / 20            % then bound(iSecondaryBonus, 0, 10)
+</div>
+<p class="cite">kod/object/passive/spell.kod:2169, :2203</p>
+
+<p>Every <a href="faren.html">Faren</a> spell gets up to +10 spell power from vigor alone — the school
+"rewards the vigorous warrior", as the comment puts it. Vigor 200 gives the full +10; Vigor 100 gives
++5. For comparison, <a href="kraanan.html">Kraanan</a>'s equivalent secondary bonus is your health
+fraction and <a href="jala.html">Jala</a>'s is <code>maxHealth/12</code>. That is a real difference to
+a Faren caster: +5 spell power moves <a href="../spells/manafocus.html">Mana Focus</a>,
+<a href="../spells/mystictouch.html">Mystic touch</a> and every elemental attack spell.</p>
+
+<h3>4. The gate on running</h3>
+
+<div class="formula">if speed &gt; USER_WALKING_SPEED AND GetVigor() &lt; VIGOR_RUN_THRESHOLD:
+    the server snaps you back to where you were and logs a cheat warning
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player/user.kod:2958–2975; constants USER_WALKING_SPEED = 18 and VIGOR_RUN_THRESHOLD = 10 at :46 and :54</p>
+
+<p>Below 10 vigor you cannot run. The client is supposed to enforce this; the server treats a running
+move packet from an exhausted player as a possible speedhack, refuses the move and writes an
+<code>ALERT!</code> line to the log.</p>
+
+<h3>5. The gate on casting and skills</h3>
+
+<table class="data">
+<thead><tr><th>Action</th><th>Requirement</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td>Casting a spell</td><td><code>piVigor &gt; viSpellExertion</code>, i.e. strictly more vigor than the spell's exertion cost. Refused with "you are too tired".</td><td>kod/object/passive/spell.kod:597–610</td></tr>
+<tr><td>Using a skill</td><td><code>piVigor &gt; viSkillExertion</code>, when the skill sets <code class="k">vbCheck_Exertion</code></td><td>kod/object/passive/skill.kod:200–205</td></tr>
+<tr><td>Swinging a weapon</td><td>same test, via the stroke</td><td>kod/object/passive/skill/stroke.kod:131–140</td></tr>
+</tbody>
+</table>
+
+<p><code class="k">HasVigor</code> is a strict comparison — <code>piVigor &gt; amount</code>, not
+<code>&gt;=</code> (<code>player.kod:1354–1362</code>). At exactly 10 vigor a 10-exertion spell is
+refused.</p>
+
+<h2>Spending vigor</h2>
+
+<h3>Moving</h3>
+
+<div class="formula">once per second, while you are moving:
+   iExertion = ((speed * 5) / 6) ^ 2 * EXERTION_PER_MOVE       % EXERTION_PER_MOVE = 2
+   if hasted:  iExertion = iExertion * (100 - hasteLevel) / 100
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player/user.kod:3014–3034; EXERTION_PER_MOVE = 2 at :26</p>
+
+<p>The client reports position at most once per second (<code>MOVE_INTERVAL</code> = 1000 ms,
+<code>clientd3d/move.c:57</code>) and sends speed 18 when walking, doubled to 36 when running
+(<code>clientd3d/move.c:775–777</code>).</p>
+
+<table class="data">
+<thead><tr><th>Movement</th><th>Speed sent</th><th>Exertion / second</th><th>Vigor / second</th><th>Vigor / minute</th></tr></thead>
+<tbody>
+<tr><td>Standing still</td><td>—</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>Walking</td><td>18</td><td>450</td><td>0.045</td><td>2.7</td></tr>
+<tr><td>Running</td><td>36</td><td>1800</td><td>0.180</td><td>10.8</td></tr>
+<tr><td>Running under <a href="../spells/haste.html">Haste</a> at spell power 99</td><td>36</td><td>18</td><td>0.002</td><td>0.1</td></tr>
+</tbody>
+</table>
+
+<p>Running is exactly four times as expensive as walking, because the cost is quadratic in speed and
+running doubles it. Ten minutes of running is 108 vigor — more than the whole rest-able range.
+Haste's state is its spell power, 1–99 (<code>kod/object/passive/spell/persench/haste.kod:69–71</code>),
+so it subtracts up to 99 % of movement exertion and is far and away the cheapest way to cross the
+world with your bar intact.</p>
+
+<h3>Attacking</h3>
+
+<p>Every swing pays its stroke's cost through the ordinary skill machinery
+(<code>kod/object/active/holder/nomoveon/battler/player.kod:4070–4073</code> →
+<code>kod/object/passive/skill.kod:252–265</code>).</p>
+
+<div class="formula">on a successful skill:  AddExertion(1000 * viSkillExertion)
+on a failed skill:      AddExertion((1000 * viSkillExertion) / 2)
+</div>
+<p class="cite">kod/object/passive/skill.kod:246, :263</p>
+
+<p>Note the multiplier is 1000, not 10 000 — so a skill's <code class="k">viSkillExertion</code> is in
+<em>tenths</em> of a vigor point, while a spell's <code class="k">viSpellExertion</code> is in whole
+points.</p>
+
+<table class="data">
+<thead><tr><th>Stroke</th><th><code class="k">viSkillExertion</code></th><th>Vigor per swing</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td><a href="../skills/slash.html">Slash</a> — the default stroke for every weapon</td><td>2</td><td>0.2</td><td>kod/object/passive/skill/stroke/slash.kod:40; default at kod/object/item/passitem/weapon.kod:446–449</td></tr>
+<tr><td><a href="../skills/fire.html">Fire</a> — the ranged stroke</td><td>2</td><td>0.2</td><td>kod/object/passive/skill/stroke/fire.kod:49</td></tr>
+<tr><td><a href="../skills/punch.html">Punch</a></td><td>5</td><td>0.5</td><td>kod/object/passive/skill/stroke/unarmed/punch.kod:47</td></tr>
+<tr><td><a href="../skills/unarmed.html">Unarmed</a> (the base class)</td><td>10</td><td>1.0</td><td>kod/object/passive/skill/stroke/unarmed.kod:35</td></tr>
+<tr><td><a href="../skills/disarm.html">Disarm</a></td><td>10, and 4× that on the retaliation path</td><td>1.0 / 4.0</td><td>kod/object/passive/skill/disarm.kod:48, :72, :173</td></tr>
+<tr><td>Every other skill by default</td><td>2</td><td>0.2</td><td>kod/object/passive/skill.kod:60</td></tr>
+</tbody>
+</table>
+
+<p>At 0.2 vigor a swing, sustained melee is cheap — roughly 5 swings per vigor point. Movement, not
+combat, is what empties the bar.</p>
+
+<div class="warn">
+<p><strong><a href="../skills/thrust.html">Thrust</a> and <a href="../skills/kick.html">Kick</a> are
+unfinished, and their exertion values prove it.</strong> Thrust declares
+<code class="k">viskillExertion</code> = 500 and Kick declares 2000 — 50 and 200 vigor per swing.
+Neither overrides <code class="k">vbCheck_Exertion</code>, so the pre-swing test
+<code>HasVigor(500)</code> can never pass at a 200-vigor ceiling and the stroke is refused every
+time. Both are also declared at <code class="k">viSkill_level</code> = 50, far past any real school
+level, so they cannot be learned in the first place
+(<code>kod/object/passive/skill/stroke/thrust.kod:37, :40</code>;
+<code>kod/object/passive/skill/stroke/unarmed/kick.kod:44, :46</code>).</p>
+<p>Three near-identical names live in this corner of the tree and only one of them is read:
+<code class="k">viSkillExertion</code> (skill.kod:60 — the live one),
+<code class="k">viSkill_Exertion</code> (stroke.kod:59, returned by a <code class="k">GetExertion</code>
+message that nothing calls) and <code class="k">piSkillExertion</code>
+(<code>kod/object/passive/skill/assess.kod:50</code>, never read at all).</p>
+</div>
+
+<h3>Casting</h3>
+
+<div class="formula">on a successful cast:  AddExertion(10000 * viSpellExertion)     % whole vigor points
+on a failed cast:      AddExertion((10000 * viSpellExertion) / 2)
+</div>
+<p class="cite">kod/object/passive/spell.kod:1283 and :1166</p>
+
+<p>A failed spell costs half the vigor, half the mana and no reagents. Immortals and non-player
+casters pay nothing.</p>
+
+<table class="data">
+<thead><tr><th><code class="k">viSpellExertion</code></th><th>Vigor per cast</th><th>Spells</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>free</td><td>Smite, boons, <a href="../spells/haste.html">Haste</a>, <a href="../spells/relay.html">Relay</a>, Create food, Engrave, DM spells</td></tr>
+<tr><td>2–8</td><td>2–8</td><td>most low-level attack and utility spells</td></tr>
+<tr><td>10</td><td>10</td><td>the commonest value — 19 spells, including every basic Jala song</td></tr>
+<tr><td>15–20</td><td>15–20</td><td>heavier enchantments and room spells</td></tr>
+<tr><td>25–30</td><td>25–30</td><td>Distill, Crystalize mana, Nodeburst, Spore burst</td></tr>
+<tr><td>40–50</td><td>40–50</td><td>Curse weapon, Elusion, Death's door, and the multicasts: Bond, Blood inheritance, Hunt, Shatterlock</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<p>A typical spell costs 10 vigor — <strong>fifty times what a sword swing costs</strong>. Seven casts
+of an ordinary spell take a rested character from 80 down to 10, and the eighth is refused. This,
+not mana, is usually what stops a caster mid-fight, and it is why the food table below matters more
+to casters than to fighters.</p>
+</div>
+
+<h3>Everything else that drains you</h3>
+
+<table class="data">
+<thead><tr><th>Source</th><th>Cost</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td>Contracting poison</td><td>20 vigor, flat, unless the caller suppresses it</td><td>kod/object/active/holder/nomoveon/battler/player.kod:9807–9822</td></tr>
+<tr><td><a href="../spells/sandstorm.html">Sandstorm</a></td><td><code>SP/10 + 1</code> = 1–10 vigor per tick</td><td>kod/object/passive/spell/roomench/sandstor.kod:211</td></tr>
+<tr><td><a href="../spells/markofdishonor.html">Mark of Dishonor</a></td><td>20 vigor on application, plus a rest-threshold cut scaled by how evil you are</td><td>kod/object/passive/spell/dishonor.kod:145–166</td></tr>
+<tr><td>Revenant</td><td>10 % of your current vigor per hit</td><td>kod/object/active/holder/nomoveon/battler/monster/revenant.kod:197</td></tr>
+<tr><td>Northern lightworm</td><td><code>random(3,7)</code> vigor per hit</td><td>kod/object/active/holder/nomoveon/battler/monster/nrthlwrm.kod:18–19, :153</td></tr>
+<tr><td><a href="../items/ringoflethargy.html">Ring of lethargy</a></td><td>rest threshold −20 while worn; 40 vigor every time you try to take it off, and it does not come off</td><td>kod/object/item/passitem/ring/lethring.kod:55, :72, :107–125, :163</td></tr>
+<tr><td>Faction tokens</td><td>rest threshold pinned at 10; 6–12 vigor on the trigger</td><td>kod/object/item/passitem/token.kod:63, :241–252</td></tr>
+<tr><td><a href="../items/huntersword.html">Hunter sword</a>, hungry</td><td>2 vigor per tick, rising to 4 with damage when starving</td><td>kod/object/item/passitem/weapon/huntsw.kod:468, :482</td></tr>
+<tr><td><a href="../items/necromanceramulet.html">Necromancer amulet</a>, hungry</td><td>2 vigor per tick when starving</td><td>kod/object/item/actitem/necroam.kod:518</td></tr>
+</tbody>
+</table>
+
+<h3>The faction discount</h3>
+
+<div class="formula">if exertion being added is positive:
+    percent = GetFactionVigorBonus(you)
+    exertion = exertion * (100 - percent) / 100
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:1259–1264; kod/util/parlia.kod:1420–1455</p>
+
+<table class="data">
+<thead><tr><th>Your standing</th><th>Exertion reduction</th></tr></thead>
+<tbody>
+<tr><td>Princess or Rebel faction</td><td>0 %</td></tr>
+<tr><td>Not "intriguing"</td><td>5 %</td></tr>
+<tr><td>Duke, intriguing</td><td><code>CalcFactionBonus(base=30)</code> — from −3 % when the faction is weak to <strong>45 %</strong> when it is dominant</td></tr>
+<tr><td>Neutral, intriguing</td><td>the same calculation, then quartered and floored at zero: 0 to <strong>11 %</strong></td></tr>
+</tbody>
+</table>
+<p class="cite">kod/util/parlia.kod:998–1074</p>
+
+<p>This applies only to <em>costs</em>, never to gains — the test is <code>iExertionAdded &gt; 0</code>
+— so it makes you tire more slowly but does not make you rest or eat any faster. It is the only
+mechanic in the game that reduces vigor spending.</p>
+
+<h2>Getting vigor back</h2>
+
+<h3>Resting — and why it stops at 80</h3>
+
+<p>Sit down (the client's <code class="k">UC_REST</code>) and a timer starts that removes exertion
+until you reach your rest threshold, then stops.</p>
+
+<div class="formula">GetRestTime() = 1000 + 30 * (51 - Stamina)        % ms between rest ticks
+                 (reduced by Invigorate if a bard is singing it)
+
+RestTimer():
+   if piVigor &lt; piVigor_rest_threshold:  RestAddExertion(-10000)
+
+RestAddExertion(amount):
+   if piVigor &gt; piVigor_rest_threshold:  return               % never rests you above the threshold
+   if room is ROOM_SANCTUARY:      amount = 2 * amount
+   if room is ROOM_TRIPLE_HEAL:    amount = 3 * amount
+   piExertion = piExertion + amount
+   if abs(piExertion) &gt; MIN_VIGOR_CHANGE:
+      piVigor = min(piVigor - piExertion/10000, piVigor_rest_threshold)
+      piExertion = 0
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:9984–10045 and :1296–1339</p>
+
+<div class="warn">
+<p><strong>Resting cannot take you above 80.</strong> That is the default
+<code class="k">piVigor_rest_threshold</code> (<code>player.kod:891</code>), and the threshold is
+itself bounded to 10–100 no matter what modifies it (<code>player.kod:1238</code>). The top 120
+points of the vigor bar — where the health formula pays the most — are reachable <em>only</em> by
+eating.</p>
+</div>
+
+<table class="data">
+<thead><tr><th>Stamina</th><th>Rest tick</th><th>10 → 80 in a normal room</th><th>In an inn (<code class="k">ROOM_SANCTUARY</code>)</th><th>In the Jasper inn (<code class="k">ROOM_TRIPLE_HEAL</code>)</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>2500 ms</td><td>175 s</td><td>88 s</td><td>58 s</td></tr>
+<tr><td>10</td><td>2230 ms</td><td>156 s</td><td>78 s</td><td>52 s</td></tr>
+<tr><td>25</td><td>1780 ms</td><td>125 s</td><td>62 s</td><td>42 s</td></tr>
+<tr><td>40</td><td>1330 ms</td><td>93 s</td><td>47 s</td><td>31 s</td></tr>
+<tr><td>50</td><td>1030 ms</td><td>72 s</td><td>36 s</td><td>24 s</td></tr>
+<tr><td>70</td><td>430 ms</td><td>30 s</td><td>15 s</td><td>10 s</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:10009–10031</p>
+
+<div class="note">
+<p><strong><code class="k">ROOM_TRIPLE_HEAL</code> does not affect healing.</strong> Despite the name,
+the flag is read in exactly one place in the entire tree — <code>player.kod:1320</code>, inside
+<code class="k">RestAddExertion</code> — so it triples your <em>vigor</em> recovery and does nothing
+whatever for health or mana. Exactly one room in the game sets it: the Jasper inn
+(<code>kod/object/active/holder/room/jasperrm/jasinn.kod:33</code>). Seventeen rooms carry
+<code class="k">ROOM_SANCTUARY</code> and get the double rate.</p>
+</div>
+
+<p>Two side effects of the dead band are worth knowing. In a normal room the −10 000 per tick only
+crosses <code class="k">MIN_VIGOR_CHANGE</code> on the third tick, so vigor arrives in visible jumps of
+three; in a sanctuary it is four points every two ticks. And <code class="k">RestAddExertion</code>
+zeroes the accumulator rather than keeping the remainder, so if you sit down with a large positive
+exertion balance from a fight, the first rest tick swallows it.</p>
+
+<p>While resting you are flagged <code class="k">PFLAG_NO_MOVE</code>,
+<code class="k">PFLAG_NO_FIGHT</code> and <code class="k">PFLAG_NO_MAGIC</code>
+(<code>player.kod:1155–1167</code>) — you cannot move, attack or cast, and a spell that finishes its
+cast time while you are resting is refused
+(<code>kod/object/passive/spell.kod:739–745</code>, <code>:1793–1798</code>). Resting also breaks a
+trance immediately (<code>player.kod:9991</code>). Nothing in the server stops you resting in a
+hostile room, and nothing stands you back up when you are hit; standing is a client command.</p>
+
+<img class="icon" src="../assets/img/iinvigor_g1.png" alt="invigorate icon">
+
+<p><a href="../spells/invigorate.html">Invigorate</a> (Jala 1) multiplies the rest tick by
+<code>(200 − spellPower)/200</code>, cutting it roughly in half at spell power 99
+(<code>kod/object/passive/spell/jala/invigor.kod:61–69</code>). At Stamina 25 that is 1780 ms down to
+898 ms. It is room-wide, costs 5 mana plus 1 every 5 s, and needs one diamond and one snack
+(<code>invigor.kod:35–41</code>, <code>:52–58</code>). It does not raise the threshold — it only gets you to 80 faster.</p>
+
+<h3>Eating — the only route past the threshold</h3>
+
+<div class="formula">EatSomething(nutrition, filling):
+   AddExertion(-10000 * nutrition)         % one vigor point per point of nutrition
+   piStomach = piStomach + filling
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5734–5758; kod/object/item/passitem/numbitem/food.kod:73</p>
+
+<p>This path goes through <code class="k">AddExertion</code>, not
+<code class="k">RestAddExertion</code>, so it is not threshold-clamped — only
+<code class="k">NewVigor</code>'s ceiling of 200 stops it. You cannot eat past 100 fullness
+(<code>player.kod:5695–5717</code>), and fullness drains at
+<code class="k">FOOD_USE_RATE</code> = 12 per 100 seconds, emptying a full stomach in 13.9 minutes
+(<code>player.kod:51</code>, <code>:1341–1352</code>).</p>
+
+<p>Because stomach space is the limiting resource, what matters is nutrition per point of filling.</p>
+
+<table class="data">
+<thead><tr><th>Food</th><th>Nutrition (vigor)</th><th>Filling</th><th>Vigor per fullness</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Chaos food</td><td>200</td><td>0</td><td>unbounded</td><td>food/chaosfood.kod:43–44</td></tr>
+<tr><td>Inky cap</td><td>50</td><td>25</td><td>2.00</td><td>food/inkycap.kod:45–46</td></tr>
+<tr><td>Chocolate mint</td><td>5</td><td>5</td><td>1.00</td><td>food/mint.kod:47–48</td></tr>
+<tr><td>Cheese</td><td>30</td><td>40</td><td>0.75</td><td>food/cheese.kod:43–44</td></tr>
+<tr><td>Turkey leg</td><td>15</td><td>20</td><td>0.75</td><td>food/turkyleg.kod:44–45</td></tr>
+<tr><td>Mug of ale / wine goblet</td><td>6</td><td>8</td><td>0.75</td><td>food/mug.kod:56–57, food/gobletwn.kod:44–45</td></tr>
+<tr><td>Meat pie</td><td>30</td><td>50</td><td>0.60</td><td>food/meatpie.kod:44–45</td></tr>
+<tr><td>Stew</td><td>15</td><td>25</td><td>0.60</td><td>food/stew.kod:45–46</td></tr>
+<tr><td>Bread</td><td>20</td><td>40</td><td>0.50</td><td>food/bread.kod:44–45</td></tr>
+<tr><td>Fortune cookie</td><td>1</td><td>2</td><td>0.50</td><td>food/ftncooky.kod:58–59</td></tr>
+<tr><td>Pork / soup / spider eye</td><td>9</td><td>20</td><td>0.45</td><td>food/pork.kod:53–54, soup.kod:49–50, spideye.kod:57–58</td></tr>
+<tr><td>Grapes</td><td>7</td><td>16</td><td>0.44</td><td>food/grapes.kod:53–54</td></tr>
+<tr><td>Apple</td><td>10</td><td>24</td><td>0.42</td><td>food/apple.kod:44–45</td></tr>
+<tr><td>Waterskin</td><td>3</td><td>6</td><td>0.50</td><td>food/watrskin.kod:46–47</td></tr>
+<tr><td>Goblet / stout goblet / Ko'catan mug</td><td>3</td><td>10</td><td>0.30</td><td>food/goblet.kod:56–57, gobletst.kod:45–46, kocmug.kod:53–54</td></tr>
+<tr><td>Drumstick</td><td>9</td><td>30</td><td>0.30</td><td>food/drumstik.kod:55–56</td></tr>
+<tr><td>Snack</td><td>5</td><td>15</td><td>0.33</td><td>food/snack.kod:44–45</td></tr>
+</tbody>
+</table>
+<p class="cite">All paths relative to kod/object/item/passitem/numbitem/</p>
+
+<div class="note">
+<p><strong>Inky caps are twice as efficient as anything else, and chaos food ignores your stomach
+entirely.</strong> Below those two, <a href="../items/mint.html">chocolate mints</a> are the best
+choice available in quantity — they are the only food in the game that hands you mana as well, +5 on
+top of the +5 vigor (<code>kod/object/item/passitem/numbitem/food/mint.kod:58–62</code>). A full
+stomach of mints is 100 vigor and 100 mana.</p>
+</div>
+
+<h3>Second Wind</h3>
+
+<img class="icon" src="../assets/img/isecwind_g1.png" alt="second wind icon">
+
+<p>An automatic Fencing skill that fires the moment exertion pushes you below 25 vigor.</p>
+
+<div class="formula">trigger:   any positive exertion, while ability &gt; 0 and vigor &lt; 25
+grant:     40 + Stamina/2 + skill ability          vigor points
+lockout:   (600 - 3 * ((100 - Stamina) * ability / 100 + Stamina)) seconds     % 5 to 10 minutes
+during the lockout:  rest threshold is pinned at 10 and NO vigor can be gained at all
+</div>
+<p class="cite">kod/object/passive/skill/secwind.kod:52, :68–77, :80–95, :107–120</p>
+
+<table class="data">
+<thead><tr><th>Stamina</th><th>Ability</th><th>Vigor granted</th><th>Lockout</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>1</td><td>41</td><td>9 m 57 s</td></tr>
+<tr><td>25</td><td>50</td><td>102</td><td>6 m 54 s</td></tr>
+<tr><td>50</td><td>100</td><td>165</td><td>5 m 00 s</td></tr>
+<tr><td>70</td><td>100</td><td>175</td><td>5 m 00 s</td></tr>
+</tbody>
+</table>
+
+<div class="warn">
+<p><strong>Second Wind is a bargain that turns into a trap.</strong> The grant is applied before the
+enchantment starts, which is the only reason it works at all —
+<code class="k">AddExertion</code> and <code class="k">RestAddExertion</code> both return immediately
+on any negative amount while the enchantment is up, and eating is refused outright with "still
+feeling a surge of vitality, you have no interest in food or drink right now"
+(<code>player.kod:1251–1257</code>, <code>:1303–1308</code>;
+<code>kod/object/passive/skill/secwind.kod:107–120</code>). For the full five to ten minutes your
+vigor can only go down, and your rest threshold is 10. A maxed character gets 165 vigor up front and
+then cannot add a single point for five minutes.</p>
+</div>
+
+<p>The skill also refuses to advance if you have an easy way to trigger it — holding a faction token,
+wearing a <a href="../items/ringoflethargy.html">ring of lethargy</a>, or standing in the Underworld
+all set your advancement chance to zero (<code>secwind.kod:131–139</code>).</p>
+
+<h3>Relay, and the rest</h3>
+
+<img class="icon" src="../assets/img/irelay_g1.png" alt="relay icon">
+
+<table class="data">
+<thead><tr><th>Source</th><th>Amount</th><th>Catch</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td><a href="../spells/relay.html">Relay</a></td><td>the caster gives up <code>spellPower</code> vigor; the target receives 125 % of it</td><td>caster must hold more than 15 vigor and is never taken below 10; target is capped at 150, not 200; free to cast (<code class="k">viSpellExertion</code> = 0)</td><td>kod/object/passive/spell/relay.kod:17, :51, :101–152</td></tr>
+<tr><td>Feeding a hungry <a href="../items/huntersword.html">hunter sword</a> or <a href="../items/necromanceramulet.html">necromancer amulet</a></td><td>one vigor point per point of hunger satisfied</td><td>you have to feed it what it wants</td><td>kod/object/item/passitem/weapon/huntsw.kod:612; kod/object/item/actitem/necroam.kod:638</td></tr>
+<tr><td>Tournament of Skills arena</td><td>set to your rest threshold on entry; original value restored on exit</td><td>arena only</td><td>kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1942, :1953–1954</td></tr>
+<tr><td>Duel arena (Goad)</td><td>set to your rest threshold on entry; original value restored on exit</td><td>arena only</td><td>kod/object/active/holder/nomoveon/battler/monster/towns/Goad.kod:995, :1007</td></tr>
+<tr><td>Leaving the newbie zone</td><td>+200, i.e. topped to the cap</td><td>once, on graduation</td><td>kod/object/active/portal/newbport.kod:93–95</td></tr>
+</tbody>
+</table>
+
+<p>Relay is the only vigor transfer in the game, and it is the only mechanic that creates vigor out of
+nothing: the target gets 25 % more than the caster loses
+(<code>relay.kod:150–151</code>). It is also free to cast, so a support caster can top a fighter up
+repeatedly at no cost but their own bar.</p>
+
+<h2>The rest threshold</h2>
+
+<p><code class="k">piVigor_rest_threshold</code> is the ceiling on resting and the marker drawn on
+your vigor bar. It defaults to 80, is reset to 80 on character restart
+(<code>player.kod:2308</code>), and every write to it is re-bounded to 10–100 — and forced to 10 if
+Second Wind is active (<code>player.kod:1228–1243</code>).</p>
+
+<table class="data">
+<thead><tr><th>Effect</th><th>Change to the threshold</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td><a href="../spells/vigorboon.html">Vigor boon</a> (DM/NPC enchantment)</td><td>+ the boon amount, up to the hard 100</td><td>kod/object/passive/spell/boon/vigboon.kod:47–58</td></tr>
+<tr><td><a href="../items/ringoflethargy.html">Ring of lethargy</a></td><td>−20, restored when the curse is broken</td><td>kod/object/item/passitem/ring/lethring.kod:72, :107–125, :168–185</td></tr>
+<tr><td>Faction token</td><td>pinned to 10 while carried</td><td>kod/object/item/passitem/token.kod:74, :241–251</td></tr>
+<tr><td><a href="../spells/markofdishonor.html">Mark of Dishonor</a> on an evil target</td><td><code>karma × (threshold − 10) / MAX_EVIL</code>, restored when it ends; no effect on a good target</td><td>kod/object/passive/spell/dishonor.kod:146–166, :198–210</td></tr>
+<tr><td>Second Wind</td><td>pinned to 10 for the whole lockout</td><td>kod/object/passive/skill/secwind.kod:113</td></tr>
+</tbody>
+</table>
+
+<p>Each of these carefully clamps its own change so that reversing it cannot push you above where you
+started — the ring, the token and the Mark all recompute their delta on the way in for exactly that
+reason. Nothing but a vigor boon ever raises the threshold, so <strong>100 is a number almost no
+player ever sees on the marker</strong>.</p>
+
+<h2>Death, logoff and resets</h2>
+
+<table class="data">
+<thead><tr><th>Event</th><th>Vigor result</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td>Death, normal night</td><td><code>bound(piVigor/4, 0, 50)</code> — quartered and capped at 50</td><td>kod/object/active/holder/nomoveon/battler/player.kod:8154–8160</td></tr>
+<tr><td>Death, Chaos Night</td><td>100, flat — better than most players are carrying</td><td>kod/object/active/holder/nomoveon/battler/player.kod:8147–8153</td></tr>
+<tr><td>Character restart</td><td>vigor 100, threshold 80, exertion 0</td><td>kod/object/active/holder/nomoveon/battler/player.kod:2307–2309</td></tr>
+<tr><td>Immortal mode</td><td>vigor forced to 200</td><td>kod/object/active/holder/nomoveon/battler/player/user/dm.kod:1144</td></tr>
+</tbody>
+</table>
+
+<p>Note that the death value is capped at 50, below the 80 you can rest to — so the first thing every
+corpse-run costs you is a sit-down. See <a href="death.html">Death</a>.</p>
+
+<h2>Reading the vigor bar</h2>
+
+<div class="formula">AddPacket(1,3, 4,user_stat_vigor, 1,STAT_VALUE, 1,STAT_INTEGER,
+          4,piVigor, 4,0, 4,200, 4,piVigor_rest_threshold);
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player/user.kod:6834–6839; the client maps these to GRPH_RANGESET / GRPH_POSSET / GRPH_LIMITSET at module/merintr/statnum.c:196–198</p>
+
+<p>Unlike health and mana, the vigor bar's range is honest — 0 to 200, the true full scale. The limit
+marker is <em>not</em> your maximum, though: it is your rest threshold. That line on the bar is the
+point at which sitting down stops helping, which is why it usually sits at 80 and why it drops to a
+sliver while you are carrying a token or riding out a Second Wind.</p>
+
+<h2>Quick reference</h2>
+
+<ol>
+<li><strong>Eat before you fight, not after.</strong> Resting stops at 80; food is the only way to
+200, and the health formula pays quadratically for the difference.</li>
+<li><strong>Inky caps, then mints.</strong> Twice the vigor per point of stomach; mints add mana on
+top.</li>
+<li><strong>Walk in safe areas.</strong> Running costs four times as much per second — 10.8 vigor a
+minute against 2.7.</li>
+<li><strong>Casting is the real drain.</strong> An ordinary spell costs 10 vigor, fifty sword swings'
+worth. Melee barely touches the bar.</li>
+<li><strong>Stamina buys rest speed.</strong> Stamina 50 rests almost 2.5× faster than Stamina 1, and
+inns double it again.</li>
+<li><strong>Do not carry a token if you plan to fight.</strong> It pins your rest threshold at 10 and
+blocks Second Wind advancement.</li>
+<li><strong>Second Wind is a one-shot.</strong> It hands a maxed character 165 vigor, then locks out
+every source of vigor — including food — for five to ten minutes.</li>
+</ol>

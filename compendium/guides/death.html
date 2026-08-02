@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Death, the Underworld and PvP — Meridian 59 Compendium</title>
+<meta name="description" content="Dying in Meridian 59 drops your whole inventory on a corpse, dumps you in the Underworld, and — for anyone past newbie status — costs you exactly one point of maximum health plus a scattering of spell and skill percents. The penalties are not applied at the moment you die; they are applied the moment you leave the Underworld, which is the window in which a Portal of Life can buy them down. Attacking a peaceful player makes you an outlaw; killing one makes you a murderer, a flag that no amount of dying will ever remove.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html" class="on">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Guides</a> › Death, the Underworld and PvP</p>
+<h1>Death, the Underworld and PvP</h1>
+
+<p class="lede">Dying in Meridian 59 drops your whole inventory on a corpse, dumps you in the
+Underworld, and — for anyone past newbie status — costs you exactly one point of maximum health
+plus a scattering of spell and skill percents. The penalties are not applied at the moment you die;
+they are applied the moment you <em>leave</em> the Underworld, which is the window in which a
+Portal of Life can buy them down. Attacking a peaceful player makes you an <code class="k">outlaw</code>;
+killing one makes you a <code class="k">murderer</code>, a flag that no amount of dying will ever
+remove.</p>
+
+<img class="icon" src="../assets/img/playerxa_g1.png" alt="A player's corpse">
+
+<h2>The numbers at a glance</h2>
+
+<table class="data">
+<thead><tr><th>Thing</th><th>Value</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Default death cost (<code class="k">piDeathCost</code>)</td><td>100</td><td>kod/util/settings.kod:59</td></tr>
+<tr><td>Max health lost per full-price death</td><td>exactly 1 (guaranteed at cost 100)</td><td>kod/object/active/holder/nomoveon/battler/player.kod:8247</td></tr>
+<tr><td>Floor on base max health</td><td>20</td><td>kod/object/active/holder/nomoveon/battler/player.kod:5903</td></tr>
+<tr><td>Player corpse lifetime</td><td>600&nbsp;000 ms = 10 minutes</td><td>kod/object/passive/body.kod:94</td></tr>
+<tr><td>Monster corpse lifetime</td><td>120&nbsp;000 ms = 2 minutes</td><td>kod/object/passive/body.kod:88</td></tr>
+<tr><td>PK-loot lock on dropped items</td><td><code class="k">PKPOINTER_TIME</code> = 10*60*1000 ms = 10 minutes</td><td>kod/object/active/holder/nomoveon/battler/player.kod:70</td></tr>
+<tr><td>Double-death guard</td><td>2 seconds</td><td>kod/object/active/holder/nomoveon/battler/player.kod:7922</td></tr>
+<tr><td>Per-hit damage cap (lawful)</td><td>(base max HP + 2) / 3</td><td>kod/object/active/holder/nomoveon/battler/player.kod:4612</td></tr>
+<tr><td>Absolute per-hit damage cap</td><td><code class="k">MAX_DAMAGE_PER_HIT</code> = 30</td><td>kod/object/active/holder/nomoveon/battler/player.kod:113</td></tr>
+<tr><td>PvP-eligible threshold</td><td><code class="k">PKILL_ENABLE_HP</code> = 30 base max HP</td><td>kod/include/blakston.khd:2094</td></tr>
+<tr><td>Underworld room</td><td><code class="k">RID_UNDERWORLD</code> = 1</td><td>kod/include/blakston.khd:375</td></tr>
+</tbody>
+</table>
+
+<h2>The death sequence, step by step</h2>
+
+<p>Everything below happens inside <code class="k">Player:Killed</code>, in this order.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:7908–8201</p>
+
+<ol>
+<li><strong>Death cost is read from server settings.</strong> <code class="k">piDeathCost</code> is
+reset to <code class="k">GetDefaultDeathCost</code>, normally <strong>100</strong>. (line 7919;
+kod/util/settings.kod:59)</li>
+
+<li><strong>Double-death guard.</strong> If <code class="k">GetTime() &lt; piLastDeathTime + 2</code>
+(seconds), the whole message aborts. You cannot die twice within 2 seconds. (lines 7922–7927)</li>
+
+<li><strong>Any rescue in progress is cancelled.</strong> (line 7930)</li>
+
+<li><strong>Cheap escapes.</strong> If you are logged on and any of these hold, you do
+<em>not</em> die at all — your health is set to 1 and the message returns:
+<ul>
+<li>you are in an arena, in play, and the arena does not have real death on;</li>
+<li>the room is the <code class="k">OutOfGrace</code> prison;</li>
+<li>the room answers <code class="k">SafePlayerAttack</code> (i.e. has <code class="k">ROOM_SAFE_DEATH</code>).</li>
+</ul>
+(lines 7965–7984; kod/object/active/holder/room.kod:1124–1131)</li>
+
+<li><strong>All enchantments are stripped</strong> — every buff, silently. (line 7989)</li>
+
+<li><strong>"No-drop" death test.</strong> You keep everything and take no penalties
+(<code class="k">piDeathCost</code> set to 0) if <em>any</em> of:
+<ul>
+<li>a Frenzy (Chaos Night) is running;</li>
+<li>the room number is in <code class="k">RID_NEWB_BASE</code>..<code class="k">RID_NEWB_MAX</code> (1010–1018);</li>
+<li>your honor string is still the newbie string;</li>
+<li>you are wielding a <code class="k">Token</code> (checked slightly later, so a token death still
+costs you your Necromancer Amulet or Hunter Sword).</li>
+</ul>
+(lines 7996–8035; kod/include/blakston.khd:752, 767)</li>
+
+<li><strong>The corpse is created</strong> and placed at your exact tile with fine offsets 16/16.
+(lines 8038–8039)</li>
+
+<li><strong>Inventory falls onto the corpse.</strong> Your natural healing timer is deleted, then
+every item in <code class="k">plActive</code> and <code class="k">plPassive</code> that the room
+will accept and whose <code class="k">DropOnDeath</code> returns TRUE is dropped where you fell.
+If your killer was a player, each dropped item gets the <code class="k">IA_PKPOINTER</code>
+attribute for 10 minutes. (lines 8044–8079)</li>
+
+<li><strong>Learning progress is gutted.</strong>
+<div class="formula">piAdvancement_points = 0
+piGain_chance      = piGain_chance / 2</div>
+plus <code class="k">ResetGainFlags</code>, <code class="k">ResetAtrophyFlags</code>, and the
+advancement timer is deleted. <code class="k">piGain_chance</code> is your accumulated progress
+toward the next point of maximum health, so death halves it. (lines 8082–8090; high-water mark
+formula at 7896–7903)</li>
+
+<li><strong>PK status is re-evaluated</strong> (posted), and any Soldier Shield is told you died.
+(lines 8092–8099)</li>
+
+<li><strong>Consolation prize.</strong> If <code class="k">piKarma &gt; 5000</code> and your home
+room is not <code class="k">RID_NEWB1</code>, you are handed a <em>Hammer</em>; otherwise if
+<code class="k">piKarma &gt;= 0</code> you get a <em>Mace</em>. Both are stamped with the
+<code class="k">IA_MADE</code> attribute for 18&nbsp;000&nbsp;000 ms (5 hours) so they cannot be
+sold. Negative-karma characters get nothing. (lines 8102–8124)</li>
+
+<li><strong>Dying scream</strong>, then <code class="k">UserGotoDeadRoom</code>. (lines 8127–8144)</li>
+
+<li><strong>Health, mana and vigor are set.</strong>
+<div class="formula">Frenzy:      health = max_health / 2 ; mana = max_mana / 2 ; vigor = 100
+Otherwise:   health = 1            ; mana = 1            ; vigor = bound(vigor/4, 0, 50)</div>
+(lines 8147–8164)</li>
+
+<li><strong>Five seconds of red pain effect</strong> (<code class="k">EFFECT_PAIN</code>,
+duration 5000 ms). (line 8178)</li>
+
+<li><strong>Newbie consolation mail.</strong> If <code class="k">piDeathCost &gt; 0</code> and you
+are <em>not</em> flagged <code class="k">PFLAG_TUTORIAL</code> and not a murderer, you get a
+guardian-angel gmail and your mana is set to <code class="k">(max_mana / 2) + 2</code> so you can
+broadcast for help. (lines 8181–8193)</li>
+</ol>
+
+<div class="warn">
+<p><code class="k">PFLAG_TUTORIAL</code> reads backwards from its name. It is set to
+<strong>TRUE</strong> the first time you become PK-enabled, or once your character is 2 game years
+old — i.e. TRUE means "no longer a newbie". So "<code class="k">NOT PFLAG_TUTORIAL</code>" in the
+death code means "still a newbie".</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:1543–1545, 11089–11091</p>
+</div>
+
+<h2>What you drop and what you keep</h2>
+
+<p>The default is <strong>everything drops</strong> — worn armour, wielded weapons, money, reagents,
+the lot. Only these classes refuse:</p>
+
+<table class="data">
+<thead><tr><th>Class</th><th>Behaviour</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td><code class="k">SoldierShield</code></td><td>never drops</td><td>kod/object/item/passitem/defmod/shield/soldshld.kod:648</td></tr>
+<tr><td><code class="k">ManaCrystal</code></td><td>never drops</td><td>kod/object/item/passitem/manacrys.kod:157</td></tr>
+<tr><td><code class="k">ReagentRing</code></td><td>never drops</td><td>kod/object/item/passitem/ring/ringreag.kod:164</td></tr>
+<tr><td><code class="k">RingWedding</code></td><td>never drops</td><td>kod/object/item/passitem/ring/ringwedd.kod:127</td></tr>
+<tr><td><code class="k">RoomKeyCopy</code></td><td>never drops</td><td>kod/object/item/passitem/roomkeyc.kod:320</td></tr>
+<tr><td><code class="k">RoomKeySecureCopy</code></td><td>never drops</td><td>kod/object/item/passitem/roomkeyc/rmkeysec.kod:119</td></tr>
+<tr><td><code class="k">WarJoinPendant</code></td><td>never drops</td><td>kod/object/item/passitem/warjoin.kod:131</td></tr>
+<tr><td><code class="k">BlackDagger</code></td><td>never drops</td><td>kod/object/item/passitem/weapon/bkdagger.kod:622</td></tr>
+<tr><td>Anything with the Transcendent item attribute</td><td>never drops</td><td>kod/object/passive/itematt/iatransc.kod:57</td></tr>
+<tr><td><code class="k">NecromancerAmulet</code></td><td>drops <em>unless</em> you hold a Token or die in a safe-death room while in play</td><td>kod/object/item/actitem/necroam.kod:998</td></tr>
+<tr><td><code class="k">HunterSword</code></td><td>same rule as the amulet</td><td>kod/object/item/passitem/weapon/huntsw.kod:797</td></tr>
+</tbody>
+</table>
+
+<p>That list is exhaustive: no other class overrides <code class="k">DropOnDeath</code>, and the
+base implementation in <code class="k">Item</code> returns TRUE unless an item attribute vetoes it.</p>
+<p class="cite">kod/object/item.kod:1090–1108</p>
+
+<h2>Corpses and looting</h2>
+
+<ul>
+<li>Your corpse is a <code class="k">DeadBody</code> carrying your name, and it decomposes after
+<strong>10 minutes</strong>. <span>(kod/object/passive/body.kod:94)</span></li>
+<li>The corpse registers itself with the Underworld's corpse list at creation, and de-registers on
+decay. <span>(kod/object/passive/body.kod:95; kod/object/active/holder/room/monsroom/uworld.kod:598, 612)</span></li>
+<li>If your killer was a <code class="k">User</code>, every item you dropped carries
+<code class="k">IA_PKPOINTER</code> for <strong>10 minutes</strong>. During that window only the
+dead player themselves or another <code class="k">PFLAG_PKILL_ENABLE</code> character may pick the
+loot up — non-PK "angeled" characters are "mystically barred". The bar also applies to being
+<em>offered</em> the item.
+<span>(kod/object/active/holder/nomoveon/battler/player.kod:8057, 8072; kod/object/passive/itematt/iaPKptr.kod:58–89)</span></li>
+<li>Corpses of players killed in Ko'catan are flagged, which changes where the Underworld exit
+sends you (see below). <span>(kod/object/active/holder/room/monsroom/uworld.kod:598–608)</span></li>
+</ul>
+
+<div class="note">
+<p><code class="k">DeadBody</code> also runs a 25-second <code class="k">ptNoSteal</code> timer with a
+<code class="k">CanGetMe</code> check. That check is only ever consulted by
+<code class="k">IA_CORPSEPOINTER</code>, which is attached to loot generated from <em>monster</em>
+corpses, not to items a player drops. For player deaths the relevant lock is the 10-minute
+<code class="k">IA_PKPOINTER</code> above.</p>
+<p class="cite">kod/object/passive/body.kod:100–124; kod/object/passive/itematt/iacorptr.kod:58–72; kod/object/item.kod:114–126</p>
+</div>
+
+<h2>The Underworld</h2>
+
+<img class="icon" src="../assets/img/teleport_g1.png" alt="A rip in space">
+
+<p><code class="k">Underworld</code> is room 1. It is <code class="k">ROOM_NO_COMBAT |
+ROOM_SAFELOGOFF</code>, terrain mystical + lava, and it has <strong>no ordinary exits at all</strong>
+— <code class="k">CreateStandardExits</code> sets <code class="k">plExits = $</code>.</p>
+<p class="cite">kod/object/active/holder/room/monsroom/uworld.kod:54, 59, 307–311</p>
+
+<h3>Getting out</h3>
+
+<table class="data">
+<thead><tr><th>Route</th><th>Where it puts you</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Five fixed <code class="k">Portal</code>s around the room</td>
+<td>Familiars (Tos Inn), Cibilo Creek (Cor Inn), Brownstone (Bar Inn), Limping Toad (Mar Inn), Yonder Inn (Jasper Inn)</td>
+<td>uworld.kod:649–663</td></tr>
+<tr><td>The <code class="k">HellPortal</code> ("rip in space")</td>
+<td>One of those same five inns, re-rolled every <strong>5–10 seconds</strong>; if you died in Ko'catan it instead sends you to the Ko'catan Inn and clears the flag</td>
+<td>kod/object/active/portal/hellport.kod:16–17, 57, 65–70, 142–158</td></tr>
+<tr><td>The <code class="k">CorpseNode</code> (brazier puzzle reward)</td>
+<td><code class="k">ZapToCorpse</code> — within 3 squares of your own corpse, or your home room + 100 health if the corpse is gone</td>
+<td>uworld.kod:336–380; kod/object/active/portal/corpnode.kod:61–65</td></tr>
+<tr><td>A <code class="k">CorpsePortal</code> from a friend's Portal of Life</td>
+<td>Same <code class="k">ZapToCorpse</code>, but only for the named corpse's owner</td>
+<td>kod/object/active/portal/corpport.kod:85–94</td></tr>
+</tbody>
+</table>
+
+<h3>The brazier puzzle</h3>
+
+<p>Five braziers, each wired to itself plus two others. On reset, one brazier is unlit, and with
+probability 2/3 (<code class="k">random(0,2) &lt;&gt; 0</code>) a second one is too. Lighting a
+brazier toggles its own triple. Get all five lit and the room fires a lightning projectile at the
+skull and spawns the <code class="k">CorpseNode</code> at row 16, col 16 for
+<code class="k">DELETE_PORTAL_DELAY</code> = <strong>60 seconds</strong>. The puzzle resets when the
+room is empty on the 10-minute maintenance tick.</p>
+<p class="cite">kod/object/active/holder/room/monsroom/uworld.kod:17–18, 241–300, 389–434, 460–520</p>
+
+<p>Touching the corpse node while standing within 3 squares also <em>melds</em> it as a mana node,
+permanently raising your maximum mana by <code class="k">((5 + Mysticism) / 10) + 3</code>.</p>
+<p class="cite">kod/object/active/portal/corpnode.kod:17, 133–155, 184–187</p>
+
+<h2>Death penalties — applied when you leave, not when you die</h2>
+
+<p>The Underworld's <code class="k">LeaveHold</code> removes your corpse from its list and calls
+<code class="k">ApplyDeathPenalties</code> on you. Until you step through a portal, nothing has been
+taken yet.</p>
+<p class="cite">kod/object/active/holder/room/monsroom/uworld.kod:314–333; kod/object/active/holder/nomoveon/battler/player.kod:8203–8324</p>
+
+<h3>1. Outlaw and revenant clearing</h3>
+
+<div class="formula">if piDeathCost &gt;= GetDefaultDeathCost           % i.e. >= 100 by default
+{
+   PFLAG_OUTLAW  = FALSE
+   PFLAG_HAUNTED = FALSE      % "The revenant is satisfied."
+}</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:8219–8234</p>
+
+<div class="warn">
+<p>Only a <strong>full-price</strong> death launders the outlaw flag. A Frenzy death, a newbie-area
+death, a token death, an arena death — and <em>any</em> death cheapened by a Portal of Life, since
+the spell bounds the cost to at most 80 — leaves you an outlaw and leaves your revenant hunting
+you.</p>
+</div>
+
+<h3>2. Maximum health</h3>
+
+<div class="formula">if piDeathCost &gt; 0
+{
+   if NOT PFLAG_TUTORIAL AND NOT PFLAG_MURDERER     % still a newbie, not a murderer
+      piDeathCost = piDeathCost / 3                 % no HP roll at all
+   else
+      if random(1,100) &lt;= piDeathCost             % lose one base max HP
+         GainBaseMaxHealth(-1)
+}</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:8237–8253</p>
+
+<p>At the default death cost of 100, <code class="k">random(1,100) &lt;= 100</code> is always true:
+<strong>every ordinary death costs an established character exactly one point of base maximum
+health.</strong> <code class="k">GainBaseMaxHealth</code> floors this at 20, so you can never be
+ground below 20 base HP by dying.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5903–5905</p>
+
+<p>Immediately afterwards, if your base max health has fallen below
+<code class="k">PKILL_ENABLE_HP</code> (30) you are <strong>ejected from your guild</strong>.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:8270–8273</p>
+
+<h3>3. Spell and skill proficiency</h3>
+
+<div class="formula">iAmount = -2 if PFLAG_MURDERER else -1
+
+for each spell in plSpells:
+   if ability &gt; 5
+      AND random(1,100) &gt; Stamina
+      AND random(1,100) &lt; piDeathCost
+   then ability += iAmount        % clamped to 1..99
+
+for each skill in plSkills:   (identical test)</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:8279–8308; clamp at 6766</p>
+
+<h3>Worked example</h3>
+
+<p>An established fighter with Stamina 40 and 22 spells, dying normally (cost 100, not a murderer):</p>
+<ul>
+<li>Base max health: <strong>−1, guaranteed.</strong></li>
+<li>Per spell above 5%: P(<code class="k">random(1,100) &gt; 40</code>) = 60/100, times
+P(<code class="k">random(1,100) &lt; 100</code>) = 99/100 → <strong>59.4%</strong> chance to lose 1%.
+Expected loss over 22 spells ≈ <strong>13 percentage points</strong>.</li>
+<li>A <em>murderer</em> in the same spot loses <strong>2%</strong> per triggered spell — expected
+≈ 26 points — and still takes the guaranteed HP loss.</li>
+<li>A <em>newbie</em> (never PK-enabled, under 2 game years) instead has the cost divided by three:
+100/3 = 33, so P(<code class="k">random(1,100) &lt; 33</code>) = 32/100, giving 60/100 × 32/100 =
+<strong>19.2%</strong> per spell, and <strong>no</strong> health loss at all.</li>
+</ul>
+
+<h2>Resurrection: Portal of Life</h2>
+
+<img class="icon" src="../assets/img/irasdead_g1.png" alt="Portal of life icon">
+
+<p><a href="../spells/portaloflife.html">Portal of Life</a> (Shal'ille 6, 30 mana, 10 s cast,
+2 emeralds + 1 polished seraphym) is cast on a <em>corpse</em>, not a person. It creates a
+<code class="k">CorpsePortal</code> in the Underworld that only that corpse's owner can use, and it
+reduces the dead player's <code class="k">piDeathCost</code>.</p>
+<p class="cite">kod/object/passive/spell/portlife.kod:42–44, 58–59, 87–103</p>
+
+<div class="formula">t = GetTime() - TimeOfDeath          % seconds; 0..600 while the corpse exists
+
+if t &lt; 60   then penalty = -(60 - t)      % -60 .. -1   (a bonus)
+             else penalty = t/10 - 6        %   0 .. 54   (a penalty)
+
+newCost = bound( oldCost - (SpellPower - penalty), 5, 80 )</div>
+<p class="cite">kod/object/passive/spell/portlife.kod:105–129</p>
+
+<p>Spell power runs 1–99 (<code class="k">SPELLPOWER_MINIMUM</code>/<code class="k">MAXIMUM</code>,
+kod/include/blakston.khd:2089–2090). Worked cases from a fresh cost of 100:</p>
+
+<table class="data">
+<thead><tr><th>Cast at</th><th>Spell power</th><th>penalty</th><th>New death cost</th><th>Chance to lose 1 max HP</th></tr></thead>
+<tbody>
+<tr><td>immediately (t = 0)</td><td>99</td><td>−60</td><td>bound(100−159) → <strong>5</strong></td><td>5%</td></tr>
+<tr><td>t = 30 s</td><td>60</td><td>−30</td><td>bound(100−90) → <strong>10</strong></td><td>10%</td></tr>
+<tr><td>t = 120 s</td><td>60</td><td>+6</td><td>100−54 = <strong>46</strong></td><td>46%</td></tr>
+<tr><td>t = 300 s</td><td>50</td><td>+24</td><td>100−26 = <strong>74</strong></td><td>74%</td></tr>
+<tr><td>t = 600 s (corpse expiring)</td><td>50</td><td>+54</td><td>bound(100+4) → <strong>80</strong></td><td>80%</td></tr>
+</tbody>
+</table>
+
+<p>The portal itself lasts <code class="k">(10 + SpellPower/2)</code> seconds — 10 s at power 1,
+59 s at power 99 — and vanishes the instant its owner steps through.</p>
+<p class="cite">kod/object/active/portal/corpport.kod:58–60, 85–94</p>
+
+<div class="note">
+<p>A corpse can only be resurrected once: <code class="k">CanPayCosts</code> refuses a target whose
+<code class="k">GetResurrected</code> is already TRUE, and <code class="k">SetDeathCost</code>
+refuses to <em>raise</em> a cost unless overridden — so a second, worse cast cannot undo a good
+first one.</p>
+<p class="cite">kod/object/passive/spell/portlife.kod:71–85; kod/object/active/holder/nomoveon/battler/player.kod:8326–8336</p>
+</div>
+
+<h2>Who may attack whom</h2>
+
+<p><code class="k">AllowPlayerAttack</code> is the gate every player attack passes through, in this
+exact order:</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:3615–3765</p>
+
+<ol>
+<li>The room's <code class="k">ReqSomethingAttack</code> must permit it (room flags — see below).</li>
+<li>If the room <code class="k">IsArena</code> → <strong>allowed, unconditionally</strong>.</li>
+<li>If a Frenzy (<code class="k">GetChaosNight</code>) is running → <strong>allowed</strong>.</li>
+<li>Mortal event characters are always attackable.</li>
+<li>On a <code class="k">SERVER_NO_MURDER</code> ("Sacred Haven") server,
+<code class="k">IsPKAllowed</code> is FALSE and no player-vs-player attack is permitted at all;
+even pets are protected. <span>(kod/util/system.kod:5300–5308)</span></li>
+<li>Unless the room has <code class="k">ROOM_KILL_ZONE</code>, both parties must have
+<code class="k">PFLAG_PKILL_ENABLE</code>. Attacking someone without it gets the "guardian angel"
+refusal; lacking it yourself gets "you can't hit a newbie".</li>
+<li>Finally <code class="k">CheckStatusAndSafety</code> and <code class="k">CheckFactionAttack</code>.</li>
+</ol>
+
+<p><code class="k">PFLAG_PKILL_ENABLE</code> is granted automatically by
+<code class="k">EvaluatePKStatus</code> when you join a guild, reach 30 base max health, or become an
+outlaw or murderer; and revoked when you are unguilded, under 30 base max health,
+<em>and</em> neither outlaw nor murderer. Becoming killable also permanently sets
+<code class="k">PFLAG_TUTORIAL</code> and clears your newbie honour string.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:11047–11107</p>
+
+<h3>Free-fire relationships</h3>
+
+<p><code class="k">CheckStatusAndSafety</code> lets these pairs fight with <strong>no</strong> outlaw
+flag and no faction loss:</p>
+<ul>
+<li>Two guilds that are <em>mutual</em> enemies (<code class="k">IsMutualEnemy</code>).</li>
+<li>Two Soldier Shield holders on opposing factions (<code class="k">IsEnemyAttack</code>).</li>
+<li>Anyone holding a <code class="k">Token</code> — a free target.</li>
+<li>Any target already flagged murderer or outlaw.</li>
+<li>Targets who are <code class="k">PFLAG_ANONYMOUS</code> or <code class="k">PFLAG_MORPHED</code>.</li>
+<li>Yourself.</li>
+</ul>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:3773–3813, 3789–3795</p>
+
+<h3>Safety</h3>
+
+<p><code class="k">PFLAG_SAFETY</code> is a client-toggled interlock. With safety on, an attack on a
+non-outlaw, non-murderer player simply <em>fails</em> ("safety caught") rather than flagging you.
+On a Sacred Haven server <code class="k">CheckPlayerFlag</code> reports safety as permanently on.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:3819–3838, 1131–1133</p>
+
+<h2>Outlaw and murderer</h2>
+
+<table class="data">
+<thead><tr><th>Flag</th><th>Bit</th><th>Client name colour</th></tr></thead>
+<tbody>
+<tr><td><code class="k">PFLAG_MURDERER</code></td><td>0x000002</td><td>red — RGB(255, 0, 0)</td></tr>
+<tr><td><code class="k">PFLAG_OUTLAW</code></td><td>0x000008</td><td>orange — RGB(252, 128, 0)</td></tr>
+<tr><td>(neither)</td><td>—</td><td>white — RGB(255, 255, 255)</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:2101, 2103; clientd3d/color.c:124–126, 606–628</p>
+
+<h3>Everything that sets the flags</h3>
+
+<table class="data">
+<thead><tr><th>Event</th><th>Effect</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>You attack a player who is neither outlaw nor murderer, with safety <em>off</em>, and you are clean</td><td>OUTLAW ← TRUE, "Shal'ille frowns upon your unprovoked attack."</td><td>player.kod:3841–3849</td></tr>
+<tr><td>You kill a player who is not murderer/outlaw/anonymous/morphed, outside a guild war, outside a faction war, who is not holding a Token</td><td>MURDERER ← TRUE, OUTLAW ← FALSE, "You are now wanted for the murder of …"</td><td>player.kod:4887–4898</td></tr>
+<tr><td>You cast a spell whose <code class="k">viOutlaw</code> is TRUE but which is not itself harmful (Shatterlock is the example)</td><td>OUTLAW ← TRUE</td><td>kod/object/passive/spell.kod:1449–1456</td></tr>
+<tr><td>You cast a <em>helpful</em> non-DM spell on an outlaw or murderer</td><td>OUTLAW ← TRUE</td><td>kod/object/passive/spell.kod:1458–1477</td></tr>
+<tr><td>You conquer a guild hall that was not betrayed, and you are not already a murderer</td><td>OUTLAW ← TRUE</td><td>kod/object/active/holder/room/ghall.kod:685–690</td></tr>
+<tr><td>A quest node awards the <code class="k">QN_PRIZETYPE_OUTLAW</code> "prize"</td><td>OUTLAW ← TRUE (on Sacred Haven, a random negative stat instead)</td><td>kod/object/passive/questnode.kod:1481–1495</td></tr>
+<tr><td>A Justicar pardons a murderer</td><td>MURDERER ← FALSE, OUTLAW ← TRUE (one notch, not a wipe)</td><td>bqclerk.kod:520–532</td></tr>
+<tr><td>The DM spell <em>Vilify</em></td><td>sets either flag</td><td>kod/object/passive/spell/dmspell/villify.kod:95–106</td></tr>
+</tbody>
+</table>
+
+<p>Your summons flag <em>you</em>: a <code class="k">Reflection</code> or <code class="k">EvilTwin</code>
+routes its attacks through the original caster's <code class="k">AllowPlayerAttack</code>, so its
+kills make you the murderer.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:449–472; kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:420–443</p>
+
+<h3>Everything that clears the flags</h3>
+
+<table class="data">
+<thead><tr><th>Event</th><th>Effect</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Leaving the Underworld after a full-price death (cost ≥ 100)</td><td>OUTLAW ← FALSE. <strong>Murderer is untouched.</strong></td><td>player.kod:8219–8222</td></tr>
+<tr><td>Justicar pardon of a murderer</td><td>MURDERER ← FALSE but OUTLAW ← TRUE</td><td>bqclerk.kod:526–527</td></tr>
+<tr><td>Justicar pardon of an outlaw</td><td>both ← FALSE</td><td>bqclerk.kod:541–542</td></tr>
+<tr><td>Suicide / character reset</td><td>both ← FALSE (along with everything else you own)</td><td>player.kod:2324–2325</td></tr>
+<tr><td>DM <em>Vilify</em></td><td>can clear either</td><td>villify.kod:95–106</td></tr>
+</tbody>
+</table>
+
+<div class="warn">
+<p><strong>Murder is permanent.</strong> Nothing in the game removes
+<code class="k">PFLAG_MURDERER</code> by dying, by time, or by good behaviour. The only three exits
+are a Justicar pardon (which only demotes you to outlaw — and a second pardon in the same term is
+refused because you are on <code class="k">plPardons</code>), a DM spell, or deleting the character.
+Working the flag off takes <em>two</em> pardons across <em>two</em> Justicar terms, or one pardon
+plus a full-price death.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqclerk.kod:296, 520–547, 653–662</p>
+</div>
+
+<h3>Kill counters</h3>
+
+<div class="formula">victim was outlaw or murderer  -> piJustified_kill_count += 1
+otherwise                      -> piKill_count += 1 ; piKill_count_decay += 1</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4842–4851</p>
+
+<p>Only kills of a <code class="k">User</code>, outside a safe-death room, and not of yourself,
+count at all. The Justicar's clerk reads these back on request as "N people, M of whom were
+lawful".</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqclerk.kod:640–690</p>
+
+<div class="note">
+<p><code class="k">DecayPKillCount</code> exists (a 50% chance to shed one point of
+<code class="k">piKill_count_decay</code>) but is not called from anywhere in the kod tree. As
+shipped, <code class="k">piKill_count_decay</code> — which feeds revenant strength and the unsafe
+logoff penalty — only resets on a character reset.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:11707–11718; kod/object/active/holder/nomoveon/battler/player.kod:2317</p>
+</div>
+
+<h2>The damage cap, and why outlaws die faster</h2>
+
+<p>Inside <code class="k">Player:AssessDamage</code>, after defence modifiers, resistances and
+attack-modifier bonuses, and after a floor of 1 damage:</p>
+
+<div class="formula">if piHealth &lt; (piBase_Max_Health * 2)
+   AND ( (NOT PFLAG_OUTLAW AND NOT PFLAG_MURDERER)
+         OR DamageCapProtectionMurderersEnabled )
+{
+   iLimit = (piBase_Max_Health + 2) / 3      % MAX_HEALTH_DAMAGE_FRACTION = 3
+   damage = bound(damage, $, iLimit)
+}
+
+damage = bound(damage, $, 30)                % MAX_DAMAGE_PER_HIT
+
+% faction enemies, above all caps:
+if attacker wears a SoldierShield and IsEnemyAttack
+   damage = (damage * 115) / 100</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4597–4629; constants at 109 and 113</p>
+
+<p><code class="k">pbDamageCapProtectionMurderersEnable</code> ships <strong>FALSE</strong>, so on a
+default server an outlaw or murderer loses the fractional cap entirely.</p>
+<p class="cite">kod/util/settings.kod:137, 346–349</p>
+
+<table class="data">
+<thead><tr><th>Base max HP</th><th>Lawful: max damage per hit</th><th>Outlaw / murderer</th><th>Difference</th></tr></thead>
+<tbody>
+<tr><td>20 (fresh character)</td><td>(20+2)/3 = <strong>7</strong></td><td>30</td><td>4.3×</td></tr>
+<tr><td>40</td><td>(40+2)/3 = <strong>14</strong></td><td>30</td><td>2.1×</td></tr>
+<tr><td>50</td><td>(50+2)/3 = <strong>17</strong></td><td>30</td><td>1.8×</td></tr>
+<tr><td>70</td><td>(70+2)/3 = <strong>24</strong></td><td>30</td><td>1.25×</td></tr>
+<tr><td>88 or more</td><td>30 (the flat cap binds first)</td><td>30</td><td>none</td></tr>
+</tbody>
+</table>
+
+<p>Two further wrinkles. If you are boosted above <em>twice</em> your base maximum health the
+fractional cap does not apply to you either — vamped-up health is not protected. And the faction
++15% is applied <em>after</em> both caps, so a Soldier Shield enemy can land 34 on a
+30-cap target.</p>
+
+<h2>Revenants</h2>
+
+<img class="icon" src="../assets/img/zombie_g1.png" alt="Revenant">
+
+<p>Murder can summon a <a href="../creatures/revenant.html">revenant</a>: an invisible,
+wall-walking, single-minded monster that hunts only the killer.</p>
+
+<div class="formula">chance = 10
+   + 20  if same guild as victim
+   + 10  if your guild allies theirs      + 10 if theirs allies yours
+   - 10  if your guild is their enemy     - 10 if theirs is yours
+   return 0 if the guilds are MUTUAL enemies
+   + 15  if same faction as victim        - 5 if different (both non-neutral)
+   + (10 * yourBaseMaxHealth) / victimBaseMaxHealth
+   + abs(victimKarma - yourKarma/100) / 20
+   + bound(20 * yourHealth / yourBaseMaxHealth, 0, 20)
+
+chance = bound(chance, 2, 30) + 5 * piKill_count_decay
+   (+ a further Martyr's Battleground room-enchantment percentage)
+
+return 0 outright if you are in a Guildhall, if PFLAG2_NOHAUNT is set,
+   or if the victim was themselves an outlaw or murderer</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5029–5119</p>
+
+<p>The roll is <code class="k">random(1,100) &lt; chance</code>, and it is skipped entirely during a
+Frenzy. On success you gain <code class="k">PFLAG_HAUNTED</code> and the first revenant appears
+3–12 seconds later, near you.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4905–4914; kod/object/active/holder/nomoveon/battler/monster/revenant.kod:103</p>
+
+<table class="data">
+<thead><tr><th>Spawn</th><th>Level</th><th>Difficulty</th></tr></thead>
+<tbody>
+<tr><td>First, at the murder scene</td><td>(baseMaxHealth × 110)/100 + 7 × piKill_count_decay</td><td>bound(baseMaxHealth/12, 4, 9)</td></tr>
+<tr><td>Every room you flee into</td><td>(baseMaxHealth × 150)/100 + 5 × piKill_count_decay</td><td>bound(baseMaxHealth/10, 4, 10)</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4911–4913 and 1450–1453</p>
+
+<p>Running makes it worse, and no new revenant spawns in a room flagged
+<code class="k">ROOM_NO_COMBAT</code>, <code class="k">ROOM_SANCTUARY</code> or
+<code class="k">ROOM_SAFE_DEATH</code>. Karma is passed as <code class="k">-piKarma/100</code>, and
+the revenant resists 40% of all spell damage and 40% of magic weapon damage.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:1439–1454; kod/object/active/holder/nomoveon/battler/monster/revenant.kod:74–81, 109–111</p>
+
+<p>There are exactly three ways out of a haunting: kill the revenant (which also clears the flag and
+sends "You feel a great weight lifted from your soul."), take a full-price death, or be caught in a
+Frenzy, which clears <code class="k">PFLAG_HAUNTED</code> outright. Helping someone else fight their
+revenant transfers the haunting to <em>you</em>.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:255–265, 297–312; kod/object/active/holder/nomoveon/battler/player.kod:8207–8233</p>
+
+<h2>Guards, bounties and the Justicar</h2>
+
+<div class="note">
+<p>There is <strong>no bounty system and no guard that attacks criminals</strong> in this codebase.
+The complete set of consumers of <code class="k">PFLAG_MURDERER</code>/<code class="k">PFLAG_OUTLAW</code>
+outside player.kod is: the Barloque clerk (Justicar), shopkeeper service checks in monster.kod, two
+trainers (JealousGeneral, RebelLiege), the guild-hall conquest check, the room's guild-PK gate, the
+logoff-ghost penalty, the Hunter Sword, a quest-node prize, the Reflection and Evil Twin summons,
+and a DM spell. Social and economic pressure is the entire enforcement mechanism.</p>
+</div>
+
+<h3>Social consequences of being a murderer</h3>
+
+<ul>
+<li>Any NPC with <code class="k">MOB_LAWFUL</code> (0x40000) refuses to trade with you if more than
+one player is in the room; alone with the shopkeeper, you get "illicit service" and the trade goes
+through. A faction ruling from the Parliament can waive the refusal entirely.
+<span>(kod/object/active/holder/nomoveon/battler/monster.kod:5062–5097; kod/include/blakston.khd:1407)</span></li>
+<li>The JealousGeneral and the RebelLiege refuse to teach you any spell.
+<span>(kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/jGeneral.kod:147–155; .../factions/rebel.kod:158–166)</span></li>
+<li>Picking up a <code class="k">HunterSword</code> as an outlaw or murderer damages you every tick
+instead of arming you: <code class="k">random(1,2)</code>, plus
+<code class="k">-8 × karma / 100</code> if your karma is negative.
+<span>(kod/object/item/passitem/weapon/huntsw.kod:222–243)</span></li>
+<li>Outlaws and murderers may not vote for, or stand as, Justicar.
+<span>(bqclerk.kod:1184–1208)</span></li>
+<li>Your death is announced world-wide with a special line — "### %q, an outlaw, …" /
+"### %q, a murderer, …" — and killing an innocent as a murderer produces the anonymous
+"### %q has been murdered in cold blood."
+<span>(kod/util/system.kod:49–58, 1533–1546, 1614–1624)</span></li>
+<li>Outlaws and murderers cannot generate revenants when they are the victim.
+<span>(player.kod:5040–5045)</span></li>
+</ul>
+
+<h3>The Justicar</h3>
+
+<table class="data">
+<thead><tr><th>Rule</th><th>Value</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Pardons allowed per term</td><td><code class="k">PARDON_LIMIT</code> = 8</td><td>bqclerk.kod:21</td></tr>
+<tr><td>A given murderer may be pardoned</td><td>once per term (<code class="k">plPardons</code>)</td><td>bqclerk.kod:293–295, 531, 653–662</td></tr>
+<tr><td>Voting period</td><td>288 game hours ≈ 1 earth day</td><td>bqclerk.kod:306–307</td></tr>
+<tr><td>Term of office</td><td>1790 game hours ≈ 6 earth days</td><td>bqclerk.kod:308–309</td></tr>
+<tr><td>Tiebreaker period</td><td>288 game hours</td><td>bqclerk.kod:310–311</td></tr>
+<tr><td>Minimum base max HP to vote or stand</td><td><code class="k">piMinHPForJusticar</code> = 100</td><td>kod/util/settings.kod:125; bqclerk.kod:1379–1385</td></tr>
+<tr><td>Candidate must also be</td><td><code class="k">PFLAG_PKILL_ENABLE</code>, not outlaw, not murderer</td><td>bqclerk.kod:1196–1208</td></tr>
+<tr><td>A Justicar who becomes unlawful</td><td>is stripped of office on entering the Office</td><td>bqclerk.kod:435–450</td></tr>
+</tbody>
+</table>
+
+<p>The pardon must be spoken with the subject standing in the special area in front of the clerk,
+in person; the clerk refuses <em>in absentia</em> requests. Each pardon is posted publicly to the
+Book of Jala.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqclerk.kod:645–690, 472–500</p>
+
+<h2>Safe rooms and no-PvP zones</h2>
+
+<table class="data">
+<thead><tr><th>Room flag</th><th>Bit</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code class="k">ROOM_SAFE_DEATH</code></td><td>0x0001</td><td>Death has no consequences — <code class="k">Killed</code> just sets health to 1</td></tr>
+<tr><td><code class="k">ROOM_NO_COMBAT</code></td><td>0x0002</td><td>No fighting at all, by anyone</td></tr>
+<tr><td><code class="k">ROOM_NO_PK</code></td><td>0x0004</td><td>Players may not attack players</td></tr>
+<tr><td><code class="k">ROOM_GUILD_PK_ONLY</code></td><td>0x0008</td><td>Only guilded characters, murderers, Soldier Shield bearers or Token holders may be involved</td></tr>
+<tr><td><code class="k">ROOM_SANCTUARY</code></td><td>0x0080</td><td>Vigor heals twice as fast; blocks revenant spawns</td></tr>
+<tr><td><code class="k">ROOM_KILL_ZONE</code></td><td>0x0200</td><td>Anyone may be killed here — bypasses the <code class="k">PKILL_ENABLE</code> check both ways</td></tr>
+<tr><td><code class="k">ROOM_SAFELOGOFF</code></td><td>0x1000</td><td>Logging off here creates no logoff ghost and no penalty</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:1034–1066</p>
+
+<h3>Where those flags actually appear</h3>
+
+<p><strong><code class="k">ROOM_SAFE_DEATH</code></strong> — exactly two rooms:
+<code class="k">TosArena</code> (kod/object/active/holder/room/tosrm/tosarena.kod:99) and
+<code class="k">NecArena</code> (kod/object/active/holder/room/necarena.kod:68). Both also return TRUE
+from <code class="k">SafePlayerAttack</code>, and both expose <code class="k">ArenaRealDeath</code>
+so an admin can switch real death on (tosarena.kod:748–752).</p>
+
+<p><strong><code class="k">ROOM_GUILD_PK_ONLY</code></strong> — the open streets of every town, so
+unguilded non-criminals cannot be jumped in the street: Tos, EastTos, TosArena2, BarloqueNorth,
+BarloqueSouth, BarloquePort, CorNoth, Jasper, JasperWest, JasperAB1, Kocatan, KocatanSouth,
+Castle1, Castle1B, H6.
+<span>(barln.kod:39, barls.kod:30, barlport.kod:28, cornoth.kod:30, jasper.kod:30, jaswest.kod:32,
+jasab1.kod:29, kocatan.kod:29, kocsouth.kod:40, tos.kod:31, easttos.kod:29, tosaren2.kod:33,
+castle1.kod, castle1b.kod, h6.kod)</span></p>
+
+<p><strong><code class="k">ROOM_NO_COMBAT</code></strong> — every shop, bank, tavern, hall, guest
+room, the Barloque court and jail, the University, both Trading Posts, and the Underworld itself.</p>
+
+<p><strong><code class="k">ROOM_SAFELOGOFF</code></strong> — the five town inns (Bar, Cor, Jasper,
+Marion, Tos), the Ko'catan Inn, the adventurers' halls (Bar, Cor, Jasper, Marion, Tos, Ko'catan
+House of Healing), the Jasper and Ko'catan taverns, the Gallery, the University, Field1, the
+Trading Post, rented rooms, the Out of Grace prison and the Underworld. Note that the base
+<code class="k">GuildHall</code> class has <code class="k">ROOM_SAFELOGOFF</code>
+<em>commented out</em> (ghall.kod:124); guild halls get their safe-logoff treatment through the
+special case in <code class="k">UserLogoff</code> instead.</p>
+
+<p><strong><code class="k">ROOM_KILL_ZONE</code> and <code class="k">ROOM_NO_PK</code></strong> — no
+room in the shipped world sets either as a permanent flag. They exist only for runtime
+<code class="k">SetRoomFlag</code> use.</p>
+
+<p>Two more places behave as sanctuaries without using a flag: <code class="k">OutOfGrace</code>
+(room 43) hard-refuses every attack and every non-DM spell in overridden messages, and the
+Underworld is <code class="k">ROOM_NO_COMBAT</code> and refuses assassin-game attacks outright.</p>
+<p class="cite">kod/object/active/holder/room/outgrace.kod:45–67; kod/object/active/holder/room/monsroom/uworld.kod:54, 725–730</p>
+
+<h2>Logging off in the field</h2>
+
+<p>Quitting outside a <code class="k">ROOM_SAFELOGOFF</code> room (or a guild hall you may enter,
+outside its foyer) leaves a <code class="k">LogoffGhost</code> standing there. You have a grace
+period of <code class="k">GetLogoffPenaltyGhostTime</code> = <strong>600 seconds (10 minutes)</strong>,
+randomised to 90–110% of that, to reconnect. Reconnect in time and nothing happens.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player/user.kod:665–690; kod/util/settings.kod:94</p>
+
+<div class="formula">penaltyCounter = piLogoffPenaltyCount + piKill_count_decay
+iEquivDeath    = 10                       % system.kod:340
+
+itemsToDrop    = numItems * penaltyCounter / iEquivDeath
+                 (+1 more with probability penaltyCounter/(iEquivDeath-1) when under)
+maxHealthLost  = penaltyCounter / iEquivDeath   (+1 more on the remainder roll)
+spellPointsLost= numSpells * penaltyCounter / iEquivDeath, at 1 per spell
+                 (2 per spell if PFLAG_MURDERER), never below 5%</div>
+<p class="cite">kod/object/active/logghost.kod:263–265, 270–278, 336–342, 356–360; kod/util/system.kod:340</p>
+
+<p>So ten unsafe logoffs (or fewer, if you have unjustified kills on the books) is a full death's
+worth of loss. <code class="k">IncrementLogoffPenaltyCount</code> adds <strong>2</strong> instead of
+1 if you attacked a player in the last 15 minutes — logging out mid-fight is punished double. The
+counter decays by 1 on a system timer.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player/user.kod:760–773, 748–752; kod/util/system.kod:1141</p>
+
+<h2>Being helped by others</h2>
+
+<div class="formula">CanHelpPlayer() = (piTimeAttackedPlayer + ATTACKED_PLAYER_WAIT) &lt;= GetTime()
+                  OR GetChaosNight()
+
+ATTACKED_PLAYER_WAIT = 15 * 60 seconds</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:3948–3958, 105</p>
+
+<p>For <strong>15 minutes</strong> after you attack another player, nobody may cast a helpful spell
+on you unless the room's guild-PK rules already allow them to fight you. This is the anti-"mule
+healer" rule: you cannot park an unkillable, angeled character behind the front line to keep the
+fighters topped up. The clock is set in <code class="k">CheckStatusAndSafety</code> the moment your
+attack is approved.</p>
+<p class="cite">kod/object/passive/spell.kod:578–592, 874–884; kod/object/active/holder/nomoveon/battler/player.kod:3810, 3860</p>
+
+<h3>Rescue</h3>
+
+<p><a href="../spells/rescue.html">Rescue</a> (Shal'ille 3, 16 mana, 1 emerald) is the escape hatch,
+not a resurrection. It cannot be started within
+<code class="k">piTeleportAttackDelaySec</code> = <strong>10 minutes</strong> of your own last player
+attack, nor while holding a Token, nor while another rescue is pending.</p>
+
+<div class="formula">delay = 1000 * 15                       % piRescueBaseDelaySec = 15
+delay = delay - (SpellPower * delay) / 100 / 4
+if random(1,2) = 1: delay = delay + random(5000, 10000)</div>
+
+<p>At spell power 99 that is 15000 − 3712 = 11.3 s, plus a coin-flip 5–10 s. Any attack you make
+cancels a pending rescue, as does dying. The destination is your guild hall if it is in the same
+region, else the Ko'catan Inn (in Ko'catan), else the Pool of Vigor (in the orc caves), else your
+home room.</p>
+<p class="cite">kod/object/passive/spell/rescue.kod:38–44, 64–90, 92–108, 110–166; kod/util/settings.kod:88, 91; kod/object/active/holder/nomoveon/battler/player.kod:1364–1418, 3756–3762, 7930</p>
+
+<h2>Frenzies (Chaos Night)</h2>
+
+<p>During a Frenzy every rule above relaxes at once, and this is the single largest behavioural
+switch in the game:</p>
+
+<ul>
+<li><code class="k">AllowPlayerAttack</code> returns TRUE for anything the room permits — no
+PK-enable check, no safety, no newbie protection. (player.kod:3646–3649)</li>
+<li>Deaths are no-drop and cost nothing. (player.kod:7996–8003)</li>
+<li>You respawn with half health, half mana and full vigor instead of 1/1/quartered.
+(player.kod:8147–8153)</li>
+<li><code class="k">ApplyDeathPenalties</code> returns immediately, after clearing
+<code class="k">PFLAG_HAUNTED</code>. (player.kod:8207–8214)</li>
+<li>No revenants are created. (player.kod:4906)</li>
+<li>No karma changes from player kills. (player.kod:6530–6534)</li>
+<li>No faction loss. (player.kod:3874–3881)</li>
+<li>Anyone may be healed regardless of recent attacks. (player.kod:3951–3952)</li>
+<li>The Underworld ignores Frenzies entirely so bodies do not pile up.
+(uworld.kod:712–723)</li>
+<li><code class="k">ROOM_NO_COMBAT</code> is suppressed on non-hometown rooms while the Frenzy runs.
+(kod/object/active/holder/room.kod:1167–1184)</li>
+</ul>
+
+<h2>Death announcements</h2>
+
+<p>Every non-Guest death is broadcast to all logged-on players by
+<code class="k">System:UserKilled</code>. The message chosen, in priority order:</p>
+
+<table class="data">
+<thead><tr><th>Condition</th><th>Broadcast</th></tr></thead>
+<tbody>
+<tr><td>Killed by a room (earthquake, etc.)</td><td>"### %q met an untimely end."</td></tr>
+<tr><td>Self-inflicted</td><td>"killed self" line</td></tr>
+<tr><td>Victim held a Token</td><td>"### %q lost a token to %s%q."</td></tr>
+<tr><td>Victim was an outlaw</td><td>outlaw line</td></tr>
+<tr><td>Victim was a murderer</td><td>murderer line</td></tr>
+<tr><td>Faction (Soldier Shield) war kill</td><td>"### %q was bested by faction rival %s%q."</td></tr>
+<tr><td>Mutual guild war kill</td><td>guild-war line, also posted to the Guild War Standings book</td></tr>
+<tr><td>During a Frenzy</td><td>standard line but with the killer's <em>true</em> name</td></tr>
+<tr><td>Killer is a murderer, outside a safe-death room, nothing else matched</td><td>"### %q has been murdered in cold blood." — killer unnamed, and recorded as <code class="k">GetLastMurderer</code></td></tr>
+<tr><td>Anything else</td><td>"### %q was just killed by %s%q."</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/util/system.kod:49–60, 1455–1658</p>
+
+<p>Separately, the victim always learns who really killed them, even through an illusion:
+<code class="k">User:Killed</code> sends the killer's <code class="k">GetTrueName</code> privately.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player/user.kod:6896–6924</p>
+
+<h2>Odds and ends worth knowing</h2>
+
+<ul>
+<li>A Necromancer Amulet wearer can be <em>killed while logged off</em>; the corpse and drops are
+placed at the saved logoff location instead of the current room.
+<span>(player.kod:7937–7960, 7948–7952)</span></li>
+<li>Guests never enter the Underworld: <code class="k">Guest:UserGotoDeadRoom</code> sends them to
+<code class="k">RID_GUEST1</code>, and guest deaths are not broadcast.
+<span>(kod/object/active/holder/nomoveon/battler/player/user/guest.kod:63–68; kod/util/system.kod:1461–1466)</span></li>
+<li>Dying inside the newbie area (rooms 1010–1018) teleports you to
+<code class="k">RID_NEWB1</code> rather than the Underworld, so
+<code class="k">ApplyDeathPenalties</code> is never reached.
+<span>(kod/object/active/holder/nomoveon/battler/player/user.kod:2285–2304)</span></li>
+<li>Suicide (<code class="k">UC_SUICIDE</code>) is blocked if you are a guild master, in Out of
+Grace, the sitting Justicar, holding a Token, or within
+<code class="k">SUICIDE_REPEAT_TIME</code> = <strong>600 seconds</strong> of your last restart.
+<span>(kod/object/active/holder/nomoveon/battler/player/user.kod:31, 1494–1538)</span></li>
+<li>Karma from a player kill uses the strongest swing factor,
+<code class="k">piKillKarmaSwingPlayer</code> = 10, against
+<code class="k">piKillKarmaSwingMonster</code> = 6 for monsters, and is skipped entirely in arenas,
+in the newbie region, and during Frenzies. See <a href="../guides/karma.html">Karma</a>.
+<span>(player.kod:6524–6592; kod/util/settings.kod:51–53)</span></li>
+<li>Alternate server presets change the death cost: server 101 uses
+<code class="k">piDefaultDeathCost = 90</code>, server 102 uses 60. The stock configuration
+(<code class="k">piServerNumber = 0</code>) uses 100.
+<span>(kod/util/settings.kod:161–186; kod/util/system.kod:393, 2661)</span></li>
+</ul>
+
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

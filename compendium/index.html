@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home — Meridian 59 Compendium</title>
+
+<link rel="stylesheet" href="./assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="./index.html" class="on">Home</a><a href="./guides/index.html">Guides</a><a href="./spells/index.html">Spells</a><a href="./skills/index.html">Skills</a><a href="./items/index.html">Items</a><a href="./weapons/index.html">Weapons</a><a href="./armor/index.html">Armour</a><a href="./creatures/index.html">Bestiary</a><a href="./npcs/index.html">NPCs</a><a href="./reagents/index.html">Reagents</a><a href="./zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+
+<h1>The Meridian 59 Compendium</h1>
+<p class="lede">Every spell, skill, item and creature in the game, with the numbers the server
+actually uses. Compiled directly from the Blakod source and the client's own sprites, so the
+figures here are the figures the game runs — not remembered ones.</p>
+
+<h2>Catalogues</h2>
+<div class="cards"><a class="card" href="spells/index.html"><div class="t">Spells</div><div class="d">Every spell in the game: school, level, mana, reagents, karma gate and effect.</div><div class="n">186 pages</div></a><a class="card" href="skills/index.html"><div class="t">Skills</div><div class="d">Every skill: what it does, what it costs, who teaches it and how it improves.</div><div class="n">22 pages</div></a><a class="card" href="items/index.html"><div class="t">Items</div><div class="d">Every object in the game: weight, bulk, value, durability and what it does.</div><div class="n">323 pages</div></a><a class="card" href="weapons/index.html"><div class="t">Weapons</div><div class="d">Every weapon side by side: damage, reach, proficiency and price.</div><div class="n">comparison table</div></a><a class="card" href="armor/index.html"><div class="t">Armour</div><div class="d">What each piece of armour actually subtracts, by damage type.</div><div class="n">comparison table</div></a><a class="card" href="creatures/index.html"><div class="t">Bestiary</div><div class="d">Every creature and NPC: level, difficulty, damage, drops and where it stands.</div><div class="n">171 pages</div></a><a class="card" href="npcs/index.html"><div class="t">NPCs</div><div class="d">Merchants, teachers, guards and everyone else who talks back.</div><div class="n">comparison table</div></a><a class="card" href="reagents/index.html"><div class="t">Reagents</div><div class="d">Every spell component, what it costs, where it drops and what needs it.</div><div class="n">comparison table</div></a><a class="card" href="zones/index.html"><div class="t">Zones</div><div class="d">Every place in the world: its map, its inhabitants and its exits.</div><div class="n">267 pages</div></a></div>
+
+<h2>How the game works</h2>
+<div class="cards"><a class="card" href="guides/advancing.html"><div class="t">Advancing Your Character</div><div class="d">There are three separate progressions in Meridian 59 and they do not share a budget. Your maximum health grows by killing things…</div></a><a class="card" href="guides/armor.html"><div class="t">Armor</div><div class="d">Every wearable defensive item in Meridian 59 is a DefenseModifier, and each one can do three completely separate things: change…</div></a><a class="card" href="guides/attributes.html"><div class="t">Attributes</div><div class="d">Meridian 59 gives every character six attributes — Might, Intellect, Stamina, Agility, Mysticism, Aim — set once at character…</div></a><a class="card" href="guides/channeling.html"><div class="t">Channeling and Mana</div><div class="d">Mana is the only currency your spells spend. Your maximum is set by Mysticism plus every mana node you have ever melded with; the…</div></a><a class="card" href="guides/combat.html"><div class="t">Combat</div><div class="d">Every swing in the game runs through one function, and it is short. Your offence divides into the defender's defence to produce a…</div></a><a class="card" href="guides/death.html"><div class="t">Death, the Underworld and PvP</div><div class="d">Dying in Meridian 59 drops your whole inventory on a corpse, dumps you in the Underworld, and — for anyone past newbie status —…</div></a><a class="card" href="guides/duke.html"><div class="t">The Duke and Politics</div><div class="d">Above the fighting there is a second game, played by three courts, scored continuously, and worth real combat statistics to…</div></a><a class="card" href="guides/economy.html"><div class="t">Money, Merchants and the Economy</div><div class="d">Every item in the game has one declared value, and every price a merchant quotes is that number run through two multipliers: a…</div></a></div>
+<p><a href="guides/index.html">All 25 guides →</a></p>
+
+<h2>Reading these pages</h2>
+<p>A line like <code>kod/object/passive/spell.kod:482</code> is a citation: that file, that line,
+in the Meridian 59 source tree. If a number here disagrees with the game, the citation is where
+to look. Formulas use integer arithmetic throughout, because Blakod has no other kind —
+<code>/</code> truncates, and <code>random(a,b)</code> is inclusive at both ends.</p>
+<p>Pictures are the game's own bitmaps, decoded from the client's <code>.bgf</code> files with
+the palette in <code>blakston.pal</code>.</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL=".";</script>
+<script src="./assets/site.js"></script>
+
+</body>
+</html>

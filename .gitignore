@@ -1,0 +1,38 @@
+# The client's own art: 5,355 PNGs decoded from its .bgf files, 40 MB of it, and
+# not ours to redistribute. Regenerate from any local client with
+#     python tools/pull-client-assets.py
+/compendium/assets/img/
+
+node_modules/
+
+# Everything a running fleet writes. This repository is a starting point, not a
+# snapshot of somebody's characters: the roster carries account passwords in
+# plain text, and the flight recordings are one server's history, not reference.
+/substrate/fleet-state.json
+/substrate/fleet-state.json.*
+/substrate/history/
+/substrate/recordings/
+/substrate/*.log
+/commissions/
+
+# Transient logs from background helpers and test sweeps. Each is a record of one
+# run against one server state, so none of it is worth carrying forward.
+.m59-*.log
+.build-m59.log
+
+# The Meridian 59 client writes these into whatever directory it is launched from
+/meridian.ini
+/config.ini
+/d3dlog.txt
+/mail/
+/ads/
+/download/
+/help/
+/resource/
+
+# Personal Claude Code settings — the status line points at a broker port that is
+# a local choice, not a shared one.
+.claude/settings.local.json
+
+__pycache__/
+*.pyc

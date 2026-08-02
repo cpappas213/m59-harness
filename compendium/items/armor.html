@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Armor — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Armor</p>
+<div class="hero"><div class="heroText"><h1>Armor</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">armour</span><span class="tag ">body</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">10</div></div><div class="fact"><div class="lbl">Value</div><div class="val">10 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div><div class="fact"><div class="lbl">Spell penalty</div><div class="val">-25%</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">body</div></div></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/defmod/armor.kod:11</p>
+<p><code class="k">Armor</code> is <code class="k">DefenseModifier</code> — full chain <code class="k">Armor</code> ← <code class="k">DefenseModifier</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">ChainArmor</code>, <code class="k">LeatherArmor</code>, <code class="k">NeruditeArmor</code>, <code class="k">PlateArmor</code>, <code class="k">Robe</code>, <code class="k">ScaleArmor</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viUse_type</code></td><td class=""><code>ITEM_USE_BODY</code></td><td class="">16</td><td class="num " data-sort="28">28</td></tr>
+<tr><td class=""><code class="k">viUse_amount</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">viSpell_modifier</code></td><td class=""><code>-25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrPoss_article</code></td><td class=""><code>object_article_cap_this_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="33">33</td></tr>
+<tr><td class=""><code class="k">viInventory_group</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viBroken_group</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">vbShow_condition</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">vrCondition_exc</code></td><td class=""><code>armor_condition_exc</code></td><td class=""><em> is without blemish or flaw.</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">vrCondition_exc_mended</code></td><td class=""><code>armor_condition_exc_mended</code></td><td class=""><em> is in great condition, but has been repaired before.</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrCondition_good</code></td><td class=""><code>armor_condition_good</code></td><td class=""><em> has a dent or two.</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">vrCondition_med</code></td><td class=""><code>armor_condition_med</code></td><td class=""><em> is nicked and scarred from battle.</em></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrCondition_poor</code></td><td class=""><code>armor_condition_poor</code></td><td class=""><em> has been rent and torn by fierce attacks and may not last much longer.</em></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrCondition_broken</code></td><td class=""><code>armor_condition_broken</code></td><td class=""><em> is useless.  It has been torn into several pieces from the wear and strain of battle.</em></td><td class="num " data-sort="43">43</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ReqUseSomething(what = $)</h4>
+<pre><code>{
+      if IsClass(what,&amp;Armor)
+      {
+         if Send(poOwner,@TryUnuseItem,#what=self)
+         {
+            propagate;
+         }
+         else
+         {
+            return FALSE;
+         }
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor.kod:49</p>
+<h4>ReqRepair()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor.kod:66</p>
+<h4>SendInventoryAnimation()</h4>
+<pre><code>{
+      if piHits &gt; 0 OR viBroken_group = $
+      {
+         propagate;
+      }
+
+      if (piItem_flags &amp; ITEM_PALETTE_MASK) &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,piItem_flags &amp; ITEM_PALETTE_MASK);
+      }
+
+      AddPacket(1,ANIMATE_NONE,2,viBroken_group);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor.kod:71</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      if piHits &gt; 0 OR viBroken_group = $
+      {
+         propagate;
+      }
+
+      if (piItem_flags &amp; ITEM_PALETTE_MASK) &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,piItem_flags &amp; ITEM_PALETTE_MASK);
+      }
+
+      AddPacket(1,ANIMATE_NONE,2,viBroken_group);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor.kod:88</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if piHits &gt; 0 OR viBroken_group = $
+      {
+         propagate;
+      }
+
+      if (piItem_flags &amp; ITEM_PALETTE_MASK) &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,piItem_flags &amp; ITEM_PALETTE_MASK);
+      }
+
+      AddPacket(1,ANIMATE_NONE,2,viBroken_group);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor.kod:105</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

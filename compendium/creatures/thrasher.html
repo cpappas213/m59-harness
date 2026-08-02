@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>thrasher — Meridian 59 Compendium</title>
+<meta name="description" content="The powerful smell of rotted flesh and embalming herbs assault your nostrils. This shambling horror in front of you seems like it was crafted in madness, and bi">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › thrasher</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/res0001a_g1.png" alt="thrasher" width="162" height="230"></div><div class="heroText"><h1>thrasher</h1><p class="lede">The powerful smell of rotted flesh and embalming herbs assault your nostrils. This shambling horror in front of you seems like it was crafted in madness, and birthed in nightmares. Various limbs, none of them matching, sprout from this monster in disarray, and in its eye a strange malignance glows. Run for your life.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Evil</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">-75</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">thrasher</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>teotixleoc</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 0
+                = 75
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>bludgeon</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 25/55 + random(0, 0/3), $, 6)
+       = 1 item
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/thrasht.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="BlueDragonScale"><a href="../items/bluedragonscale.html">blue dragon scale</a></td><td class="num " data-sort="18.812">18.8%</td><td class=""></td><td class=""><code>thrasht.kod:31</code></td></tr>
+<tr><td class="" data-sort="DarkAngelFeather"><a href="../items/darkangelfeather.html">dark angel feather</a></td><td class="num " data-sort="17.822">17.8%</td><td class=""></td><td class=""><code>thrasht.kod:32</code></td></tr>
+<tr><td class="" data-sort="PurpleMushroom"><a href="../items/purplemushroom.html">purple mushroom</a></td><td class="num " data-sort="15.842">15.8%</td><td class=""></td><td class=""><code>thrasht.kod:33</code></td></tr>
+<tr><td class="" data-sort="InkyCap"><a href="../items/inkycap.html">Inky-cap mushroom</a></td><td class="num " data-sort="10.891">10.9%</td><td class=""></td><td class=""><code>thrasht.kod:34</code></td></tr>
+<tr><td class="" data-sort="ScaleArmor"><a href="../items/scalearmor.html">scale armor</a></td><td class="num " data-sort="7.921">7.9%</td><td class=""></td><td class=""><code>thrasht.kod:35</code></td></tr>
+<tr><td class="" data-sort="LongSword"><a href="../items/longsword.html">long sword</a></td><td class="num " data-sort="5.941">5.9%</td><td class=""></td><td class=""><code>thrasht.kod:36</code></td></tr>
+<tr><td class="" data-sort="Torch"><a href="../items/torch.html">torch</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>thrasht.kod:37</code></td></tr>
+<tr><td class="" data-sort="NightVisionPotion"><a href="../items/nightvisionpotion.html">Night Vision Potion</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>thrasht.kod:38</code></td></tr>
+<tr><td class="" data-sort="Money"><a href="../items/money.html">shilling</a></td><td class="num " data-sort="3.96">4.0%</td><td class="">151–451 shillings</td><td class=""><code>thrasht.kod:39</code></td></tr>
+<tr><td class="" data-sort="BerserkerRing"><a href="../items/berserkerring.html">Berserker Ring</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>thrasht.kod:40</code></td></tr>
+<tr><td class="" data-sort="MysticSword"><a href="../items/mysticsword.html">mystic sword</a></td><td class="num " data-sort="3.96">4.0%</td><td class=""></td><td class=""><code>thrasht.kod:41</code></td></tr></tbody></table></div><div class="formula">shillings = 1 + (MoneyFactor × 2 × bound(random(level/2, 3×level/2), 1, ∞)) / 100
+          = 151–451 at level 25     % MoneyFactor = 100</div>
+<p class="cite">kod/object/passive/trestype.kod:302</p><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>6 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 6.
+<span class="cite">kod/object/passive/trestype/thrasht.kod:23</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>1 place in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="Affirmation of the Forsaken"><a href="../zones/marioncrypt3a.html">Affirmation of the Forsaken</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator, placed</td><td class="num " data-sort="100">100%</td><td class=""><code>monsroom/marcry3a.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_MOVE_FLEE_FRIGHTENERS</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_LASHOUT</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_HYPERAGGRESSIVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>What killing it does to your karma</h2>
+<p>Its karma is <code class="k">-75</code>, and a kill is treated as an act whose karma is the
+<em>negative</em> of the victim's — so killing this creature pushes you
+<strong>towards good</strong>.</p>
+<div class="formula">base   = your_karma − (−victim_karma) = your_karma − 75
+change = −( base³ / 2500 + 5 × base ) / (11 − swing)      % hundredths of a karma point
+       bounded to ±150 for a monster kill — at most 1.5 karma per kill</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code> · :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+<div class="note">No karma moves at all in the newbie region, in an arena, or when the victim's
+karma is neutral. And once you are already further from neutral than your victim in the same
+direction, killing them does nothing to you.</div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/res0001a_g1.png" alt="thrasher group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/res0001a_g2.png" alt="thrasher group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/res0001a_g3.png" alt="thrasher group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/res0001a_g4.png" alt="thrasher group 4" loading="lazy"><figcaption>group 4 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/res0001a_g5.png" alt="thrasher group 5" loading="lazy"><figcaption>group 5 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/res0001a_g6.png" alt="thrasher group 6" loading="lazy"><figcaption>group 6 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/res0001a_g7.png" alt="thrasher group 7" loading="lazy"><figcaption>group 7 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/res0001a_g8.png" alt="thrasher group 8" loading="lazy"><figcaption>group 8 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/res0001a_g9.png" alt="thrasher group 9" loading="lazy"><figcaption>group 9 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/res0001b_g1.png" alt="thrasher corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:11</p>
+<p><code class="k">Thrasher</code> is <code class="k">Monster</code> — full chain <code class="k">Thrasher</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrKocName</code></td><td class=""><code>thrasher_koc_name_rsc</code></td><td class=""><em>teotixleoc</em></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>thrasher_name_rsc</code></td><td class=""><em>thrasher</em></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>thrasher_icon_rsc</code></td><td class=""><em>res0001a.bgf</em></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>thrasher_desc_rsc</code></td><td class=""><em>The powerful smell of rotted flesh and embalming herbs assault your nostrils.  This shambl</em></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>thrasher_dead_icon_rsc</code></td><td class=""><em>res0001b.bgf</em></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>thrasher_dead_name_rsc</code></td><td class=""><em>dead thrasher</em></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_THRASHER</code></td><td class="">53</td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viNormalSpeed</code></td><td class=""><code>SPEED_FAST</code></td><td class="">16</td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_BLUDGEON</code></td><td class="">16</td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>-75</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_AGGRESSIVE | AI_FIGHT_HYPERAGGRESSIVE  | AI_FIGHT_LASHOUT | AI_MOVE_FLEE_FRIGHTENERS</code></td><td class="">5259296</td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>thrasher_sound_attack</code></td><td class=""><em>res0001b.wav</em></td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>thrasher_sound_attack</code></td><td class=""><em>res0001b.wav</em></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>thrasher_sound_aware</code></td><td class=""><em>res0001a.wav</em></td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>thrasher_sound_death</code></td><td class=""><em>res0001c.wav</em></td><td class="num " data-sort="69">69</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_FAST</code></td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>150</code></td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>7</code></td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="77">77</td></tr>
+<tr><td class=""><code class="k">prShieldOverlay</code></td><td class=""><code>$</code></td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">pbFirstAttack</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="80">80</td></tr>
+<tr><td class=""><code class="k">ptSecondAttack</code></td><td class=""><code>$</code></td><td class="num " data-sort="81">81</td></tr>
+<tr><td class=""><code class="k">piSpinDelay</code></td><td class=""><code>75</code></td><td class="num " data-sort="82">82</td></tr>
+<tr><td class=""><code class="k">ptSpin</code></td><td class=""><code>$</code></td><td class="num " data-sort="83">83</td></tr>
+<tr><td class=""><code class="k">piSpinAngle</code></td><td class=""><code>ANGLE_EAST</code></td><td class="num " data-sort="84">84</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(bAwake = TRUE)</h4>
+<pre><code>{
+      if NOT bAwake
+      {
+         viSpeed = SPEED_NONE;
+      }
+
+      propagate;
+   }   </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:88</p>
+<h4>Constructed()</h4>
+<pre><code>{
+
+      
+      plResistances = [ [ 50, ATCK_WEAP_PIERCE ],
+                        [ 50, ATCK_WEAP_SLASH ],
+                        [ 50, ATCK_WEAP_BLUDGEON ],
+                        [ 50, -ATCK_SPELL_UNHOLY ],
+                        [ 90, -ATCK_SPELL_SHOCK ],
+                        [ -20, -ATCK_SPELL_FIRE ],
+                        [ -15, -ATCK_SPELL_HOLY ]
+                      ]; 
+
+      Send(self,@SelectAdditionalWeapon);
+      Send(self,@TweakBehavior);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:98</p>
+<h4>SelectAdditionalWeapon()</h4>
+<p>Decides which shield/weapon/drumstick is part of the thrasher and sets the appropriate overlay and stat adjustments.</p>
+<pre><code>{
+      local RandomNumber, oObject;
+
+      
+      RandomNumber = random(0,2);
+      if RandomNumber = 0
+      {
+         
+         viLevel = viLevel + 10;
+         oObject = Create(&amp;GoldShield);
+         Send(self,@NewHold,#what=oObject);
+         prShieldOverlay = thrasher_shield_overlay;
+      }
+      else
+      {
+         if RandomNumber = 1
+         {
+            
+            oObject = Create(&amp;Mace);
+            Send(self,@NewHold,#what=oObject);
+            prShieldOverlay = thrasher_mace_overlay;
+         }
+         else
+         {
+            
+            viDifficulty = viDifficulty + 1;
+            oObject = Create(&amp;Scimitar);
+            Send(self,@NewHold,#what=oObject);
+            prShieldOverlay = thrasher_scimitar_overlay;
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:117</p>
+<h4>HitSideEffect(what = $)</h4>
+<pre><code>{
+      local oSpell;
+      
+      oSpell = Send(SYS,@FindSpellByNum,#num=SID_PALSY);
+      if NOT Send(what,@IsEnchanted,#what=oSpell) 
+         AND Random(1,PALSY_CHANCE) = 1
+      {
+         Send(oSpell,@MakeSick,#who=what);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:155</p>
+<h4>TweakBehavior()</h4>
+<p>Our default behavior is to not be noticeable as a monster.</p>
+<pre><code>{
+      if viSpeed = SPEED_NONE
+      {
+         piBehavior = AI_NOMOVE | AI_NOFIGHT | AI_NPC;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:174</p>
+<h4>SomethingMoved(what = $, new_row = $, new_col = $)</h4>
+<pre><code>{     
+      
+      
+      
+      if viSpeed = SPEED_NONE
+         AND what &lt;&gt; $
+         AND IsClass(what,&amp;Player)
+         AND NOT (IsClass(what,&amp;DM) AND Send(what,@PlayerIsImmortal))
+         AND Send(poOwner,@LineOfSight,#obj1=self,#obj2=what)
+         AND Send(self,@SquaredDistanceTo,#what=what) &lt;= 49
+      {
+         
+         
+         if Send(self,@GetHatred) &lt;= 25
+         {
+            Send(self,@TargetSwitch,#what=what,#iHatred=25);
+         }
+
+         
+         Send(self,@WakeUp);
+      }
+
+      propagate;
+   } </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:185</p>
+<h4>WakeUp()</h4>
+<pre><code>{
+      
+      viSpeed = viNormalSpeed;
+      piBehavior = piBehavior &amp; ~(AI_NOMOVE | AI_NOFIGHT | AI_NPC);
+      Send(poOwner,@SomethingChanged,#what=self);
+      Send(self,@EnterStateChase,#target=poTarget,#actnow=TRUE);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:211</p>
+<h4>TryAttack(what = $, stroke_obj = $)</h4>
+<pre><code>{
+      local lFinalTargets, oRoom;
+
+      oRoom = Send(self,@GetOwner);
+
+      
+      if piAnimation = ANIM_SPIN
+      {
+         return;
+      }
+
+      lFinalTargets = Send(self,@GetFinalTargets);
+      If Length(lFinalTargets) &gt; 1
+         AND NOT Send(oRoom,@CheckRoomFlag,#flag=ROOM_NO_COMBAT)
+         And NOT Send(oRoom,@CheckRoomFlag,#flag=ROOM_NO_MOB_COMBAT)
+      {
+         Send(self,@StartSpin);
+
+         return;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:224</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      
+      
+      
+      
+      if pbFirstAttack 
+      {
+         Send(self,@DoBludgeon);
+         if ptSecondAttack = $ 
+         {
+            ptSecondAttack = CreateTimer(self,@SecondAttackTimer,400); 
+            pbFirstAttack = FALSE;
+
+            return;
+         }
+ 
+         pbFirstAttack = TRUE; 
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:249</p>
+<h4>SecondAttackTimer()</h4>
+<pre><code>{
+      if pbFirstAttack
+      {
+         return;  
+      }
+
+      ptSecondAttack = $;
+      if poTarget &lt;&gt; $ AND Send(self,@GetOwner) = Send(poTarget,@GetOwner)
+      {  
+         
+         if prShieldOverlay &lt;&gt; thrasher_shield_overlay
+         {
+            
+            Send(self,@TryAttack,#what=poTarget);
+
+         }
+
+         pbFirstAttack = TRUE;
+      }      
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:272</p>
+<h4>DoBludgeon()</h4>
+<pre><code>{
+      piAnimation = ANIM_ATTACK;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:296</p>
+<h4>GetBlockAbility(stroke_obj = $)</h4>
+<pre><code>{
+      
+      
+
+      if (stroke_obj &lt;&gt; $ AND Send(stroke_obj,@CanBlock))
+         AND prShieldOverlay = thrasher_shield_overlay
+      {
+         return (viDifficulty*10);
+      }
+
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:305</p>
+<h4>GetFinalTargets()</h4>
+<pre><code>{
+      local oRoom, i, each_obj, lValidTargets;
+
+      lValidTargets = $;
+
+      oRoom = Send(self,@GetOwner);
+      for i in Send(oRoom,@GetHolderActive)
+      {
+         each_obj = Send(oRoom,@HolderExtractObject,#data=i);
+         if IsClass(each_obj,&amp;User)
+            AND Send(self,@CanReach,#what=each_obj)
+         {
+            lValidTargets = Cons(each_obj,lValidTargets);
+         }
+      }
+
+      return lValidTargets; 
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:321</p>
+<h4>DoSpinAttack(lFinalTargets = $)</h4>
+<pre><code>{
+      local i, lTargets, iDamage;
+
+      iDamage = Random(SPIN_DAMAGE_MIN,SPIN_DAMAGE_MAX);
+
+      lTargets = lFinalTargets;
+      
+      if lTargets = $
+      {
+         lTargets = Send(self,@GetFinalTargets);
+      }
+
+      for i in lTargets
+      {
+         iDamage = Send(i,@AssessDamage,#what=self,#damage=iDamage,
+                        #atype=viAttack_type,#aspell=viAttack_spell);
+         if iDamage = $
+         {
+            Send(self,@KilledSomething,#what=i,#use_weapon=self);
+         } 
+
+         Send(i,@MsgSendUser,#message_rsc=thrasher_spin_message);
+         Send(i,@WaveSendUser,#wave_rsc=thrasher_sound_attack);
+      }
+
+      return;
+   }      </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:341</p>
+<h4>StartSpin(delay = 200)</h4>
+<pre><code>{   
+      if poOwner = $
+      {
+         return;
+      }
+
+      piSpinDelay = delay;
+      piSpinAngle = ANGLE_EAST;
+      Send(self,@SpinTimer);      
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:372</p>
+<h4>SpinTimer()</h4>
+<pre><code>{
+      ptSpin = $;
+
+      piAnimation = ANIM_SPIN;
+
+      if piSpinAngle &gt; MAX_ANGLE
+      {
+         
+         piAnimation = ANIM_NONE;
+         Send(poOwner,@SomethingChanged,#what=self);
+
+         
+         Send(self,@DoSpinAttack);
+
+         return;
+      }
+
+      Send(poOwner,@SomethingTurned,#what=self,#new_angle=piSpinAngle);
+      Send(poOwner,@SomethingChanged,#what=self);
+      piSpinAngle = piSpinAngle + (MAX_ANGLE / 4);
+
+      ptSpin = CreateTimer(self,@SpinTimer,piSpinDelay);
+
+      return;   
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:386</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      if piColor_Translation &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,piColor_Translation);
+      }
+
+      
+      AddPacket(1,ANIMATE_CYCLE, 4,80, 2,1, 2,5);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:415</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if piColor_Translation &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION, 1,piColor_Translation);
+      }
+      
+      if piAnimation = ANIM_ATTACK
+      {
+         
+         AddPacket(1,ANIMATE_ONCE, 4,150, 2,6, 2,8, 2,9);
+
+         return;
+      }
+
+      if piAnimation = ANIM_SPIN
+      {
+         
+         AddPacket(1,ANIMATE_NONE, 2,7);
+
+         return;
+      }
+
+      
+      AddPacket(1,ANIMATE_NONE, 2,9); 
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:428</p>
+<h4>SendMoveOverlays()</h4>
+<pre><code>{
+      AddPacket(1,1);
+      
+      AddPacket(4,prShieldOverlay, 1,HS_HEAD, 1,ANIMATE_NONE, 2,1);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:457</p>
+<h4>SendOverlays()</h4>
+<pre><code>{
+      
+      AddPacket(1,1);
+
+      if piAnimation = ANIM_ATTACK
+      {
+         
+         
+         AddPacket(4,prShieldOverlay, 1,HS_HEAD, 1,ANIMATE_ONCE, 4,150,
+                   2,1, 2,1, 2,1);
+  
+         return;
+      }
+
+      
+      AddPacket(4,prShieldOverlay, 1,HS_HEAD, 1,ANIMATE_NONE, 2,1);
+
+      return;
+      
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:466</p>
+<h4>IsUndead()</h4>
+<pre><code>{
+      
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:488</p>
+<h4>Delete()</h4>
+<pre><code>{
+      if ptSecondAttack &lt;&gt; $
+      {
+         DeleteTimer(ptSecondAttack);
+         ptSecondAttack = $;
+      }
+
+      if ptSpin &lt;&gt; $
+      {
+         DeleteTimer(ptSpin);
+         ptSpin = $;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/thrasher.kod:494</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

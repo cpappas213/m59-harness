@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>block — Meridian 59 Compendium</title>
+<meta name="description" content="Weaponcraft Lv. 1: The ability to block blows in combat, and thus stay alive longer.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html" class="on">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Skills</a> › block</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/iblock_g1.png" alt="block" width="128" height="128"></div><div class="heroText"><h1>block</h1><p class="lede">Weaponcraft Lv. 1: The ability to block blows in combat, and thus stay alive longer.</p><div class="tags"><span class="tag ">skill</span><span class="tag ">fencing</span><span class="tag ">Level 1</span><span class="tag ">Automatic</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Discipline</div><div class="val sm">fencing</div></div><div class="fact"><div class="lbl">Level</div><div class="val">1</div></div><div class="fact"><div class="lbl">Vigour per use</div><div class="val">0</div></div><div class="fact"><div class="lbl">Improve chance</div><div class="val">60%</div></div><div class="fact"><div class="lbl">Skill number</div><div class="val">404</div></div></div><div class="flavor">Block is a basic skill, allowing people in combat to block blows with a shield. A successfully blocked blow will be more damaging to the attacking weapon and to the defending shield.</div><h2>What kind of skill this is</h2><p>A <strong>skill</strong> proper is something you invoke, or that fires automatically
+when its condition is met. It costs vigour, it can fail, and its ability is both the success
+chance and the size of the effect.</p><h2>Learning and improving it</h2><p>Taught by <a href="../creatures/rebelliege.html">Rebel Liege</a>, <a href="../creatures/jealousgeneral.html">Jonas D'Accor</a>.</p><p>Ability runs 0–99 and rises by <em>use against something hard enough to matter</em>,
+with a 60% roll on each qualifying use. It also atrophies: stop using a skill and
+the number falls. See <a href="../guides/advancing.html">Advancing Your Character</a>.</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/passive/skill/block.kod:11</p>
+<p><code class="k">Block</code> is <code class="k">Skill</code> — full chain <code class="k">Block</code> ← <code class="k">Skill</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>Block_name_rsc</code></td><td class=""><em>block</em></td><td class="num " data-sort="28">28</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>Block_icon_rsc</code></td><td class=""><em>iblock.bgf</em></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>Block_desc_rsc</code></td><td class=""><em>Block is a basic skill, allowing people in combat to block blows with a shield.  A success</em></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrSkill_intro</code></td><td class=""><code>Block_skill_intro</code></td><td class=""><em>Weaponcraft Lv. 1: The ability to block blows in combat, and thus stay alive longer.</em></td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viDefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">viSkill_num</code></td><td class=""><code>SKID_BLOCK</code></td><td class="">404</td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SKS_FENCING</code></td><td class="">10</td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viSkill_Level</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viChance_to_Increase</code></td><td class=""><code>60</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viSkillExertion</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vbCheck_exertion</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vbAutomatic</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="45">45</td></tr></tbody></table></div>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

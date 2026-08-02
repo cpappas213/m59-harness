@@ -1,0 +1,9 @@
+{
+  "name": "m59-harness",
+  "private": true,
+  "type": "module",
+  "description": "Play Meridian 59 as a real player character, from an agent. Only the chat responder needs a dependency — every other tool in tools/ is standalone .mjs and runs with `node tools/<name>.mjs` against a bare Node install.",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0"
+  }
+}

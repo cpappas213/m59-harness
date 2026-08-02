@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>shrunken head — Meridian 59 Compendium</title>
+<meta name="description" content="There is something both grotesque and fascinating in staring at the mummified, distorted face on this reduced skull. What magic this object may hold, you haven'">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › shrunken head</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/shruhead_g1.png" alt="shrunken head" width="86" height="83"></div><div class="heroText"><h1>shrunken head</h1><p class="lede">There is something both grotesque and fascinating in staring at the mummified, distorted face on this reduced skull. What magic this object may hold, you haven't a clue.</p><div class="tags"><span class="tag ">sundry</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">10</div></div><div class="fact"><div class="lbl">Value</div><div class="val">50 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/shruhead.kod:11</p>
+<p><code class="k">ShrunkenHead</code> is <code class="k">PassiveItem</code> — full chain <code class="k">ShrunkenHead</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>ShrunkenHead_name_rsc</code></td><td class=""><em>shrunken head</em></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>ShrunkenHead_desc_rsc</code></td><td class=""><em>There is something both grotesque and fascinating in staring at the mummified, distorted f</em></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>ShrunkenHead_icon_rsc</code></td><td class=""><em>shruhead.bgf</em></td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>50</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="65">65</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">psOverheard</code></td><td class=""><code>$</code></td><td class="num " data-sort="69">69</td></tr>
+<tr><td class=""><code class="k">poOverheard</code></td><td class=""><code>$</code></td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">piSilenced</code></td><td class=""><code>0</code></td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">ptBabble</code></td><td class=""><code>$</code></td><td class="num " data-sort="72">72</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Delete()</h4>
+<pre><code>{
+      if ptBabble &lt;&gt; $
+      {
+         deleteTimer(ptBabble);
+         ptBabble = $;
+      }
+      
+      psOverheard = $;
+      poOverheard = $;
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:76</p>
+<h4>DoSilence()</h4>
+<pre><code>{
+      if ptBabble &lt;&gt; $
+      {
+         deleteTimer(ptBabble);
+         ptBabble = $;
+      }
+      
+      piSilenced = getTime();
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:90</p>
+<h4>SomeoneOverheard(from = $, string = $)</h4>
+<pre><code>{
+      
+
+      if poOwner = $ { return; }
+
+      if stringContain(string,ShrunkenHead_name_rsc)
+         AND stringContain(string,ShrunkenHead_shut_up)
+      {
+         if not isClass(poOwner,&amp;Player) or
+            stringContain(string,send(poOwner,@GetName))
+         {
+            post(self,@DoBabbleString,#string=ShrunkenHead_offended);
+            post(self,@DoSilence);
+            return;
+         }
+      }
+
+      
+
+      if random(1,100) &lt; 10 OR psOverheard = $
+      {
+         psOverheard = createString();
+         setString(psOverheard,string);
+         poOverheard = from;
+      }
+
+      if psOverheard &lt;&gt; $ AND ptBabble = $
+      {
+         ptBabble = createTimer(self,@Babble,random(BABBLE_MINIMUM,BABBLE_MAXIMUM));
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:103</p>
+<h4>PickSomeoneNearby()</h4>
+<pre><code>{
+      local oRoom, i, lNearby, lPlayers;
+
+      oRoom = send(SYS,@UtilGetRoomRecurse,#what=self);
+
+      if oRoom = $
+      {
+         return $;
+      }
+
+      lPlayers = $;
+      lNearby = send(oRoom,@GetHolderActive);
+
+      for i in lNearby
+      {
+         if isClass(first(i),&amp;Player)
+            AND NOT send(first(i),@CheckPlayerFlag,#flag=PFLAG_ANONYMOUS)
+            AND NOT send(first(i),@CheckPlayerFlag,#flag=PFLAG_INVISIBLE)
+         {
+            lPlayers = cons(first(i), lPlayers);
+         }
+      }
+
+      if lPlayers &lt;&gt; $
+      {
+         i = length(lPlayers);
+         i = Nth(lPlayers,random(1,i));
+         
+         return i;
+      }
+
+      return $;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:138</p>
+<h4>DoNameList(things = $, conjunction = $, definite = FALSE)</h4>
+<pre><code>{
+      local i, n, m;
+
+      clearTempString();
+
+      if things = $
+         OR length(things) = 0
+      {
+         return $;
+      }
+
+      n = length(things);
+
+      m = 1;
+      for i in things
+      {
+         
+
+         if (m &gt; 1) and (m &lt; n)
+         {
+            appendTempString(&quot;, &quot;);
+         }
+         
+         if (m &gt; 1) and (m = n)
+         {
+            appendTempString(&quot; &quot;);
+            appendTempString(conjunction);
+            appendTempString(&quot; &quot;);
+         }
+
+         
+
+         if i = $ { return $; }
+
+         if isClass(i,&amp;NumberItem)
+         {
+            send(SYS,@AppendFuzzyCardinalToTempString,#number=send(i,@GetNumber));
+            appendTempString(&quot; &quot;);
+         }
+         else
+         {
+            if definite
+            {
+               appendTempString(send(i,@GetDef));
+            }
+            else
+            {
+               appendTempString(send(i,@GetIndef));
+            }
+         }
+         
+         appendTempString(send(i,@GetName));
+
+         
+
+         m = m + 1;
+      }
+
+      i = createString();
+      setString(i,getTempString());
+
+      return i;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:173</p>
+<h4>DoBabbleString(string = $)</h4>
+<pre><code>{
+      local oRoom, i, lHear, rsc;
+
+      oRoom = send(SYS,@UtilGetRoomRecurse,#what=self);
+      if oRoom = $ { return; }
+
+      if string = getTempString()
+      {
+         string = createString();
+         setString(string,getTempString());
+      }
+
+      rsc = send(SYS,@GetPercentQRsc);
+      lHear = send(oRoom,@GetHolderActive);
+      for i in lHear
+      {
+         if isClass(first(i),&amp;User)
+         {
+            
+            
+            
+            
+            
+
+            clearTempString();
+            AppendTempString(ShrunkenHead_third_part_one);
+            AppendTempString(send(poOwner,@GetIndef));
+            AppendTempString(send(poOwner,@GetName));
+            AppendTempString(ShrunkenHead_third_part_two);
+
+            if first(i) = poOwner
+            {
+               clearTempString();
+               AppendTempString(ShrunkenHead_first);
+            }
+
+            if oRoom = poOwner
+            {
+               clearTempString();
+               AppendTempString(ShrunkenHead_generic);
+            }
+
+            appendTempString(string);
+            appendTempString(&quot;~n~k\&quot;&quot;);
+
+            send(first(i),@MsgSendUser,#message_rsc=rsc,#parm1=getTempString(),#type1=0);
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:238</p>
+<h4>Babble()</h4>
+<pre><code>{
+      ptBabble = $;
+
+      if isClass(poOwner,&amp;Player)
+         AND (send(poOwner,@CheckPlayerFlag,#flag=PFLAG_ANONYMOUS)
+              OR send(poOwner,@CheckPlayerFlag,#flag=PFLAG_INVISIBLE))
+      {
+         return;
+      }
+
+      if getTime() &lt; (piSilenced + 900)
+      {
+         return;
+      }
+
+      
+      send(self,@BabbleRandom);
+
+      if random(1,100) &lt; 90
+      {
+         ptBabble = createTimer(self,@Babble,random(BABBLE_MINIMUM,BABBLE_MAXIMUM));
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:293</p>
+<h4>BabbleRandom()</h4>
+<pre><code>{
+      local choice;
+
+      choice = random(1,9);
+
+      if choice = 1
+         OR choice = 2
+      {
+         send(self,@BabbleOverheard);
+      }
+
+      if choice = 3
+      {
+         send(self,@BabbleLottery);
+      }
+
+      if choice = 4
+         OR choice = 5
+      {
+         send(self,@BabbleInventoryNearby);
+      }
+
+      if choice = 6
+      {
+         send(self,@BabblePeopleNearby);
+      }
+
+      if choice = 7
+      {
+         send(self,@BabbleFortune);
+      }
+
+      if choice = 8
+      {
+         send(self,@BabbleBizarre);
+      }
+
+      if choice = 9
+      {
+         send(self,@BabbleMurderer);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:320</p>
+<h4>BabbleOverheard()</h4>
+<pre><code>{
+      local s;
+
+      if psOverheard = $ { return; }
+
+      if poOverheard = $ or random(1,100) &lt; 50
+      {
+         send(self,@DoBabbleString,#string=psOverheard);
+      }
+      else
+      {
+         s = createString();
+         clearTempString();
+         appendTempString(send(poOverheard,@GetCapIndef));
+         appendTempString(send(poOverheard,@GetName));
+         appendTempString(ShrunkenHead_said);
+         appendTempString(psOverheard);
+         appendTempString(&quot;~n~k\'&quot;);
+         setString(s,getTempString());
+
+         send(self,@DoBabbleString,#string=s);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:366</p>
+<h4>BabbleMurderer()</h4>
+<pre><code>{
+      local s, oKiller, oLocation;
+
+      oKiller = send(SYS,@GetLastMurderer);
+      if oKiller = $ { return; }
+
+      oLocation = send(oKiller,@GetOwner);
+      if oLocation = $
+      {
+         s = send(oKiller,@GetSaveRoom);
+         oLocation = send(SYS,@FindRoomByNum,#num=s);
+      }
+      
+      if oLocation = $
+      {
+         return;
+      }
+
+      s = createString();
+      clearTempString();
+      appendTempString(send(oKiller,@GetCapIndef));
+      appendTempString(send(oKiller,@GetName));
+      appendTempString(ShrunkenHead_near);
+      appendTempString(send(oLocation,@GetName));
+      appendTempString(ShrunkenHead_laugh);
+      setString(s,getTempString());
+
+      send(self,@DoBabbleString,#string=s);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:393</p>
+<h4>BabbleLottery()</h4>
+<pre><code>{
+      local s;
+
+      s = createString();
+
+      clearTempString();
+      appendTempString(ShrunkenHead_magic_number);
+      send(SYS,@AppendCardinalToTempString,#number=random(1,12));
+      appendTempString(&quot;, &quot;);
+      send(SYS,@AppendCardinalToTempString,#number=random(1,12));
+      appendTempString(ShrunkenHead_number_and);
+      send(SYS,@AppendCardinalToTempString,#number=random(1,12));
+      appendTempString(&quot;.&quot;);
+      setString(s,getTempString());
+
+      send(self,@DoBabbleString,#string=s);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:426</p>
+<h4>BabbleBizarre()</h4>
+<pre><code>{
+      local choice, oObject, iCount;
+
+      choice = random(1,8);
+
+      if choice = 1
+      {
+         send(self,@DoBabbleString,#string=ShrunkenHead_random_1);
+      }
+      
+      if choice = 2
+      {
+         send(self,@DoBabbleString,#string=ShrunkenHead_random_2);
+      }
+      
+      if choice = 3
+      {
+         send(self,@DoBabbleString,#string=ShrunkenHead_random_3);
+      }
+      
+      if choice = 4
+      {
+         send(self,@DoBabbleString,#string=ShrunkenHead_random_4);
+      }
+      
+      if choice = 5
+      {
+         send(self,@DoBabbleString,#string=ShrunkenHead_random_5);
+      }
+      
+      if choice = 6
+      {
+         send(self,@DoBabbleString,#string=ShrunkenHead_random_6);
+      }
+
+      if choice = 7
+      {
+         
+         oObject = send(poOwner,@FindHolding,#class=&amp;SpidEye);
+         
+         if oObject = $
+         {
+            send(self,@DoBabbleString,#string=ShrunkenHead_random_Spider_eyes_ask);
+         }
+         else
+         {
+            
+            send(oObject,@SubtractNumber,#number=1);
+            send(self,@DoBabbleString,#string=ShrunkenHead_random_Spider_eyes_eat);
+         }
+      }
+      
+      if choice = 8
+      {
+         
+         iCount = send(poOwner,@CountHoldingHowMany,#class=&amp;ShrunkenHead);
+         
+         if iCount &lt;= 1
+         {
+            
+            send(self,@DoBabbleString,#string=ShrunkenHead_random_lonely);
+         }
+         else
+         {
+            
+            send(self,@DoBabbleString,#string=ShrunkenHead_random_not_lonely_1);
+            while iCount &gt; 1
+            {
+               iCount = iCount - 1;
+               send(self,@DoBabbleString,#string=ShrunkenHead_random_not_lonely_2);
+            }
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:447</p>
+<h4>BabbleFortune()</h4>
+<pre><code>{
+      local fortune;
+
+      fortune = send(send(SYS,@GetLibrary),@PickFortune);
+      send(self,@DoBabbleString,#string=fortune);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:525</p>
+<h4>BabblePeopleNearby()</h4>
+<pre><code>{
+      local lNearby, i, j, s;
+
+      
+
+      lNearby = $;
+      j = 0;
+      
+      while j &lt; 5
+      {
+         i = send(self,@PickSomeoneNearby);
+         
+         if FindListElem(lNearby, i) = 0
+         {
+            lNearby = cons(i, lNearby);
+         }
+         
+         j = j + 1;
+      }
+
+      if lNearby = $
+      {
+         return;
+      }
+
+      
+
+      s = send(self,@DoNameList,#things=lNearby,#conjunction=ShrunkenHead_and);
+
+      if s = $
+      {
+         return;
+      }
+
+      clearTempString();
+      appendTempString(ShrunkenHead_see_players);
+      appendTempString(s);
+      appendTempString(ShrunkenHead_laugh);
+      setString(s,getTempString());
+
+      send(self,@DoBabbleString,#string=s);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:535</p>
+<h4>BabbleInventoryNearby()</h4>
+<pre><code>{
+      local oPerson, lInventory, lPicks, oItem, iCount, sString, iNumberItems;
+
+      
+
+      oPerson = send(self,@PickSomeoneNearby);
+      if oPerson = $
+      {
+         return;
+      }
+
+      lPicks = $;
+      lInventory = send(oPerson,@GetHolderPassive);
+      iCount = 0;
+      iNumberItems = length(lInventory);
+
+      if iNumberItems &gt; 0
+      {
+         while iCount &lt; 5 
+         {
+            oItem = Nth(lInventory,random(1,iNumberItems));
+
+            if lPicks = $
+               OR FindListElem(lPicks, oItem) = 0
+            {
+               lPicks = cons(oItem, lPicks);
+            }
+
+            iCount = iCount + 1;
+         }
+      }
+
+      
+
+      sString = send(self,@DoNameList,#things=lPicks,#conjunction=ShrunkenHead_and);
+      if sString = $
+      {
+         return;
+      }
+
+      clearTempString();
+      appendTempString(send(oPerson,@GetIndef));
+      appendTempString(send(oPerson,@GetName));
+      appendTempString(ShrunkenHead_inventory_has);
+      appendTempString(sString);
+      appendTempString(ShrunkenHead_laugh);
+      setString(sString,getTempString());
+
+      send(self,@DoBabbleString,#string=sString);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/shruhead.kod:581</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

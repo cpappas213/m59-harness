@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Six Schools of Magic — Meridian 59 Compendium</title>
+<meta name="description" content="Six gods, six schools, 150 castable spells. Two of the schools sit at opposite ends of a karma axis and lock each other out; the other four are open to anybody. But the decision that actually shapes a caster is quieter than polarity: each school draws its power from a different feature of the world, and each requires a different attribute — chosen at character creation and never changeable.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html" class="on">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Guides</a> › The Six Schools of Magic</p>
+<h1>The Six Schools of Magic</h1>
+
+<p class="lede">Six gods, six schools, 150 castable spells. Two of the schools sit at opposite
+ends of a karma axis and lock each other out; the other four are open to anybody. But the
+decision that actually shapes a caster is quieter than polarity: each school draws its power
+from a different feature of the world, and each requires a different attribute — chosen at
+character creation and never changeable.</p>
+
+<h2>The schools at a glance</h2>
+
+<table class="data">
+<thead><tr><th>School</th><th>Spells</th><th>Polarity</th><th>Karma gate</th><th>Requisite attribute</th><th>Division</th></tr></thead>
+<tbody>
+<tr><td><a href="shalille.html"><strong>Shal'ille</strong></a></td><td>29</td><td>good</td><td>karma ≥ level × +10</td><td>Mysticism</td><td>Magic</td></tr>
+<tr><td><a href="qor.html"><strong>Qor</strong></a></td><td>26</td><td>evil</td><td>karma ≤ level × −10</td><td>Mysticism</td><td>Magic</td></tr>
+<tr><td><a href="kraanan.html"><strong>Kraanan</strong></a></td><td>27</td><td>neutral</td><td>none</td><td>Stamina</td><td>Combat</td></tr>
+<tr><td><a href="faren.html"><strong>Faren</strong></a></td><td>28</td><td>neutral</td><td>none</td><td>Mysticism</td><td>Magic</td></tr>
+<tr><td><a href="riija.html"><strong>Riija</strong></a></td><td>23</td><td>neutral</td><td>none</td><td>Intellect</td><td>Lore</td></tr>
+<tr><td><a href="jala.html"><strong>Jala</strong></a></td><td>17</td><td>neutral</td><td>none</td><td>Intellect</td><td>Lore</td></tr>
+</tbody>
+</table>
+<p class="cite">Counted from every <code class="k">Spell</code> subclass with a spell number in kod. Gate: kod/object/passive/spell.kod:482. Requisite: :392 <code class="k">GetDivisionReq</code>. Division: :376</p>
+
+<p>Every school runs levels 1 through 6. A further 24 spell classes belong to the administrative
+pseudo-school and are not castable by players; one more sits outside the schools entirely.</p>
+
+<h2>The polarity axis</h2>
+
+<p>Shal'ille and Qor are the same mechanism with opposite signs, and the sign is checked
+<em>every time you cast</em>:</p>
+
+<div class="formula">Shal'ille level 6  needs karma ≥ +60
+Qor       level 6  needs karma ≤ −60
+karma runs −100 … +100</div>
+
+<p>There is no karma at which both are available at any level. A caster who wants either school's
+deep spells commits their character's alignment to it, and alignment is moved mainly by what they
+kill — at most 1.5 points per monster. Choosing a polar school is choosing what you will spend
+the next several hundred kills fighting. See <a href="karma.html">Karma</a>.</p>
+
+<div class="note">The four neutral schools cost nothing in alignment and can be mixed freely with
+each other and with either polar school, up to the level your karma allows.</div>
+
+<h2>What each school draws power from</h2>
+
+<p>This is the real difference between them, and the game never states it anywhere a player can
+read. Spell power — which sets your success chance, your mana cost, your casting speed and the
+strength of the effect — is half your ability in the spell plus up to 40 points of bonus, and
+the bonus comes from somewhere different in each school.</p>
+
+<table class="data">
+<thead><tr><th>School</th><th>Primary bonus, 0–30 — from the world</th><th>Secondary bonus, 0–10 — from you</th><th>What that means in play</th></tr></thead>
+<tbody>
+<tr><td><strong>Shal'ille</strong></td><td>The room's natural setting; more inside a Forces of Light enchantment</td><td>abs(karma) / 10</td><td>Strong outdoors and strong when devout. Karma pays twice: it gates the spells and it powers them.</td></tr>
+<tr><td><strong>Qor</strong></td><td><code class="k">2 + abs(hour − 12) × 2</code>; more inside Darkness</td><td>abs(karma) / 10</td><td>A night school, literally. Twice as strong at midnight as at noon, on a real clock.</td></tr>
+<tr><td><strong>Kraanan</strong></td><td>The number of active beings in the room</td><td>health / max_health × 10</td><td>A battlefield school. Weak alone, weak wounded, formidable healthy in a crowd.</td></tr>
+<tr><td><strong>Faren</strong></td><td>The room's water and fire</td><td>vigour / 20</td><td>Terrain-dependent and rewards the rested. Faren is the elementalist's school.</td></tr>
+<tr><td><strong>Riija</strong></td><td>The moon's height in the sky / 12</td><td><code class="k">bulk_held × 10 / bulk_max</code></td><td>The only school that rewards carrying <em>more</em>. Power varies with the moon, on a cycle you do not control.</td></tr>
+<tr><td><strong>Jala</strong></td><td>The level of the instrument you hold — this one reaches 40</td><td>max_health / 12</td><td>Requires an instrument in hand, so it cannot be combined with a weapon. The largest possible bonus, at the largest possible cost.</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:2107–2196 <code class="k">GetSpellPower</code></p>
+
+<p>Kraanan gets one further concession, stated in the source as being because it is a combat
+school: <strong>negative spell modifiers from worn items are halved for it.</strong> Every other
+school pays the full armour penalty. That, plus stamina as its requisite attribute, makes Kraanan
+the only school a heavily armoured fighter can carry without compromise.</p>
+
+<h2>Choosing one</h2>
+
+<table class="data">
+<thead><tr><th>If you want to…</th><th>Take</th><th>Because</th></tr></thead>
+<tbody>
+<tr><td>Fight in armour and still cast</td><td><strong>Kraanan</strong></td><td>Stamina is both its requisite attribute and your health ceiling, and it halves armour's spell penalty</td></tr>
+<tr><td>Support other players</td><td><strong>Shal'ille</strong></td><td>The healing school, and its karma requirement is the one a conventional adventurer earns anyway by killing evil things</td></tr>
+<tr><td>Fight other players</td><td><strong>Qor</strong></td><td>Deepest offensive magic, at the cost of living at −60 karma and being treated accordingly by lawful merchants</td></tr>
+<tr><td>Control the battlefield</td><td><strong>Faren</strong></td><td>Elemental effects, and vigour is cheap to keep topped up</td></tr>
+<tr><td>Deceive, escape and scout</td><td><strong>Riija</strong></td><td>Illusion and the mind; intellect also speeds all your learning and damps atrophy</td></tr>
+<tr><td>Play a bard</td><td><strong>Jala</strong></td><td>The biggest single power bonus in the game — if you accept holding an instrument instead of a weapon</td></tr>
+</tbody>
+</table>
+
+<div class="warn">Mysticism — required by three of the six schools — buys nothing else in the game.
+Stamina and intellect both do double duty. If you are undecided between two schools of similar
+appeal, the one whose requisite attribute you were going to buy anyway is worth more than it
+looks. See <a href="attributes.html">Attributes</a>.</div>
+
+<h2>Learning</h2>
+
+<p>Spells are bought from teachers, and the schools are taught in different places by different
+people — see <a href="../npcs/index.html">who teaches what</a>, sorted by level so the affordable
+rows come first. Your starting ability in a new spell is
+<code class="k">bound(random(requisite/2, requisite) / 2, 1, 25)</code>, so the requisite
+attribute pays out from the very first cast.</p>
+<p class="cite">kod/object/passive/spell.kod:446 <code class="k">InitialAbility</code></p>
+
+<h2>Related</h2>
+<p><a href="../spells/index.html">Every spell</a>, filterable by school and level ·
+<a href="spells.html">How casting works</a> · <a href="karma.html">Karma</a> ·
+<a href="../reagents/index.html">Reagents</a> · <a href="channeling.html">Channeling and Mana</a> ·
+<a href="shalille.html">Shal'ille</a> · <a href="qor.html">Qor</a> ·
+<a href="kraanan.html">Kraanan</a> · <a href="faren.html">Faren</a> ·
+<a href="riija.html">Riija</a> · <a href="jala.html">Jala</a></p>
+
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spell Item — Meridian 59 Compendium</title>
+<meta name="description" content="This is the generic spellitem and I can think of no good reason for you to have it. You have been reported to the authorities. prepare to die!!!!!">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Spell Item</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/scr07_g1.png" alt="Spell Item" width="118" height="40"></div><div class="heroText"><h1>Spell Item</h1><p class="lede">This is the generic spellitem and I can think of no good reason for you to have it. You have been reported to the authorities. prepare to die!!!!!</p><div class="tags"><span class="tag ">spell item</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">3</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">5</div></div><div class="fact"><div class="lbl">Value</div><div class="val">120 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div></div><h2>Where to buy it</h2><p><a href="../creatures/kocatanshopkeeper.html">Pacal ix'Anoak</a>, <a href="../creatures/izzio.html">Izzio</a>, Monster</p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/scr07_g1.png" alt="Spell Item inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/scr07_g2.png" alt="Spell Item on the ground" loading="lazy"><figcaption>on the ground</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/spelitem.kod:11</p>
+<p><code class="k">SpellItem</code> is <code class="k">PassiveItem</code> — full chain <code class="k">SpellItem</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">Potion</code>, <code class="k">Scroll</code>, <code class="k">Wand</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrLabelName</code></td><td class=""><code>Spellitem_label_name_rsc</code></td><td class=""><em>generic spellitem</em></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>Spellitem_icon_rsc</code></td><td class=""><em>scr07.bgf</em></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viSpellEffect</code></td><td class=""><code>SID_LIGHT</code></td><td class="">30</td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viColor</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">vrBadDesc</code></td><td class=""><code>Spellitem_bad_item_rsc</code></td><td class=""><em>generic bad item message</em></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">vrBroken</code></td><td class=""><code>Spellitem_Broken</code></td><td class=""><em>This is the generic broken message.</em></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">vrBrokenDesc</code></td><td class=""><code>Spellitem_broken_desc</code></td><td class=""><em>Generic broken description</em></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">vrFails</code></td><td class=""><code>Spellitem_fails</code></td><td class=""><em>Generic failure message.</em></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">vrKarmaDesc</code></td><td class=""><code>Spellitem_has_karma_requirement</code></td><td class=""><em>To use this, you must have sufficient karma to cast the spell inside.</em></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viUse_type</code></td><td class=""><code>ITEM_SINGLE_USE</code></td><td class="">2</td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viObject_flags</code></td><td class=""><code>APPLY_YES | GETTABLE_YES</code></td><td class="">4112</td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>Spellitem_desc_rsc</code></td><td class=""><em>This is the generic spellitem and I can think of no good reason for you to have it.  You h</em></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>120</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">vbFailSafe</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="64">64</td></tr>
+<tr><td class=""><code class="k">vbNoBrokenView</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="69">69</td></tr>
+<tr><td class=""><code class="k">viInventory_group</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="72">72</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="73">73</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>Spellitem_name_rsc</code></td><td class="num " data-sort="77">77</td></tr>
+<tr><td class=""><code class="k">piSpellPower</code></td><td class=""><code>$</code></td><td class="num " data-sort="80">80</td></tr>
+<tr><td class=""><code class="k">pbBad</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="81">81</td></tr>
+<tr><td class=""><code class="k">ptGoBadTimer</code></td><td class=""><code>$</code></td><td class="num " data-sort="82">82</td></tr>
+<tr><td class=""><code class="k">piGoBadTime</code></td><td class=""><code>GO_BAD_TIME</code></td><td class="num " data-sort="83">83</td></tr>
+<tr><td class=""><code class="k">piMinSpellPower</code></td><td class=""><code>30</code></td><td class="num " data-sort="84">84</td></tr>
+<tr><td class=""><code class="k">piMaxSpellPower</code></td><td class=""><code>60</code></td><td class="num " data-sort="85">85</td></tr>
+<tr><td class=""><code class="k">pbMade</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="86">86</td></tr>
+<tr><td class=""><code class="k">poMaker</code></td><td class=""><code>$</code></td><td class="num " data-sort="87">87</td></tr>
+<tr><td class=""><code class="k">piSkill</code></td><td class=""><code>$</code></td><td class="num " data-sort="88">88</td></tr>
+<tr><td class=""><code class="k">piLabelColor</code></td><td class=""><code>0</code></td><td class="num " data-sort="89">89</td></tr>
+<tr><td class=""><code class="k">pbDisabled</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="90">90</td></tr>
+<tr><td class=""><code class="k">pbCheckKarma</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="93">93</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(labelled = FALSE, model = $, iSpellpower = $, gobadtime = $, maker = $, Ability = $)</h4>
+<pre><code>{
+      if model &lt;&gt; $
+      {
+         if GetClass(model) &lt;&gt; GetClass(self)
+         {
+            model = $;
+         }
+         else
+         {
+            if Send(model,@IsLabelled)
+            {
+               vrName = vrLabelName;
+            }
+         }
+      }
+
+      if labelled
+      {
+         vrName = vrLabelName;
+         
+         
+      }
+      else
+      {
+         
+         if gobadtime &lt;&gt; $
+         {
+            piGoBadTime = gobadtime;
+         }
+
+         Send(self,@StartGoBadTimer);
+      }
+      
+      if maker &lt;&gt; $
+      {
+         pbMade = TRUE;
+         poMaker = maker;
+
+         piSkill = bound(((Ability / 25) + 1),1,4);
+         if piSkill = 1 { pilabelcolor = XLAT_TO_GREEN; }
+         if piSkill = 2 { pilabelcolor = XLAT_TO_YELLOW; }
+         if piSkill = 3 { pilabelcolor = XLAT_TO_PURPLE; }
+         if piSkill = 4 { pilabelcolor = XLAT_TO_RED; }
+      }
+
+      if viColor &lt;&gt; $
+      {
+         piItem_flags = Send(SYS,@EncodeTwoColorXLAT,#color1=viColor,#color2=pilabelcolor);
+      }
+
+      if iSpellpower &lt;&gt; $
+      {
+         piSpellPower = iSpellPower;
+      }
+
+      piHits = random(viHits_init_min,viHits_init_max);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:97</p>
+<h4>IsLabelled()</h4>
+<pre><code>{
+      if vrName = vrLabelName
+      {
+         return TRUE;
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:158</p>
+<h4>GetRequiredKarma()</h4>
+<p>Returns the karma value required to use the item, or 0 if there's no karma requirement.</p>
+<pre><code>{
+      local iKarma;
+
+      if (pbCheckKarma)
+      {
+         iKarma = Send(Send(SYS, @FindSpellByNum, #num=viSpellEffect), @GetRequiredKarma);
+      }
+      else
+      {
+         iKarma = 0;
+      }
+
+      return iKarma;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:168</p>
+<h4>AppendDesc()</h4>
+<pre><code>{
+      
+      
+      if (pbCheckKarma AND Send(self, @GetRequiredKarma) &lt;&gt; 0)
+      {
+         if NOT (vbShow_condition AND piHits_init &gt; 0)
+         {
+            
+            AppendTempString(&quot;\n\n&quot;);
+         }
+         AppendTempString(vrKarmaDesc);
+         if (vbShow_condition AND piHits_init &gt; 0)
+         {
+            
+            AppendTempString(&quot;\n\n&quot;);
+         }
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:185</p>
+<h4>ReqNewApply(what = $, apply_on = $)</h4>
+<pre><code>{
+      
+      if (IsClass(what,&amp;Player))
+         AND (Send(what,@CheckPlayerFlag,#flag=PFLAG_NO_FIGHT))
+         OR pbDisabled
+      {
+         return FALSE;
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:207</p>
+<h4>CastSpell(what = $, apply_on = $)</h4>
+<p>Casts the spell set by the spell object, returning TRUE\nif successful, or FALSE if the spell failed for whatever reason.</p>
+<pre><code>{
+      local oSpell,iSpellPower,lTargets;
+
+      oSpell = Send(SYS,@FindSpellByNum,#num=viSpellEffect);
+
+      
+
+      lTargets = Send(self,@GetTargetsBySpell,#oSpell=oSpell,#who=what,#lTargets=[apply_on]);
+      
+      if Send(oSpell,@IsHarmful)
+         AND IsClass(apply_on,&amp;Monster)
+         AND NOT Send(apply_on,@CanMonsterFight,#who=poOwner,#oStroke=self)
+      {
+         return FALSE;
+      }
+
+      
+      if pbCheckKarma AND NOT Send(oSpell, @KarmaCheck, #who = poOwner)
+      {
+         Post(what, @MsgSendUser, #message_rsc = SpellItem_bad_karma,
+              #parm1 = Send(self, @GetDef),
+              #parm2 = Send(self, @GetName));
+         return FALSE;
+      }
+
+      if piSpellPower = $
+      {   
+         iSpellPower = random(piMinSpellPower,piMaxSpellPower);
+      }
+      else
+      {
+         iSpellpower = piSpellpower;
+      }
+
+      if (vbFailSafe)
+         OR ( (Send(oSpell,@CanPayCosts,#who=poOwner,#lTargets=lTargets,
+                    #iSpellPower=iSpellPower,#bItemCast=TRUE,
+                    #bCheckKarma=pbCheckKarma))
+              AND (Send(Send(what,@GetOwner),@ReqSpellCast,#who=what,#oSpell=oSpell))
+              AND ((NOT Send(oSpell,@IsHarmful))
+                   OR Send(Send(what,@GetOwner),@ReqSomethingAttack,#what=what,
+                            #victim=apply_on)) )
+      {         
+         Send(oSpell,@CastSpell,#who=poOwner,#lTargets=lTargets,
+              #iSpellPower=iSpellPower,#bItemCast=TRUE);
+      } 
+      else 
+      {
+         Send(self,@DoFailure,#what=what,#lTargets=lTargets);
+
+         return FALSE;
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:220</p>
+<h4>DoFailure(what = $, lTargets = $)</h4>
+<pre><code>{      
+      
+      Send(what,@MsgSendUser,#message_rsc=vrFails);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:279</p>
+<h4>CanIdentify()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:287</p>
+<h4>RevealHiddenAttributes()</h4>
+<pre><code>{
+      if vrName &lt;&gt; vrLabelName
+      {
+         vrName = vrLabelName;
+         
+         
+         if poOwner &lt;&gt; $
+         {
+            Send(poOwner,@SomethingChanged,#what=self);
+         }
+
+         return TRUE;
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:292</p>
+<h4>GetTrueName()</h4>
+<pre><code>{
+      return vrLabelName;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:310</p>
+<h4>NewApplied(what = $, apply_on = $)</h4>
+<p>Casts the spell specified by the item (see subclass) on whatever itis being applied to, then reduces 1 charge--break the item if last charge</p>
+<pre><code>{
+      
+      
+      if Send(self, @CastSpell, #what=what, #apply_on=apply_on)
+      {
+         Send(self, @OnSuccessfulApply, #what=what, #apply_on=apply_on);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:315</p>
+<h4>OnSuccessfulApply(what = $, apply_on = $)</h4>
+<p>If the item is successfully applied to the user, this is everythingwe want to happen besides the spell effect itself.</p>
+<pre><code>{
+      piHits = piHits - 1;
+
+      
+      if piHits &lt;= 0
+      {
+         
+         Post(poOwner,@MsgSendUser,#message_rsc=vrBroken,
+              #parm1=Send(self,@GetCapDef),#parm2=Send(self,@GetName));
+
+         
+         
+         
+
+         if vbNoBrokenView
+         {
+            Post(self,@Delete);
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:329</p>
+<h4>IsRangedAttack()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:355</p>
+<h4>DoBaseDesc()</h4>
+<pre><code>{
+      ClearTempString();
+
+      if pbBad
+      {
+         AppendTempString(vrBadDesc);
+      }
+      else
+      {
+         AppendTempString(vrDesc);
+      }
+
+      if pbMade 
+      { 
+         if IsClass(poMaker,&amp;Admin)
+         {
+            AppendTempString(SpellItem_Divine_rsc);
+            return;
+         }
+
+         AppendTempString(SpellItem_made_rsc);
+         AppendTempString(Send(poMaker,@GetTrueName));
+         AppendTempString(&quot; &quot;);
+         AppendTempString(Send(poMaker,@GetCapDef));
+         AppendTempString(Send(self,@GetTitle));
+         AppendTempString(SpellItem_distiller_rsc);
+      }  
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:360</p>
+<h4>GetTitle()</h4>
+<pre><code>{
+      local stitle;
+
+      if piSkill = 1 { stitle = SpellItem_novice_rsc; }
+      if piSkill = 2 { sTitle = SpellItem_apprentice_rsc; }
+      if piSkill = 3 { sTitle = SpellItem_journeyman_rsc; }
+      if piSkill = 4 { sTitle = SpellItem_master_rsc; }
+
+      return stitle;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:392</p>
+<h4>GoBad()</h4>
+<pre><code>{
+      ptGoBadTimer = $;
+      pbBad = TRUE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:404</p>
+<h4>GetGoBadTime()</h4>
+<pre><code>{
+      return piGoBadTime;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:412</p>
+<h4>SetBad(IsBad = FALSE)</h4>
+<pre><code>{
+      
+      pbBad = IsBad;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:417</p>
+<h4>StartGoBadTimer()</h4>
+<pre><code>{
+      
+      if NOT pbBad
+         AND piGoBadTime &gt; 0
+      {
+         ptGoBadTimer = CreateTimer(self,@GoBad,piGoBadTime);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:425</p>
+<h4>StopGoBadTimer()</h4>
+<pre><code>{
+      
+      if ptGoBadTimer &lt;&gt; $
+      {
+         
+         
+         piGoBadTime = bound(GetTimeRemaining(ptGoBadTimer),GO_BAD_TIME/6,$);
+
+         DeleteTimer(ptGoBadTimer);
+         ptGoBadTimer = $;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:437</p>
+<h4>SpellItemIsAccessible()</h4>
+<pre><code>{
+      local oSpell;
+   
+      oSpell = Send(SYS,@FindSpellByNum,#num=viSpellEffect);
+
+      return Send(oSpell,@IsAccessible);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:453</p>
+<h4>Delete()</h4>
+<pre><code>{
+      if ptGoBadTimer &lt;&gt; $
+      {
+         DeleteTimer(ptGoBadTimer);
+         ptGoBadTimer = $;
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:462</p>
+<h4>IsIdentified()</h4>
+<pre><code>{
+      return Send(self, @IsLabelled);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:473</p>
+<h4>GetTargetsBySpell(oSpell = $, who = $, lTargets = $)</h4>
+<p>Returns the list of targets for a given spell</p>
+<pre><code>{
+      return Send(oSpell,@GetTargets,#who=who,#lTargets=lTargets);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem.kod:481</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

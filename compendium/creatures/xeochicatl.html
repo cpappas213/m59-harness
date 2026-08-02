@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xeochicatl — Meridian 59 Compendium</title>
+<meta name="description" content="Before you is a Xeochicatl, a fearsome monster given life by the chaotic magic of the Meridian. The Xeochicatl is the embodiment of destruction, a violent monst">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Xeochicatl</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/xeo_g1.png" alt="Xeochicatl" width="177" height="179"></div><div class="heroText"><h1>Xeochicatl</h1><p class="lede">Before you is a Xeochicatl, a fearsome monster given life by the chaotic magic of the Meridian. The Xeochicatl is the embodiment of destruction, a violent monster that seems uncontrollable. These monsters feed off of the magic of the lands which makes them very powerful. Rumors abound about the origin of these monsters, but you have little time to contemplate these rumors in the presence of such destructive power!</p><div class="tags"><span class="tag ">Level 150</span><span class="tag ">Difficulty 8</span><span class="tag ">Neutral</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">150</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">8</div></div><div class="fact"><div class="lbl">Health</div><div class="val">135–225</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">8–19</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>Xeo'chicatl</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 150 + 60 × 8
+                = 930
+
+health          = Fuzzy(level × 120/100) = 135–225
+damage per hit  = Fuzzy(level / random(10,15))  = 8–19
+dodge           = difficulty × 10 = 80</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">87%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">35%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">10</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">11.7</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>magic</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>No room in the world declares this creature. It is summoned by another creature, placed by an
+administrator, or left over from content that is no longer reachable.</p><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_MOVE_REGROUP</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_MOVE_WALKTHROUGH_WALLS</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_SWITCHALOT</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/xeo_g1.png" alt="Xeochicatl group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/xeo_g2.png" alt="Xeochicatl group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/xeo_g3.png" alt="Xeochicatl group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/xeo_g4.png" alt="Xeochicatl group 4" loading="lazy"><figcaption>group 4 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/xeo_g5.png" alt="Xeochicatl group 5" loading="lazy"><figcaption>group 5 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/xeo_g6.png" alt="Xeochicatl group 6" loading="lazy"><figcaption>group 6 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/xeo_g7.png" alt="Xeochicatl group 7" loading="lazy"><figcaption>group 7 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/xeo_g8.png" alt="Xeochicatl group 8" loading="lazy"><figcaption>group 8 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/xeo_g9.png" alt="Xeochicatl group 9" loading="lazy"><figcaption>group 9 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/xeo_g10.png" alt="Xeochicatl group 10" loading="lazy"><figcaption>group 10 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/xeox_g1.png" alt="Xeochicatl corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:11</p>
+<p><code class="k">Xeochicatl</code> is <code class="k">Monster</code> — full chain <code class="k">Xeochicatl</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>. Subclasses: <code class="k">XeoAir</code>, <code class="k">XeoEarth</code>, <code class="k">XeoFire</code>, <code class="k">XeoWater</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>Xeochicatl_name_rsc</code></td><td class=""><em>Xeochicatl</em></td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>Xeochicatl_desc_rsc</code></td><td class=""><em>Before you is a Xeochicatl, a fearsome monster given life by the chaotic magic of the Meri</em></td><td class="num " data-sort="64">64</td></tr>
+<tr><td class=""><code class="k">vrKocName</code></td><td class=""><code>Xeochicatl_koc_name_rsc</code></td><td class=""><em>Xeo'chicatl</em></td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>Xeochicatl_icon_rsc</code></td><td class=""><em>Xeo.bgf</em></td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>Xeochicatl_dead_icon_rsc</code></td><td class=""><em>XeoX.bgf</em></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>Xeochicatl_dead_name_rsc</code></td><td class=""><em>slain xeochicatl</em></td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_NONE</code></td><td class="">1</td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_AGGRESSIVE | AI_FIGHT_SWITCHALOT  | AI_MOVE_REGROUP | AI_MOVE_WALKTHROUGH_WALLS</code></td><td class="">8405184</td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_MAGIC</code></td><td class="">4</td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>150</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>8</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_AVERAGE</code></td><td class="">12</td><td class="num " data-sort="76">76</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="77">77</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>Xeochicatl_sound_attack</code></td><td class=""><em>xeoatk.wav</em></td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>Xeochicatl_sound_attack</code></td><td class=""><em>xeoatk.wav</em></td><td class="num " data-sort="80">80</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>Xeochicatl_sound_aware</code></td><td class=""><em>xeo1awr.wav</em></td><td class="num " data-sort="81">81</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>Xeochicatl_sound_death</code></td><td class=""><em>xeodie.wav</em></td><td class="num " data-sort="82">82</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="86">86</td></tr>
+<tr><td class=""><code class="k">piMana</code></td><td class=""><code>20</code></td><td class="num " data-sort="87">87</td></tr>
+<tr><td class=""><code class="k">pbNodeAttack</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="90">90</td></tr>
+<tr><td class=""><code class="k">piColor_Translation</code></td><td class=""><code>0</code></td><td class="num " data-sort="92">92</td></tr>
+<tr><td class=""><code class="k">piDrainAmount</code></td><td class=""><code>5</code></td><td class="num " data-sort="95">95</td></tr>
+<tr><td class=""><code class="k">pcTreasureItem</code></td><td class=""><code>&amp;CheapOreChunk</code></td><td class="num " data-sort="97">97</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(InAttack = FALSE)</h4>
+<pre><code>{
+      pbNodeAttack = InAttack;
+      
+      pbDontDispose = InAttack;
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:101</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      local iAmount;
+   
+      piAnimation = ANIM_ATTACK;      
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+
+      if IsClass(what,&amp;Player)
+      {
+         if Random(1,100) &lt; DRAIN_CHANCE
+         {
+            
+            if NOT (piEnch_flags &amp; ENCH_MANA_BOMB)
+            {
+               iAmount = Send(what,@GetMaxMana);
+               iAmount = ((iAmount * piDrainAmount)/100) + 1;
+               iAmount = bound(iAmount,0,Send(what,@GetMana));
+
+               Send(what,@LoseMana,#amount=iAmount);
+               piMana = piMana + iAmount;
+               Send(what,@MsgSendUser,#message_rsc=Xeochicatl_drain_rsc,#parm1=vrName);
+            }
+         }
+         else
+         {
+            Send(self,@MonsterCastSpell);
+         }
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:110</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      if (piColor_Translation &lt;&gt; 0)
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,piColor_Translation);
+      }
+      
+      AddPacket(1,ANIMATE_NONE,2,FRAME_FLY);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:143</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if (piColor_Translation &lt;&gt; 0)
+      {
+         AddPacket(1,ANIMATE_TRANSLATION, 1,piColor_Translation);
+      }
+      
+      if piAnimation = ANIM_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE, 4,150, 2,FRAME_ATTACK_START,
+                   2,FRAME_ATTACK_END, 2,FRAME_FLY);
+                   
+         return;
+      }
+      
+      if piAnimation = ANIM_CAST
+      {
+         AddPacket(1,ANIMATE_ONCE, 4,150, 2,FRAME_CAST_START,
+                   2,FRAME_CAST_END, 2,FRAME_FLY);
+                   
+         return;
+      }
+
+      
+      AddPacket(1,ANIMATE_NONE, 2,FRAME_FLY);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:155</p>
+<h4>EndAttack()</h4>
+<pre><code>{
+      pbNodeAttack = FALSE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:184</p>
+<h4>IsAlly(target = $)</h4>
+<pre><code>{
+      if IsClass(target,&amp;Xeochicatl)
+      {
+         return TRUE;
+      }
+
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:191</p>
+<h4>Killed()</h4>
+<pre><code>{
+      if pbNodeAttack
+      {
+         Post(Send(SYS,@GetNodeAttack),@XeoKilled);
+      }
+
+      
+      Send(self,@NewHold,#what=create(pcTreasureItem));
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:202</p>
+<h4>MonsterCastSpell()</h4>
+<pre><code>{
+      local iRandom, iSpell, oSpell, iManaCost, lInfo, lTargets;
+
+      
+      
+      iRandom = Send(self,@AdjustedChanceBase,#base=SPELL_CHANCE);
+      if Random(1,iRandom) &lt;&gt; 1
+      {
+         return FALSE;
+      }
+
+      
+      
+      lInfo = Send(self,@ChooseSpell);
+
+      
+      if lInfo = $
+      {
+         return FALSE;
+      }
+
+      iSpell = First(lInfo);
+      iManaCost = Nth(lInfo,2);
+
+      if piMana &lt; iManaCost
+      {
+         return FALSE;
+      }
+
+      piMana = piMana - iManaCost;
+
+      piAnimation = ANIM_CAST;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;             
+ 
+      oSpell = Send(SYS,@FindSpellByNum,#num=iSpell);
+
+      if (Send(oSpell,@GetNumSpellTargets) &gt; 0
+          AND NOT Send(poOwner,@LineOfSight,#obj1=self,#obj2=poTarget))
+         OR NOT Send(poOwner,@ReqSomethingAttack,#what=self,#victim=poTarget)
+      {
+         return FALSE;
+      }
+
+      lTargets = Send(oSpell,@GetTargets,#who=self,#lTargets=[poTarget]);
+
+      if Send(oSpell,@CanPayMonsterCosts,#who=self,#lTargets=lTargets,
+              #iSpellPower=SPELLPOWER_MAXIMUM)
+         AND Send(poOwner,@ReqSpellCast,#who=self,#oSpell=oSpell,
+                  #litems=lTargets)
+      {
+         Send(oSpell,@CastSpell,#who=self,#ltargets=lTargets,
+              #iSpellPower=SPELLPOWER_MAXIMUM);
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:215</p>
+<h4>ChooseSpell()</h4>
+<pre><code>{
+      return $;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:274</p>
+<h4>CanCastWallSpell()</h4>
+<pre><code>{
+      if (Send(poOwner,@CountHoldingSummoned) + 6) &gt; (MAX_WALLS * 6)
+      {
+         return FALSE;
+      }
+      
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:279</p>
+<h4>CanMorphTo()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:289</p>
+<h4>StartManaBomb()</h4>
+<p>Called when affected by Mana Bomb spell.</p>
+<pre><code>{
+      
+      piMana = piMana / 2;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:294</p>
+<h4>CanBeSilenced()</h4>
+<p>Xeochicatl cannot be silenced by the room enchantment.</p>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:303</p>
+<h4>SpellResist(oSpell = $, who = $, iSpellpower = $)</h4>
+<pre><code>{
+      local iResistChance;
+
+      if IsClass(who,&amp;DM)
+      {
+         return FALSE;
+      }
+ 
+      if Send(oSpell,@IsHarmful)
+      {
+         iResistChance = MAGIC_RESIST;
+         if IsClass(oSpell,&amp;Dazzle)
+            OR IsClass(oSpell,&amp;Blind)
+            OR IsClass(oSpell,&amp;Hold)
+         {
+            
+            iResistChance = (iResistChance * 3);
+         }
+
+         if iSpellPower &lt; 40
+            OR Random(0,100) &lt; iResistChance
+         {
+            return TRUE;
+         }
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/xeochctl.kod:309</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nerudite bow — Meridian 59 Compendium</title>
+<meta name="description" content="They DO exist! This bow was forged from the notoriously brittle nerudite instead of carved from wood. The bow doesn't look very flexible.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › nerudite bow</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/bow_g3.png" alt="nerudite bow" width="77" height="120"></div><div class="heroText"><h1>nerudite bow</h1><p class="lede">They DO exist! This bow was forged from the notoriously brittle nerudite instead of carved from wood. The bow doesn't look very flexible.</p><div class="tags"><span class="tag ">weapon</span><span class="tag ">hand</span><span class="tag ">rare</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">100</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">100</div></div><div class="fact"><div class="lbl">Value</div><div class="val">3500 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">100–150</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">hand</div></div></div><h2>As a weapon</h2><div class="formula">base       = random(3, 8)            % thrust weapon
+quality    +0                           % normal quality
+stroke     × 80/100                     % Slash stroke damage factor
+might      × (100 + bound(might−25, 0, 40))/100
+proficiency+ (proficiency + 1) × 5/100</div><p class="cite">kod/object/item/passitem/weapon.kod:241 <code class="k">GetBaseDamage</code> · kod/object/passive/skill/stroke.kod:201 <code class="k">FindDamage</code> · :332 <code class="k">DamageFactors</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Wielder</th><th class="num ">Damage per hit</th><th class=""></th></tr></thead>
+<tbody><tr><td class="">novice — 0 proficiency, might 25</td><td class="num ">2–6</td><td class="">before the target’s armour</td></tr>
+<tr><td class="">expert — 99 proficiency, might 65</td><td class="num ">7–13</td><td class="">before the target’s armour</td></tr></tbody></table></div><div class="facts"><div class="fact"><div class="lbl">Weapon type</div><div class="val sm">thrust</div></div><div class="fact"><div class="lbl">Quality</div><div class="val sm">normal</div></div><div class="fact"><div class="lbl">To-hit bonus</div><div class="val">+125</div></div><div class="fact"><div class="lbl">Reach</div><div class="val">3</div></div><div class="fact"><div class="lbl">Disarm</div><div class="val">10</div></div><div class="fact"><div class="lbl">Spell penalty</div><div class="val">-10%</div></div><div class="fact"><div class="lbl">Proficiency</div><div class="val sm">bow</div></div></div><p>Damage type matters because armour resists by type. See
+<a href="../guides/armor.html">Armour</a> for what each armour does to each type, and
+<a href="../weapons/index.html">Weapons</a> to compare this against everything else.</p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/bow_g1.png" alt="nerudite bow on the ground" loading="lazy"><figcaption>on the ground</figcaption></figure><figure><img class="icon" src="../assets/img/bow_g2.png" alt="nerudite bow broken" loading="lazy"><figcaption>broken</figcaption></figure><figure><img class="icon" src="../assets/img/bow_g3.png" alt="nerudite bow inventory" loading="lazy"><figcaption>inventory</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow/nerubow.kod:11</p>
+<p><code class="k">NeruditeBow</code> is <code class="k">Bow</code> — full chain <code class="k">NeruditeBow</code> ← <code class="k">Bow</code> ← <code class="k">RangedWeapon</code> ← <code class="k">Weapon</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>NeruditeBow_name_rsc</code></td><td class=""><em>nerudite bow</em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>NeruditeBow_desc_rsc</code></td><td class=""><em>They DO exist!  This bow was forged from the notoriously brittle nerudite instead of carve</em></td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">vrWeaponBroke</code></td><td class=""><code>NeruditeBow_shatters</code></td><td class=""><em>The nerudite bow shatters into a flurry of splinters!</em></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viWeaponDamage</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">viRange</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viHit_roll_modifier</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>3500</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>100</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>100</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>100</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>150</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viSpell_modifier</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viBaseXLAT</code></td><td class=""><code>XLAT_TO_GREEN</code></td><td class="">5</td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viRarity</code></td><td class=""><code>ITEM_RARITY_GRADE_RARE</code></td><td class="">2</td><td class="num " data-sort="53">53</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>DoShatter()</h4>
+<pre><code>{
+      send(self,@WeaponBroke);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow/nerubow.kod:59</p>
+<h4>ShatterToShards()</h4>
+<pre><code>{
+      if poOwner &lt;&gt; $ AND isClass(poOwner,&amp;User)
+      {
+         if send(poOwner,@AssessDamage,#what=self,#damage=random(10,25),
+                 #report=FALSE,#atype=ATCK_WEAP_NERUDITE) = $
+         {
+            Send(Send(poOwner,@GetOwner),@SomethingKilled,#what=self,#victim=poOwner);
+            Send(poOwner,@Killed,#what=self);
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow/nerubow.kod:66</p>
+<h4>WeaponBroke()</h4>
+<pre><code>{
+      send(self,@ShatterToShards);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow/nerubow.kod:81</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

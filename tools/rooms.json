@@ -1,0 +1,13894 @@
+[
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/badland2.kod",
+  "class": "Badland2",
+  "parent": "Room",
+  "room_name": "Kardde's Canyon",
+  "rid": "RID_BADLAND2",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm.kod",
+  "class": "BarloqueRoom",
+  "parent": "Room",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/bazmans.kod",
+  "class": "BazmansRoom",
+  "parent": "Room",
+  "room_name": "The Councilors' Chamber",
+  "rid": "RID_BAZMANS_ROOM",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Throne",
+    102
+   ],
+   [
+    "Pillar",
+    105
+   ],
+   [
+    "Pillar",
+    107
+   ],
+   [
+    "Pillar",
+    109
+   ],
+   [
+    "Pillar",
+    111
+   ],
+   [
+    "Pillar",
+    113
+   ],
+   [
+    "Pillar",
+    115
+   ],
+   [
+    "brazier",
+    119
+   ],
+   [
+    "brazier",
+    121
+   ],
+   [
+    "brazier",
+    123
+   ],
+   [
+    "brazier",
+    125
+   ],
+   [
+    "brazier",
+    127
+   ],
+   [
+    "brazier",
+    129
+   ],
+   [
+    "brazier",
+    131
+   ],
+   [
+    "brazier",
+    133
+   ],
+   [
+    "brazier",
+    135
+   ],
+   [
+    "brazier",
+    137
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/bowhut.kod",
+  "class": "BowmakerHut",
+  "parent": "Room",
+  "room_name": "The Bowmaker's Hut",
+  "rid": "RID_JUNGLE_BOWMAKER_HUT",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Candle",
+    81
+   ],
+   [
+    "Candle",
+    83
+   ],
+   [
+    "KocatanBowmaker",
+    86
+   ],
+   [
+    "DynamicLight",
+    90
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/castle1c.kod",
+  "class": "Castle1c",
+  "parent": "Room",
+  "room_name": "Outside Castle Victoria",
+  "rid": "RID_CASTLE1C",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/castle2a.kod",
+  "class": "Castle2a",
+  "parent": "Room",
+  "room_name": "Banquet Hall of the Bourgeois Castle",
+  "rid": "RID_CASTLE2A",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": [
+   [
+    "PrincessGuard",
+    98
+   ],
+   [
+    "PrincessGuard",
+    99
+   ],
+   [
+    "PrincessGuard",
+    100
+   ],
+   [
+    "Tree",
+    102
+   ],
+   [
+    "Tree",
+    104
+   ],
+   [
+    "Tree",
+    106
+   ],
+   [
+    "Tree",
+    108
+   ],
+   [
+    "Tree",
+    110
+   ],
+   [
+    "Tree",
+    112
+   ],
+   [
+    "Shrub",
+    115
+   ],
+   [
+    "Shrub",
+    117
+   ],
+   [
+    "Shrub",
+    119
+   ],
+   [
+    "Shrub",
+    121
+   ],
+   [
+    "Shrub",
+    123
+   ],
+   [
+    "Shrub",
+    125
+   ],
+   [
+    "Shrub",
+    127
+   ],
+   [
+    "Fountain",
+    130
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/castle2d.kod",
+  "class": "Castle2d",
+  "parent": "Room",
+  "room_name": "Royal Library of the Bourgeois Castle",
+  "rid": "RID_CASTLE2D",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BookPedestal",
+    182
+   ],
+   [
+    "PrincessGuard",
+    187
+   ],
+   [
+    "PrincessGuard",
+    189
+   ],
+   [
+    "PrincessGuard",
+    192
+   ],
+   [
+    "PrincessGuard",
+    194
+   ],
+   [
+    "PrincessGuard",
+    197
+   ],
+   [
+    "PrincessGuard",
+    199
+   ],
+   [
+    "PrincessGuard",
+    203
+   ],
+   [
+    "PrincessGuard",
+    205
+   ],
+   [
+    "PrincessGuard",
+    207
+   ],
+   [
+    "PrincessGuard",
+    209
+   ],
+   [
+    "QuillPen",
+    213
+   ],
+   [
+    "Table",
+    216
+   ],
+   [
+    "Table",
+    218
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/castle2e.kod",
+  "class": "Castle2E",
+  "parent": "Room",
+  "room_name": "room_name_Castle2E",
+  "rid": "RID_CASTLE2E",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BarloqueTailor",
+    64
+   ],
+   [
+    "Stool",
+    66
+   ],
+   [
+    "Stool",
+    68
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/cave3.kod",
+  "class": "Cave3",
+  "parent": "Room",
+  "room_name": "The Underground Lake",
+  "rid": "RID_cave3",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "JewelOfFroz",
+    170
+   ],
+   [
+    "DynamicLight",
+    174
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/crnthrm.kod",
+  "class": "CorNothRoom",
+  "parent": "Room",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/duke1.kod",
+  "class": "Duke1",
+  "parent": "Room",
+  "room_name": "The Courtyard of Blackstone Keep",
+  "rid": "RID_DUKE1",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Firepit",
+    84
+   ],
+   [
+    "Firepit",
+    86
+   ],
+   [
+    "Firepit",
+    88
+   ],
+   [
+    "Firepit",
+    90
+   ],
+   [
+    "Firepit",
+    93
+   ],
+   [
+    "Firepit",
+    95
+   ],
+   [
+    "Dukeguard",
+    98
+   ],
+   [
+    "Dukeguard",
+    100
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/duke2.kod",
+  "class": "Duke2",
+  "parent": "Room",
+  "room_name": "Blackstone Keep",
+  "rid": "RID_DUKE2",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Firepit",
+    221
+   ],
+   [
+    "Firepit",
+    223
+   ],
+   [
+    "Shrub",
+    226
+   ],
+   [
+    "Shrub",
+    228
+   ],
+   [
+    "Shrub",
+    230
+   ],
+   [
+    "Shrub",
+    232
+   ],
+   [
+    "DukeGuard",
+    235
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/duke3.kod",
+  "class": "Duke3",
+  "parent": "Room",
+  "room_name": "The Chambers of Duke Akardius",
+  "rid": "RID_DUKE3",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Brazier",
+    92
+   ],
+   [
+    "Brazier",
+    94
+   ],
+   [
+    "Brazier",
+    96
+   ],
+   [
+    "Brazier",
+    98
+   ],
+   [
+    "Throne",
+    101
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/dungeon.kod",
+  "class": "DungeonVictoria",
+  "parent": "Room",
+  "room_name": "Underbasement of Victoria",
+  "rid": "RID_DUNGEON",
+  "pibaselight": "80",
+  "plMonsters": [],
+  "creates": [
+   [
+    "DynamicLight",
+    71
+   ],
+   [
+    "DynamicLight",
+    73
+   ],
+   [
+    "DynamicLight",
+    75
+   ],
+   [
+    "DynamicLight",
+    77
+   ],
+   [
+    "DynamicLight",
+    79
+   ],
+   [
+    "DynamicLight",
+    81
+   ],
+   [
+    "DynamicLight",
+    83
+   ],
+   [
+    "DynamicLight",
+    85
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/field1.kod",
+  "class": "Field1",
+  "parent": "Room",
+  "room_name": "The Fields",
+  "rid": "RID_FIELD1",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/gallery.kod",
+  "class": "Gallery",
+  "parent": "Room",
+  "room_name": "object gallery",
+  "rid": "RID_GALLERY",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Candelabra",
+    48
+   ],
+   [
+    "Candelabra",
+    49
+   ],
+   [
+    "AssassinSign",
+    51
+   ],
+   [
+    "Sign",
+    52
+   ],
+   [
+    "Brazier",
+    53
+   ],
+   [
+    "Firepit",
+    54
+   ],
+   [
+    "Skull",
+    55
+   ],
+   [
+    "FountainJet",
+    56
+   ],
+   [
+    "Fountain",
+    57
+   ],
+   [
+    "Table",
+    58
+   ],
+   [
+    "Stool",
+    59
+   ],
+   [
+    "Barstool",
+    60
+   ],
+   [
+    "Boulder",
+    62
+   ],
+   [
+    "Chandelier",
+    63
+   ],
+   [
+    "Lever",
+    64
+   ],
+   [
+    "Pillar",
+    65
+   ],
+   [
+    "QuillPen",
+    66
+   ],
+   [
+    "Tree",
+    67
+   ],
+   [
+    "Tree",
+    69
+   ],
+   [
+    "Tallbush",
+    71
+   ],
+   [
+    "SpiderTree",
+    72
+   ],
+   [
+    "FeyTree",
+    73
+   ],
+   [
+    "Throne",
+    75
+   ],
+   [
+    "Tombstone",
+    76
+   ],
+   [
+    "Portal",
+    77
+   ],
+   [
+    "HellPortal",
+    78
+   ],
+   [
+    "Chest",
+    79
+   ],
+   [
+    "Box",
+    80
+   ],
+   [
+    "Tombstone",
+    81
+   ],
+   [
+    "FoodDispenser",
+    83
+   ],
+   [
+    "FoodDispenser",
+    84
+   ],
+   [
+    "FoodDispenser",
+    85
+   ],
+   [
+    "FoodDispenser",
+    86
+   ],
+   [
+    "FoodDispenser",
+    87
+   ],
+   [
+    "FoodDispenser",
+    88
+   ],
+   [
+    "KocatanBrazier",
+    89
+   ],
+   [
+    "Candle",
+    90
+   ],
+   [
+    "OrcTorch",
+    91
+   ],
+   [
+    "TableLamp",
+    92
+   ],
+   [
+    "SkullBrazier",
+    93
+   ],
+   [
+    "Lamp",
+    94
+   ],
+   [
+    "OrnamentalObject",
+    99
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall.kod",
+  "class": "GuildHall",
+  "parent": "Room",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "News",
+    255
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/godroom.kod",
+  "class": "GodRoom",
+  "parent": "Room",
+  "room_name": "The meeting place of the Gods",
+  "rid": "RID_GODROOM",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "News",
+    61
+   ],
+   [
+    "chest",
+    66
+   ],
+   [
+    "Minstrel",
+    68
+   ],
+   [
+    "Heretic",
+    69
+   ],
+   [
+    "DarkWizard",
+    70
+   ],
+   [
+    "HunterGhost",
+    71
+   ],
+   [
+    "Izzio",
+    72
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest1.kod",
+  "class": "Guest1",
+  "parent": "Room",
+  "room_name": "The Inn of Hazar",
+  "rid": "RID_GUEST1",
+  "plMonsters": [],
+  "creates": [
+   [
+    "HazarInnkeeper",
+    98
+   ],
+   [
+    "Sign",
+    100
+   ],
+   [
+    "Table",
+    103
+   ],
+   [
+    "Table",
+    105
+   ],
+   [
+    "Table",
+    107
+   ],
+   [
+    "BarStool",
+    109
+   ],
+   [
+    "BarStool",
+    111
+   ],
+   [
+    "BarStool",
+    113
+   ],
+   [
+    "DynamicLight",
+    117
+   ],
+   [
+    "DynamicLight",
+    119
+   ],
+   [
+    "DynamicLight",
+    121
+   ],
+   [
+    "DynamicLight",
+    123
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest2.kod",
+  "class": "Guest2",
+  "parent": "Room",
+  "room_name": "Hazar",
+  "rid": "RID_GUEST2",
+  "plMonsters": [],
+  "creates": [
+   [
+    "sign",
+    119
+   ],
+   [
+    "OrnamentalObject",
+    122
+   ],
+   [
+    "OrnamentalObject",
+    124
+   ],
+   [
+    "OrnamentalObject",
+    126
+   ],
+   [
+    "OrnamentalObject",
+    128
+   ],
+   [
+    "OrnamentalObject",
+    130
+   ],
+   [
+    "OrnamentalObject",
+    132
+   ],
+   [
+    "OrnamentalObject",
+    134
+   ],
+   [
+    "OrnamentalObject",
+    136
+   ],
+   [
+    "OrnamentalObject",
+    138
+   ],
+   [
+    "OrnamentalObject",
+    140
+   ],
+   [
+    "OrnamentalObject",
+    142
+   ],
+   [
+    "OrnamentalObject",
+    144
+   ],
+   [
+    "OrnamentalObject",
+    146
+   ],
+   [
+    "OrnamentalObject",
+    148
+   ],
+   [
+    "OrnamentalObject",
+    150
+   ],
+   [
+    "OrnamentalObject",
+    152
+   ],
+   [
+    "OrnamentalObject",
+    154
+   ],
+   [
+    "OrnamentalObject",
+    156
+   ],
+   [
+    "OrnamentalObject",
+    158
+   ],
+   [
+    "OrnamentalObject",
+    160
+   ],
+   [
+    "OrnamentalObject",
+    162
+   ],
+   [
+    "OrnamentalObject",
+    164
+   ],
+   [
+    "OrnamentalObject",
+    166
+   ],
+   [
+    "OrnamentalObject",
+    168
+   ],
+   [
+    "OrnamentalObject",
+    170
+   ],
+   [
+    "OrnamentalObject",
+    172
+   ],
+   [
+    "OrnamentalObject",
+    174
+   ],
+   [
+    "OrnamentalObject",
+    176
+   ],
+   [
+    "OrnamentalObject",
+    178
+   ],
+   [
+    "OrnamentalObject",
+    180
+   ],
+   [
+    "OrnamentalObject",
+    182
+   ],
+   [
+    "Lamp",
+    184
+   ],
+   [
+    "Lamp",
+    186
+   ],
+   [
+    "Lamp",
+    188
+   ],
+   [
+    "Lamp",
+    190
+   ],
+   [
+    "Lamp",
+    192
+   ],
+   [
+    "Lamp",
+    194
+   ],
+   [
+    "OrnamentalObject",
+    196
+   ],
+   [
+    "OrnamentalObject",
+    198
+   ],
+   [
+    "OrnamentalObject",
+    200
+   ],
+   [
+    "OrnamentalObject",
+    202
+   ],
+   [
+    "OrnamentalObject",
+    204
+   ],
+   [
+    "OrnamentalObject",
+    206
+   ],
+   [
+    "OrnamentalObject",
+    208
+   ],
+   [
+    "OrnamentalObject",
+    210
+   ],
+   [
+    "OrnamentalObject",
+    212
+   ],
+   [
+    "OrnamentalObject",
+    214
+   ],
+   [
+    "OrnamentalObject",
+    216
+   ],
+   [
+    "OrnamentalObject",
+    218
+   ],
+   [
+    "OrnamentalObject",
+    220
+   ],
+   [
+    "OrnamentalObject",
+    222
+   ],
+   [
+    "OrnamentalObject",
+    224
+   ],
+   [
+    "OrnamentalObject",
+    226
+   ],
+   [
+    "OrnamentalObject",
+    228
+   ],
+   [
+    "OrnamentalObject",
+    230
+   ],
+   [
+    "OrnamentalObject",
+    232
+   ],
+   [
+    "OrnamentalObject",
+    234
+   ],
+   [
+    "OrnamentalObject",
+    236
+   ],
+   [
+    "OrnamentalObject",
+    238
+   ],
+   [
+    "OrnamentalObject",
+    240
+   ],
+   [
+    "OrnamentalObject",
+    242
+   ],
+   [
+    "OrnamentalObject",
+    244
+   ],
+   [
+    "OrnamentalObject",
+    246
+   ],
+   [
+    "OrnamentalObject",
+    248
+   ],
+   [
+    "OrnamentalObject",
+    250
+   ],
+   [
+    "OrnamentalObject",
+    252
+   ],
+   [
+    "OrnamentalObject",
+    254
+   ],
+   [
+    "OrnamentalObject",
+    256
+   ],
+   [
+    "OrnamentalObject",
+    258
+   ],
+   [
+    "OrnamentalObject",
+    260
+   ],
+   [
+    "OrnamentalObject",
+    262
+   ],
+   [
+    "OrnamentalObject",
+    264
+   ],
+   [
+    "OrnamentalObject",
+    266
+   ],
+   [
+    "OrnamentalObject",
+    268
+   ],
+   [
+    "OrnamentalObject",
+    270
+   ],
+   [
+    "OrnamentalObject",
+    272
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest3.kod",
+  "class": "Guest3",
+  "parent": "Room",
+  "room_name": "The Blacksmith of Hazar",
+  "rid": "RID_guest3",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "HazarBlacksmith",
+    86
+   ],
+   [
+    "sign",
+    89
+   ],
+   [
+    "DynamicLight",
+    94
+   ],
+   [
+    "DynamicLight",
+    98
+   ],
+   [
+    "DynamicLight",
+    100
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest4.kod",
+  "class": "Guest4",
+  "parent": "Room",
+  "room_name": "Ravi's Magicks of Hazar's Crossing",
+  "rid": "RID_guest4",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "OrnamentalObject",
+    91
+   ],
+   [
+    "OrnamentalObject",
+    93
+   ],
+   [
+    "OrnamentalObject",
+    95
+   ],
+   [
+    "OrnamentalObject",
+    97
+   ],
+   [
+    "OrnamentalObject",
+    99
+   ],
+   [
+    "DynamicLight",
+    103
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest5.kod",
+  "class": "Guest5",
+  "parent": "Room",
+  "room_name": "The Home of Roderic D'Stane",
+  "rid": "RID_guest5",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "HazarElder",
+    82
+   ],
+   [
+    "Sign",
+    85
+   ],
+   [
+    "OrnamentalObject",
+    88
+   ],
+   [
+    "OrnamentalObject",
+    90
+   ],
+   [
+    "OrnamentalObject",
+    92
+   ],
+   [
+    "OrnamentalObject",
+    94
+   ],
+   [
+    "DynamicLight",
+    98
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest7.kod",
+  "class": "Guest7",
+  "parent": "Room",
+  "room_name": "Eric's Stout Spirits",
+  "rid": "RID_guest7",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Hazarbartender",
+    81
+   ],
+   [
+    "Sign",
+    84
+   ],
+   [
+    "Stool",
+    87
+   ],
+   [
+    "Stool",
+    89
+   ],
+   [
+    "Stool",
+    91
+   ],
+   [
+    "Stool",
+    93
+   ],
+   [
+    "Stool",
+    95
+   ],
+   [
+    "Stool",
+    97
+   ],
+   [
+    "OrnamentalObject",
+    99
+   ],
+   [
+    "OrnamentalObject",
+    101
+   ],
+   [
+    "OrnamentalObject",
+    103
+   ],
+   [
+    "OrnamentalObject",
+    105
+   ],
+   [
+    "Candle",
+    107
+   ],
+   [
+    "DynamicLight",
+    111
+   ],
+   [
+    "DynamicLight",
+    113
+   ],
+   [
+    "DynamicLight",
+    115
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest8.kod",
+  "class": "Guest8",
+  "parent": "Room",
+  "room_name": "The Grand Museum of Hazar",
+  "rid": "RID_guest8",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Sign",
+    121
+   ],
+   [
+    "Sign",
+    124
+   ],
+   [
+    "Sign",
+    127
+   ],
+   [
+    "Sign",
+    130
+   ],
+   [
+    "Sign",
+    133
+   ],
+   [
+    "Sign",
+    136
+   ],
+   [
+    "Sign",
+    139
+   ],
+   [
+    "OrnamentalObject",
+    143
+   ],
+   [
+    "OrnamentalObject",
+    145
+   ],
+   [
+    "OrnamentalObject",
+    147
+   ],
+   [
+    "OrnamentalObject",
+    149
+   ],
+   [
+    "OrnamentalObject",
+    151
+   ],
+   [
+    "OrnamentalObject",
+    153
+   ],
+   [
+    "OrnamentalObject",
+    155
+   ],
+   [
+    "OrnamentalObject",
+    157
+   ],
+   [
+    "OrnamentalObject",
+    159
+   ],
+   [
+    "ModelNode",
+    161
+   ],
+   [
+    "OrnamentalObject",
+    163
+   ],
+   [
+    "OrnamentalObject",
+    165
+   ],
+   [
+    "OrnamentalObject",
+    167
+   ],
+   [
+    "OrnamentalObject",
+    169
+   ],
+   [
+    "OrnamentalObject",
+    171
+   ],
+   [
+    "OrnamentalObject",
+    173
+   ],
+   [
+    "OrnamentalObject",
+    175
+   ],
+   [
+    "OrnamentalObject",
+    177
+   ],
+   [
+    "OrnamentalObject",
+    179
+   ],
+   [
+    "OrnamentalObject",
+    181
+   ],
+   [
+    "OrnamentalObject",
+    183
+   ],
+   [
+    "OrnamentalObject",
+    185
+   ],
+   [
+    "OrnamentalObject",
+    187
+   ],
+   [
+    "OrnamentalObject",
+    189
+   ],
+   [
+    "OrnamentalObject",
+    191
+   ],
+   [
+    "OrnamentalObject",
+    193
+   ],
+   [
+    "OrnamentalObject",
+    195
+   ],
+   [
+    "OrnamentalObject",
+    197
+   ],
+   [
+    "DynamicLight",
+    201
+   ],
+   [
+    "DynamicLight",
+    203
+   ],
+   [
+    "DynamicLight",
+    205
+   ],
+   [
+    "DynamicLight",
+    207
+   ],
+   [
+    "DynamicLight",
+    209
+   ],
+   [
+    "DynamicLight",
+    211
+   ],
+   [
+    "DynamicLight",
+    213
+   ],
+   [
+    "DynamicLight",
+    215
+   ],
+   [
+    "DynamicLight",
+    217
+   ],
+   [
+    "DynamicLight",
+    219
+   ],
+   [
+    "DynamicLight",
+    221
+   ],
+   [
+    "DynamicLight",
+    223
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/hermhut.kod",
+  "class": "HermitHut",
+  "parent": "Room",
+  "room_name": "The Hermit's Hut",
+  "rid": "RID_HERMITHUT",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BookPedestal",
+    89
+   ],
+   [
+    "Table",
+    94
+   ],
+   [
+    "Stool",
+    96
+   ],
+   [
+    "Firepit",
+    98
+   ],
+   [
+    "DynamicLight",
+    103
+   ],
+   [
+    "DynamicLight",
+    105
+   ],
+   [
+    "DynamicLight",
+    107
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm.kod",
+  "class": "JasperRoom",
+  "parent": "Room",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm.kod",
+  "class": "KocatanRoom",
+  "parent": "Room",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/marnrm.kod",
+  "class": "MarionRoom",
+  "parent": "Room",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/mockers.kod",
+  "class": "MockersRoom",
+  "parent": "Room",
+  "room_name": "Chamber of the Mocker",
+  "rid": "RID_MOCKERS_ROOM",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom.kod",
+  "class": "MonsterRoom",
+  "parent": "Room",
+  "pigen_time": "20000",
+  "pigen_percent": "100",
+  "piinit_count_min": "1",
+  "piinit_count_max": "5",
+  "pimonster_count_max": "10",
+  "pireload_wait_time": "180000",
+  "pbload_first_monster_only": "FALSE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "apple",
+    386
+   ]
+  ],
+  "ngen": 0
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/necarena.kod",
+  "class": "NecArena",
+  "parent": "Room",
+  "room_name": "Goad's Grinder",
+  "rid": "RID_BRAX_ARENA",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Goad",
+    234
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/outgrace.kod",
+  "class": "OutOfGrace",
+  "parent": "Room",
+  "room_name": "Out of Grace with the Higher Powers",
+  "rid": "RID_OUTOFGRACE",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Skull",
+    72
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/profroom.kod",
+  "class": "ProfileRoom",
+  "parent": "Room",
+  "rid": "RID_PROFILE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/rentroom.kod",
+  "class": "RentableRoom",
+  "parent": "Room",
+  "room_name": "A tastefully appointed room",
+  "rid": "$",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": [
+   [
+    "OrnamentalObject",
+    242
+   ],
+   [
+    "OrnamentalObject",
+    243
+   ],
+   [
+    "OrnamentalObject",
+    244
+   ],
+   [
+    "Stool",
+    245
+   ],
+   [
+    "OrnamentalObject",
+    248
+   ],
+   [
+    "OrnamentalObject",
+    249
+   ],
+   [
+    "OrnamentalObject",
+    250
+   ],
+   [
+    "OrnamentalObject",
+    251
+   ],
+   [
+    "Pillar",
+    252
+   ],
+   [
+    "SkullBrazier",
+    255
+   ],
+   [
+    "Brazier",
+    256
+   ],
+   [
+    "OrcTorch",
+    257
+   ],
+   [
+    "TableLamp",
+    258
+   ],
+   [
+    "Candle",
+    259
+   ],
+   [
+    "OrnamentalObject",
+    262
+   ],
+   [
+    "OrnamentalObject",
+    263
+   ],
+   [
+    "OrnamentalObject",
+    264
+   ],
+   [
+    "OrnamentalObject",
+    265
+   ],
+   [
+    "OrnamentalObject",
+    268
+   ],
+   [
+    "OrnamentalObject",
+    269
+   ],
+   [
+    "OrnamentalObject",
+    270
+   ],
+   [
+    "OrnamentalObject",
+    271
+   ],
+   [
+    "DragonflyCage",
+    274
+   ],
+   [
+    "SmallBox",
+    275
+   ],
+   [
+    "Decorator",
+    1104
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tempkra.kod",
+  "class": "TempleKraanan",
+  "parent": "Room",
+  "room_name": "The Temple of Kraanan",
+  "rid": "RID_TEMPLE_KRAANAN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "KraananPriestess",
+    151
+   ],
+   [
+    "Brazier",
+    157
+   ],
+   [
+    "Brazier",
+    158
+   ],
+   [
+    "DecoItem",
+    161
+   ],
+   [
+    "DecoItem",
+    167
+   ],
+   [
+    "DecoItem",
+    172
+   ],
+   [
+    "DecoItem",
+    177
+   ],
+   [
+    "DecoItem",
+    182
+   ],
+   [
+    "DecoItem",
+    187
+   ],
+   [
+    "DecoItem",
+    193
+   ],
+   [
+    "DecoItem",
+    198
+   ],
+   [
+    "DecoItem",
+    204
+   ],
+   [
+    "DecoItem",
+    209
+   ],
+   [
+    "DecoItem",
+    215
+   ],
+   [
+    "Pillar",
+    221
+   ],
+   [
+    "Pillar",
+    223
+   ],
+   [
+    "Pillar",
+    225
+   ],
+   [
+    "Pillar",
+    227
+   ],
+   [
+    "Pillar",
+    229
+   ],
+   [
+    "Pillar",
+    231
+   ],
+   [
+    "Pillar",
+    233
+   ],
+   [
+    "Pillar",
+    235
+   ],
+   [
+    "Pillar",
+    237
+   ],
+   [
+    "Pillar",
+    239
+   ],
+   [
+    "Pillar",
+    241
+   ],
+   [
+    "Pillar",
+    243
+   ],
+   [
+    "Pillar",
+    245
+   ],
+   [
+    "Pillar",
+    247
+   ],
+   [
+    "Pillar",
+    249
+   ],
+   [
+    "Pillar",
+    251
+   ],
+   [
+    "Pillar",
+    253
+   ],
+   [
+    "Pillar",
+    255
+   ],
+   [
+    "Pillar",
+    257
+   ],
+   [
+    "Pillar",
+    259
+   ],
+   [
+    "Pillar",
+    261
+   ],
+   [
+    "Pillar",
+    263
+   ],
+   [
+    "Pillar",
+    265
+   ],
+   [
+    "Pillar",
+    267
+   ],
+   [
+    "Pillar",
+    269
+   ],
+   [
+    "Pillar",
+    271
+   ],
+   [
+    "Pillar",
+    273
+   ],
+   [
+    "Pillar",
+    275
+   ],
+   [
+    "Pillar",
+    277
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/temple.kod",
+  "class": "Temple",
+  "parent": "Room",
+  "room_name": "The Temple of Shal'ille",
+  "rid": "RID_TEMPLE",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Scepter",
+    68
+   ],
+   [
+    "ShalillePriestess",
+    116
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tempqor.kod",
+  "class": "TempleQor",
+  "parent": "Room",
+  "room_name": "The Temple of Qor",
+  "rid": "RID_TEMPLE_QOR",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "QorPriestess",
+    140
+   ],
+   [
+    "Brazier",
+    146
+   ],
+   [
+    "Brazier",
+    147
+   ],
+   [
+    "Brazier",
+    148
+   ],
+   [
+    "Brazier",
+    149
+   ],
+   [
+    "Brazier",
+    150
+   ],
+   [
+    "Brazier",
+    151
+   ],
+   [
+    "Brazier",
+    152
+   ],
+   [
+    "Brazier",
+    153
+   ],
+   [
+    "Brazier",
+    154
+   ],
+   [
+    "Brazier",
+    155
+   ],
+   [
+    "Brazier",
+    156
+   ],
+   [
+    "Brazier",
+    157
+   ],
+   [
+    "Brazier",
+    158
+   ],
+   [
+    "Brazier",
+    159
+   ],
+   [
+    "Brazier",
+    160
+   ],
+   [
+    "Brazier",
+    161
+   ],
+   [
+    "Brazier",
+    162
+   ],
+   [
+    "Brazier",
+    163
+   ],
+   [
+    "Brazier",
+    164
+   ],
+   [
+    "Brazier",
+    165
+   ],
+   [
+    "Brazier",
+    166
+   ],
+   [
+    "Brazier",
+    167
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/temprii.kod",
+  "class": "TempleRiija",
+  "parent": "Room",
+  "room_name": "The Temple of Riija",
+  "rid": "RID_TEMPLE_RIIJA",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "RiijaMonk",
+    508
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm.kod",
+  "class": "TosRoom",
+  "parent": "Room",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tpost1.kod",
+  "class": "TradingPost",
+  "parent": "Room",
+  "room_name": "The Remote Trading Post of Wulfgang zax'Ak",
+  "rid": "RID_JUNGLE_TRADING_POST",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "KocatanTradeMaster",
+    85
+   ],
+   [
+    "Candle",
+    88
+   ],
+   [
+    "Candle",
+    90
+   ],
+   [
+    "DynamicLight",
+    95
+   ],
+   [
+    "DynamicLight",
+    97
+   ],
+   [
+    "DynamicLight",
+    101
+   ],
+   [
+    "DynamicLight",
+    103
+   ],
+   [
+    "DynamicLight",
+    105
+   ],
+   [
+    "DynamicLight",
+    107
+   ],
+   [
+    "DynamicLight",
+    109
+   ],
+   [
+    "DynamicLight",
+    111
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tpost2.kod",
+  "class": "TradingPostCellar",
+  "parent": "Room",
+  "room_name": "The Cellar Rooms",
+  "rid": "RID_JUNGLE_TRADING_POST_CELLAR",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/univ.kod",
+  "class": "University",
+  "parent": "Room",
+  "room_name": "Meridian University",
+  "rid": "RID_UNIVERSITY",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Candelabra",
+    46
+   ],
+   [
+    "Candelabra",
+    47
+   ],
+   [
+    "HellPortal",
+    49
+   ],
+   [
+    "HellPortal",
+    77
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/asshq.kod",
+  "class": "AssassinHeadQuarters",
+  "parent": "BarloqueRoom",
+  "room_name": "A shadowy corner",
+  "rid": "RID_ASSHQ",
+  "pibaselight": "80",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Sign",
+    99
+   ],
+   [
+    "Sign",
+    101
+   ],
+   [
+    "Sign",
+    103
+   ],
+   [
+    "Sign",
+    105
+   ],
+   [
+    "Sign",
+    107
+   ],
+   [
+    "Assassin",
+    110
+   ],
+   [
+    "AssassinSign",
+    111
+   ],
+   [
+    "DynamicLight",
+    114
+   ],
+   [
+    "DynamicLight",
+    116
+   ],
+   [
+    "DynamicLight",
+    118
+   ],
+   [
+    "DynamicLight",
+    120
+   ],
+   [
+    "DynamicLight",
+    122
+   ],
+   [
+    "DynamicLight",
+    124
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/barapoth.kod",
+  "class": "BarApoth",
+  "parent": "BarloqueRoom",
+  "room_name": "Joguer's Herbs and Roots",
+  "rid": "RID_BAR_APOTH",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BarloqueApothecary",
+    63
+   ],
+   [
+    "Brazier",
+    66
+   ],
+   [
+    "Brazier",
+    68
+   ],
+   [
+    "Brazier",
+    70
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/barcourt.kod",
+  "class": "BarloqueCourt",
+  "parent": "BarloqueRoom",
+  "room_name": "Office of the Justicar",
+  "rid": "RID_BAR_COURT",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BarloqueClerk",
+    109
+   ],
+   [
+    "DukeGuard",
+    117
+   ],
+   [
+    "NewsJusticar",
+    125
+   ],
+   [
+    "Sign",
+    134
+   ],
+   [
+    "Brazier",
+    141
+   ],
+   [
+    "Brazier",
+    143
+   ],
+   [
+    "Table",
+    147
+   ],
+   [
+    "Candelabra",
+    151
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/barhall.kod",
+  "class": "BarHall",
+  "parent": "BarloqueRoom",
+  "room_name": "Adventurer's Hall of Barloque",
+  "rid": "RID_BAR_HALL",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Newslink",
+    65
+   ],
+   [
+    "BarloqueMerchant",
+    71
+   ],
+   [
+    "Table",
+    76
+   ],
+   [
+    "Table",
+    78
+   ],
+   [
+    "Table",
+    80
+   ],
+   [
+    "Table",
+    82
+   ],
+   [
+    "Brazier",
+    85
+   ],
+   [
+    "Brazier",
+    87
+   ],
+   [
+    "Brazier",
+    89
+   ],
+   [
+    "Brazier",
+    91
+   ],
+   [
+    "Brazier",
+    93
+   ],
+   [
+    "Brazier",
+    95
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/barinn.kod",
+  "class": "BarInn",
+  "parent": "BarloqueRoom",
+  "room_name": "Brownestone Inn",
+  "rid": "RID_BAR_INN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "NewsLink",
+    80
+   ],
+   [
+    "BarloqueInnkeeper",
+    84
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/barjail.kod",
+  "class": "BarloqueJail",
+  "parent": "BarloqueRoom",
+  "room_name": "Old Jailhouse",
+  "rid": "RID_BAR_JAIL",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "DukeGuard",
+    47
+   ],
+   [
+    "DukeGuard",
+    50
+   ],
+   [
+    "DukeGuard",
+    53
+   ],
+   [
+    "Table",
+    58
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/barln.kod",
+  "class": "BarloqueNorth",
+  "parent": "BarloqueRoom",
+  "room_name": "North Barloque",
+  "rid": "RID_BAR_NORTH",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "OrnamentalObject",
+    112
+   ],
+   [
+    "OrnamentalObject",
+    114
+   ],
+   [
+    "OrnamentalObject",
+    116
+   ],
+   [
+    "OrnamentalObject",
+    118
+   ],
+   [
+    "OrnamentalObject",
+    120
+   ],
+   [
+    "OrnamentalObject",
+    122
+   ],
+   [
+    "OrnamentalObject",
+    124
+   ],
+   [
+    "OrnamentalObject",
+    126
+   ],
+   [
+    "OrnamentalObject",
+    128
+   ],
+   [
+    "OrnamentalObject",
+    130
+   ],
+   [
+    "OrnamentalObject",
+    133
+   ],
+   [
+    "OrnamentalObject",
+    135
+   ],
+   [
+    "OrnamentalObject",
+    137
+   ],
+   [
+    "OrnamentalObject",
+    139
+   ],
+   [
+    "OrnamentalObject",
+    141
+   ],
+   [
+    "OrnamentalObject",
+    143
+   ],
+   [
+    "OrnamentalObject",
+    145
+   ],
+   [
+    "OrnamentalObject",
+    147
+   ],
+   [
+    "OrnamentalObject",
+    149
+   ],
+   [
+    "Lamp",
+    152
+   ],
+   [
+    "Lamp",
+    154
+   ],
+   [
+    "Lamp",
+    156
+   ],
+   [
+    "Lamp",
+    158
+   ],
+   [
+    "Lamp",
+    160
+   ],
+   [
+    "Lamp",
+    162
+   ],
+   [
+    "Lamp",
+    164
+   ],
+   [
+    "Lamp",
+    166
+   ],
+   [
+    "OrnamentalObject",
+    169
+   ],
+   [
+    "OrnamentalObject",
+    171
+   ],
+   [
+    "OrnamentalObject",
+    174
+   ],
+   [
+    "OrnamentalObject",
+    176
+   ],
+   [
+    "OrnamentalObject",
+    178
+   ],
+   [
+    "OrnamentalObject",
+    180
+   ],
+   [
+    "OrnamentalObject",
+    182
+   ],
+   [
+    "OrnamentalObject",
+    184
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/barlport.kod",
+  "class": "BarloquePort",
+  "parent": "BarloqueRoom",
+  "room_name": "The Ports of Barloque",
+  "rid": "RID_BAR_PORT",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/barls.kod",
+  "class": "BarloqueSouth",
+  "parent": "BarloqueRoom",
+  "room_name": "South Barloque",
+  "rid": "RID_BAR_SOUTH",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "OrnamentalObject",
+    57
+   ],
+   [
+    "OrnamentalObject",
+    59
+   ],
+   [
+    "OrnamentalObject",
+    61
+   ],
+   [
+    "OrnamentalObject",
+    63
+   ],
+   [
+    "OrnamentalObject",
+    65
+   ],
+   [
+    "OrnamentalObject",
+    67
+   ],
+   [
+    "OrnamentalObject",
+    69
+   ],
+   [
+    "OrnamentalObject",
+    71
+   ],
+   [
+    "OrnamentalObject",
+    73
+   ],
+   [
+    "OrnamentalObject",
+    75
+   ],
+   [
+    "OrnamentalObject",
+    77
+   ],
+   [
+    "OrnamentalObject",
+    79
+   ],
+   [
+    "OrnamentalObject",
+    81
+   ],
+   [
+    "OrnamentalObject",
+    83
+   ],
+   [
+    "OrnamentalObject",
+    85
+   ],
+   [
+    "OrnamentalObject",
+    87
+   ],
+   [
+    "OrnamentalObject",
+    89
+   ],
+   [
+    "OrnamentalObject",
+    91
+   ],
+   [
+    "OrnamentalObject",
+    93
+   ],
+   [
+    "OrnamentalObject",
+    96
+   ],
+   [
+    "OrnamentalObject",
+    98
+   ],
+   [
+    "OrnamentalObject",
+    100
+   ],
+   [
+    "OrnamentalObject",
+    102
+   ],
+   [
+    "OrnamentalObject",
+    104
+   ],
+   [
+    "OrnamentalObject",
+    106
+   ],
+   [
+    "Lamp",
+    109
+   ],
+   [
+    "Lamp",
+    111
+   ],
+   [
+    "Lamp",
+    113
+   ],
+   [
+    "Lamp",
+    115
+   ],
+   [
+    "Fountain",
+    118
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/barmerch.kod",
+  "class": "BarMerchant",
+  "parent": "BarloqueRoom",
+  "room_name": "The Sparkling Stone Shop",
+  "rid": "RID_BAR_MERCHANT",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BarloqueMerchant",
+    65
+   ],
+   [
+    "Brazier",
+    68
+   ],
+   [
+    "Brazier",
+    70
+   ],
+   [
+    "Brazier",
+    72
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/barsmith.kod",
+  "class": "BarloqueSmithy",
+  "parent": "BarloqueRoom",
+  "room_name": "The Royal Blacksmith of Barloque",
+  "rid": "RID_BAR_SMITHY",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BarloqueBlacksmith",
+    62
+   ],
+   [
+    "Firepit",
+    64
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/barvault.kod",
+  "class": "BarVault",
+  "parent": "BarloqueRoom",
+  "room_name": "Office of the Barloque Vaultman",
+  "rid": "RID_BAR_VAULT",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Barloquevaultman",
+    68
+   ],
+   [
+    "Brazier",
+    71
+   ],
+   [
+    "Brazier",
+    73
+   ],
+   [
+    "QuillPen",
+    75
+   ],
+   [
+    "DynamicLight",
+    82
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/barlqrm/gmhall.kod",
+  "class": "GMHall",
+  "parent": "BarloqueRoom",
+  "room_name": "The Guildmaster's Hall",
+  "rid": "RID_GM_HALL",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "GuildCreator",
+    74
+   ],
+   [
+    "NewsGuildCharter",
+    83
+   ],
+   [
+    "GuildWarNews",
+    92
+   ],
+   [
+    "Brazier",
+    100
+   ],
+   [
+    "Brazier",
+    102
+   ],
+   [
+    "Shrub",
+    105
+   ],
+   [
+    "Shrub",
+    107
+   ],
+   [
+    "Shrub",
+    109
+   ],
+   [
+    "Shrub",
+    111
+   ],
+   [
+    "Shrub",
+    113
+   ],
+   [
+    "Shrub",
+    115
+   ],
+   [
+    "Pillar",
+    118
+   ],
+   [
+    "Pillar",
+    120
+   ],
+   [
+    "Pillar",
+    122
+   ],
+   [
+    "Pillar",
+    124
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/crnthrm/corgroc.kod",
+  "class": "CorGrocer",
+  "parent": "CorNothRoom",
+  "room_name": "Solomon's Edibles",
+  "rid": "RID_COR_GROCER",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "CornothGrocer",
+    61
+   ],
+   [
+    "Brazier",
+    64
+   ],
+   [
+    "Brazier",
+    66
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/crnthrm/corhall.kod",
+  "class": "CorHall",
+  "parent": "CorNothRoom",
+  "room_name": "The Adventurer's Hall of Cor Noth",
+  "rid": "RID_COR_HALL",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Newslink",
+    70
+   ],
+   [
+    "NewsAdventure",
+    77
+   ],
+   [
+    "Brazier",
+    84
+   ],
+   [
+    "Brazier",
+    86
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/crnthrm/corinn.kod",
+  "class": "CorInn",
+  "parent": "CorNothRoom",
+  "room_name": "Cibilo Creek Inn",
+  "rid": "RID_COR_INN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "CorNothInnKeeper",
+    65
+   ],
+   [
+    "NewsLink",
+    69
+   ],
+   [
+    "Brazier",
+    74
+   ],
+   [
+    "Brazier",
+    75
+   ],
+   [
+    "Brazier",
+    76
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/crnthrm/cornoth.kod",
+  "class": "CorNoth",
+  "parent": "CorNothRoom",
+  "room_name": "Cor Noth",
+  "rid": "RID_CORNOTH",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Tree",
+    120
+   ],
+   [
+    "Tree",
+    122
+   ],
+   [
+    "Tree",
+    124
+   ],
+   [
+    "Tree",
+    126
+   ],
+   [
+    "Tree",
+    128
+   ],
+   [
+    "Tree",
+    130
+   ],
+   [
+    "Tree",
+    132
+   ],
+   [
+    "Tree",
+    134
+   ],
+   [
+    "Tree",
+    136
+   ],
+   [
+    "Tree",
+    138
+   ],
+   [
+    "Tree",
+    140
+   ],
+   [
+    "Tree",
+    142
+   ],
+   [
+    "Tree",
+    144
+   ],
+   [
+    "Tree",
+    146
+   ],
+   [
+    "Shrub",
+    148
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/crnthrm/cortail.kod",
+  "class": "CorTailor",
+  "parent": "CorNothRoom",
+  "room_name": "The Spindle and the Spinster",
+  "rid": "RID_COR_TAILOR",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "CorNothTailor",
+    64
+   ],
+   [
+    "Candelabra",
+    67
+   ],
+   [
+    "Candelabra",
+    69
+   ],
+   [
+    "Stool",
+    71
+   ],
+   [
+    "Brazier",
+    73
+   ],
+   [
+    "Brazier",
+    78
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/crnthrm/Coruniv.kod",
+  "class": "CornothUniversity",
+  "parent": "CorNothRoom",
+  "room_name": "The Hall of Genealogy",
+  "rid": "RID_COR_UNIV",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BookPedestal",
+    421
+   ],
+   [
+    "BookPedestal",
+    425
+   ],
+   [
+    "BookPedestal",
+    429
+   ],
+   [
+    "BookPedestal",
+    433
+   ],
+   [
+    "BookPedestal",
+    437
+   ],
+   [
+    "Brazier",
+    441
+   ],
+   [
+    "Brazier",
+    443
+   ],
+   [
+    "Stool",
+    446
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/crnthrm/corwepm.kod",
+  "class": "CorWeaponsMaster",
+  "parent": "CorNothRoom",
+  "room_name": "The Weapon Master's Abode",
+  "rid": "RID_COR_WEAPONSMASTER",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "CorNothSergeant",
+    69
+   ],
+   [
+    "Firepit",
+    73
+   ],
+   [
+    "Firepit",
+    75
+   ],
+   [
+    "Firepit",
+    77
+   ],
+   [
+    "Firepit",
+    79
+   ],
+   [
+    "Table",
+    82
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/crnthrm/forgot2.kod",
+  "class": "ForgottenToo",
+  "parent": "CorNothRoom",
+  "room_name": "Chamber of the Forgotten Heroes",
+  "rid": "RID_FORGOTTEN_TOO",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BookPedestal",
+    239
+   ],
+   [
+    "BookPedestal",
+    242
+   ],
+   [
+    "Statue",
+    265
+   ],
+   [
+    "Statue",
+    270
+   ],
+   [
+    "Statue",
+    275
+   ],
+   [
+    "Statue",
+    280
+   ],
+   [
+    "Statue",
+    285
+   ],
+   [
+    "Statue",
+    290
+   ],
+   [
+    "Statue",
+    295
+   ],
+   [
+    "Statue",
+    300
+   ],
+   [
+    "Statue",
+    305
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh1.kod",
+  "class": "GuildHall1",
+  "parent": "GuildHall",
+  "room_name": "Mercenary Alley",
+  "rid": "RID_GUILDH1",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Table",
+    175
+   ],
+   [
+    "Table",
+    177
+   ],
+   [
+    "Brazier",
+    180
+   ],
+   [
+    "Brazier",
+    182
+   ],
+   [
+    "Brazier",
+    184
+   ],
+   [
+    "Brazier",
+    186
+   ],
+   [
+    "Chest",
+    189
+   ],
+   [
+    "Hotplate",
+    204
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh10.kod",
+  "class": "GuildHall10",
+  "parent": "GuildHall",
+  "room_name": "Jaarba's Abode",
+  "rid": "RID_GUILDH10",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Chest",
+    93
+   ],
+   [
+    "Table",
+    97
+   ],
+   [
+    "Table",
+    99
+   ],
+   [
+    "Table",
+    101
+   ],
+   [
+    "Hotplate",
+    381
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh11.kod",
+  "class": "GuildHall11",
+  "parent": "GuildHall",
+  "room_name": "The home of the Friends of the Forest",
+  "rid": "RID_GUILDH11",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "WoodenBox",
+    184
+   ],
+   [
+    "WoodenBox",
+    186
+   ],
+   [
+    "Table",
+    189
+   ],
+   [
+    "Table",
+    191
+   ],
+   [
+    "Table",
+    193
+   ],
+   [
+    "Table",
+    195
+   ],
+   [
+    "Firepit",
+    198
+   ],
+   [
+    "Firepit",
+    200
+   ],
+   [
+    "Hotplate",
+    214
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh12.kod",
+  "class": "GuildHall12",
+  "parent": "GuildHall",
+  "room_name": "West Tower Guild Hall in Ko'catan",
+  "rid": "RID_GUILDH12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Chest",
+    221
+   ],
+   [
+    "Chest",
+    223
+   ],
+   [
+    "KocatanLamp",
+    240
+   ],
+   [
+    "Hotplate",
+    333
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh13.kod",
+  "class": "GuildHall13",
+  "parent": "GuildHall",
+  "room_name": "The Hall of the Slaughtered Command",
+  "rid": "RID_GUILDH13",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "TableLamp",
+    309
+   ],
+   [
+    "TableLamp",
+    310
+   ],
+   [
+    "TableLamp",
+    311
+   ],
+   [
+    "Chest",
+    313
+   ],
+   [
+    "Chest",
+    315
+   ],
+   [
+    "Chest",
+    317
+   ],
+   [
+    "Chest",
+    319
+   ],
+   [
+    "Hotplate",
+    347
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh14.kod",
+  "class": "GuildHall14",
+  "parent": "GuildHall",
+  "room_name": "The Bookmaker's Guild House",
+  "rid": "RID_GUILDH14",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BookPedestal",
+    508
+   ],
+   [
+    "Dice",
+    513
+   ],
+   [
+    "Dice",
+    515
+   ],
+   [
+    "Chest",
+    518
+   ],
+   [
+    "Chest",
+    520
+   ],
+   [
+    "Chest",
+    522
+   ],
+   [
+    "Candelabra",
+    525
+   ],
+   [
+    "Brazier",
+    528
+   ],
+   [
+    "Brazier",
+    530
+   ],
+   [
+    "Table",
+    532
+   ],
+   [
+    "Table",
+    534
+   ],
+   [
+    "Table",
+    536
+   ],
+   [
+    "Stool",
+    539
+   ],
+   [
+    "Stool",
+    541
+   ],
+   [
+    "Stool",
+    543
+   ],
+   [
+    "Stool",
+    545
+   ],
+   [
+    "Stool",
+    547
+   ],
+   [
+    "Stool",
+    549
+   ],
+   [
+    "Stool",
+    551
+   ],
+   [
+    "Stool",
+    553
+   ],
+   [
+    "Stool",
+    555
+   ],
+   [
+    "Stool",
+    557
+   ],
+   [
+    "Stool",
+    559
+   ],
+   [
+    "Stool",
+    561
+   ],
+   [
+    "Stool",
+    563
+   ],
+   [
+    "Stool",
+    565
+   ],
+   [
+    "Hotplate",
+    586
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh15.kod",
+  "class": "GuildHall15",
+  "parent": "GuildHall",
+  "room_name": "Inner Sanctum of Queen Venya'cyr",
+  "rid": "RID_guildh15",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "OrnamentalObject",
+    204
+   ],
+   [
+    "OrnamentalObject",
+    205
+   ],
+   [
+    "OrnamentalObject",
+    206
+   ],
+   [
+    "OrnamentalObject",
+    207
+   ],
+   [
+    "OrnamentalObject",
+    208
+   ],
+   [
+    "OrnamentalObject",
+    209
+   ],
+   [
+    "DeadLich",
+    213
+   ],
+   [
+    "Lich",
+    218
+   ],
+   [
+    "Chest",
+    222
+   ],
+   [
+    "Lever",
+    225
+   ],
+   [
+    "Lever",
+    229
+   ],
+   [
+    "Lever",
+    233
+   ],
+   [
+    "Lever",
+    237
+   ],
+   [
+    "Lever",
+    241
+   ],
+   [
+    "Lever",
+    245
+   ],
+   [
+    "Lever",
+    249
+   ],
+   [
+    "Lever",
+    253
+   ],
+   [
+    "Lever",
+    257
+   ],
+   [
+    "Lever",
+    261
+   ],
+   [
+    "Hotplate",
+    276
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh2.kod",
+  "class": "GuildHall2",
+  "parent": "GuildHall",
+  "room_name": "The Hall of Explorers",
+  "rid": "RID_GUILDH2",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Skull",
+    118
+   ],
+   [
+    "Table",
+    121
+   ],
+   [
+    "Table",
+    123
+   ],
+   [
+    "Firepit",
+    126
+   ],
+   [
+    "Brazier",
+    130
+   ],
+   [
+    "Brazier",
+    132
+   ],
+   [
+    "Brazier",
+    134
+   ],
+   [
+    "Brazier",
+    136
+   ],
+   [
+    "Brazier",
+    138
+   ],
+   [
+    "Brazier",
+    140
+   ],
+   [
+    "WoodenBox",
+    143
+   ],
+   [
+    "Hotplate",
+    408
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh3.kod",
+  "class": "GuildHall3",
+  "parent": "Guildhall",
+  "room_name": "The Den of Shadows",
+  "rid": "RID_GUILDH3",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Table",
+    174
+   ],
+   [
+    "Table",
+    176
+   ],
+   [
+    "Brazier",
+    179
+   ],
+   [
+    "Brazier",
+    181
+   ],
+   [
+    "Brazier",
+    183
+   ],
+   [
+    "Brazier",
+    185
+   ],
+   [
+    "Brazier",
+    187
+   ],
+   [
+    "Brazier",
+    189
+   ],
+   [
+    "Brazier",
+    191
+   ],
+   [
+    "Brazier",
+    193
+   ],
+   [
+    "Brazier",
+    195
+   ],
+   [
+    "Brazier",
+    197
+   ],
+   [
+    "Brazier",
+    199
+   ],
+   [
+    "Brazier",
+    201
+   ],
+   [
+    "Brazier",
+    203
+   ],
+   [
+    "Chest",
+    206
+   ],
+   [
+    "Chest",
+    208
+   ],
+   [
+    "Hotplate",
+    222
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh4.kod",
+  "class": "GuildHall4",
+  "parent": "GuildHall",
+  "room_name": "The Wryn's Keep",
+  "rid": "RID_GUILDH4",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Table",
+    352
+   ],
+   [
+    "Table",
+    353
+   ],
+   [
+    "Table",
+    354
+   ],
+   [
+    "Table",
+    355
+   ],
+   [
+    "Table",
+    356
+   ],
+   [
+    "Table",
+    357
+   ],
+   [
+    "Firepit",
+    359
+   ],
+   [
+    "Firepit",
+    361
+   ],
+   [
+    "Firepit",
+    363
+   ],
+   [
+    "Firepit",
+    365
+   ],
+   [
+    "Firepit",
+    367
+   ],
+   [
+    "Firepit",
+    369
+   ],
+   [
+    "Firepit",
+    371
+   ],
+   [
+    "Firepit",
+    372
+   ],
+   [
+    "Firepit",
+    373
+   ],
+   [
+    "Firepit",
+    374
+   ],
+   [
+    "Firepit",
+    375
+   ],
+   [
+    "Firepit",
+    376
+   ],
+   [
+    "Firepit",
+    377
+   ],
+   [
+    "Firepit",
+    378
+   ],
+   [
+    "Firepit",
+    379
+   ],
+   [
+    "Firepit",
+    381
+   ],
+   [
+    "Firepit",
+    383
+   ],
+   [
+    "Firepit",
+    385
+   ],
+   [
+    "Firepit",
+    387
+   ],
+   [
+    "Firepit",
+    389
+   ],
+   [
+    "Firepit",
+    391
+   ],
+   [
+    "Firepit",
+    393
+   ],
+   [
+    "Brazier",
+    396
+   ],
+   [
+    "Brazier",
+    398
+   ],
+   [
+    "Brazier",
+    400
+   ],
+   [
+    "Brazier",
+    402
+   ],
+   [
+    "Brazier",
+    404
+   ],
+   [
+    "Brazier",
+    406
+   ],
+   [
+    "Brazier",
+    408
+   ],
+   [
+    "Brazier",
+    410
+   ],
+   [
+    "Brazier",
+    411
+   ],
+   [
+    "Brazier",
+    412
+   ],
+   [
+    "Brazier",
+    413
+   ],
+   [
+    "Brazier",
+    415
+   ],
+   [
+    "Brazier",
+    417
+   ],
+   [
+    "Brazier",
+    419
+   ],
+   [
+    "Brazier",
+    421
+   ],
+   [
+    "Brazier",
+    423
+   ],
+   [
+    "Brazier",
+    424
+   ],
+   [
+    "Brazier",
+    426
+   ],
+   [
+    "Brazier",
+    428
+   ],
+   [
+    "Brazier",
+    430
+   ],
+   [
+    "Chest",
+    433
+   ],
+   [
+    "Chest",
+    435
+   ],
+   [
+    "Chest",
+    437
+   ],
+   [
+    "Hotplate",
+    453
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh5.kod",
+  "class": "GuildHall5",
+  "parent": "GuildHall",
+  "room_name": "Konima's Abandoned Dwelling",
+  "rid": "RID_GUILDH5",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "chest",
+    107
+   ],
+   [
+    "Brazier",
+    110
+   ],
+   [
+    "Brazier",
+    112
+   ],
+   [
+    "Brazier",
+    114
+   ],
+   [
+    "Brazier",
+    116
+   ],
+   [
+    "Brazier",
+    118
+   ],
+   [
+    "Brazier",
+    120
+   ],
+   [
+    "Pillar",
+    122
+   ],
+   [
+    "Pillar",
+    124
+   ],
+   [
+    "Pillar",
+    126
+   ],
+   [
+    "Pillar",
+    128
+   ],
+   [
+    "Pillar",
+    130
+   ],
+   [
+    "Pillar",
+    132
+   ],
+   [
+    "Pillar",
+    134
+   ],
+   [
+    "Pillar",
+    136
+   ],
+   [
+    "Pillar",
+    138
+   ],
+   [
+    "Pillar",
+    140
+   ],
+   [
+    "Pillar",
+    142
+   ],
+   [
+    "Pillar",
+    144
+   ],
+   [
+    "Pillar",
+    146
+   ],
+   [
+    "Pillar",
+    148
+   ],
+   [
+    "Pillar",
+    150
+   ],
+   [
+    "Pillar",
+    152
+   ],
+   [
+    "Pillar",
+    154
+   ],
+   [
+    "Pillar",
+    156
+   ],
+   [
+    "Pillar",
+    158
+   ],
+   [
+    "Pillar",
+    160
+   ],
+   [
+    "Shrub",
+    162
+   ],
+   [
+    "Shrub",
+    164
+   ],
+   [
+    "Shrub",
+    166
+   ],
+   [
+    "Shrub",
+    168
+   ],
+   [
+    "Shrub",
+    170
+   ],
+   [
+    "Shrub",
+    172
+   ],
+   [
+    "Shrub",
+    174
+   ],
+   [
+    "Shrub",
+    176
+   ],
+   [
+    "Tree",
+    178
+   ],
+   [
+    "Table",
+    180
+   ],
+   [
+    "Table",
+    182
+   ],
+   [
+    "Table",
+    184
+   ],
+   [
+    "Table",
+    186
+   ],
+   [
+    "Table",
+    188
+   ],
+   [
+    "Hotplate",
+    450
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh6.kod",
+  "class": "GuildHall6",
+  "parent": "GuildHall",
+  "room_name": "The Ivory Chapel",
+  "rid": "RID_GUILDH6",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "WoodenBox",
+    166
+   ],
+   [
+    "Brazier",
+    168
+   ],
+   [
+    "Brazier",
+    169
+   ],
+   [
+    "Brazier",
+    170
+   ],
+   [
+    "Brazier",
+    171
+   ],
+   [
+    "Hotplate",
+    183
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh7.kod",
+  "class": "GuildHall7",
+  "parent": "GuildHall",
+  "room_name": "The Old Dwarven Hall",
+  "rid": "RID_GUILDH7",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Table",
+    303
+   ],
+   [
+    "Table",
+    305
+   ],
+   [
+    "Brazier",
+    309
+   ],
+   [
+    "Brazier",
+    311
+   ],
+   [
+    "Brazier",
+    314
+   ],
+   [
+    "Brazier",
+    318
+   ],
+   [
+    "Brazier",
+    320
+   ],
+   [
+    "Brazier",
+    324
+   ],
+   [
+    "Brazier",
+    328
+   ],
+   [
+    "Brazier",
+    330
+   ],
+   [
+    "firepit",
+    334
+   ],
+   [
+    "firepit",
+    336
+   ],
+   [
+    "Brazier",
+    338
+   ],
+   [
+    "Brazier",
+    340
+   ],
+   [
+    "WoodenBox",
+    343
+   ],
+   [
+    "WoodenBox",
+    345
+   ],
+   [
+    "Hotplate",
+    388
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh8.kod",
+  "class": "GuildHall8",
+  "parent": "GuildHall",
+  "room_name": "The Sewer Hideout",
+  "rid": "RID_GUILDH8",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Table",
+    311
+   ],
+   [
+    "Table",
+    313
+   ],
+   [
+    "Brazier",
+    315
+   ],
+   [
+    "Brazier",
+    316
+   ],
+   [
+    "Brazier",
+    317
+   ],
+   [
+    "Brazier",
+    318
+   ],
+   [
+    "Chest",
+    321
+   ],
+   [
+    "Hotplate",
+    336
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/ghall/guildh9.kod",
+  "class": "GuildHall9",
+  "parent": "GuildHall",
+  "room_name": "The Abandoned Warehouse",
+  "rid": "RID_GUILDH9",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "WoodenBox",
+    170
+   ],
+   [
+    "Hotplate",
+    184
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest1/newb1.kod",
+  "class": "Newb1",
+  "parent": "Guest1",
+  "room_name": "Raza Inn",
+  "rid": "RID_NEWB1",
+  "plMonsters": [],
+  "creates": [
+   [
+    "NewsLink",
+    52
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest2/newb2.kod",
+  "class": "Newb2",
+  "parent": "Guest2",
+  "room_name": "Raza",
+  "rid": "RID_NEWB2",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Cow",
+    42
+   ],
+   [
+    "Cow",
+    43
+   ],
+   [
+    "Cow",
+    44
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest3/newb3.kod",
+  "class": "Newb3",
+  "parent": "Guest3",
+  "room_name": "Raza Blacksmith",
+  "rid": "RID_NEWB3",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest4/newb4.kod",
+  "class": "Newb4",
+  "parent": "Guest4",
+  "room_name": "Ravi's Magicks of Raza",
+  "rid": "RID_NEWB4",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest5/newb5.kod",
+  "class": "Newb5",
+  "parent": "Guest5",
+  "room_name": "Raza Hut",
+  "rid": "RID_NEWB5",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest7/newb7.kod",
+  "class": "Newb7",
+  "parent": "Guest7",
+  "room_name": "Raza Pub",
+  "rid": "RID_NEWB7",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/guest8/newb8.kod",
+  "class": "Newb8",
+  "parent": "Guest8",
+  "room_name": "The Grand Museum of Raza",
+  "rid": "RID_Newb8",
+  "plMonsters": [],
+  "creates": [
+   [
+    "NewbPortal",
+    58
+   ],
+   [
+    "Sign",
+    60
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab1.kod",
+  "class": "JasperAB1",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB1",
+  "rid": "RID_JAS_AB1",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab10.kod",
+  "class": "JasperAB10",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB10",
+  "rid": "RID_JAS_AB10",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab11.kod",
+  "class": "JasperAB11",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB11",
+  "rid": "RID_JAS_AB11",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab12.kod",
+  "class": "JasperAB12",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB12",
+  "rid": "RID_JAS_AB12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab13.kod",
+  "class": "JasperAB13",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB13",
+  "rid": "RID_JAS_AB13",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab14.kod",
+  "class": "JasperAB14",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB14",
+  "rid": "RID_JAS_AB14",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab2.kod",
+  "class": "JasperAB2",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB2",
+  "rid": "RID_JAS_AB2",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab3.kod",
+  "class": "JasperAB3",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB3",
+  "rid": "RID_JAS_AB3",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BookPedestal",
+    96
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab4.kod",
+  "class": "JasperAB4",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB4",
+  "rid": "RID_JAS_AB4",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab5.kod",
+  "class": "JasperAB5",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB5",
+  "rid": "RID_JAS_AB5",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab6.kod",
+  "class": "JasperAB6",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB6",
+  "rid": "RID_JAS_AB6",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab7.kod",
+  "class": "JasperAB7",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB7",
+  "rid": "RID_JAS_AB7",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab8.kod",
+  "class": "JasperAB8",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB8",
+  "rid": "RID_JAS_AB8",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasab9.kod",
+  "class": "JasperAB9",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperAB9",
+  "rid": "RID_JAS_AB9",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasbank.kod",
+  "class": "JasBank",
+  "parent": "JasperRoom",
+  "room_name": "The Royal Bank of Jasper",
+  "rid": "RID_JAS_BANK",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "JasperBanker",
+    65
+   ],
+   [
+    "Sign",
+    68
+   ],
+   [
+    "Firepit",
+    71
+   ],
+   [
+    "Brazier",
+    74
+   ],
+   [
+    "Brazier",
+    76
+   ],
+   [
+    "Brazier",
+    78
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jaselder.kod",
+  "class": "JasperElderHut",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperelder",
+  "rid": "RID_JAS_ELDER_HUT",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "JasperElder",
+    48
+   ],
+   [
+    "Brazier",
+    53
+   ],
+   [
+    "Brazier",
+    55
+   ],
+   [
+    "Table",
+    58
+   ],
+   [
+    "Table",
+    60
+   ],
+   [
+    "Stool",
+    63
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jashall.kod",
+  "class": "JasperHall",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperhall",
+  "rid": "RID_JAS_HALL",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Newslink",
+    62
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasinn.kod",
+  "class": "JasperInn",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperInn",
+  "rid": "RID_JAS_INN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "NewsLink",
+    52
+   ],
+   [
+    "JasperInnkeeper",
+    56
+   ],
+   [
+    "Table",
+    59
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasper.kod",
+  "class": "Jasper",
+  "parent": "JasperRoom",
+  "room_name": "East Jasper",
+  "rid": "RID_JASPER",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "OrnamentalObject",
+    91
+   ],
+   [
+    "OrnamentalObject",
+    94
+   ],
+   [
+    "OrnamentalObject",
+    97
+   ],
+   [
+    "SmokeColumn",
+    100
+   ],
+   [
+    "OrnamentalObject",
+    103
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jassmith.kod",
+  "class": "JasperSmithy",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jaspersmith",
+  "rid": "RID_JAS_SMITHY",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "JasperBlackSmith",
+    47
+   ],
+   [
+    "Brazier",
+    51
+   ],
+   [
+    "Brazier",
+    53
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jasstore.kod",
+  "class": "JasperStore",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jasperstore",
+  "rid": "RID_JAS_STORE",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "JasperMerchant",
+    48
+   ],
+   [
+    "Brazier",
+    53
+   ],
+   [
+    "Brazier",
+    55
+   ],
+   [
+    "Brazier",
+    57
+   ],
+   [
+    "Brazier",
+    59
+   ],
+   [
+    "Brazier",
+    61
+   ],
+   [
+    "Brazier",
+    63
+   ],
+   [
+    "Brazier",
+    65
+   ],
+   [
+    "Brazier",
+    67
+   ],
+   [
+    "Brazier",
+    69
+   ],
+   [
+    "Brazier",
+    71
+   ],
+   [
+    "Brazier",
+    73
+   ],
+   [
+    "Brazier",
+    75
+   ],
+   [
+    "Table",
+    78
+   ],
+   [
+    "Table",
+    80
+   ],
+   [
+    "Table",
+    82
+   ],
+   [
+    "Table",
+    84
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jastavrn.kod",
+  "class": "JasperTavern",
+  "parent": "JasperRoom",
+  "room_name": "room_name_jaspertavern",
+  "rid": "RID_JAS_TAVERN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "JasperBartender",
+    51
+   ],
+   [
+    "Newslink",
+    54
+   ],
+   [
+    "BarStool",
+    58
+   ],
+   [
+    "BarStool",
+    60
+   ],
+   [
+    "BarStool",
+    62
+   ],
+   [
+    "BarStool",
+    64
+   ],
+   [
+    "BarStool",
+    66
+   ],
+   [
+    "BarStool",
+    70
+   ],
+   [
+    "BarStool",
+    72
+   ],
+   [
+    "BarStool",
+    74
+   ],
+   [
+    "BarStool",
+    78
+   ],
+   [
+    "BarStool",
+    80
+   ],
+   [
+    "BarStool",
+    82
+   ],
+   [
+    "Table",
+    88
+   ],
+   [
+    "Table",
+    90
+   ],
+   [
+    "Table",
+    92
+   ],
+   [
+    "Table",
+    94
+   ],
+   [
+    "Table",
+    100
+   ],
+   [
+    "Table",
+    102
+   ],
+   [
+    "Table",
+    104
+   ],
+   [
+    "Table",
+    106
+   ],
+   [
+    "Brazier",
+    112
+   ],
+   [
+    "Brazier",
+    114
+   ],
+   [
+    "Brazier",
+    117
+   ],
+   [
+    "Brazier",
+    119
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/jasperrm/jaswest.kod",
+  "class": "JasperWest",
+  "parent": "JasperRoom",
+  "room_name": "West Jasper",
+  "rid": "RID_JASWEST",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/kocapoth.kod",
+  "class": "KocatanApoth",
+  "parent": "KocatanRoom",
+  "room_name": "Two Lizards Magic Shop",
+  "rid": "RID_KOC_APOTH",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "KocatanApothecary",
+    82
+   ],
+   [
+    "DynamicLight",
+    87
+   ],
+   [
+    "DynamicLight",
+    89
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/kocatan.kod",
+  "class": "Kocatan",
+  "parent": "KocatanRoom",
+  "room_name": "Ko'catan, the Island Settlement",
+  "rid": "RID_KOCATAN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/kocbank.kod",
+  "class": "KocatanBank",
+  "parent": "KocatanRoom",
+  "room_name": "The Hungry Vaults",
+  "rid": "RID_KOC_BANK",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "KocatanVaultman",
+    87
+   ],
+   [
+    "KocatanBanker",
+    89
+   ],
+   [
+    "KocatanSentry",
+    92
+   ],
+   [
+    "DynamicLight",
+    96
+   ],
+   [
+    "DynamicLight",
+    99
+   ],
+   [
+    "DynamicLight",
+    102
+   ],
+   [
+    "DynamicLight",
+    105
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/kocblack.kod",
+  "class": "KocatanSmithy",
+  "parent": "KocatanRoom",
+  "room_name": "The Chimney House",
+  "rid": "RID_KOC_SMITHY",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "KocatanBlacksmith",
+    85
+   ],
+   [
+    "DynamicLight",
+    90
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/kochoh.kod",
+  "class": "KocatanHall",
+  "parent": "KocatanRoom",
+  "room_name": "The Hall of Heroes",
+  "rid": "RID_KOC_HALL_OF_HEROES",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Newslink",
+    110
+   ],
+   [
+    "Statue",
+    136
+   ],
+   [
+    "Statue",
+    142
+   ],
+   [
+    "Statue",
+    148
+   ],
+   [
+    "Statue",
+    154
+   ],
+   [
+    "Statue",
+    160
+   ],
+   [
+    "Statue",
+    166
+   ],
+   [
+    "Statue",
+    172
+   ],
+   [
+    "Statue",
+    178
+   ],
+   [
+    "Statue",
+    184
+   ],
+   [
+    "Statue",
+    190
+   ],
+   [
+    "Statue",
+    196
+   ],
+   [
+    "Statue",
+    202
+   ],
+   [
+    "Statue",
+    208
+   ],
+   [
+    "Statue",
+    214
+   ],
+   [
+    "Statue",
+    220
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/kochoha.kod",
+  "class": "KocatanHallA",
+  "parent": "KocatanRoom",
+  "room_name": "The Hall of Heroes West",
+  "rid": "RID_KOC_HALL_OF_HEROES_A",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "KocatanWeaponsMaster",
+    63
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/kochohb.kod",
+  "class": "KocatanHallB",
+  "parent": "KocatanRoom",
+  "room_name": "The Hall of Heroes East",
+  "rid": "RID_KOC_HALL_OF_HEROES_B",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BookPedestal",
+    120
+   ],
+   [
+    "KocatanLanguageMaster",
+    125
+   ],
+   [
+    "Quillpen",
+    126
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/kocinn.kod",
+  "class": "KocatanInn",
+  "parent": "KocatanRoom",
+  "room_name": "The Aerie Guest House",
+  "rid": "RID_KOC_INN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "NewsLink",
+    118
+   ],
+   [
+    "KocatanInnkeeper",
+    126
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/kocsouth.kod",
+  "class": "KocatanSouth",
+  "parent": "KocatanRoom",
+  "room_name": "Ko'catan, the Island Settlement",
+  "rid": "RID_KOC_SOUTH",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/kocstore.kod",
+  "class": "KocatanStore",
+  "parent": "KocatanRoom",
+  "room_name": "The Neglected Arsenal",
+  "rid": "RID_KOC_STORE",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "kocatanShopkeeper",
+    93
+   ],
+   [
+    "DynamicLight",
+    98
+   ],
+   [
+    "DynamicLight",
+    100
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/koctail.kod",
+  "class": "KocatanTailorShop",
+  "parent": "KocatanRoom",
+  "room_name": "The Crooked Hem Garment Shop",
+  "rid": "RID_KOC_TAILOR",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "KocatanTailor",
+    95
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/koctav.kod",
+  "class": "KocatanTavern",
+  "parent": "KocatanRoom",
+  "room_name": "The Barking Monster",
+  "rid": "RID_KOC_TAVERN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "KocatanLamp",
+    86
+   ],
+   [
+    "KocatanLamp",
+    88
+   ],
+   [
+    "KocatanLamp",
+    90
+   ],
+   [
+    "KocatanLamp",
+    92
+   ],
+   [
+    "KocatanLamp",
+    94
+   ],
+   [
+    "KocatanLamp",
+    96
+   ],
+   [
+    "KocatanLamp",
+    98
+   ],
+   [
+    "Candle",
+    101
+   ],
+   [
+    "KocatanBartender",
+    104
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/kocarm/koctower.kod",
+  "class": "KocatanGuardtowerEast",
+  "parent": "KocatanRoom",
+  "room_name": "The East Tower",
+  "rid": "RID_KOC_GUARDTOWER_EAST",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "KocatanCaptainGood",
+    58
+   ],
+   [
+    "KocatanCaptainEvil",
+    59
+   ],
+   [
+    "KocatanLamp",
+    177
+   ],
+   [
+    "KocatanLamp",
+    178
+   ],
+   [
+    "KocatanSentry",
+    192
+   ],
+   [
+    "KocatanSentry",
+    194
+   ],
+   [
+    "KocatanSentry",
+    196
+   ],
+   [
+    "KocatanSentry",
+    198
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/marnrm/marhall.kod",
+  "class": "MarHall",
+  "parent": "MarionRoom",
+  "room_name": "The Adventurer's Hall of Marion",
+  "rid": "RID_MAR_HALL",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Brazier",
+    160
+   ],
+   [
+    "Brazier",
+    162
+   ],
+   [
+    "Brazier",
+    164
+   ],
+   [
+    "Table",
+    167
+   ],
+   [
+    "Table",
+    169
+   ],
+   [
+    "Table",
+    171
+   ],
+   [
+    "BookPedestal",
+    174
+   ],
+   [
+    "Newslink",
+    179
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/marnrm/marhlshp.kod",
+  "class": "MarionHealerShop",
+  "parent": "MarionRoom",
+  "room_name": "Lady Aftyn's Sanctuary",
+  "rid": "RID_MAR_HEALER_SHOP",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "MarionHealer",
+    62
+   ],
+   [
+    "Candelabra",
+    64
+   ],
+   [
+    "Candelabra",
+    65
+   ],
+   [
+    "BookPedestal",
+    66
+   ],
+   [
+    "Candle",
+    67
+   ],
+   [
+    "Candle",
+    68
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/marnrm/marion.kod",
+  "class": "Marion",
+  "parent": "MarionRoom",
+  "room_name": "Marion",
+  "rid": "RID_MARION",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "MarionElder",
+    174
+   ],
+   [
+    "Sign",
+    177
+   ],
+   [
+    "Tree",
+    180
+   ],
+   [
+    "Tree",
+    182
+   ],
+   [
+    "Tree",
+    184
+   ],
+   [
+    "Brazier",
+    187
+   ],
+   [
+    "Brazier",
+    189
+   ],
+   [
+    "Brazier",
+    191
+   ],
+   [
+    "DynamicLight",
+    196
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/a5.kod",
+  "class": "OutdoorsA5",
+  "parent": "MonsterRoom",
+  "room_name": "Seafarer's Peak",
+  "rid": "RID_A5",
+  "pigen_time": "40000",
+  "pigen_percent": "80",
+  "piinit_count_min": "5",
+  "piinit_count_max": "7",
+  "pimonster_count_max": "15",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 62,
+    "pairs": [
+     [
+      "RedAnt",
+      "60"
+     ],
+     [
+      "Troll",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "ManaNode",
+    90
+   ]
+  ],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/a6.kod",
+  "class": "OutdoorsA6",
+  "parent": "MonsterRoom",
+  "room_name": "The Hills",
+  "rid": "RID_A6",
+  "pigen_time": "40000",
+  "pigen_percent": "80",
+  "piinit_count_min": "4",
+  "piinit_count_max": "6",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 57,
+    "pairs": [
+     [
+      "RedAnt",
+      "30"
+     ],
+     [
+      "Troll",
+      "70"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 14
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/badland1.kod",
+  "class": "Badland1",
+  "parent": "MonsterRoom",
+  "room_name": "The Badlands",
+  "rid": "RID_BADLAND1",
+  "plMonsters": [
+   {
+    "line": 45,
+    "pairs": [
+     [
+      "Ant",
+      "60"
+     ],
+     [
+      "Groundworm",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "FarenPriestess",
+    56
+   ],
+   [
+    "Firepit",
+    59
+   ],
+   [
+    "ManaNode",
+    61
+   ]
+  ],
+  "ngen": 9
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/barlsew.kod",
+  "class": "BarlSewer",
+  "parent": "MonsterRoom",
+  "room_name": "The Sewers of Barloque",
+  "rid": "RID_BAR_SEWER",
+  "pigen_time": "60000",
+  "pigen_percent": "80",
+  "piinit_count_min": "4",
+  "piinit_count_max": "6",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 59,
+    "pairs": [
+     [
+      "GiantRat",
+      "94"
+     ],
+     [
+      "Lupogg",
+      "6"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Brazier",
+    97
+   ],
+   [
+    "Brazier",
+    98
+   ]
+  ],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/barlsew2.kod",
+  "class": "BarlSewer2",
+  "parent": "MonsterRoom",
+  "room_name": "The Sewers of Barloque",
+  "rid": "RID_BAR_SEWER2",
+  "pigen_time": "70000",
+  "pigen_percent": "80",
+  "piinit_count_min": "4",
+  "piinit_count_max": "6",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 60,
+    "pairs": [
+     [
+      "GiantRat",
+      "55"
+     ],
+     [
+      "Lupogg",
+      "45"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 18
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/barlsew3.kod",
+  "class": "BarlSewer3",
+  "parent": "MonsterRoom",
+  "room_name": "The Sewers of Barloque",
+  "rid": "RID_BAR_SEWER3",
+  "pigen_time": "50000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 60,
+    "pairs": [
+     [
+      "GiantRat",
+      "20"
+     ],
+     [
+      "Lupogg",
+      "80"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Brazier",
+    89
+   ],
+   [
+    "Brazier",
+    90
+   ]
+  ],
+  "ngen": 16
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/bossroom.kod",
+  "class": "BossRoom",
+  "parent": "MonsterRoom",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/c4.kod",
+  "class": "OutdoorsC4",
+  "parent": "MonsterRoom",
+  "room_name": "Deep Woods of Ileria",
+  "rid": "RID_C4",
+  "pigen_time": "80000",
+  "pigen_percent": "80",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 53,
+    "pairs": [
+     [
+      "SpiderBaby",
+      "60"
+     ],
+     [
+      "Ent",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Tree",
+    104
+   ],
+   [
+    "Tree",
+    106
+   ],
+   [
+    "Tree",
+    108
+   ],
+   [
+    "Tree",
+    110
+   ],
+   [
+    "Tree",
+    112
+   ],
+   [
+    "Tree",
+    114
+   ],
+   [
+    "Tree",
+    116
+   ],
+   [
+    "Tree",
+    118
+   ],
+   [
+    "Tree",
+    120
+   ],
+   [
+    "Tree",
+    122
+   ],
+   [
+    "Tree",
+    124
+   ],
+   [
+    "Tree",
+    126
+   ],
+   [
+    "Tree",
+    128
+   ],
+   [
+    "Tree",
+    130
+   ],
+   [
+    "Tree",
+    132
+   ],
+   [
+    "Tree",
+    134
+   ],
+   [
+    "Tree",
+    136
+   ],
+   [
+    "Tree",
+    138
+   ],
+   [
+    "Tree",
+    140
+   ],
+   [
+    "Tree",
+    142
+   ],
+   [
+    "Tree",
+    144
+   ],
+   [
+    "Tree",
+    146
+   ],
+   [
+    "Tree",
+    148
+   ],
+   [
+    "Tree",
+    150
+   ],
+   [
+    "Tree",
+    152
+   ],
+   [
+    "Tree",
+    154
+   ],
+   [
+    "Tree",
+    156
+   ],
+   [
+    "Tree",
+    158
+   ]
+  ],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/c6.kod",
+  "class": "OutdoorsC6",
+  "parent": "MonsterRoom",
+  "room_name": "Forest of Farol",
+  "rid": "RID_C6",
+  "pigen_time": "110000",
+  "pigen_percent": "70",
+  "piinit_count_min": "3",
+  "piinit_count_max": "8",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "Spider",
+      "70"
+     ],
+     [
+      "Ent",
+      "30"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 16
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/castle1b.kod",
+  "class": "Castle1B",
+  "parent": "MonsterRoom",
+  "room_name": "Upstairs in Castle Victoria",
+  "rid": "RID_CASTLE1B",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [
+   {
+    "line": 49,
+    "pairs": [
+     [
+      "Zombie",
+      "40"
+     ],
+     [
+      "BatteredSkeleton",
+      "60"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "ManaNode",
+    61
+   ]
+  ],
+  "ngen": 12
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/castle2b.kod",
+  "class": "Castle2b",
+  "parent": "MonsterRoom",
+  "room_name": "Bourgeois Castle",
+  "rid": "RID_CASTLE2B",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": [
+   [
+    "PrincessGuard",
+    105
+   ],
+   [
+    "PrincessGuard",
+    106
+   ],
+   [
+    "PrincessGuard",
+    108
+   ],
+   [
+    "PrincessGuard",
+    110
+   ],
+   [
+    "PrincessGuard",
+    112
+   ],
+   [
+    "PrincessGuard",
+    114
+   ],
+   [
+    "PrincessGuard",
+    116
+   ],
+   [
+    "PrincessGuard",
+    118
+   ],
+   [
+    "PrincessGuard",
+    119
+   ],
+   [
+    "PrincessGuard",
+    120
+   ],
+   [
+    "PrincessGuard",
+    122
+   ],
+   [
+    "TallBush",
+    125
+   ],
+   [
+    "TallBush",
+    127
+   ],
+   [
+    "TallBush",
+    129
+   ],
+   [
+    "TallBush",
+    131
+   ],
+   [
+    "TallBush",
+    133
+   ],
+   [
+    "TallBush",
+    135
+   ],
+   [
+    "Shrub",
+    138
+   ],
+   [
+    "Shrub",
+    140
+   ],
+   [
+    "Shrub",
+    142
+   ],
+   [
+    "Shrub",
+    144
+   ],
+   [
+    "Shrub",
+    146
+   ],
+   [
+    "Shrub",
+    148
+   ],
+   [
+    "TallBush",
+    152
+   ],
+   [
+    "TallBush",
+    154
+   ],
+   [
+    "Shrub",
+    157
+   ],
+   [
+    "TallBush",
+    161
+   ],
+   [
+    "TallBush",
+    163
+   ],
+   [
+    "TallBush",
+    165
+   ],
+   [
+    "Shrub",
+    168
+   ],
+   [
+    "Shrub",
+    170
+   ],
+   [
+    "Shrub",
+    172
+   ],
+   [
+    "TallBush",
+    176
+   ],
+   [
+    "TallBush",
+    180
+   ],
+   [
+    "Shrub",
+    182
+   ],
+   [
+    "TallBush",
+    186
+   ],
+   [
+    "TallBush",
+    188
+   ],
+   [
+    "Tallbush",
+    190
+   ],
+   [
+    "TallBush",
+    192
+   ],
+   [
+    "TallBush",
+    194
+   ],
+   [
+    "TallBush",
+    196
+   ],
+   [
+    "TallBush",
+    198
+   ],
+   [
+    "Shrub",
+    201
+   ],
+   [
+    "Shrub",
+    203
+   ],
+   [
+    "Shrub",
+    205
+   ],
+   [
+    "Shrub",
+    207
+   ],
+   [
+    "Shrub",
+    209
+   ],
+   [
+    "TallBush",
+    213
+   ],
+   [
+    "TallBush",
+    217
+   ],
+   [
+    "TallBush",
+    219
+   ],
+   [
+    "Shrub",
+    222
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/castle2c.kod",
+  "class": "Castle2c",
+  "parent": "MonsterRoom",
+  "room_name": "The Assembly Chamber",
+  "rid": "RID_CASTLE2C",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": [
+   [
+    "PrincessGuard",
+    61
+   ],
+   [
+    "PrincessGuard",
+    63
+   ],
+   [
+    "PrincessGuard",
+    65
+   ],
+   [
+    "PrincessGuard",
+    67
+   ],
+   [
+    "Throne",
+    70
+   ],
+   [
+    "Throne",
+    73
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/d4.kod",
+  "class": "OutdoorsD4",
+  "parent": "MonsterRoom",
+  "room_name": "Valley of Ileria",
+  "rid": "RID_D4",
+  "pigen_time": "70000",
+  "pigen_percent": "80",
+  "piinit_count_min": "5",
+  "piinit_count_max": "10",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "FungusBeast",
+      "65"
+     ],
+     [
+      "GroundwormLarva",
+      "35"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Tree",
+    79
+   ],
+   [
+    "Tree",
+    81
+   ],
+   [
+    "Tree",
+    83
+   ],
+   [
+    "Tree",
+    85
+   ],
+   [
+    "Tree",
+    87
+   ],
+   [
+    "Tree",
+    89
+   ],
+   [
+    "Tree",
+    91
+   ],
+   [
+    "Tree",
+    93
+   ],
+   [
+    "Tree",
+    95
+   ],
+   [
+    "Tree",
+    97
+   ],
+   [
+    "Tree",
+    99
+   ],
+   [
+    "Tree",
+    101
+   ],
+   [
+    "Tree",
+    103
+   ],
+   [
+    "Tree",
+    105
+   ],
+   [
+    "Tree",
+    107
+   ],
+   [
+    "Tree",
+    109
+   ],
+   [
+    "Tree",
+    111
+   ],
+   [
+    "Tree",
+    113
+   ],
+   [
+    "Tree",
+    115
+   ],
+   [
+    "Tree",
+    117
+   ],
+   [
+    "Tree",
+    119
+   ],
+   [
+    "Tree",
+    121
+   ],
+   [
+    "Tree",
+    123
+   ],
+   [
+    "Tree",
+    125
+   ],
+   [
+    "Tree",
+    127
+   ],
+   [
+    "Tree",
+    129
+   ],
+   [
+    "Tree",
+    131
+   ],
+   [
+    "Tree",
+    133
+   ],
+   [
+    "Tree",
+    135
+   ]
+  ],
+  "ngen": 20
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/d5.kod",
+  "class": "OutdoorsD5",
+  "parent": "MonsterRoom",
+  "room_name": "West Merchant Way",
+  "rid": "RID_D5",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 59,
+    "pairs": [
+     [
+      "SpiderBaby",
+      "50"
+     ],
+     [
+      "Centipede",
+      "50"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/d6.kod",
+  "class": "OutdoorsD6",
+  "parent": "MonsterRoom",
+  "room_name": "Deep in the Forest of Farol",
+  "rid": "RID_D6",
+  "pigen_time": "100000",
+  "pigen_percent": "80",
+  "piinit_count_min": "4",
+  "piinit_count_max": "8",
+  "pimonster_count_max": "13",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "MolluskMonster",
+      "30"
+     ],
+     [
+      "Ent",
+      "70"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/d7.kod",
+  "class": "OutdoorsD7",
+  "parent": "MonsterRoom",
+  "room_name": "Deep in the Forest of Farol",
+  "rid": "RID_D7",
+  "pigen_time": "100000",
+  "pigen_percent": "80",
+  "pimonster_count_max": "15",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 55,
+    "pairs": [
+     [
+      "Ent",
+      "40"
+     ],
+     [
+      "GroundwormLarva",
+      "60"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 20
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/e2.kod",
+  "class": "OutdoorsE2",
+  "parent": "MonsterRoom",
+  "room_name": "The Great Ocean",
+  "rid": "RID_E2",
+  "pigen_time": "45000",
+  "pigen_percent": "70",
+  "piinit_count_min": "2",
+  "piinit_count_max": "5",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "MolluskMonster",
+      "80"
+     ],
+     [
+      "Frogman",
+      "20"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Tree",
+    92
+   ],
+   [
+    "Tree",
+    94
+   ],
+   [
+    "Tree",
+    96
+   ],
+   [
+    "Tree",
+    98
+   ],
+   [
+    "Tree",
+    100
+   ],
+   [
+    "Tree",
+    102
+   ]
+  ],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/e4.kod",
+  "class": "OutdoorsE4",
+  "parent": "MonsterRoom",
+  "room_name": "East Merchant Way through Ilerian Woods",
+  "rid": "RID_E4",
+  "pigen_time": "100000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "7",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "SpiderBaby",
+      "65"
+     ],
+     [
+      "Centipede",
+      "35"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Tree",
+    81
+   ],
+   [
+    "Tree",
+    83
+   ],
+   [
+    "Tree",
+    85
+   ],
+   [
+    "Tree",
+    87
+   ],
+   [
+    "Tree",
+    89
+   ],
+   [
+    "Tree",
+    91
+   ],
+   [
+    "Tree",
+    93
+   ],
+   [
+    "Tree",
+    95
+   ],
+   [
+    "Tree",
+    97
+   ],
+   [
+    "Tree",
+    99
+   ],
+   [
+    "Tree",
+    101
+   ],
+   [
+    "Tree",
+    103
+   ],
+   [
+    "Tree",
+    105
+   ],
+   [
+    "Tree",
+    107
+   ],
+   [
+    "Tree",
+    109
+   ],
+   [
+    "Tree",
+    111
+   ],
+   [
+    "Tree",
+    113
+   ],
+   [
+    "Tree",
+    115
+   ],
+   [
+    "Tree",
+    117
+   ],
+   [
+    "Tree",
+    119
+   ],
+   [
+    "Tree",
+    121
+   ],
+   [
+    "Tree",
+    123
+   ],
+   [
+    "Tree",
+    125
+   ],
+   [
+    "Tree",
+    127
+   ],
+   [
+    "Tree",
+    129
+   ],
+   [
+    "Tree",
+    131
+   ],
+   [
+    "Tree",
+    133
+   ],
+   [
+    "Tree",
+    135
+   ],
+   [
+    "Tree",
+    137
+   ],
+   [
+    "Tree",
+    139
+   ],
+   [
+    "Tree",
+    141
+   ]
+  ],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/e5.kod",
+  "class": "OutdoorsE5",
+  "parent": "MonsterRoom",
+  "room_name": "The Forest Shrine",
+  "rid": "RID_E5",
+  "pigen_time": "100000",
+  "pigen_percent": "80",
+  "piinit_count_min": "1",
+  "piinit_count_max": "3",
+  "pimonster_count_max": "3",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/e7.kod",
+  "class": "OutdoorsE7",
+  "parent": "MonsterRoom",
+  "room_name": "The Sweet Grass Prairies",
+  "rid": "RID_E7",
+  "pigen_time": "100000",
+  "pigen_percent": "80",
+  "piinit_count_min": "3",
+  "piinit_count_max": "6",
+  "pimonster_count_max": "8",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 57,
+    "pairs": [
+     [
+      "Centipede",
+      "25"
+     ],
+     [
+      "GroundwormLarva",
+      "75"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/f2.kod",
+  "class": "OutdoorsF2",
+  "parent": "MonsterRoom",
+  "room_name": "The sandy shores of the Great Ocean",
+  "rid": "RID_F2",
+  "pigen_time": "55000",
+  "pigen_percent": "80",
+  "piinit_count_min": "4",
+  "piinit_count_max": "6",
+  "pimonster_count_max": "6",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 67,
+    "pairs": [
+     [
+      "FungusBeast",
+      "50"
+     ],
+     [
+      "Slime",
+      "50"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Tree",
+    110
+   ],
+   [
+    "Tree",
+    112
+   ],
+   [
+    "Tree",
+    114
+   ],
+   [
+    "Tree",
+    116
+   ],
+   [
+    "Tree",
+    118
+   ],
+   [
+    "Tree",
+    120
+   ],
+   [
+    "Tree",
+    122
+   ],
+   [
+    "Tree",
+    124
+   ],
+   [
+    "Tree",
+    126
+   ],
+   [
+    "Tree",
+    128
+   ],
+   [
+    "Tree",
+    130
+   ],
+   [
+    "Tree",
+    132
+   ],
+   [
+    "Tree",
+    134
+   ],
+   [
+    "Tree",
+    136
+   ]
+  ],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/f3.kod",
+  "class": "OutdoorsF3",
+  "parent": "MonsterRoom",
+  "room_name": "Source of the River Ille",
+  "rid": "RID_F3",
+  "pigen_time": "120000",
+  "pigen_percent": "60",
+  "piinit_count_min": "2",
+  "piinit_count_max": "5",
+  "pimonster_count_max": "7",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "FungusBeast",
+      "70"
+     ],
+     [
+      "Ant",
+      "30"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Tree",
+    80
+   ],
+   [
+    "Tree",
+    82
+   ],
+   [
+    "Tree",
+    84
+   ],
+   [
+    "Tree",
+    86
+   ],
+   [
+    "Tree",
+    88
+   ],
+   [
+    "Tree",
+    90
+   ],
+   [
+    "Tree",
+    92
+   ],
+   [
+    "Tree",
+    94
+   ],
+   [
+    "Tree",
+    96
+   ],
+   [
+    "Tree",
+    98
+   ],
+   [
+    "Tree",
+    100
+   ],
+   [
+    "Tree",
+    102
+   ],
+   [
+    "Tree",
+    104
+   ]
+  ],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/f4.kod",
+  "class": "OutdoorsF4",
+  "parent": "MonsterRoom",
+  "room_name": "East Merchant Way",
+  "rid": "RID_F4",
+  "pigen_time": "120000",
+  "pigen_percent": "60",
+  "piinit_count_min": "1",
+  "piinit_count_max": "3",
+  "pimonster_count_max": "6",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "Spider",
+      "45"
+     ],
+     [
+      "Centipede",
+      "55"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/f6.kod",
+  "class": "OutdoorsF6",
+  "parent": "MonsterRoom",
+  "room_name": "Off the beaten path",
+  "rid": "RID_F6",
+  "pigen_time": "70000",
+  "pigen_percent": "60",
+  "piinit_count_min": "3",
+  "piinit_count_max": "6",
+  "pimonster_count_max": "10",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "GroundwormLarva",
+      "70"
+     ],
+     [
+      "Centipede",
+      "30"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 21
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/f7.kod",
+  "class": "OutdoorsF7",
+  "parent": "MonsterRoom",
+  "room_name": "Off the beaten path",
+  "rid": "RID_F7",
+  "pigen_time": "70000",
+  "pigen_percent": "60",
+  "piinit_count_min": "2",
+  "piinit_count_max": "5",
+  "pimonster_count_max": "9",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 59,
+    "pairs": [
+     [
+      "GiantRat",
+      "60"
+     ],
+     [
+      "GroundwormLarva",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/f8.kod",
+  "class": "OutdoorsF8",
+  "parent": "MonsterRoom",
+  "room_name": "Lake of Jala's Song",
+  "rid": "RID_F8",
+  "pigen_time": "60000",
+  "pigen_percent": "60",
+  "piinit_count_min": "1",
+  "piinit_count_max": "3",
+  "pimonster_count_max": "5",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 80,
+    "pairs": [
+     [
+      "SpiderBaby",
+      "50"
+     ],
+     [
+      "Centipede",
+      "50"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Brazier",
+    169
+   ],
+   [
+    "Brazier",
+    171
+   ]
+  ],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/feyforst.kod",
+  "class": "FeyForest",
+  "parent": "MonsterRoom",
+  "pigen_time": "150000",
+  "pigen_percent": "80",
+  "piinit_count_min": "piInit_count_min + 1",
+  "piinit_count_max": "piInit_count_max + 1",
+  "pibaselight": "BASE_LIGHT",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Fairy",
+    140
+   ],
+   [
+    "EvilFairy",
+    145
+   ]
+  ],
+  "ngen": 0
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/forest2.kod",
+  "class": "Forest2",
+  "parent": "MonsterRoom",
+  "room_name": "The Forests of Meridian",
+  "rid": "RID_FOREST2",
+  "pigen_time": "120000",
+  "pigen_percent": "60",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [
+   {
+    "line": 61,
+    "pairs": [
+     [
+      "Ant",
+      "60"
+     ],
+     [
+      "Spider",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Tree",
+    148
+   ],
+   [
+    "SingleTree",
+    150
+   ],
+   [
+    "Tree",
+    152
+   ],
+   [
+    "Tree",
+    154
+   ],
+   [
+    "Tree",
+    156
+   ],
+   [
+    "Tree",
+    158
+   ],
+   [
+    "Tree",
+    160
+   ],
+   [
+    "Tree",
+    162
+   ],
+   [
+    "Tree",
+    164
+   ],
+   [
+    "Tree",
+    166
+   ],
+   [
+    "Tree",
+    168
+   ],
+   [
+    "Tree",
+    170
+   ],
+   [
+    "Tree",
+    172
+   ],
+   [
+    "Tree",
+    174
+   ],
+   [
+    "Tree",
+    176
+   ],
+   [
+    "Tree",
+    178
+   ],
+   [
+    "Tree",
+    180
+   ],
+   [
+    "Tree",
+    182
+   ],
+   [
+    "Tree",
+    184
+   ],
+   [
+    "Tree",
+    186
+   ],
+   [
+    "Tree",
+    188
+   ],
+   [
+    "Tree",
+    190
+   ],
+   [
+    "Tree",
+    192
+   ],
+   [
+    "Tree",
+    194
+   ],
+   [
+    "Tree",
+    196
+   ],
+   [
+    "Tree",
+    198
+   ],
+   [
+    "Tree",
+    200
+   ],
+   [
+    "Tree",
+    202
+   ],
+   [
+    "Tree",
+    205
+   ],
+   [
+    "Tree",
+    208
+   ],
+   [
+    "Mushroom",
+    213
+   ],
+   [
+    "Mushroom",
+    216
+   ],
+   [
+    "Mushroom",
+    219
+   ],
+   [
+    "Mushroom",
+    222
+   ]
+  ],
+  "ngen": 9
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/forest3.kod",
+  "class": "Forest3",
+  "parent": "MonsterRoom",
+  "room_name": "The Forests of Meridian",
+  "rid": "RID_FOREST3",
+  "pigen_time": "60000",
+  "pigen_percent": "50",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [
+   {
+    "line": 53,
+    "pairs": [
+     [
+      "Ant",
+      "40"
+     ],
+     [
+      "Spider",
+      "60"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Tree",
+    108
+   ],
+   [
+    "Tree",
+    110
+   ],
+   [
+    "Tree",
+    112
+   ],
+   [
+    "Tree",
+    114
+   ],
+   [
+    "Tree",
+    116
+   ],
+   [
+    "Tree",
+    118
+   ],
+   [
+    "Tree",
+    120
+   ],
+   [
+    "Tree",
+    122
+   ],
+   [
+    "Tree",
+    124
+   ],
+   [
+    "Tree",
+    126
+   ],
+   [
+    "Tree",
+    128
+   ],
+   [
+    "Tree",
+    130
+   ],
+   [
+    "Tree",
+    132
+   ],
+   [
+    "Tree",
+    134
+   ],
+   [
+    "Tree",
+    136
+   ],
+   [
+    "Tree",
+    138
+   ],
+   [
+    "Tree",
+    140
+   ],
+   [
+    "Tree",
+    142
+   ],
+   [
+    "Tree",
+    144
+   ],
+   [
+    "Tree",
+    146
+   ],
+   [
+    "Tree",
+    148
+   ],
+   [
+    "Tree",
+    150
+   ],
+   [
+    "Tree",
+    152
+   ],
+   [
+    "Tree",
+    154
+   ],
+   [
+    "Tree",
+    156
+   ],
+   [
+    "Tree",
+    158
+   ]
+  ],
+  "ngen": 11
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/forest4.kod",
+  "class": "Forest4",
+  "parent": "MonsterRoom",
+  "room_name": "The Deep Dark Woods of Tos",
+  "rid": "RID_FOREST4",
+  "pibaselight": "LIGHT_VERY_DARK",
+  "plMonsters": [
+   {
+    "line": 47,
+    "pairs": [
+     [
+      "Ant",
+      "30"
+     ],
+     [
+      "Spider",
+      "70"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Tree",
+    86
+   ],
+   [
+    "Tree",
+    88
+   ],
+   [
+    "Tree",
+    90
+   ],
+   [
+    "Tree",
+    92
+   ],
+   [
+    "Tree",
+    94
+   ],
+   [
+    "Tree",
+    96
+   ],
+   [
+    "Tree",
+    98
+   ],
+   [
+    "Tree",
+    100
+   ],
+   [
+    "Tree",
+    102
+   ],
+   [
+    "Tree",
+    104
+   ],
+   [
+    "Tree",
+    106
+   ],
+   [
+    "Tree",
+    108
+   ],
+   [
+    "Tree",
+    110
+   ],
+   [
+    "Tree",
+    112
+   ],
+   [
+    "Tree",
+    114
+   ],
+   [
+    "Tree",
+    116
+   ],
+   [
+    "Tree",
+    118
+   ],
+   [
+    "Tree",
+    120
+   ],
+   [
+    "Tree",
+    122
+   ],
+   [
+    "Tree",
+    124
+   ],
+   [
+    "Tree",
+    126
+   ],
+   [
+    "Tree",
+    128
+   ],
+   [
+    "Tree",
+    130
+   ],
+   [
+    "Tree",
+    132
+   ]
+  ],
+  "ngen": 9
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/g4.kod",
+  "class": "OutdoorsG4",
+  "parent": "MonsterRoom",
+  "room_name": "Main gate to Cor Noth",
+  "rid": "RID_G4",
+  "pigen_time": "150000",
+  "pigen_percent": "40",
+  "piinit_count_min": "1",
+  "piinit_count_max": "4",
+  "pimonster_count_max": "7",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 60,
+    "pairs": [
+     [
+      "SpiderBaby",
+      "75"
+     ],
+     [
+      "Centipede",
+      "25"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/g5.kod",
+  "class": "OutdoorsG5",
+  "parent": "MonsterRoom",
+  "room_name": "The King's Way",
+  "rid": "RID_G5",
+  "pigen_time": "50000",
+  "pigen_percent": "40",
+  "piinit_count_min": "1",
+  "piinit_count_max": "3",
+  "pimonster_count_max": "7",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 57,
+    "pairs": [
+     [
+      "SpiderBaby",
+      "50"
+     ],
+     [
+      "GiantRat",
+      "50"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/g6.kod",
+  "class": "OutdoorsG6",
+  "parent": "MonsterRoom",
+  "room_name": "The King's Way",
+  "rid": "RID_G6",
+  "pigen_time": "100000",
+  "pigen_percent": "80",
+  "piinit_count_min": "4",
+  "piinit_count_max": "8",
+  "pimonster_count_max": "9",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 61,
+    "pairs": [
+     [
+      "Frogman",
+      "90"
+     ],
+     [
+      "Centipede",
+      "10"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "FirePit",
+    72
+   ]
+  ],
+  "ngen": 8
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/g8.kod",
+  "class": "OutdoorsG8",
+  "parent": "MonsterRoom",
+  "room_name": "The Cragged Mountains",
+  "rid": "RID_G8",
+  "pigen_time": "100000",
+  "pigen_percent": "80",
+  "piinit_count_min": "6",
+  "piinit_count_max": "10",
+  "pimonster_count_max": "13",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 54,
+    "pairs": [
+     [
+      "DeathSpider",
+      "40"
+     ],
+     [
+      "Troll",
+      "60"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 20
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/g9.kod",
+  "class": "OutdoorsG9",
+  "parent": "MonsterRoom",
+  "room_name": "An ancient place, its origin forgotten",
+  "rid": "RID_G9",
+  "pigen_time": "100000",
+  "pigen_percent": "80",
+  "piinit_count_min": "2",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "6",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 167,
+    "pairs": [
+     [
+      "Orc",
+      "80"
+     ],
+     [
+      "DeathSpider",
+      "20"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "MovingSector",
+    181
+   ],
+   [
+    "MovingSector",
+    187
+   ],
+   [
+    "MovingSector",
+    192
+   ],
+   [
+    "MovingSector",
+    197
+   ],
+   [
+    "MovingSector",
+    202
+   ],
+   [
+    "MovingSector",
+    209
+   ],
+   [
+    "MovingSector",
+    215
+   ],
+   [
+    "MovingSector",
+    221
+   ],
+   [
+    "MovingSector",
+    227
+   ],
+   [
+    "ManaNode",
+    255
+   ],
+   [
+    "BookPedestal",
+    259
+   ],
+   [
+    "Lever",
+    267
+   ],
+   [
+    "Lever",
+    272
+   ],
+   [
+    "Lever",
+    276
+   ],
+   [
+    "Lever",
+    280
+   ],
+   [
+    "Lever",
+    284
+   ],
+   [
+    "Lever",
+    289
+   ],
+   [
+    "Lever",
+    293
+   ],
+   [
+    "Lever",
+    297
+   ],
+   [
+    "Lever",
+    301
+   ],
+   [
+    "Lever",
+    309
+   ],
+   [
+    "Lever",
+    312
+   ],
+   [
+    "Lever",
+    315
+   ],
+   [
+    "Lever",
+    318
+   ],
+   [
+    "Lever",
+    321
+   ],
+   [
+    "Skeleton",
+    543
+   ],
+   [
+    "BatteredSkeleton",
+    547
+   ]
+  ],
+  "ngen": 19
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/guest6.kod",
+  "class": "Guest6",
+  "parent": "MonsterRoom",
+  "room_name": "Mausoleum",
+  "rid": "RID_guest6",
+  "pimonster_count_max": "20",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [
+   {
+    "line": 174,
+    "pairs": [
+     [
+      "Mummy",
+      "50"
+     ],
+     [
+      "MummyNoTreasure",
+      "50"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "sign",
+    207
+   ],
+   [
+    "sign",
+    210
+   ],
+   [
+    "sign",
+    213
+   ],
+   [
+    "sign",
+    216
+   ],
+   [
+    "Skull",
+    219
+   ],
+   [
+    "sign",
+    222
+   ],
+   [
+    "sign",
+    225
+   ],
+   [
+    "sign",
+    228
+   ],
+   [
+    "sign",
+    231
+   ],
+   [
+    "sign",
+    234
+   ],
+   [
+    "sign",
+    237
+   ],
+   [
+    "sign",
+    240
+   ],
+   [
+    "sign",
+    243
+   ],
+   [
+    "sign",
+    246
+   ],
+   [
+    "sign",
+    249
+   ],
+   [
+    "sign",
+    252
+   ],
+   [
+    "sign",
+    255
+   ],
+   [
+    "sign",
+    258
+   ],
+   [
+    "sign",
+    261
+   ],
+   [
+    "sign",
+    264
+   ],
+   [
+    "sign",
+    267
+   ],
+   [
+    "Brazier",
+    271
+   ],
+   [
+    "Brazier",
+    273
+   ],
+   [
+    "DynamicLight",
+    280
+   ],
+   [
+    "GuestLever",
+    290
+   ],
+   [
+    "GuestLever",
+    296
+   ],
+   [
+    "MummyNoTreasure",
+    330
+   ],
+   [
+    "ManaNode",
+    532
+   ],
+   [
+    "Mummy",
+    604
+   ],
+   [
+    "Mummy",
+    606
+   ],
+   [
+    "Mummy",
+    608
+   ],
+   [
+    "Mummy",
+    610
+   ],
+   [
+    "BlackMummy",
+    613
+   ]
+  ],
+  "ngen": 9
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/h3.kod",
+  "class": "OutdoorsH3",
+  "parent": "MonsterRoom",
+  "room_name": "Outskirts of Barloque",
+  "rid": "RID_H3",
+  "pigen_time": "100000",
+  "pigen_percent": "60",
+  "piinit_count_min": "2",
+  "piinit_count_max": "4",
+  "pimonster_count_max": "6",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "Slime",
+      "30"
+     ],
+     [
+      "GiantRat",
+      "70"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/h5.kod",
+  "class": "OutdoorsH5",
+  "parent": "MonsterRoom",
+  "room_name": "The border of the Badlands",
+  "rid": "RID_H5",
+  "pigen_time": "160000",
+  "pigen_percent": "80",
+  "piinit_count_min": "1",
+  "piinit_count_max": "5",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "Troll",
+      "30"
+     ],
+     [
+      "Groundworm",
+      "70"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 8
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/h6.kod",
+  "class": "OutdoorsH6",
+  "parent": "MonsterRoom",
+  "room_name": "Main gate to the city of Tos",
+  "rid": "RID_H6",
+  "pigen_time": "25000",
+  "pigen_percent": "80",
+  "piinit_count_min": "5",
+  "piinit_count_max": "7",
+  "pimonster_count_max": "7",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 66,
+    "pairs": [
+     [
+      "GiantRat",
+      "70"
+     ],
+     [
+      "Centipede",
+      "30"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 13
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/h7.kod",
+  "class": "OutdoorsH7",
+  "parent": "MonsterRoom",
+  "room_name": "Western border of the Twisted Wood",
+  "rid": "RID_H7",
+  "pigen_time": "60000",
+  "pigen_percent": "80",
+  "piinit_count_min": "6",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "Spider",
+      "60"
+     ],
+     [
+      "Centipede",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "SpiderTree",
+    96
+   ]
+  ],
+  "ngen": 17
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/i3.kod",
+  "class": "OutdoorsI3",
+  "parent": "MonsterRoom",
+  "room_name": "Main gate of Barloque-- Royal City of Meridian",
+  "rid": "RID_I3",
+  "pigen_time": "45000",
+  "pigen_percent": "40",
+  "piinit_count_min": "0",
+  "piinit_count_max": "2",
+  "pimonster_count_max": "7",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 77,
+    "pairs": [
+     [
+      "Centipede",
+      "40"
+     ],
+     [
+      "SpiderBaby",
+      "60"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 9
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/i6.kod",
+  "class": "OutdoorsI6",
+  "parent": "MonsterRoom",
+  "room_name": "Outskirts of Tos",
+  "rid": "RID_I6",
+  "pigen_time": "80000",
+  "pigen_percent": "75",
+  "piinit_count_min": "1",
+  "piinit_count_max": "4",
+  "pimonster_count_max": "6",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 57,
+    "pairs": [
+     [
+      "Spider",
+      "50"
+     ],
+     [
+      "Groundworm",
+      "50"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/i7.kod",
+  "class": "OutdoorsI7",
+  "parent": "MonsterRoom",
+  "room_name": "The Twisted Wood",
+  "rid": "RID_I7",
+  "pigen_time": "45000",
+  "pigen_percent": "80",
+  "piinit_count_min": "8",
+  "piinit_count_max": "12",
+  "pimonster_count_max": "15",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "Spider",
+      "55"
+     ],
+     [
+      "Troll",
+      "45"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/i8.kod",
+  "class": "OutdoorsI8",
+  "parent": "MonsterRoom",
+  "room_name": "The Cragged Mountains",
+  "rid": "RID_I8",
+  "pigen_time": "80000",
+  "pigen_percent": "80",
+  "piinit_count_min": "8",
+  "piinit_count_max": "11",
+  "pimonster_count_max": "14",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 57,
+    "pairs": [
+     [
+      "Troll",
+      "60"
+     ],
+     [
+      "DeathSpider",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 14
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/i9.kod",
+  "class": "OutdoorsI9",
+  "parent": "MonsterRoom",
+  "room_name": "Ukgoth, Holy Land of Trolls",
+  "rid": "RID_I9",
+  "pigen_time": "70000",
+  "pigen_percent": "85",
+  "piinit_count_min": "9",
+  "piinit_count_max": "12",
+  "pimonster_count_max": "15",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [
+   {
+    "line": 77,
+    "pairs": [
+     [
+      "Troll",
+      "100"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "ManaNode",
+    85
+   ],
+   [
+    "StoneTroll",
+    195
+   ],
+   [
+    "StoneTroll",
+    197
+   ],
+   [
+    "StoneTroll",
+    199
+   ],
+   [
+    "Portal",
+    344
+   ]
+  ],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/j3.kod",
+  "class": "OutdoorsJ3",
+  "parent": "MonsterRoom",
+  "room_name": "The Queen's Way",
+  "rid": "RID_J3",
+  "pigen_time": "180000",
+  "pigen_percent": "60",
+  "piinit_count_min": "1",
+  "piinit_count_max": "3",
+  "pimonster_count_max": "5",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 61,
+    "pairs": [
+     [
+      "SpiderBaby",
+      "40"
+     ],
+     [
+      "GiantRat",
+      "60"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "PrincessGuard",
+    69
+   ]
+  ],
+  "ngen": 4
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/jassew1.kod",
+  "class": "JasSewer1",
+  "parent": "MonsterRoom",
+  "room_name": "The Sewers of Jasper",
+  "rid": "RID_JAS_SEWER1",
+  "pigen_time": "80000",
+  "pigen_percent": "80",
+  "piinit_count_min": "6",
+  "piinit_count_max": "7",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 98,
+    "pairs": [
+     [
+      "GiantRat",
+      "95"
+     ],
+     [
+      "Lupogg",
+      "5"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "BookPedestal",
+    127
+   ],
+   [
+    "DynamicLight",
+    132
+   ],
+   [
+    "DynamicLight",
+    134
+   ]
+  ],
+  "ngen": 18
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/jassew2.kod",
+  "class": "JasSewer2",
+  "parent": "MonsterRoom",
+  "room_name": "The Sewers of Jasper",
+  "rid": "RID_JAS_SEWER2",
+  "pigen_time": "55000",
+  "pigen_percent": "80",
+  "piinit_count_min": "5",
+  "piinit_count_max": "7",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "GiantRat",
+      "39"
+     ],
+     [
+      "Lupogg",
+      "60"
+     ],
+     [
+      "RebelTroop",
+      "1"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 16
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/jassew3.kod",
+  "class": "JasSewer3",
+  "parent": "MonsterRoom",
+  "room_name": "The Sewers of Jasper",
+  "rid": "RID_JAS_SEWER3",
+  "pigen_time": "35000",
+  "pigen_percent": "80",
+  "piinit_count_min": "5",
+  "piinit_count_max": "7",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 59,
+    "pairs": [
+     [
+      "GiantRat",
+      "15"
+     ],
+     [
+      "Lupogg",
+      "85"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 22
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest.kod",
+  "class": "KCForest",
+  "parent": "MonsterRoom",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kocsew1.kod",
+  "class": "KocatanSewer1",
+  "parent": "MonsterRoom",
+  "room_name": "A foul place to wander",
+  "rid": "RID_KOC_SEWER1",
+  "pigen_time": "80000",
+  "pigen_percent": "20",
+  "piinit_count_min": "0",
+  "piinit_count_max": "1",
+  "pimonster_count_max": "5",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 64,
+    "pairs": [
+     [
+      "DuskRat",
+      "95"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 2
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kocsew2.kod",
+  "class": "KocatanSewer2",
+  "parent": "MonsterRoom",
+  "room_name": "Up Chuk Creek without a paddle",
+  "rid": "RID_KOC_SEWER2",
+  "pigen_time": "40000",
+  "pigen_percent": "90",
+  "piinit_count_min": "4",
+  "piinit_count_max": "6",
+  "pimonster_count_max": "15",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 62,
+    "pairs": [
+     [
+      "DuskRat",
+      "100"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 6
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/lichmaze.kod",
+  "class": "LichMaze",
+  "parent": "MonsterRoom",
+  "room_name": "The Dungeon of Castle Brax",
+  "rid": "RID_LICH_MAZE",
+  "pibaselight": "LIGHT_VERY_DARK",
+  "plMonsters": [
+   {
+    "line": 62,
+    "pairs": [
+     [
+      "DaemonSkeleton",
+      "50"
+     ],
+     [
+      "TuskedSkeleton",
+      "50"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "MovingSector",
+    76
+   ],
+   [
+    "MovingSector",
+    82
+   ],
+   [
+    "TargetGlobe",
+    102
+   ],
+   [
+    "ViewpointGlobe",
+    105
+   ],
+   [
+    "TargetGlobe",
+    108
+   ],
+   [
+    "ViewpointGlobe",
+    111
+   ],
+   [
+    "TargetGlobe",
+    114
+   ],
+   [
+    "ViewpointGlobe",
+    117
+   ],
+   [
+    "TargetGlobe",
+    120
+   ],
+   [
+    "ViewpointGlobe",
+    123
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/marcry3a.kod",
+  "class": "MarionCrypt3a",
+  "parent": "MonsterRoom",
+  "room_name": "Affirmation of the Forsaken",
+  "rid": "RID_MAR_CRYPT3A",
+  "pimonster_count_max": "15",
+  "pibaselight": "LIGHT_VERY_DARK",
+  "plMonsters": [
+   {
+    "line": 230,
+    "pairs": [
+     [
+      "Thrasher",
+      "100"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "WoodenBox",
+    249
+   ],
+   [
+    "Thrasher",
+    477
+   ],
+   [
+    "Thrasher",
+    506
+   ],
+   [
+    "Thrasher",
+    509
+   ],
+   [
+    "Thrasher",
+    532
+   ],
+   [
+    "Thrasher",
+    535
+   ],
+   [
+    "Thrasher",
+    538
+   ],
+   [
+    "Thrasher",
+    824
+   ],
+   [
+    "Thrasher",
+    832
+   ],
+   [
+    "Thrasher",
+    835
+   ],
+   [
+    "Thrasher",
+    844
+   ],
+   [
+    "Thrasher",
+    847
+   ],
+   [
+    "Thrasher",
+    850
+   ],
+   [
+    "DynamicLight",
+    929
+   ],
+   [
+    "DynamicLight",
+    931
+   ],
+   [
+    "DynamicLight",
+    933
+   ],
+   [
+    "DynamicLight",
+    935
+   ],
+   [
+    "DynamicLight",
+    937
+   ]
+  ],
+  "ngen": 7
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/marcryp1.kod",
+  "class": "MarionCrypt1",
+  "parent": "MonsterRoom",
+  "room_name": "The crypt in Marion",
+  "rid": "RID_MAR_CRYPT1",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [
+   {
+    "line": 101,
+    "pairs": [
+     [
+      "SpectralMummy",
+      "100"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Skull",
+    141
+   ],
+   [
+    "Skull",
+    144
+   ],
+   [
+    "Sign",
+    147
+   ],
+   [
+    "Sign",
+    150
+   ],
+   [
+    "Sign",
+    153
+   ],
+   [
+    "Sign",
+    156
+   ],
+   [
+    "Sign",
+    159
+   ],
+   [
+    "Sign",
+    162
+   ],
+   [
+    "Sign",
+    165
+   ],
+   [
+    "Sign",
+    168
+   ],
+   [
+    "Sign",
+    171
+   ],
+   [
+    "Sign",
+    174
+   ],
+   [
+    "Sign",
+    177
+   ],
+   [
+    "Sign",
+    180
+   ],
+   [
+    "Sign",
+    183
+   ],
+   [
+    "Brazier",
+    186
+   ],
+   [
+    "Brazier",
+    187
+   ],
+   [
+    "GuestLever",
+    198
+   ],
+   [
+    "GuestLever",
+    204
+   ],
+   [
+    "LivingStatue",
+    562
+   ],
+   [
+    "SpectralMummy",
+    571
+   ]
+  ],
+  "ngen": 9
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/marcryp2.kod",
+  "class": "MarionCrypt2",
+  "parent": "MonsterRoom",
+  "room_name": "Resting place of Marion's ancestors",
+  "rid": "RID_MAR_CRYPT2",
+  "piinit_count_min": "1",
+  "piinit_count_max": "3",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [
+   {
+    "line": 79,
+    "pairs": [
+     [
+      "Skeleton",
+      "80"
+     ],
+     [
+      "BatteredSkeleton",
+      "20"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Sign",
+    140
+   ],
+   [
+    "LivingStatue",
+    173
+   ]
+  ],
+  "ngen": 35
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/necare3a.kod",
+  "class": "Necropolis3a",
+  "parent": "MonsterRoom",
+  "room_name": "Ancient Building",
+  "rid": "RID_NECROAREA3a",
+  "pigen_time": "40000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "NarthylWorm",
+      "60"
+     ],
+     [
+      "DaemonSkeleton",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    78
+   ],
+   [
+    "OrnamentalObject",
+    80
+   ]
+  ],
+  "ngen": 2
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/necare3b.kod",
+  "class": "Necropolis3b",
+  "parent": "MonsterRoom",
+  "room_name": "Ancient Building",
+  "rid": "RID_NECROAREA3b",
+  "pigen_time": "40000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "DaemonSkeleton",
+      "50"
+     ],
+     [
+      "TuskedSkeleton",
+      "50"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 3
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/necarea1.kod",
+  "class": "Necropolis1",
+  "parent": "MonsterRoom",
+  "room_name": "Winding Caverns",
+  "rid": "RID_NECROAREA1",
+  "pigen_time": "40000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "DeathSpider",
+      "45"
+     ],
+     [
+      "Skeleton",
+      "55"
+     ]
+    ]
+   }
+  ],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/necarea2.kod",
+  "class": "Necropolis2",
+  "parent": "MonsterRoom",
+  "room_name": "Ancient Graveyard of Brax",
+  "rid": "RID_NECROAREA2",
+  "pigen_time": "40000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_VERY_DARK",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "DaemonSkeleton",
+      "60"
+     ],
+     [
+      "NarthylWorm",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Skull",
+    75
+   ],
+   [
+    "Skull",
+    77
+   ],
+   [
+    "Skull",
+    79
+   ],
+   [
+    "Skull",
+    81
+   ],
+   [
+    "OrnamentalObject",
+    84
+   ],
+   [
+    "OrnamentalObject",
+    86
+   ],
+   [
+    "OrnamentalObject",
+    88
+   ],
+   [
+    "OrnamentalObject",
+    90
+   ],
+   [
+    "OrnamentalObject",
+    92
+   ],
+   [
+    "OrnamentalObject",
+    94
+   ],
+   [
+    "OrnamentalObject",
+    96
+   ],
+   [
+    "OrnamentalObject",
+    98
+   ],
+   [
+    "OrnamentalObject",
+    100
+   ],
+   [
+    "OrnamentalObject",
+    102
+   ],
+   [
+    "OrnamentalObject",
+    104
+   ],
+   [
+    "OrnamentalObject",
+    107
+   ],
+   [
+    "OrnamentalObject",
+    109
+   ],
+   [
+    "OrnamentalObject",
+    111
+   ],
+   [
+    "OrnamentalObject",
+    113
+   ],
+   [
+    "OrnamentalObject",
+    115
+   ],
+   [
+    "OrnamentalObject",
+    117
+   ],
+   [
+    "OrnamentalObject",
+    119
+   ],
+   [
+    "OrnamentalObject",
+    121
+   ],
+   [
+    "OrnamentalObject",
+    124
+   ],
+   [
+    "OrnamentalObject",
+    126
+   ],
+   [
+    "OrnamentalObject",
+    128
+   ],
+   [
+    "OrnamentalObject",
+    130
+   ],
+   [
+    "OrnamentalObject",
+    132
+   ],
+   [
+    "OrnamentalObject",
+    134
+   ],
+   [
+    "OrnamentalObject",
+    136
+   ],
+   [
+    "OrnamentalObject",
+    138
+   ],
+   [
+    "OrnamentalObject",
+    140
+   ],
+   [
+    "OrnamentalObject",
+    142
+   ],
+   [
+    "OrnamentalObject",
+    144
+   ],
+   [
+    "OrnamentalObject",
+    146
+   ],
+   [
+    "OrnamentalObject",
+    148
+   ],
+   [
+    "OrnamentalObject",
+    150
+   ],
+   [
+    "OrnamentalObject",
+    152
+   ],
+   [
+    "OrnamentalObject",
+    155
+   ],
+   [
+    "OrnamentalObject",
+    157
+   ],
+   [
+    "OrnamentalObject",
+    159
+   ],
+   [
+    "OrnamentalObject",
+    161
+   ],
+   [
+    "OrnamentalObject",
+    163
+   ],
+   [
+    "OrnamentalObject",
+    165
+   ],
+   [
+    "OrnamentalObject",
+    167
+   ],
+   [
+    "OrnamentalObject",
+    169
+   ],
+   [
+    "OrnamentalObject",
+    171
+   ],
+   [
+    "OrnamentalObject",
+    173
+   ],
+   [
+    "GlowTree",
+    176
+   ],
+   [
+    "GlowTree",
+    178
+   ],
+   [
+    "GlowTree",
+    180
+   ],
+   [
+    "GlowTree",
+    182
+   ],
+   [
+    "OrnamentalObject",
+    185
+   ],
+   [
+    "OrnamentalObject",
+    187
+   ],
+   [
+    "OrnamentalObject",
+    189
+   ],
+   [
+    "OrnamentalObject",
+    191
+   ],
+   [
+    "OrnamentalObject",
+    193
+   ],
+   [
+    "OrnamentalObject",
+    195
+   ],
+   [
+    "OrnamentalObject",
+    198
+   ]
+  ],
+  "ngen": 4
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/necarea3.kod",
+  "class": "Necropolis3",
+  "parent": "MonsterRoom",
+  "room_name": "Decaying City of Brax",
+  "rid": "RID_NECROAREA3",
+  "pigen_time": "40000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 68,
+    "pairs": [
+     [
+      "NarthylWorm",
+      "60"
+     ],
+     [
+      "TuskedSkeleton",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Skull",
+    135
+   ],
+   [
+    "OrnamentalObject",
+    137
+   ],
+   [
+    "OrnamentalObject",
+    140
+   ],
+   [
+    "OrnamentalObject",
+    142
+   ],
+   [
+    "OrnamentalObject",
+    144
+   ],
+   [
+    "GlowTree",
+    147
+   ],
+   [
+    "OrnamentalObject",
+    150
+   ],
+   [
+    "DynamicLight",
+    156
+   ]
+  ],
+  "ngen": 7
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/necarea4.kod",
+  "class": "Necropolis4",
+  "parent": "MonsterRoom",
+  "room_name": "Within the Walls of Castle Brax",
+  "rid": "RID_NECROAREA4",
+  "pigen_time": "40000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "DaemonSkeleton",
+      "60"
+     ],
+     [
+      "TuskedSkeleton",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    82
+   ],
+   [
+    "OrnamentalObject",
+    84
+   ],
+   [
+    "OrnamentalObject",
+    86
+   ],
+   [
+    "OrnamentalObject",
+    88
+   ],
+   [
+    "OrnamentalObject",
+    90
+   ],
+   [
+    "OrnamentalObject",
+    92
+   ]
+  ],
+  "ngen": 6
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/necarea5.kod",
+  "class": "Necropolis5",
+  "parent": "MonsterRoom",
+  "room_name": "Ruins of Castle Brax",
+  "rid": "RID_NECROAREA5",
+  "pigen_time": "40000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 62,
+    "pairs": [
+     [
+      "DaemonSkeleton",
+      "60"
+     ],
+     [
+      "NarthylWorm",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    101
+   ],
+   [
+    "OrnamentalObject",
+    103
+   ],
+   [
+    "OrnamentalObject",
+    105
+   ],
+   [
+    "OrnamentalObject",
+    107
+   ],
+   [
+    "OrnamentalObject",
+    109
+   ],
+   [
+    "OrnamentalObject",
+    111
+   ],
+   [
+    "OrnamentalObject",
+    113
+   ],
+   [
+    "Lamp",
+    115
+   ],
+   [
+    "Lamp",
+    117
+   ],
+   [
+    "Lamp",
+    119
+   ],
+   [
+    "Lamp",
+    121
+   ],
+   [
+    "OrnamentalObject",
+    123
+   ],
+   [
+    "OrnamentalObject",
+    125
+   ]
+  ],
+  "ngen": 4
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/nest1.kod",
+  "class": "SpiderNest1",
+  "parent": "MonsterRoom",
+  "room_name": "The Spider Nest",
+  "rid": "RID_NEST1",
+  "pigen_time": "20000",
+  "pigen_percent": "60",
+  "pimonster_count_max": "10",
+  "pibaselight": "LIGHT_VERY_DARK",
+  "plMonsters": [
+   {
+    "line": 61,
+    "pairs": [
+     [
+      "SpiderBaby",
+      "80"
+     ],
+     [
+      "Spider",
+      "20"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "SpiderQueen",
+    105
+   ]
+  ],
+  "ngen": 26
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom.kod",
+  "class": "ObjectRoom",
+  "parent": "MonsterRoom",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/oldbarln.kod",
+  "class": "OldBarloqueNorth",
+  "parent": "MonsterRoom",
+  "room_name": "Historic North Barloque",
+  "rid": "RID_OLD_BAR_NORTH",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [],
+  "ngen": 0
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/oldbarls.kod",
+  "class": "OldBarloqueSouth",
+  "parent": "MonsterRoom",
+  "room_name": "Historic South Barloque",
+  "rid": "RID_OLD_BAR_SOUTH",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [],
+  "ngen": 0
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/oldjas.kod",
+  "class": "OldJasper",
+  "parent": "MonsterRoom",
+  "room_name": "Historic Jasper",
+  "rid": "RID_OLD_JASPER",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": [],
+  "ngen": 0
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/oldmar.kod",
+  "class": "OldMarion",
+  "parent": "MonsterRoom",
+  "room_name": "Historic Marion",
+  "rid": "RID_OLD_MARION",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [],
+  "ngen": 0
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/orccav1x.kod",
+  "class": "OrcCave1Extension",
+  "parent": "MonsterRoom",
+  "room_name": "A Tranquil Place",
+  "rid": "RID_ORC_CAVE1_EXT",
+  "pigen_time": "25000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/orccav5x.kod",
+  "class": "OrcCave5Extension",
+  "parent": "MonsterRoom",
+  "room_name": "A spring of vitality",
+  "rid": "RID_ORC_CAVE5_EXT",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Food",
+    54
+   ],
+   [
+    "DynamicLight",
+    110
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/orccave1.kod",
+  "class": "Orccave1",
+  "parent": "MonsterRoom",
+  "room_name": "Ugol's Warren Entrance",
+  "rid": "RID_ORC_CAVE1",
+  "pigen_time": "25000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 55,
+    "pairs": [
+     [
+      "Orc",
+      "60"
+     ],
+     [
+      "CaveOrc",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Portal",
+    86
+   ],
+   [
+    "Portal",
+    97
+   ]
+  ],
+  "ngen": 16
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/orccave2.kod",
+  "class": "OrcCave2",
+  "parent": "MonsterRoom",
+  "room_name": "An Enigmatic Chamber",
+  "rid": "RID_ORC_CAVE2",
+  "pigen_time": "25000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 55,
+    "pairs": [
+     [
+      "Orc",
+      "70"
+     ],
+     [
+      "OrcWizard",
+      "30"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 14
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/orccave3.kod",
+  "class": "OrcCave3",
+  "parent": "MonsterRoom",
+  "room_name": "The Archaic Hollows",
+  "rid": "RID_ORC_CAVE3",
+  "pigen_time": "25000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 54,
+    "pairs": [
+     [
+      "CaveOrc",
+      "70"
+     ],
+     [
+      "Shadowbeast",
+      "30"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 25
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/orccave4.kod",
+  "class": "OrcCave4",
+  "parent": "MonsterRoom",
+  "room_name": "Aqueducts of Merb",
+  "rid": "RID_ORC_CAVE4",
+  "pigen_time": "25000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 55,
+    "pairs": [
+     [
+      "OrcWizard",
+      "60"
+     ],
+     [
+      "Shadowbeast",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 29
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/orccave5.kod",
+  "class": "OrcCave5",
+  "parent": "MonsterRoom",
+  "room_name": "Obfal's Sepulchre",
+  "rid": "RID_ORC_CAVE5",
+  "pigen_time": "15000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "CaveOrc",
+      "75"
+     ],
+     [
+      "OrcWizard",
+      "25"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    69
+   ],
+   [
+    "OrnamentalObject",
+    71
+   ],
+   [
+    "OrnamentalObject",
+    73
+   ],
+   [
+    "OrnamentalObject",
+    75
+   ],
+   [
+    "OrnamentalObject",
+    77
+   ],
+   [
+    "OrnamentalObject",
+    79
+   ],
+   [
+    "OrnamentalObject",
+    81
+   ],
+   [
+    "OrnamentalObject",
+    83
+   ],
+   [
+    "OrnamentalObject",
+    85
+   ],
+   [
+    "OrnamentalObject",
+    87
+   ],
+   [
+    "OrnamentalObject",
+    89
+   ],
+   [
+    "OrnamentalObject",
+    91
+   ],
+   [
+    "OrnamentalObject",
+    93
+   ],
+   [
+    "OrnamentalObject",
+    95
+   ],
+   [
+    "OrnamentalObject",
+    97
+   ],
+   [
+    "OrnamentalObject",
+    99
+   ],
+   [
+    "OrnamentalObject",
+    101
+   ],
+   [
+    "OrnamentalObject",
+    103
+   ],
+   [
+    "OrnamentalObject",
+    105
+   ],
+   [
+    "OrnamentalObject",
+    107
+   ],
+   [
+    "Skull",
+    110
+   ],
+   [
+    "Skull",
+    112
+   ],
+   [
+    "Skull",
+    114
+   ],
+   [
+    "Skull",
+    116
+   ],
+   [
+    "Skull",
+    118
+   ],
+   [
+    "Skull",
+    120
+   ],
+   [
+    "Shrine",
+    123
+   ]
+  ],
+  "ngen": 33
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/orccave6.kod",
+  "class": "OrcCave6",
+  "parent": "MonsterRoom",
+  "room_name": "Konima's Ascension",
+  "rid": "RID_ORC_CAVE6",
+  "pigen_time": "25000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 63,
+    "pairs": [
+     [
+      "CaveOrc",
+      "70"
+     ],
+     [
+      "OrcWizard",
+      "30"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Kocatanbrazier",
+    122
+   ],
+   [
+    "Kocatanbrazier",
+    123
+   ],
+   [
+    "KocatanSentry",
+    124
+   ]
+  ],
+  "ngen": 23
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/orcpita.kod",
+  "class": "OrcPitA",
+  "parent": "MonsterRoom",
+  "room_name": "Grog's Antechamber",
+  "rid": "RID_ORC_PIT_A",
+  "pigen_time": "25000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 60,
+    "pairs": [
+     [
+      "CaveOrc",
+      "60"
+     ],
+     [
+      "OrcWizard",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 16
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/orcpitb.kod",
+  "class": "OrcPitB",
+  "parent": "MonsterRoom",
+  "room_name": "Brog's Antechamber",
+  "rid": "RID_ORC_PIT_B",
+  "pigen_time": "25000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "25",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 75,
+    "pairs": [
+     [
+      "CaveOrc",
+      "70"
+     ],
+     [
+      "GroundwormQueen",
+      "30"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Lever",
+    95
+   ]
+  ],
+  "ngen": 16
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/throne1.kod",
+  "class": "Throne1",
+  "parent": "MonsterRoom",
+  "room_name": "The Throne Room of Victoria Castle",
+  "rid": "RID_THRONE1",
+  "pibaselight": "LIGHT_VERY_DARK / 2",
+  "plMonsters": [
+   {
+    "line": 59,
+    "pairs": [
+     [
+      "Zombie",
+      "20"
+     ],
+     [
+      "TuskedSkeleton",
+      "80"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Ghost",
+    121
+   ],
+   [
+    "Throne",
+    138
+   ],
+   [
+    "Pillar",
+    142
+   ],
+   [
+    "Pillar",
+    143
+   ],
+   [
+    "Pillar",
+    144
+   ],
+   [
+    "Pillar",
+    145
+   ],
+   [
+    "Pillar",
+    146
+   ],
+   [
+    "Pillar",
+    147
+   ],
+   [
+    "Pillar",
+    150
+   ],
+   [
+    "Pillar",
+    151
+   ],
+   [
+    "Pillar",
+    152
+   ],
+   [
+    "Pillar",
+    153
+   ],
+   [
+    "Pillar",
+    154
+   ],
+   [
+    "Pillar",
+    155
+   ],
+   [
+    "Brazier",
+    158
+   ],
+   [
+    "Brazier",
+    160
+   ],
+   [
+    "Brazier",
+    164
+   ],
+   [
+    "Brazier",
+    166
+   ]
+  ],
+  "ngen": 6
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/toscrypt.kod",
+  "class": "TosCrypt",
+  "parent": "MonsterRoom",
+  "room_name": "The Crypt",
+  "rid": "RID_TOS_CRYPT",
+  "pibaselight": "LIGHT_VERY_DARK",
+  "plMonsters": [
+   {
+    "line": 44,
+    "pairs": [
+     [
+      "Zombie",
+      "80"
+     ],
+     [
+      "Skeleton",
+      "20"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Brazier",
+    80
+   ],
+   [
+    "Brazier",
+    82
+   ],
+   [
+    "Brazier",
+    84
+   ],
+   [
+    "Brazier",
+    86
+   ]
+  ],
+  "ngen": 6
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/tosgrave.kod",
+  "class": "TosGraveyard",
+  "parent": "MonsterRoom",
+  "room_name": "The Graveyard of Tos",
+  "rid": "RID_TOS_GRAVEYARD",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [
+   {
+    "line": 51,
+    "pairs": [
+     [
+      "Zombie",
+      "85"
+     ],
+     [
+      "Skeleton",
+      "15"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Tombstone",
+    161
+   ],
+   [
+    "Tombstone",
+    165
+   ],
+   [
+    "Tombstone",
+    169
+   ],
+   [
+    "Tombstone",
+    173
+   ],
+   [
+    "Tombstone",
+    177
+   ],
+   [
+    "Tombstone",
+    181
+   ],
+   [
+    "Tombstone",
+    185
+   ],
+   [
+    "Tombstone",
+    189
+   ],
+   [
+    "Tombstone",
+    193
+   ],
+   [
+    "Tombstone",
+    197
+   ],
+   [
+    "Tombstone",
+    201
+   ]
+  ],
+  "ngen": 8
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/uworld.kod",
+  "class": "Underworld",
+  "parent": "MonsterRoom",
+  "room_name": "The Underworld",
+  "rid": "RID_UNDERWORLD",
+  "pibaselight": "128",
+  "plMonsters": [],
+  "creates": [
+   [
+    "CorpseNode",
+    98
+   ],
+   [
+    "CorpseNode",
+    423
+   ],
+   [
+    "HellPortal",
+    631
+   ],
+   [
+    "BrazierSwitch",
+    633
+   ],
+   [
+    "BrazierSwitch",
+    636
+   ],
+   [
+    "BrazierSwitch",
+    639
+   ],
+   [
+    "BrazierSwitch",
+    642
+   ],
+   [
+    "BrazierSwitch",
+    645
+   ],
+   [
+    "Portal",
+    649
+   ],
+   [
+    "Portal",
+    652
+   ],
+   [
+    "Portal",
+    655
+   ],
+   [
+    "Portal",
+    658
+   ],
+   [
+    "Portal",
+    661
+   ],
+   [
+    "Skull",
+    664
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/bossroom/orcpit1.kod",
+  "class": "Orcpit1",
+  "parent": "BossRoom",
+  "room_name": "Lair of the Orc Pit Boss",
+  "rid": "RID_ORC_PIT",
+  "pigen_time": "50000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "10",
+  "pimonster_count_max": "15",
+  "pibaselight": "(LIGHT_VERY_DARK + LIGHT_MIN)/2",
+  "plMonsters": [
+   {
+    "line": 95,
+    "pairs": [
+     [
+      "CaveOrc",
+      "100"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/bossroom/sewking.kod",
+  "class": "SewerKingLair",
+  "parent": "BossRoom",
+  "room_name": "The Ancient Smuggler's Crossing",
+  "rid": "RID_SEWER_KING",
+  "pigen_time": "25000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "15",
+  "pibaselight": "(LIGHT_VERY_DARK + LIGHT_MIN)/2",
+  "plMonsters": [
+   {
+    "line": 138,
+    "pairs": [
+     [
+      "Lupogg",
+      "100"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "MovingSector",
+    141
+   ],
+   [
+    "MovingSector",
+    145
+   ],
+   [
+    "Lever",
+    176
+   ],
+   [
+    "Lever",
+    178
+   ]
+  ],
+  "ngen": 3
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/feyforst/a1.kod",
+  "class": "OutdoorsA1",
+  "parent": "FeyForest",
+  "room_name": "North Quilicia Wood",
+  "rid": "RID_A1",
+  "pigen_time": "150000",
+  "plMonsters": [],
+  "creates": [
+   [
+    "FeyTree",
+    58
+   ],
+   [
+    "FeyTree",
+    59
+   ],
+   [
+    "FeyTree",
+    60
+   ],
+   [
+    "FeyTree",
+    61
+   ],
+   [
+    "FeyTree",
+    62
+   ],
+   [
+    "FeyTree",
+    63
+   ],
+   [
+    "FeyTree",
+    64
+   ]
+  ],
+  "ngen": 13
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/feyforst/b1.kod",
+  "class": "OutdoorsB1",
+  "parent": "FeyForest",
+  "room_name": "Elhadrim",
+  "rid": "RID_B1",
+  "pigen_time": "180000",
+  "plMonsters": [],
+  "creates": [
+   [
+    "FeyTree",
+    61
+   ],
+   [
+    "FeyTree",
+    62
+   ],
+   [
+    "FeyTree",
+    63
+   ]
+  ],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/feyforst/b2.kod",
+  "class": "OutdoorsB2",
+  "parent": "FeyForest",
+  "room_name": "Lower Elhadrim",
+  "rid": "RID_B2",
+  "pigen_time": "240000",
+  "plMonsters": [],
+  "creates": [
+   [
+    "FeyTree",
+    60
+   ],
+   [
+    "FeyTree",
+    62
+   ],
+   [
+    "FeyTree",
+    64
+   ],
+   [
+    "FeyTree",
+    66
+   ],
+   [
+    "FeyTree",
+    68
+   ],
+   [
+    "FeyTree",
+    70
+   ],
+   [
+    "FeyTree",
+    72
+   ],
+   [
+    "FeyTree",
+    74
+   ],
+   [
+    "FeyTree",
+    76
+   ],
+   [
+    "FeyTree",
+    78
+   ],
+   [
+    "FeyTree",
+    80
+   ],
+   [
+    "FeyTree",
+    82
+   ]
+  ],
+  "ngen": 14
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/feyforst/c1.kod",
+  "class": "OutdoorsC1",
+  "parent": "FeyForest",
+  "room_name": "The Fey's Crossing",
+  "rid": "RID_C1",
+  "pigen_time": "100000",
+  "plMonsters": [],
+  "creates": [
+   [
+    "FeyTree",
+    63
+   ],
+   [
+    "FeyTree",
+    65
+   ],
+   [
+    "FeyTree",
+    67
+   ],
+   [
+    "FeyTree",
+    69
+   ],
+   [
+    "FeyTree",
+    71
+   ],
+   [
+    "FeyTree",
+    73
+   ],
+   [
+    "FeyTree",
+    75
+   ]
+  ],
+  "ngen": 12
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/feyforst/c2.kod",
+  "class": "OutdoorsC2",
+  "parent": "FeyForest",
+  "room_name": "The Vale of Sorrows",
+  "rid": "RID_C2",
+  "pigen_time": "50000",
+  "plMonsters": [],
+  "creates": [
+   [
+    "FeyNode",
+    65
+   ],
+   [
+    "FeyTree",
+    255
+   ],
+   [
+    "FeyTree",
+    256
+   ],
+   [
+    "FeyTree",
+    257
+   ],
+   [
+    "FeyTree",
+    258
+   ],
+   [
+    "FeyTree",
+    259
+   ],
+   [
+    "FeyTree",
+    260
+   ],
+   [
+    "FeyTree",
+    261
+   ],
+   [
+    "FeyTree",
+    262
+   ],
+   [
+    "FeyTree",
+    263
+   ],
+   [
+    "FeyTree",
+    264
+   ],
+   [
+    "FeyTree",
+    265
+   ],
+   [
+    "FeyTree",
+    266
+   ],
+   [
+    "FeyTree",
+    267
+   ],
+   [
+    "FeyTree",
+    268
+   ],
+   [
+    "FeyTree",
+    269
+   ],
+   [
+    "FeyTree",
+    270
+   ],
+   [
+    "FeyTree",
+    271
+   ],
+   [
+    "FeyTree",
+    272
+   ],
+   [
+    "FeyTree",
+    273
+   ],
+   [
+    "FeyTree",
+    274
+   ],
+   [
+    "FeyTree",
+    275
+   ],
+   [
+    "FeyTree",
+    276
+   ],
+   [
+    "FeyTree",
+    277
+   ],
+   [
+    "FeyTree",
+    278
+   ],
+   [
+    "FeyTree",
+    279
+   ],
+   [
+    "FeyTree",
+    280
+   ],
+   [
+    "FeyTree",
+    281
+   ],
+   [
+    "FeyTree",
+    282
+   ]
+  ],
+  "ngen": 16
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/feyforst/c3.kod",
+  "class": "OutdoorsC3",
+  "parent": "FeyForest",
+  "room_name": "Quilicia Wood",
+  "rid": "RID_C3",
+  "pigen_time": "150000",
+  "plMonsters": [],
+  "creates": [
+   [
+    "FeyTree",
+    70
+   ],
+   [
+    "FeyTree",
+    72
+   ],
+   [
+    "FeyTree",
+    74
+   ],
+   [
+    "FeyTree",
+    76
+   ]
+  ],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/feyforst/d1.kod",
+  "class": "OutdoorsD1",
+  "parent": "FeyForest",
+  "room_name": "Dirhadrim",
+  "rid": "RID_D1",
+  "pigen_time": "180000",
+  "plMonsters": [],
+  "creates": [
+   [
+    "FeyTree",
+    63
+   ],
+   [
+    "FeyTree",
+    65
+   ],
+   [
+    "FeyTree",
+    67
+   ],
+   [
+    "FeyTree",
+    69
+   ],
+   [
+    "FeyTree",
+    71
+   ],
+   [
+    "FeyTree",
+    73
+   ],
+   [
+    "FeyTree",
+    75
+   ],
+   [
+    "FeyTree",
+    77
+   ],
+   [
+    "FeyTree",
+    79
+   ]
+  ],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/feyforst/d2.kod",
+  "class": "OutdoorsD2",
+  "parent": "FeyForest",
+  "room_name": "Lower Dirhadrim",
+  "rid": "RID_D2",
+  "pigen_time": "210000",
+  "plMonsters": [],
+  "creates": [
+   [
+    "FeyTree",
+    62
+   ],
+   [
+    "FeyTree",
+    64
+   ],
+   [
+    "FeyTree",
+    66
+   ],
+   [
+    "FeyTree",
+    68
+   ],
+   [
+    "FeyTree",
+    70
+   ],
+   [
+    "FeyTree",
+    72
+   ],
+   [
+    "FeyTree",
+    74
+   ]
+  ],
+  "ngen": 12
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/guest6/newb6.kod",
+  "class": "Newb6",
+  "parent": "Guest6",
+  "room_name": "Mausoleum",
+  "rid": "RID_NEWB6",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Elderberry",
+    68
+   ],
+   [
+    "Herbs",
+    71
+   ],
+   [
+    "Mushroom",
+    74
+   ],
+   [
+    "Money",
+    77
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/ka0.kod",
+  "class": "OutdoorsKA0",
+  "parent": "KCForest",
+  "room_name": "A dark, humid cavern",
+  "rid": "RID_KA0",
+  "pimonster_count_max": "0",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Shrine",
+    166
+   ],
+   [
+    "Firepit",
+    181
+   ],
+   [
+    "Firepit",
+    184
+   ],
+   [
+    "Firepit",
+    187
+   ],
+   [
+    "Firepit",
+    190
+   ],
+   [
+    "Firepit",
+    193
+   ],
+   [
+    "Firepit",
+    196
+   ],
+   [
+    "GhostItem",
+    367
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/ka1.kod",
+  "class": "OutdoorsKA1",
+  "parent": "KCForest",
+  "room_name": "Cliff Hive",
+  "rid": "RID_KA1",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 57,
+    "pairs": [
+     [
+      "Dragonfly",
+      "90"
+     ],
+     [
+      "DragonflyQueen",
+      "10"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 13
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/ka2.kod",
+  "class": "OutdoorsKA2",
+  "parent": "KCForest",
+  "room_name": "The Jungle Cliffs",
+  "rid": "RID_KA2",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "Dragonfly",
+      "100"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 9
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/ka3.kod",
+  "class": "OutdoorsKA3",
+  "parent": "KCForest",
+  "room_name": "A notch in the jungle",
+  "rid": "RID_KA3",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "Dragonfly",
+      "100"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "SmokeColumn",
+    88
+   ]
+  ],
+  "ngen": 3
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/ka4.kod",
+  "class": "OutdoorsKA4",
+  "parent": "KCForest",
+  "room_name": "Into the Jungle",
+  "rid": "RID_KA4",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "Avar",
+      "10"
+     ],
+     [
+      "Dragonfly",
+      "90"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 6
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/ka5.kod",
+  "class": "OutdoorsKA5",
+  "parent": "KCForest",
+  "room_name": "Outside the Guard Tower",
+  "rid": "RID_KA5",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "Avar",
+      "95"
+     ],
+     [
+      "Dragonfly",
+      "5"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    100
+   ],
+   [
+    "OrnamentalObject",
+    102
+   ],
+   [
+    "OrnamentalObject",
+    104
+   ],
+   [
+    "OrnamentalObject",
+    106
+   ],
+   [
+    "OrnamentalObject",
+    108
+   ],
+   [
+    "OrnamentalObject",
+    110
+   ],
+   [
+    "OrnamentalObject",
+    112
+   ]
+  ],
+  "ngen": 3
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kb1.kod",
+  "class": "OutdoorsKB1",
+  "parent": "KCForest",
+  "room_name": "The Cliffs",
+  "rid": "RID_KB1",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 55,
+    "pairs": [
+     [
+      "Dragonfly",
+      "90"
+     ],
+     [
+      "Avar",
+      "10"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    84
+   ],
+   [
+    "OrnamentalObject",
+    86
+   ]
+  ],
+  "ngen": 3
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kb2.kod",
+  "class": "OutdoorsKB2",
+  "parent": "KCForest",
+  "room_name": "Headquarters for the Avar Warriors",
+  "rid": "RID_KB2",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "Avar",
+      "60"
+     ],
+     [
+      "AvarShaman",
+      "18"
+     ],
+     [
+      "AvarChieftain",
+      "7"
+     ],
+     [
+      "Kriipa",
+      "15"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    72
+   ],
+   [
+    "OrnamentalObject",
+    74
+   ],
+   [
+    "OrnamentalObject",
+    76
+   ],
+   [
+    "OrnamentalObject",
+    78
+   ],
+   [
+    "OrnamentalObject",
+    80
+   ],
+   [
+    "OrnamentalObject",
+    82
+   ],
+   [
+    "OrnamentalObject",
+    84
+   ],
+   [
+    "OrnamentalObject",
+    86
+   ]
+  ],
+  "ngen": 6
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kb3.kod",
+  "class": "OutdoorsKB3",
+  "parent": "KCForest",
+  "room_name": "Camp of the Warrior Avars",
+  "rid": "RID_KB3",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 55,
+    "pairs": [
+     [
+      "Avar",
+      "50"
+     ],
+     [
+      "AvarShaman",
+      "18"
+     ],
+     [
+      "AvarChieftain",
+      "5"
+     ],
+     [
+      "Kriipa",
+      "27"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    73
+   ],
+   [
+    "OrnamentalObject",
+    75
+   ],
+   [
+    "OrnamentalObject",
+    77
+   ],
+   [
+    "OrnamentalObject",
+    79
+   ],
+   [
+    "OrnamentalObject",
+    81
+   ],
+   [
+    "OrnamentalObject",
+    83
+   ],
+   [
+    "OrnamentalObject",
+    85
+   ],
+   [
+    "OrnamentalObject",
+    87
+   ],
+   [
+    "OrnamentalObject",
+    89
+   ],
+   [
+    "OrnamentalObject",
+    91
+   ],
+   [
+    "OrnamentalObject",
+    93
+   ],
+   [
+    "OrnamentalObject",
+    95
+   ],
+   [
+    "OrnamentalObject",
+    97
+   ]
+  ],
+  "ngen": 7
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kb4.kod",
+  "class": "OutdoorsKB4",
+  "parent": "KCForest",
+  "room_name": "Path to the Ruins",
+  "rid": "RID_KB4",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 54,
+    "pairs": [
+     [
+      "Kriipa",
+      "100"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    72
+   ],
+   [
+    "OrnamentalObject",
+    74
+   ],
+   [
+    "OrnamentalObject",
+    76
+   ],
+   [
+    "OrnamentalObject",
+    78
+   ],
+   [
+    "OrnamentalObject",
+    80
+   ],
+   [
+    "OrnamentalObject",
+    82
+   ],
+   [
+    "OrnamentalObject",
+    84
+   ],
+   [
+    "OrnamentalObject",
+    86
+   ],
+   [
+    "OrnamentalObject",
+    88
+   ],
+   [
+    "OrnamentalObject",
+    90
+   ],
+   [
+    "OrnamentalObject",
+    92
+   ],
+   [
+    "OrnamentalObject",
+    94
+   ],
+   [
+    "OrnamentalObject",
+    96
+   ],
+   [
+    "OrnamentalObject",
+    98
+   ],
+   [
+    "OrnamentalObject",
+    100
+   ],
+   [
+    "OrnamentalObject",
+    102
+   ],
+   [
+    "OrnamentalObject",
+    104
+   ],
+   [
+    "OrnamentalObject",
+    106
+   ]
+  ],
+  "ngen": 8
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kb5.kod",
+  "class": "OutdoorsKB5",
+  "parent": "KCForest",
+  "room_name": "Into the Jungle",
+  "rid": "RID_KB5",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 63,
+    "pairs": [
+     [
+      "Dragonfly",
+      "100"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    80
+   ],
+   [
+    "OrnamentalObject",
+    82
+   ],
+   [
+    "OrnamentalObject",
+    84
+   ],
+   [
+    "OrnamentalObject",
+    86
+   ],
+   [
+    "OrnamentalObject",
+    88
+   ],
+   [
+    "OrnamentalObject",
+    90
+   ],
+   [
+    "OrnamentalObject",
+    92
+   ],
+   [
+    "OrnamentalObject",
+    94
+   ],
+   [
+    "OrnamentalObject",
+    96
+   ],
+   [
+    "OrnamentalObject",
+    98
+   ],
+   [
+    "OrnamentalObject",
+    100
+   ],
+   [
+    "OrnamentalObject",
+    102
+   ]
+  ],
+  "ngen": 5
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kc1.kod",
+  "class": "OutdoorsKC1",
+  "parent": "KCForest",
+  "room_name": "The Chasm",
+  "rid": "RID_KC1",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "Avar",
+      "90"
+     ],
+     [
+      "AvarChieftain",
+      "10"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    81
+   ],
+   [
+    "OrnamentalObject",
+    83
+   ],
+   [
+    "OrnamentalObject",
+    85
+   ]
+  ],
+  "ngen": 4
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kc2.kod",
+  "class": "OutdoorsKC2",
+  "parent": "KCForest",
+  "room_name": "Turf of the Warrior Avars",
+  "rid": "RID_KC2",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "Avar",
+      "50"
+     ],
+     [
+      "AvarShaman",
+      "10"
+     ],
+     [
+      "Kriipa",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    74
+   ],
+   [
+    "OrnamentalObject",
+    76
+   ],
+   [
+    "OrnamentalObject",
+    78
+   ],
+   [
+    "OrnamentalObject",
+    80
+   ],
+   [
+    "OrnamentalObject",
+    82
+   ],
+   [
+    "OrnamentalObject",
+    84
+   ],
+   [
+    "OrnamentalObject",
+    86
+   ],
+   [
+    "OrnamentalObject",
+    88
+   ],
+   [
+    "OrnamentalObject",
+    90
+   ],
+   [
+    "OrnamentalObject",
+    92
+   ],
+   [
+    "OrnamentalObject",
+    94
+   ],
+   [
+    "OrnamentalObject",
+    96
+   ],
+   [
+    "OrnamentalObject",
+    98
+   ],
+   [
+    "OrnamentalObject",
+    100
+   ],
+   [
+    "OrnamentalObject",
+    102
+   ],
+   [
+    "OrnamentalObject",
+    104
+   ]
+  ],
+  "ngen": 8
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kc3.kod",
+  "class": "OutdoorsKC3",
+  "parent": "KCForest",
+  "room_name": "Ruins of the Riija Temple",
+  "rid": "RID_KC3",
+  "pigen_time": "30000",
+  "pigen_percent": "70",
+  "piinit_count_min": "8",
+  "piinit_count_max": "12",
+  "pimonster_count_max": "20",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 54,
+    "pairs": [
+     [
+      "Avar",
+      "60"
+     ],
+     [
+      "AvarShaman",
+      "25"
+     ],
+     [
+      "AvarChieftain",
+      "15"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    77
+   ],
+   [
+    "OrnamentalObject",
+    79
+   ],
+   [
+    "OrnamentalObject",
+    81
+   ],
+   [
+    "OrnamentalObject",
+    83
+   ],
+   [
+    "OrnamentalObject",
+    85
+   ],
+   [
+    "OrnamentalObject",
+    87
+   ],
+   [
+    "OrnamentalObject",
+    89
+   ],
+   [
+    "OrnamentalObject",
+    91
+   ],
+   [
+    "OrnamentalObject",
+    93
+   ],
+   [
+    "OrnamentalObject",
+    95
+   ],
+   [
+    "OrnamentalObject",
+    97
+   ],
+   [
+    "OrnamentalObject",
+    99
+   ],
+   [
+    "OrnamentalObject",
+    101
+   ],
+   [
+    "OrnamentalObject",
+    103
+   ],
+   [
+    "OrnamentalObject",
+    105
+   ],
+   [
+    "OrnamentalObject",
+    107
+   ],
+   [
+    "OrnamentalObject",
+    109
+   ],
+   [
+    "OrnamentalObject",
+    111
+   ],
+   [
+    "OrnamentalObject",
+    113
+   ]
+  ],
+  "ngen": 9
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kc4.kod",
+  "class": "OutdoorsKC4",
+  "parent": "KCForest",
+  "room_name": "Origin of the Kriipa",
+  "rid": "RID_KC4",
+  "pigen_time": "25000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "13",
+  "pimonster_count_max": "13",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 54,
+    "pairs": [
+     [
+      "DragonFly",
+      "30"
+     ],
+     [
+      "Avar",
+      "70"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    79
+   ],
+   [
+    "OrnamentalObject",
+    81
+   ],
+   [
+    "OrnamentalObject",
+    83
+   ],
+   [
+    "OrnamentalObject",
+    85
+   ],
+   [
+    "OrnamentalObject",
+    87
+   ],
+   [
+    "OrnamentalObject",
+    89
+   ],
+   [
+    "OrnamentalObject",
+    91
+   ],
+   [
+    "OrnamentalObject",
+    93
+   ],
+   [
+    "OrnamentalObject",
+    95
+   ],
+   [
+    "OrnamentalObject",
+    97
+   ],
+   [
+    "OrnamentalObject",
+    99
+   ],
+   [
+    "OrnamentalObject",
+    101
+   ],
+   [
+    "OrnamentalObject",
+    103
+   ],
+   [
+    "OrnamentalObject",
+    105
+   ]
+  ],
+  "ngen": 6
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kc5.kod",
+  "class": "OutdoorsKC5",
+  "parent": "KCForest",
+  "room_name": "Outside the Mad Scientist's Hut",
+  "rid": "RID_KC5",
+  "pigen_time": "900000",
+  "pigen_percent": "5",
+  "piinit_count_min": "2",
+  "piinit_count_max": "3",
+  "pimonster_count_max": "5",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "DragonflyQueen",
+      "100"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 0
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kd1.kod",
+  "class": "OutdoorsKD1",
+  "parent": "KCForest",
+  "room_name": "Lair of the Bone Priestess",
+  "rid": "RID_KD1",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 56,
+    "pairs": [
+     [
+      "Avar",
+      "90"
+     ],
+     [
+      "AvarChieftain",
+      "10"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "YrxlTree",
+    82
+   ],
+   [
+    "OrnamentalObject",
+    84
+   ],
+   [
+    "OrnamentalObject",
+    86
+   ],
+   [
+    "OrnamentalObject",
+    88
+   ],
+   [
+    "OrnamentalObject",
+    90
+   ],
+   [
+    "KocatanBonePriestess",
+    93
+   ]
+  ],
+  "ngen": 5
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kd2.kod",
+  "class": "OutdoorsKD2",
+  "parent": "KCForest",
+  "room_name": "Territory of the Noble Avars",
+  "rid": "RID_KD2",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 54,
+    "pairs": [
+     [
+      "Avar",
+      "80"
+     ],
+     [
+      "AvarShaman",
+      "15"
+     ],
+     [
+      "AvarChieftain",
+      "5"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    62
+   ],
+   [
+    "OrnamentalObject",
+    64
+   ],
+   [
+    "OrnamentalObject",
+    66
+   ],
+   [
+    "OrnamentalObject",
+    68
+   ],
+   [
+    "OrnamentalObject",
+    70
+   ],
+   [
+    "OrnamentalObject",
+    72
+   ],
+   [
+    "OrnamentalObject",
+    74
+   ],
+   [
+    "OrnamentalObject",
+    76
+   ],
+   [
+    "OrnamentalObject",
+    78
+   ],
+   [
+    "OrnamentalObject",
+    80
+   ],
+   [
+    "OrnamentalObject",
+    82
+   ],
+   [
+    "OrnamentalObject",
+    84
+   ],
+   [
+    "OrnamentalObject",
+    86
+   ],
+   [
+    "OrnamentalObject",
+    88
+   ]
+  ],
+  "ngen": 6
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kd3.kod",
+  "class": "OutdoorsKD3",
+  "parent": "KCForest",
+  "room_name": "Deep in the Jungle",
+  "rid": "RID_KD3",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 54,
+    "pairs": [
+     [
+      "Avar",
+      "80"
+     ],
+     [
+      "AvarShaman",
+      "18"
+     ],
+     [
+      "AvarChieftain",
+      "2"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "OrnamentalObject",
+    62
+   ],
+   [
+    "OrnamentalObject",
+    64
+   ],
+   [
+    "OrnamentalObject",
+    66
+   ],
+   [
+    "OrnamentalObject",
+    68
+   ],
+   [
+    "OrnamentalObject",
+    70
+   ],
+   [
+    "OrnamentalObject",
+    72
+   ],
+   [
+    "OrnamentalObject",
+    74
+   ],
+   [
+    "OrnamentalObject",
+    76
+   ],
+   [
+    "OrnamentalObject",
+    78
+   ],
+   [
+    "OrnamentalObject",
+    80
+   ],
+   [
+    "OrnamentalObject",
+    82
+   ],
+   [
+    "OrnamentalObject",
+    84
+   ],
+   [
+    "OrnamentalObject",
+    86
+   ],
+   [
+    "OrnamentalObject",
+    88
+   ],
+   [
+    "OrnamentalObject",
+    90
+   ],
+   [
+    "OrnamentalObject",
+    92
+   ],
+   [
+    "OrnamentalObject",
+    94
+   ],
+   [
+    "OrnamentalObject",
+    96
+   ],
+   [
+    "OrnamentalObject",
+    98
+   ],
+   [
+    "OrnamentalObject",
+    100
+   ],
+   [
+    "OrnamentalObject",
+    102
+   ],
+   [
+    "OrnamentalObject",
+    104
+   ],
+   [
+    "OrnamentalObject",
+    106
+   ],
+   [
+    "OrnamentalObject",
+    108
+   ],
+   [
+    "OrnamentalObject",
+    110
+   ]
+  ],
+  "ngen": 6
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kd4.kod",
+  "class": "OutdoorsKD4",
+  "parent": "KCForest",
+  "room_name": "The Clearing of the Trading Post",
+  "rid": "RID_KD4",
+  "pigen_time": "120000",
+  "pigen_percent": "50",
+  "piinit_count_min": "2",
+  "piinit_count_max": "4",
+  "pimonster_count_max": "3",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 59,
+    "pairs": [
+     [
+      "Avar",
+      "80"
+     ],
+     [
+      "AvarShaman",
+      "10"
+     ],
+     [
+      "AvarChieftain",
+      "10"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 5
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/ke2.kod",
+  "class": "OutdoorsKE2",
+  "parent": "KCForest",
+  "room_name": "Headquarters of the Noble Avars",
+  "rid": "RID_KE2",
+  "pigen_time": "90000",
+  "pigen_percent": "70",
+  "piinit_count_min": "5",
+  "piinit_count_max": "9",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 54,
+    "pairs": [
+     [
+      "Avar",
+      "60"
+     ],
+     [
+      "AvarShaman",
+      "25"
+     ],
+     [
+      "AvarChieftain",
+      "15"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 8
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/ke4.kod",
+  "class": "OutdoorsKE4",
+  "parent": "KCForest",
+  "room_name": "Avar Village",
+  "rid": "RID_KE4",
+  "pigen_time": "60000",
+  "pigen_percent": "80",
+  "piinit_count_min": "7",
+  "piinit_count_max": "10",
+  "pimonster_count_max": "12",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 118,
+    "pairs": [
+     [
+      "Avar",
+      "40"
+     ],
+     [
+      "AvarChieftain",
+      "35"
+     ],
+     [
+      "Avarshaman",
+      "25"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "AvarNode",
+    123
+   ]
+  ],
+  "ngen": 11
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/kcforest/kmadscih.kod",
+  "class": "MadScientistHut",
+  "parent": "KCForest",
+  "room_name": "Hut of the Mad Scientist",
+  "rid": "RID_MAD_SCIENTIST_HUT",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "KocatanMadScientist",
+    68
+   ],
+   [
+    "DynamicLight",
+    72
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/b6.kod",
+  "class": "OutdoorsB6",
+  "parent": "ObjectRoom",
+  "room_name": "Druid Hills",
+  "rid": "RID_B6",
+  "pigen_time": "45000",
+  "pigen_percent": "80",
+  "piinit_count_min": "4",
+  "piinit_count_max": "8",
+  "pimonster_count_max": "13",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "Scorpion",
+      "40"
+     ],
+     [
+      "Troll",
+      "60"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 13
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/barlbar1.kod",
+  "class": "BarlBar1",
+  "parent": "ObjectRoom",
+  "room_name": "The Bhrama & Falcon",
+  "rid": "RID_BAR_BAR",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BarloqueBartender",
+    101
+   ],
+   [
+    "Table",
+    104
+   ],
+   [
+    "Table",
+    106
+   ],
+   [
+    "Table",
+    108
+   ],
+   [
+    "Table",
+    110
+   ],
+   [
+    "Table",
+    112
+   ],
+   [
+    "Table",
+    114
+   ],
+   [
+    "Table",
+    116
+   ],
+   [
+    "Table",
+    118
+   ],
+   [
+    "Table",
+    120
+   ],
+   [
+    "Table",
+    122
+   ],
+   [
+    "Table",
+    124
+   ],
+   [
+    "Table",
+    126
+   ],
+   [
+    "Table",
+    128
+   ],
+   [
+    "Table",
+    130
+   ],
+   [
+    "Table",
+    132
+   ],
+   [
+    "BarStool",
+    136
+   ],
+   [
+    "BarStool",
+    138
+   ],
+   [
+    "BarStool",
+    141
+   ],
+   [
+    "BarStool",
+    143
+   ],
+   [
+    "BarStool",
+    145
+   ],
+   [
+    "BarStool",
+    147
+   ],
+   [
+    "BarStool",
+    150
+   ],
+   [
+    "BarStool",
+    152
+   ],
+   [
+    "BarStool",
+    154
+   ],
+   [
+    "BarStool",
+    156
+   ],
+   [
+    "BarStool",
+    159
+   ],
+   [
+    "BarStool",
+    161
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/c5.kod",
+  "class": "OutdoorsC5",
+  "parent": "ObjectRoom",
+  "room_name": "West Merchant Way through Ilerian Woods",
+  "rid": "RID_C5",
+  "pigen_time": "70000",
+  "pigen_percent": "70",
+  "piinit_count_min": "1",
+  "piinit_count_max": "4",
+  "pimonster_count_max": "6",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 59,
+    "pairs": [
+     [
+      "SpiderBaby",
+      "30"
+     ],
+     [
+      "GiantRat",
+      "70"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/c7.kod",
+  "class": "OutdoorsC7",
+  "parent": "ObjectRoom",
+  "room_name": "Faronath, home of the TreeFolk",
+  "rid": "RID_C7",
+  "pigen_time": "45000",
+  "pigen_percent": "80",
+  "piinit_count_min": "6",
+  "piinit_count_max": "12",
+  "pimonster_count_max": "8",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "Spider",
+      "5"
+     ],
+     [
+      "Ent",
+      "95"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 18
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/canyon1.kod",
+  "class": "Canyon1",
+  "parent": "ObjectRoom",
+  "room_name": "The Berdonne Canyons",
+  "rid": "RID_CANYON1",
+  "pigen_time": "40000",
+  "pigen_percent": "70",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 64,
+    "pairs": [
+     [
+      "RedAnt",
+      "50"
+     ],
+     [
+      "Orc",
+      "50"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 13
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/canyon2.kod",
+  "class": "Canyon2",
+  "parent": "ObjectRoom",
+  "room_name": "Martyr's Battleground",
+  "rid": "RID_CANYON2",
+  "pigen_time": "10000",
+  "pigen_percent": "85",
+  "piinit_count_min": "9",
+  "piinit_count_max": "12",
+  "pimonster_count_max": "20",
+  "pibaselight": "255",
+  "plMonsters": [
+   {
+    "line": 72,
+    "pairs": [
+     [
+      "StoneTroll",
+      "85"
+     ],
+     [
+      "GroundwormQueen",
+      "15"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "ManaNode",
+    80
+   ],
+   [
+    "Portal",
+    82
+   ]
+  ],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/castle1.kod",
+  "class": "CASTLE1",
+  "parent": "ObjectRoom",
+  "room_name": "Castle Victoria",
+  "rid": "RID_CASTLE1",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [
+   {
+    "line": 49,
+    "pairs": [
+     [
+      "Skeleton",
+      "40"
+     ],
+     [
+      "Zombie",
+      "20"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 12
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/cave2.kod",
+  "class": "Cave2",
+  "parent": "ObjectRoom",
+  "room_name": "A Deep, Dark, Spooky, Icky Cave",
+  "rid": "RID_CAVE2",
+  "pigen_time": "45000",
+  "pigen_percent": "80",
+  "pibaselight": "LIGHT_MIN",
+  "plMonsters": [
+   {
+    "line": 78,
+    "pairs": [
+     [
+      "Orc",
+      "50"
+     ],
+     [
+      "Spider",
+      "50"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "ManaNode",
+    125
+   ]
+  ],
+  "ngen": 13
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/duke4.kod",
+  "class": "Duke4",
+  "parent": "ObjectRoom",
+  "room_name": "The Duke's Feast Hall",
+  "rid": "RID_DUKE4",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "DukeGuard",
+    110
+   ],
+   [
+    "DukeGuard",
+    112
+   ],
+   [
+    "DukeGuard",
+    114
+   ],
+   [
+    "DukeGuard",
+    116
+   ],
+   [
+    "Candelabra",
+    120
+   ],
+   [
+    "Candelabra",
+    122
+   ],
+   [
+    "Candelabra",
+    124
+   ],
+   [
+    "Candelabra",
+    126
+   ],
+   [
+    "Candelabra",
+    128
+   ],
+   [
+    "Candelabra",
+    130
+   ],
+   [
+    "Brazier",
+    134
+   ],
+   [
+    "Brazier",
+    136
+   ],
+   [
+    "Brazier",
+    138
+   ],
+   [
+    "Brazier",
+    140
+   ],
+   [
+    "Brazier",
+    142
+   ],
+   [
+    "Brazier",
+    144
+   ],
+   [
+    "Brazier",
+    146
+   ],
+   [
+    "FoodDispenser",
+    152
+   ],
+   [
+    "FoodDispenser",
+    154
+   ],
+   [
+    "FoodDispenser",
+    156
+   ],
+   [
+    "FoodDispenser",
+    158
+   ],
+   [
+    "FoodDispenser",
+    160
+   ],
+   [
+    "FoodDispenser",
+    162
+   ],
+   [
+    "FoodDispenser",
+    164
+   ],
+   [
+    "FoodDispenser",
+    166
+   ],
+   [
+    "FoodDispenser",
+    168
+   ],
+   [
+    "FoodDispenser",
+    170
+   ],
+   [
+    "FoodDispenser",
+    172
+   ],
+   [
+    "FoodDispenser",
+    174
+   ],
+   [
+    "FoodDispenser",
+    176
+   ],
+   [
+    "FoodDispenser",
+    178
+   ],
+   [
+    "FoodDispenser",
+    180
+   ],
+   [
+    "FoodDispenser",
+    182
+   ],
+   [
+    "FoodDispenser",
+    184
+   ],
+   [
+    "FoodDispenser",
+    186
+   ],
+   [
+    "FoodDispenser",
+    188
+   ],
+   [
+    "FoodDispenser",
+    190
+   ],
+   [
+    "FoodDispenser",
+    192
+   ],
+   [
+    "FoodDispenser",
+    194
+   ],
+   [
+    "FountainJet",
+    197
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/duke5.kod",
+  "class": "Duke5",
+  "parent": "ObjectRoom",
+  "room_name": "The Duke's Grand Ballroom",
+  "rid": "RID_DUKE5",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Basicinnkeeper",
+    334
+   ],
+   [
+    "DukeGuard",
+    336
+   ],
+   [
+    "DukeGuard",
+    338
+   ],
+   [
+    "DukeGuard",
+    340
+   ],
+   [
+    "DukeGuard",
+    342
+   ],
+   [
+    "Candelabra",
+    345
+   ],
+   [
+    "Brazier",
+    348
+   ],
+   [
+    "Brazier",
+    350
+   ],
+   [
+    "Brazier",
+    352
+   ],
+   [
+    "Brazier",
+    354
+   ],
+   [
+    "Brazier",
+    356
+   ],
+   [
+    "DynamicLight",
+    362
+   ],
+   [
+    "DynamicLight",
+    368
+   ],
+   [
+    "DynamicLight",
+    374
+   ],
+   [
+    "DynamicLight",
+    380
+   ],
+   [
+    "DynamicLight",
+    386
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/e6.kod",
+  "class": "OutdoorsE6",
+  "parent": "ObjectRoom",
+  "room_name": "Deep Forest of Farol",
+  "rid": "RID_E6",
+  "pigen_time": "45000",
+  "pigen_percent": "80",
+  "piinit_count_min": "5",
+  "piinit_count_max": "10",
+  "pimonster_count_max": "16",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 58,
+    "pairs": [
+     [
+      "Spider",
+      "55"
+     ],
+     [
+      "Centipede",
+      "30"
+     ],
+     [
+      "Ent",
+      "15"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 20
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/forest1.kod",
+  "class": "Forest1",
+  "parent": "ObjectRoom",
+  "room_name": "The Forests of Meridian",
+  "rid": "RID_FOREST1",
+  "pibaselight": "LIGHT_DARK",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Tree",
+    58
+   ],
+   [
+    "Tree",
+    60
+   ],
+   [
+    "Tree",
+    62
+   ],
+   [
+    "Tree",
+    64
+   ],
+   [
+    "Tree",
+    66
+   ],
+   [
+    "Tree",
+    68
+   ],
+   [
+    "Tree",
+    70
+   ],
+   [
+    "Tree",
+    74
+   ],
+   [
+    "Tree",
+    76
+   ],
+   [
+    "Tree",
+    78
+   ],
+   [
+    "Tree",
+    80
+   ],
+   [
+    "Tree",
+    82
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/forest5.kod",
+  "class": "Forest5",
+  "parent": "objectRoom",
+  "room_name": "The Deep Dark Woods of Marion",
+  "rid": "RID_FOREST5",
+  "pibaselight": "LIGHT_VERY_DARK",
+  "plMonsters": [
+   {
+    "line": 48,
+    "pairs": [
+     [
+      "Ant",
+      "60"
+     ],
+     [
+      "Spider",
+      "40"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Tree",
+    107
+   ],
+   [
+    "Tree",
+    109
+   ],
+   [
+    "Tree",
+    111
+   ],
+   [
+    "Tree",
+    113
+   ],
+   [
+    "Tree",
+    115
+   ],
+   [
+    "Tree",
+    117
+   ],
+   [
+    "Tree",
+    119
+   ],
+   [
+    "Tree",
+    121
+   ],
+   [
+    "Tree",
+    123
+   ],
+   [
+    "Tree",
+    125
+   ],
+   [
+    "Tree",
+    127
+   ],
+   [
+    "Tree",
+    129
+   ],
+   [
+    "Tree",
+    131
+   ],
+   [
+    "Tree",
+    133
+   ],
+   [
+    "Tree",
+    135
+   ],
+   [
+    "Tree",
+    137
+   ],
+   [
+    "Tree",
+    139
+   ],
+   [
+    "Tree",
+    141
+   ],
+   [
+    "Tree",
+    143
+   ],
+   [
+    "Tree",
+    145
+   ],
+   [
+    "Tree",
+    147
+   ],
+   [
+    "Tree",
+    149
+   ],
+   [
+    "Tree",
+    151
+   ]
+  ],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/h4.kod",
+  "class": "OutdoorsH4",
+  "parent": "ObjectRoom",
+  "room_name": "The Flatlands",
+  "rid": "RID_H4",
+  "pigen_time": "120000",
+  "pigen_percent": "70",
+  "piinit_count_min": "2",
+  "piinit_count_max": "5",
+  "pimonster_count_max": "8",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 61,
+    "pairs": [
+     [
+      "Spider",
+      "45"
+     ],
+     [
+      "Ant",
+      "55"
+     ]
+    ]
+   }
+  ],
+  "creates": [],
+  "ngen": 10
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/h9.kod",
+  "class": "OutdoorsH9",
+  "parent": "ObjectRoom",
+  "room_name": "Under the shadow of the Sentinel",
+  "rid": "RID_H9",
+  "pigen_time": "80000",
+  "pigen_percent": "80",
+  "piinit_count_min": "8",
+  "piinit_count_max": "12",
+  "pimonster_count_max": "15",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 59,
+    "pairs": [
+     [
+      "Orc",
+      "40"
+     ],
+     [
+      "DeathSpider",
+      "60"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "ManaNode",
+    133
+   ]
+  ],
+  "ngen": 15
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/icecave1.kod",
+  "class": "IceCave1",
+  "parent": "ObjectRoom",
+  "room_name": "The Dreaded Caves of Ice",
+  "rid": "RID_ICE_CAVE1",
+  "pigen_time": "25000",
+  "pigen_percent": "100",
+  "piinit_count_min": "6",
+  "piinit_count_max": "8",
+  "pimonster_count_max": "13",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 67,
+    "pairs": [
+     [
+      "SnowRat",
+      "55"
+     ],
+     [
+      "Troll",
+      "45"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "yeti",
+    124
+   ],
+   [
+    "ManaNode",
+    138
+   ]
+  ],
+  "ngen": 16
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/k5.kod",
+  "class": "OutdoorsK5",
+  "parent": "ObjectRoom",
+  "room_name": "The Badlands",
+  "rid": "RID_K5",
+  "pigen_time": "60000",
+  "pigen_percent": "80",
+  "piinit_count_min": "5",
+  "piinit_count_max": "7",
+  "pimonster_count_max": "34",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [
+   {
+    "line": 62,
+    "pairs": [
+     [
+      "Troll",
+      "30"
+     ],
+     [
+      "GroundwormQueen",
+      "70"
+     ]
+    ]
+   }
+  ],
+  "creates": [
+   [
+    "Brambles",
+    145
+   ]
+  ],
+  "ngen": 16
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/marelder.kod",
+  "class": "MarionElderHut",
+  "parent": "ObjectRoom",
+  "room_name": "The home of the elder",
+  "rid": "RID_MAR_ELDER_HUT",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Table",
+    60
+   ],
+   [
+    "Table",
+    62
+   ],
+   [
+    "brazier",
+    65
+   ],
+   [
+    "brazier",
+    67
+   ],
+   [
+    "News",
+    73
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/marinn.kod",
+  "class": "MarionInn",
+  "parent": "ObjectRoom",
+  "room_name": "The Limping Toad Inn and Tavern",
+  "rid": "RID_MAR_INN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Table",
+    95
+   ],
+   [
+    "Table",
+    97
+   ],
+   [
+    "Table",
+    99
+   ],
+   [
+    "Table",
+    101
+   ],
+   [
+    "Stool",
+    103
+   ],
+   [
+    "Stool",
+    105
+   ],
+   [
+    "Stool",
+    107
+   ],
+   [
+    "Stool",
+    109
+   ],
+   [
+    "Stool",
+    111
+   ],
+   [
+    "Stool",
+    113
+   ],
+   [
+    "Stool",
+    115
+   ],
+   [
+    "Stool",
+    117
+   ],
+   [
+    "NewsLink",
+    120
+   ],
+   [
+    "MarionInnKeeper",
+    124
+   ],
+   [
+    "MarionBartender",
+    126
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/marsmith.kod",
+  "class": "MarionSmithy",
+  "parent": "ObjectRoom",
+  "room_name": "Ye Olde Slasher Salesman",
+  "rid": "RID_MAR_SMITHY",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "MarionBlacksmith",
+    61
+   ],
+   [
+    "Firepit",
+    63
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/monsroom/objroom/tosinn.kod",
+  "class": "TosInn",
+  "parent": "ObjectRoom",
+  "room_name": "Familiars",
+  "rid": "RID_TOS_INN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "NewsAnnouncement",
+    95
+   ],
+   [
+    "TosInnKeeper",
+    101
+   ],
+   [
+    "OrnamentalObject",
+    104
+   ],
+   [
+    "OrnamentalObject",
+    106
+   ],
+   [
+    "OrnamentalObject",
+    108
+   ],
+   [
+    "Table",
+    112
+   ],
+   [
+    "Table",
+    114
+   ],
+   [
+    "BarStool",
+    118
+   ],
+   [
+    "BarStool",
+    120
+   ],
+   [
+    "BarStool",
+    122
+   ],
+   [
+    "BarStool",
+    124
+   ],
+   [
+    "BarStool",
+    126
+   ],
+   [
+    "BarStool",
+    128
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/rentroom/barrent.kod",
+  "class": "BarloqueRentableRoom",
+  "parent": "RentableRoom",
+  "room_name": "A tastefully appointed room",
+  "rid": "iRID",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Bell",
+    91
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/rentroom/kocrent.kod",
+  "class": "KocatanRentableRoom",
+  "parent": "RentableRoom",
+  "room_name": "A comfortable room",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Bell",
+    113
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/rentroom/marrent.kod",
+  "class": "MarionRentableRoom",
+  "parent": "RentableRoom",
+  "room_name": "A comfortable room",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Bell",
+    90
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/easttos.kod",
+  "class": "EastTos",
+  "parent": "TosRoom",
+  "room_name": "East Ende",
+  "rid": "RID_EAST_TOS",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Lamp",
+    93
+   ],
+   [
+    "Lamp",
+    94
+   ],
+   [
+    "Lamp",
+    95
+   ],
+   [
+    "Lamp",
+    96
+   ],
+   [
+    "Lamp",
+    98
+   ],
+   [
+    "Lamp",
+    99
+   ],
+   [
+    "Lamp",
+    100
+   ],
+   [
+    "Lamp",
+    101
+   ],
+   [
+    "Lamp",
+    102
+   ],
+   [
+    "Lamp",
+    103
+   ],
+   [
+    "Lamp",
+    104
+   ],
+   [
+    "Lamp",
+    105
+   ],
+   [
+    "Lamp",
+    106
+   ],
+   [
+    "Lamp",
+    107
+   ],
+   [
+    "Lamp",
+    108
+   ],
+   [
+    "Lamp",
+    109
+   ],
+   [
+    "Lamp",
+    111
+   ],
+   [
+    "Lamp",
+    112
+   ],
+   [
+    "Lamp",
+    113
+   ],
+   [
+    "Lamp",
+    115
+   ],
+   [
+    "Lamp",
+    118
+   ],
+   [
+    "Lamp",
+    119
+   ],
+   [
+    "Lamp",
+    120
+   ],
+   [
+    "Lamp",
+    121
+   ],
+   [
+    "Lamp",
+    122
+   ],
+   [
+    "Lamp",
+    123
+   ],
+   [
+    "Lamp",
+    124
+   ],
+   [
+    "Lamp",
+    126
+   ],
+   [
+    "Lamp",
+    128
+   ],
+   [
+    "Lamp",
+    129
+   ],
+   [
+    "Lamp",
+    131
+   ],
+   [
+    "Lamp",
+    132
+   ],
+   [
+    "Lamp",
+    133
+   ],
+   [
+    "Lamp",
+    134
+   ],
+   [
+    "Lamp",
+    135
+   ],
+   [
+    "Lamp",
+    137
+   ],
+   [
+    "Lamp",
+    138
+   ],
+   [
+    "Lamp",
+    139
+   ],
+   [
+    "Tree",
+    142
+   ],
+   [
+    "Tree",
+    144
+   ],
+   [
+    "Tree",
+    146
+   ],
+   [
+    "Tree",
+    148
+   ],
+   [
+    "Tree",
+    150
+   ],
+   [
+    "Tree",
+    152
+   ],
+   [
+    "Tree",
+    154
+   ],
+   [
+    "Tree",
+    156
+   ],
+   [
+    "Tree",
+    158
+   ],
+   [
+    "Tree",
+    160
+   ],
+   [
+    "Tree",
+    162
+   ],
+   [
+    "Tree",
+    164
+   ],
+   [
+    "Tree",
+    166
+   ],
+   [
+    "Tree",
+    168
+   ],
+   [
+    "Tree",
+    170
+   ],
+   [
+    "Tree",
+    172
+   ],
+   [
+    "Tree",
+    174
+   ],
+   [
+    "Tree",
+    176
+   ],
+   [
+    "Tree",
+    178
+   ],
+   [
+    "Tree",
+    180
+   ],
+   [
+    "Tree",
+    182
+   ],
+   [
+    "Tree",
+    184
+   ],
+   [
+    "Tree",
+    186
+   ],
+   [
+    "Tree",
+    188
+   ],
+   [
+    "Tree",
+    190
+   ],
+   [
+    "Tree",
+    192
+   ],
+   [
+    "Tree",
+    194
+   ],
+   [
+    "Shrub",
+    197
+   ],
+   [
+    "Shrub",
+    199
+   ],
+   [
+    "Shrub",
+    201
+   ],
+   [
+    "Shrub",
+    203
+   ],
+   [
+    "Shrub",
+    206
+   ],
+   [
+    "Shrub",
+    208
+   ],
+   [
+    "Shrub",
+    210
+   ],
+   [
+    "Shrub",
+    212
+   ],
+   [
+    "Shrub",
+    214
+   ],
+   [
+    "Shrub",
+    216
+   ],
+   [
+    "Shrub",
+    218
+   ],
+   [
+    "Shrub",
+    220
+   ],
+   [
+    "Shrub",
+    222
+   ],
+   [
+    "Shrub",
+    224
+   ],
+   [
+    "Shrub",
+    226
+   ],
+   [
+    "Shrub",
+    228
+   ],
+   [
+    "Shrub",
+    230
+   ],
+   [
+    "Shrub",
+    232
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/tos.kod",
+  "class": "Tos",
+  "parent": "TosRoom",
+  "room_name": "The Streets of Tos",
+  "rid": "RID_TOS",
+  "pibaselight": "((LIGHT_MAX+LIGHT_NICE)/2)",
+  "plMonsters": [],
+  "creates": [
+   [
+    "OrnamentalObject",
+    129
+   ],
+   [
+    "OrnamentalObject",
+    131
+   ],
+   [
+    "OrnamentalObject",
+    133
+   ],
+   [
+    "OrnamentalObject",
+    135
+   ],
+   [
+    "OrnamentalObject",
+    137
+   ],
+   [
+    "OrnamentalObject",
+    139
+   ],
+   [
+    "OrnamentalObject",
+    141
+   ],
+   [
+    "OrnamentalObject",
+    143
+   ],
+   [
+    "OrnamentalObject",
+    145
+   ],
+   [
+    "OrnamentalObject",
+    147
+   ],
+   [
+    "OrnamentalObject",
+    149
+   ],
+   [
+    "OrnamentalObject",
+    151
+   ],
+   [
+    "OrnamentalObject",
+    153
+   ],
+   [
+    "OrnamentalObject",
+    155
+   ],
+   [
+    "OrnamentalObject",
+    157
+   ],
+   [
+    "OrnamentalObject",
+    159
+   ],
+   [
+    "OrnamentalObject",
+    161
+   ],
+   [
+    "OrnamentalObject",
+    163
+   ],
+   [
+    "OrnamentalObject",
+    166
+   ],
+   [
+    "OrnamentalObject",
+    168
+   ],
+   [
+    "OrnamentalObject",
+    170
+   ],
+   [
+    "OrnamentalObject",
+    172
+   ],
+   [
+    "OrnamentalObject",
+    174
+   ],
+   [
+    "OrnamentalObject",
+    176
+   ],
+   [
+    "OrnamentalObject",
+    178
+   ],
+   [
+    "OrnamentalObject",
+    180
+   ],
+   [
+    "OrnamentalObject",
+    182
+   ],
+   [
+    "OrnamentalObject",
+    184
+   ],
+   [
+    "OrnamentalObject",
+    186
+   ],
+   [
+    "OrnamentalObject",
+    188
+   ],
+   [
+    "OrnamentalObject",
+    190
+   ],
+   [
+    "OrnamentalObject",
+    192
+   ],
+   [
+    "OrnamentalObject",
+    194
+   ],
+   [
+    "OrnamentalObject",
+    196
+   ],
+   [
+    "OrnamentalObject",
+    198
+   ],
+   [
+    "OrnamentalObject",
+    200
+   ],
+   [
+    "OrnamentalObject",
+    202
+   ],
+   [
+    "OrnamentalObject",
+    205
+   ],
+   [
+    "Lamp",
+    208
+   ],
+   [
+    "Lamp",
+    210
+   ],
+   [
+    "Lamp",
+    212
+   ],
+   [
+    "Lamp",
+    214
+   ],
+   [
+    "Lamp",
+    216
+   ],
+   [
+    "Fountain",
+    219
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/tosapoth.kod",
+  "class": "TosApoth",
+  "parent": "TosRoom",
+  "room_name": "Frisconar's Mysticals",
+  "rid": "RID_TOS_APOTH",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "OrnamentalObject",
+    185
+   ],
+   [
+    "OrnamentalObject",
+    187
+   ],
+   [
+    "OrnamentalObject",
+    189
+   ],
+   [
+    "OrnamentalObject",
+    191
+   ],
+   [
+    "OrnamentalObject",
+    193
+   ],
+   [
+    "OrnamentalObject",
+    195
+   ],
+   [
+    "OrnamentalObject",
+    197
+   ],
+   [
+    "OrnamentalObject",
+    199
+   ],
+   [
+    "OrnamentalObject",
+    201
+   ],
+   [
+    "OrnamentalObject",
+    203
+   ],
+   [
+    "OrnamentalObject",
+    205
+   ],
+   [
+    "OrnamentalObject",
+    207
+   ],
+   [
+    "TosApothecary",
+    211
+   ],
+   [
+    "BookPedestal",
+    214
+   ],
+   [
+    "DynamicLight",
+    220
+   ],
+   [
+    "DynamicLight",
+    222
+   ],
+   [
+    "DynamicLight",
+    224
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/tosaren2.kod",
+  "class": "TosArena2",
+  "parent": "TosRoom",
+  "room_name": "The Arena of Kraanan",
+  "rid": "RID_TOS_ARENA2",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "ArenaSign2",
+    98
+   ],
+   [
+    "ArenaSign2",
+    100
+   ],
+   [
+    "ArenaSign2",
+    102
+   ],
+   [
+    "ArenaSign2",
+    104
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/tosarena.kod",
+  "class": "TosArena",
+  "parent": "TosRoom",
+  "room_name": "The Arena of Kraanan",
+  "rid": "RID_TOS_ARENA",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "TosWatcher",
+    213
+   ],
+   [
+    "ArenaSign1",
+    216
+   ],
+   [
+    "ArenaSign1",
+    218
+   ],
+   [
+    "ArenaSign1",
+    220
+   ],
+   [
+    "ArenaSign1",
+    222
+   ],
+   [
+    "ArenaSign1",
+    224
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/tosbank.kod",
+  "class": "TosBank",
+  "parent": "TosRoom",
+  "room_name": "First Royal Bank of Tos",
+  "rid": "RID_TOS_BANK",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "TosBanker",
+    63
+   ],
+   [
+    "Sign",
+    66
+   ],
+   [
+    "Brazier",
+    69
+   ],
+   [
+    "Brazier",
+    71
+   ],
+   [
+    "Brazier",
+    73
+   ],
+   [
+    "Brazier",
+    75
+   ],
+   [
+    "Table",
+    79
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/toscellar.kod",
+  "class": "TosInnCellar",
+  "parent": "TosRoom",
+  "room_name": "The Cellar",
+  "rid": "RID_TOS_INN_CELLAR",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Brazier",
+    57
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/tosforgt.kod",
+  "class": "TosForgotten",
+  "parent": "TosRoom",
+  "room_name": "Hall of the Forgotten Heroes",
+  "rid": "RID_TOS_FORGET",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "BookPedestal",
+    276
+   ],
+   [
+    "Statue",
+    317
+   ],
+   [
+    "Statue",
+    323
+   ],
+   [
+    "Statue",
+    328
+   ],
+   [
+    "Statue",
+    344
+   ],
+   [
+    "Statue",
+    349
+   ],
+   [
+    "Statue",
+    354
+   ],
+   [
+    "Statue",
+    359
+   ],
+   [
+    "Statue",
+    364
+   ],
+   [
+    "Statue",
+    380
+   ],
+   [
+    "Statue",
+    386
+   ],
+   [
+    "Statue",
+    392
+   ],
+   [
+    "Statue",
+    398
+   ],
+   [
+    "Statue",
+    404
+   ],
+   [
+    "Statue",
+    410
+   ],
+   [
+    "Statue",
+    425
+   ],
+   [
+    "Statue",
+    431
+   ],
+   [
+    "Statue",
+    437
+   ],
+   [
+    "Statue",
+    443
+   ],
+   [
+    "Statue",
+    449
+   ],
+   [
+    "Statue",
+    455
+   ],
+   [
+    "Statue",
+    461
+   ],
+   [
+    "Statue",
+    476
+   ],
+   [
+    "Statue",
+    482
+   ],
+   [
+    "Statue",
+    488
+   ],
+   [
+    "Statue",
+    503
+   ],
+   [
+    "Statue",
+    509
+   ],
+   [
+    "Statue",
+    515
+   ],
+   [
+    "Statue",
+    521
+   ],
+   [
+    "Statue",
+    527
+   ],
+   [
+    "Statue",
+    533
+   ],
+   [
+    "Statue",
+    543
+   ],
+   [
+    "Statue",
+    548
+   ],
+   [
+    "Statue",
+    553
+   ],
+   [
+    "Statue",
+    558
+   ],
+   [
+    "Statue",
+    563
+   ],
+   [
+    "Statue",
+    568
+   ],
+   [
+    "Statue",
+    573
+   ],
+   [
+    "Statue",
+    578
+   ],
+   [
+    "Statue",
+    583
+   ],
+   [
+    "Statue",
+    588
+   ],
+   [
+    "Statue",
+    593
+   ],
+   [
+    "Statue",
+    598
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/tosgrey.kod",
+  "class": "TosGrey",
+  "parent": "TosRoom",
+  "room_name": "Abandoned Building",
+  "rid": "RID_TOS_GREY",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "News",
+    75
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/toshall.kod",
+  "class": "TosHall",
+  "parent": "TosRoom",
+  "room_name": "The Adventurer's Hall of Tos",
+  "rid": "RID_TOS_HALL",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "News",
+    68
+   ],
+   [
+    "Brazier",
+    75
+   ],
+   [
+    "Brazier",
+    77
+   ],
+   [
+    "Brazier",
+    79
+   ],
+   [
+    "Brazier",
+    80
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/toshidden.kod",
+  "class": "TosSecretPassage",
+  "parent": "TosRoom",
+  "room_name": "Secret Passage",
+  "rid": "RID_TOS_SECRET_PASSAGE",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Brazier",
+    54
+   ],
+   [
+    "Brazier",
+    57
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/toslover.kod",
+  "class": "TosForgottenLovers",
+  "parent": "TosRoom",
+  "room_name": "Forgotten Lover's Tryst",
+  "rid": "RID_TOS_FORGOTTEN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": [
+   [
+    "Candelabra",
+    56
+   ],
+   [
+    "OrnamentalObject",
+    58
+   ],
+   [
+    "OrnamentalObject",
+    60
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/tossmith.kod",
+  "class": "TosSmithy",
+  "parent": "TosRoom",
+  "room_name": "The Freelance Merchant and Menders Shop",
+  "rid": "RID_TOS_SMITHY",
+  "pibaselight": "100",
+  "plMonsters": [],
+  "creates": [
+   [
+    "OrnamentalObject",
+    69
+   ],
+   [
+    "OrnamentalObject",
+    71
+   ],
+   [
+    "OrnamentalObject",
+    73
+   ],
+   [
+    "DynamicLight",
+    78
+   ],
+   [
+    "DynamicLight",
+    80
+   ],
+   [
+    "DynamicLight",
+    82
+   ],
+   [
+    "DynamicLight",
+    84
+   ],
+   [
+    "DynamicLight",
+    88
+   ]
+  ]
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/tostan.kod",
+  "class": "TosTan",
+  "parent": "TosRoom",
+  "room_name": "Abandoned Building",
+  "rid": "RID_TOS_TAN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room/tosrm/tostavern.kod",
+  "class": "TosTavern",
+  "parent": "TosRoom",
+  "room_name": "Abandoned Fountain Tavern",
+  "rid": "RID_TOS_OLD_TAVERN",
+  "pibaselight": "LIGHT_NICE",
+  "plMonsters": [],
+  "creates": []
+ },
+ {
+  "file": "C:/code/meridian59/kod/object/active/holder/room.kod",
+  "class": "Room",
+  "parent": "Holder",
+  "room_name": "Room",
+  "pibaselight": "LIGHT_MAX",
+  "plMonsters": [],
+  "creates": [
+   [
+    "OrnamentalObject",
+    835
+   ],
+   [
+    "OrnamentalObject",
+    843
+   ],
+   [
+    "Apple",
+    3878
+   ]
+  ]
+ }
+]

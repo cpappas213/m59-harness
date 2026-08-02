@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>apparition — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › apparition</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/iapparit_g1.png" alt="apparition" width="128" height="128"></div><div class="heroText"><h1>apparition</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><a class="tag school-5" href="../guides/riija.html">Riija</a><span class="tag ">Level 4</span><span class="tag ">Harmful</span><span class="tag ">Outlaw cast</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/riija.html">Riija</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">4</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">30</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">1</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">4000 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">101</div></div></div><div class="flavor">Summons an illusory creature to attack your enemies. The creature does good damage, but is easily banished. Requires web moss and rainbow fern to cast.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">30</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/webmoss.html">web moss</a>, <a href="../items/rainbowfern.html">rainbow fern</a> ×2</td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">20</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">4000 ms trance</td><td class="">You are locked in a casting trance for this long; taking damage can break it.</td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/apparitn.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/riijamonk.html">Monk of Riija</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">CanPayCosts</code></li><li><code class="k">CastSpell</code></li><li><code class="k">CreateRandomMonster</code></li><li><code class="k">IsSummonSpell</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/iapparit_g1.png" alt="apparition group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/iapparit_g2.png" alt="apparition group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/apparitn.kod:11</p>
+<p><code class="k">SummonApparition</code> is <code class="k">Spell</code> — full chain <code class="k">SummonApparition</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>summonapparition_name_rsc</code></td><td class=""><em>apparition</em></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>summonapparition_icon_rsc</code></td><td class=""><em>iapparit.bgf</em></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>summonapparition_desc_rsc</code></td><td class=""><em>Summons an illusory creature to attack your enemies.  The creature does good damage, but i</em></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_APPARITION</code></td><td class="">101</td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_RIIJA</code></td><td class="">5</td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>30</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viCast_time</code></td><td class=""><code>4000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">viChance_To_Increase</code></td><td class=""><code>25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>summonapparition_sound</code></td><td class=""><em>rapparit.wav</em></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">viHarmful</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viOutlaw</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">viNoNewbieOffense</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="59">59</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      plReagents = $;
+      plReagents = Cons([&amp;WebMoss,1],plReagents);
+      plReagents = Cons([&amp;RainbowFern,2],plReagents);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/apparitn.kod:66</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 1;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/apparitn.kod:75</p>
+<h4>CanPayCosts(who = $, ltargets = $)</h4>
+<pre><code>{
+      local oRoom, oTarget;
+      
+      if ltargets  = $
+      {
+         
+         
+         Send(who,@MsgSendUser,#message_rsc=apparition_fizzle);
+      }
+
+      oRoom = Send(who,@GetOwner);
+
+      if Send(oRoom,@CheckRoomFlag,#flag=ROOM_NO_COMBAT)
+         OR Send(oRoom,@CheckRoomFlag,#flag=ROOM_NO_PK)
+         OR Send(oRoom,@CheckRoomFlag,#flag=ROOM_GUILD_PK_ONLY)
+      {
+         Send(who,@MsgSendUser,#message_rsc=spell_bad_location,#parm1=vrName);
+         
+         return FALSE;
+      }
+
+      if Send(oRoom,@CountHoldingHowMany,#class=&amp;monster) &gt; 15
+         OR Send(oRoom,@CountHoldingSummoned)
+            &gt; Send(Send(SYS, @GetSettings), @GetPlayerSummonedObjectLimit)
+      {
+         Send(who,@MsgSendUser,#message_rsc=summonapparition_failed_rsc);
+
+         return FALSE;
+      }
+      
+      oTarget = First(ltargets);
+
+      if NOT IsClass(oTarget,&amp;battler)
+      {
+         Send(who,@MsgSendUser,#message_rsc=summonapparition_failed_inanimate,
+              #parm1=Send(oTarget,@GetCapDef),#parm2=Send(oTarget,@GetName));
+              
+         return FALSE;
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/apparitn.kod:80</p>
+<h4>CastSpell(who = $, lTargets = $, iSpellpower = $)</h4>
+<pre><code>{
+      local oApparition, oRoom, iRow, iCol, iFine_Row, iFine_Col,
+            lMonsList, i;
+
+      oRoom = Send(who,@GetOwner);
+
+      if not isclass(oRoom,&amp;MonsterRoom)
+      {
+         oApparition = Send(self,@CreateRandomMonster,#spellpower=iSpellpower);
+      }
+      else
+      {
+         lMonsList = Send(oRoom,@GetMonsterList);
+         if Length(lMonsList) = 0
+         {
+            oApparition = Send(self,@CreateRandomMonster,
+                               #spellpower=iSpellpower);
+         }
+         else
+         {           
+            i = Random(1,Length(lMonsList));
+            oApparition = Create(Nth(Nth(lMonsList,i),1));
+         }
+      }
+
+      Send(oApparition,@SetIllusion,#value=TRUE);
+      Send(oApparition,@SetSummoned,#value=TRUE);
+      
+      iRow = Send(Nth(lTargets,1),@GetRow);
+      iCol = Send(Nth(lTargets,1),@GetCol);
+      iFine_Row = Send(Nth(lTargets,1),@GetFineRow);
+      iFine_Col = Send(Nth(lTargets,1),@GetFineCol);
+
+      Send(oRoom,@newhold,#what=oApparition,#new_row=iRow,#new_col=iCol,
+           #fine_row=iFine_Row,#fine_col=iFine_Col);
+
+      Send(oApparition,@TargetSwitch,#what=First(lTargets),#iHatred=1000);
+      Send(oApparition,@EnterStateAttack);
+
+      Send(who,@MsgSendUser,#message_rsc=summonapparition_cast_rsc,
+           #parm1=Send(oApparition,@GetIndef),
+           #parm2=Send(oApparition,@GetName),
+           #parm3=Send(Nth(lTargets,1),@GetIndef),
+           #parm4=Send(Nth(lTargets,1),@GetName));
+      
+      i = Send(oApparition,@ReturnMaxHitPoints);
+      i = i / APPARITION_FRACTION;
+
+      Send(oApparition,@SetMaxHitPoints,#amount=i);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/apparitn.kod:124</p>
+<h4>CreateRandomMonster(spellpower = $)</h4>
+<pre><code>{
+      local i;
+
+      i = random(1,60);
+
+      if spellpower &lt; 35
+      {
+         if i &lt; 5
+         {
+            return Create(&amp;Scorpion);
+         }
+         
+         if i &lt; 15
+         {
+            return Create(&amp;Spider);
+         }
+         
+         if i &lt; 35
+         {
+            return Create(&amp;SpiderBaby);
+         }
+         
+         return Create(&amp;GiantRat);
+      }
+
+      if spellpower &gt; 34 and spellpower &lt; 66
+      {
+         if i &lt; 5
+         {
+            return Create(&amp;RedAnt);
+         }
+         
+         if i &lt; 15
+         {
+            return Create(&amp;Slime);
+         }
+         
+         if i &lt; 35
+         {
+            return Create(&amp;SpiderBaby);
+         }
+         
+         return Create(&amp;Centipede);
+      }
+
+      if spellpower &gt; 65
+      {
+         if i &lt; 5
+         {
+            return Create(&amp;Troll);
+         }
+         
+         if i &lt; 15
+         {
+            return Create(&amp;FungusBeast);
+         }
+         
+         if i &lt; 35
+         {
+            return Create(&amp;RedAnt);
+         }
+         
+         return Create(&amp;Slime);
+      }
+   
+      return Create(&amp;GiantRat);
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/apparitn.kod:178</p>
+<h4>IsSummonSpell()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/apparitn.kod:247</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

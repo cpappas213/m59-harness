@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Passive Item — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Passive Item</p>
+<div class="hero"><div class="heroText"><h1>Passive Item</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">sundry</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">10</div></div><div class="fact"><div class="lbl">Value</div><div class="val">10 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem.kod:11</p>
+<p><code class="k">PassiveItem</code> is <code class="k">Item</code> — full chain <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">Arsenic</code>, <code class="k">AttackModifier</code>, <code class="k">AvarShamanFeather</code>, <code class="k">BardLetter</code>, <code class="k">BetaPotion</code>, <code class="k">OrcPitBossHead</code>, <code class="k">Chalice</code>, <code class="k">ChickenSoup</code>, <code class="k">CouncilLetter</code>, <code class="k">DefenseModifier</code>, <code class="k">DressPattern</code>, <code class="k">FactionFlag</code>, <code class="k">FormulaScroll</code>, <code class="k">Gift</code>, <code class="k">Healer</code>, <code class="k">HeartStone</code>, <code class="k">InscriptionItem</code>, <code class="k">Instrument</code>, <code class="k">Junk</code>, <code class="k">KarmaPotion</code>, <code class="k">Key</code>, <code class="k">LabeledPotion</code>, <code class="k">LabeledWand</code>, <code class="k">Letter</code>, <code class="k">LoveLetter</code>, <code class="k">ManaCrystal</code>, <code class="k">MiniGame</code>, <code class="k">MysteryPotion</code>, <code class="k">MysteryWand</code>, <code class="k">NecromancerWarningLetter</code>, <code class="k">Necklace</code>, <code class="k">NecromancerLetter</code>, <code class="k">NeruditeOreChunk</code>, <code class="k">NumberItem</code>, <code class="k">Offering</code>, <code class="k">CheapOreChunk</code>, <code class="k">OreChunk</code>, <code class="k">ForgetPotion</code>, <code class="k">IllusionaryFormPotion</code>, <code class="k">AphrodesiacPotion</code>, <code class="k">Prism</code>, <code class="k">RecipeScroll</code>, <code class="k">Ring</code>, <code class="k">RoomKeyCopy</code>, <code class="k">Rose</code>, <code class="k">Sacchaqua</code>, <code class="k">SanctuaryKey</code>, <code class="k">ScamScroll</code>, <code class="k">Scepter</code>, <code class="k">ShrunkenHead</code>, <code class="k">SpecialGiftTwo</code>, <code class="k">SpiderEgg</code>, <code class="k">SpiderEggShell</code>, <code class="k">SpecialGift</code>, <code class="k">SpecialWand</code>, <code class="k">SpellItem</code>, <code class="k">SwordShard</code>, <code class="k">TaxLetter</code>, <code class="k">Token</code>, <code class="k">WarJoinPendant</code>, <code class="k">WarLetter</code>, <code class="k">Weapon</code>.</p>
+<h3>Behaviour overridden here</h3>
+<h4>GetObjectType()</h4>
+<pre><code>{
+      return PASSIVE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem.kod:25</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

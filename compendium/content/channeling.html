@@ -1,0 +1,616 @@
+<h1>Channeling and Mana</h1>
+
+<p class="lede">Mana is the only currency your spells spend. Your maximum is set by Mysticism plus
+every mana node you have ever melded with; the refill rate is set by a single formula whose two big
+levers are Vigor and that same maximum. There is no cap-restoring potion, no mana-for-health trade
+except one helmet, and no skill called "channeling" — the fast regen everyone talks about is the
+<code class="k">ManaFocus</code> spell sitting on top of an ordinary timer.</p>
+
+<div class="note">
+<p><strong>"Channeling" is not a mechanic in this game.</strong> A case-insensitive search of
+<code>kod/</code>, <code>clientd3d/</code> and <code>blakserv/</code> finds the word only in three
+places: NPC and item flavor text (<code>kod/object/active/holder/room/hermhut.kod:29</code>,
+<code>kod/object/active/holder/room/monsroom/g9.kod:88</code>,
+<code>kod/object/passive/spell/persench/touchatk/zap.kod:22</code>,
+<code>kod/object/item/actitem/necroam.kod:52</code>), a chat-etiquette message
+(<code>kod/object/active/holder/room/guest5/newb5.kod:32</code>), and the server's unrelated
+logging subsystem (<code>blakserv/channel.c</code>, the <code>[Channel]</code> config section).
+There is no Channeling skill, spell, or class. When players say "channeling" they mean the mana
+economy documented on this page — melding nodes, tranced mana regeneration under Mana Focus, and
+bard-sung Rejuvenate.</p>
+</div>
+
+<h2>Maximum mana</h2>
+
+<p>Max mana is stored in <code class="k">piMax_Mana</code> and is fully recomputed by
+<code class="k">ComputeMaxMana</code> from four sources.</p>
+
+<div class="formula">piMax_mana = GetInitialMaxMana()
+           + SUM over melded nodes of node.GetManaAdjust(you)
+           + SUM over items in use with AdjustsMaxMana of item.GetManaChange()
+           + SUM over enchantments with AffectsMaxMana of ench.GetManaBonus(state)
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6115</p>
+
+<h3>The base: Mysticism only</h3>
+
+<div class="formula">GetInitialMaxMana() = 15 + Mysticism/5        % integer division
+GetMysticism()      = bound(piMysticism + piMysticismMod, 1, 70)
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5965 and :6394 (MAXIMUM_STAT = 70 at :116)</p>
+
+<p>Intellect does <strong>not</strong> appear anywhere in the mana system. It gates Ri'ija and Jala
+spell success (<code>kod/object/passive/spell.kod:409</code>) but contributes nothing to your pool
+or your regen.</p>
+
+<div class="warn">
+<p>The comment block at <code>kod/object/active/holder/nomoveon/battler/player.kod:33</code> says
+the base regeneration time is tuned for "a player of intelligence 25 to recover mana." That comment
+is stale. The code at <code>:5656</code> reads <code class="k">GetMysticism</code>, not
+<code class="k">GetIntellect</code>. Build a caster on Mysticism.</p>
+</div>
+
+<p>Your base Mysticism (<code class="k">piMysticism</code>) is set once, at character creation, from
+the six stat values you distribute (each 1–50, sum ≤ 200), and is never raised again by play —
+grep the file: the only assignments are at character creation
+(<code>kod/object/active/holder/nomoveon/battler/player.kod:2086</code> and <code>:2095</code>).
+Everything later moves <code class="k">piMysticismMod</code> instead, via
+<code class="k">AddMysticism</code>, which itself calls <code class="k">ComputeMaxMana</code>
+(<code>:9964</code>).</p>
+
+<table class="data">
+<thead><tr><th>Mysticism</th><th>Base max mana</th><th>Per standard node</th><th>Fey node</th><th>Max with 12 nodes</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>15</td><td>+3</td><td>+6</td><td>54</td></tr>
+<tr><td>10</td><td>17</td><td>+4</td><td>+8</td><td>69</td></tr>
+<tr><td>20</td><td>19</td><td>+5</td><td>+10</td><td>84</td></tr>
+<tr><td>25</td><td>20</td><td>+6</td><td>+12</td><td>98</td></tr>
+<tr><td>30</td><td>21</td><td>+6</td><td>+12</td><td>99</td></tr>
+<tr><td>40</td><td>23</td><td>+7</td><td>+14</td><td>114</td></tr>
+<tr><td>45</td><td>24</td><td>+8</td><td>+16</td><td>128</td></tr>
+<tr><td>50 (creation max)</td><td>25</td><td>+8</td><td>+16</td><td>129</td></tr>
+<tr><td>70 (buffed cap)</td><td>29</td><td>+10</td><td>+20</td><td>159</td></tr>
+</tbody>
+</table>
+<p>"12 nodes" means every node except the guest-only one: eleven standard nodes plus the
+double-value Fey node.</p>
+
+<h3>Items and enchantments that change max mana</h3>
+
+<p>Exhaustively, out of the whole class tree, exactly one item type and one enchantment answer
+<code class="k">AdjustsMaxMana</code>/<code class="k">AffectsMaxMana</code> with TRUE:</p>
+
+<table class="data">
+<thead><tr><th>Source</th><th>Effect on max mana</th><th>Source line</th></tr></thead>
+<tbody>
+<tr><td><a href="../items/circlet.html">Circlet</a> (item, head slot)</td><td>+2 × the max health it takes away</td><td>kod/object/item/passitem/defmod/helmet/circlet.kod:56</td></tr>
+<tr><td><a href="../spells/manaboon.html">Mana boon</a> (DM/NPC enchantment)</td><td>+ (state mod 100), default +5</td><td>kod/object/passive/spell/boon/manaboon.kod:72</td></tr>
+</tbody>
+</table>
+
+<h3>The circlet: the only health→mana converter</h3>
+
+<img class="icon" src="../assets/img/invcirc_g1.png" alt="circlet">
+
+<div class="formula">on equip:
+  iHealthMod   = bound(maxHealth/7, 5, 20)
+  healthChange = GainMaxHealth(-iHealthMod)      % max health floors at 20
+  manaChange   = NewMaxMana(-2 * healthChange)   % i.e. +2x the health lost
+</div>
+<p class="cite">kod/object/item/passitem/defmod/helmet/circlet.kod:54–63 (<code class="k">GainMaxHealth</code> floor at kod/object/active/holder/nomoveon/battler/player.kod:5930)</p>
+
+<table class="data">
+<thead><tr><th>Your max health</th><th>Max health lost</th><th>Max mana gained</th></tr></thead>
+<tbody>
+<tr><td>40</td><td>5</td><td>+10</td></tr>
+<tr><td>70</td><td>10</td><td>+20</td></tr>
+<tr><td>100</td><td>14</td><td>+28</td></tr>
+<tr><td>140 or more</td><td>20 (capped)</td><td>+40</td></tr>
+</tbody>
+</table>
+<p>Unequipping reverses both changes exactly (<code>circlet.kod:76</code>). The circlet also carries
+<code class="k">viDefense_base</code> = 5 and 355–400 hit points of durability
+(<code>circlet.kod:39–41</code>).</p>
+
+<h2>Regeneration</h2>
+
+<p>Mana ticks on a self-rescheduling timer. Every tick you gain exactly 1 point if you are below max,
+or lose exactly 1 point if you are above it.</p>
+
+<div class="formula">ManaTimer():
+   if piMana &lt; piMax_mana:  GainMana(1)
+   else:                    LoseMana(1)
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:2664</p>
+
+<p>The timer exists only while <code class="k">piMana &lt;&gt; piMax_mana</code>; at exactly full it is
+deleted (<code>player.kod:6226–6235</code>). Unlike health regen, mana regen does <em>not</em>
+require you to have moved since entering the room — compare <code class="k">HealthTimer</code> at
+<code>player.kod:2640</code>, which is gated on <code class="k">PFLAG_MOVED_SINCE_ENTRY</code>.
+Standing perfectly still regenerates mana at full rate.</p>
+
+<h3>The regeneration formula</h3>
+
+<div class="formula">CalculateManaTime()  -&gt; milliseconds until the next mana point
+
+if piMana &gt; piMax_mana:              % overcharged
+    t = BOOST_DECAY_TIME             % 30000 ms; you LOSE 1 mana every 30 s
+else:
+    t = 150000 + (25 - Mysticism)*1000        % BASE_REGEN_TIME = 150000
+    t = t * 200 / bound(Vigor, 1, $)
+    t = t / bound(piMax_Mana, 1, $)
+    t = t - FactionRegenBonus(you, hpregen=FALSE)
+    t = bound(t, 1000, 60000)
+
+    if you are in a room:
+        if a Rejuvenate song is playing here:
+            t = t * (200 - jalaSpellPower) / 200
+        t = bound(t, 500, 60000)
+
+    if you are enchanted with Mana Focus:
+        t = bound(t * (200 - focusSpellPower) / 200, 500, 60000)
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5645–5693; constants BASE_REGEN_TIME = 150000 at :48 and BOOST_DECAY_TIME = 30000 at :63</p>
+
+<p>Two consequences worth internalising:</p>
+<ul>
+<li><strong>Dividing by max mana means a bigger pool refills at the same wall-clock speed but delivers
+far more mana per second.</strong> Ignoring the faction subtraction, time to fill from empty is
+<code>(150000 + (25−Myst)·1000) · 200 / Vigor</code> milliseconds regardless of how large your pool
+is. Melding nodes therefore multiplies your mana-per-minute roughly linearly.</li>
+<li><strong>Vigor is a straight divisor.</strong> Vigor 200 regenerates exactly twice as fast as
+Vigor 100.</li>
+</ul>
+
+<h3>Worked numbers</h3>
+
+<table class="data">
+<thead><tr><th>Situation</th><th>Myst</th><th>Max mana</th><th>Vigor</th><th>ms / point</th><th>mana / min</th><th>Empty → full</th></tr></thead>
+<tbody>
+<tr><td>Fresh character, resting-capped vigor</td><td>25</td><td>20</td><td>100</td><td>14800</td><td>4.1</td><td>4 m 56 s</td></tr>
+<tr><td>Fresh character, well fed</td><td>25</td><td>20</td><td>200</td><td>7300</td><td>8.2</td><td>2 m 26 s</td></tr>
+<tr><td>Max-Myst caster, no nodes</td><td>50</td><td>25</td><td>100</td><td>9800</td><td>6.1</td><td>4 m 5 s</td></tr>
+<tr><td>Max-Myst caster, 8 nodes</td><td>50</td><td>89</td><td>100</td><td>2608</td><td>23.0</td><td>3 m 52 s</td></tr>
+<tr><td>Same, well fed</td><td>50</td><td>89</td><td>200</td><td>1204</td><td>49.8</td><td>1 m 47 s</td></tr>
+<tr><td>Same + Mana Focus at spellpower 99</td><td>50</td><td>89</td><td>200</td><td>608</td><td>98.7</td><td>54 s</td></tr>
+<tr><td>Same + Rejuvenate 99 + Mana Focus 99</td><td>50</td><td>89</td><td>200</td><td>500 (floor)</td><td>120.0</td><td>45 s</td></tr>
+<tr><td>Low-Myst character, exhausted</td><td>1</td><td>15</td><td>20</td><td>60000 (ceiling)</td><td>1.0</td><td>15 m</td></tr>
+</tbody>
+</table>
+<p>All rows assume the non-intriguing faction bonus of 200 ms. Worked example for row 5:
+<code>150000 + (25−50)·1000 = 125000</code>; <code>125000·200/200 = 125000</code>;
+<code>125000/89 = 1404</code>; <code>1404 − 200 = 1204 ms</code>.</p>
+
+<h3>Vigor: how to raise the divisor</h3>
+
+<p>Vigor sits in <code class="k">piVigor</code>, starts at 100, and is hard-capped at
+<code class="k">viMax_vigor</code> = 200
+(<code>kod/object/active/holder/nomoveon/battler/player.kod:829</code>, <code>:740</code>,
+bounded in <code class="k">NewVigor</code> at <code>:1217</code>).</p>
+
+<ul>
+<li><strong>Resting</strong> (<code class="k">StartResting</code>,
+<code>player.kod:9984</code>) burns off exertion every <code>1000 + 30·(51 − Stamina)</code> ms
+(<code>:10009</code>), but <code class="k">RestAddExertion</code> clamps vigor at
+<code class="k">piVigor_rest_threshold</code>, which defaults to <strong>80</strong> and is bounded to
+10–100 (<code>:891</code>, <code>:1238</code>, <code>:1296–1334</code>).
+<strong>Resting can never take you above your threshold, and that threshold is 80 unless something
+has changed it.</strong>
+Inns double the rate (<code class="k">ROOM_SANCTUARY</code>) and triple-heal rooms triple it
+(<code>:1315–1323</code>). You also cannot cast at all while resting
+(<code>kod/object/passive/spell.kod:739</code>).</li>
+<li><strong>Eating</strong> is the only route past the threshold.
+<code class="k">EatSomething</code> calls <code>AddExertion(-10000 · nutrition)</code>
+(<code>player.kod:5738</code>), i.e. one vigor point per point of nutrition, and that path is not
+threshold-clamped — only <code class="k">NewVigor</code>'s ceiling of 200 stops it. Fullness
+(<code class="k">piStomach</code>) empties at <code class="k">FOOD_USE_RATE</code> = 12 per 100 ms of
+elapsed time and blocks eating past 100 (<code>player.kod:51</code>, <code>:5703</code>,
+<code>:1341</code>).</li>
+</ul>
+
+<p>Because stomach space is the limiting resource, what matters is nutrition per unit of filling. The
+full treatment — what spends vigor, what the rest threshold is and what moves it — is on
+<a href="vigor.html">Vigor</a>.</p>
+
+<table class="data">
+<thead><tr><th>Food</th><th>Nutrition (vigor)</th><th>Filling</th><th>Vigor per fullness</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Chaos food</td><td>200</td><td>0</td><td>—</td><td>food/chaosfood.kod:44</td></tr>
+<tr><td>Inky cap</td><td>50</td><td>25</td><td>2.00</td><td>food/inkycap.kod:46</td></tr>
+<tr><td>Cheese</td><td>30</td><td>40</td><td>0.75</td><td>food/cheese.kod:43</td></tr>
+<tr><td>Meat pie</td><td>30</td><td>50</td><td>0.60</td><td>food/meatpie.kod:45</td></tr>
+<tr><td>Bread</td><td>20</td><td>40</td><td>0.50</td><td>food/bread.kod:44</td></tr>
+<tr><td>Stew</td><td>15</td><td>25</td><td>0.60</td><td>food/stew.kod:46</td></tr>
+<tr><td>Turkey leg</td><td>15</td><td>20</td><td>0.75</td><td>food/turkyleg.kod:45</td></tr>
+<tr><td>Apple</td><td>10</td><td>24</td><td>0.42</td><td>food/apple.kod:44</td></tr>
+<tr><td>Drumstick / pork / soup / spider eye</td><td>9</td><td>30 / 20 / 20 / 20</td><td>0.30–0.45</td><td>food/drumstik.kod:56, pork.kod:54, soup.kod:50, spideye.kod:58</td></tr>
+<tr><td>Grapes</td><td>7</td><td>16</td><td>0.44</td><td>food/grapes.kod:54</td></tr>
+<tr><td>Mug / wine goblet</td><td>6</td><td>8</td><td>0.75</td><td>food/mug.kod:57, gobletwn.kod:45</td></tr>
+<tr><td>Chocolate mint</td><td>5</td><td>5</td><td>1.00</td><td>food/mint.kod:48</td></tr>
+<tr><td>Snack</td><td>5</td><td>15</td><td>0.33</td><td>food/snack.kod:44</td></tr>
+<tr><td>Goblet / stout goblet / waterskin</td><td>3</td><td>10 / 10 / 6</td><td>0.30–0.50</td><td>food/goblet.kod:57, gobletst.kod:46, watrskin.kod:47</td></tr>
+<tr><td>Fortune cookie</td><td>1</td><td>2</td><td>0.50</td><td>food/ftncooky.kod:59</td></tr>
+</tbody>
+</table>
+<p class="cite">All paths relative to kod/object/item/passitem/numbitem/</p>
+
+<div class="warn">
+<p>While the <a href="../skills/secondwind.html">Second Wind</a> skill is active you cannot gain any
+vigor at all — <code class="k">AddExertion</code> and <code class="k">RestAddExertion</code> both
+return immediately on negative amounts, and your rest threshold is pinned at 10
+(<code>kod/object/active/holder/nomoveon/battler/player.kod:1253</code>, <code>:1304</code>,
+<code>kod/object/passive/skill/secwind.kod:113</code>). Eating is refused outright. Your mana regen
+is stuck at that low vigor for the whole 5–10 minute lockout.</p>
+</div>
+
+<h3>Faction regeneration bonus</h3>
+
+<p>A flat number of milliseconds is subtracted from the tick time.</p>
+
+<table class="data">
+<thead><tr><th>Your standing</th><th>Mana-regen bonus (ms subtracted)</th></tr></thead>
+<tbody>
+<tr><td>Duke faction</td><td>0</td></tr>
+<tr><td>Rebel faction</td><td>0 (rebels get the health-regen bonus instead)</td></tr>
+<tr><td>Not "intriguing" (under 40 base max HP)</td><td>200</td></tr>
+<tr><td>Princess or Neutral, intriguing</td><td><code>CalcFactionBonus(base=700)</code>, scaled −10 % to +150 % of 700 by faction power and membership</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/util/parlia.kod:1322–1368; scaling function at kod/util/parlia.kod:998–1040</p>
+
+<h3>Mana Focus and Rejuvenate</h3>
+
+<img class="icon" src="../assets/img/imanafoc_g1.png" alt="mana focus icon">
+<img class="icon" src="../assets/img/irejuven_g1.png" alt="rejuvenate icon">
+
+<p>Both use the identical multiplier <code>t · (200 − spellpower) / 200</code>. Spell power is bounded
+to 1–99 (<code>kod/include/blakston.khd:2089–2090</code>), so each one can at best cut the tick time
+to 101/200 ≈ 50.5 %. Applied together they reach ≈ 25.5 %, but the 500 ms floor usually bites first.</p>
+
+<table class="data">
+<thead><tr><th>Spell</th><th>School / level</th><th>Cast cost</th><th>Reagent</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><a href="../spells/manafocus.html">Mana focus</a></td><td>Faren 3</td><td>1 mana, 7 s cast</td><td>1 mushroom</td><td>Indefinite duration; a trance. Also boosts natural elemental attack spell damage.</td></tr>
+<tr><td><a href="../spells/rejuvenate.html">Rejuvenate</a></td><td>Jala 5</td><td>5 mana + 8 mana every 5 s</td><td>1 diamond, 1 uncut seraphym</td><td>Room-wide: helps every listener, not just the bard.</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell/focus.kod:41–46 and :120; kod/object/passive/spell/jala/rejuven.kod:33–41 and :60</p>
+
+<p>Mana Focus is a trance and dies to almost any interruption
+(<code class="k">BreakTrance</code>), with one carve-out: casting an
+<code class="k">AttackSpell</code> does <em>not</em> break it
+(<code>kod/object/passive/spell/focus.kod:110–118</code>). Movement, being damaged, using an item,
+changing rooms, resting, and drinking a mana crystal all do
+(<code>kod/object/active/holder/nomoveon/battler/player/user.kod:2979</code>, <code>:4621</code>,
+<code>:4676</code>; <code>player.kod:1457</code>, <code>:5767</code>, <code>:9991</code>;
+<code>kod/object/item/passitem/manacrys.kod:122</code>).</p>
+
+<div class="note">
+<p>Only one Jala song can be active in a room at a time —
+<code class="k">GetJalaInfo</code> returns the first Jala enchantment it finds
+(<code>kod/object/active/holder/room.kod:3473</code>). A bard cannot stack Rejuvenate with Mana
+Convergence in the same room.</p>
+</div>
+
+<h3>Overcharge decay</h3>
+
+<p>Every mana-granting message in the game calls <code>GainMana(amount)</code> with
+<code class="k">bCapped</code> left at its FALSE default — no caller in the entire tree passes TRUE
+(<code>kod/object/active/holder/nomoveon/battler/player.kod:6199</code>). So every external source
+can push you <em>above</em> your maximum. While above it, the same timer bleeds off exactly 1 mana
+every <code class="k">BOOST_DECAY_TIME</code> = 30 seconds (<code>player.kod:63</code>, <code>:5652</code>).</p>
+
+<table class="data">
+<thead><tr><th>Overcharge ceiling</th><th>Value</th><th>Set by</th></tr></thead>
+<tbody>
+<tr><td>Mana crystal / nodeburst hard cap</td><td>250 total mana</td><td>kod/object/item/passitem/manacrys.kod:16, kod/object/passive/spell/nodebrst.kod:15</td></tr>
+<tr><td>Defile: refuses to cast at or above</td><td>3 × your max mana</td><td>kod/object/passive/spell/defile.kod:88</td></tr>
+<tr><td>Mystic touch: target ceiling</td><td>min(1.5 × target max, 75)</td><td>kod/object/passive/spell/mysttch.kod:18, :119–125</td></tr>
+</tbody>
+</table>
+
+<h2>Mana nodes</h2>
+
+<img class="icon" src="../assets/img/node_g1.png" alt="mana node">
+
+<p>A mana node is a <code class="k">PassiveObject</code> you activate (double-click) while standing
+within range. Melding is permanent, free, instant, and repeatable across the whole node set — there
+is no upkeep and no limit on how many you hold.</p>
+
+<div class="formula">TryActivate(who):
+   requires abs(yourRow - nodeRow) &lt; 3 AND abs(yourCol - nodeCol) &lt; 3   % MANANODE_RANGE = 3
+   requires the node not be in state NODE_DEAD
+   requires you not already hold this node's bit in piNodelist
+   -&gt; Meld: NewMaxMana(GetManaAdjust(you), node_num)
+
+GetManaAdjust(who) = ((5 + who.GetMysticism()) / 10) + 3        % 0 if the node is dead
+</div>
+<p class="cite">kod/object/passive/mananode.kod:17, :157–200, :228–238</p>
+
+<p>Membership is a 16-bit mask in <code class="k">piNodelist</code>
+(<code class="k">NODE_MAX_VALUE</code> = 0x8000, <code>kod/include/blakston.khd:2284</code>). Thirteen
+bits are assigned.</p>
+
+<table class="data">
+<thead><tr><th>Node</th><th>Bit</th><th>Location</th><th>Kind</th><th>Availability</th></tr></thead>
+<tbody>
+<tr><td>H9</td><td>0x0001</td><td>Under the shadow of the Sentinel</td><td>standard</td><td>always present</td></tr>
+<tr><td>G9</td><td>0x0002</td><td>An ancient place, its origin forgotten</td><td>standard</td><td>always present</td></tr>
+<tr><td>Victoria</td><td>0x0004</td><td>Upstairs in Castle Victoria</td><td>standard</td><td>always present</td></tr>
+<tr><td>Badlands</td><td>0x0008</td><td>The Badlands</td><td>standard</td><td>always present</td></tr>
+<tr><td>Orc caves</td><td>0x0010</td><td>A Deep, Dark, Spooky, Icky Cave</td><td>standard</td><td>always present</td></tr>
+<tr><td>A5</td><td>0x0020</td><td>Seafarer's Peak</td><td>standard</td><td>always present</td></tr>
+<tr><td>Ice cave</td><td>0x0040</td><td>The Dreaded Caves of Ice</td><td>standard</td><td>always present</td></tr>
+<tr><td>Corpse node ("rip in space")</td><td>0x0080</td><td>The Underworld</td><td>standard rate, but a <code class="k">Portal</code> subclass</td><td>appears only when the Underworld puzzle is solved</td></tr>
+<tr><td>Heart of Zjiria</td><td>0x0100</td><td>Ukgoth, Holy Land of Trolls</td><td>standard</td><td>appears at game-hour 0 only, guarded by three stone trolls; gone at hour 1</td></tr>
+<tr><td>Fey node (kii'elhai / kii'dirhai)</td><td>0x0200</td><td>The Vale of Sorrows</td><td><strong>double value</strong></td><td>appears only when room karma hits KVERY_GOOD or KVERY_EVIL; karma-locked</td></tr>
+<tr><td>Guest node</td><td>0x0400</td><td>Mausoleum</td><td>standard</td><td>"normally not attainable except by guests"</td></tr>
+<tr><td>Q node</td><td>0x0800</td><td>Martyr's Battleground</td><td>standard</td><td>only while that portal is active</td></tr>
+<tr><td>Avar node</td><td>0x1000</td><td>Avar Village</td><td>standard</td><td>appears for 60 s when the idol's favor reaches ±2000; karma-locked</td></tr>
+</tbody>
+</table>
+<p class="cite">Bits: kod/include/blakston.khd:2267–2281. Creation sites: objroom/h9.kod:133, g9.kod:255, castle1b.kod:61, badland1.kod:61, objroom/cave2.kod:125, a5.kod:90, objroom/icecave1.kod:138, uworld.kod:98, i9.kod:85, feyforst/c2.kod:65, guest6.kod:532, objroom/canyon2.kod:80, kcforest/ke4.kod:123 (all under kod/object/active/holder/room/monsroom/)</p>
+
+<div class="note">
+<p><strong>Nodes that vanish do not take your mana with them.</strong>
+<code class="k">NodeDisappear</code> removes the node from the room but deliberately leaves it in the
+system list "so that a player's max mana can always be figured on the fly"
+(<code>kod/object/passive/mananode.kod:138–142</code>). Once melded with the Heart of Zjiria, the Q
+node or the Avar node, the bonus is yours whether or not the node is currently visible.</p>
+</div>
+
+<h3>Karma-locked nodes</h3>
+
+<ul>
+<li><strong>Fey node</strong> (<code>kod/object/passive/mananode/feynode.kod</code>) gives double the
+standard adjustment (<code>:135</code>). It appears aligned good or evil. Attempting to meld with the
+wrong karma triggers <code class="k">LashOut</code> for <code class="k">FEYNODE_DAMAGE</code> = 10
+damage, which can kill you (<code>:24</code>, <code>:122–131</code>). Worse, when the node flips
+alignment it runs <code class="k">StripUsers</code> and unmelds every player of the opposing karma
+(<code>:72–104</code>).</li>
+<li><strong>Avar node</strong> (<code>kod/object/passive/mananode/avarnode.kod</code>) is also karma-gated
+but merely refuses you (<code>:57–70</code>) — and, unlike the fey node, it never strips anyone.</li>
+</ul>
+
+<h3>Node attacks: your max mana can drop while you are offline</h3>
+
+<p>The <code class="k">NodeAttack</code> utility periodically sends Xeochicatl against a node. If the
+defenders lose, the node is <code class="k">Deactivate</code>d — and a dead node's
+<code class="k">GetManaAdjust</code> returns 0, so every melded player's max mana falls by that node's
+worth on their next <code class="k">ComputeMaxMana</code> (which fires on login,
+<code>kod/object/active/holder/nomoveon/battler/player.kod:1885</code>).</p>
+
+<table class="data">
+<thead><tr><th>Parameter</th><th>Value</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td>Attacks enabled by default</td><td>FALSE</td><td>kod/util/nodeattk.kod:68</td></tr>
+<tr><td>Base frequency</td><td>36 Meridian days</td><td>kod/util/nodeattk.kod:70</td></tr>
+<tr><td>Xeochicatl spawned</td><td>8</td><td>kod/util/nodeattk.kod:72</td></tr>
+<tr><td>Attack duration</td><td>60 minutes</td><td>kod/util/nodeattk.kod:75</td></tr>
+<tr><td>Node stays dead</td><td>12 Meridian days</td><td>kod/util/nodeattk.kod:78</td></tr>
+<tr><td>Chance your link is permanently severed</td><td><code>5 + (number of nodes you hold)</code> percent</td><td>kod/util/nodeattk.kod:80, :584</td></tr>
+<tr><td>Players online required</td><td>20</td><td>kod/util/nodeattk.kod:82</td></tr>
+</tbody>
+</table>
+
+<div class="warn">
+<p>The severance roll is <code>Random(1,100) &lt;= piSeveredChance + NumManaNodes()</code>. The more
+nodes you hold, the more likely you are to lose one permanently in a failed defence — a player with
+12 nodes has a 17 % severance chance versus 6 % for a player with one. If you are offline you get a
+mail from Alzahakar instead of a message (<code>kod/util/nodeattk.kod:571–627</code>).</p>
+</div>
+
+<h3>Auditing your nodes</h3>
+
+<p>Say <code>nodes</code> to Esseldi, the Fifth Councilor, and she lists every node your aura is
+connected to by room name ("Your aura is connected with these mana nodes: %q.").</p>
+<p class="cite">kod/util/library.kod:213, :1327, :3144, :4422–4466; NPC class kod/object/active/holder/nomoveon/battler/monster/council/fivecon.kod:20</p>
+
+<h3>Nodeburst: cashing in your links</h3>
+
+<img class="icon" src="../assets/img/icanniba_g1.png" alt="nodeburst icon">
+
+<div class="formula">iGain    = numNodes^2 + (numNodes^2 * spellPower)/100
+StripOneNode()                                   % removes one random node link
+manaGain = bound(iGain, manaLostByStripping, 250 - currentMana)
+GainMana(manaGain)
+GainHealth(iGain / 2)
+</div>
+<p class="cite">kod/object/passive/spell/nodebrst.kod:100–130</p>
+
+<p>Qor level 5; 1 mana, <code class="k">viSpellExertion</code> = 30 (very tiring), 3 s cast, 3 fairy
+wings and 3 entroot berries, and once per Meridian day per caster
+(<code>nodebrst.kod:38–56</code>, <code>:82–95</code>).
+<code class="k">StripOneNode</code> protects the Fey and Q nodes: it will only take one of those if
+you have nothing else left (<code>kod/object/active/holder/nomoveon/battler/player.kod:6000–6060</code>).
+A worked case: 9 nodes, spellpower 60 → <code>81 + 81·60/100 = 129</code> mana and 64 health,
+minus the ~8 max mana the stripped node was giving you. There is also a
+<a href="../items/nodeburstpotion.html">pungent elixir</a> that casts it at spellpower 20–60
+(<code>kod/object/item/passitem/spelitem/potion/nodebrsp.kod:43</code>,
+<code>kod/object/item/passitem/spelitem/potion.kod:77–78</code>).</p>
+
+<h2>Spending mana</h2>
+
+<h3>Per-cast cost</h3>
+
+<div class="formula">GetManaCost(who, spellPower):
+   iCost = viMana                                  % per-spell class variable, default 1
+   if iCost = 0: return 0
+   if spellPower &gt; 40: iCost = iCost - 1
+   if spellPower &gt; 80: iCost = iCost - 1
+   if wielding a Princess shield:
+       iCost = iCost - (iCost * reductionPercent + 99) / 100    % ceiling division
+   return bound(iCost, 1, $)
+</div>
+<p class="cite">kod/object/passive/spell.kod:1544–1580; default <code class="k">viMana</code> = 1 at kod/object/passive/spell.kod:161</p>
+
+<p>The Princess shield reduction scales linearly with faction rank from 5 % at rank 1 to 25 % at
+rank 10 (<code>kod/object/item/passitem/defmod/shield/soldshld/prinshld.kod:24–25</code>,
+<code>:185</code>). Because the subtraction rounds <em>up</em>, a 10-mana spell at rank 10 costs 7,
+not 8.</p>
+
+<p>Costs are paid in <code class="k">PayCosts</code>, after a success roll. A spell that fails the roll
+costs half the mana and half the exertion and no reagents
+(<code>kod/object/passive/spell.kod:1256–1290</code>, <code>:1150–1170</code>). Immortals pay nothing,
+and non-<code class="k">Player</code> casters (monsters) pay nothing at all — the message returns TRUE
+immediately at <code>spell.kod:1262</code>.</p>
+
+<h3>Sustained drains</h3>
+
+<p>Songs, multicasts and a handful of personal enchantments bill you on a repeating timer. Every one
+of them uses the same shutdown test: the enchantment terminates when your mana falls below
+<code>2 × viManaDrain</code>. This is the complete list in the class tree.</p>
+
+<table class="data">
+<thead><tr><th>Spell</th><th>Cast cost</th><th>Drain</th><th>Every</th><th>Mana / minute</th><th>File</th></tr></thead>
+<tbody>
+<tr><td>Crystalize mana</td><td>20</td><td>2</td><td>1000 ms</td><td>120</td><td>spell/jala/crysmana.kod:46–48</td></tr>
+<tr><td>Silence</td><td>10</td><td>10</td><td>1000 ms × (1 + SP/99)</td><td>300–600</td><td>spell/roomench/silence.kod:46–50, :201</td></tr>
+<tr><td>Multicast (generic)</td><td>10</td><td>7</td><td>1000 ms</td><td>420</td><td>spell/multicst.kod:36–40</td></tr>
+<tr><td>Bond</td><td>50</td><td>1</td><td>1000 ms</td><td>60</td><td>spell/multicst/bond.kod:53, :64–65</td></tr>
+<tr><td>Blood inheritance</td><td>50</td><td>1</td><td>1000 ms</td><td>60</td><td>spell/multicst/bldinher.kod:42, :52–53</td></tr>
+<tr><td>Hunt</td><td>50</td><td>1</td><td>1000 ms</td><td>60</td><td>spell/multicst/hunt.kod:58, :68–70</td></tr>
+<tr><td>Shatterlock</td><td>50</td><td>1</td><td>1000 ms</td><td>60</td><td>spell/multicst/shttrlck.kod:56, :66–67</td></tr>
+<tr><td>Death's door</td><td>30</td><td>1</td><td>1000 ms</td><td>60</td><td>spell/multicst/shadrift.kod:51, :61–62</td></tr>
+<tr><td>Summon cow</td><td>5</td><td>1</td><td>1000 ms</td><td>60</td><td>spell/multicst/summcow.kod:37, :47–48</td></tr>
+<tr><td>Eavesdrop</td><td>8</td><td>1</td><td>500 + (SP/10)·100 ms</td><td>43–120</td><td>spell/persench/eavesdrp.kod:47–50, :132–137</td></tr>
+<tr><td>Jig</td><td>10</td><td>10</td><td>5000 ms</td><td>120</td><td>spell/jala/jig.kod:33–35</td></tr>
+<tr><td>Mana convergence</td><td>10</td><td>9</td><td>5000 ms</td><td>108</td><td>spell/jala/manaconv.kod:36–38</td></tr>
+<tr><td>Rejuvenate</td><td>5</td><td>8</td><td>5000 ms</td><td>96</td><td>spell/jala/rejuven.kod:37–39</td></tr>
+<tr><td>Spellbane</td><td>12</td><td>8</td><td>5000 ms</td><td>96</td><td>spell/jala/spelbane.kod:40–42</td></tr>
+<tr><td>Feign death</td><td>5</td><td>5</td><td>5000 ms</td><td>60</td><td>spell/fdeath.kod:38–40</td></tr>
+<tr><td>Warp time</td><td>5</td><td>5</td><td>5000 ms</td><td>60</td><td>spell/jala/warptime.kod:39–41</td></tr>
+<tr><td>Jala songs (base) and every Hinder song: civility, conciliation, disharmony, profane resonance, sacred resonance, truth</td><td>5</td><td>3</td><td>5000 ms</td><td>36</td><td>spell/jala.kod:39–42; spell/jala/hinder.kod:22–24 and hinder/*.kod:33–35</td></tr>
+<tr><td>Restorate</td><td>5</td><td>3</td><td>5000 ms</td><td>36</td><td>spell/jala/restorat.kod:40–42</td></tr>
+<tr><td>Melancholy / Mirth</td><td>2</td><td>2</td><td>5000 ms</td><td>24</td><td>spell/jala/melcholy.kod:42–44, mirth.kod:42–44</td></tr>
+<tr><td>Invigorate</td><td>5</td><td>1</td><td>5000 ms</td><td>12</td><td>spell/jala/invigor.kod:37–39</td></tr>
+<tr><td>Seduce (drains the <em>caster</em> while the charm holds)</td><td>15</td><td>monster level / 10</td><td>2000 ms</td><td>varies</td><td>spell/seduce.kod:42, :47, :225–235</td></tr>
+</tbody>
+</table>
+<p class="cite">All paths relative to kod/object/passive/</p>
+
+<div class="warn">
+<p>Rejuvenate costs the bard 96 mana per minute while it saves the room roughly half its regen time.
+Compare it against the caster's own regen from the table above: a Myst-50 bard with 8 nodes and 200
+vigor makes about 50 mana a minute. <strong>Rejuvenate is a net drain on the singer.</strong> It only
+pays off with three or more listeners.</p>
+</div>
+
+<h3>Non-spell mana costs</h3>
+
+<table class="data">
+<thead><tr><th>Action</th><th>Mana cost</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>Broadcast</td><td><code>bound(maxMana · pct/100 + 1, 1, $)</code>, where <code class="k">piBroadcastManaCostPercent</code> defaults to <strong>50</strong></td><td>kod/object/active/holder/nomoveon/battler/player.kod:3173–3206; kod/util/settings.kod:148</td></tr>
+<tr><td>Group say (tell to N people)</td><td>exactly N mana; refused if you have less</td><td>kod/object/active/holder/nomoveon/battler/player.kod:3208–3222</td></tr>
+<tr><td>Jewel of Froz proc on a spell hit</td><td>1 per jewel worn; if the mana is actually spent, adds <code>Random(3,5)</code> damage</td><td>kod/object/item/passitem/attmod/frozjewl.kod:89–110</td></tr>
+</tbody>
+</table>
+<p>At the default 50 %, a broadcast costs <code>maxMana/2 + 1</code> — half your entire pool. If the
+Parliament's beta-potions flag is set, broadcasts are free
+(<code>player.kod:3186</code>). Mail is free and has no mana cost at all.</p>
+
+<h2>Getting mana back out of band</h2>
+
+<p>This is the complete set of things in the game that call <code class="k">GainMana</code> on a
+player. There is <strong>no mana potion</strong> — the full potion list under
+<code>kod/object/item/passitem/spelitem/potion/</code> contains no mana restorative except the
+Nodeburst elixir described above.</p>
+
+<table class="data">
+<thead><tr><th>Source</th><th>Amount</th><th>Cost / catch</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td><a href="../items/manacrystal.html">Mana crystal</a></td><td>whatever was stored, capped so total mana ≤ 250</td><td>single use; breaks your trance; cannot be dropped, given, swapped, shattered or vaulted</td><td>kod/object/item/passitem/manacrys.kod:105–124</td></tr>
+<tr><td><a href="../spells/mystictouch.html">Mystic touch</a></td><td><code>bound(spellPower/2, 10, 55)</code> percent of the caster's mana</td><td>Faren 1, 3 mana, 1 mushroom; not on yourself; caster must keep ≥ 5 mana above the cost; target capped at min(1.5 × their max, 75)</td><td>kod/object/passive/spell/mysttch.kod:128–170</td></tr>
+<tr><td><a href="../spells/defile.html">Defile</a></td><td><code>10 + spellPower/3</code></td><td>Qor 3, 10 s cast, 1 fairy wing, needs the corpse of a <em>good</em> player, costs karma, blocked at 3 × max mana, banned in happy land</td><td>kod/object/passive/spell/defile.kod:52–56, :138–153</td></tr>
+<tr><td>Nodeburst</td><td><code>n² · (1 + SP/100)</code>, capped at 250 total</td><td>destroys one node link, once per day</td><td>kod/object/passive/spell/nodebrst.kod:104–125</td></tr>
+<tr><td><a href="../items/mint.html">Chocolate mint</a></td><td>+5 mana <em>and</em> +5 vigor, for 5 fullness</td><td>none — the single most efficient consumable in the game for a caster</td><td>kod/object/item/passitem/numbitem/food/mint.kod:46–48, :58–62</td></tr>
+<tr><td><a href="../spells/deathlink.html">Deathlink</a> kill benefit</td><td><code>Random(1,5)</code> mana and health, ×4 if the victim was a player</td><td>room enchantment; requires the kill</td><td>kod/object/passive/spell/roomench/dethlink.kod:110–130</td></tr>
+<tr><td>Tournament of Skills arena</td><td>topped to full on entry; winner gets up to +25 over max; original value restored on exit</td><td>arena only</td><td>.../monster/towns/tostwn/tswatch.kod:1244–1260, :1930–1955</td></tr>
+<tr><td>Quest node prize</td><td><code>QN_PRIZE_STAT_MANA</code> awards a scripted amount; <code>QN_PRIZE_STAT_MYSTICISM</code> raises your Mysticism modifier and recomputes max mana</td><td>per quest</td><td>kod/object/passive/questnode.kod:1220–1245</td></tr>
+<tr><td>Immortal mode (DM)</td><td>max mana forced to 200 and refilled</td><td>staff only</td><td>.../player/user/dm.kod:1147, :1155</td></tr>
+</tbody>
+</table>
+
+<h3>Crystalize mana: storage, not generation</h3>
+
+<img class="icon" src="../assets/img/manacrys_g1.png" alt="mana crystal">
+
+<div class="formula">every 1000 ms while singing:
+   drain 2 mana from the singer                    % viManaDrain = 2
+   iAmount = 1
+   if random(1,99) &lt;= spellPower: iAmount = iAmount + 1
+   crystal.IncreaseMana(iAmount)
+
+IncreaseMana(amount):
+   stored = bound(stored + amount, 1, 130 * ownerMaxMana / 100)
+   stored = bound(stored, 1, 250)
+</div>
+<p class="cite">kod/object/passive/spell/jala/crysmana.kod:79–119; kod/object/item/passitem/manacrys.kod:68–92</p>
+
+<p>At spell power 99 the roll always succeeds, so you bank 2 mana for every 2 mana drained — 100 %
+efficiency, and no better. At low spell power it is 50 %. Crystalize mana therefore lets a bard
+<em>carry</em> mana past their cap (up to 130 % of max mana or 250, whichever is lower) but never
+creates any. Jala 6; 20 mana to start, 1 sapphire and 1 uncut seraphym
+(<code>crysmana.kod:44–52</code>). Only one crystal per singer exists at a time
+(<code>crysmana.kod:82–86</code>), and the crystal survives death
+(<code class="k">DropOnDeath</code> returns FALSE, <code>manacrys.kod:151</code>).</p>
+
+<p>The crystal's colour tells you its charge: one step per 30 stored mana through sky, red, orange,
+yellow, green, blue, purple (<code>manacrys.kod:58–62</code>, <code>:80</code>). Purple means 180+.</p>
+
+<h2>Losing mana to other people and monsters</h2>
+
+<table class="data">
+<thead><tr><th>Threat</th><th>Effect</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td><a href="../spells/manabomb.html">Mana bomb</a></td><td>Caster burns <em>all</em> their mana; everyone else in range loses <code>(casterMana/2) · (1 + SP/100)</code>. Range is <code>6 + SP/20</code>. Requires the caster hold ≥ 12 mana. Kraanan 4, 2 sapphires, outlaw spell.</td><td>kod/object/passive/spell/manabomb.kod:15, :75–135</td></tr>
+<tr><td><a href="../monsters/xeochicatl.html">Xeochicatl</a></td><td>50 % chance per attack to steal <code>maxMana·5/100 + 1</code> mana (capped at what you have) and add it to its own. Immune if the Xeochicatl is itself mana-bombed.</td><td>.../monster/xeochctl.kod:18, :95, :110–133</td></tr>
+<tr><td><a href="../monsters/reflection.html">Reflection</a></td><td>Drains 1 mana from its original every 8000 ms; deletes itself when the original has less than 1 mana.</td><td>.../monster/reflectn.kod:19–20, :226–241</td></tr>
+<tr><td><a href="../spells/seduce.html">Seduce</a></td><td>Drains the caster, not the target: <code>monsterLevel/10</code> every 2000 ms, and the charm ends when the caster cannot pay.</td><td>kod/object/passive/spell/seduce.kod:225–235</td></tr>
+</tbody>
+</table>
+
+<h2>Death, logoff, and other resets</h2>
+
+<table class="data">
+<thead><tr><th>Event</th><th>Mana result</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td>Death, normal night</td><td><code>piMana = 1</code> (health 1, vigor quartered and capped at 50)</td><td>kod/object/active/holder/nomoveon/battler/player.kod:8155–8160</td></tr>
+<tr><td>Death, Chaos Night</td><td><code>piMana = piMax_Mana / 2</code>, health half, vigor 100</td><td>.../player.kod:8148–8153</td></tr>
+<tr><td>Death with a death cost (non-tutorial, non-murderer)</td><td>overridden afterwards to <code>piMax_mana/2 + 2</code> "to broadcast for help with"</td><td>.../player.kod:8185–8192</td></tr>
+<tr><td>Safe logoff, when <code class="k">LogSafePenaltyEnable</code> is on</td><td>lose half your current mana, and all buffs purged</td><td>.../player/user.kod:696–701</td></tr>
+<tr><td>Login</td><td><code class="k">ComputeMaxMana</code> runs — "max mana could have changed while offline (e.g. mana node changes)"</td><td>.../player.kod:1883–1885</td></tr>
+<tr><td>Character restart</td><td><code>piMax_mana = GetInitialMaxMana(); piMana = piMax_mana;</code> and vigor reset to 100</td><td>.../player.kod:2301–2307</td></tr>
+</tbody>
+</table>
+
+<h2>Reading the mana bar</h2>
+
+<p>The server sends mana as a numeric stat with a fixed display range of 0–100 and a separate
+"current max" limit line at your real maximum:</p>
+
+<div class="formula">AddPacket(1,2, 4,user_stat_mana, 1,STAT_VALUE, 1,STAT_INTEGER,
+          4,piMana, 4,0, 4,100, 4,piMax_mana);
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player/user.kod:6663–6669; the client maps these to GRPH_RANGESET / GRPH_POSSET / GRPH_LIMITSET at module/merintr/statnum.c:196–198</p>
+
+<p>So the bar is drawn against a hard 0–100 scale with a marker at your maximum. If you push past 100
+mana — easy with several nodes, and trivial with a mana crystal or Defile — the bar pegs and stops
+being informative. The redraw fires from <code class="k">NewMana</code>, which every gain and loss
+calls (<code>player.kod:6217–6239</code>).</p>
+
+<h2>Quick reference: what actually makes you cast more</h2>
+
+<ol>
+<li><strong>Mysticism at creation.</strong> It is the only stat in the mana formulas, it sets both the
+base pool and the per-node bonus, and base Mysticism can never be raised later.</li>
+<li><strong>Meld every node you can reach.</strong> Each one is a permanent, free, unconditional
+increase to both your pool and your mana-per-second. The Fey node is worth two.</li>
+<li><strong>Eat before you fight.</strong> Vigor 200 versus vigor 100 is exactly double regen. Inky
+caps and chocolate mints are the efficient choices; mints also hand you 5 mana directly.</li>
+<li><strong>Mana Focus while you idle.</strong> Roughly halves the tick time and survives casting
+attack spells.</li>
+<li><strong>Don't broadcast.</strong> At the default 50 % setting a single broadcast costs half your
+maximum mana.</li>
+</ol>

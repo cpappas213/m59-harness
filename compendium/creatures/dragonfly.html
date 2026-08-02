@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dragonfly — Meridian 59 Compendium</title>
+<meta name="description" content="These small lizards look exceptionally friendly. Their gossamer wings allow them to jump into the air and take flight for brief periods of time. When backed int">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › dragonfly</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/dfly_g1.png" alt="dragonfly" width="102" height="94"></div><div class="heroText"><h1>dragonfly</h1><p class="lede">These small lizards look exceptionally friendly. Their gossamer wings allow them to jump into the air and take flight for brief periods of time. When backed into a corner, dragonflies are known to have a nasty spitting attack.</p><div class="tags"><span class="tag ">Level 120</span><span class="tag ">Difficulty 6</span><span class="tag ">Good</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">120</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">6</div></div><div class="fact"><div class="lbl">Health</div><div class="val">108–180</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">6–15</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">40</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">dragonfly</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 120 + 60 × 6
+                = 720
+
+health          = Fuzzy(level × 120/100) = 108–180
+damage per hit  = Fuzzy(level / random(10,15))  = 6–15
+dodge           = difficulty × 10 = 60</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">67%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">46%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">13</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">7.0</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>pierce</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 120/55 + random(0, 6/3), $, 6)
+       = 3–5 items
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/dflyt.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="DragonflyEye"><a href="../items/dragonflyeye.html">dragonfly eye</a></td><td class="num " data-sort="30.693">30.7%</td><td class=""></td><td class=""><code>dflyt.kod:30</code></td></tr>
+<tr><td class="" data-sort="WebMoss"><a href="../items/webmoss.html">web moss</a></td><td class="num " data-sort="19.802">19.8%</td><td class=""></td><td class=""><code>dflyt.kod:31</code></td></tr>
+<tr><td class="" data-sort="Meatpie"><a href="../items/meatpie.html">meat pie</a></td><td class="num " data-sort="19.802">19.8%</td><td class=""></td><td class=""><code>dflyt.kod:32</code></td></tr>
+<tr><td class="" data-sort="RainbowFern"><a href="../items/rainbowfern.html">rainbow fern</a></td><td class="num " data-sort="14.851">14.9%</td><td class=""></td><td class=""><code>dflyt.kod:33</code></td></tr>
+<tr><td class="" data-sort="Money"><a href="../items/money.html">shilling</a></td><td class="num " data-sort="6.931">6.9%</td><td class="">121–481 shillings</td><td class=""><code>dflyt.kod:34</code></td></tr>
+<tr><td class="" data-sort="KriipaClaw"><a href="../items/kriipaclaw.html">kriipa claw</a></td><td class="num " data-sort="6.931">6.9%</td><td class=""></td><td class=""><code>dflyt.kod:35</code></td></tr>
+<tr><td class="" data-sort="Yrxlsap"><a href="../items/yrxlsap.html">yrxl sap</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>dflyt.kod:36</code></td></tr></tbody></table></div><div class="formula">shillings = 1 + (MoneyFactor × 2 × bound(random(level/2, 3×level/2), 1, ∞)) / 100
+          = 121–481 at level 120     % MoneyFactor = 100</div>
+<p class="cite">kod/object/passive/trestype.kod:302</p><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>3 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 3.
+<span class="cite">kod/object/passive/trestype/dflyt.kod:23</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>1 place in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="Origin of the Kriipa"><a href="../zones/outdoorskc4.html">Origin of the Kriipa</a></td><td class="" data-sort="Ko’catan jungle">Ko’catan jungle</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="30">30%</td><td class=""><code>monsroom/kcforest/kc4.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>What killing it does to your karma</h2>
+<p>Its karma is <code class="k">40</code>, and a kill is treated as an act whose karma is the
+<em>negative</em> of the victim's — so killing this creature pushes you
+<strong>towards evil</strong>.</p>
+<div class="formula">base   = your_karma − (−victim_karma) = your_karma + 40
+change = −( base³ / 2500 + 5 × base ) / (11 − swing)      % hundredths of a karma point
+       bounded to ±150 for a monster kill — at most 1.5 karma per kill</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code> · :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+<div class="note">No karma moves at all in the newbie region, in an arena, or when the victim's
+karma is neutral. And once you are already further from neutral than your victim in the same
+direction, killing them does nothing to you.</div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/dfly_g1.png" alt="dragonfly group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/dfly_g2.png" alt="dragonfly group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/dfly_g3.png" alt="dragonfly group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/dfly_g4.png" alt="dragonfly group 4" loading="lazy"><figcaption>group 4 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/dfly_g5.png" alt="dragonfly group 5" loading="lazy"><figcaption>group 5 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/dfly_g6.png" alt="dragonfly group 6" loading="lazy"><figcaption>group 6 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/dfly_g7.png" alt="dragonfly group 7" loading="lazy"><figcaption>group 7 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/dfly_g8.png" alt="dragonfly group 8" loading="lazy"><figcaption>group 8 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/dfly_g9.png" alt="dragonfly group 9" loading="lazy"><figcaption>group 9 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/dflyx_g1.png" alt="dragonfly corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:11</p>
+<p><code class="k">DragonFly</code> is <code class="k">Monster</code> — full chain <code class="k">DragonFly</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_A</code></td><td class="">2</td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>DragonFly_name_rsc</code></td><td class=""><em>dragonfly</em></td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>DragonFly_icon_rsc</code></td><td class=""><em>dfly.bgf</em></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>DragonFly_desc_rsc</code></td><td class=""><em>These small lizards look exceptionally friendly.  Their gossamer wings allow them to jump </em></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>DragonFly_dead_icon_rsc</code></td><td class=""><em>dflyX.bgf</em></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>DragonFly_dead_name_rsc</code></td><td class=""><em>dead dragonfly</em></td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_DRAGONFLY</code></td><td class="">41</td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_AVERAGE</code></td><td class="">12</td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_PIERCE</code></td><td class="">32</td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>120</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="69">69</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>6</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>40</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_AGGRESSIVE</code></td><td class="">16384</td><td class="num " data-sort="72">72</td></tr>
+<tr><td class=""><code class="k">viWimpy</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>DragonFly_sound_hit</code></td><td class=""><em>df_atkm.wav</em></td><td class="num " data-sort="76">76</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>DragonFly_sound_miss</code></td><td class=""><em>df_atkm.wav</em></td><td class="num " data-sort="77">77</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>DragonFly_sound_aware</code></td><td class=""><em>df_awr.wav</em></td><td class="num " data-sort="78">78</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>DragonFly_sound_death</code></td><td class=""><em>df_dth.wav</em></td><td class="num " data-sort="79">79</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="83">83</td></tr>
+<tr><td class=""><code class="k">ptHover</code></td><td class=""><code>$</code></td><td class="num " data-sort="84">84</td></tr>
+<tr><td class=""><code class="k">ptLand</code></td><td class=""><code>$</code></td><td class="num " data-sort="85">85</td></tr>
+<tr><td class=""><code class="k">piDrawfx</code></td><td class=""><code>BOUNCE_YES</code></td><td class="num " data-sort="87">87</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructed()</h4>
+<pre><code>{
+      plResistances = [ [ 25, -ATCK_SPELL_COLD ],
+                        [ 40, -ATCK_SPELL_SHOCK ],
+                        [ -20, -ATCK_SPELL_FIRE ],
+                        [ 40, ATCK_WEAP_THRUST ],
+                        [ 25, ATCK_WEAP_NERUDITE ],
+                        [ -10, ATCK_WEAP_MAGIC ]
+                      ];
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:91</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      Send(self,@DoSpit);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:104</p>
+<h4>DoSpit()</h4>
+<pre><code>{
+      piAnimation = ANIM_ATTACK;
+      piDrawFX = piDrawFX | BOUNCE_YES;
+      Send(poOwner,@SomethingChanged,#what=self);
+      send(poOwner,@SomethingShot,#who=self,#target=poTarget,#projectile = self);
+      piAnimation = ANIM_HOVER;
+
+      if ptHover = $
+      {
+         ptHover = CreateTimer(self,@HoverTimer,HOVER_DELAY);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:111</p>
+<h4>GetProjectileSpeed()</h4>
+<pre><code>{
+      return 8;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:127</p>
+<h4>SendProjectileAnimation()</h4>
+<pre><code>{
+      AddPacket(1, ANIMATE_CYCLE, 4, 40, 2, 1, 2, 5);   
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:132</p>
+<h4>GetProjectileIcon()</h4>
+<pre><code>{
+      return DragonFly_spit;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:139</p>
+<h4>GetProjectileLightFlags()</h4>
+<pre><code>{
+      
+      return LIGHT_FLAG_NONE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:144</p>
+<h4>HoverTimer()</h4>
+<pre><code>{  
+      ptHover = $;
+      
+      Send(poOwner,@SomethingChanged,#what=self);
+      if ptLand &lt;&gt; $
+      {
+         DeleteTimer(ptLand);
+      }
+
+      ptLand = CreateTimer(self,@LandTimer,LAND_DELAY);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:150</p>
+<h4>LandTimer()</h4>
+<pre><code>{
+      ptLand = $;
+
+      if (poTarget = $) AND (piAnimation = ANIM_HOVER)
+      {
+         piAnimation = ANIM_NONE;
+         piDrawFX = (piDrawFX &amp; (~BOUNCE_YES));
+         Send(poOwner,@SomethingChanged,#what=self);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:165</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_NONE);
+      AddPacket(2,FRAME_LAND);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:179</p>
+<h4>SendLookOverlays()</h4>
+<pre><code>{
+      AddPacket(1,0);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:187</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE,4,ANIM_SPEED,2,FRAME_FLY_START,2,FRAME_FLY_END);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:194</p>
+<h4>SendmoveOverlays()</h4>
+<pre><code>{
+      AddPacket(1,1);
+      AddPacket(4,DragonFly_wings_rsc,1,HS_WINGS);
+      AddPacket(1,ANIMATE_EFFECT,1,DRAWFX_TRANSLUCENT_25-DRAWFX_TRANSLUCENT_25+1);
+      AddPacket(1,ANIMATE_CYCLE,4,WING_ANIM_SPEED,2,(FRAME_FLY_START - 1),2,(FRAME_FLY_END - 1) );
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:201</p>
+<h4>SendOverlays()</h4>
+<pre><code>{
+      if piAnimation = ANIM_HOVER
+      {
+         AddPacket(1,1);
+         AddPacket(4,DragonFly_wings_rsc,1,HS_WINGS);
+         AddPacket(1,ANIMATE_EFFECT,1,DRAWFX_TRANSLUCENT_25-DRAWFX_TRANSLUCENT_25+1);
+         AddPacket(1,ANIMATE_CYCLE,4,WING_ANIM_SPEED,2,(FRAME_HOVER_START - 1),2,(FRAME_HOVER_END - 1) );
+
+         return;
+      }
+
+      if piAnimation = ANIM_ATTACK
+      {
+         AddPacket(1,1);                                             
+         AddPacket(4,DragonFly_wings_rsc,1,HS_WINGS);
+         AddPacket(1,ANIMATE_EFFECT,1,DRAWFX_TRANSLUCENT_25-DRAWFX_TRANSLUCENT_25+1);
+         AddPacket(1,ANIMATE_ONCE,4,ANIM_SPEED,2,(FRAME_ATTACK_START - 1),2,(FRAME_ATTACK_END - 1),2,(FRAME_HOVER_END - 1) );
+
+         return;
+      }
+
+     propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:211</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if piAnimation = ANIM_HOVER
+      {
+         AddPacket(1,ANIMATE_CYCLE,4,ANIM_SPEED,2,FRAME_HOVER_START,2,FRAME_HOVER_END);
+
+         return;
+      }
+
+      if piAnimation = ANIM_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,ANIM_SPEED,2,FRAME_ATTACK_START,2,FRAME_ATTACK_END,2,FRAME_HOVER_END);
+
+         return;
+      }
+
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:236</p>
+<h4>Delete()</h4>
+<pre><code>{
+      if ptHover &lt;&gt; $
+      {
+         DeleteTimer(ptHover);
+         ptHover = $;
+      }
+
+      if ptLand &lt;&gt; $
+      {
+         DeleteTimer(ptLand);
+         ptLand = $;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:256</p>
+<h4>GetObjectFlags()</h4>
+<pre><code>{
+      if piAnimation = ANIM_NONE
+      {
+         return MOVEON_NO | BATTLER_YES;
+      }
+
+      return MOVEON_NO | BOUNCE_YES | BATTLER_YES;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:273</p>
+<h4>CanMorphTo()</h4>
+<pre><code>{
+      return FALSE;
+   }      </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dfly.kod:283</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

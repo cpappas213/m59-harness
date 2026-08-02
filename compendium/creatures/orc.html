@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>orc — Meridian 59 Compendium</title>
+<meta name="description" content="This foul servant of Qor, body covered in filth, towers above human height. It fiercely grips a blade in one gnarled hand.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › orc</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/orc_g1.png" alt="orc" width="143" height="168"></div><div class="heroText"><h1>orc</h1><p class="lede">This foul servant of Qor, body covered in filth, towers above human height. It fiercely grips a blade in one gnarled hand.</p><div class="tags"><span class="tag ">Level 45</span><span class="tag ">Difficulty 6</span><span class="tag ">Evil</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">45</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">6</div></div><div class="fact"><div class="lbl">Health</div><div class="val">41–68</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">3–5</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">-40</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">orc</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>utomca</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 45 + 60 × 6
+                = 495
+
+health          = Fuzzy(level × 120/100) = 41–68
+damage per hit  = Fuzzy(level / random(10,15))  = 3–5
+dodge           = difficulty × 10 = 60</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">46%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">67%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">33</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">1.8</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>slash</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 45/55 + random(0, 6/3), $, 6)
+       = 1–3 items
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/orctres.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="OrcTooth"><a href="../items/orctooth.html">orc tooth</a></td><td class="num " data-sort="40.594">40.6%</td><td class=""></td><td class=""><code>orctres.kod:32</code></td></tr>
+<tr><td class="" data-sort="PurpleMushroom"><a href="../items/purplemushroom.html">purple mushroom</a></td><td class="num " data-sort="19.802">19.8%</td><td class=""></td><td class=""><code>orctres.kod:33</code></td></tr>
+<tr><td class="" data-sort="Scimitar"><a href="../items/scimitar.html">scimitar</a></td><td class="num " data-sort="15.842">15.8%</td><td class=""></td><td class=""><code>orctres.kod:34</code></td></tr>
+<tr><td class="" data-sort="MetalShield"><a href="../items/metalshield.html">small round shield</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>orctres.kod:35</code></td></tr>
+<tr><td class="" data-sort="LeatherArmor"><a href="../items/leatherarmor.html">leather armor</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>orctres.kod:36</code></td></tr>
+<tr><td class="" data-sort="ShadowAmulet"><a href="../items/shadowamulet.html">Amulet of Shadows</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>orctres.kod:37</code></td></tr>
+<tr><td class="" data-sort="RingofLethargy"><a href="../items/ringoflethargy.html">Ringof Lethargy</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>orctres.kod:38</code></td></tr>
+<tr><td class="" data-sort="Money"><a href="../items/money.html">shilling</a></td><td class="num " data-sort="1.98">2.0%</td><td class="">45–135 shillings</td><td class=""><code>orctres.kod:39</code></td></tr>
+<tr><td class="" data-sort="DarknessScroll"><a href="../items/darknessscroll.html">Darkness Scroll</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>orctres.kod:40</code></td></tr></tbody></table></div><div class="formula">shillings = 1 + (MoneyFactor × 2 × bound(random(level/2, 3×level/2), 1, ∞)) / 100
+          = 45–135 at level 45     % MoneyFactor = 100</div>
+<p class="cite">kod/object/passive/trestype.kod:302</p><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>5 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 1.
+<span class="cite">kod/object/passive/trestype/orctres.kod:25</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>6 places in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="A Deep, Dark, Spooky, Icky Cave"><a href="../zones/cave2.html">A Deep, Dark, Spooky, Icky Cave</a></td><td class="" data-sort="Set pieces">Set pieces</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="50">50%</td><td class=""><code>monsroom/objroom/cave2.kod</code></td></tr>
+<tr><td class="" data-sort="The Berdonne Canyons"><a href="../zones/canyon1.html">The Berdonne Canyons</a></td><td class="" data-sort="Set pieces">Set pieces</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="50">50%</td><td class=""><code>monsroom/objroom/canyon1.kod</code></td></tr>
+<tr><td class="" data-sort="Under the shadow of the Sentinel"><a href="../zones/outdoorsh9.html">Under the shadow of the Sentinel</a></td><td class="" data-sort="Set pieces">Set pieces</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="40">40%</td><td class=""><code>monsroom/objroom/h9.kod</code></td></tr>
+<tr><td class="" data-sort="An ancient place, its origin forgotten"><a href="../zones/outdoorsg9.html">An ancient place, its origin forgotten</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="80">80%</td><td class=""><code>monsroom/g9.kod</code></td></tr>
+<tr><td class="" data-sort="An Enigmatic Chamber"><a href="../zones/orccave2.html">An Enigmatic Chamber</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="70">70%</td><td class=""><code>monsroom/orccave2.kod</code></td></tr>
+<tr><td class="" data-sort="Ugol's Warren Entrance"><a href="../zones/orccave1.html">Ugol's Warren Entrance</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="60">60%</td><td class=""><code>monsroom/orccave1.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_MOVE_FLEE_FRIGHTENERS</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_SWITCHALOT</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>What killing it does to your karma</h2>
+<p>Its karma is <code class="k">-40</code>, and a kill is treated as an act whose karma is the
+<em>negative</em> of the victim's — so killing this creature pushes you
+<strong>towards good</strong>.</p>
+<div class="formula">base   = your_karma − (−victim_karma) = your_karma − 40
+change = −( base³ / 2500 + 5 × base ) / (11 − swing)      % hundredths of a karma point
+       bounded to ±150 for a monster kill — at most 1.5 karma per kill</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code> · :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+<div class="note">No karma moves at all in the newbie region, in an arena, or when the victim's
+karma is neutral. And once you are already further from neutral than your victim in the same
+direction, killing them does nothing to you.</div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/orc_g1.png" alt="orc group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orc_g2.png" alt="orc group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orc_g3.png" alt="orc group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orc_g4.png" alt="orc group 4" loading="lazy"><figcaption>group 4 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orc_g5.png" alt="orc group 5" loading="lazy"><figcaption>group 5 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orc_g6.png" alt="orc group 6" loading="lazy"><figcaption>group 6 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orc_g7.png" alt="orc group 7" loading="lazy"><figcaption>group 7 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orc_g8.png" alt="orc group 8" loading="lazy"><figcaption>group 8 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orc_g9.png" alt="orc group 9" loading="lazy"><figcaption>group 9 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orc_g10.png" alt="orc group 10" loading="lazy"><figcaption>group 10 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orc_g11.png" alt="orc group 11" loading="lazy"><figcaption>group 11 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcx_g1.png" alt="orc corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orc.kod:11</p>
+<p><code class="k">Orc</code> is <code class="k">Monster</code> — full chain <code class="k">Orc</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_AN</code></td><td class="">3</td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">vrKocName</code></td><td class=""><code>orc_koc_name_rsc</code></td><td class=""><em>utomca</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>orc_name_rsc</code></td><td class=""><em>orc</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>orc_icon_rsc</code></td><td class=""><em>orc.bgf</em></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>orc_desc_rsc</code></td><td class=""><em>This foul servant of Qor, body covered in filth, towers above human height.  It fiercely g</em></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>orc_dead_icon_rsc</code></td><td class=""><em>orcX.bgf</em></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>orc_dead_name_rsc</code></td><td class=""><em>dead orc</em></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_ORC</code></td><td class="">25</td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_AVERAGE</code></td><td class="">12</td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_SLASH</code></td><td class="">128</td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>45</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>6</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>-40</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_AGGRESSIVE | AI_MOVE_FLEE_FRIGHTENERS | AI_FIGHT_SWITCHALOT</code></td><td class="">8405024</td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viWimpy</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>orc_sound_hit</code></td><td class=""><em>orc_atkh.wav</em></td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>orc_sound_miss</code></td><td class=""><em>orc_atkm.wav</em></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>orc_sound_aware</code></td><td class=""><em>orc_awr.wav</em></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>orc_sound_death</code></td><td class=""><em>orc_dth.wav</em></td><td class="num " data-sort="62">62</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="66">66</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructed()</h4>
+<pre><code>{
+      plResistances = [ [ 40, -ATCK_SPELL_UNHOLY ],
+                        [ 40, ATCK_WEAP_PIERCE ],
+                        [ 20, ATCK_WEAP_SLASH ],
+                        [-25, -ATCK_SPELL_HOLY ] ];
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orc.kod:70</p>
+<h4>GetParryAbility(stroke_obj = $)</h4>
+<pre><code>{
+      if (stroke_obj &lt;&gt; $) and not Send(stroke_obj,@CanParry)
+      {
+         return 0;
+      }
+      return (viDifficulty*10)/2;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orc.kod:80</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      Send(self,@DoSlash);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orc.kod:89</p>
+<h4>DoSlash()</h4>
+<pre><code>{
+      piAnimation = ANIM_ATTACK;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orc.kod:95</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE);
+      AddPacket(4,100,2,2,2,6);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orc.kod:104</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      
+      
+      AddPacket(1,ANIMATE_CYCLE,4,50,2,2,2,6);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orc.kod:112</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if piAnimation = ANIM_ATTACK
+      {
+	 AddPacket(1,ANIMATE_ONCE,4,75,2,7,2,11,2,1);
+	 return;
+      } 
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orc.kod:121</p>
+<h4>IsFrightenedOf(target = $)</h4>
+<pre><code>{
+      if isClass(target,&amp;giantrat)
+      { return TRUE; }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orc.kod:132</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

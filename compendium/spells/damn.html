@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>damn — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › damn</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/light_g1.png" alt="damn" width="128" height="128"></div><div class="heroText"><h1>damn</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><span class="tag school-7">Administrative</span><span class="tag ">Level 50</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><span class="muted">Administrative</span></div></div><div class="fact"><div class="lbl">Level</div><div class="val">50</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">0</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">1</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">0 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">9</div></div></div><div class="flavor">Sends an unruly player to a small prison.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">0</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><span class="muted">none</span></td><td class="">This spell needs no material component.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">0</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">instant</td><td class=""></td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/dmspell/damn.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>No teacher in the current world data offers this spell. It may be granted by a quest, by an item, or reserved for monsters and administrators.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">CastSpell</code></li></ul><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/dmspell/damn.kod:11</p>
+<p><code class="k">Damn</code> is <code class="k">DMSpell</code> — full chain <code class="k">Damn</code> ← <code class="k">DMSpell</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>damn_name_rsc</code></td><td class=""><em>damn</em></td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>damn_icon_rsc</code></td><td class=""><em>light.bgf</em></td><td class="num " data-sort="33">33</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>damn_desc_rsc</code></td><td class=""><em>Sends an unruly player to a small prison.</em></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_DAMN</code></td><td class="">9</td><td class="num " data-sort="36">36</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">poHell</code></td><td class=""><code>$</code></td><td class="num " data-sort="40">40</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 1;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/dmspell/damn.kod:44</p>
+<h4>CastSpell(who = $, lTargets = $)</h4>
+<pre><code>{
+      local i, j, oHell;
+
+      oHell = send(SYS,@FindRoomByNum,#num=RID_OUTOFGRACE);
+
+      for j in lTargets
+      {
+         i = j;
+
+         if isClass(i,&amp;Battler)
+         {
+            send(i,@MsgSendUser,#message_rsc=damn_msg_target,
+                 #parm1=Send(who,@GetIndef),#parm2=Send(who,@GetTrueName));
+            send(who,@MsgSendUser,#message_rsc=damn_msg_DM,
+                 #parm1=Send(i,@GetDef),#parm2=Send(i,@GetTrueName));
+
+            send(SYS,@UtilGoNearSquare,#what=i,#where=oHell,#new_row=4,#new_col=3);
+
+            if isClass(i,&amp;Player)
+            {
+               
+
+               ClearTempString();
+               AppendTempString(send(i,@GetHeShe,#cap=TRUE));
+               AppendTempString(damn_last_annoyed);
+               AppendTempString(send(who,@GetTrueName));
+               AppendTempString(damn_dot);
+
+               send(i,@SetHonorString,#string=GetTempString());
+            }
+
+            continue;
+         }
+
+         if isClass(i,&amp;LogoffGhost)
+         {
+            Send(SYS,@UtilGoNearSquare,#what=i,#where=oHell,#new_row=4,#new_col=3);
+
+            i = send(i,@GetGhostedPlayer);
+            send(who,@MsgSendUser,#message_rsc=damn_msg_DM,
+                 #parm1=Send(i,@GetDef),#parm2=Send(i,@GetTrueName));
+            send(i,@SetSaveLocation,#rid=RID_OUTOFGRACE,#row=4,#col=3);
+
+            
+
+            ClearTempString();
+            AppendTempString(send(self,@GetHeShe,#cap=TRUE));
+            AppendTempString(damn_last_annoyed);
+            AppendTempString(send(who,@GetTrueName));
+	    AppendTempString(damn_dot);
+
+            send(i,@SetHonorString,#string=GetTempString());
+
+            continue;
+         }
+
+         Send(who,@MsgSendUser,#message_rsc=spell_bad_target,
+              #parm1=Send(self,@GetName),#parm2=Send(i,@GetIndef),
+              #parm3=Send(i,@GetName));
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/dmspell/damn.kod:49</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

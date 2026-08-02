@@ -1,0 +1,913 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attributes — Meridian 59 Compendium</title>
+<meta name="description" content="Meridian 59 gives every character six attributes — Might, Intellect, Stamina, Agility, Mysticism, Aim — set once at character creation from a 200-point budget and never changeable afterward by any means available to a mortal player. They are not a soft flavour layer: Aim and Agility are worth 4 points each of raw offense and defense, Stamina sets the hard ceiling on your hit points, Mysticism sets your mana pool and its refill rate, Might is your carrying capacity and your melee damage multiplier, and Intellect alone decides how many schools of magic you will ever be allowed to master.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html" class="on">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Guides</a> › Attributes</p>
+<h1>Attributes</h1>
+
+<p class="lede">Meridian 59 gives every character six attributes &mdash; Might, Intellect, Stamina,
+Agility, Mysticism, Aim &mdash; set once at character creation from a 200-point budget and never
+changeable afterward by any means available to a mortal player. They are not a soft flavour layer:
+Aim and Agility are worth 4 points each of raw offense and defense, Stamina sets the hard ceiling on
+your hit points, Mysticism sets your mana pool and its refill rate, Might is your carrying capacity
+and your melee damage multiplier, and Intellect alone decides how many schools of magic you will ever
+be allowed to master.</p>
+
+<h2>The six attributes at a glance</h2>
+
+<table class="data">
+<thead>
+<tr><th>Attribute</th><th>Creation range</th><th>In-play range</th><th>Primary derived quantities</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Might</strong> <code class="k">piMight</code></td><td>1&ndash;50</td><td>1&ndash;70</td><td>Carrying capacity (bulk and weight); melee damage multiplier; requisite stat for axe/hammer/mace/brawling</td></tr>
+<tr><td><strong>Intellect</strong> <code class="k">piIntellect</code></td><td>1&ndash;50</td><td>1&ndash;70</td><td>Total school learn-point budget; skill/spell improve chance; atrophy resistance; requisite stat for Riija and Jala</td></tr>
+<tr><td><strong>Stamina</strong> <code class="k">piStamina</code></td><td>1&ndash;50</td><td>1&ndash;70</td><td>Maximum hit-point ceiling and gain rate; health regeneration; vigor rest rate; death-penalty resistance; requisite stat for Kraanan</td></tr>
+<tr><td><strong>Agility</strong> <code class="k">piAgility</code></td><td>1&ndash;50</td><td>1&ndash;70</td><td>Defense; requisite stat for every skill except the eight noted below</td></tr>
+<tr><td><strong>Mysticism</strong> <code class="k">piMysticism</code></td><td>1&ndash;50</td><td>1&ndash;70</td><td>Maximum mana and mana regeneration; mana per melded node; requisite stat for Qor, Shal'ille and Faren</td></tr>
+<tr><td><strong>Aim</strong> <code class="k">piAim</code></td><td>1&ndash;50</td><td>1&ndash;70</td><td>Offense; ranged damage multiplier; wand hit chance; requisite stat for sword/short sword/bow proficiency</td></tr>
+</tbody>
+</table>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:796&ndash;801 (base properties), 6369&ndash;6397 (accessors)</p>
+
+<h2>How the value is computed</h2>
+
+<p>Each attribute is stored as two numbers: a permanent base (<code class="k">piMight</code>) and a
+running modifier (<code class="k">piMightMod</code>) that items, spells and diseases push around.
+The value the game actually uses is the sum, clamped to 1..70.</p>
+
+<div class="formula">GetMight()      = bound(piMight     + piMightMod,     1, MAXIMUM_STAT)
+GetIntellect()  = bound(piIntellect + piIntellectMod, 1, MAXIMUM_STAT)
+GetAgility()    = bound(piAgility   + piAgilityMod,   1, MAXIMUM_STAT)
+GetAim()        = bound(piAim       + piAimMod,       1, MAXIMUM_STAT)
+GetStamina()    = bound(piStamina   + piStaminaMod,   1, MAXIMUM_STAT)
+GetMysticism()  = bound(piMysticism + piMysticismMod, 1, MAXIMUM_STAT)
+
+MAXIMUM_STAT = 70</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:116, 6369&ndash;6397</p>
+
+<p>There is a second family of accessors, <code class="k">GetRawMight</code> and friends, that
+returns the base value only and clamps at 50 instead of 70:</p>
+
+<div class="formula">GetRawIntellect() = bound(piIntellect, 1, 50)</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6399&ndash;6427</p>
+
+<div class="warn">
+<p>Only one thing in the whole game reads the <em>raw</em> value: the Intellect learn-point budget
+(player.kod:10839, 11779, 11857). Every point of Intellect from a diamond pendant, a Riija charm or a
+prince's shield therefore helps you improve skills and resist atrophy, but buys you
+<strong>zero</strong> extra school capacity. If you plan to be a generalist mage, the Intellect has to
+be bought at character creation.</p>
+</div>
+
+<h2>Character creation: the exact trade-off</h2>
+
+<p>The character-creation dialog gives you six sliders. Every slider starts at 25, has a floor of 1
+and a ceiling of 50, and every point costs exactly one point out of a spare pool of 50.</p>
+
+<table class="data">
+<thead>
+<tr><th>Quantity</th><th>Value</th><th>Source</th></tr>
+</thead>
+<tbody>
+<tr><td>Slider minimum</td><td>1</td><td>module/char/charstat.c:24&ndash;29</td></tr>
+<tr><td>Slider maximum</td><td>50</td><td>module/char/charstat.c:24&ndash;29</td></tr>
+<tr><td>Slider default</td><td>25</td><td>module/char/charstat.c:24&ndash;29</td></tr>
+<tr><td>Cost per point</td><td>1</td><td>module/char/charstat.c:24&ndash;29</td></tr>
+<tr><td>Spare pool</td><td>50</td><td>module/char/char.h:53 (<code class="k">STAT_POINTS_INITIAL</code>)</td></tr>
+<tr><td>Number of stats</td><td>6</td><td>module/char/char.h:50 (<code class="k">NUM_CHAR_STATS</code>)</td></tr>
+<tr><td>Implied total</td><td>6 &times; 25 + 50 = <strong>200</strong></td><td>&mdash;</td></tr>
+<tr><td>Server-side ceiling on the sum</td><td>200</td><td>kod/object/active/holder/nomoveon/battler/player.kod:2070&ndash;2079</td></tr>
+</tbody>
+</table>
+
+<p>So the trade is strictly one-for-one and zero-sum: <strong>every point you put above 25 in one
+attribute must come out of another attribute, point for point.</strong> Dropping a stat from 25 to 1
+frees 24 points; the theoretical extreme is five stats at 1 and one at 50 (total 55), which simply
+wastes 145 points &mdash; there is no refund and no benefit to under-spending.</p>
+
+<div class="formula">Sent to the server as a 6-element list, in this order:
+  1 Might, 2 Intellect, 3 Stamina, 4 Agility, 5 Mysticism, 6 Aim</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:2063, 2091&ndash;2096; module/char/charstat.c:24&ndash;29</p>
+
+<p>The server re-validates. If the list is not exactly six long, or any entry is below 1 or above 50,
+or the total exceeds 200, it does not clamp &mdash; it hands you a deliberately ruined character:</p>
+
+<div class="formula">piMight = 3;  piIntellect = 1;  piStamina = 4;
+piAgility = 1;  piMysticism = 5;  piAim = 9;   % total 23</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:2064&ndash;2088</p>
+
+<h3>The three built-in presets</h3>
+
+<p>The creation dialog offers three one-click distributions. All three spend exactly 200.</p>
+
+<table class="data">
+<thead>
+<tr><th>Preset</th><th>Might</th><th>Intellect</th><th>Stamina</th><th>Agility</th><th>Mysticism</th><th>Aim</th><th>Total</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Warrior</strong></td><td>50</td><td>10</td><td>50</td><td>30</td><td>10</td><td>50</td><td>200</td></tr>
+<tr><td><strong>Mage</strong></td><td>35</td><td>40</td><td>50</td><td>15</td><td>45</td><td>15</td><td>200</td></tr>
+<tr><td><strong>Hybrid</strong></td><td>40</td><td>25</td><td>35</td><td>25</td><td>35</td><td>40</td><td>200</td></tr>
+</tbody>
+</table>
+
+<p class="cite">module/char/charstat.c:34&ndash;38</p>
+
+<div class="warn">
+<p>The creation dialog says it plainly: "Set your character's statistics. Choose wisely; these
+statistics are permanent." (module/char/char.rc:528). Nothing in the kod ever writes
+<code class="k">piMight</code>, <code class="k">piIntellect</code>, <code class="k">piStamina</code>,
+<code class="k">piAgility</code>, <code class="k">piMysticism</code> or <code class="k">piAim</code>
+for a player after character creation except <code class="k">DM</code>, which sets all six to 50 for
+immortals (kod/object/active/holder/nomoveon/battler/player/user/dm.kod:1130&ndash;1135). There is no re-stat, no trainer, no potion, no
+quest that permanently raises a base stat.</p>
+</div>
+
+<h2>Everything that temporarily changes an attribute</h2>
+
+<p>All temporary changes go through <code class="k">AddMight</code> / <code class="k">AddIntellect</code> /
+<code class="k">AddAim</code> / <code class="k">AddStamina</code> / <code class="k">AddAgility</code> /
+<code class="k">AddMysticism</code>, which move the <code class="k">...Mod</code> property and redraw the
+stat bar (player.kod:9869&ndash;9982). This is the complete list of callers in the source tree.</p>
+
+<table class="data">
+<thead>
+<tr><th>Source</th><th>Effect</th><th>Citation</th></tr>
+</thead>
+<tbody>
+<tr><td><img class="icon" src="../assets/img/krcharm_g1.png" alt="steel torc"> <a href="../items/kraanancharm.html">Kraanan charm</a> (steel torc)</td><td>Might +5, Agility +2</td><td>kod/object/item/passitem/necklace/krcharm.kod:21&ndash;22, 76&ndash;77</td></tr>
+<tr><td><img class="icon" src="../assets/img/qrcharm_g1.png" alt="monocle"> <a href="../items/qorcharm.html">Qor charm</a> (monocle)</td><td>Aim +5, Might +2</td><td>kod/object/item/passitem/necklace/qrcharm.kod:26&ndash;27, 80&ndash;81</td></tr>
+<tr><td><img class="icon" src="../assets/img/frcharm_g1.png" alt="brass medallion"> <a href="../items/farencharm.html">Faren charm</a> (brass medallion)</td><td>Stamina +5, Aim +2</td><td>kod/object/item/passitem/necklace/frcharm.kod:20&ndash;21, 75&ndash;76</td></tr>
+<tr><td><img class="icon" src="../assets/img/rjcharm_g1.png" alt="feathered choker"> <a href="../items/riijacharm.html">Riija charm</a> (feathered choker)</td><td>Agility +5, Intellect +2</td><td>kod/object/item/passitem/necklace/rjcharm.kod:20&ndash;21, 75&ndash;76</td></tr>
+<tr><td><img class="icon" src="../assets/img/shcharm_g1.png" alt="diamond pendant"> <a href="../items/shalillecharm.html">Shal'ille charm</a> (diamond pendant)</td><td>Intellect +5, Stamina +2</td><td>kod/object/item/passitem/necklace/shcharm.kod:20&ndash;21, 75&ndash;76</td></tr>
+<tr><td><a href="../items/rebelshield.html">Rebel soldier shield</a></td><td>Might and Aim: +0 at faction rank 1&ndash;2, +3 at rank 3&ndash;6, +5 at rank 7+</td><td>kod/object/item/passitem/defmod/shield/soldshld/reblshld.kod:108&ndash;148</td></tr>
+<tr><td><a href="../items/dukeshield.html">Duke's soldier shield</a></td><td>Stamina and Agility, same rank ladder</td><td>kod/object/item/passitem/defmod/shield/soldshld/dukeshld.kod:99&ndash;148</td></tr>
+<tr><td>Prince's soldier shield</td><td>Intellect and Mysticism, same rank ladder</td><td>kod/object/item/passitem/defmod/shield/soldshld/prinshld.kod:106&ndash;153</td></tr>
+<tr><td><a href="../items/huntersword.html">Hunter's sword</a></td><td>Any of the six, per its stat-mod list</td><td>kod/object/item/passitem/weapon/huntsw.kod:307&ndash;365</td></tr>
+<tr><td><a href="../items/necromanceramulet.html">Necromancer's amulet</a></td><td>Any of the six, per its stat-mod list</td><td>kod/object/item/actitem/necroam.kod:330&ndash;395</td></tr>
+<tr><td><a href="../spells/superstrength.html">Superstrength</a> (Kraanan 2)</td><td>Might + (spellpower/5 + 1)</td><td>kod/object/passive/spell/persench/strength.kod:67&ndash;74</td></tr>
+<tr><td><a href="../spells/vertigo.html">Vertigo</a></td><td>Agility, Might and Aim each &minus;(15 + spellpower/10)</td><td>kod/object/passive/spell/Vertigo.kod:129&ndash;133, 145&ndash;150</td></tr>
+<tr><td>Palsy</td><td>Might &minus;15 for 10 minutes (defaults)</td><td>kod/object/passive/sickness/disease/palsy.kod:17&ndash;18, 60</td></tr>
+<tr><td>Dementia</td><td>Intellect &minus;15 for 10 minutes (defaults)</td><td>kod/object/passive/sickness/disease/dementia.kod:17&ndash;18, 52</td></tr>
+<tr><td><a href="../spells/sandstorm.html">Sandstorm</a></td><td>Aim &minus;(spellpower/3) while in the room</td><td>kod/object/passive/spell/roomench/sandstor.kod:174</td></tr>
+<tr><td>Howling winds</td><td>Aim &minus;(spellpower/4) while in the room</td><td>kod/object/passive/spell/roomench/winds.kod:119</td></tr>
+<tr><td><a href="../spells/curedisease.html">Cure disease</a></td><td>Restores Might / Intellect lost to palsy / dementia</td><td>kod/object/passive/spell/cdisease.kod:97, 117</td></tr>
+<tr><td>Quest node stat prize</td><td>Any of the six, by quest-defined amount</td><td>kod/object/passive/questnode.kod:1196&ndash;1224</td></tr>
+<tr><td>Boon spells (DM / NPC only)</td><td>+5 by default, 1 realtime week</td><td>kod/object/passive/spell/boon.kod:22&ndash;23, 87&ndash;91; strboon.kod:47, agilboon.kod:47, aimboon.kod:47, intboon.kod:47, mystboon.kod:48, stamboon.kod:47</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<p>Modifiers are wiped, not preserved, whenever the character is reset or recalibrated:
+<code class="k">ZeroMods</code> sets all six <code class="k">...Mod</code> properties back to 0
+(player.kod:11689&ndash;11698), and is called from <code class="k">ResetCharacter</code>
+(player.kod:2320) and from the recalibration sweep (player.kod:10437). A quest-node stat prize is
+therefore a modifier with a long life, not a permanent gain.</p>
+</div>
+
+<div class="warn">
+<p>Your stat bars in the client are drawn with a range of 0..50 even though the in-play cap is 70
+(kod/object/active/holder/nomoveon/battler/player/user.kod:6686, 6706, 6729, 6749, 6769, 6789 send min 0 / max 50; the bar range is set
+from those in module/merintr/statmain.c:128). A soldier at rank 7 wearing the matching charm can push
+a stat to 57 and see a bar that looks identical to 50. The extra points are real and are used by
+every formula on this page &mdash; the display just cannot show them.</p>
+</div>
+
+<hr>
+
+<h2>Might</h2>
+
+<h3>Carrying capacity</h3>
+
+<div class="formula">GetBulkMax()   = 1700 + Might * 20
+GetWeightMax() = 1700 + Might * 20</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:737&ndash;738, 10456&ndash;10464</p>
+
+<p>Both limits are enforced when anything tries to enter your inventory
+(kod/object/active/holder.kod:285&ndash;293).</p>
+
+<table class="data">
+<thead><tr><th>Might</th><th>Bulk and weight limit</th><th>vs. Might 1</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>1720</td><td>&mdash;</td></tr>
+<tr><td>25</td><td>2200</td><td>+480 (+28%)</td></tr>
+<tr><td>50</td><td>2700</td><td>+980 (+57%)</td></tr>
+<tr><td>70 (capped)</td><td>3100</td><td>+1380 (+80%)</td></tr>
+</tbody>
+</table>
+
+<h3>Melee damage</h3>
+
+<p>Every melee stroke runs its damage through <code class="k">DamageFactors</code>:</p>
+
+<div class="formula">damage = (proficiency + 1) * viMaxProficiencyDamage / 100        % weapon proficiency part
+       + ((100 + bound(Might - 25, 0, 40)) * damage) / 100      % Might part
+
+viMaxProficiencyDamage = 5 by default</div>
+
+<p class="cite">kod/object/passive/skill/stroke.kod:67, 332&ndash;353</p>
+
+<p>So the Might multiplier is <strong>1.00 at Might 25 or below, +1% per point from 26 up, and hard
+capped at +40% (Might 65)</strong>. Since creation caps you at 50, the best a player can buy at
+creation is <strong>+25% melee damage</strong>; the remaining 15% is only reachable with charms,
+shields or Superstrength.</p>
+
+<table class="data">
+<thead><tr><th>Might</th><th>Melee damage multiplier</th></tr></thead>
+<tbody>
+<tr><td>1&ndash;25</td><td>100%</td></tr>
+<tr><td>30</td><td>105%</td></tr>
+<tr><td>40</td><td>115%</td></tr>
+<tr><td>50</td><td>125%</td></tr>
+<tr><td>65&ndash;70</td><td>140% (cap)</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<p>Might does <strong>not</strong> improve your chance to hit &mdash; <code class="k">GetOffense</code>
+never reads it (player.kod:4227&ndash;4291). Might is pure damage-per-connected-hit plus inventory
+space. It also does nothing at all for ranged attacks (<a href="../skills/fire.html">Fire</a>
+overrides <code class="k">DamageFactors</code> to use Aim, fire.kod:165&ndash;182) and nothing for
+touch-attack spells (<code class="k">TouchAttackSpell.DamageFactors</code> returns the damage
+unchanged, touchatk.kod:144&ndash;149).</p>
+</div>
+
+<h3>Every place kod reads Might</h3>
+
+<table class="data">
+<thead><tr><th>Site</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>player.kod:10458</td><td><code class="k">GetBulkMax</code> &mdash; inventory bulk limit</td></tr>
+<tr><td>player.kod:10463</td><td><code class="k">GetWeightMax</code> &mdash; inventory weight limit</td></tr>
+<tr><td>stroke.kod:350</td><td>Melee damage multiplier</td></tr>
+<tr><td>profaxe.kod:40</td><td>Requisite stat for <a href="../skills/axeproficiency.html">axe proficiency</a></td></tr>
+<tr><td>profhamr.kod:41</td><td>Requisite stat for <a href="../skills/hammerproficiency.html">hammer proficiency</a></td></tr>
+<tr><td>profmace.kod:45</td><td>Requisite stat for <a href="../skills/maceproficiency.html">mace proficiency</a></td></tr>
+<tr><td>brawling.kod:49</td><td>Requisite stat for <a href="../skills/brawling.html">brawling</a></td></tr>
+<tr><td>assess.kod:85</td><td><a href="../skills/assess.html">Assess</a> reads the <em>target's</em> Might into its power estimate</td></tr>
+<tr><td>statistics.kod:216</td><td>Server-side census histogram only</td></tr>
+<tr><td>user.kod:6686</td><td>Sends the stat bar to the client</td></tr>
+</tbody>
+</table>
+
+<hr>
+
+<h2>Aim</h2>
+
+<h3>Offense</h3>
+
+<div class="formula">iOffense = (stroke_ability * 3)
+         + (proficiency  * 2)
+         + (Aim          * 4)
+         + (base_max_health * 3 / 2)
+   ... then weapon, enchantment and faction modifiers ...
+iOffense = bound(iOffense, 1, 1000)</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4241&ndash;4290</p>
+
+<p>Offense turns into a hit chance against the target's defense:</p>
+
+<div class="formula">chance_to_hit = bound( (attacker_offense * 55) / defender_defense, 10, 95 )   % percent
+EQUAL_CHANCE_HIT = 55</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler.kod:19, 330&ndash;335</p>
+
+<p><strong>Worked example.</strong> A player with slash ability 60, sword proficiency 60 and 100 base
+max health, attacking something with 550 defense:</p>
+
+<table class="data">
+<thead><tr><th>Aim</th><th>Offense</th><th>Chance to hit a 550-defense target</th></tr></thead>
+<tbody>
+<tr><td>10</td><td>180 + 120 + 40 + 150 = 490</td><td>490&times;55/550 = <strong>49%</strong></td></tr>
+<tr><td>25</td><td>180 + 120 + 100 + 150 = 550</td><td><strong>55%</strong></td></tr>
+<tr><td>50</td><td>180 + 120 + 200 + 150 = 650</td><td><strong>65%</strong></td></tr>
+</tbody>
+</table>
+
+<p>Forty points of Aim is worth 160 offense, or about <strong>16 percentage points of hit chance</strong>
+in this bracket. For reference, 160 offense is the same as 53 points of stroke ability or 80 points of
+weapon proficiency &mdash; more than either skill can ever supply, since both cap at 99.</p>
+
+<h3>Ranged damage</h3>
+
+<p>The <a href="../skills/fire.html">Fire</a> stroke (bows and crossbows) replaces the Might term with
+an identical Aim term:</p>
+
+<div class="formula">damage = (proficiency + 1) * viMaxProficiencyDamage / 100
+       + ((100 + bound(Aim - 25, 0, 40)) * damage) / 100</div>
+
+<p class="cite">kod/object/passive/skill/stroke/fire.kod:165&ndash;182</p>
+
+<p>Same shape as Might for melee: no bonus at or below 25, +1%/point, +40% cap at 65.</p>
+
+<h3>Every place kod reads Aim</h3>
+
+<table class="data">
+<thead><tr><th>Site</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>player.kod:4257</td><td>Offense: +4 per point</td></tr>
+<tr><td>fire.kod:178</td><td>Ranged damage multiplier</td></tr>
+<tr><td>fire.kod:140</td><td>Requisite stat for the <a href="../skills/fire.html">Fire</a> stroke</td></tr>
+<tr><td>archery.kod:46</td><td>Requisite stat for <a href="../skills/archery.html">bow proficiency</a></td></tr>
+<tr><td>profswrd.kod:42</td><td>Requisite stat for <a href="../skills/swordproficiency.html">sword proficiency</a></td></tr>
+<tr><td>profshsw.kod:45</td><td>Requisite stat for <a href="../skills/shortswordproficiency.html">short sword proficiency</a></td></tr>
+<tr><td>firewand.kod:140</td><td>Fire wand hits if <code class="k">random(1,100) &lt; bound(Mysticism + Aim, 10, 90)</code></td></tr>
+<tr><td>vampwand.kod:135</td><td>Vampiric wand, same formula</td></tr>
+<tr><td>statistics.kod:231</td><td>Server-side census histogram only</td></tr>
+<tr><td>user.kod:6729</td><td>Sends the stat bar to the client</td></tr>
+</tbody>
+</table>
+
+<hr>
+
+<h2>Agility</h2>
+
+<h3>Defense</h3>
+
+<div class="formula">iDefense = (parry_ability * 2)
+         + (block_ability * 1)
+         + (dodge_ability * 3)
+         + (Agility       * 4)
+         + (base_max_health * 3 / 2)
+   ... then enchantment and faction modifiers ...
+iDefense = bound(iDefense, 1, 1000)</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4306&ndash;4333</p>
+
+<p><strong>Worked example.</strong> Parry 60, block 0, dodge 60, 100 base max health, attacked by
+something with 550 offense:</p>
+
+<table class="data">
+<thead><tr><th>Agility</th><th>Defense</th><th>Its chance to hit you</th></tr></thead>
+<tbody>
+<tr><td>10</td><td>120 + 0 + 180 + 40 + 150 = 490</td><td>550&times;55/490 = <strong>61%</strong></td></tr>
+<tr><td>25</td><td>120 + 0 + 180 + 100 + 150 = 550</td><td><strong>55%</strong></td></tr>
+<tr><td>50</td><td>120 + 0 + 180 + 200 + 150 = 650</td><td><strong>46%</strong></td></tr>
+</tbody>
+</table>
+
+<h3>Requisite stat for skills</h3>
+
+<p>Agility is the default requisite stat for <em>every</em> skill; only eight skills override it.</p>
+
+<table class="data">
+<thead><tr><th>Requisite stat</th><th>Skills</th><th>Citation</th></tr></thead>
+<tbody>
+<tr><td><strong>Agility</strong> (default)</td><td>Assess, Block, Disarm, Dodge, Kick, Parry, Punch, Scimitar proficiency, Slash, Thrust, and any other stroke or skill that does not override</td><td>skill.kod:288&ndash;292; disarm.kod:57&ndash;61 restates it</td></tr>
+<tr><td><strong>Aim</strong></td><td>Archery, Sword proficiency, Short sword proficiency, Fire</td><td>archery.kod:44, profswrd.kod:40, profshsw.kod:43, fire.kod:138</td></tr>
+<tr><td><strong>Might</strong></td><td>Axe proficiency, Hammer proficiency, Mace proficiency, Brawling</td><td>profaxe.kod:38, profhamr.kod:39, profmace.kod:43, brawling.kod:47</td></tr>
+<tr><td><strong>Stamina</strong></td><td>Second Wind</td><td>secwind.kod:62</td></tr>
+</tbody>
+</table>
+
+<p>The requisite stat is used in four separate places, so it matters far more than a single formula
+would suggest:</p>
+
+<div class="formula">1. Starting ability when you first learn the skill
+   InitialAbility = bound( random(req/2, req) / 2, 1, 25 )
+   [skill.kod:184-186]
+
+2. Raw success chance of using the skill at ability A
+   num = ((100 - req) * A / 100) + req            % percent
+   [skill.kod:228-233]
+
+3. Base chance to improve on a use
+   increase_chance = 60 + req - (skill_level * 10) - generalization_penalty
+   [skill.kod:399-406]
+
+4. Floor on the improve roll, and the SOFT CAP
+   increase_chance = bound(increase_chance, 1 + req/10, 99)   [skill.kod:363-364]
+   if ability > (2*req - 1):  final = final / SOFTCAP_PENALTY  (5 for skills)
+   [skill.kod:18, 426-429]</div>
+
+<div class="warn">
+<p><strong>The soft cap is the reason low requisite stats hurt so much.</strong> Once a skill's ability
+exceeds <code class="k">2 &times; requisite_stat - 1</code>, every further improvement roll is divided by
+5 (skills) or 4 (spells). At the requisite stat 50 the threshold is 99, i.e. it never bites. At 25 the
+threshold is 49 &mdash; the whole second half of that skill's progression runs at one fifth speed. At
+10 it is 19.</p>
+<p class="cite">kod/object/passive/skill.kod:18, 426&ndash;429; kod/object/passive/spell.kod:21, 1750&ndash;1754</p>
+</div>
+
+<h3>Every place kod reads Agility</h3>
+
+<table class="data">
+<thead><tr><th>Site</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>player.kod:4319</td><td>Defense: +4 per point</td></tr>
+<tr><td>skill.kod:291</td><td>Default requisite stat for all skills</td></tr>
+<tr><td>skill.kod:161</td><td><code class="k">GetDivisionReq</code> for the combat division</td></tr>
+<tr><td>disarm.kod:60</td><td>Requisite stat for <a href="../skills/disarm.html">Disarm</a></td></tr>
+<tr><td>assess.kod:86</td><td><a href="../skills/assess.html">Assess</a> reads the <em>target's</em> Agility</td></tr>
+<tr><td>statistics.kod:225</td><td>Server-side census histogram only</td></tr>
+<tr><td>user.kod:6749</td><td>Sends the stat bar to the client</td></tr>
+</tbody>
+</table>
+
+<hr>
+
+<h2>Stamina</h2>
+
+<p>Stamina is the survivability stat and, indirectly, the single biggest contributor to combat power,
+because base max health feeds <em>both</em> offense and defense at 1.5 points each.</p>
+
+<h3>The hit-point ceiling</h3>
+
+<div class="formula">piBase_max_health = bound(piBase_max_health + amount, 20, 100 + Stamina)
+piBase_max_health = bound(piBase_max_health, $, 150)
+
+=>  hit-point ceiling = min(100 + Stamina, 150)</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5897&ndash;5906</p>
+
+<p>Everyone starts at 20 (player.kod:2101&ndash;2105).</p>
+
+<table class="data">
+<thead><tr><th>Stamina</th><th>Max base health you can ever reach</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>101</td></tr>
+<tr><td>10</td><td>110</td></tr>
+<tr><td>25</td><td>125</td></tr>
+<tr><td>50</td><td>150</td></tr>
+<tr><td>50+ via charms/shields</td><td>150 (hard cap)</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<p>Because the hard cap is 150 and 100 + 50 = 150, a Stamina-50 character reaches the absolute
+ceiling with base stats alone. Stamina above 50 raises no ceiling &mdash; it only helps the other
+Stamina effects below.</p>
+</div>
+
+<h3>How fast you gain those hit points</h3>
+
+<p>After a qualifying kill the server rolls <code class="k">random(1, highmark)</code> against your
+accumulated gain chance:</p>
+
+<div class="formula">index    = (base_max_health * (100 - Stamina)) / 100
+highmark = (index + 1) * index
+
+roll: random(1, highmark) < gain_chance + bound((monster_level - base_max_health)/5, 0, 10)
+  and requires base_max_health < 101 + Stamina</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:7825&ndash;7832, 7896&ndash;7904</p>
+
+<p>The <code class="k">highmark</code> is the denominator of your chance, so lower is better. At 100
+base health:</p>
+
+<table class="data">
+<thead><tr><th>Stamina</th><th>index</th><th>highmark</th><th>Relative grind</th></tr></thead>
+<tbody>
+<tr><td>50</td><td>50</td><td>2550</td><td>1.0&times;</td></tr>
+<tr><td>35</td><td>65</td><td>4290</td><td>1.7&times;</td></tr>
+<tr><td>25</td><td>75</td><td>5700</td><td>2.2&times;</td></tr>
+<tr><td>10</td><td>90</td><td>8190</td><td>3.2&times;</td></tr>
+</tbody>
+</table>
+
+<p>And after each successful gain your accumulated chance is reset further into the negative if your
+Stamina is low:</p>
+
+<div class="formula">piGain_chance = -(base_max_health / 2)
+if base_max_health > 30:
+   piGain_chance = piGain_chance - ((50 - Stamina) / 2)</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:7848&ndash;7853</p>
+
+<h3>Health regeneration</h3>
+
+<div class="formula">iTime = ((200 - vigor) * (200 - vigor)) / 6 + 1000
+iTime = ((125 - Stamina) * iTime) / 100
+iTime = (iTime * 100) / bound(max_health, 40, 100)
+iTime = bound(iTime, 1000, 60000)          % milliseconds per hit point</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5611&ndash;5642</p>
+
+<p>At full vigor (100) and 100 max health the base term is 2666 ms:</p>
+
+<table class="data">
+<thead><tr><th>Stamina</th><th>Stamina factor</th><th>ms per hit point</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>124/100</td><td>3305</td></tr>
+<tr><td>25</td><td>100/100</td><td>2666</td></tr>
+<tr><td>50</td><td>75/100</td><td>1999</td></tr>
+<tr><td>70</td><td>55/100</td><td>1466</td></tr>
+</tbody>
+</table>
+
+<h3>Vigor recovery while resting</h3>
+
+<div class="formula">GetRestTime() = 1000 + 30 * (51 - Stamina)     % ms between rest ticks</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:10009&ndash;10031</p>
+
+<p>Stamina 50 &rarr; 1030 ms; Stamina 25 &rarr; 1780 ms; Stamina 1 &rarr; 2500 ms. Resting to full is
+roughly 2.4&times; slower at Stamina 1 than at 50.</p>
+
+<h3>Death penalties</h3>
+
+<p>When you die, every skill and every spell you know above ability 5 is rolled for a 1- or 2-point
+loss (2 points if you are flagged a murderer):</p>
+
+<div class="formula">if ability > 5
+   and random(1,100) > Stamina
+   and random(1,100) < piDeathCost        % piDeathCost is normally 100
+then lose points</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:8279&ndash;8308</p>
+
+<p>The Stamina clause means each eligible entry escapes with probability
+<strong>Stamina/100</strong>. At Stamina 50, half your skills and spells survive each death untouched;
+at Stamina 10, 90% of them take the hit.</p>
+
+<h3>Every place kod reads Stamina</h3>
+
+<table class="data">
+<thead><tr><th>Site</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>player.kod:5903</td><td>Hit-point ceiling: <code class="k">100 + Stamina</code></td></tr>
+<tr><td>player.kod:7830</td><td>Gate on further hit-point gains</td></tr>
+<tr><td>player.kod:7852</td><td>Post-gain penalty to accumulated gain chance</td></tr>
+<tr><td>player.kod:7900</td><td><code class="k">GetHighMark</code> &mdash; hit-point gain difficulty</td></tr>
+<tr><td>player.kod:5619</td><td>Health regeneration interval</td></tr>
+<tr><td>player.kod:10013</td><td>Vigor rest tick interval</td></tr>
+<tr><td>player.kod:8291</td><td>Spell-point loss on death</td></tr>
+<tr><td>player.kod:8302</td><td>Skill-point loss on death</td></tr>
+<tr><td>spell.kod:403</td><td>Requisite stat for all <a href="../guides/kraanan.html">Kraanan</a> spells</td></tr>
+<tr><td>secwind.kod:65</td><td>Requisite stat for <a href="../skills/secondwind.html">Second Wind</a></td></tr>
+<tr><td>secwind.kod:73</td><td>Second Wind cooldown: <code class="k">(600 - 3*(((100-Stam)*ability/100)+Stam)) * 1000</code> ms</td></tr>
+<tr><td>secwind.kod:116</td><td>Vigor restored by Second Wind: <code class="k">40 + Stamina/2 + ability</code></td></tr>
+<tr><td>betap.kod:141</td><td>Beta potion health boost capped at <code class="k">100 + Stamina</code></td></tr>
+<tr><td>logghost.kod:262</td><td>Read into a local and then never used &mdash; dead code (see note)</td></tr>
+<tr><td>statistics.kod:222</td><td>Server-side census histogram only</td></tr>
+<tr><td>user.kod:6769</td><td>Sends the stat bar to the client</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<p>The logoff-penalty routine in kod/object/active/logghost.kod assigns
+<code class="k">iStamina = Send(poGhostedPlayer,@GetStamina)</code> at line 262 and never reads
+<code class="k">iStamina</code> again anywhere in the file. Stamina therefore does <em>not</em> reduce
+the item and skill losses from logging out in a dangerous place, despite the code looking as though it
+was meant to. Do not plan around it.</p>
+</div>
+
+<hr>
+
+<h2>Mysticism</h2>
+
+<h3>Mana pool</h3>
+
+<div class="formula">GetInitialMaxMana() = 15 + Mysticism / 5
+
+ComputeMaxMana() = GetInitialMaxMana()
+                 + sum over melded nodes of GetManaAdjust
+                 + item bonuses + enchantment bonuses
+
+standard mana node: GetManaAdjust = ((5 + Mysticism) / 10) + 3
+fey node:           GetManaAdjust = 2 * (((5 + Mysticism) / 10) + 3)</div>
+
+<p class="cite">player.kod:5965&ndash;5968, 6115&ndash;6156; mananode.kod:228&ndash;236; feynode.kod:135&ndash;139; corpnode.kod:184&ndash;188</p>
+
+<table class="data">
+<thead><tr><th>Mysticism</th><th>Base max mana</th><th>Per standard node</th><th>Per fey node</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>15</td><td>3</td><td>6</td></tr>
+<tr><td>25</td><td>20</td><td>6</td><td>12</td></tr>
+<tr><td>50</td><td>25</td><td>8</td><td>16</td></tr>
+<tr><td>70</td><td>29</td><td>10</td><td>20</td></tr>
+</tbody>
+</table>
+
+<h3>Mana regeneration</h3>
+
+<div class="formula">iTime = BASE_REGEN_TIME + (25 - Mysticism) * 1000
+iTime = iTime * 200 / bound(vigor, 1, $)
+iTime = iTime / bound(max_mana, 1, $)
+iTime = bound(iTime, 1000, 60000)         % milliseconds per mana point
+
+BASE_REGEN_TIME = 150000</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:48, 5645&ndash;5663</p>
+
+<p>Because max mana is itself driven by Mysticism, the two effects compound. At full vigor (100), with
+no nodes melded:</p>
+
+<table class="data">
+<thead><tr><th>Mysticism</th><th>Base term</th><th>Max mana</th><th>ms per mana point</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>174000</td><td>15</td><td>23200 (23.2 s)</td></tr>
+<tr><td>25</td><td>150000</td><td>20</td><td>15000 (15.0 s)</td></tr>
+<tr><td>50</td><td>125000</td><td>25</td><td>10000 (10.0 s)</td></tr>
+</tbody>
+</table>
+
+<p>Add five standard nodes at Mysticism 50 (max mana 25 + 40 = 65) and the interval drops to
+250000/65 = 3846 ms.</p>
+
+<h3>Every place kod reads Mysticism</h3>
+
+<table class="data">
+<thead><tr><th>Site</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>player.kod:5967</td><td>Base max mana: <code class="k">15 + Myst/5</code></td></tr>
+<tr><td>player.kod:5656</td><td>Mana regeneration interval</td></tr>
+<tr><td>mananode.kod:235</td><td>Mana added per melded node</td></tr>
+<tr><td>feynode.kod:138</td><td>Fey node: double the standard amount</td></tr>
+<tr><td>corpnode.kod:186</td><td>Corporeal node: standard amount</td></tr>
+<tr><td>spell.kod:398</td><td>Requisite stat for <a href="../guides/qor.html">Qor</a>, <a href="../guides/shalille.html">Shal'ille</a> and <a href="../guides/faren.html">Faren</a></td></tr>
+<tr><td>spell.kod:417</td><td>Requisite stat fallback for any other school</td></tr>
+<tr><td>touchatk.kod:172</td><td>Touch-attack spells use <code class="k">max(punch_ability, Mysticism*3/2)</code> as their proficiency (to-hit) term</td></tr>
+<tr><td>firewand.kod:140</td><td>Fire wand hit chance <code class="k">bound(Mysticism + Aim, 10, 90)</code></td></tr>
+<tr><td>vampwand.kod:135</td><td>Vampiric wand, same formula</td></tr>
+<tr><td>statistics.kod:228</td><td>Server-side census histogram only</td></tr>
+<tr><td>user.kod:6789</td><td>Sends the stat bar to the client</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<p>The touch-attack substitution at touchatk.kod:166&ndash;180 is the reason a pure mage can fight
+without ever training Punch: Mysticism 50 supplies an effective proficiency of 75, which is more than
+most players' actual Punch ability. The comment in the source says as much: "Added bonus for 'pure'
+mages ... but you can reach higher levels if you learn punch."</p>
+</div>
+
+<hr>
+
+<h2>Intellect</h2>
+
+<h3>How many schools you can master</h3>
+
+<p>This is the big one, and it is the only stat effect that is genuinely irreversible in its
+consequences. Every school of magic, plus the weapon-skill division, contributes learn points equal to
+the highest level you know in it:</p>
+
+<div class="formula">level:        1  2  3  4  5   6
+learn points: 1  2  4  6  8  10</div>
+
+<p class="cite">kod/util/system.kod:414 (<code class="k">vlLevelPoints</code>), 6224</p>
+
+<p>Learning a new level is gated by:</p>
+
+<div class="formula">iPoints = sum over the 7 divisions of GetLevelLearnPoints(highest level known)
+          (+ the marginal cost of the new level, if you know nothing in that school yet)
+
+iNeed = (iPoints * POINTS_SLOPE)
+      + (297 - GetMaxLearnPoints() * POINTS_SLOPE)
+      - ((GetRawIntellect() * 2 * POINTS_SLOPE) / 5)
+iNeed = bound(iNeed, MIN_NEEDED_TO_ADVANCE, $)
+   if previous level had <3 spells: iNeed = iNeed/3 (level 1) or iNeed*2/3 (level 2)
+
+you may learn iff  iHave >= iNeed
+   where iHave = sum of your top three abilities in the previous level (max 297),
+                 or a flat 297 when learning a level-1 spell
+
+POINTS_SLOPE = 7 ;  MIN_NEEDED_TO_ADVANCE = 75 ;  piMaxLearnPoints = 16</div>
+
+<p class="cite">player.kod:93, 97, 10781, 10786, 10813&ndash;10846, 10925; kod/util/settings.kod:71, 261&ndash;264</p>
+
+<p>Substituting the shipped settings (<code class="k">piMaxLearnPoints = 16</code>,
+<code class="k">POINTS_SLOPE = 7</code>) gives <code class="k">iNeed = 7&times;iPoints + 185 &minus; (Intellect&times;14)/5</code>.
+Setting <code class="k">iHave</code> to its maximum of 297 and solving gives the clean result the code
+uses directly elsewhere:</p>
+
+<div class="formula">maximum total learn points you can ever hold
+   = 16 + (RawIntellect * 2) / 5</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:11778&ndash;11779, 11856&ndash;11857</p>
+
+<table class="data">
+<thead><tr><th>Intellect</th><th>Learn-point budget</th><th>What that buys</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>16</td><td>One school mastered (10) + one school to level 4 (6)</td></tr>
+<tr><td>10</td><td>20</td><td>Two schools mastered (20)</td></tr>
+<tr><td>25</td><td>26</td><td>Two mastered (20) + one to level 4 (6)</td></tr>
+<tr><td>40</td><td>32</td><td>Three mastered (30) + one to level 2 (2)</td></tr>
+<tr><td>50</td><td>36</td><td>Three mastered (30) + one to level 4 (6)</td></tr>
+</tbody>
+</table>
+
+<p>The source comment agrees: "Intellect gives you a bonus to learning, currently about 20 points for
+50 Intellect (approximately mastering 2 extra schools)" (player.kod:10835&ndash;10836).</p>
+
+<div class="warn">
+<p>The seven divisions are the weapon/fencing skills and the six magic schools (Kraanan, Shal'ille,
+Qor, Faren, Riija, Jala). <strong>Weapon skills eat the same budget as spells.</strong> A warrior who
+masters Fencing has spent 10 of his 16-to-36 points before he casts anything.</p>
+</div>
+
+<h3>Speed of improvement</h3>
+
+<div class="formula">GetInitialChance(who) = viChance_to_increase * (100 + Intellect) / 100   (+ faction bonus)</div>
+
+<p class="cite">kod/object/passive/skill.kod:377&ndash;393; kod/object/passive/spell.kod:1693&ndash;1709</p>
+
+<p>This is the first gate on every improvement roll for every skill and every spell: fail it and no
+improvement is even attempted. Intellect 50 gives a flat <strong>+50% to the frequency of improvement
+attempts</strong> over Intellect 0, and +49% over Intellect 1.</p>
+
+<h3>Atrophy resistance</h3>
+
+<div class="formula">highmark = piAdvancement_points
+         + ((50 - bound(Intellect,1,50)) * piAdvancement_points) / 20
+
+for each skill/spell not used this cycle: if random(1,200) < highmark, lose 2 points
+   (only if ability > 2, and only if the school offers an alternative)</div>
+
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:7196&ndash;7211 (spells), 7568&ndash;7580 (skills)</p>
+
+<p><code class="k">piAdvancement_points</code> is your improvement activity in the current cycle and is
+gated at <code class="k">ADVANCEMENT_LIMIT = 10</code> (player.kod:68, 7648&ndash;7654). At the busiest
+(10 points):</p>
+
+<table class="data">
+<thead><tr><th>Intellect</th><th>highmark</th><th>Atrophy chance per idle skill/spell</th></tr></thead>
+<tbody>
+<tr><td>50</td><td>10</td><td>4.5%</td></tr>
+<tr><td>25</td><td>22</td><td>10.5%</td></tr>
+<tr><td>10</td><td>30</td><td>14.5%</td></tr>
+<tr><td>1</td><td>34</td><td>16.5%</td></tr>
+</tbody>
+</table>
+
+<h3>Every place kod reads Intellect</h3>
+
+<table class="data">
+<thead><tr><th>Site</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>player.kod:10839</td><td>Reduces <code class="k">iNeed</code> in <code class="k">CanLearn</code> &mdash; uses <code class="k">GetRawIntellect</code></td></tr>
+<tr><td>player.kod:11779, 11857</td><td>Learn-point budget <code class="k">16 + (RawInt*2)/5</code> &mdash; uses <code class="k">GetRawIntellect</code></td></tr>
+<tr><td>player.kod:10898</td><td>Scry/debug readout of the Intellect bonus</td></tr>
+<tr><td>player.kod:7203</td><td>Spell atrophy highmark</td></tr>
+<tr><td>player.kod:7573</td><td>Skill atrophy highmark</td></tr>
+<tr><td>skill.kod:382</td><td>Initial chance to attempt a skill improvement</td></tr>
+<tr><td>spell.kod:1698</td><td>Initial chance to attempt a spell improvement</td></tr>
+<tr><td>spell.kod:409</td><td>Requisite stat for <a href="../guides/riija.html">Riija</a> and <a href="../guides/jala.html">Jala</a></td></tr>
+<tr><td>scroll.kod:70</td><td>On a failed scroll cast, <code class="k">random(1,70) &lt;= Intellect</code> preserves the charge instead of consuming it (71% at Intellect 50, 1.4% at Intellect 1)</td></tr>
+<tr><td>illwound.kod:183</td><td>As the <em>victim</em>: Illusionary Wounds base damage <code class="k">17 + (50 - Intellect)/10</code></td></tr>
+<tr><td>seduce.kod:175</td><td>As the <em>caster</em>: adds Intellect to the Seduce control roll</td></tr>
+<tr><td>statistics.kod:219</td><td>Server-side census histogram only</td></tr>
+<tr><td>user.kod:6706</td><td>Sends the stat bar to the client</td></tr>
+</tbody>
+</table>
+
+<hr>
+
+<h2>Derived quantities, all in one place</h2>
+
+<table class="data">
+<thead><tr><th>Derived quantity</th><th>Formula</th><th>Citation</th></tr></thead>
+<tbody>
+<tr><td>Bulk capacity</td><td><code class="k">1700 + Might*20</code></td><td>player.kod:737, 10458</td></tr>
+<tr><td>Weight capacity</td><td><code class="k">1700 + Might*20</code></td><td>player.kod:738, 10463</td></tr>
+<tr><td>Melee damage multiplier</td><td><code class="k">(100 + bound(Might-25,0,40)) / 100</code></td><td>stroke.kod:350&ndash;351</td></tr>
+<tr><td>Ranged damage multiplier</td><td><code class="k">(100 + bound(Aim-25,0,40)) / 100</code></td><td>fire.kod:178&ndash;179</td></tr>
+<tr><td>Offense</td><td><code class="k">stroke*3 + prof*2 + Aim*4 + bmh*3/2</code>, bound 1&ndash;1000</td><td>player.kod:4258, 4290</td></tr>
+<tr><td>Defense</td><td><code class="k">parry*2 + block + dodge*3 + Agility*4 + bmh*3/2</code>, bound 1&ndash;1000</td><td>player.kod:4320, 4333</td></tr>
+<tr><td>Chance to hit</td><td><code class="k">bound(offense*55/defense, 10, 95)</code> percent</td><td>battler.kod:19, 330&ndash;335</td></tr>
+<tr><td>Max base health ceiling</td><td><code class="k">min(100 + Stamina, 150)</code></td><td>player.kod:5903&ndash;5905</td></tr>
+<tr><td>Health regen (ms/point)</td><td><code class="k">((200-vigor)^2/6 + 1000) * (125-Stamina)/100 * 100 / bound(maxhp,40,100)</code></td><td>player.kod:5617&ndash;5642</td></tr>
+<tr><td>Rest tick (ms)</td><td><code class="k">1000 + 30*(51-Stamina)</code></td><td>player.kod:10013</td></tr>
+<tr><td>Base max mana</td><td><code class="k">15 + Mysticism/5</code></td><td>player.kod:5967</td></tr>
+<tr><td>Mana per node</td><td><code class="k">(5+Mysticism)/10 + 3</code> (doubled at a fey node)</td><td>mananode.kod:235, feynode.kod:138</td></tr>
+<tr><td>Mana regen (ms/point)</td><td><code class="k">(150000 + (25-Myst)*1000) * 200 / vigor / maxmana</code></td><td>player.kod:5656&ndash;5658</td></tr>
+<tr><td>Learn-point budget</td><td><code class="k">16 + (RawIntellect*2)/5</code></td><td>settings.kod:71; player.kod:11779</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<p>Notice what appears in <em>both</em> the offense and defense formulas: <code class="k">bmh*3/2</code>,
+your base max health. 100 base health is worth 150 offense <em>and</em> 150 defense &mdash; equivalent
+to 37 points of Aim and 37 points of Agility simultaneously. Since the ceiling on base max health is
+<code class="k">100 + Stamina</code>, Stamina is quietly a combat stat as well as a survival stat, and
+the 49 hit points a Stamina-50 character can reach beyond a Stamina-1 character's ceiling of 101 are
+worth 73 offense and 73 defense that the Stamina-1 character can never have.</p>
+</div>
+
+<h2>What one point buys</h2>
+
+<table class="data">
+<thead><tr><th>Attribute</th><th>Marginal value of +1</th></tr></thead>
+<tbody>
+<tr><td>Might</td><td>+20 bulk and +20 weight capacity; +1% melee damage (only in the band 26&ndash;65); +1 to the axe/hammer/mace/brawling requisite (which moves the soft cap by +2)</td></tr>
+<tr><td>Intellect</td><td>+0.4 learn points (a real point every 5 Intellect, base stat only); +1% relative improvement frequency on every skill and spell; lower atrophy highmark</td></tr>
+<tr><td>Stamina</td><td>+1 to the hit-point ceiling (worth +1.5 offense and +1.5 defense once earned); &minus;1% health regen time; &minus;30 ms rest tick; +1% chance for each skill/spell to survive a death; +1 to the Kraanan / Second Wind requisite</td></tr>
+<tr><td>Agility</td><td>+4 defense; +1 to the requisite stat of nearly every skill (+2 to each soft-cap threshold)</td></tr>
+<tr><td>Aim</td><td>+4 offense; +1% ranged damage (band 26&ndash;65); +1% wand hit chance; +1 to the sword/short-sword/bow/Fire requisite</td></tr>
+<tr><td>Mysticism</td><td>+0.2 max mana; &minus;1000 ms off the mana regen base term; +0.1 mana per melded node; +1% wand hit chance; +1.5 effective touch-attack proficiency; +1 to the Qor/Shal'ille/Faren requisite</td></tr>
+</tbody>
+</table>
+
+<h2>Recommendations by playstyle</h2>
+
+<p>Every recommendation below is a consequence of the cited formulas, not folklore. The one constant:
+<strong>Stamina is never a dump stat.</strong> It sets a permanent ceiling on the quantity that feeds
+both offense and defense, and low Stamina multiplies the grind to reach even that lower ceiling by up
+to 3.2&times; (player.kod:5903, 7900, 4258, 4320). All three of the game's own presets put Stamina at
+50 for a reason (charstat.c:34&ndash;38).</p>
+
+<h3>Melee warrior</h3>
+<div class="formula">Stamina 50, Aim 50, Might 40-50, Agility 25-30, Intellect 10-20, Mysticism 1-10</div>
+<p>Aim before Might: 4 offense per point is a bigger swing than 1% damage per point, because a miss
+does zero damage. Might still matters &mdash; it is your only damage multiplier and it gates axe,
+hammer and mace proficiency &mdash; but only above 25 (stroke.kod:350). If you intend to use swords,
+short swords or bows, Aim is doing double duty as both offense and the proficiency requisite
+(profswrd.kod:40, profshsw.kod:43, archery.kod:44), which raises your proficiency soft cap to 99.
+Keep enough Intellect to hold Fencing at 6 plus one useful school: 10 Intellect gives a 20-point
+budget, exactly Fencing 6 + one school at 6.</p>
+
+<h3>Archer</h3>
+<div class="formula">Aim 50, Stamina 50, Agility 30, Might 25-35, Intellect 20, Mysticism 10-15</div>
+<p>Aim 50 is non-negotiable: it is offense (+4/pt), ranged damage (+1%/pt above 25), the requisite for
+both Archery and the Fire stroke, and therefore your bow soft cap
+(fire.kod:138, 178; archery.kod:44; player.kod:4257). Might buys nothing for a bow &mdash;
+<code class="k">Fire.DamageFactors</code> ignores it entirely (fire.kod:165&ndash;182) &mdash; so spend
+on Might only for carrying capacity and a melee backup weapon.</p>
+
+<h3>Pure mage</h3>
+<div class="formula">Mysticism 50, Intellect 40-50, Stamina 50, Might 20-25, Agility 20-25, Aim 1-15</div>
+<p>Mysticism is mana, mana rate, spell success and spell improvement all at once
+(player.kod:5967, 5656; spell.kod:398), and at 50 it also gives you an effective touch-attack
+proficiency of 75 without ever training Punch (touchatk.kod:172). Intellect is what decides whether
+you end up with two schools or four (player.kod:11779). If you want breadth &mdash; Shal'ille and Qor
+and Riija and Jala &mdash; Intellect 50 for a 36-point budget is the only way to get there, and it can
+never be bought later, because the budget reads <code class="k">GetRawIntellect</code>. If you want
+depth in two schools, 16&ndash;25 Intellect is enough and the spare points are better spent elsewhere.
+Note that Kraanan is a <em>Stamina</em> school and Riija/Jala are <em>Intellect</em> schools
+(spell.kod:392&ndash;417), so "Mysticism is the mage stat" is only true for Qor, Shal'ille and
+Faren.</p>
+
+<h3>Nuke mage who never melees</h3>
+<div class="formula">Mysticism 50, Stamina 50, Intellect 35-45, Agility 25-35, Might 10-20, Aim 10-20</div>
+<p>Aim can be dumped &mdash; touch-attack spells substitute Mysticism for proficiency and their hit
+roll comes from the spell ability, not Aim (touchatk.kod:166&ndash;188). Do not dump Agility below
+about 25: it is the requisite stat for Dodge, Parry and Block (skill.kod:288), and at Agility 25 those
+skills stop improving properly at ability 49 because of the soft cap (skill.kod:426&ndash;429). Keep
+Might high enough to carry reagents &mdash; 20 Might is 2100 units of bulk (player.kod:10458).</p>
+
+<h3>Hybrid / fighter-mage</h3>
+<div class="formula">Stamina 50, Aim 40, Might 40, Mysticism 35, Agility 25, Intellect 10</div>
+<p>This is close to the shipped Hybrid preset. The mathematics of the learn budget punish hybrids
+hardest: Fencing at 6 costs 10 points out of a 20-point budget at Intellect 10, which leaves exactly
+one school mastered and nothing else. If you want Fencing 6 plus two schools at 6, you need
+<code class="k">16 + (Int*2)/5 &ge; 30</code>, i.e. <strong>Intellect 35 or higher</strong>. Decide that
+at the character screen or not at all.</p>
+
+<h3>Faction soldier</h3>
+<p>If you plan to carry a soldier's shield, remember it will hand you +5 in two specific stats at
+rank 7 (reblshld.kod:120&ndash;148: Might and Aim; dukeshld.kod: Stamina and Agility; prinshld.kod:
+Intellect and Mysticism). Those points count for everything <em>except</em> the Intellect learn budget,
+which reads only the base value. Planning to reach 50 in a stat "with the shield" works for Aim,
+Agility, Might, Stamina and Mysticism; it does not work for Intellect.</p>
+
+<h2>The one number that answers "did I ruin my character?"</h2>
+
+<p>No stat can be changed, so the honest test is whether the permanent ceilings you bought are the
+ones your playstyle needs. There are exactly four permanent, unrecoverable ceilings set at
+character creation:</p>
+
+<ol>
+<li><strong>Hit points:</strong> <code class="k">min(100 + Stamina, 150)</code> (player.kod:5903&ndash;5905). Stamina 20 means 120 HP forever, which is 45 less offense and 45 less defense than a Stamina-50 character, permanently.</li>
+<li><strong>Schools:</strong> <code class="k">16 + (RawIntellect*2)/5</code> learn points (player.kod:11779). No item, spell or quest raises this.</li>
+<li><strong>Mana:</strong> <code class="k">15 + Mysticism/5</code> plus node melds (player.kod:5967) &mdash; charms and shields <em>do</em> raise this one, via <code class="k">ComputeMaxMana</code> (player.kod:6122).</li>
+<li><strong>Soft caps:</strong> each skill or spell stops improving efficiently at <code class="k">2 &times; requisite_stat - 1</code> ability (skill.kod:426&ndash;429, spell.kod:1749&ndash;1753). Requisite-stat modifiers from items do count here, so a base 45 plus a +5 charm reaches the 99 threshold.</li>
+</ol>
+
+<p>Everything else &mdash; damage, offense, defense, carry weight, regeneration &mdash; scales
+smoothly and can be partially bought back with charms, shields and enchantments.</p>
+
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frular — Meridian 59 Compendium</title>
+<meta name="description" content="Before you stands the stately guild hall executor. Frular has made a healthy profit off of selling official guild titles, maintenance of their charters and the ">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Frular</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/gcreator_g1.png" alt="Frular" width="156" height="381"></div><div class="heroText"><h1>Frular</h1><p class="lede">Before you stands the stately guild hall executor. Frular has made a healthy profit off of selling official guild titles, maintenance of their charters and the leasing of guild halls.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Neutral</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 0
+                = 75
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>hit</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>1 place in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="The Guildmaster's Hall"><a href="../zones/gmhall.html">The Guildmaster's Hall</a></td><td class="" data-sort="Barloque">Barloque</td><td class="" data-sort="placed">placed</td><td class="num " data-sort="-1"><span class="muted">—</span></td><td class=""><code>barlqrm/gmhall.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_NPC</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_NOMOVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_NOFIGHT</code></td><td class="">Doesn't fight</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_BARTENDER</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_NOMOVE</code></td><td class="">Doesn't move</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_APOTHECARY</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_LISTEN</code></td><td class="">Responds to speech</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_TAILOR</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RECEIVE</code></td><td class="">Will accept items/gifts</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/gcreator.kod:11</p>
+<p><code class="k">GuildCreator</code> is <code class="k">BarloqueTown</code> — full chain <code class="k">GuildCreator</code> ← <code class="k">BarloqueTown</code> ← <code class="k">Towns</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>GuildCreator_name_rsc</code></td><td class=""><em>Frular</em></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>GuildCreator_icon_rsc</code></td><td class=""><em>gcreator.bgf</em></td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>GuildCreator_desc_rsc</code></td><td class=""><em>Before you stands the stately guild hall executor. Frular has made a healthy profit off of</em></td><td class="num " data-sort="69">69</td></tr>
+<tr><td class=""><code class="k">viDefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="72">72</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_NOMOVE | MOB_NOFIGHT | MOB_LISTEN | MOB_RECEIVE</code></td><td class="">51</td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">viOccupation</code></td><td class=""><code>MOB_ROLE_GUILD_CREATOR</code></td><td class="">12</td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">vrUnwanted_give</code></td><td class=""><code>gcreator_unwanted_give</code></td><td class=""><em>~k%s%s tells you, &quot;Thou canst pay thy rent only with shillings!~n~k&quot;</em></td><td class="num " data-sort="77">77</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>WelcomeUser(who = $)</h4>
+<pre><code>{
+      if Send(who,@GetGender) = GENDER_FEMALE
+      {
+         send(self,@SetMood,#new_mood=piMood+1);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/gcreator.kod:83</p>
+<h4>SomeoneSaid(what = $, string = $)</h4>
+<pre><code>{
+      local oPlayer, oGuild;
+      
+      if StringEqual(string,GuildCreator_rent_command)
+         OR StringEqual(string,&quot;rent&quot;)
+      {
+         send(self,@ReportRent,#who=what);
+      }
+
+      if IsClass(what,&amp;Player)
+      {
+         oGuild = send(what,@GetGuild);
+         if oGuild &lt;&gt; $
+            AND send(oGuild,@GetRank,#who=what) &gt;= RANK_LORD
+         {
+            oPlayer = send(SYS,@FindUserByString,#string=string);
+            if oPlayer &lt;&gt; $
+               AND oPlayer &lt;&gt; what
+               AND send(oPlayer,@GetGuild) = oGuild
+            {
+               if send(oPlayer,@IsUserInactive)
+               {
+                  send(self,@SayToOne,#target=what,#message_rsc=GuildCreator_player_inactive);
+               }
+               else
+               {
+                  send(self,@SayToOne,#target=what,#message_rsc=GuildCreator_player_active);
+               }
+            }
+         }
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/gcreator.kod:93</p>
+<h4>AffectMood(why = $, what = $)</h4>
+<pre><code>{
+      if why = MOODMOD_FACTION_CHANGE
+      {
+         if what = FACTION_DUKE
+         {
+            send(self,@SetMood,#new_mood=piMood+1);
+
+            return;
+         }
+         
+         if what = FACTION_REBEL
+         {
+            send(self,@SetMood,#new_mood=piMood-1);
+
+            return;
+         }
+      }
+      
+      if why = MOODMOD_ACCEPT_RENT
+      {
+         send(self,@SetMood,#new_mood=piMood+2);
+
+         return;
+      }
+      
+      if why = MOODMOD_DAWN
+      {
+         send(self,@SetMood,#new_mood=piMood+2);
+
+         return;
+      }
+      
+      if why = MOODMOD_DUSK
+      {
+         send(self,@SetMood,#new_mood=piMood-2);
+
+         return;
+      }
+      
+      if why = MOODMOD_SELL_GHALL
+      {
+         send(self,@SetMood,#new_mood=piMood+7);
+
+         return;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/gcreator.kod:129</p>
+<h4>ReportRent(who = $)</h4>
+<pre><code>{
+      local oRent, oGuild, oHours;
+
+      oGuild = send(who,@GetGuild);
+      if oGuild = $
+         OR IsClass(oGuild,&amp;NecromancerGuild)
+      {
+         send(who,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+              #string=gcreator_no_guild);
+
+         return;
+      }
+
+      oRent = send(oGuild,@GetRentDue);
+
+      if oRent = 0
+      {
+         send(who,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+              #string=gcreator_no_rent);
+
+         return;
+      }
+
+      if oRent &gt; 0
+      {
+         send(who,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,#string=gcreator_rent_due,
+              #parm1=send(oGuild,@GetCapDef),#parm2=send(oGuild,@GetName),
+              #parm3=oRent);
+
+         oHours = send(oGuild,@GetRentCounter)/10;
+         
+         if oHours &gt; 1
+         {
+            send(who,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+                 #string=Gcreator_hours_til_rent,#parm1=oHours-1);
+         }
+         
+         if oHours = 2
+         {
+            send(who,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+                 #string=Gcreator_hour_til_rent);
+         }
+
+         if oHours = 1
+         {
+            send(who,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+                 #string=Gcreator_lesshour_til_rent);
+         }
+         
+         return;
+      }
+
+      if oRent &lt; 0
+      {
+         send(who,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+              #string=gcreator_positive_balance,
+              #parm1=send(oGuild,@GetCapDef),
+              #parm2=send(oGuild,@GetName),#parm3=-(oRent));
+
+         return;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/gcreator.kod:179</p>
+<h4>MobIsSeller()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/gcreator.kod:245</p>
+<h4>GetForSale(who = $)</h4>
+<p>This is hacky--user.kod:UserBuy() aborts if it gets $ returned from here, so we can use it as a hook.</p>
+<pre><code>{
+      local oGuild,i,iAvailable;
+      
+      oGuild = Send(who,@GetGuild);
+      if oGuild &lt;&gt; $
+      {
+         if isClass(oGuild,&amp;NecromancerGuild)
+         {
+            return $;
+         }
+
+         if Send(oGuild,@GetRank,#who=who) &gt;= RANK_LIEUTENANT
+         {
+            if Send(oGuild,@IsMature) 
+            {
+               if Send(oGuild,@GetGuildHall) &lt;&gt; $
+               {
+                  Send(who,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+                       #string=GuildCreator_have_guild);
+
+                  return;
+               }
+
+               iAvailable = 0;
+               for i in Send(SYS,@GetGuildHalls)
+               {
+                  if Send(i,@GetPurchaseValue,#who=who) &lt;&gt; -1
+                  {
+                     iAvailable = iAvailable + 1;
+                  }
+               }
+               
+               if iAvailable = 0
+               {
+                  Send(who,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+                       #string=GuildCreator_no_halls);
+
+                  return;
+               }
+
+               Send(who,@SendBuyGuildHall);
+               send(self,@AffectMood,#why=MOODMOD_SELL_GHALL);
+               
+               return;
+            }
+            
+            Send(who,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+                 #string=GuildCreator_not_mature_yet);
+
+            return;
+         }
+
+         Send(who,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+              #string=GuildCreator_not_master);
+
+         return;
+      }
+      
+      
+      
+
+      if not send(who,@CheckPlayerFlag,#flag=PFLAG_PKILL_ENABLE)
+      {
+         send(who,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,#string=gcreator_low_level);
+
+         return;
+      }
+      
+      Send(who,@SendCreateGuild);
+      
+      return $;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/gcreator.kod:250</p>
+<h4>ReqOffer(what = $, item_list = $)</h4>
+<pre><code>{
+      local i, iMoney, oMoney, oGuild;
+
+      
+      if send(what,@GetOwner) &lt;&gt; poOwner
+      {
+         debug(&quot;ALERT! &quot;,send(what,@GetTRUEName),what,&quot; offered items to &quot;,send(self,@GetTrueName),&quot; from distant RID &quot;,send(send(what,@GetOwner),@GetRoomNum));
+         
+         return FALSE;
+      }     
+
+      for i in item_list
+      {
+         if NOT IsClass(i,&amp;Money)
+         {
+            propagate;
+         }
+      }
+
+      oGuild = Send(what,@GetGuild);
+      if oGuild = $ OR IsClass(oGuild,&amp;NecromancerGuild)
+      {
+         Send(what,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+              #string=GuildCreator_no_rent);
+         
+         return FALSE;
+      }
+
+      iMoney = 0;
+      for i in item_list
+      {
+         iMoney = iMoney + Send(i,@GetValue);
+      }
+
+      oMoney = Send(what,@GetMoneyObject);
+      
+      if oMoney = $
+         OR Send(oMoney,@GetNumber) &lt; iMoney
+      {
+         Send(what,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+              #string=GuildCreator_not_enough_money,#parm1=iMoney);
+              
+         return FALSE;
+      }
+
+      Send(oMoney,@SubtractNumber,#number=iMoney);
+      Send(what,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,#string=GuildCreator_thanks);
+      Send(self,@AffectMood,#why=MOODMOD_ACCEPT_RENT);
+      Send(Send(what,@GetGuild),@PayRent,#amount=iMoney);
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/gcreator.kod:326</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Junk — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Junk</p>
+<div class="hero"><div class="heroText"><h1>Junk</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">sundry</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">10</div></div><div class="fact"><div class="lbl">Value</div><div class="val">10 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div></div><h2>Where to buy it</h2><p><a href="../creatures/kocatanshopkeeper.html">Pacal ix'Anoak</a></p><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/junk.kod:20</p>
+<p><code class="k">Junk</code> is <code class="k">PassiveItem</code> — full chain <code class="k">Junk</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>junk_name_rsc1</code></td><td class="num " data-sort="167">167</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>junk_desc_rsc1</code></td><td class="num " data-sort="168">168</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>junk_icon_rsc1</code></td><td class="num " data-sort="169">169</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>junk_value1</code></td><td class="num " data-sort="170">170</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>junk_weight1</code></td><td class="num " data-sort="171">171</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>junk_bulk1</code></td><td class="num " data-sort="172">172</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>2</code></td><td class="num " data-sort="174">174</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(junknum = $)</h4>
+<pre><code>{
+      local iRandom;
+
+      if junknum = $
+      { iRandom = Random(1,NUM_JUNK_TYPES); }
+      else
+      { iRandom = junknum;}
+
+      if iRandom = 1
+      {
+         vrName =       junk_name_rsc1;
+         vrDesc =       junk_desc_rsc1;
+         vrIcon =       junk_icon_rsc1;
+         viValue_average = junk_value1;
+         viWeight =       junk_weight1;
+         viBulk =           junk_bulk1;
+         viGround_group =  junk_group1;
+      }
+
+      if iRandom = 2
+      {
+         vrName =       junk_name_rsc2;
+         vrDesc =       junk_desc_rsc2;
+         vrIcon =       junk_icon_rsc2;
+         viValue_average = junk_value2;
+         viWeight =       junk_weight2;
+         viBulk =           junk_bulk2;
+         viGround_group =  junk_group2;
+      }
+
+      if iRandom = 3
+      {
+         vrName =       junk_name_rsc3;
+         vrDesc =       junk_desc_rsc3;
+         vrIcon =       junk_icon_rsc3;
+         viValue_average = junk_value3;
+         viWeight =       junk_weight3;
+         viBulk =           junk_bulk3;
+         viGround_group =  junk_group3;
+      }
+
+      if iRandom = 4
+      {
+         vrName =       junk_name_rsc4;
+         vrDesc =       junk_desc_rsc4;
+         vrIcon =       junk_icon_rsc4;
+         viValue_average = junk_value4;
+         viWeight =       junk_weight4;
+         viBulk =           junk_bulk4;
+         viGround_group =  junk_group4;
+      }
+
+      if iRandom = 5
+      {
+         vrName =       junk_name_rsc5;
+         vrDesc =       junk_desc_rsc5;
+         vrIcon =       junk_icon_rsc5;
+         viValue_average = junk_value5;
+         viWeight =       junk_weight5;
+         viBulk =           junk_bulk5;
+         viGround_group =  junk_group5;
+      }
+
+      if iRandom = 6
+      {
+         vrName =       junk_name_rsc6;
+         vrDesc =       junk_desc_rsc6;
+         vrIcon =       junk_icon_rsc6;
+         viValue_average = junk_value6;
+         viWeight =       junk_weight6;
+         viBulk =           junk_bulk6;
+         viGround_group =  junk_group6;
+      }
+      if iRandom = 7
+      {
+         vrName =       junk_name_rsc7;
+         vrDesc =       junk_desc_rsc7;
+         vrIcon =       junk_icon_rsc7;
+         viValue_average = junk_value7;
+         viWeight =       junk_weight7;
+         viBulk =           junk_bulk7;
+         viGround_group =  junk_group7;
+      }
+      if iRandom = 8
+      {
+         vrName =       junk_name_rsc8;
+         vrDesc =       junk_desc_rsc8;
+         vrIcon =       junk_icon_rsc8;
+         viValue_average = junk_value8;
+         viWeight =       junk_weight8;
+         viBulk =           junk_bulk8;
+         viGround_group =  junk_group8;
+      }
+      if iRandom = 9
+      {
+         vrName =       junk_name_rsc9;
+         vrDesc =       junk_desc_rsc9;
+         vrIcon =       junk_icon_rsc9;
+         viValue_average = junk_value9;
+         viWeight =       junk_weight9;
+         viBulk =           junk_bulk9;
+         viGround_group =  junk_group9;
+      }
+      if iRandom = 10
+      {
+         vrName =       junk_name_rsc10;
+         vrDesc =       junk_desc_rsc10;
+         vrIcon =       junk_icon_rsc10;
+         viValue_average = junk_value10;
+         viWeight =       junk_weight10;
+         viBulk =           junk_bulk10;
+         viGround_group =  junk_group10;
+      }
+      if iRandom = 11
+      {
+         vrName =       junk_name_rsc11;
+         vrDesc =       junk_desc_rsc11;
+         vrIcon =       junk_icon_rsc11;
+         viValue_average = junk_value11;
+         viWeight =       junk_weight11;
+         viBulk =           junk_bulk11;
+         viGround_group =  junk_group11;
+      }
+      if iRandom = 12
+      {
+         vrName =       junk_name_rsc12;
+         vrDesc =       junk_desc_rsc12;
+         vrIcon =       junk_icon_rsc12;
+         viValue_average = junk_value12;
+         viWeight =       junk_weight12;
+         viBulk =           junk_bulk12;
+         viGround_group =  junk_group12;
+      }
+      if iRandom = 13
+      {
+         vrName =       junk_name_rsc13;
+         vrDesc =       junk_desc_rsc13;
+         vrIcon =       junk_icon_rsc13;
+         viValue_average = junk_value13;
+         viWeight =       junk_weight13;
+         viBulk =           junk_bulk13;
+         viGround_group =  junk_group13;
+      }
+
+      propagate;
+
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/junk.kod:178</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_NONE,2,viGround_group);  
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/junk.kod:327</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      send(self,@SendAnimation);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/junk.kod:334</p>
+<h4>SendInventoryAnimation()</h4>
+<pre><code>{
+      send(self,@SendAnimation);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/junk.kod:341</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,4703 @@
+{
+ "builtAt": null,
+ "rooms": {
+  "AssassinHeadQuarters": {
+   "name": "A shadowy corner",
+   "rid": "RID_ASSHQ",
+   "file": "kod/object/active/holder/room/barlqrm/asshq.kod"
+  },
+  "Badland1": {
+   "name": "The Badlands",
+   "rid": "RID_BADLAND1",
+   "file": "kod/object/active/holder/room/monsroom/badland1.kod"
+  },
+  "Badland2": {
+   "name": "Kardde's Canyon",
+   "rid": "RID_BADLAND2",
+   "file": "kod/object/active/holder/room/badland2.kod"
+  },
+  "BarApoth": {
+   "name": "Joguer's Herbs and Roots",
+   "rid": "RID_BAR_APOTH",
+   "file": "kod/object/active/holder/room/barlqrm/barapoth.kod"
+  },
+  "BarHall": {
+   "name": "Adventurer's Hall of Barloque",
+   "rid": "RID_BAR_HALL",
+   "file": "kod/object/active/holder/room/barlqrm/barhall.kod"
+  },
+  "BarInn": {
+   "name": "Brownestone Inn",
+   "rid": "RID_BAR_INN",
+   "file": "kod/object/active/holder/room/barlqrm/barinn.kod"
+  },
+  "BarlBar1": {
+   "name": "The Bhrama & Falcon",
+   "rid": "RID_BAR_BAR",
+   "file": "kod/object/active/holder/room/monsroom/objroom/barlbar1.kod"
+  },
+  "BarloqueCourt": {
+   "name": "Office of the Justicar",
+   "rid": "RID_BAR_COURT",
+   "file": "kod/object/active/holder/room/barlqrm/barcourt.kod"
+  },
+  "BarloqueJail": {
+   "name": "Old Jailhouse",
+   "rid": "RID_BAR_JAIL",
+   "file": "kod/object/active/holder/room/barlqrm/barjail.kod"
+  },
+  "BarloqueNorth": {
+   "name": "North Barloque",
+   "rid": "RID_BAR_NORTH",
+   "file": "kod/object/active/holder/room/barlqrm/barln.kod"
+  },
+  "BarloquePort": {
+   "name": "The Ports of Barloque",
+   "rid": "RID_BAR_PORT",
+   "file": "kod/object/active/holder/room/barlqrm/barlport.kod"
+  },
+  "BarloqueRentableRoom": {
+   "name": "A tastefully appointed room",
+   "rid": null,
+   "file": "kod/object/active/holder/room/rentroom/barrent.kod"
+  },
+  "BarloqueSmithy": {
+   "name": "The Royal Blacksmith of Barloque",
+   "rid": "RID_BAR_SMITHY",
+   "file": "kod/object/active/holder/room/barlqrm/barsmith.kod"
+  },
+  "BarloqueSouth": {
+   "name": "South Barloque",
+   "rid": "RID_BAR_SOUTH",
+   "file": "kod/object/active/holder/room/barlqrm/barls.kod"
+  },
+  "BarlSewer": {
+   "name": "The Sewers of Barloque",
+   "rid": "RID_BAR_SEWER",
+   "file": "kod/object/active/holder/room/monsroom/barlsew.kod"
+  },
+  "BarlSewer2": {
+   "name": "The Sewers of Barloque",
+   "rid": "RID_BAR_SEWER2",
+   "file": "kod/object/active/holder/room/monsroom/barlsew2.kod"
+  },
+  "BarlSewer3": {
+   "name": "The Sewers of Barloque",
+   "rid": "RID_BAR_SEWER3",
+   "file": "kod/object/active/holder/room/monsroom/barlsew3.kod"
+  },
+  "BarMerchant": {
+   "name": "The Sparkling Stone Shop",
+   "rid": "RID_BAR_MERCHANT",
+   "file": "kod/object/active/holder/room/barlqrm/barmerch.kod"
+  },
+  "BarVault": {
+   "name": "Office of the Barloque Vaultman",
+   "rid": "RID_BAR_VAULT",
+   "file": "kod/object/active/holder/room/barlqrm/barvault.kod"
+  },
+  "BazmansRoom": {
+   "name": "The Councilors' Chamber",
+   "rid": "RID_BAZMANS_ROOM",
+   "file": "kod/object/active/holder/room/bazmans.kod"
+  },
+  "BowmakerHut": {
+   "name": "The Bowmaker's Hut",
+   "rid": "RID_JUNGLE_BOWMAKER_HUT",
+   "file": "kod/object/active/holder/room/bowhut.kod"
+  },
+  "Canyon1": {
+   "name": "The Berdonne Canyons",
+   "rid": "RID_CANYON1",
+   "file": "kod/object/active/holder/room/monsroom/objroom/canyon1.kod"
+  },
+  "Canyon2": {
+   "name": "Martyr's Battleground",
+   "rid": "RID_CANYON2",
+   "file": "kod/object/active/holder/room/monsroom/objroom/canyon2.kod"
+  },
+  "CASTLE1": {
+   "name": "Castle Victoria",
+   "rid": "RID_CASTLE1",
+   "file": "kod/object/active/holder/room/monsroom/objroom/castle1.kod"
+  },
+  "Castle1B": {
+   "name": "Upstairs in Castle Victoria",
+   "rid": "RID_CASTLE1B",
+   "file": "kod/object/active/holder/room/monsroom/castle1b.kod"
+  },
+  "Castle1c": {
+   "name": "Outside Castle Victoria",
+   "rid": "RID_CASTLE1C",
+   "file": "kod/object/active/holder/room/castle1c.kod"
+  },
+  "Castle2a": {
+   "name": "Banquet Hall of the Bourgeois Castle",
+   "rid": "RID_CASTLE2A",
+   "file": "kod/object/active/holder/room/castle2a.kod"
+  },
+  "Castle2b": {
+   "name": "Bourgeois Castle",
+   "rid": "RID_CASTLE2B",
+   "file": "kod/object/active/holder/room/monsroom/castle2b.kod"
+  },
+  "Castle2c": {
+   "name": "The Assembly Chamber",
+   "rid": "RID_CASTLE2C",
+   "file": "kod/object/active/holder/room/monsroom/castle2c.kod"
+  },
+  "Castle2d": {
+   "name": "Royal Library of the Bourgeois Castle",
+   "rid": "RID_CASTLE2D",
+   "file": "kod/object/active/holder/room/castle2d.kod"
+  },
+  "Castle2E": {
+   "name": "Castle2 E",
+   "rid": "RID_CASTLE2E",
+   "file": "kod/object/active/holder/room/castle2e.kod"
+  },
+  "Cave2": {
+   "name": "A Deep, Dark, Spooky, Icky Cave",
+   "rid": "RID_CAVE2",
+   "file": "kod/object/active/holder/room/monsroom/objroom/cave2.kod"
+  },
+  "Cave3": {
+   "name": "The Underground Lake",
+   "rid": "RID_cave3",
+   "file": "kod/object/active/holder/room/cave3.kod"
+  },
+  "CorGrocer": {
+   "name": "Solomon's Edibles",
+   "rid": "RID_COR_GROCER",
+   "file": "kod/object/active/holder/room/crnthrm/corgroc.kod"
+  },
+  "CorHall": {
+   "name": "The Adventurer's Hall of Cor Noth",
+   "rid": "RID_COR_HALL",
+   "file": "kod/object/active/holder/room/crnthrm/corhall.kod"
+  },
+  "CorInn": {
+   "name": "Cibilo Creek Inn",
+   "rid": "RID_COR_INN",
+   "file": "kod/object/active/holder/room/crnthrm/corinn.kod"
+  },
+  "CorNoth": {
+   "name": "Cor Noth",
+   "rid": "RID_CORNOTH",
+   "file": "kod/object/active/holder/room/crnthrm/cornoth.kod"
+  },
+  "CornothUniversity": {
+   "name": "The Hall of Genealogy",
+   "rid": "RID_COR_UNIV",
+   "file": "kod/object/active/holder/room/crnthrm/Coruniv.kod"
+  },
+  "CorTailor": {
+   "name": "The Spindle and the Spinster",
+   "rid": "RID_COR_TAILOR",
+   "file": "kod/object/active/holder/room/crnthrm/cortail.kod"
+  },
+  "CorWeaponsMaster": {
+   "name": "The Weapon Master's Abode",
+   "rid": "RID_COR_WEAPONSMASTER",
+   "file": "kod/object/active/holder/room/crnthrm/corwepm.kod"
+  },
+  "Duke1": {
+   "name": "The Courtyard of Blackstone Keep",
+   "rid": "RID_DUKE1",
+   "file": "kod/object/active/holder/room/duke1.kod"
+  },
+  "Duke2": {
+   "name": "Blackstone Keep",
+   "rid": "RID_DUKE2",
+   "file": "kod/object/active/holder/room/duke2.kod"
+  },
+  "Duke3": {
+   "name": "Room",
+   "rid": "RID_DUKE3",
+   "file": "kod/object/active/holder/room/duke3.kod"
+  },
+  "Duke4": {
+   "name": "The Duke's Feast Hall",
+   "rid": "RID_DUKE4",
+   "file": "kod/object/active/holder/room/monsroom/objroom/duke4.kod"
+  },
+  "Duke5": {
+   "name": "The Duke's Grand Ballroom",
+   "rid": "RID_DUKE5",
+   "file": "kod/object/active/holder/room/monsroom/objroom/duke5.kod"
+  },
+  "DungeonVictoria": {
+   "name": "Underbasement of Victoria",
+   "rid": "RID_DUNGEON",
+   "file": "kod/object/active/holder/room/dungeon.kod"
+  },
+  "EastTos": {
+   "name": "East Ende",
+   "rid": "RID_EAST_TOS",
+   "file": "kod/object/active/holder/room/tosrm/easttos.kod"
+  },
+  "Field1": {
+   "name": "The Fields",
+   "rid": "RID_FIELD1",
+   "file": "kod/object/active/holder/room/field1.kod"
+  },
+  "Forest1": {
+   "name": "The Forests of Meridian",
+   "rid": "RID_FOREST1",
+   "file": "kod/object/active/holder/room/monsroom/objroom/forest1.kod"
+  },
+  "Forest2": {
+   "name": "The Forests of Meridian",
+   "rid": "RID_FOREST2",
+   "file": "kod/object/active/holder/room/monsroom/forest2.kod"
+  },
+  "Forest3": {
+   "name": "The Forests of Meridian",
+   "rid": "RID_FOREST3",
+   "file": "kod/object/active/holder/room/monsroom/forest3.kod"
+  },
+  "Forest4": {
+   "name": "The Deep Dark Woods of Tos",
+   "rid": "RID_FOREST4",
+   "file": "kod/object/active/holder/room/monsroom/forest4.kod"
+  },
+  "Forest5": {
+   "name": "The Deep Dark Woods of Marion",
+   "rid": "RID_FOREST5",
+   "file": "kod/object/active/holder/room/monsroom/objroom/forest5.kod"
+  },
+  "ForgottenToo": {
+   "name": "Chamber of the Forgotten Heroes",
+   "rid": "RID_FORGOTTEN_TOO",
+   "file": "kod/object/active/holder/room/crnthrm/forgot2.kod"
+  },
+  "Gallery": {
+   "name": "object gallery",
+   "rid": "RID_GALLERY",
+   "file": "kod/object/active/holder/room/gallery.kod"
+  },
+  "GMHall": {
+   "name": "The Guildmaster's Hall",
+   "rid": "RID_GM_HALL",
+   "file": "kod/object/active/holder/room/barlqrm/gmhall.kod"
+  },
+  "GodRoom": {
+   "name": "The meeting place of the Gods",
+   "rid": "RID_GODROOM",
+   "file": "kod/object/active/holder/room/godroom.kod"
+  },
+  "Guest1": {
+   "name": "The Inn of Hazar",
+   "rid": "RID_GUEST1",
+   "file": "kod/object/active/holder/room/guest1.kod"
+  },
+  "Guest2": {
+   "name": "Hazar",
+   "rid": "RID_GUEST2",
+   "file": "kod/object/active/holder/room/guest2.kod"
+  },
+  "Guest3": {
+   "name": "The Blacksmith of Hazar",
+   "rid": "RID_guest3",
+   "file": "kod/object/active/holder/room/guest3.kod"
+  },
+  "Guest4": {
+   "name": "Ravi's Magicks of Hazar's Crossing",
+   "rid": "RID_guest4",
+   "file": "kod/object/active/holder/room/guest4.kod"
+  },
+  "Guest5": {
+   "name": "The Home of Roderic D'Stane",
+   "rid": "RID_guest5",
+   "file": "kod/object/active/holder/room/guest5.kod"
+  },
+  "Guest6": {
+   "name": "Mausoleum",
+   "rid": "RID_guest6",
+   "file": "kod/object/active/holder/room/monsroom/guest6.kod"
+  },
+  "Guest7": {
+   "name": "Eric's Stout Spirits",
+   "rid": "RID_guest7",
+   "file": "kod/object/active/holder/room/guest7.kod"
+  },
+  "Guest8": {
+   "name": "The Grand Museum of Hazar",
+   "rid": "RID_guest8",
+   "file": "kod/object/active/holder/room/guest8.kod"
+  },
+  "GuildHall1": {
+   "name": "Mercenary Alley",
+   "rid": "RID_GUILDH1",
+   "file": "kod/object/active/holder/room/ghall/guildh1.kod"
+  },
+  "GuildHall10": {
+   "name": "Jaarba's Abode",
+   "rid": "RID_GUILDH10",
+   "file": "kod/object/active/holder/room/ghall/guildh10.kod"
+  },
+  "GuildHall11": {
+   "name": "The home of the Friends of the Forest",
+   "rid": "RID_GUILDH11",
+   "file": "kod/object/active/holder/room/ghall/guildh11.kod"
+  },
+  "GuildHall12": {
+   "name": "West Tower Guild Hall in Ko'catan",
+   "rid": "RID_GUILDH12",
+   "file": "kod/object/active/holder/room/ghall/guildh12.kod"
+  },
+  "GuildHall13": {
+   "name": "The Hall of the Slaughtered Command",
+   "rid": "RID_GUILDH13",
+   "file": "kod/object/active/holder/room/ghall/guildh13.kod"
+  },
+  "GuildHall14": {
+   "name": "The Bookmaker's Guild House",
+   "rid": "RID_GUILDH14",
+   "file": "kod/object/active/holder/room/ghall/guildh14.kod"
+  },
+  "GuildHall15": {
+   "name": "Inner Sanctum of Queen Venya'cyr",
+   "rid": "RID_guildh15",
+   "file": "kod/object/active/holder/room/ghall/guildh15.kod"
+  },
+  "GuildHall2": {
+   "name": "The Hall of Explorers",
+   "rid": "RID_GUILDH2",
+   "file": "kod/object/active/holder/room/ghall/guildh2.kod"
+  },
+  "GuildHall3": {
+   "name": "The Den of Shadows",
+   "rid": "RID_GUILDH3",
+   "file": "kod/object/active/holder/room/ghall/guildh3.kod"
+  },
+  "GuildHall4": {
+   "name": "The Wryn's Keep",
+   "rid": "RID_GUILDH4",
+   "file": "kod/object/active/holder/room/ghall/guildh4.kod"
+  },
+  "GuildHall5": {
+   "name": "Konima's Abandoned Dwelling",
+   "rid": "RID_GUILDH5",
+   "file": "kod/object/active/holder/room/ghall/guildh5.kod"
+  },
+  "GuildHall6": {
+   "name": "The Ivory Chapel",
+   "rid": "RID_GUILDH6",
+   "file": "kod/object/active/holder/room/ghall/guildh6.kod"
+  },
+  "GuildHall7": {
+   "name": "The Old Dwarven Hall",
+   "rid": "RID_GUILDH7",
+   "file": "kod/object/active/holder/room/ghall/guildh7.kod"
+  },
+  "GuildHall8": {
+   "name": "The Sewer Hideout",
+   "rid": "RID_GUILDH8",
+   "file": "kod/object/active/holder/room/ghall/guildh8.kod"
+  },
+  "GuildHall9": {
+   "name": "The Abandoned Warehouse",
+   "rid": "RID_GUILDH9",
+   "file": "kod/object/active/holder/room/ghall/guildh9.kod"
+  },
+  "HermitHut": {
+   "name": "The Hermit's Hut",
+   "rid": "RID_HERMITHUT",
+   "file": "kod/object/active/holder/room/hermhut.kod"
+  },
+  "IceCave1": {
+   "name": "The Dreaded Caves of Ice",
+   "rid": "RID_ICE_CAVE1",
+   "file": "kod/object/active/holder/room/monsroom/objroom/icecave1.kod"
+  },
+  "JasBank": {
+   "name": "The Royal Bank of Jasper",
+   "rid": "RID_JAS_BANK",
+   "file": "kod/object/active/holder/room/jasperrm/jasbank.kod"
+  },
+  "Jasper": {
+   "name": "East Jasper",
+   "rid": "RID_JASPER",
+   "file": "kod/object/active/holder/room/jasperrm/jasper.kod"
+  },
+  "JasperAB1": {
+   "name": "Jasper AB1",
+   "rid": "RID_JAS_AB1",
+   "file": "kod/object/active/holder/room/jasperrm/jasab1.kod"
+  },
+  "JasperAB10": {
+   "name": "Jasper AB10",
+   "rid": "RID_JAS_AB10",
+   "file": "kod/object/active/holder/room/jasperrm/jasab10.kod"
+  },
+  "JasperAB11": {
+   "name": "Jasper AB11",
+   "rid": "RID_JAS_AB11",
+   "file": "kod/object/active/holder/room/jasperrm/jasab11.kod"
+  },
+  "JasperAB12": {
+   "name": "Jasper AB12",
+   "rid": "RID_JAS_AB12",
+   "file": "kod/object/active/holder/room/jasperrm/jasab12.kod"
+  },
+  "JasperAB13": {
+   "name": "Jasper AB13",
+   "rid": "RID_JAS_AB13",
+   "file": "kod/object/active/holder/room/jasperrm/jasab13.kod"
+  },
+  "JasperAB14": {
+   "name": "Jasper AB14",
+   "rid": "RID_JAS_AB14",
+   "file": "kod/object/active/holder/room/jasperrm/jasab14.kod"
+  },
+  "JasperAB2": {
+   "name": "Jasper AB2",
+   "rid": "RID_JAS_AB2",
+   "file": "kod/object/active/holder/room/jasperrm/jasab2.kod"
+  },
+  "JasperAB3": {
+   "name": "Jasper AB3",
+   "rid": "RID_JAS_AB3",
+   "file": "kod/object/active/holder/room/jasperrm/jasab3.kod"
+  },
+  "JasperAB4": {
+   "name": "Jasper AB4",
+   "rid": "RID_JAS_AB4",
+   "file": "kod/object/active/holder/room/jasperrm/jasab4.kod"
+  },
+  "JasperAB5": {
+   "name": "Jasper AB5",
+   "rid": "RID_JAS_AB5",
+   "file": "kod/object/active/holder/room/jasperrm/jasab5.kod"
+  },
+  "JasperAB6": {
+   "name": "Jasper AB6",
+   "rid": "RID_JAS_AB6",
+   "file": "kod/object/active/holder/room/jasperrm/jasab6.kod"
+  },
+  "JasperAB7": {
+   "name": "Jasper AB7",
+   "rid": "RID_JAS_AB7",
+   "file": "kod/object/active/holder/room/jasperrm/jasab7.kod"
+  },
+  "JasperAB8": {
+   "name": "Jasper AB8",
+   "rid": "RID_JAS_AB8",
+   "file": "kod/object/active/holder/room/jasperrm/jasab8.kod"
+  },
+  "JasperAB9": {
+   "name": "Jasper AB9",
+   "rid": "RID_JAS_AB9",
+   "file": "kod/object/active/holder/room/jasperrm/jasab9.kod"
+  },
+  "JasperElderHut": {
+   "name": "Jasper Elder Hut",
+   "rid": "RID_JAS_ELDER_HUT",
+   "file": "kod/object/active/holder/room/jasperrm/jaselder.kod"
+  },
+  "JasperHall": {
+   "name": "Jasper Hall",
+   "rid": "RID_JAS_HALL",
+   "file": "kod/object/active/holder/room/jasperrm/jashall.kod"
+  },
+  "JasperInn": {
+   "name": "Jasper Inn",
+   "rid": "RID_JAS_INN",
+   "file": "kod/object/active/holder/room/jasperrm/jasinn.kod"
+  },
+  "JasperSmithy": {
+   "name": "Jasper Smithy",
+   "rid": "RID_JAS_SMITHY",
+   "file": "kod/object/active/holder/room/jasperrm/jassmith.kod"
+  },
+  "JasperStore": {
+   "name": "Jasper Store",
+   "rid": "RID_JAS_STORE",
+   "file": "kod/object/active/holder/room/jasperrm/jasstore.kod"
+  },
+  "JasperTavern": {
+   "name": "Jasper Tavern",
+   "rid": "RID_JAS_TAVERN",
+   "file": "kod/object/active/holder/room/jasperrm/jastavrn.kod"
+  },
+  "JasperWest": {
+   "name": "West Jasper",
+   "rid": "RID_JASWEST",
+   "file": "kod/object/active/holder/room/jasperrm/jaswest.kod"
+  },
+  "JasSewer1": {
+   "name": "The Sewers of Jasper",
+   "rid": "RID_JAS_SEWER1",
+   "file": "kod/object/active/holder/room/monsroom/jassew1.kod"
+  },
+  "JasSewer2": {
+   "name": "The Sewers of Jasper",
+   "rid": "RID_JAS_SEWER2",
+   "file": "kod/object/active/holder/room/monsroom/jassew2.kod"
+  },
+  "JasSewer3": {
+   "name": "The Sewers of Jasper",
+   "rid": "RID_JAS_SEWER3",
+   "file": "kod/object/active/holder/room/monsroom/jassew3.kod"
+  },
+  "Kocatan": {
+   "name": "Ko'catan, the Island Settlement",
+   "rid": "RID_KOCATAN",
+   "file": "kod/object/active/holder/room/kocarm/kocatan.kod"
+  },
+  "KocatanApoth": {
+   "name": "Two Lizards Magic Shop",
+   "rid": "RID_KOC_APOTH",
+   "file": "kod/object/active/holder/room/kocarm/kocapoth.kod"
+  },
+  "KocatanBank": {
+   "name": "The Hungry Vaults",
+   "rid": "RID_KOC_BANK",
+   "file": "kod/object/active/holder/room/kocarm/kocbank.kod"
+  },
+  "KocatanGuardtowerEast": {
+   "name": "The East Tower",
+   "rid": "RID_KOC_GUARDTOWER_EAST",
+   "file": "kod/object/active/holder/room/kocarm/koctower.kod"
+  },
+  "KocatanHall": {
+   "name": "The Hall of Heroes",
+   "rid": "RID_KOC_HALL_OF_HEROES",
+   "file": "kod/object/active/holder/room/kocarm/kochoh.kod"
+  },
+  "KocatanHallA": {
+   "name": "The Hall of Heroes West",
+   "rid": "RID_KOC_HALL_OF_HEROES_A",
+   "file": "kod/object/active/holder/room/kocarm/kochoha.kod"
+  },
+  "KocatanHallB": {
+   "name": "The Hall of Heroes East",
+   "rid": "RID_KOC_HALL_OF_HEROES_B",
+   "file": "kod/object/active/holder/room/kocarm/kochohb.kod"
+  },
+  "KocatanInn": {
+   "name": "The Aerie Guest House",
+   "rid": "RID_KOC_INN",
+   "file": "kod/object/active/holder/room/kocarm/kocinn.kod"
+  },
+  "KocatanRentableRoom": {
+   "name": "A comfortable room",
+   "rid": null,
+   "file": "kod/object/active/holder/room/rentroom/kocrent.kod"
+  },
+  "KocatanSewer1": {
+   "name": "A foul place to wander",
+   "rid": "RID_KOC_SEWER1",
+   "file": "kod/object/active/holder/room/monsroom/kocsew1.kod"
+  },
+  "KocatanSewer2": {
+   "name": "Up Chuk Creek without a paddle",
+   "rid": "RID_KOC_SEWER2",
+   "file": "kod/object/active/holder/room/monsroom/kocsew2.kod"
+  },
+  "KocatanSmithy": {
+   "name": "The Chimney House",
+   "rid": "RID_KOC_SMITHY",
+   "file": "kod/object/active/holder/room/kocarm/kocblack.kod"
+  },
+  "KocatanSouth": {
+   "name": "Ko'catan, the Island Settlement",
+   "rid": "RID_KOC_SOUTH",
+   "file": "kod/object/active/holder/room/kocarm/kocsouth.kod"
+  },
+  "KocatanStore": {
+   "name": "The Neglected Arsenal",
+   "rid": "RID_KOC_STORE",
+   "file": "kod/object/active/holder/room/kocarm/kocstore.kod"
+  },
+  "KocatanTailorShop": {
+   "name": "The Crooked Hem Garment Shop",
+   "rid": "RID_KOC_TAILOR",
+   "file": "kod/object/active/holder/room/kocarm/koctail.kod"
+  },
+  "KocatanTavern": {
+   "name": "The Barking Monster",
+   "rid": "RID_KOC_TAVERN",
+   "file": "kod/object/active/holder/room/kocarm/koctav.kod"
+  },
+  "LichMaze": {
+   "name": "The Dungeon of Castle Brax",
+   "rid": "RID_LICH_MAZE",
+   "file": "kod/object/active/holder/room/monsroom/lichmaze.kod"
+  },
+  "MadScientistHut": {
+   "name": "Hut of the Mad Scientist",
+   "rid": "RID_MAD_SCIENTIST_HUT",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kmadscih.kod"
+  },
+  "MarHall": {
+   "name": "The Adventurer's Hall of Marion",
+   "rid": "RID_MAR_HALL",
+   "file": "kod/object/active/holder/room/marnrm/marhall.kod"
+  },
+  "Marion": {
+   "name": "Marion",
+   "rid": "RID_MARION",
+   "file": "kod/object/active/holder/room/marnrm/marion.kod"
+  },
+  "MarionCrypt1": {
+   "name": "The crypt in Marion",
+   "rid": "RID_MAR_CRYPT1",
+   "file": "kod/object/active/holder/room/monsroom/marcryp1.kod"
+  },
+  "MarionCrypt2": {
+   "name": "Resting place of Marion's ancestors",
+   "rid": "RID_MAR_CRYPT2",
+   "file": "kod/object/active/holder/room/monsroom/marcryp2.kod"
+  },
+  "MarionCrypt3a": {
+   "name": "Affirmation of the Forsaken",
+   "rid": "RID_MAR_CRYPT3A",
+   "file": "kod/object/active/holder/room/monsroom/marcry3a.kod"
+  },
+  "MarionElderHut": {
+   "name": "The home of the elder",
+   "rid": "RID_MAR_ELDER_HUT",
+   "file": "kod/object/active/holder/room/monsroom/objroom/marelder.kod"
+  },
+  "MarionHealerShop": {
+   "name": "Lady Aftyn's Sanctuary",
+   "rid": "RID_MAR_HEALER_SHOP",
+   "file": "kod/object/active/holder/room/marnrm/marhlshp.kod"
+  },
+  "MarionInn": {
+   "name": "The Limping Toad Inn and Tavern",
+   "rid": "RID_MAR_INN",
+   "file": "kod/object/active/holder/room/monsroom/objroom/marinn.kod"
+  },
+  "MarionRentableRoom": {
+   "name": "A comfortable room",
+   "rid": null,
+   "file": "kod/object/active/holder/room/rentroom/marrent.kod"
+  },
+  "MarionSmithy": {
+   "name": "Ye Olde Slasher Salesman",
+   "rid": "RID_MAR_SMITHY",
+   "file": "kod/object/active/holder/room/monsroom/objroom/marsmith.kod"
+  },
+  "MockersRoom": {
+   "name": "Chamber of the Mocker",
+   "rid": "RID_MOCKERS_ROOM",
+   "file": "kod/object/active/holder/room/mockers.kod"
+  },
+  "NecArena": {
+   "name": "Goad's Grinder",
+   "rid": "RID_BRAX_ARENA",
+   "file": "kod/object/active/holder/room/necarena.kod"
+  },
+  "Necropolis1": {
+   "name": "Winding Caverns",
+   "rid": "RID_NECROAREA1",
+   "file": "kod/object/active/holder/room/monsroom/necarea1.kod"
+  },
+  "Necropolis2": {
+   "name": "Ancient Graveyard of Brax",
+   "rid": "RID_NECROAREA2",
+   "file": "kod/object/active/holder/room/monsroom/necarea2.kod"
+  },
+  "Necropolis3": {
+   "name": "Decaying City of Brax",
+   "rid": "RID_NECROAREA3",
+   "file": "kod/object/active/holder/room/monsroom/necarea3.kod"
+  },
+  "Necropolis3a": {
+   "name": "Ancient Building",
+   "rid": "RID_NECROAREA3a",
+   "file": "kod/object/active/holder/room/monsroom/necare3a.kod"
+  },
+  "Necropolis3b": {
+   "name": "Ancient Building",
+   "rid": "RID_NECROAREA3b",
+   "file": "kod/object/active/holder/room/monsroom/necare3b.kod"
+  },
+  "Necropolis4": {
+   "name": "Within the Walls of Castle Brax",
+   "rid": "RID_NECROAREA4",
+   "file": "kod/object/active/holder/room/monsroom/necarea4.kod"
+  },
+  "Necropolis5": {
+   "name": "Ruins of Castle Brax",
+   "rid": "RID_NECROAREA5",
+   "file": "kod/object/active/holder/room/monsroom/necarea5.kod"
+  },
+  "Newb1": {
+   "name": "Raza Inn",
+   "rid": "RID_NEWB1",
+   "file": "kod/object/active/holder/room/guest1/newb1.kod"
+  },
+  "Newb2": {
+   "name": "Raza",
+   "rid": "RID_NEWB2",
+   "file": "kod/object/active/holder/room/guest2/newb2.kod"
+  },
+  "Newb3": {
+   "name": "Raza Blacksmith",
+   "rid": "RID_NEWB3",
+   "file": "kod/object/active/holder/room/guest3/newb3.kod"
+  },
+  "Newb4": {
+   "name": "Ravi's Magicks of Raza",
+   "rid": "RID_NEWB4",
+   "file": "kod/object/active/holder/room/guest4/newb4.kod"
+  },
+  "Newb5": {
+   "name": "Raza Hut",
+   "rid": "RID_NEWB5",
+   "file": "kod/object/active/holder/room/guest5/newb5.kod"
+  },
+  "Newb6": {
+   "name": "Mausoleum",
+   "rid": "RID_NEWB6",
+   "file": "kod/object/active/holder/room/monsroom/guest6/newb6.kod"
+  },
+  "Newb7": {
+   "name": "Raza Pub",
+   "rid": "RID_NEWB7",
+   "file": "kod/object/active/holder/room/guest7/newb7.kod"
+  },
+  "Newb8": {
+   "name": "The Grand Museum of Raza",
+   "rid": "RID_Newb8",
+   "file": "kod/object/active/holder/room/guest8/newb8.kod"
+  },
+  "OldBarloqueNorth": {
+   "name": "Historic North Barloque",
+   "rid": "RID_OLD_BAR_NORTH",
+   "file": "kod/object/active/holder/room/monsroom/oldbarln.kod"
+  },
+  "OldBarloqueSouth": {
+   "name": "Historic South Barloque",
+   "rid": "RID_OLD_BAR_SOUTH",
+   "file": "kod/object/active/holder/room/monsroom/oldbarls.kod"
+  },
+  "OldJasper": {
+   "name": "Historic Jasper",
+   "rid": "RID_OLD_JASPER",
+   "file": "kod/object/active/holder/room/monsroom/oldjas.kod"
+  },
+  "OldMarion": {
+   "name": "Historic Marion",
+   "rid": "RID_OLD_MARION",
+   "file": "kod/object/active/holder/room/monsroom/oldmar.kod"
+  },
+  "Orccave1": {
+   "name": "Ugol's Warren Entrance",
+   "rid": "RID_ORC_CAVE1",
+   "file": "kod/object/active/holder/room/monsroom/orccave1.kod"
+  },
+  "OrcCave1Extension": {
+   "name": "A Tranquil Place",
+   "rid": "RID_ORC_CAVE1_EXT",
+   "file": "kod/object/active/holder/room/monsroom/orccav1x.kod"
+  },
+  "OrcCave2": {
+   "name": "An Enigmatic Chamber",
+   "rid": "RID_ORC_CAVE2",
+   "file": "kod/object/active/holder/room/monsroom/orccave2.kod"
+  },
+  "OrcCave3": {
+   "name": "The Archaic Hollows",
+   "rid": "RID_ORC_CAVE3",
+   "file": "kod/object/active/holder/room/monsroom/orccave3.kod"
+  },
+  "OrcCave4": {
+   "name": "Aqueducts of Merb",
+   "rid": "RID_ORC_CAVE4",
+   "file": "kod/object/active/holder/room/monsroom/orccave4.kod"
+  },
+  "OrcCave5": {
+   "name": "Obfal's Sepulchre",
+   "rid": "RID_ORC_CAVE5",
+   "file": "kod/object/active/holder/room/monsroom/orccave5.kod"
+  },
+  "OrcCave5Extension": {
+   "name": "A spring of vitality",
+   "rid": "RID_ORC_CAVE5_EXT",
+   "file": "kod/object/active/holder/room/monsroom/orccav5x.kod"
+  },
+  "OrcCave6": {
+   "name": "Konima's Ascension",
+   "rid": "RID_ORC_CAVE6",
+   "file": "kod/object/active/holder/room/monsroom/orccave6.kod"
+  },
+  "Orcpit1": {
+   "name": "Lair of the Orc Pit Boss",
+   "rid": "RID_ORC_PIT",
+   "file": "kod/object/active/holder/room/monsroom/bossroom/orcpit1.kod"
+  },
+  "OrcPitA": {
+   "name": "Grog's Antechamber",
+   "rid": "RID_ORC_PIT_A",
+   "file": "kod/object/active/holder/room/monsroom/orcpita.kod"
+  },
+  "OrcPitB": {
+   "name": "Brog's Antechamber",
+   "rid": "RID_ORC_PIT_B",
+   "file": "kod/object/active/holder/room/monsroom/orcpitb.kod"
+  },
+  "OutdoorsA1": {
+   "name": "North Quilicia Wood",
+   "rid": "RID_A1",
+   "file": "kod/object/active/holder/room/monsroom/feyforst/a1.kod"
+  },
+  "OutdoorsA5": {
+   "name": "Seafarer's Peak",
+   "rid": "RID_A5",
+   "file": "kod/object/active/holder/room/monsroom/a5.kod"
+  },
+  "OutdoorsA6": {
+   "name": "The Hills",
+   "rid": "RID_A6",
+   "file": "kod/object/active/holder/room/monsroom/a6.kod"
+  },
+  "OutdoorsB1": {
+   "name": "Elhadrim",
+   "rid": "RID_B1",
+   "file": "kod/object/active/holder/room/monsroom/feyforst/b1.kod"
+  },
+  "OutdoorsB2": {
+   "name": "Lower Elhadrim",
+   "rid": "RID_B2",
+   "file": "kod/object/active/holder/room/monsroom/feyforst/b2.kod"
+  },
+  "OutdoorsB6": {
+   "name": "Druid Hills",
+   "rid": "RID_B6",
+   "file": "kod/object/active/holder/room/monsroom/objroom/b6.kod"
+  },
+  "OutdoorsC1": {
+   "name": "The Fey's Crossing",
+   "rid": "RID_C1",
+   "file": "kod/object/active/holder/room/monsroom/feyforst/c1.kod"
+  },
+  "OutdoorsC2": {
+   "name": "The Vale of Sorrows",
+   "rid": "RID_C2",
+   "file": "kod/object/active/holder/room/monsroom/feyforst/c2.kod"
+  },
+  "OutdoorsC3": {
+   "name": "Quilicia Wood",
+   "rid": "RID_C3",
+   "file": "kod/object/active/holder/room/monsroom/feyforst/c3.kod"
+  },
+  "OutdoorsC4": {
+   "name": "Deep Woods of Ileria",
+   "rid": "RID_C4",
+   "file": "kod/object/active/holder/room/monsroom/c4.kod"
+  },
+  "OutdoorsC5": {
+   "name": "West Merchant Way through Ilerian Woods",
+   "rid": "RID_C5",
+   "file": "kod/object/active/holder/room/monsroom/objroom/c5.kod"
+  },
+  "OutdoorsC6": {
+   "name": "Forest of Farol",
+   "rid": "RID_C6",
+   "file": "kod/object/active/holder/room/monsroom/c6.kod"
+  },
+  "OutdoorsC7": {
+   "name": "Faronath, home of the TreeFolk",
+   "rid": "RID_C7",
+   "file": "kod/object/active/holder/room/monsroom/objroom/c7.kod"
+  },
+  "OutdoorsD1": {
+   "name": "Dirhadrim",
+   "rid": "RID_D1",
+   "file": "kod/object/active/holder/room/monsroom/feyforst/d1.kod"
+  },
+  "OutdoorsD2": {
+   "name": "Lower Dirhadrim",
+   "rid": "RID_D2",
+   "file": "kod/object/active/holder/room/monsroom/feyforst/d2.kod"
+  },
+  "OutdoorsD4": {
+   "name": "Valley of Ileria",
+   "rid": "RID_D4",
+   "file": "kod/object/active/holder/room/monsroom/d4.kod"
+  },
+  "OutdoorsD5": {
+   "name": "West Merchant Way",
+   "rid": "RID_D5",
+   "file": "kod/object/active/holder/room/monsroom/d5.kod"
+  },
+  "OutdoorsD6": {
+   "name": "Deep in the Forest of Farol",
+   "rid": "RID_D6",
+   "file": "kod/object/active/holder/room/monsroom/d6.kod"
+  },
+  "OutdoorsD7": {
+   "name": "Deep in the Forest of Farol",
+   "rid": "RID_D7",
+   "file": "kod/object/active/holder/room/monsroom/d7.kod"
+  },
+  "OutdoorsE2": {
+   "name": "The Great Ocean",
+   "rid": "RID_E2",
+   "file": "kod/object/active/holder/room/monsroom/e2.kod"
+  },
+  "OutdoorsE4": {
+   "name": "East Merchant Way through Ilerian Woods",
+   "rid": "RID_E4",
+   "file": "kod/object/active/holder/room/monsroom/e4.kod"
+  },
+  "OutdoorsE5": {
+   "name": "The Forest Shrine",
+   "rid": "RID_E5",
+   "file": "kod/object/active/holder/room/monsroom/e5.kod"
+  },
+  "OutdoorsE6": {
+   "name": "Deep Forest of Farol",
+   "rid": "RID_E6",
+   "file": "kod/object/active/holder/room/monsroom/objroom/e6.kod"
+  },
+  "OutdoorsE7": {
+   "name": "The Sweet Grass Prairies",
+   "rid": "RID_E7",
+   "file": "kod/object/active/holder/room/monsroom/e7.kod"
+  },
+  "OutdoorsF2": {
+   "name": "The sandy shores of the Great Ocean",
+   "rid": "RID_F2",
+   "file": "kod/object/active/holder/room/monsroom/f2.kod"
+  },
+  "OutdoorsF3": {
+   "name": "Source of the River Ille",
+   "rid": "RID_F3",
+   "file": "kod/object/active/holder/room/monsroom/f3.kod"
+  },
+  "OutdoorsF4": {
+   "name": "East Merchant Way",
+   "rid": "RID_F4",
+   "file": "kod/object/active/holder/room/monsroom/f4.kod"
+  },
+  "OutdoorsF6": {
+   "name": "Off the beaten path",
+   "rid": "RID_F6",
+   "file": "kod/object/active/holder/room/monsroom/f6.kod"
+  },
+  "OutdoorsF7": {
+   "name": "Off the beaten path",
+   "rid": "RID_F7",
+   "file": "kod/object/active/holder/room/monsroom/f7.kod"
+  },
+  "OutdoorsF8": {
+   "name": "Lake of Jala's Song",
+   "rid": "RID_F8",
+   "file": "kod/object/active/holder/room/monsroom/f8.kod"
+  },
+  "OutdoorsG4": {
+   "name": "Main gate to Cor Noth",
+   "rid": "RID_G4",
+   "file": "kod/object/active/holder/room/monsroom/g4.kod"
+  },
+  "OutdoorsG5": {
+   "name": "The King's Way",
+   "rid": "RID_G5",
+   "file": "kod/object/active/holder/room/monsroom/g5.kod"
+  },
+  "OutdoorsG6": {
+   "name": "The King's Way",
+   "rid": "RID_G6",
+   "file": "kod/object/active/holder/room/monsroom/g6.kod"
+  },
+  "OutdoorsG8": {
+   "name": "The Cragged Mountains",
+   "rid": "RID_G8",
+   "file": "kod/object/active/holder/room/monsroom/g8.kod"
+  },
+  "OutdoorsG9": {
+   "name": "An ancient place, its origin forgotten",
+   "rid": "RID_G9",
+   "file": "kod/object/active/holder/room/monsroom/g9.kod"
+  },
+  "OutdoorsH3": {
+   "name": "Outskirts of Barloque",
+   "rid": "RID_H3",
+   "file": "kod/object/active/holder/room/monsroom/h3.kod"
+  },
+  "OutdoorsH4": {
+   "name": "The Flatlands",
+   "rid": "RID_H4",
+   "file": "kod/object/active/holder/room/monsroom/objroom/h4.kod"
+  },
+  "OutdoorsH5": {
+   "name": "The border of the Badlands",
+   "rid": "RID_H5",
+   "file": "kod/object/active/holder/room/monsroom/h5.kod"
+  },
+  "OutdoorsH6": {
+   "name": "Main gate to the city of Tos",
+   "rid": "RID_H6",
+   "file": "kod/object/active/holder/room/monsroom/h6.kod"
+  },
+  "OutdoorsH7": {
+   "name": "Western border of the Twisted Wood",
+   "rid": "RID_H7",
+   "file": "kod/object/active/holder/room/monsroom/h7.kod"
+  },
+  "OutdoorsH9": {
+   "name": "Under the shadow of the Sentinel",
+   "rid": "RID_H9",
+   "file": "kod/object/active/holder/room/monsroom/objroom/h9.kod"
+  },
+  "OutdoorsI3": {
+   "name": "Main gate of Barloque-- Royal City of Meridian",
+   "rid": "RID_I3",
+   "file": "kod/object/active/holder/room/monsroom/i3.kod"
+  },
+  "OutdoorsI6": {
+   "name": "Outskirts of Tos",
+   "rid": "RID_I6",
+   "file": "kod/object/active/holder/room/monsroom/i6.kod"
+  },
+  "OutdoorsI7": {
+   "name": "The Twisted Wood",
+   "rid": "RID_I7",
+   "file": "kod/object/active/holder/room/monsroom/i7.kod"
+  },
+  "OutdoorsI8": {
+   "name": "The Cragged Mountains",
+   "rid": "RID_I8",
+   "file": "kod/object/active/holder/room/monsroom/i8.kod"
+  },
+  "OutdoorsI9": {
+   "name": "Ukgoth, Holy Land of Trolls",
+   "rid": "RID_I9",
+   "file": "kod/object/active/holder/room/monsroom/i9.kod"
+  },
+  "OutdoorsJ3": {
+   "name": "The Queen's Way",
+   "rid": "RID_J3",
+   "file": "kod/object/active/holder/room/monsroom/j3.kod"
+  },
+  "OutdoorsK5": {
+   "name": "The Badlands",
+   "rid": "RID_K5",
+   "file": "kod/object/active/holder/room/monsroom/objroom/k5.kod"
+  },
+  "OutdoorsKA0": {
+   "name": "A dark, humid cavern",
+   "rid": "RID_KA0",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/ka0.kod"
+  },
+  "OutdoorsKA1": {
+   "name": "Cliff Hive",
+   "rid": "RID_KA1",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/ka1.kod"
+  },
+  "OutdoorsKA2": {
+   "name": "The Jungle Cliffs",
+   "rid": "RID_KA2",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/ka2.kod"
+  },
+  "OutdoorsKA3": {
+   "name": "A notch in the jungle",
+   "rid": "RID_KA3",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/ka3.kod"
+  },
+  "OutdoorsKA4": {
+   "name": "Into the Jungle",
+   "rid": "RID_KA4",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/ka4.kod"
+  },
+  "OutdoorsKA5": {
+   "name": "Outside the Guard Tower",
+   "rid": "RID_KA5",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/ka5.kod"
+  },
+  "OutdoorsKB1": {
+   "name": "The Cliffs",
+   "rid": "RID_KB1",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kb1.kod"
+  },
+  "OutdoorsKB2": {
+   "name": "Headquarters for the Avar Warriors",
+   "rid": "RID_KB2",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kb2.kod"
+  },
+  "OutdoorsKB3": {
+   "name": "Camp of the Warrior Avars",
+   "rid": "RID_KB3",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kb3.kod"
+  },
+  "OutdoorsKB4": {
+   "name": "Path to the Ruins",
+   "rid": "RID_KB4",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kb4.kod"
+  },
+  "OutdoorsKB5": {
+   "name": "Into the Jungle",
+   "rid": "RID_KB5",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kb5.kod"
+  },
+  "OutdoorsKC1": {
+   "name": "The Chasm",
+   "rid": "RID_KC1",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kc1.kod"
+  },
+  "OutdoorsKC2": {
+   "name": "Turf of the Warrior Avars",
+   "rid": "RID_KC2",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kc2.kod"
+  },
+  "OutdoorsKC3": {
+   "name": "Ruins of the Riija Temple",
+   "rid": "RID_KC3",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kc3.kod"
+  },
+  "OutdoorsKC4": {
+   "name": "Origin of the Kriipa",
+   "rid": "RID_KC4",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kc4.kod"
+  },
+  "OutdoorsKC5": {
+   "name": "Outside the Mad Scientist's Hut",
+   "rid": "RID_KC5",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kc5.kod"
+  },
+  "OutdoorsKD1": {
+   "name": "Lair of the Bone Priestess",
+   "rid": "RID_KD1",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kd1.kod"
+  },
+  "OutdoorsKD2": {
+   "name": "Territory of the Noble Avars",
+   "rid": "RID_KD2",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kd2.kod"
+  },
+  "OutdoorsKD3": {
+   "name": "Deep in the Jungle",
+   "rid": "RID_KD3",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kd3.kod"
+  },
+  "OutdoorsKD4": {
+   "name": "The Clearing of the Trading Post",
+   "rid": "RID_KD4",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/kd4.kod"
+  },
+  "OutdoorsKE2": {
+   "name": "Headquarters of the Noble Avars",
+   "rid": "RID_KE2",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/ke2.kod"
+  },
+  "OutdoorsKE4": {
+   "name": "Avar Village",
+   "rid": "RID_KE4",
+   "file": "kod/object/active/holder/room/monsroom/kcforest/ke4.kod"
+  },
+  "OutOfGrace": {
+   "name": "Out of Grace with the Higher Powers",
+   "rid": "RID_OUTOFGRACE",
+   "file": "kod/object/active/holder/room/outgrace.kod"
+  },
+  "ProfileRoom": {
+   "name": "Room",
+   "rid": "RID_PROFILE",
+   "file": "kod/object/active/holder/room/profroom.kod"
+  },
+  "SewerKingLair": {
+   "name": "The Ancient Smuggler's Crossing",
+   "rid": "RID_SEWER_KING",
+   "file": "kod/object/active/holder/room/monsroom/bossroom/sewking.kod"
+  },
+  "SpiderNest1": {
+   "name": "The Spider Nest",
+   "rid": "RID_NEST1",
+   "file": "kod/object/active/holder/room/monsroom/nest1.kod"
+  },
+  "Temple": {
+   "name": "The Temple of Shal'ille",
+   "rid": "RID_TEMPLE",
+   "file": "kod/object/active/holder/room/temple.kod"
+  },
+  "TempleKraanan": {
+   "name": "The Temple of Kraanan",
+   "rid": "RID_TEMPLE_KRAANAN",
+   "file": "kod/object/active/holder/room/tempkra.kod"
+  },
+  "TempleQor": {
+   "name": "The Temple of Qor",
+   "rid": "RID_TEMPLE_QOR",
+   "file": "kod/object/active/holder/room/tempqor.kod"
+  },
+  "TempleRiija": {
+   "name": "The Temple of Riija",
+   "rid": "RID_TEMPLE_RIIJA",
+   "file": "kod/object/active/holder/room/temprii.kod"
+  },
+  "Throne1": {
+   "name": "The Throne Room of Victoria Castle",
+   "rid": "RID_THRONE1",
+   "file": "kod/object/active/holder/room/monsroom/throne1.kod"
+  },
+  "Tos": {
+   "name": "The Streets of Tos",
+   "rid": "RID_TOS",
+   "file": "kod/object/active/holder/room/tosrm/tos.kod"
+  },
+  "TosApoth": {
+   "name": "Frisconar's Mysticals",
+   "rid": "RID_TOS_APOTH",
+   "file": "kod/object/active/holder/room/tosrm/tosapoth.kod"
+  },
+  "TosArena": {
+   "name": "The Arena of Kraanan",
+   "rid": "RID_TOS_ARENA",
+   "file": "kod/object/active/holder/room/tosrm/tosarena.kod"
+  },
+  "TosArena2": {
+   "name": "The Arena of Kraanan",
+   "rid": "RID_TOS_ARENA2",
+   "file": "kod/object/active/holder/room/tosrm/tosaren2.kod"
+  },
+  "TosBank": {
+   "name": "First Royal Bank of Tos",
+   "rid": "RID_TOS_BANK",
+   "file": "kod/object/active/holder/room/tosrm/tosbank.kod"
+  },
+  "TosCrypt": {
+   "name": "The Crypt",
+   "rid": "RID_TOS_CRYPT",
+   "file": "kod/object/active/holder/room/monsroom/toscrypt.kod"
+  },
+  "TosForgotten": {
+   "name": "Hall of the Forgotten Heroes",
+   "rid": "RID_TOS_FORGET",
+   "file": "kod/object/active/holder/room/tosrm/tosforgt.kod"
+  },
+  "TosForgottenLovers": {
+   "name": "Forgotten Lover's Tryst",
+   "rid": "RID_TOS_FORGOTTEN",
+   "file": "kod/object/active/holder/room/tosrm/toslover.kod"
+  },
+  "TosGraveyard": {
+   "name": "The Graveyard of Tos",
+   "rid": "RID_TOS_GRAVEYARD",
+   "file": "kod/object/active/holder/room/monsroom/tosgrave.kod"
+  },
+  "TosGrey": {
+   "name": "Abandoned Building",
+   "rid": "RID_TOS_GREY",
+   "file": "kod/object/active/holder/room/tosrm/tosgrey.kod"
+  },
+  "TosHall": {
+   "name": "The Adventurer's Hall of Tos",
+   "rid": "RID_TOS_HALL",
+   "file": "kod/object/active/holder/room/tosrm/toshall.kod"
+  },
+  "TosInn": {
+   "name": "Familiars",
+   "rid": "RID_TOS_INN",
+   "file": "kod/object/active/holder/room/monsroom/objroom/tosinn.kod"
+  },
+  "TosInnCellar": {
+   "name": "The Cellar",
+   "rid": "RID_TOS_INN_CELLAR",
+   "file": "kod/object/active/holder/room/tosrm/toscellar.kod"
+  },
+  "TosSecretPassage": {
+   "name": "Secret Passage",
+   "rid": "RID_TOS_SECRET_PASSAGE",
+   "file": "kod/object/active/holder/room/tosrm/toshidden.kod"
+  },
+  "TosSmithy": {
+   "name": "The Freelance Merchant and Menders Shop",
+   "rid": "RID_TOS_SMITHY",
+   "file": "kod/object/active/holder/room/tosrm/tossmith.kod"
+  },
+  "TosTan": {
+   "name": "Abandoned Building",
+   "rid": "RID_TOS_TAN",
+   "file": "kod/object/active/holder/room/tosrm/tostan.kod"
+  },
+  "TosTavern": {
+   "name": "Abandoned Fountain Tavern",
+   "rid": "RID_TOS_OLD_TAVERN",
+   "file": "kod/object/active/holder/room/tosrm/tostavern.kod"
+  },
+  "TradingPost": {
+   "name": "The Remote Trading Post of Wulfgang zax'Ak",
+   "rid": "RID_JUNGLE_TRADING_POST",
+   "file": "kod/object/active/holder/room/tpost1.kod"
+  },
+  "TradingPostCellar": {
+   "name": "The Cellar Rooms",
+   "rid": "RID_JUNGLE_TRADING_POST_CELLAR",
+   "file": "kod/object/active/holder/room/tpost2.kod"
+  },
+  "Underworld": {
+   "name": "The Underworld",
+   "rid": "RID_UNDERWORLD",
+   "file": "kod/object/active/holder/room/monsroom/uworld.kod"
+  },
+  "University": {
+   "name": "Meridian University",
+   "rid": "RID_UNIVERSITY",
+   "file": "kod/object/active/holder/room/univ.kod"
+  }
+ },
+ "byMonster": {
+  "Ant": [
+   {
+    "room": "OutdoorsF3",
+    "name": "Source of the River Ille",
+    "cite": "kod/object/active/holder/room/monsroom/f3.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 7
+   },
+   {
+    "room": "Badland1",
+    "name": "The Badlands",
+    "cite": "kod/object/active/holder/room/monsroom/badland1.kod:45",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 10
+   },
+   {
+    "room": "Forest5",
+    "name": "The Deep Dark Woods of Marion",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/forest5.kod:48",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 10
+   },
+   {
+    "room": "Forest4",
+    "name": "The Deep Dark Woods of Tos",
+    "cite": "kod/object/active/holder/room/monsroom/forest4.kod:47",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsH4",
+    "name": "The Flatlands",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/h4.kod:61",
+    "how": "generator",
+    "count": null,
+    "chance": 55,
+    "cap": 8
+   },
+   {
+    "room": "Forest2",
+    "name": "The Forests of Meridian",
+    "cite": "kod/object/active/holder/room/monsroom/forest2.kod:61",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 10
+   },
+   {
+    "room": "Forest3",
+    "name": "The Forests of Meridian",
+    "cite": "kod/object/active/holder/room/monsroom/forest3.kod:53",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 10
+   }
+  ],
+  "Assassin": [
+   {
+    "room": "AssassinHeadQuarters",
+    "name": "A shadowy corner",
+    "cite": "kod/object/active/holder/room/barlqrm/asshq.kod:110",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Avar": [
+   {
+    "room": "OutdoorsKE4",
+    "name": "Avar Village",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ke4.kod:118",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKB3",
+    "name": "Camp of the Warrior Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kb3.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKD3",
+    "name": "Deep in the Jungle",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kd3.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 80,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKB2",
+    "name": "Headquarters for the Avar Warriors",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kb2.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKE2",
+    "name": "Headquarters of the Noble Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ke2.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKA4",
+    "name": "Into the Jungle",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ka4.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 10,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKD1",
+    "name": "Lair of the Bone Priestess",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kd1.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 90,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKC4",
+    "name": "Origin of the Kriipa",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kc4.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 13
+   },
+   {
+    "room": "OutdoorsKA5",
+    "name": "Outside the Guard Tower",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ka5.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 95,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKC3",
+    "name": "Ruins of the Riija Temple",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kc3.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 20
+   },
+   {
+    "room": "OutdoorsKD2",
+    "name": "Territory of the Noble Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kd2.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 80,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKC1",
+    "name": "The Chasm",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kc1.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 90,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKD4",
+    "name": "The Clearing of the Trading Post",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kd4.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 80,
+    "cap": 3
+   },
+   {
+    "room": "OutdoorsKB1",
+    "name": "The Cliffs",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kb1.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 10,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKC2",
+    "name": "Turf of the Warrior Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kc2.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 12
+   }
+  ],
+  "AvarChieftain": [
+   {
+    "room": "OutdoorsKE4",
+    "name": "Avar Village",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ke4.kod:118",
+    "how": "generator",
+    "count": null,
+    "chance": 35,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKB3",
+    "name": "Camp of the Warrior Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kb3.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 5,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKD3",
+    "name": "Deep in the Jungle",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kd3.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 2,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKB2",
+    "name": "Headquarters for the Avar Warriors",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kb2.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 7,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKE2",
+    "name": "Headquarters of the Noble Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ke2.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 15,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKD1",
+    "name": "Lair of the Bone Priestess",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kd1.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 10,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKC3",
+    "name": "Ruins of the Riija Temple",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kc3.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 15,
+    "cap": 20
+   },
+   {
+    "room": "OutdoorsKD2",
+    "name": "Territory of the Noble Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kd2.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 5,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKC1",
+    "name": "The Chasm",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kc1.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 10,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKD4",
+    "name": "The Clearing of the Trading Post",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kd4.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 10,
+    "cap": 3
+   }
+  ],
+  "AvarShaman": [
+   {
+    "room": "OutdoorsKE4",
+    "name": "Avar Village",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ke4.kod:118",
+    "how": "generator",
+    "count": null,
+    "chance": 25,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKB3",
+    "name": "Camp of the Warrior Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kb3.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 18,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKD3",
+    "name": "Deep in the Jungle",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kd3.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 18,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKB2",
+    "name": "Headquarters for the Avar Warriors",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kb2.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 18,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKE2",
+    "name": "Headquarters of the Noble Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ke2.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 25,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKC3",
+    "name": "Ruins of the Riija Temple",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kc3.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 25,
+    "cap": 20
+   },
+   {
+    "room": "OutdoorsKD2",
+    "name": "Territory of the Noble Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kd2.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 15,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKD4",
+    "name": "The Clearing of the Trading Post",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kd4.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 10,
+    "cap": 3
+   },
+   {
+    "room": "OutdoorsKC2",
+    "name": "Turf of the Warrior Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kc2.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 10,
+    "cap": 12
+   }
+  ],
+  "BarloqueApothecary": [
+   {
+    "room": "BarApoth",
+    "name": "Joguer's Herbs and Roots",
+    "cite": "kod/object/active/holder/room/barlqrm/barapoth.kod:63",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "BarloqueBartender": [
+   {
+    "room": "BarlBar1",
+    "name": "The Bhrama & Falcon",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/barlbar1.kod:101",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "BarloqueBlacksmith": [
+   {
+    "room": "BarloqueSmithy",
+    "name": "The Royal Blacksmith of Barloque",
+    "cite": "kod/object/active/holder/room/barlqrm/barsmith.kod:62",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "BarloqueClerk": [
+   {
+    "room": "BarloqueCourt",
+    "name": "Office of the Justicar",
+    "cite": "kod/object/active/holder/room/barlqrm/barcourt.kod:109",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "BarloqueInnkeeper": [
+   {
+    "room": "BarInn",
+    "name": "Brownestone Inn",
+    "cite": "kod/object/active/holder/room/barlqrm/barinn.kod:84",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "BarloqueMerchant": [
+   {
+    "room": "BarMerchant",
+    "name": "The Sparkling Stone Shop",
+    "cite": "kod/object/active/holder/room/barlqrm/barmerch.kod:65",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Barloquetailor": [
+   {
+    "room": "Castle2E",
+    "name": "Castle2 E",
+    "cite": "kod/object/active/holder/room/castle2e.kod:64",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "barloqueVaultman": [
+   {
+    "room": "BarVault",
+    "name": "Office of the Barloque Vaultman",
+    "cite": "kod/object/active/holder/room/barlqrm/barvault.kod:68",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "BasicInnKeeper": [
+   {
+    "room": "Duke5",
+    "name": "The Duke's Grand Ballroom",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/duke5.kod:334",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "BatteredSkeleton": [
+   {
+    "room": "OutdoorsG9",
+    "name": "An ancient place, its origin forgotten",
+    "cite": "kod/object/active/holder/room/monsroom/g9.kod:547",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "MarionCrypt2",
+    "name": "Resting place of Marion's ancestors",
+    "cite": "kod/object/active/holder/room/monsroom/marcryp2.kod:79",
+    "how": "generator",
+    "count": null,
+    "chance": 20,
+    "cap": 25
+   },
+   {
+    "room": "Castle1B",
+    "name": "Upstairs in Castle Victoria",
+    "cite": "kod/object/active/holder/room/monsroom/castle1b.kod:49",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 10
+   }
+  ],
+  "BlackMummy": [
+   {
+    "room": "Newb6",
+    "name": "Mausoleum",
+    "cite": "kod/object/active/holder/room/monsroom/guest6.kod:613",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Guest6",
+    "name": "Mausoleum",
+    "cite": "kod/object/active/holder/room/monsroom/guest6.kod:613",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Brambles": [
+   {
+    "room": "OutdoorsK5",
+    "name": "The Badlands",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/k5.kod:145",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "CaveOrc": [
+   {
+    "room": "OrcPitB",
+    "name": "Brog's Antechamber",
+    "cite": "kod/object/active/holder/room/monsroom/orcpitb.kod:75",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 25
+   },
+   {
+    "room": "OrcPitA",
+    "name": "Grog's Antechamber",
+    "cite": "kod/object/active/holder/room/monsroom/orcpita.kod:60",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 25
+   },
+   {
+    "room": "OrcCave6",
+    "name": "Konima's Ascension",
+    "cite": "kod/object/active/holder/room/monsroom/orccave6.kod:63",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 25
+   },
+   {
+    "room": "Orcpit1",
+    "name": "Lair of the Orc Pit Boss",
+    "cite": "kod/object/active/holder/room/monsroom/bossroom/orcpit1.kod:95",
+    "how": "generator",
+    "count": null,
+    "chance": 100,
+    "cap": 15
+   },
+   {
+    "room": "OrcCave5",
+    "name": "Obfal's Sepulchre",
+    "cite": "kod/object/active/holder/room/monsroom/orccave5.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 75,
+    "cap": 25
+   },
+   {
+    "room": "OrcCave3",
+    "name": "The Archaic Hollows",
+    "cite": "kod/object/active/holder/room/monsroom/orccave3.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 25
+   },
+   {
+    "room": "Orccave1",
+    "name": "Ugol's Warren Entrance",
+    "cite": "kod/object/active/holder/room/monsroom/orccave1.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 25
+   }
+  ],
+  "Centipede": [
+   {
+    "room": "OutdoorsE6",
+    "name": "Deep Forest of Farol",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/e6.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 16
+   },
+   {
+    "room": "OutdoorsF4",
+    "name": "East Merchant Way",
+    "cite": "kod/object/active/holder/room/monsroom/f4.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 55,
+    "cap": 6
+   },
+   {
+    "room": "OutdoorsE4",
+    "name": "East Merchant Way through Ilerian Woods",
+    "cite": "kod/object/active/holder/room/monsroom/e4.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 35,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsF8",
+    "name": "Lake of Jala's Song",
+    "cite": "kod/object/active/holder/room/monsroom/f8.kod:80",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 5
+   },
+   {
+    "room": "OutdoorsI3",
+    "name": "Main gate of Barloque-- Royal City of Meridian",
+    "cite": "kod/object/active/holder/room/monsroom/i3.kod:77",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 7
+   },
+   {
+    "room": "OutdoorsG4",
+    "name": "Main gate to Cor Noth",
+    "cite": "kod/object/active/holder/room/monsroom/g4.kod:60",
+    "how": "generator",
+    "count": null,
+    "chance": 25,
+    "cap": 7
+   },
+   {
+    "room": "OutdoorsH6",
+    "name": "Main gate to the city of Tos",
+    "cite": "kod/object/active/holder/room/monsroom/h6.kod:66",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 7
+   },
+   {
+    "room": "OutdoorsF6",
+    "name": "Off the beaten path",
+    "cite": "kod/object/active/holder/room/monsroom/f6.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsG6",
+    "name": "The King's Way",
+    "cite": "kod/object/active/holder/room/monsroom/g6.kod:61",
+    "how": "generator",
+    "count": null,
+    "chance": 10,
+    "cap": 9
+   },
+   {
+    "room": "OutdoorsE7",
+    "name": "The Sweet Grass Prairies",
+    "cite": "kod/object/active/holder/room/monsroom/e7.kod:57",
+    "how": "generator",
+    "count": null,
+    "chance": 25,
+    "cap": 8
+   },
+   {
+    "room": "OutdoorsD5",
+    "name": "West Merchant Way",
+    "cite": "kod/object/active/holder/room/monsroom/d5.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsH7",
+    "name": "Western border of the Twisted Wood",
+    "cite": "kod/object/active/holder/room/monsroom/h7.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 12
+   }
+  ],
+  "CornothGrocer": [
+   {
+    "room": "CorGrocer",
+    "name": "Solomon's Edibles",
+    "cite": "kod/object/active/holder/room/crnthrm/corgroc.kod:61",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "CorNothInnkeeper": [
+   {
+    "room": "CorInn",
+    "name": "Cibilo Creek Inn",
+    "cite": "kod/object/active/holder/room/crnthrm/corinn.kod:65",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "CorNothSergeant": [
+   {
+    "room": "CorWeaponsMaster",
+    "name": "The Weapon Master's Abode",
+    "cite": "kod/object/active/holder/room/crnthrm/corwepm.kod:69",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "CorNothTailor": [
+   {
+    "room": "CorTailor",
+    "name": "The Spindle and the Spinster",
+    "cite": "kod/object/active/holder/room/crnthrm/cortail.kod:64",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Cow": [
+   {
+    "room": "Newb2",
+    "name": "Raza",
+    "cite": "kod/object/active/holder/room/guest2/newb2.kod:42",
+    "how": "create",
+    "count": 3,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "DaemonSkeleton": [
+   {
+    "room": "Necropolis3a",
+    "name": "Ancient Building",
+    "cite": "kod/object/active/holder/room/monsroom/necare3a.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 25
+   },
+   {
+    "room": "Necropolis3b",
+    "name": "Ancient Building",
+    "cite": "kod/object/active/holder/room/monsroom/necare3b.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 25
+   },
+   {
+    "room": "Necropolis2",
+    "name": "Ancient Graveyard of Brax",
+    "cite": "kod/object/active/holder/room/monsroom/necarea2.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 25
+   },
+   {
+    "room": "Necropolis5",
+    "name": "Ruins of Castle Brax",
+    "cite": "kod/object/active/holder/room/monsroom/necarea5.kod:62",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 25
+   },
+   {
+    "room": "LichMaze",
+    "name": "The Dungeon of Castle Brax",
+    "cite": "kod/object/active/holder/room/monsroom/lichmaze.kod:62",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 10
+   },
+   {
+    "room": "Necropolis4",
+    "name": "Within the Walls of Castle Brax",
+    "cite": "kod/object/active/holder/room/monsroom/necarea4.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 25
+   }
+  ],
+  "DarkWizard": [
+   {
+    "room": "GodRoom",
+    "name": "The meeting place of the Gods",
+    "cite": "kod/object/active/holder/room/godroom.kod:70",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "DeadLich": [
+   {
+    "room": "GuildHall15",
+    "name": "Inner Sanctum of Queen Venya'cyr",
+    "cite": "kod/object/active/holder/room/ghall/guildh15.kod:213",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "DeathSpider": [
+   {
+    "room": "OutdoorsG9",
+    "name": "An ancient place, its origin forgotten",
+    "cite": "kod/object/active/holder/room/monsroom/g9.kod:167",
+    "how": "generator",
+    "count": null,
+    "chance": 20,
+    "cap": 6
+   },
+   {
+    "room": "OutdoorsG8",
+    "name": "The Cragged Mountains",
+    "cite": "kod/object/active/holder/room/monsroom/g8.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 13
+   },
+   {
+    "room": "OutdoorsI8",
+    "name": "The Cragged Mountains",
+    "cite": "kod/object/active/holder/room/monsroom/i8.kod:57",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 14
+   },
+   {
+    "room": "OutdoorsH9",
+    "name": "Under the shadow of the Sentinel",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/h9.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 15
+   },
+   {
+    "room": "Necropolis1",
+    "name": "Winding Caverns",
+    "cite": "kod/object/active/holder/room/monsroom/necarea1.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 45,
+    "cap": 25
+   }
+  ],
+  "Decorator": [
+   {
+    "room": "KocatanRentableRoom",
+    "name": "A comfortable room",
+    "cite": "kod/object/active/holder/room/rentroom.kod:1104",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "MarionRentableRoom",
+    "name": "A comfortable room",
+    "cite": "kod/object/active/holder/room/rentroom.kod:1104",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "BarloqueRentableRoom",
+    "name": "A tastefully appointed room",
+    "cite": "kod/object/active/holder/room/rentroom.kod:1104",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "DragonFly": [
+   {
+    "room": "OutdoorsKA3",
+    "name": "A notch in the jungle",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ka3.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 100,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKA1",
+    "name": "Cliff Hive",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ka1.kod:57",
+    "how": "generator",
+    "count": null,
+    "chance": 90,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKA4",
+    "name": "Into the Jungle",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ka4.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 90,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKB5",
+    "name": "Into the Jungle",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kb5.kod:63",
+    "how": "generator",
+    "count": null,
+    "chance": 100,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKC4",
+    "name": "Origin of the Kriipa",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kc4.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 13
+   },
+   {
+    "room": "OutdoorsKA5",
+    "name": "Outside the Guard Tower",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ka5.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 5,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKB1",
+    "name": "The Cliffs",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kb1.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 90,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKA2",
+    "name": "The Jungle Cliffs",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ka2.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 100,
+    "cap": 12
+   }
+  ],
+  "DragonFlyQueen": [
+   {
+    "room": "OutdoorsKA1",
+    "name": "Cliff Hive",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/ka1.kod:57",
+    "how": "generator",
+    "count": null,
+    "chance": 10,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKC5",
+    "name": "Outside the Mad Scientist's Hut",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kc5.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 100,
+    "cap": 5
+   }
+  ],
+  "DukeGuard": [
+   {
+    "room": "Duke2",
+    "name": "Blackstone Keep",
+    "cite": "kod/object/active/holder/room/duke2.kod:235",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "BarloqueCourt",
+    "name": "Office of the Justicar",
+    "cite": "kod/object/active/holder/room/barlqrm/barcourt.kod:117",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "BarloqueJail",
+    "name": "Old Jailhouse",
+    "cite": "kod/object/active/holder/room/barlqrm/barjail.kod:47",
+    "how": "create",
+    "count": 3,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Duke1",
+    "name": "The Courtyard of Blackstone Keep",
+    "cite": "kod/object/active/holder/room/duke1.kod:98",
+    "how": "create",
+    "count": 2,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Duke4",
+    "name": "The Duke's Feast Hall",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/duke4.kod:110",
+    "how": "create",
+    "count": 4,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Duke5",
+    "name": "The Duke's Grand Ballroom",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/duke5.kod:336",
+    "how": "create",
+    "count": 4,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "DuskRat": [
+   {
+    "room": "KocatanSewer1",
+    "name": "A foul place to wander",
+    "cite": "kod/object/active/holder/room/monsroom/kocsew1.kod:64",
+    "how": "generator",
+    "count": null,
+    "chance": 95,
+    "cap": 5
+   },
+   {
+    "room": "KocatanSewer2",
+    "name": "Up Chuk Creek without a paddle",
+    "cite": "kod/object/active/holder/room/monsroom/kocsew2.kod:62",
+    "how": "generator",
+    "count": null,
+    "chance": 100,
+    "cap": 15
+   }
+  ],
+  "Ent": [
+   {
+    "room": "OutdoorsE6",
+    "name": "Deep Forest of Farol",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/e6.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 15,
+    "cap": 16
+   },
+   {
+    "room": "OutdoorsD6",
+    "name": "Deep in the Forest of Farol",
+    "cite": "kod/object/active/holder/room/monsroom/d6.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 13
+   },
+   {
+    "room": "OutdoorsD7",
+    "name": "Deep in the Forest of Farol",
+    "cite": "kod/object/active/holder/room/monsroom/d7.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 15
+   },
+   {
+    "room": "OutdoorsC4",
+    "name": "Deep Woods of Ileria",
+    "cite": "kod/object/active/holder/room/monsroom/c4.kod:53",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsC7",
+    "name": "Faronath, home of the TreeFolk",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/c7.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 95,
+    "cap": 8
+   },
+   {
+    "room": "OutdoorsC6",
+    "name": "Forest of Farol",
+    "cite": "kod/object/active/holder/room/monsroom/c6.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 12
+   }
+  ],
+  "EvilFairy": [
+   {
+    "room": "OutdoorsD1",
+    "name": "Dirhadrim",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:145",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsB1",
+    "name": "Elhadrim",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:145",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsD2",
+    "name": "Lower Dirhadrim",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:145",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsB2",
+    "name": "Lower Elhadrim",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:145",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsA1",
+    "name": "North Quilicia Wood",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:145",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsC3",
+    "name": "Quilicia Wood",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:145",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsC1",
+    "name": "The Fey's Crossing",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:145",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsC2",
+    "name": "The Vale of Sorrows",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:145",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Fairy": [
+   {
+    "room": "OutdoorsD1",
+    "name": "Dirhadrim",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:140",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsB1",
+    "name": "Elhadrim",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:140",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsD2",
+    "name": "Lower Dirhadrim",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:140",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsB2",
+    "name": "Lower Elhadrim",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:140",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsA1",
+    "name": "North Quilicia Wood",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:140",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsC3",
+    "name": "Quilicia Wood",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:140",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsC1",
+    "name": "The Fey's Crossing",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:140",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsC2",
+    "name": "The Vale of Sorrows",
+    "cite": "kod/object/active/holder/room/monsroom/feyforst.kod:140",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "FarenPriestess": [
+   {
+    "room": "Badland1",
+    "name": "The Badlands",
+    "cite": "kod/object/active/holder/room/monsroom/badland1.kod:56",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Frogman": [
+   {
+    "room": "OutdoorsE2",
+    "name": "The Great Ocean",
+    "cite": "kod/object/active/holder/room/monsroom/e2.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 20,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsG6",
+    "name": "The King's Way",
+    "cite": "kod/object/active/holder/room/monsroom/g6.kod:61",
+    "how": "generator",
+    "count": null,
+    "chance": 90,
+    "cap": 9
+   }
+  ],
+  "FungusBeast": [
+   {
+    "room": "OutdoorsF3",
+    "name": "Source of the River Ille",
+    "cite": "kod/object/active/holder/room/monsroom/f3.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 7
+   },
+   {
+    "room": "OutdoorsF2",
+    "name": "The sandy shores of the Great Ocean",
+    "cite": "kod/object/active/holder/room/monsroom/f2.kod:67",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 6
+   },
+   {
+    "room": "OutdoorsD4",
+    "name": "Valley of Ileria",
+    "cite": "kod/object/active/holder/room/monsroom/d4.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 65,
+    "cap": 10
+   }
+  ],
+  "Ghost": [
+   {
+    "room": "Throne1",
+    "name": "The Throne Room of Victoria Castle",
+    "cite": "kod/object/active/holder/room/monsroom/throne1.kod:121",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "GiantRat": [
+   {
+    "room": "OutdoorsH6",
+    "name": "Main gate to the city of Tos",
+    "cite": "kod/object/active/holder/room/monsroom/h6.kod:66",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 7
+   },
+   {
+    "room": "OutdoorsF7",
+    "name": "Off the beaten path",
+    "cite": "kod/object/active/holder/room/monsroom/f7.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 9
+   },
+   {
+    "room": "OutdoorsH3",
+    "name": "Outskirts of Barloque",
+    "cite": "kod/object/active/holder/room/monsroom/h3.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 6
+   },
+   {
+    "room": "OutdoorsG5",
+    "name": "The King's Way",
+    "cite": "kod/object/active/holder/room/monsroom/g5.kod:57",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 7
+   },
+   {
+    "room": "OutdoorsJ3",
+    "name": "The Queen's Way",
+    "cite": "kod/object/active/holder/room/monsroom/j3.kod:61",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 5
+   },
+   {
+    "room": "BarlSewer",
+    "name": "The Sewers of Barloque",
+    "cite": "kod/object/active/holder/room/monsroom/barlsew.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 94,
+    "cap": 25
+   },
+   {
+    "room": "BarlSewer2",
+    "name": "The Sewers of Barloque",
+    "cite": "kod/object/active/holder/room/monsroom/barlsew2.kod:60",
+    "how": "generator",
+    "count": null,
+    "chance": 55,
+    "cap": 25
+   },
+   {
+    "room": "BarlSewer3",
+    "name": "The Sewers of Barloque",
+    "cite": "kod/object/active/holder/room/monsroom/barlsew3.kod:60",
+    "how": "generator",
+    "count": null,
+    "chance": 20,
+    "cap": 25
+   },
+   {
+    "room": "JasSewer1",
+    "name": "The Sewers of Jasper",
+    "cite": "kod/object/active/holder/room/monsroom/jassew1.kod:98",
+    "how": "generator",
+    "count": null,
+    "chance": 95,
+    "cap": 25
+   },
+   {
+    "room": "JasSewer2",
+    "name": "The Sewers of Jasper",
+    "cite": "kod/object/active/holder/room/monsroom/jassew2.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 39,
+    "cap": 25
+   },
+   {
+    "room": "JasSewer3",
+    "name": "The Sewers of Jasper",
+    "cite": "kod/object/active/holder/room/monsroom/jassew3.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 15,
+    "cap": 25
+   },
+   {
+    "room": "OutdoorsC5",
+    "name": "West Merchant Way through Ilerian Woods",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/c5.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 6
+   }
+  ],
+  "Goad": [
+   {
+    "room": "NecArena",
+    "name": "Goad's Grinder",
+    "cite": "kod/object/active/holder/room/necarena.kod:234",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "GroundWorm": [
+   {
+    "room": "OutdoorsI6",
+    "name": "Outskirts of Tos",
+    "cite": "kod/object/active/holder/room/monsroom/i6.kod:57",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 6
+   },
+   {
+    "room": "Badland1",
+    "name": "The Badlands",
+    "cite": "kod/object/active/holder/room/monsroom/badland1.kod:45",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsH5",
+    "name": "The border of the Badlands",
+    "cite": "kod/object/active/holder/room/monsroom/h5.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 10
+   }
+  ],
+  "GroundWormLarva": [
+   {
+    "room": "OutdoorsD7",
+    "name": "Deep in the Forest of Farol",
+    "cite": "kod/object/active/holder/room/monsroom/d7.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 15
+   },
+   {
+    "room": "OutdoorsF6",
+    "name": "Off the beaten path",
+    "cite": "kod/object/active/holder/room/monsroom/f6.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsF7",
+    "name": "Off the beaten path",
+    "cite": "kod/object/active/holder/room/monsroom/f7.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 9
+   },
+   {
+    "room": "OutdoorsE7",
+    "name": "The Sweet Grass Prairies",
+    "cite": "kod/object/active/holder/room/monsroom/e7.kod:57",
+    "how": "generator",
+    "count": null,
+    "chance": 75,
+    "cap": 8
+   },
+   {
+    "room": "OutdoorsD4",
+    "name": "Valley of Ileria",
+    "cite": "kod/object/active/holder/room/monsroom/d4.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 35,
+    "cap": 10
+   }
+  ],
+  "GroundWormQueen": [
+   {
+    "room": "OrcPitB",
+    "name": "Brog's Antechamber",
+    "cite": "kod/object/active/holder/room/monsroom/orcpitb.kod:75",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 25
+   },
+   {
+    "room": "Canyon2",
+    "name": "Martyr's Battleground",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/canyon2.kod:72",
+    "how": "generator",
+    "count": null,
+    "chance": 15,
+    "cap": 20
+   },
+   {
+    "room": "OutdoorsK5",
+    "name": "The Badlands",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/k5.kod:62",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 34
+   }
+  ],
+  "GuildCreator": [
+   {
+    "room": "GMHall",
+    "name": "The Guildmaster's Hall",
+    "cite": "kod/object/active/holder/room/barlqrm/gmhall.kod:74",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "HazarApothecary": [
+   {
+    "room": "Guest4",
+    "name": "Ravi's Magicks of Hazar's Crossing",
+    "cite": "kod/object/active/holder/room/guest4.kod:84",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Newb4",
+    "name": "Ravi's Magicks of Raza",
+    "cite": "kod/object/active/holder/room/guest4.kod:84",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "HazarBartender": [
+   {
+    "room": "Guest7",
+    "name": "Eric's Stout Spirits",
+    "cite": "kod/object/active/holder/room/guest7.kod:81",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Newb7",
+    "name": "Raza Pub",
+    "cite": "kod/object/active/holder/room/guest7.kod:81",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "HazarBlacksmith": [
+   {
+    "room": "Newb3",
+    "name": "Raza Blacksmith",
+    "cite": "kod/object/active/holder/room/guest3.kod:86",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Guest3",
+    "name": "The Blacksmith of Hazar",
+    "cite": "kod/object/active/holder/room/guest3.kod:86",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "HazarElder": [
+   {
+    "room": "Newb5",
+    "name": "Raza Hut",
+    "cite": "kod/object/active/holder/room/guest5.kod:82",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Guest5",
+    "name": "The Home of Roderic D'Stane",
+    "cite": "kod/object/active/holder/room/guest5.kod:82",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "HazarInnKeeper": [
+   {
+    "room": "Newb1",
+    "name": "Raza Inn",
+    "cite": "kod/object/active/holder/room/guest1.kod:98",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Guest1",
+    "name": "The Inn of Hazar",
+    "cite": "kod/object/active/holder/room/guest1.kod:98",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Heretic": [
+   {
+    "room": "GodRoom",
+    "name": "The meeting place of the Gods",
+    "cite": "kod/object/active/holder/room/godroom.kod:69",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "HunterGhost": [
+   {
+    "room": "GodRoom",
+    "name": "The meeting place of the Gods",
+    "cite": "kod/object/active/holder/room/godroom.kod:71",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Izzio": [
+   {
+    "room": "GodRoom",
+    "name": "The meeting place of the Gods",
+    "cite": "kod/object/active/holder/room/godroom.kod:72",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "JasperBanker": [
+   {
+    "room": "JasBank",
+    "name": "The Royal Bank of Jasper",
+    "cite": "kod/object/active/holder/room/jasperrm/jasbank.kod:65",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "JasperBartender": [
+   {
+    "room": "JasperTavern",
+    "name": "Jasper Tavern",
+    "cite": "kod/object/active/holder/room/jasperrm/jastavrn.kod:51",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "JasperBlacksmith": [
+   {
+    "room": "JasperSmithy",
+    "name": "Jasper Smithy",
+    "cite": "kod/object/active/holder/room/jasperrm/jassmith.kod:47",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "JasperElder": [
+   {
+    "room": "JasperElderHut",
+    "name": "Jasper Elder Hut",
+    "cite": "kod/object/active/holder/room/jasperrm/jaselder.kod:48",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "JasperInnKeeper": [
+   {
+    "room": "JasperInn",
+    "name": "Jasper Inn",
+    "cite": "kod/object/active/holder/room/jasperrm/jasinn.kod:56",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "JasperMerchant": [
+   {
+    "room": "JasperStore",
+    "name": "Jasper Store",
+    "cite": "kod/object/active/holder/room/jasperrm/jasstore.kod:48",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanApothecary": [
+   {
+    "room": "KocatanApoth",
+    "name": "Two Lizards Magic Shop",
+    "cite": "kod/object/active/holder/room/kocarm/kocapoth.kod:82",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanBanker": [
+   {
+    "room": "KocatanBank",
+    "name": "The Hungry Vaults",
+    "cite": "kod/object/active/holder/room/kocarm/kocbank.kod:89",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanBartender": [
+   {
+    "room": "KocatanTavern",
+    "name": "The Barking Monster",
+    "cite": "kod/object/active/holder/room/kocarm/koctav.kod:104",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanBlacksmith": [
+   {
+    "room": "KocatanSmithy",
+    "name": "The Chimney House",
+    "cite": "kod/object/active/holder/room/kocarm/kocblack.kod:85",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanBonePriestess": [
+   {
+    "room": "OutdoorsKD1",
+    "name": "Lair of the Bone Priestess",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kd1.kod:93",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanBowMaker": [
+   {
+    "room": "BowmakerHut",
+    "name": "The Bowmaker's Hut",
+    "cite": "kod/object/active/holder/room/bowhut.kod:86",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanCaptainEvil": [
+   {
+    "room": "KocatanGuardtowerEast",
+    "name": "The East Tower",
+    "cite": "kod/object/active/holder/room/kocarm/koctower.kod:59",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanCaptainGood": [
+   {
+    "room": "KocatanGuardtowerEast",
+    "name": "The East Tower",
+    "cite": "kod/object/active/holder/room/kocarm/koctower.kod:58",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanInnkeeper": [
+   {
+    "room": "KocatanInn",
+    "name": "The Aerie Guest House",
+    "cite": "kod/object/active/holder/room/kocarm/kocinn.kod:126",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanLanguageMaster": [
+   {
+    "room": "KocatanHallB",
+    "name": "The Hall of Heroes East",
+    "cite": "kod/object/active/holder/room/kocarm/kochohb.kod:125",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanMadScientist": [
+   {
+    "room": "MadScientistHut",
+    "name": "Hut of the Mad Scientist",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kmadscih.kod:68",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Kocatansentry": [
+   {
+    "room": "OrcCave6",
+    "name": "Konima's Ascension",
+    "cite": "kod/object/active/holder/room/monsroom/orccave6.kod:124",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "KocatanGuardtowerEast",
+    "name": "The East Tower",
+    "cite": "kod/object/active/holder/room/kocarm/koctower.kod:192",
+    "how": "create",
+    "count": 4,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "KocatanBank",
+    "name": "The Hungry Vaults",
+    "cite": "kod/object/active/holder/room/kocarm/kocbank.kod:92",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanShopkeeper": [
+   {
+    "room": "KocatanStore",
+    "name": "The Neglected Arsenal",
+    "cite": "kod/object/active/holder/room/kocarm/kocstore.kod:93",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanTailor": [
+   {
+    "room": "KocatanTailorShop",
+    "name": "The Crooked Hem Garment Shop",
+    "cite": "kod/object/active/holder/room/kocarm/koctail.kod:95",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "kocatanTradeMaster": [
+   {
+    "room": "TradingPost",
+    "name": "The Remote Trading Post of Wulfgang zax'Ak",
+    "cite": "kod/object/active/holder/room/tpost1.kod:85",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanVaultman": [
+   {
+    "room": "KocatanBank",
+    "name": "The Hungry Vaults",
+    "cite": "kod/object/active/holder/room/kocarm/kocbank.kod:87",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KocatanWeaponsMaster": [
+   {
+    "room": "KocatanHallA",
+    "name": "The Hall of Heroes West",
+    "cite": "kod/object/active/holder/room/kocarm/kochoha.kod:63",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "KraananPriestess": [
+   {
+    "room": "TempleKraanan",
+    "name": "The Temple of Kraanan",
+    "cite": "kod/object/active/holder/room/tempkra.kod:151",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Kriipa": [
+   {
+    "room": "OutdoorsKB3",
+    "name": "Camp of the Warrior Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kb3.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 27,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKB2",
+    "name": "Headquarters for the Avar Warriors",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kb2.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 15,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKB4",
+    "name": "Path to the Ruins",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kb4.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 100,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsKC2",
+    "name": "Turf of the Warrior Avars",
+    "cite": "kod/object/active/holder/room/monsroom/kcforest/kc2.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 12
+   }
+  ],
+  "Lich": [
+   {
+    "room": "GuildHall15",
+    "name": "Inner Sanctum of Queen Venya'cyr",
+    "cite": "kod/object/active/holder/room/ghall/guildh15.kod:218",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "LivingStatue": [
+   {
+    "room": "MarionCrypt2",
+    "name": "Resting place of Marion's ancestors",
+    "cite": "kod/object/active/holder/room/monsroom/marcryp2.kod:173",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "MarionCrypt1",
+    "name": "The crypt in Marion",
+    "cite": "kod/object/active/holder/room/monsroom/marcryp1.kod:562",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Lupogg": [
+   {
+    "room": "SewerKingLair",
+    "name": "The Ancient Smuggler's Crossing",
+    "cite": "kod/object/active/holder/room/monsroom/bossroom/sewking.kod:138",
+    "how": "generator",
+    "count": null,
+    "chance": 100,
+    "cap": 15
+   },
+   {
+    "room": "SewerKingLair",
+    "name": "The Ancient Smuggler's Crossing",
+    "cite": "kod/object/active/holder/room/monsroom/bossroom/sewking.kod:157",
+    "how": "henchman",
+    "count": 3,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "BarlSewer",
+    "name": "The Sewers of Barloque",
+    "cite": "kod/object/active/holder/room/monsroom/barlsew.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 6,
+    "cap": 25
+   },
+   {
+    "room": "BarlSewer2",
+    "name": "The Sewers of Barloque",
+    "cite": "kod/object/active/holder/room/monsroom/barlsew2.kod:60",
+    "how": "generator",
+    "count": null,
+    "chance": 45,
+    "cap": 25
+   },
+   {
+    "room": "BarlSewer3",
+    "name": "The Sewers of Barloque",
+    "cite": "kod/object/active/holder/room/monsroom/barlsew3.kod:60",
+    "how": "generator",
+    "count": null,
+    "chance": 80,
+    "cap": 25
+   },
+   {
+    "room": "JasSewer1",
+    "name": "The Sewers of Jasper",
+    "cite": "kod/object/active/holder/room/monsroom/jassew1.kod:98",
+    "how": "generator",
+    "count": null,
+    "chance": 5,
+    "cap": 25
+   },
+   {
+    "room": "JasSewer2",
+    "name": "The Sewers of Jasper",
+    "cite": "kod/object/active/holder/room/monsroom/jassew2.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 25
+   },
+   {
+    "room": "JasSewer3",
+    "name": "The Sewers of Jasper",
+    "cite": "kod/object/active/holder/room/monsroom/jassew3.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 85,
+    "cap": 25
+   }
+  ],
+  "LupoggKing": [
+   {
+    "room": "SewerKingLair",
+    "name": "The Ancient Smuggler's Crossing",
+    "cite": "kod/object/active/holder/room/monsroom/bossroom/sewking.kod:156",
+    "how": "boss",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "MarionBartender": [
+   {
+    "room": "MarionInn",
+    "name": "The Limping Toad Inn and Tavern",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/marinn.kod:126",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "MarionBlacksmith": [
+   {
+    "room": "MarionSmithy",
+    "name": "Ye Olde Slasher Salesman",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/marsmith.kod:61",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "MarionElder": [
+   {
+    "room": "Marion",
+    "name": "Marion",
+    "cite": "kod/object/active/holder/room/marnrm/marion.kod:174",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "MarionHealer": [
+   {
+    "room": "MarionHealerShop",
+    "name": "Lady Aftyn's Sanctuary",
+    "cite": "kod/object/active/holder/room/marnrm/marhlshp.kod:62",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "MarionInnkeeper": [
+   {
+    "room": "MarionInn",
+    "name": "The Limping Toad Inn and Tavern",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/marinn.kod:124",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Minstrel": [
+   {
+    "room": "GodRoom",
+    "name": "The meeting place of the Gods",
+    "cite": "kod/object/active/holder/room/godroom.kod:68",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "MolluskMonster": [
+   {
+    "room": "OutdoorsD6",
+    "name": "Deep in the Forest of Farol",
+    "cite": "kod/object/active/holder/room/monsroom/d6.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 13
+   },
+   {
+    "room": "OutdoorsE2",
+    "name": "The Great Ocean",
+    "cite": "kod/object/active/holder/room/monsroom/e2.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 80,
+    "cap": 10
+   }
+  ],
+  "Mummy": [
+   {
+    "room": "Newb6",
+    "name": "Mausoleum",
+    "cite": "kod/object/active/holder/room/monsroom/guest6.kod:174",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 20
+   },
+   {
+    "room": "Guest6",
+    "name": "Mausoleum",
+    "cite": "kod/object/active/holder/room/monsroom/guest6.kod:174",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 20
+   },
+   {
+    "room": "Newb6",
+    "name": "Mausoleum",
+    "cite": "kod/object/active/holder/room/monsroom/guest6.kod:604",
+    "how": "respawn",
+    "count": 4,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Guest6",
+    "name": "Mausoleum",
+    "cite": "kod/object/active/holder/room/monsroom/guest6.kod:604",
+    "how": "respawn",
+    "count": 4,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "MummyNoTreasure": [
+   {
+    "room": "Newb6",
+    "name": "Mausoleum",
+    "cite": "kod/object/active/holder/room/monsroom/guest6.kod:174",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 20
+   },
+   {
+    "room": "Guest6",
+    "name": "Mausoleum",
+    "cite": "kod/object/active/holder/room/monsroom/guest6.kod:174",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 20
+   },
+   {
+    "room": "Newb6",
+    "name": "Mausoleum",
+    "cite": "kod/object/active/holder/room/monsroom/guest6.kod:330",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Guest6",
+    "name": "Mausoleum",
+    "cite": "kod/object/active/holder/room/monsroom/guest6.kod:330",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "NarthylWorm": [
+   {
+    "room": "Necropolis3a",
+    "name": "Ancient Building",
+    "cite": "kod/object/active/holder/room/monsroom/necare3a.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 25
+   },
+   {
+    "room": "Necropolis2",
+    "name": "Ancient Graveyard of Brax",
+    "cite": "kod/object/active/holder/room/monsroom/necarea2.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 25
+   },
+   {
+    "room": "Necropolis3",
+    "name": "Decaying City of Brax",
+    "cite": "kod/object/active/holder/room/monsroom/necarea3.kod:68",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 25
+   },
+   {
+    "room": "Necropolis5",
+    "name": "Ruins of Castle Brax",
+    "cite": "kod/object/active/holder/room/monsroom/necarea5.kod:62",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 25
+   },
+   {
+    "room": "DungeonVictoria",
+    "name": "Underbasement of Victoria",
+    "cite": "kod/object/active/holder/room/dungeon.kod:50",
+    "how": "findlist",
+    "count": null,
+    "chance": 9,
+    "cap": null
+   },
+   {
+    "room": "DungeonVictoria",
+    "name": "Underbasement of Victoria",
+    "cite": "kod/object/active/holder/room/dungeon.kod:56",
+    "how": "findlist",
+    "count": null,
+    "chance": 9,
+    "cap": null
+   },
+   {
+    "room": "DungeonVictoria",
+    "name": "Underbasement of Victoria",
+    "cite": "kod/object/active/holder/room/dungeon.kod:58",
+    "how": "findlist",
+    "count": null,
+    "chance": 9,
+    "cap": null
+   }
+  ],
+  "Orc": [
+   {
+    "room": "Cave2",
+    "name": "A Deep, Dark, Spooky, Icky Cave",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/cave2.kod:78",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsG9",
+    "name": "An ancient place, its origin forgotten",
+    "cite": "kod/object/active/holder/room/monsroom/g9.kod:167",
+    "how": "generator",
+    "count": null,
+    "chance": 80,
+    "cap": 6
+   },
+   {
+    "room": "OrcCave2",
+    "name": "An Enigmatic Chamber",
+    "cite": "kod/object/active/holder/room/monsroom/orccave2.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 25
+   },
+   {
+    "room": "Canyon1",
+    "name": "The Berdonne Canyons",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/canyon1.kod:64",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 10
+   },
+   {
+    "room": "Orccave1",
+    "name": "Ugol's Warren Entrance",
+    "cite": "kod/object/active/holder/room/monsroom/orccave1.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 25
+   },
+   {
+    "room": "OutdoorsH9",
+    "name": "Under the shadow of the Sentinel",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/h9.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 15
+   }
+  ],
+  "OrcPitBoss": [
+   {
+    "room": "Orcpit1",
+    "name": "Lair of the Orc Pit Boss",
+    "cite": "kod/object/active/holder/room/monsroom/bossroom/orcpit1.kod:105",
+    "how": "boss",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "OrcWizard": [
+   {
+    "room": "OrcCave2",
+    "name": "An Enigmatic Chamber",
+    "cite": "kod/object/active/holder/room/monsroom/orccave2.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 25
+   },
+   {
+    "room": "OrcCave4",
+    "name": "Aqueducts of Merb",
+    "cite": "kod/object/active/holder/room/monsroom/orccave4.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 25
+   },
+   {
+    "room": "OrcPitA",
+    "name": "Grog's Antechamber",
+    "cite": "kod/object/active/holder/room/monsroom/orcpita.kod:60",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 25
+   },
+   {
+    "room": "OrcCave6",
+    "name": "Konima's Ascension",
+    "cite": "kod/object/active/holder/room/monsroom/orccave6.kod:63",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 25
+   },
+   {
+    "room": "Orcpit1",
+    "name": "Lair of the Orc Pit Boss",
+    "cite": "kod/object/active/holder/room/monsroom/bossroom/orcpit1.kod:106",
+    "how": "henchman",
+    "count": 2,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OrcCave5",
+    "name": "Obfal's Sepulchre",
+    "cite": "kod/object/active/holder/room/monsroom/orccave5.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 25,
+    "cap": 25
+   }
+  ],
+  "PrincessGuard": [
+   {
+    "room": "Castle2a",
+    "name": "Banquet Hall of the Bourgeois Castle",
+    "cite": "kod/object/active/holder/room/castle2a.kod:98",
+    "how": "create",
+    "count": 3,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Castle2b",
+    "name": "Bourgeois Castle",
+    "cite": "kod/object/active/holder/room/monsroom/castle2b.kod:105",
+    "how": "create",
+    "count": 11,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Castle2d",
+    "name": "Royal Library of the Bourgeois Castle",
+    "cite": "kod/object/active/holder/room/castle2d.kod:187",
+    "how": "create",
+    "count": 10,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "Castle2c",
+    "name": "The Assembly Chamber",
+    "cite": "kod/object/active/holder/room/monsroom/castle2c.kod:61",
+    "how": "create",
+    "count": 4,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsJ3",
+    "name": "The Queen's Way",
+    "cite": "kod/object/active/holder/room/monsroom/j3.kod:69",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "QorPriestess": [
+   {
+    "room": "TempleQor",
+    "name": "The Temple of Qor",
+    "cite": "kod/object/active/holder/room/tempqor.kod:140",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "RebelTroop": [
+   {
+    "room": "JasSewer2",
+    "name": "The Sewers of Jasper",
+    "cite": "kod/object/active/holder/room/monsroom/jassew2.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 1,
+    "cap": 25
+   }
+  ],
+  "RedAnt": [
+   {
+    "room": "OutdoorsA5",
+    "name": "Seafarer's Peak",
+    "cite": "kod/object/active/holder/room/monsroom/a5.kod:62",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 15
+   },
+   {
+    "room": "Canyon1",
+    "name": "The Berdonne Canyons",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/canyon1.kod:64",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsA6",
+    "name": "The Hills",
+    "cite": "kod/object/active/holder/room/monsroom/a6.kod:57",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 12
+   }
+  ],
+  "RiijaMonk": [
+   {
+    "room": "TempleRiija",
+    "name": "The Temple of Riija",
+    "cite": "kod/object/active/holder/room/temprii.kod:508",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Scorpion": [
+   {
+    "room": "OutdoorsB6",
+    "name": "Druid Hills",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/b6.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 13
+   }
+  ],
+  "Shadowbeast": [
+   {
+    "room": "OrcCave4",
+    "name": "Aqueducts of Merb",
+    "cite": "kod/object/active/holder/room/monsroom/orccave4.kod:55",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 25
+   },
+   {
+    "room": "OrcCave3",
+    "name": "The Archaic Hollows",
+    "cite": "kod/object/active/holder/room/monsroom/orccave3.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 25
+   }
+  ],
+  "ShalillePriestess": [
+   {
+    "room": "Temple",
+    "name": "The Temple of Shal'ille",
+    "cite": "kod/object/active/holder/room/temple.kod:116",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Skeleton": [
+   {
+    "room": "OutdoorsG9",
+    "name": "An ancient place, its origin forgotten",
+    "cite": "kod/object/active/holder/room/monsroom/g9.kod:543",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "CASTLE1",
+    "name": "Castle Victoria",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/castle1.kod:49",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 10
+   },
+   {
+    "room": "MarionCrypt2",
+    "name": "Resting place of Marion's ancestors",
+    "cite": "kod/object/active/holder/room/monsroom/marcryp2.kod:79",
+    "how": "generator",
+    "count": null,
+    "chance": 80,
+    "cap": 25
+   },
+   {
+    "room": "TosCrypt",
+    "name": "The Crypt",
+    "cite": "kod/object/active/holder/room/monsroom/toscrypt.kod:44",
+    "how": "generator",
+    "count": null,
+    "chance": 20,
+    "cap": 10
+   },
+   {
+    "room": "TosGraveyard",
+    "name": "The Graveyard of Tos",
+    "cite": "kod/object/active/holder/room/monsroom/tosgrave.kod:51",
+    "how": "generator",
+    "count": null,
+    "chance": 15,
+    "cap": 10
+   },
+   {
+    "room": "Necropolis1",
+    "name": "Winding Caverns",
+    "cite": "kod/object/active/holder/room/monsroom/necarea1.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 55,
+    "cap": 25
+   }
+  ],
+  "Slime": [
+   {
+    "room": "OutdoorsH3",
+    "name": "Outskirts of Barloque",
+    "cite": "kod/object/active/holder/room/monsroom/h3.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 6
+   },
+   {
+    "room": "OutdoorsF2",
+    "name": "The sandy shores of the Great Ocean",
+    "cite": "kod/object/active/holder/room/monsroom/f2.kod:67",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 6
+   }
+  ],
+  "SnowRat": [
+   {
+    "room": "IceCave1",
+    "name": "The Dreaded Caves of Ice",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/icecave1.kod:67",
+    "how": "generator",
+    "count": null,
+    "chance": 55,
+    "cap": 13
+   }
+  ],
+  "SpectralMummy": [
+   {
+    "room": "MarionCrypt1",
+    "name": "The crypt in Marion",
+    "cite": "kod/object/active/holder/room/monsroom/marcryp1.kod:101",
+    "how": "generator",
+    "count": null,
+    "chance": 100,
+    "cap": 10
+   },
+   {
+    "room": "MarionCrypt1",
+    "name": "The crypt in Marion",
+    "cite": "kod/object/active/holder/room/monsroom/marcryp1.kod:571",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Spider": [
+   {
+    "room": "Cave2",
+    "name": "A Deep, Dark, Spooky, Icky Cave",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/cave2.kod:78",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsE6",
+    "name": "Deep Forest of Farol",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/e6.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 55,
+    "cap": 16
+   },
+   {
+    "room": "OutdoorsF4",
+    "name": "East Merchant Way",
+    "cite": "kod/object/active/holder/room/monsroom/f4.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 45,
+    "cap": 6
+   },
+   {
+    "room": "OutdoorsC7",
+    "name": "Faronath, home of the TreeFolk",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/c7.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 5,
+    "cap": 8
+   },
+   {
+    "room": "OutdoorsC6",
+    "name": "Forest of Farol",
+    "cite": "kod/object/active/holder/room/monsroom/c6.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsI6",
+    "name": "Outskirts of Tos",
+    "cite": "kod/object/active/holder/room/monsroom/i6.kod:57",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 6
+   },
+   {
+    "room": "Forest5",
+    "name": "The Deep Dark Woods of Marion",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/forest5.kod:48",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 10
+   },
+   {
+    "room": "Forest4",
+    "name": "The Deep Dark Woods of Tos",
+    "cite": "kod/object/active/holder/room/monsroom/forest4.kod:47",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsH4",
+    "name": "The Flatlands",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/h4.kod:61",
+    "how": "generator",
+    "count": null,
+    "chance": 45,
+    "cap": 8
+   },
+   {
+    "room": "Forest2",
+    "name": "The Forests of Meridian",
+    "cite": "kod/object/active/holder/room/monsroom/forest2.kod:61",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 10
+   },
+   {
+    "room": "Forest3",
+    "name": "The Forests of Meridian",
+    "cite": "kod/object/active/holder/room/monsroom/forest3.kod:53",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 10
+   },
+   {
+    "room": "SpiderNest1",
+    "name": "The Spider Nest",
+    "cite": "kod/object/active/holder/room/monsroom/nest1.kod:61",
+    "how": "generator",
+    "count": null,
+    "chance": 20,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsI7",
+    "name": "The Twisted Wood",
+    "cite": "kod/object/active/holder/room/monsroom/i7.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 55,
+    "cap": 15
+   },
+   {
+    "room": "OutdoorsH7",
+    "name": "Western border of the Twisted Wood",
+    "cite": "kod/object/active/holder/room/monsroom/h7.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 12
+   }
+  ],
+  "SpiderBaby": [
+   {
+    "room": "OutdoorsC4",
+    "name": "Deep Woods of Ileria",
+    "cite": "kod/object/active/holder/room/monsroom/c4.kod:53",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsE4",
+    "name": "East Merchant Way through Ilerian Woods",
+    "cite": "kod/object/active/holder/room/monsroom/e4.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 65,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsF8",
+    "name": "Lake of Jala's Song",
+    "cite": "kod/object/active/holder/room/monsroom/f8.kod:80",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 5
+   },
+   {
+    "room": "OutdoorsI3",
+    "name": "Main gate of Barloque-- Royal City of Meridian",
+    "cite": "kod/object/active/holder/room/monsroom/i3.kod:77",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 7
+   },
+   {
+    "room": "OutdoorsG4",
+    "name": "Main gate to Cor Noth",
+    "cite": "kod/object/active/holder/room/monsroom/g4.kod:60",
+    "how": "generator",
+    "count": null,
+    "chance": 75,
+    "cap": 7
+   },
+   {
+    "room": "OutdoorsG5",
+    "name": "The King's Way",
+    "cite": "kod/object/active/holder/room/monsroom/g5.kod:57",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 7
+   },
+   {
+    "room": "OutdoorsJ3",
+    "name": "The Queen's Way",
+    "cite": "kod/object/active/holder/room/monsroom/j3.kod:61",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 5
+   },
+   {
+    "room": "SpiderNest1",
+    "name": "The Spider Nest",
+    "cite": "kod/object/active/holder/room/monsroom/nest1.kod:61",
+    "how": "generator",
+    "count": null,
+    "chance": 80,
+    "cap": 10
+   },
+   {
+    "room": "DungeonVictoria",
+    "name": "Underbasement of Victoria",
+    "cite": "kod/object/active/holder/room/dungeon.kod:50",
+    "how": "findlist",
+    "count": null,
+    "chance": 9,
+    "cap": null
+   },
+   {
+    "room": "DungeonVictoria",
+    "name": "Underbasement of Victoria",
+    "cite": "kod/object/active/holder/room/dungeon.kod:56",
+    "how": "findlist",
+    "count": null,
+    "chance": 9,
+    "cap": null
+   },
+   {
+    "room": "DungeonVictoria",
+    "name": "Underbasement of Victoria",
+    "cite": "kod/object/active/holder/room/dungeon.kod:58",
+    "how": "findlist",
+    "count": null,
+    "chance": 9,
+    "cap": null
+   },
+   {
+    "room": "OutdoorsD5",
+    "name": "West Merchant Way",
+    "cite": "kod/object/active/holder/room/monsroom/d5.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsC5",
+    "name": "West Merchant Way through Ilerian Woods",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/c5.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 6
+   }
+  ],
+  "SpiderQueen": [
+   {
+    "room": "SpiderNest1",
+    "name": "The Spider Nest",
+    "cite": "kod/object/active/holder/room/monsroom/nest1.kod:105",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "StoneTroll": [
+   {
+    "room": "Canyon2",
+    "name": "Martyr's Battleground",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/canyon2.kod:72",
+    "how": "generator",
+    "count": null,
+    "chance": 85,
+    "cap": 20
+   },
+   {
+    "room": "OutdoorsI9",
+    "name": "Ukgoth, Holy Land of Trolls",
+    "cite": "kod/object/active/holder/room/monsroom/i9.kod:195",
+    "how": "respawn",
+    "count": 3,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Thrasher": [
+   {
+    "room": "MarionCrypt3a",
+    "name": "Affirmation of the Forsaken",
+    "cite": "kod/object/active/holder/room/monsroom/marcry3a.kod:230",
+    "how": "generator",
+    "count": null,
+    "chance": 100,
+    "cap": 15
+   },
+   {
+    "room": "MarionCrypt3a",
+    "name": "Affirmation of the Forsaken",
+    "cite": "kod/object/active/holder/room/monsroom/marcry3a.kod:477",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "MarionCrypt3a",
+    "name": "Affirmation of the Forsaken",
+    "cite": "kod/object/active/holder/room/monsroom/marcry3a.kod:506",
+    "how": "respawn",
+    "count": 2,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "MarionCrypt3a",
+    "name": "Affirmation of the Forsaken",
+    "cite": "kod/object/active/holder/room/monsroom/marcry3a.kod:532",
+    "how": "respawn",
+    "count": 3,
+    "chance": null,
+    "cap": null
+   },
+   {
+    "room": "MarionCrypt3a",
+    "name": "Affirmation of the Forsaken",
+    "cite": "kod/object/active/holder/room/monsroom/marcry3a.kod:824",
+    "how": "respawn",
+    "count": 6,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "TosApothecary": [
+   {
+    "room": "TosApoth",
+    "name": "Frisconar's Mysticals",
+    "cite": "kod/object/active/holder/room/tosrm/tosapoth.kod:211",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "TosBanker": [
+   {
+    "room": "TosBank",
+    "name": "First Royal Bank of Tos",
+    "cite": "kod/object/active/holder/room/tosrm/tosbank.kod:63",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "TosInnKeeper": [
+   {
+    "room": "TosInn",
+    "name": "Familiars",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/tosinn.kod:101",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "TosWatcher": [
+   {
+    "room": "TosArena",
+    "name": "The Arena of Kraanan",
+    "cite": "kod/object/active/holder/room/tosrm/tosarena.kod:213",
+    "how": "create",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Troll": [
+   {
+    "room": "OutdoorsB6",
+    "name": "Druid Hills",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/b6.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 13
+   },
+   {
+    "room": "OutdoorsA5",
+    "name": "Seafarer's Peak",
+    "cite": "kod/object/active/holder/room/monsroom/a5.kod:62",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 15
+   },
+   {
+    "room": "OutdoorsK5",
+    "name": "The Badlands",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/k5.kod:62",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 34
+   },
+   {
+    "room": "OutdoorsH5",
+    "name": "The border of the Badlands",
+    "cite": "kod/object/active/holder/room/monsroom/h5.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 30,
+    "cap": 10
+   },
+   {
+    "room": "OutdoorsG8",
+    "name": "The Cragged Mountains",
+    "cite": "kod/object/active/holder/room/monsroom/g8.kod:54",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 13
+   },
+   {
+    "room": "OutdoorsI8",
+    "name": "The Cragged Mountains",
+    "cite": "kod/object/active/holder/room/monsroom/i8.kod:57",
+    "how": "generator",
+    "count": null,
+    "chance": 60,
+    "cap": 14
+   },
+   {
+    "room": "IceCave1",
+    "name": "The Dreaded Caves of Ice",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/icecave1.kod:67",
+    "how": "generator",
+    "count": null,
+    "chance": 45,
+    "cap": 13
+   },
+   {
+    "room": "OutdoorsA6",
+    "name": "The Hills",
+    "cite": "kod/object/active/holder/room/monsroom/a6.kod:57",
+    "how": "generator",
+    "count": null,
+    "chance": 70,
+    "cap": 12
+   },
+   {
+    "room": "OutdoorsI7",
+    "name": "The Twisted Wood",
+    "cite": "kod/object/active/holder/room/monsroom/i7.kod:58",
+    "how": "generator",
+    "count": null,
+    "chance": 45,
+    "cap": 15
+   },
+   {
+    "room": "OutdoorsI9",
+    "name": "Ukgoth, Holy Land of Trolls",
+    "cite": "kod/object/active/holder/room/monsroom/i9.kod:77",
+    "how": "generator",
+    "count": null,
+    "chance": 100,
+    "cap": 15
+   }
+  ],
+  "TuskedSkeleton": [
+   {
+    "room": "Necropolis3b",
+    "name": "Ancient Building",
+    "cite": "kod/object/active/holder/room/monsroom/necare3b.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 25
+   },
+   {
+    "room": "Necropolis3",
+    "name": "Decaying City of Brax",
+    "cite": "kod/object/active/holder/room/monsroom/necarea3.kod:68",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 25
+   },
+   {
+    "room": "LichMaze",
+    "name": "The Dungeon of Castle Brax",
+    "cite": "kod/object/active/holder/room/monsroom/lichmaze.kod:62",
+    "how": "generator",
+    "count": null,
+    "chance": 50,
+    "cap": 10
+   },
+   {
+    "room": "Throne1",
+    "name": "The Throne Room of Victoria Castle",
+    "cite": "kod/object/active/holder/room/monsroom/throne1.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 80,
+    "cap": 10
+   },
+   {
+    "room": "Necropolis4",
+    "name": "Within the Walls of Castle Brax",
+    "cite": "kod/object/active/holder/room/monsroom/necarea4.kod:56",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 25
+   }
+  ],
+  "Yeti": [
+   {
+    "room": "IceCave1",
+    "name": "The Dreaded Caves of Ice",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/icecave1.kod:124",
+    "how": "respawn",
+    "count": 1,
+    "chance": null,
+    "cap": null
+   }
+  ],
+  "Zombie": [
+   {
+    "room": "CASTLE1",
+    "name": "Castle Victoria",
+    "cite": "kod/object/active/holder/room/monsroom/objroom/castle1.kod:49",
+    "how": "generator",
+    "count": null,
+    "chance": 20,
+    "cap": 10
+   },
+   {
+    "room": "TosCrypt",
+    "name": "The Crypt",
+    "cite": "kod/object/active/holder/room/monsroom/toscrypt.kod:44",
+    "how": "generator",
+    "count": null,
+    "chance": 80,
+    "cap": 10
+   },
+   {
+    "room": "TosGraveyard",
+    "name": "The Graveyard of Tos",
+    "cite": "kod/object/active/holder/room/monsroom/tosgrave.kod:51",
+    "how": "generator",
+    "count": null,
+    "chance": 85,
+    "cap": 10
+   },
+   {
+    "room": "Throne1",
+    "name": "The Throne Room of Victoria Castle",
+    "cite": "kod/object/active/holder/room/monsroom/throne1.kod:59",
+    "how": "generator",
+    "count": null,
+    "chance": 20,
+    "cap": 10
+   },
+   {
+    "room": "Castle1B",
+    "name": "Upstairs in Castle Victoria",
+    "cite": "kod/object/active/holder/room/monsroom/castle1b.kod:49",
+    "how": "generator",
+    "count": null,
+    "chance": 40,
+    "cap": 10
+   }
+  ]
+ }
+}

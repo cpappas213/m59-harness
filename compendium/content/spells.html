@@ -1,0 +1,181 @@
+<h1>Spells and Spellcasting</h1>
+
+<p class="lede">None of what matters about a spell is sent to your client. The wire tells you a
+name, how many targets it wants, and which school it belongs to; the mana cost, the reagents,
+the karma requirement and the entire success calculation live on the server and are never
+transmitted. That is why this page exists. Everything below is compiled out of the code that
+enforces it.</p>
+
+<h2>The one number that governs everything: spell power</h2>
+
+<p>Every question about a cast — will it work, how long will it take, how much will it cost, how
+strong will the effect be — resolves against a single derived value called
+<strong>spell power</strong>, on a scale of 1 to 99. It is <em>not</em> your ability in the
+spell. Your ability is half of it; the rest is the world.</p>
+
+<div class="formula">base            = your ability in this spell / 2
+primary bonus   = a per-school value from the world state, bound 0…30
+secondary bonus = a per-school value from you,          bound 0…10
+faction bonus   = from Parliament
+
+spell power     = base + primary + secondary + faction
+                  (in an anti-magic room, minus the aura, plus mana convergence)
+                  bound to at least 0
+                + shrine bonus for this school
+                + the spell modifier of every item you are wearing
+                + any administrative bonus for this school
+                − dementia, if you are under it
+                × (100 + personal modifier) / 100
+                bound to 1…99</div>
+<p class="cite">kod/object/passive/spell.kod:2066 <code class="k">GetSpellPower</code>; <code class="k">SPELLPOWER_MINIMUM/MAXIMUM</code> at kod/include/blakston.khd:2089</p>
+
+<div class="note">Because ability is halved and the bonuses are not, a mid-ability caster
+standing in the right place at the right time can out-cast a high-ability caster standing in the
+wrong one. The world-state bonus is up to 30 points on a 99-point scale.</div>
+
+<h3>What each school draws its power from</h3>
+
+<p>This is the real character of the six schools, and it is nowhere in the game's own text.</p>
+
+<table class="data">
+<thead><tr><th>School</th><th>Primary bonus (0–30) — the world</th><th>Secondary bonus (0–10) — you</th></tr></thead>
+<tbody>
+<tr><td><strong>Shal'ille</strong></td><td>The room's natural setting; boosted further inside a Forces of Light enchantment</td><td>The magnitude of your karma / 10</td></tr>
+<tr><td><strong>Qor</strong></td><td>Distance from noon: <code class="k">2 + abs(hour − 12) × 2</code>. Strongest at midnight, weakest at midday. Boosted by a Darkness enchantment</td><td>The magnitude of your karma / 10</td></tr>
+<tr><td><strong>Kraanan</strong></td><td>The number of active beings in the room — a crowded battle</td><td>Your current health as a fraction of maximum, × 10</td></tr>
+<tr><td><strong>Faren</strong></td><td>The room's water and fire</td><td>Your vigour / 20</td></tr>
+<tr><td><strong>Riija</strong></td><td>The height of the moon in the sky / 12</td><td>How full your hands are: <code class="k">bulk_held × 10 / bulk_max</code></td></tr>
+<tr><td><strong>Jala</strong></td><td>The level of the instrument you are holding (this one can reach 40)</td><td>Your maximum health / 12</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:2107–2196</p>
+
+<p>Read down that table and the schools stop being colours and become playstyles. Qor casters
+work at night. Kraanan casters are strongest healthy and surrounded. Riija casters gain power by
+carrying <em>more</em> — the only school in the game that rewards being loaded down. Jala casters
+must hold an instrument, which is why they cannot also hold a weapon.</p>
+
+<p>Kraanan gets one more concession: <strong>negative item modifiers are halved</strong> for it,
+because it is a combat school and expects you to be wearing armour.</p>
+
+<h2>Whether the cast succeeds</h2>
+
+<div class="formula">requisite  = your attribute for this school (table below)
+num        = ((100 − requisite) × spell_power / 100) + requisite
+             modified by any Jala hinder spell in the room
+             bound to 5…95
+
+if the spell has exactly one Battler target and you have no line of sight:
+      d = squared_distance / 4
+      num = num / 2          if d &gt; num/2
+      num = num − d          otherwise
+
+success if random(1,100) ≤ num</div>
+<p class="cite">kod/object/passive/spell.kod:1174 <code class="k">SuccessChance</code></p>
+
+<p>The requisite attribute is a <em>floor</em>: at spell power 0 your chance still equals your
+attribute. It never drops below 5% and never rises above 95%.</p>
+
+<table class="data">
+<thead><tr><th>School</th><th>Requisite attribute</th><th>Learning division</th></tr></thead>
+<tbody>
+<tr><td>Shal'ille, Qor, Faren</td><td>Mysticism</td><td>Magic</td></tr>
+<tr><td>Kraanan</td><td>Stamina</td><td>Combat</td></tr>
+<tr><td>Riija, Jala</td><td>Intellect</td><td>Lore</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:376 <code class="k">GetDivision</code>, :392 <code class="k">GetDivisionReq</code></p>
+
+<div class="warn">This is a character-creation decision, not a play decision. A Kraanan caster
+wants stamina — which is also the health attribute — so Kraanan is the only school that does not
+compete with survivability. A Riija or Jala caster wants intellect, which also speeds learning
+and damps atrophy. A Shal'ille, Qor or Faren caster wants mysticism, which buys nothing else.
+See <a href="attributes.html">Attributes</a>.</div>
+
+<p>A <a href="../items/reagentring.html">reagent ring</a> in use rescues a failed cast: if the
+roll fails and the ring is being worn, the spell succeeds anyway.</p>
+
+<h2>What a cast costs</h2>
+
+<div class="formula">mana = viMana
+       − 1 if spell power &gt; 40
+       − 1 if spell power &gt; 80
+       − a percentage if you carry a Princess soldier's shield
+       bound to at least 1  (a spell declared at 0 mana stays free)</div>
+<p class="cite">kod/object/passive/spell.kod:1544 <code class="k">GetManaCost</code></p>
+
+<p>Reagents are consumed on success. <strong>A failed cast costs half the mana, half the
+exertion, and no reagents</strong> — so failure is cheap in materials and expensive in time.</p>
+<p class="cite">kod/object/passive/spell.kod:1256 <code class="k">PayCosts</code></p>
+
+<h3>The casting trance</h3>
+
+<div class="formula">trance_time = viCast_time × (150 − spell_power) / 100</div>
+<p class="cite">kod/object/passive/spell.kod:1883 <code class="k">GetTranceTime</code></p>
+
+<p>At spell power 1 a cast takes <strong>149%</strong> of its declared time; at 99 it takes
+<strong>51%</strong>. A powerful caster is very nearly twice as fast as a weak one, which
+compounds with everything else on this page.</p>
+
+<h2>The karma gate</h2>
+
+<div class="formula">Qor        requires karma ≤ level × −10
+Shal'ille  requires karma ≥ level × +10
+the other four schools have no requirement</div>
+<p class="cite">kod/object/passive/spell.kod:482 <code class="k">GetRequiredKarma</code>, enforced at :456 <code class="k">KarmaCheck</code></p>
+
+<p>Checked at cast time, not at learning time. You can own a spell you cannot use. See
+<a href="karma.html">Karma</a> for how the number moves and how expensive each polarity is to
+hold.</p>
+
+<h2>Learning a spell</h2>
+
+<p>Spells are bought from teachers — see <a href="../npcs/index.html">who teaches what</a>. You
+do not start at zero:</p>
+
+<div class="formula">initial ability = bound( random(requisite/2, requisite) / 2, 1, 25 )</div>
+<p class="cite">kod/object/passive/spell.kod:446 <code class="k">InitialAbility</code></p>
+
+<p>So a caster with mysticism 50 begins a new Shal'ille spell somewhere between ability 6 and 12,
+and one with mysticism 10 begins at 2 or 3. The attribute pays out at the very first cast and
+keeps paying.</p>
+
+<p>From there ability rises with use, through two gates, capped at ten improvements per 15–22
+minutes across everything you own — and it falls again for anything you neglect. The full
+mechanism is on <a href="advancing.html">Advancing Your Character</a>.</p>
+
+<h2>Where you cannot cast</h2>
+
+<ul>
+<li><strong>Anti-magic rooms</strong> subtract an aura value from your spell power directly.</li>
+<li><strong>Safe zones</strong> refuse any spell whose <code class="k">vbCastable_in_HappyLand</code>
+is false — the harmful ones.</li>
+<li><strong>Arenas</strong> refuse spells that declare <code class="k">SpellBannedInArena</code>.</li>
+<li><strong>Line of sight</strong> is required for full effect on a single-target spell; without
+it your chance is roughly halved, scaled by distance.</li>
+</ul>
+<p class="cite">kod/object/passive/spell.kod:505 <code class="k">CanCastHere</code>, :2204, :2255</p>
+
+<h2>Rate limits, and the silence around them</h2>
+
+<p>You may cast <strong>once per second</strong>, and the server drops anything past
+<strong>five requests per second</strong> without saying so. A cast that exceeds either limit
+does not fail — it never happened. There is no message.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5305 <code class="k">IsOkayAttackTime</code> · kod/object/active/holder/nomoveon/battler/player/user.kod:50, :883</p>
+
+<h2>Spell damage against armour</h2>
+
+<p>Spells carry an <code class="k">ATCK_SPELL_</code> type — fire, cold, shock, holy, unholy,
+acid, quake. Armour's flat damage reduction is <strong>zeroed entirely</strong> against pure
+spell damage and cut to two thirds when an attack carries both a weapon and a spell type. Only
+typed resistances reach magic, and most armour has none.</p>
+<p class="cite">kod/object/item/passitem/defmod.kod:110–122</p>
+
+<p>That is the strategic case for a caster: the target's armour, which is the single largest
+mitigation in the game against a fighter, mostly does not apply to you.</p>
+
+<h2>Related</h2>
+<p><a href="../spells/index.html">Every spell</a>, filterable by school and level ·
+<a href="schools.html">The Six Schools</a> · <a href="karma.html">Karma</a> ·
+<a href="../reagents/index.html">Reagents</a> · <a href="channeling.html">Channeling and Mana</a> ·
+<a href="attributes.html">Attributes</a> · <a href="advancing.html">Advancing Your Character</a></p>

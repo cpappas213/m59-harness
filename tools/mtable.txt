@@ -1,0 +1,172 @@
+OrcPitBossBody|body of the orc pit boss|1|1|0|TID_NONE|ATCK_WEAP_WHIP|None|None|None|None|None|SPEED_NONE|None|MOB_NOMOVE|AI_NOMOVE| AI_NOFIGHT|None|BossBody.kod|51
+EvilTwin|evil twin|1|9|0|TID_NONE|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_AVERAGE|None|0|AI_FIGHT_SINGLEMINDED | AI_FIGHT_MONSTERS | AI_FIGHT_NEWBIESAFE | AI_FIGHT_AGGRESSIVE|None|eviltwin.kod|51
+Brambles|patch of bramble|25|4|0|TID_NONE|ATCK_WEAP_SLASH|None|None|0|None|None|None|None|MOB_NOMOVE | MOB_NOFIGHT | MOVEON_NOTIFY | MOB_NOQUEST|AI_NOFIGHT | AI_NOMOVE|None|BRAMBLE.kod|59
+Mummy|mummy|25|2|-20|TID_NEWBIE_AREA|None|None|None|None|None|None|SPEED_VERY_SLOW|None|0|AI_FIGHT_AGGRESSIVE | AI_MOVE_FLEE_FRIGHTENERS|None|mummy.kod|47
+SpiderBaby|baby spider|25|4|-10|TID_WIMPY|ATCK_WEAP_BITE|None|None|None|None|None|SPEED_SLOW|None|MOB_SPASM|AI_FIGHT_AGGRESSIVE|None|spdrbaby.kod|48
+Centipede|centipede|30|5|15|TID_WIMPY_MEDIUM|ATCK_WEAP_BITE|None|None|None|None|None|SPEED_FAST|None|None|None|None|centip.kod|48
+GiantRat|giant rat|30|1|-20|TID_RAT|ATCK_WEAP_CLAW|None|None|None|None|None|SPEED_FAST|None|0|AI_FIGHT_AGGRESSIVE | AI_FIGHT_SWITCHALOT|None|giarat.kod|48
+Slime|slime|35|4|0|TID_WIMPY_MEDIUM|None|ATCK_SPELL_ACID|None|None|None|None|SPEED_SLOW|None|0|AI_FIGHT_AGGRESSIVE | AI_FIGHT_SINGLEMINDED|None|slime.kod|48
+GroundWormLarva|groundworm larva|35|3|-10|TID_WORM_LARVA|None|ATCK_SPELL_ACID|None|None|None|None|SPEED_SLOW|None|None|AI_FIGHT_KARMA_AGGRESSIVE|None|grdworm/larva.kod|55
+Ant|ant|40|4|-10|TID_WIMPY_MEDIUM|ATCK_WEAP_BITE|None|None|None|None|None|SPEED_SLOW|None|MOB_SPASM|AI_FIGHT_AGGRESSIVE | AI_FIGHT_WIZARD_KILLER|None|ant.kod|49
+SpectralMummy|spectral mummy|40|5|-35|TID_MUMMY|None|None|None|None|None|None|SPEED_SLOW|None|None|AI_FIGHT_AGGRESSIVE | AI_MOVE_FLEE_FRIGHTENERS|None|specmum.kod|50
+Orc|orc|45|6|-40|TID_ORC|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_AVERAGE|None|0|AI_FIGHT_AGGRESSIVE | AI_MOVE_FLEE_FRIGHTENERS | AI_FIGHT_SWITCHALOT|None|orc.kod|51
+Reflection|reflection|45|4|0|TID_NONE|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_AVERAGE|None|0|AI_FIGHT_MONSTERS | AI_FIGHT_NEWBIESAFE                         | AI_FIGHT_AGGRESSIVE|None|reflectn.kod|56
+DuskRat|dusk rat|50|6|-40|TID_RAT|ATCK_WEAP_CLAW|None|None|None|None|None|SPEED_VERY_FAST|None|0|AI_FIGHT_AGGRESSIVE | AI_FIGHT_SWITCHALOT | AI_MOVE_REGROUP|None|duskrat.kod|60
+Ent|living tree|50|4|40|TID_ENT|ATCK_WEAP_WHIP|None|None|None|None|None|SPEED_NONE|None|MOB_NOMOVE|AI_NOMOVE | AI_FIGHT_KARMA_AGGRESSIVE|None|ent.kod|56
+EvilEnt|diseased tree|50|4|-40|TID_ENT|ATCK_WEAP_WHIP|None|None|None|None|None|SPEED_NONE|None|MOB_NOMOVE|AI_NOMOVE | AI_FIGHT_KARMA_AGGRESSIVE|None|evilent.kod|54
+FungusBeast|fungus beast|50|1|10|TID_MEDIUM|None|None|None|None|None|None|SPEED_VERY_SLOW|None|MOB_SPASM|AI_FIGHT_AGGRESSIVE | AI_FIGHT_WIZARD_KILLER|None|fungbst.kod|57
+Spider|spider|50|4|-30|TID_MEDIUM_TOUGH|ATCK_WEAP_BITE|None|None|None|None|None|SPEED_AVERAGE|None|MOB_SPASM|AI_MOVE_REGROUP | AI_FIGHT_AGGRESSIVE|None|spider.kod|48
+DukeTroop|soldier of the Duke's army|50|2|None|None|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_AVERAGE|None|0|AI_FIGHT_NEWBIESAFE | AI_MOVE_REGROUP|None|troop/duketr.kod|52
+PrincessTroop|soldier of the Princess' army|50|2|None|None|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_AVERAGE|None|0|AI_FIGHT_NEWBIESAFE | AI_MOVE_REGROUP|None|troop/printr.kod|52
+RebelTroop|rebel soldier|50|2|None|None|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_AVERAGE|None|0|AI_FIGHT_NEWBIESAFE | AI_MOVE_REGROUP|None|troop/rebeltr.kod|53
+Revenant|revenant|55|5|20|None|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_FAST|None|None|AI_FIGHT_AGGRESSIVE | AI_FIGHT_SINGLEMINDED | AI_MOVE_WALKTHROUGH_WALLS | AI_FIGHT_THROUGH_WALLS|None|revenant.kod|59
+Scorpion|giant scorpion|55|8|20|TID_MEDIUM_TOUGH|ATCK_WEAP_STING|None|None|None|None|None|SPEED_FAST|None|None|None|None|scorpion.kod|48
+Zombie|zombie|55|4|-45|TID_ZOMBIE|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_VERY_SLOW|None|None|AI_FIGHT_KARMA_AGGRESSIVE | AI_MOVE_FLEE_FRIGHTENERS|None|zombie.kod|64
+EvilFairy|teotimixlal|60|5|-50|TID_FAIRY|0|ATCK_SPELL_SHOCK|None|None|None|None|SPEED_VERY_FAST|None|None|AI_MOVE_REGROUP | AI_FIGHT_MONSTERS | AI_FIGHT_KARMA_AGGRESSIVE|None|evfairy.kod|55
+Fairy|fey elhai|60|5|50|TID_FAIRY|0|ATCK_SPELL_SHOCK|None|None|None|None|SPEED_VERY_FAST|None|None|AI_MOVE_REGROUP | AI_FIGHT_MONSTERS | AI_FIGHT_KARMA_AGGRESSIVE|None|fairy.kod|55
+flytrap|Man-eating Plant|60|5|-25|TID_LOW_HUMAN|0|0|None|None|None|None|SPEED_VERY_SLOW|None|0|None|None|flytrap.kod|44
+SnowRat|snow rat|60|4|-50|TID_RAT|ATCK_WEAP_CLAW|None|None|None|None|None|SPEED_FAST|None|0|AI_FIGHT_AGGRESSIVE|None|snowrat.kod|48
+BatteredSkeleton|battered skeleton|60|4|-70|TID_SKELETON2|ATCK_WEAP_THRUST|None|None|None|None|None|SPEED_AVERAGE|None|0|AI_FIGHT_AGGRESSIVE | AI_FIGHT_SWITCHALOT | AI_MOVE_FLEE_FRIGHTENERS|None|skel/batrskel.kod|52
+NecromancerTroop|necromancer|60|4|-40|None|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_AVERAGE|None|0|AI_FIGHT_NEWBIESAFE | AI_MOVE_REGROUP|None|troop/necrotr.kod|60
+RedAnt|mutant ant|65|8|-40|TID_TOUGH|ATCK_WEAP_BITE|None|None|None|None|None|SPEED_AVERAGE|None|MOB_SPASM|AI_FIGHT_AGGRESSIVE | AI_FIGHT_WIZARD_KILLER|None|redant.kod|48
+Frogman|frogman|70|5|80|TID_FROGMAN|ATCK_WEAP_PIERCE|None|None|None|None|None|SPEED_AVERAGE|None|None|AI_FIGHT_KARMA_AGGRESSIVE|None|frogman.kod|50
+DeathSpider|black spider|75|5|-30|TID_BLACK_SPIDER|ATCK_WEAP_BITE|None|None|None|None|None|SPEED_AVERAGE|None|MOB_SPASM|AI_MOVE_REGROUP | AI_FIGHT_AGGRESSIVE|None|dethspid.kod|54
+LivingStatue|statue|75|5|-40|TID_MEDIUM_TOUGH|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_NONE|None|None|None|None|lvstatue.kod|169
+Skeleton|skeleton|75|5|-50|TID_TOUGH|ATCK_WEAP_THRUST|None|None|None|None|None|SPEED_AVERAGE|None|0|AI_FIGHT_AGGRESSIVE | AI_FIGHT_SWITCHALOT                         | AI_MOVE_FLEE_FRIGHTENERS|None|skel.kod|48
+CaveOrc|cave orc|80|7|-55|TID_CAVE_ORC|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_FAST|None|0|AI_FIGHT_AGGRESSIVE | AI_MOVE_FLEE_FRIGHTENERS | AI_FIGHT_HYPERAGGRESSIVE | AI_FIGHT_SWITCHALOT|None|orccave.kod|49
+OrcWizard|orc wizard|80|7|-60|TID_ORC_WIZARD|ATCK_WEAP_BLUDGEON|None|None|None|None|None|SPEED_AVERAGE|None|0|AI_FIGHT_AGGRESSIVE | AI_FIGHT_HYPERAGGRESSIVE | AI_MOVE_FLEE_FRIGHTENERS|None|orcwiza.kod|70
+FactionTroop|faction troop|80|4|0|TID_NONE|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_AVERAGE|None|0|AI_FIGHT_NEWBIESAFE | AI_MOVE_REGROUP|None|troop.kod|186
+Iceperson|ice creature|90|8|75|TID_ICE_PERSON|ATCK_WEAP_PIERCE|ATCK_SPELL_COLD|None|None|None|None|SPEED_SLOW|None|0|AI_FIGHT_KARMA_AGGRESSIVE | AI_FIGHT_WIZARD_KILLER |  AI_MOVE_FLEE_FRIGHTENERS |  AI_MOVE_REGROUP|None|iceper.kod|119
+Troll|troll|90|8|-75|TID_HIGH_HUMAN|None|None|None|None|None|None|SPEED_AVERAGE|None|0|AI_FIGHT_AGGRESSIVE|None|troll.kod|46
+AvarShaman|peet-seeeep avar shaman|100|8|80|TID_AVAR_SHAMAN|ATCK_WEAP_PIERCE|ATCK_SPELL_QUAKE|None|None|None|None|SPEED_SLOW|None|None|AI_FIGHT_AGGRESSIVE | AI_MOVE_OPTIMAL_RANGE | AI_FIGHT_MONSTERS|None|avshaman.kod|84
+GroundWorm|groundworm|100|5|30|TID_TOUGH|None|ATCK_SPELL_ACID|None|None|None|None|SPEED_FAST|None|0|AI_FIGHT_AGGRESSIVE|None|grdworm.kod|64
+Guard|guard cow|100|5|100|None|ATCK_WEAP_BITE|None|None|None|None|None|SPEED_FAST|None|None|AI_FIGHT_MURDERERS|None|guard.kod|45
+TuskedSkeleton|tusked skeleton|100|6|-70|TID_SKELETON3|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_FAST|None|0|AI_FIGHT_AGGRESSIVE | AI_FIGHT_SWITCHALOT | AI_MOVE_FLEE_FRIGHTENERS|None|skel/tuskskel.kod|48
+Lupogg|lupogg|105|9|75|TID_VERY_TOUGH|ATCK_WEAP_BITE|None|None|None|None|None|2|None|0|AI_FIGHT_AGGRESSIVE | AI_FIGHT_WIZARD_KILLER|None|lupogg.kod|49
+OrcPitBoss|orc pit boss|115|7|-90|TID_ORC_CHIEF|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_FAST|None|0|AI_FIGHT_AGGRESSIVE | AI_FIGHT_HYPERAGGRESSIVE | AI_FIGHT_SWITCHALOT|None|orcboss.kod|60
+Avar|peet-seeeep avar warrior|120|7|40|TID_AVAR|ATCK_WEAP_BLUDGEON|None|None|None|None|None|SPEED_AVERAGE|None|None|AI_MOVE_REGROUP | AI_FIGHT_AGGRESSIVE | AI_FIGHT_MONSTERS|None|avar.kod|69
+DragonFly|dragonfly|120|6|40|TID_DRAGONFLY|ATCK_WEAP_PIERCE|None|None|None|None|None|SPEED_AVERAGE|None|None|AI_FIGHT_AGGRESSIVE|None|dfly.kod|69
+DragonFlyPet|pet dragonfly|120|6|40|TID_NONE|ATCK_WEAP_PIERCE|None|None|None|None|None|SPEED_AVERAGE|None|None|AI_FIGHT_AGGRESSIVE | AI_FIGHT_NEWBIESAFE|None|dflypet.kod|70
+NarthylWorm|narthyl worm|120|7|0|TID_NARTHYL_WORM|ATCK_WEAP_PIERCE|None|None|None|None|None|SPEED_SLOW|None|0|AI_FIGHT_AGGRESSIVE | AI_FIGHT_HYPERAGGRESSIVE|None|nrthlwrm.kod|54
+StoneTroll|StoneTroll_realname_rsc|120|8|-100|TID_MEDIUM_HUMAN|None|None|None|None|None|None|SPEED_FAST|None|0|AI_FIGHT_AGGRESSIVE|None|stntroll.kod|51
+GroundWormQueen|groundworm queen|130|7|-30|TID_WORM_QUEEN|None|ATCK_SPELL_ACID|None|None|None|None|SPEED_SLOW|None|None|AI_FIGHT_HYPERAGGRESSIVE | AI_FIGHT_SINGLEMINDED|None|grdworm/queen.kod|47
+DaemonSkeleton|daemon skeleton|130|8|-90|TID_SKELETON4|ATCK_WEAP_THRUST|None|None|None|None|None|SPEED_FAST|None|0|AI_FIGHT_AGGRESSIVE | AI_FIGHT_HYPERAGGRESSIVE | AI_FIGHT_SWITCHALOT | AI_MOVE_FLEE_FRIGHTENERS|None|skel/daemskel.kod|48
+AvarChieftain|avarchief_name_rsc|135|9|80|TID_AVAR_CHIEF|ATCK_WEAP_PIERCE|None|None|None|None|None|SPEED_FAST|None|None|AI_FIGHT_AGGRESSIVE | AI_MOVE_OPTIMAL_RANGE | AI_FIGHT_WIZARD_KILLER | AI_FIGHT_MONSTERS|None|avchief.kod|83
+DragonFlyQueen|dragonfly queen|145|6|40|TID_DRAGONFLY|ATCK_WEAP_PIERCE|None|None|None|None|None|SPEED_FAST|None|MOB_RECEIVE|AI_FIGHT_AGGRESSIVE|None|dflyq.kod|74
+MolluskMonster|mollusk creature|150|7|90|TID_TOUGH|ATCK_WEAP_BLUDGEON|None|None|None|None|None|SPEED_AVERAGE|None|0|None|None|mollusk.kod|77
+Thrasher|thrasher|150|7|-75|TID_THRASHER|ATCK_WEAP_BLUDGEON|None|None|None|None|None|SPEED_FAST|None|0|AI_FIGHT_AGGRESSIVE | AI_FIGHT_HYPERAGGRESSIVE                         | AI_FIGHT_LASHOUT | AI_MOVE_FLEE_FRIGHTENERS|None|thrasher.kod|74
+Xeochicatl|Xeochicatl|150|8|0|TID_NONE|ATCK_WEAP_MAGIC|None|None|None|None|None|SPEED_AVERAGE|None|None|AI_FIGHT_AGGRESSIVE | AI_FIGHT_SWITCHALOT                         | AI_MOVE_REGROUP | AI_MOVE_WALKTHROUGH_WALLS|None|xeochctl.kod|74
+XeoAir|ve'xeochicatl|150|7|None|None|ATCK_WEAP_MAGIC|None|None|None|None|None|SPEED_VERY_FAST|None|None|None|None|xeochctl/xeoair.kod|40
+Kriipa|kriipa|160|6|-50|TID_DRAGONFLY|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_FAST|None|None|AI_FIGHT_AGGRESSIVE | AI_FIGHT_HYPERAGGRESSIVE|None|kriipa.kod|71
+SpiderQueen|queen spider|165|9|-90|TID_SPIDER_QUEEN|ATCK_WEAP_BITE|None|None|None|None|None|SPEED_NONE|None|MOB_NOMOVE|AI_NOMOVE | AI_FIGHT_AGGRESSIVE | AI_FIGHT_SWITCHALOT|None|spdrquen.kod|54
+Yeti|yeti|170|9|0|TID_VERY_TOUGH|ATCK_WEAP_CLAW|None|None|None|None|None|SPEED_SLOW|None|0|AI_FIGHT_AGGRESSIVE | AI_MOVE_OPTIMAL_RANGE | AI_FIGHT_SWITCHALOT|None|yeti.kod|53
+XeoFire|ro'xeochicatl|170|7|None|None|ATCK_WEAP_MAGIC|None|None|None|None|None|SPEED_FAST|None|None|None|None|xeochctl/xeofire.kod|40
+XeoWater|ma'xeochicatl|190|8|None|None|ATCK_WEAP_MAGIC|None|None|None|None|None|SPEED_FAST|None|None|None|None|xeochctl/xeowater.kod|40
+Cow|cow|200|None|None|None|None|None|None|None|None|None|8|None|MOB_NOFIGHT|None|None|cow.kod|52
+DarkAngel|dark angel|200|9|-100|TID_DARK_ANGEL|ATCK_WEAP_MAGIC|ATCK_SPELL_FIRE|None|None|None|None|SPEED_VERY_FAST|None|None|AI_FIGHT_NEWBIESAFE | AI_FIGHT_AGGRESSIVE                         | AI_FIGHT_SWITCHALOT | AI_MOVE_REGROUP                         | AI_MOVE_OPTIMAL_RANGE|None|dangel.kod|71
+DeadLich|ghostly remains of Queen Venya'cyr|200|9|-100|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_TEACHER|AI_NOMOVE| AI_NOFIGHT| AI_NPC|MOB_ROLE_SCHOLAR|deadlich.kod|49
+Ghost|ghost|200|5|-100|TID_GHOST|None|None|None|None|None|None|SPEED_FAST|None|MOB_ONE_TREASURE|AI_FIGHT_AGGRESSIVE | AI_MOVE_WALKTHROUGH_WALLS | AI_FIGHT_WIZARD_KILLER | AI_MOVE_FLEE_FRIGHTENERS|None|ghost.kod|60
+Lich|Queen Venya'cyr|200|9|-100|TID_LICH|None|ATCK_SPELL_UNHOLY|None|None|None|None|SPEED_FAST|None|MOB_LISTEN | MOB_RECEIVE | MOB_TEACHER|AI_FIGHT_AGGRESSIVE |  AI_FIGHT_WIZARD_KILLER | AI_FIGHT_HYPERAGGRESSIVE | AI_MOVE_FLEE_FRIGHTENERS | AI_FIGHT_THROUGH_WALLS | AI_FIGHT_SWITCHALOT|None|lich.kod|106
+LupoggKing|lupogg king|200|9|0|TID_LUPOGG_KING|ATCK_WEAP_CLAW|None|None|None|None|None|SPEED_SLOW|None|MOB_SPASM|AI_FIGHT_AGGRESSIVE |  AI_FIGHT_WIZARD_KILLER | AI_FIGHT_HYPERAGGRESSIVE|None|lupking.kod|65
+Shadowbeast|shadowbeast|200|7|-100|TID_VERY_TOUGH|ATCK_WEAP_SLASH|None|None|None|None|None|SPEED_AVERAGE|None|None|AI_FIGHT_AGGRESSIVE|None|shadowb.kod|56
+XeoEarth|te'xeochicatl|200|9|None|None|ATCK_WEAP_MAGIC|None|None|None|None|None|SPEED_AVERAGE|None|None|None|None|xeochctl/xeoearth.kod|40
+Council|Councilor|None|None|None|None|None|None|None|None|None|None|SPEED_SLOW|None|MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE|AI_NPC | AI_NOMOVE|None|council.kod|None
+Factions||None|None|None|None|None|None|None|None|None|None|SPEED_SLOW|None|None|AI_NPC | AI_NOMOVE|None|factions.kod|None
+Priestess|priestess|None|None|None|None|None|None|None|None|None|None|None|None|None|None|None|priestes.kod|None
+Temples||None|None|None|None|None|None|None|None|None|None|SPEED_SLOW|None|None|AI_NPC | AI_NOMOVE|None|temples.kod|None
+GraphicTester|test1.bgf|None|5|None|None|None|None|None|None|None|None|SPEED_SLOW|None|None|None|None|tester.kod|None
+Thief|Thief|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_BUYER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE|None|None|thief.kod|None
+Towns||None|None|None|None|None|None|None|None|None|None|SPEED_AVERAGE|None|None|AI_NPC | AI_NOMOVE|None|towns.kod|None
+FiveCouncilor|Esseldi|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_NOMOVE | MOB_LISTEN | MOB_RANDOM                   | MOB_RECEIVE | MOB_TEACHER | MOB_SELLER|None|MOB_ROLE_COUNCILMEMBER|council/fivecon.kod|None
+fourCouncilor|Drechx|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_NOMOVE | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_TEACHER|None|MOB_ROLE_COUNCILMEMBER|council/fourcon.kod|None
+OneCouncilor|Alzahakar|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_NOMOVE | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_TEACHER|None|MOB_ROLE_COUNCILMEMBER|council/onecon.kod|None
+ThreeCouncilor|Cylill|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_NOMOVE | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_TEACHER|None|MOB_ROLE_COUNCILMEMBER|council/threecon.kod|None
+TwoCouncilor|Bei Naq|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_NOMOVE | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE|None|MOB_ROLE_COUNCILMEMBER|council/twocon.kod|None
+DukeLiege|Duke Akardius|None|None|0|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_NOMOVE | MOB_PERM_QUESTER | MOB_TEACHER|None|MOB_ROLE_ROYALTY|factions/duke.kod|None
+PrincessLiege|Princess Kateriina|None|None|0|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_NOMOVE | MOB_PERM_QUESTER | MOB_TEACHER|None|MOB_ROLE_ROYALTY|factions/princess.kod|None
+RebelLiege|Jonas D'Accor|None|None|0|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_NOMOVE | MOB_PERM_QUESTER | MOB_TEACHER|None|MOB_ROLE_ROYALTY|factions/rebel.kod|None
+BlackMummy|shadow mummy|None|4|None|None|None|None|None|None|None|None|None|None|None|None|None|mummy/blackmum.kod|None
+MummyNoTreasure||None|None|None|TID_NONE|None|None|None|None|None|None|None|None|None|None|None|mummy/mummyt.kod|None
+FarenPriestess|Priestess Tenuv'vyal|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_TEACHER | MOB_COND_SELLER | MOB_NOMOVE | MOB_PERM_QUESTER|None|MOB_ROLE_PRIESTESS|temples/farnprst.kod|None
+RiijaMonk|Monk of Riija|None|None|0|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_TEACHER | MOB_PERM_QUESTER | MOB_SELLER|None|MOB_ROLE_PRIESTESS|temples/kcrjmonk.kod|None
+KraananPriestess|Priestess Qerti'nya|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_TEACHER | MOB_COND_SELLER | MOB_NOMOVE | MOB_PERM_QUESTER|None|MOB_ROLE_PRIESTESS|temples/kranprst.kod|None
+QorPriestess|Priestess Zuxana|None|None|-90|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_TEACHER | MOB_COND_SELLER | MOB_PERM_QUESTER | MOB_FULL_TALK|None|MOB_ROLE_PRIESTESS|temples/qorprst.kod|None
+ShalillePriestess|Priestess Xiana|None|None|90|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_TEACHER | MOB_COND_SELLER | MOB_PERM_QUESTER|None|MOB_ROLE_PRIESTESS|temples/shalprst.kod|None
+BarloqueTown||None|None|None|None|None|None|None|None|None|None|None|None|None|None|None|towns/barlqtwn.kod|None
+CorNothTown||None|None|None|None|None|None|None|None|None|None|None|None|None|None|None|towns/crnthtwn.kod|None
+Decorator|interior design consultant|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_NOMOVE | MOB_LISTEN | MOB_RECEIVE | MOB_SELLER|None|MOB_ROLE_SCHOLAR|towns/decoratr.kod|None
+Goad|The Goad|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOMOVE | MOB_FULL_TALK | MOB_LISTEN | MOB_NOFIGHT | MOB_NOQUEST|None|MOB_ROLE_WATCHER|towns/Goad.kod|None
+HazarTown||None|None|None|None|None|None|None|None|None|None|None|None|None|None|None|towns/hazartwn.kod|None
+JasperTown||None|None|None|None|None|None|None|None|None|None|None|None|None|None|None|towns/jasprtwn.kod|None
+KocatanTown||None|None|None|None|None|None|None|None|None|None|None|None|None|None|None|towns/kocatwn.kod|None
+ladypheonix|LadyPhoenix|None|None|None|None|None|None|None|None|None|None|None|None|None|None|None|towns/ladyphen.kod|None
+MarionTown||None|None|None|None|None|None|None|None|None|None|None|None|None|None|None|towns/marntwn.kod|None
+TosTown||None|None|None|None|None|None|None|None|None|None|None|None|None|None|None|towns/tostwn.kod|None
+Wanderer||None|None|None|None|None|None|None|None|None|None|None|None|None|None|None|towns/wanderer.kod|None
+Assassin|Roq|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOMOVE | MOB_NOFIGHT | MOB_BUYER | MOB_TEACHER|None|MOB_ROLE_ASSASSIN|towns/barlqtwn/assassin.kod|None
+BarloqueApothecary|Joguer|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_BUYER | MOB_SELLER | MOB_NOMOVE | MOB_RANDOM | MOB_LISTEN | MOB_RECEIVE | MOB_TEACHER | MOB_PERM_QUESTER | MOB_LAWFUL | MOB_COND_SELLER|None|MOB_ROLE_APOTHECARY|towns/barlqtwn/bqapoth.kod|None
+BarloqueBanker|Setag'lib|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT+MOB_BANKER+MOB_NOMOVE+MOB_LISTEN+MOB_RANDOM+MOB_RECEIVE|None|MOB_ROLE_BANKER|towns/barlqtwn/bqbanker.kod|None
+BarloqueBartender|Meidei|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_NOMOVE | MOB_LISTEN | MOB_RECEIVE | MOB_SELLER | MOB_LAWFUL|None|MOB_ROLE_BARTENDER|towns/barlqtwn/bqbart.kod|None
+BarloqueClerk|Caramo|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_LISTEN | MOB_SELLER | MOB_NOMOVE | MOB_LAWFUL | MOB_FULL_TALK | MOB_RECEIVE|None|None|towns/barlqtwn/bqclerk.kod|None
+BarloqueInnkeeper|Pritchett|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_COND_SELLER | MOB_LAWFUL|None|MOB_ROLE_INNKEEPER|towns/barlqtwn/bqinnk.kod|None
+BarloqueMerchant|Herbutte|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_BUYER | MOB_SELLER | MOB_NOMOVE | MOB_LAWFUL|None|MOB_ROLE_MERCHANT|towns/barlqtwn/bqmerch.kod|None
+BarloqueBlacksmith|Fehr'loi Qan|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_NOMOVE | MOB_LISTEN | MOB_BUYER | MOB_TEACHER | MOB_COND_SELLER | MOB_LAWFUL|None|MOB_ROLE_BLACKSMITH|towns/barlqtwn/bqSmith.kod|None
+Barloquetailor|Madelia|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_NOMOVE | MOB_LISTEN | MOB_RECEIVE | MOB_SELLER | MOB_LAWFUL|None|MOB_ROLE_TAILOR|towns/barlqtwn/bqtailor.kod|None
+BarloqueUrchin|urchin|None|None|10|TID_WIMPY|None|None|None|None|None|None|10|None|MOB_SPASM|None|MOB_ROLE_URCHIN|towns/barlqtwn/bqurchin.kod|None
+barloqueVaultman|Obert Cair'bre|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_VAULTMAN | MOB_NOQUEST|None|MOB_ROLE_VAULTMAN|towns/barlqtwn/bqvaultm.kod|None
+GuildCreator|Frular|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOMOVE | MOB_NOFIGHT | MOB_LISTEN | MOB_RECEIVE|None|MOB_ROLE_GUILD_CREATOR|towns/barlqtwn/gcreator.kod|None
+PrincessGuard|Keep Guard|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_NOMOVE | MOB_LISTEN | MOB_RANDOM | MOB_NOQUEST|None|MOB_ROLE_GUARD|towns/barlqtwn/pringrd.kod|None
+CornothGrocer|Solomon|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_BUYER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE|None|MOB_ROLE_GROCER|towns/crnthtwn/cngrocer.kod|None
+CorNothInnkeeper|D'Franco|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_NOMOVE | MOB_LISTEN | MOB_RECEIVE | MOB_TEACHER | MOB_COND_SELLER|None|MOB_ROLE_INNKEEPER|towns/crnthtwn/cninnk.kod|None
+CorNothSergeant|Rook|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_TEACHER | MOB_RECEIVE | MOB_NOMOVE | MOB_SELLER | MOB_COND_SELLER|None|MOB_ROLE_SERGEANT|towns/crnthtwn/cnsarge.kod|None
+CorNothTailor|Hester Gilk|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_NOMOVE | MOB_LISTEN | MOB_RECEIVE|None|MOB_ROLE_TAILOR|towns/crnthtwn/cntailor.kod|None
+CorNothUrchin|urchin|None|None|10|TID_WIMPY|None|None|None|None|None|None|10|None|MOB_SPASM|None|MOB_ROLE_URCHIN|towns/crnthtwn/cnurchin.kod|None
+HazarApothecary|Ravi|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_NOMOVE | MOB_RANDOM | MOB_LISTEN | MOB_BUYER | MOB_NOQUEST|None|MOB_ROLE_APOTHECARY|towns/hazartwn/hzapoth.kod|None
+HazarBartender|Eric d'Jorn|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_NOQUEST|None|MOB_ROLE_BARTENDER|towns/hazartwn/hzbart.kod|None
+HazarElder|Rodric d'Stane|None|None|None|None|None|None|None|None|None|None|None|None|MOB_RANDOM | MOB_LISTEN | MOB_RECEIVE | MOB_NOFIGHT | MOB_NOMOVE | MOB_NOQUEST|None|MOB_ROLE_ELDER|towns/hazartwn/hzelder.kod|None
+HazarInnKeeper|Marcus|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_RECEIVE | MOB_NOMOVE | MOB_NOQUEST | MOB_SELLER|None|MOB_ROLE_INNKEEPER|towns/hazartwn/hzinnk.kod|None
+HazarBlacksmith|Tomas|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_NOMOVE | MOB_LISTEN | MOB_BUYER | MOB_NOQUEST|None|MOB_ROLE_BLACKSMITH|towns/hazartwn/hzsmith.kod|None
+JasperBanker|Yevitan|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_BANKER | MOB_NOMOVE | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_TEACHER|None|MOB_ROLE_BANKER|towns/jasprtwn/jsbanker.kod|None
+JasperBartender|Pietro|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE|None|MOB_ROLE_BARTENDER|towns/jasprtwn/jsbart.kod|None
+JasperElder|Afiera D'xor|None|None|None|None|None|None|None|None|None|None|None|None|MOB_RANDOM | MOB_LISTEN | MOB_RECEIVE | MOB_NOFIGHT | MOB_NOMOVE | MOB_TEACHER | MOB_PERM_QUESTER|None|MOB_ROLE_ELDER|towns/jasprtwn/jselder.kod|None
+JasperInnKeeper|Widow Qesino|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_RECEIVE | MOB_NOMOVE | MOB_SELLER | MOB_TEACHER|None|MOB_ROLE_INNKEEPER|towns/jasprtwn/jsinnk.kod|None
+JasperMerchant|Zhieu B'hob|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_BUYER | MOB_NOMOVE | MOB_RANDOM | MOB_LISTEN | MOB_COND_SELLER|None|MOB_ROLE_MERCHANT|towns/jasprtwn/jsmerch.kod|None
+JasperBlacksmith|Quintor|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_BUYER | MOB_RANDOM | MOB_NOMOVE | MOB_LISTEN | MOB_TEACHER | MOB_PERM_QUESTER|None|MOB_ROLE_BLACKSMITH|towns/jasprtwn/jssmith.kod|None
+JasperUrchin|urchin|None|None|10|TID_WIMPY|None|None|None|None|None|None|10|None|MOB_SPASM|None|MOB_ROLE_URCHIN|towns/jasprtwn/jsurchin.kod|None
+KocatanApothecary|Zala ix'Mecya|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_BUYER | MOB_COND_SELLER|None|MOB_ROLE_APOTHECARY|towns/kocatwn/kcapoth.kod|None
+KocatanBanker|Huital ko'Nosak|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_BANKER|None|MOB_ROLE_BANKER|towns/kocatwn/kcbanker.kod|None
+KocatanBartender|Oxal ix'Tokak|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_BUYER|None|MOB_ROLE_BARTENDER|towns/kocatwn/kcbart.kod|None
+KocatanBonePriestess|The Bone Priestess|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_TEACHER|None|MOB_ROLE_PRIESTESS|towns/kocatwn/kcbonepr.kod|None
+KocatanBowMaker|Hanla zax'Ta|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_COND_SELLER|None|MOB_ROLE_BLACKSMITH|towns/kocatwn/kcbowmak.kod|None
+KocatanCaptainEvil|Xacal ko'Ixca|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN  | MOB_RECEIVE | MOB_NOMOVE | MOB_FULL_TALK|None|MOB_ROLE_SERGEANT|towns/kocatwn/kcguardE.kod|None
+KocatanCaptainGood|Cital ko'Manca|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_RECEIVE | MOB_NOMOVE | MOB_FULL_TALK|None|MOB_ROLE_SERGEANT|towns/kocatwn/kcguardG.kod|None
+KocatanInnkeeper|Moxal ix'Hanak|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_COND_SELLER|None|MOB_ROLE_INNKEEPER|towns/kocatwn/kcinnk.kod|None
+KocatanLanguageMaster|Quetzal|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE|None|MOB_ROLE_SCHOLAR|towns/kocatwn/kclangua.kod|None
+KocatanMadScientist|Bahal zax'Ot|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE|None|MOB_ROLE_WIZARD|towns/kocatwn/kcmadsci.kod|None
+kocatanTradeMaster|Wulfgang zax'Ak|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_BUYER | MOB_COND_SELLER|None|MOB_ROLE_MERCHANT|towns/kocatwn/kcmerch.kod|None
+Kocatansentry|sentry|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_NOQUEST|None|MOB_ROLE_GUARD|towns/kocatwn/kcsentry.kod|None
+KocatanShopkeeper|Pacal ix'Anoak|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_BUYER | MOB_FULL_TALK|None|MOB_ROLE_MERCHANT|towns/kocatwn/kcshopk.kod|None
+KocatanBlacksmith|Ixla cha'Totlak|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_NOMOVE | MOB_LISTEN | MOB_BUYER | MOB_TEACHER | MOB_COND_SELLER | MOB_LAWFUL|None|MOB_ROLE_BLACKSMITH|towns/kocatwn/kcsmith.kod|None
+KocatanTailor|Tepal ix'Zonak|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_COND_SELLER | MOB_BUYER|None|MOB_ROLE_TAILOR|towns/kocatwn/kctailor.kod|None
+KocatanVaultman|Itzal cha'Nosak|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_VAULTMAN|None|MOB_ROLE_VAULTMAN|towns/kocatwn/kcvaultm.kod|None
+KocatanWeaponsMaster|Kochtal ko'Tulca|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_TEACHER | MOB_COND_SELLER|None|MOB_ROLE_SCHOLAR|towns/kocatwn/kcweapon.kod|None
+MarionBartender|Tova|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RECEIVE | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_SELLER | MOB_COND_SELLER | MOB_FULL_TALK|None|MOB_ROLE_BARTENDER|towns/marntwn/mrbart.kod|None
+MarionElder|Ran er'Hoth|None|None|None|None|None|None|None|None|None|None|None|None|MOB_RANDOM | MOB_LISTEN | MOB_NOFIGHT | MOB_NOMOVE | MOB_TEACHER | MOB_RECEIVE | MOB_COND_SELLER|None|MOB_ROLE_ELDER|towns/marntwn/MrElder.kod|None
+MarionHealer|Lady Aftyn|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_NOMOVE | MOB_LISTEN | MOB_SELLER | MOB_RECEIVE | MOB_TEACHER|None|MOB_ROLE_HEALER|towns/marntwn/mrhealer.kod|None
+MarionInnkeeper|Morrigan|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_NOMOVE | MOB_LISTEN | MOB_BUYER | MOB_SELLER | MOB_LISTEN_MOB | MOB_FULL_TALK|None|MOB_ROLE_INNKEEPER|towns/marntwn/mrinnk.kod|None
+MarionBlacksmith|Colhorr|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOMOVE | MOB_NOFIGHT | MOB_TEACHER | MOB_RANDOM | MOB_LISTEN | MOB_BUYER | MOB_SELLER|None|MOB_ROLE_BLACKSMITH|towns/marntwn/MrSmith.kod|None
+MarionUrchin|urchin|None|None|10|TID_WIMPY|None|None|None|None|None|None|10|None|MOB_SPASM|None|MOB_ROLE_URCHIN|towns/marntwn/mrurchin.kod|None
+BasicInnKeeper|Rycksher|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_SELLER | MOB_NOQUEST | MOB_RECEIVE|None|MOB_ROLE_INNKEEPER|towns/tostwn/basicinn.kod|None
+DukeGuard|Keep Guard|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_NOMOVE | MOB_LISTEN | MOB_RANDOM | MOB_NOQUEST|None|MOB_ROLE_GUARD|towns/tostwn/dkgrd.kod|None
+TosApothecary|Frisconar|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_TEACHER | MOB_NOMOVE | MOB_RANDOM | MOB_LISTEN | MOB_BUYER | MOB_SELLER | MOB_LAWFUL | MOB_COND_SELLER|None|MOB_ROLE_APOTHECARY|towns/tostwn/TsApoth.kod|None
+TosBanker|Skivlat|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_BANKER | MOB_NOMOVE | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_SELLER | MOB_LAWFUL | MOB_NOQUEST|None|MOB_ROLE_BANKER|towns/tostwn/TsBanker.kod|None
+TosInnKeeper|Paddock|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RECEIVE | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_SELLER | MOB_COND_SELLER | MOB_LAWFUL|None|MOB_ROLE_INNKEEPER|towns/tostwn/TsInnK.kod|None
+TosBlacksmith|Fehr'loi Qan|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_NOMOVE | MOB_LISTEN | MOB_BUYER | MOB_TEACHER | MOB_COND_SELLER | MOB_LAWFUL|None|MOB_ROLE_BLACKSMITH|towns/tostwn/TsSmith.kod|None
+TosUrchin|urchin|None|None|10|TID_WIMPY|None|None|None|None|None|None|10|None|MOB_SPASM|None|MOB_ROLE_URCHIN|towns/tostwn/TsUrchin.kod|None
+TosWatcher|Watcher|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOMOVE | MOB_FULL_TALK | MOB_LISTEN | MOB_NOFIGHT                   | MOB_NOQUEST|None|MOB_ROLE_WATCHER|towns/tostwn/tswatch.kod|None
+DarkWizard|Maleval|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_TEACHER|None|MOB_ROLE_WIZARD|towns/wanderer/dkwizard.kod|None
+Heretic|Miriana|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_TEACHER|None|MOB_ROLE_PRIESTESS|towns/wanderer/heretic.kod|None
+HunterGhost|Tendrath|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_TEACHER | MOB_SELLER|None|MOB_ROLE_WIZARD|towns/wanderer/huntghst.kod|None
+Izzio|Izzio_name_rsc|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_BUYER | MOB_SELLER|None|MOB_ROLE_MERCHANT|towns/wanderer/izzio.kod|None
+JealousGeneral|Jonas D'Accor|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_TEACHER|None|MOB_ROLE_SERGEANT|towns/wanderer/jGeneral.kod|None
+Minstrel|Parrin Aragone|None|None|None|None|None|None|None|None|None|None|None|None|MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_TEACHER | MOB_SELLER|None|MOB_ROLE_BARD|towns/wanderer/minstrel.kod|None

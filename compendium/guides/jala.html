@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jala — the School of Song — Meridian 59 Compendium</title>
+<meta name="description" content="Jala is the bard's school, and it makes the single largest trade in the game: its power bonus can reach 40 — higher than any other school's ceiling — but only while you are holding an instrument, which means you are not holding a weapon. Everything about Jala follows from that one exchange.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html" class="on">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Guides</a> › Jala — the School of Song</p>
+<h1>Jala — the School of Song</h1>
+
+<p class="lede">Jala is the bard's school, and it makes the single largest trade in the game: its power
+bonus can reach 40 — higher than any other school's ceiling — but only while you are holding an
+instrument, which means you are not holding a weapon. Everything about Jala follows from that one
+exchange.</p>
+
+<h2>Where Jala stands</h2>
+<table class="data">
+<tbody>
+<tr><td>Polarity</td><td>Neutral — no karma requirement at any level</td></tr>
+<tr><td>Requisite attribute</td><td><strong>Intellect</strong></td></tr>
+<tr><td>Learning division</td><td>Lore</td></tr>
+<tr><td>Spells</td><td>17, across levels 1–6</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:376 <code class="k">GetDivision</code>, :392 <code class="k">GetDivisionReq</code>, :482 <code class="k">GetRequiredKarma</code></p>
+
+<h2>Where its power comes from</h2>
+<p>Spell power is half your ability in the spell plus the bonuses below, on a scale of 1 to 99.
+It decides your success chance, your mana cost, your casting speed and the strength of the
+effect — see <a href="spells.html">Spells and Spellcasting</a>.</p>
+<table class="data">
+<thead><tr><th>Bonus</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td><strong>Primary, up to 40</strong></td><td>The level of the instrument you are wielding. The source explains the
+       larger ceiling: the good instruments "are harder to find and interfere with normal combat"</td></tr>
+<tr><td><strong>Secondary, 0–10</strong></td><td><code class="k">max_health / 12</code></td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:2186–2196</p>
+
+<h2>The trade</h2>
+<p>Every other school's primary bonus comes from the world and is bounded at 30. Jala's comes
+from an object you must carry in your hands and reaches 40. You cannot wield an instrument and a
+weapon at once, so a Jala caster's melee is whatever
+<a href="../skills/brawling.html">brawling</a> and <a href="../skills/punch.html">punch</a> give
+them — and those two skills are exactly what the unarmed branch of the offence calculation reads.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4253–4256</p>
+<p>The secondary bonus is maximum health over 12, which is the only place in the game where the
+health progression feeds a magical one. A Jala caster who has advanced to 120 maximum health is
+carrying the full 10-point secondary bonus; one at 60 is carrying half of it.</p>
+<h2>What the school is for</h2>
+<p>Jala's spells work on <em>other people</em> — mood, loyalty, perception, morale — and on the
+room rather than on a single target. It is the school with the most effect on a group and the
+least on a duel. The Jala <em>hinder</em> spells reach into another caster's success calculation
+directly, altering their chance before their roll is made.</p>
+<p class="cite">kod/object/passive/spell.kod:1195–1208 — <code class="k">SuccessChance</code> consults the room's Jala state</p>
+
+<h2>Every Jala spell</h2>
+<table class="data">
+<thead><tr><th>Lvl</th><th>Spell</th><th>Mana</th><th>Cast time</th><th>Reagents</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><a href="../spells/invigorate.html">invigorate</a></td><td>5</td><td>instant</td><td>diamond, edible mushroom</td></tr>
+<tr><td>1</td><td><a href="../spells/melancholy.html">melancholy</a></td><td>2</td><td>instant</td><td>sapphire</td></tr>
+<tr><td>1</td><td><a href="../spells/mirth.html">mirth</a></td><td>2</td><td>instant</td><td>sapphire</td></tr>
+<tr><td>1</td><td><a href="../spells/truth.html">truth</a></td><td>5</td><td>instant</td><td>ruby, rainbow fern ×2</td></tr>
+<tr><td>2</td><td><a href="../spells/civility.html">civility</a></td><td>5</td><td>instant</td><td>ruby, mushroom</td></tr>
+<tr><td>2</td><td><a href="../spells/conciliation.html">conciliation</a></td><td>5</td><td>instant</td><td>ruby, elderberry</td></tr>
+<tr><td>2</td><td><a href="../spells/warptime.html">warp time</a></td><td>5</td><td>instant</td><td>none</td></tr>
+<tr><td>3</td><td><a href="../spells/distill.html">distill</a></td><td>20</td><td>30,000 ms</td><td>ruby</td></tr>
+<tr><td>3</td><td><a href="../spells/profaneresonance.html">profane resonance</a></td><td>5</td><td>instant</td><td>ruby, herb</td></tr>
+<tr><td>3</td><td><a href="../spells/restorate.html">restorate</a></td><td>5</td><td>instant</td><td>diamond, herb ×5</td></tr>
+<tr><td>3</td><td><a href="../spells/sacredresonance.html">sacred resonance</a></td><td>5</td><td>instant</td><td>ruby, entroot berry</td></tr>
+<tr><td>3</td><td><a href="../spells/spellbane.html">spellbane</a></td><td>12</td><td>instant</td><td>polished seraphym</td></tr>
+<tr><td>4</td><td><a href="../spells/disharmony.html">disharmony</a></td><td>5</td><td>instant</td><td>ruby</td></tr>
+<tr><td>4</td><td><a href="../spells/jig.html">jig</a></td><td>10</td><td>instant</td><td>diamond</td></tr>
+<tr><td>5</td><td><a href="../spells/manaconvergence.html">mana convergence</a></td><td>10</td><td>instant</td><td>polished seraphym</td></tr>
+<tr><td>5</td><td><a href="../spells/rejuvenate.html">rejuvenate</a></td><td>5</td><td>instant</td><td>diamond, uncut seraphym</td></tr>
+<tr><td>6</td><td><a href="../spells/crystalizemana.html">crystalize mana</a></td><td>20</td><td>instant</td><td>sapphire, uncut seraphym</td></tr>
+</tbody>
+</table>
+<p class="cite">Compiled from every <code class="k">Spell</code> subclass declaring this school. Per-spell citations are on each spell's own page.</p>
+
+<h2>Playing it</h2>
+<ul>
+<li>Your instrument is your spell power. Upgrading it is worth more than most levels of
+       ability, because ability is halved before it enters the calculation and the instrument
+       bonus is not.</li>
+<li>Accept that you will not melee. Build for it: intellect for the school, stamina for the
+       secondary bonus and for staying alive.</li>
+<li>Intellect pays three times — Jala's success floor, the first learning gate for everything
+       you own, and reduced atrophy. It is the best requisite attribute in the game.</li>
+<li>Jala is a party school. Its value shows up in what the group can do, which means it is a
+       poor choice for a character who plays alone.</li>
+</ul>
+
+<h2>Related</h2>
+<p><a href="schools.html">The Six Schools</a> · <a href="spells.html">How casting works</a> ·
+<a href="../spells/index.html">Every spell</a> · <a href="../reagents/index.html">Reagents</a> ·
+<a href="karma.html">Karma</a> · <a href="attributes.html">Attributes</a> ·
+<a href="advancing.html">Advancing Your Character</a></p>
+
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

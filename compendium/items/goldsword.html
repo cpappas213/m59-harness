@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gold sword — Meridian 59 Compendium</title>
+<meta name="description" content="This sword is delicate and ornamental. It seems like it might be good for a fanciful duel, but it is certainly not suitable for the rigors of blood combat.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › gold sword</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/gsword_g3.png" alt="gold sword" width="81" height="124"></div><div class="heroText"><h1>gold sword</h1><p class="lede">This sword is delicate and ornamental. It seems like it might be good for a fanciful duel, but it is certainly not suitable for the rigors of blood combat.</p><div class="tags"><span class="tag ">weapon</span><span class="tag ">hand</span><span class="tag ">rare</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">90</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">60</div></div><div class="fact"><div class="lbl">Value</div><div class="val">600 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">250–300</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">hand</div></div></div><h2>As a weapon</h2><div class="formula">base       = random(3, 8)            % thrust weapon
+quality    +0                           % normal quality
+stroke     × 80/100                     % Slash stroke damage factor
+might      × (100 + bound(might−25, 0, 40))/100
+proficiency+ (proficiency + 1) × 5/100</div><p class="cite">kod/object/item/passitem/weapon.kod:241 <code class="k">GetBaseDamage</code> · kod/object/passive/skill/stroke.kod:201 <code class="k">FindDamage</code> · :332 <code class="k">DamageFactors</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Wielder</th><th class="num ">Damage per hit</th><th class=""></th></tr></thead>
+<tbody><tr><td class="">novice — 0 proficiency, might 25</td><td class="num ">2–6</td><td class="">before the target’s armour</td></tr>
+<tr><td class="">expert — 99 proficiency, might 65</td><td class="num ">7–13</td><td class="">before the target’s armour</td></tr></tbody></table></div><div class="facts"><div class="fact"><div class="lbl">Weapon type</div><div class="val sm">thrust</div></div><div class="fact"><div class="lbl">Quality</div><div class="val sm">normal</div></div><div class="fact"><div class="lbl">To-hit bonus</div><div class="val">+125</div></div><div class="fact"><div class="lbl">Reach</div><div class="val">3</div></div><div class="fact"><div class="lbl">Disarm</div><div class="val">10</div></div><div class="fact"><div class="lbl">Spell penalty</div><div class="val">-10%</div></div><div class="fact"><div class="lbl">Damage type</div><div class="val sm">nonmagic + thrust</div></div><div class="fact"><div class="lbl">Proficiency</div><div class="val sm">sword</div></div></div><p>Damage type matters because armour resists by type. See
+<a href="../guides/armor.html">Armour</a> for what each armour does to each type, and
+<a href="../weapons/index.html">Weapons</a> to compare this against everything else.</p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/gsword_g1.png" alt="gold sword on the ground" loading="lazy"><figcaption>on the ground</figcaption></figure><figure><img class="icon" src="../assets/img/gsword_g2.png" alt="gold sword broken" loading="lazy"><figcaption>broken</figcaption></figure><figure><img class="icon" src="../assets/img/gsword_g3.png" alt="gold sword inventory" loading="lazy"><figcaption>inventory</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/weapon/goldswrd.kod:11</p>
+<p><code class="k">GoldSword</code> is <code class="k">Weapon</code> — full chain <code class="k">GoldSword</code> ← <code class="k">Weapon</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>goldsword_name_rsc</code></td><td class=""><em>gold sword</em></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>goldsword_icon_rsc</code></td><td class=""><em>gsword.bgf</em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>goldsword_desc_rsc</code></td><td class=""><em>This sword is delicate and ornamental.  It seems like it might be good for a fanciful duel</em></td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>600</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>90</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>60</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">viWeaponType</code></td><td class=""><code>WEAPON_TYPE_THRUST</code></td><td class="">1</td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viWeaponQuality</code></td><td class=""><code>WEAPON_QUALITY_NORMAL</code></td><td class="">1</td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viProficiency_Needed</code></td><td class=""><code>SKID_PROFICIENCY_SWORD</code></td><td class="">451</td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrWeapon_window_overlay</code></td><td class=""><code>goldsword_window_overlay_rsc</code></td><td class=""><em>povgswrd.bgf</em></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">vrWeapon_overlay</code></td><td class=""><code>goldsword_player_overlay</code></td><td class=""><em>gswordov.bgf</em></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viInventory_group</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viBroken_group</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viMin_damage</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viMax_damage</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viRarity</code></td><td class=""><code>ITEM_RARITY_GRADE_RARE</code></td><td class="">2</td><td class="num " data-sort="54">54</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAttack_type</code></td><td class=""><code>ATCK_WEAP_NONMAGIC+ATCK_WEAP_THRUST</code></td><td class="num " data-sort="58">58</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>GetBaseDamage(who = $, target = $)</h4>
+<pre><code>{
+      local poOwner, iDamage;
+
+      iDamage = random(viMin_damage,viMax_damage);
+
+      poOwner = send(send(self,@GetOwner),@getowner);
+      if send(poOwner,@IsArena)
+      {
+         iDamage = iDamage + 7;
+      }
+
+      return iDamage;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/goldswrd.kod:62</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

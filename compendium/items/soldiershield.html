@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>soldier's shield — Meridian 59 Compendium</title>
+<meta name="description" content="Shields of this style show allegiance to a particular faction">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › soldier's shield</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/gshe_g1.png" alt="soldier's shield" width="76" height="109"></div><div class="heroText"><h1>soldier's shield</h1><p class="lede">Shields of this style show allegiance to a particular faction</p><div class="tags"><span class="tag ">shield</span><span class="tag ">hand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">0</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">0</div></div><div class="fact"><div class="lbl">Value</div><div class="val">10 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">hand</div></div></div><h2>As protection</h2><div class="facts"><div class="fact"><div class="lbl">Defence bonus</div><div class="val">20</div></div><div class="fact"><div class="lbl">Flat reduction</div><div class="val sm">random(0, 2)</div></div></div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/gshe_g1.png" alt="soldier's shield inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/gshe_g2.png" alt="soldier's shield group 2" loading="lazy"><figcaption>group 2</figcaption></figure><figure><img class="icon" src="../assets/img/gshe_g3.png" alt="soldier's shield on the ground" loading="lazy"><figcaption>on the ground</figcaption></figure><figure><img class="icon" src="../assets/img/gshe_g4.png" alt="soldier's shield broken" loading="lazy"><figcaption>broken</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:11</p>
+<p><code class="k">SoldierShield</code> is <code class="k">Shield</code> — full chain <code class="k">SoldierShield</code> ← <code class="k">Shield</code> ← <code class="k">DefenseModifier</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">DukeShield</code>, <code class="k">PrincessShield</code>, <code class="k">RebelShield</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>SoldierShield_name_rsc</code></td><td class=""><em>soldier's shield</em></td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>SoldierShield_desc_rsc</code></td><td class=""><em>Shields of this style show allegiance to a particular faction</em></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>SoldierShield_icon_rsc</code></td><td class=""><em>gshE.bgf</em></td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">viDefense_base</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">viDamage_base</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">viFaction</code></td><td class=""><code>FACTION_NEUTRAL</code></td><td class="">0</td><td class="num " data-sort="76">76</td></tr>
+<tr><td class=""><code class="k">viColor</code></td><td class=""><code>XLAT_TO_GRAY</code></td><td class="">9</td><td class="num " data-sort="77">77</td></tr>
+<tr><td class=""><code class="k">prShield_emblem_held</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">prShield_emblem_drop</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="80">80</td></tr>
+<tr><td class=""><code class="k">prShield_emblem_back</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="81">81</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="83">83</td></tr>
+<tr><td class=""><code class="k">viInventory_group</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="84">84</td></tr>
+<tr><td class=""><code class="k">vbShow_Condition</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="87">87</td></tr>
+<tr><td class=""><code class="k">vrWelcomeMessage</code></td><td class=""><code>SoldierShield_welcome_mail</code></td><td class=""><em>Subject: Welcome.
+You are a soldier now.</em></td><td class="num " data-sort="89">89</td></tr>
+<tr><td class=""><code class="k">vrArmyName</code></td><td class=""><code>SoldierShield_ArmyName</code></td><td class=""><em>the forces of neutrality</em></td><td class="num " data-sort="92">92</td></tr>
+<tr><td class=""><code class="k">vrRank1</code></td><td class=""><code>SoldierShield_rank_name1</code></td><td class=""><em>a lowly peon</em></td><td class="num " data-sort="93">93</td></tr>
+<tr><td class=""><code class="k">vrRank2</code></td><td class=""><code>SoldierShield_rank_name2</code></td><td class=""><em>an average soldier</em></td><td class="num " data-sort="94">94</td></tr>
+<tr><td class=""><code class="k">vrRank3</code></td><td class=""><code>SoldierShield_rank_name3</code></td><td class=""><em>a notable fighter</em></td><td class="num " data-sort="95">95</td></tr>
+<tr><td class=""><code class="k">vrRank4</code></td><td class=""><code>SoldierShield_rank_name4</code></td><td class=""><em>a great warrior</em></td><td class="num " data-sort="96">96</td></tr>
+<tr><td class=""><code class="k">vrRank5</code></td><td class=""><code>SoldierShield_rank_name5</code></td><td class=""><em>a supreme hero</em></td><td class="num " data-sort="97">97</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piFactionRank</code></td><td class=""><code>4</code></td><td class="num " data-sort="101">101</td></tr>
+<tr><td class=""><code class="k">piDaysUntilRankLoss</code></td><td class=""><code>0</code></td><td class="num " data-sort="104">104</td></tr>
+<tr><td class=""><code class="k">piFactionKills</code></td><td class=""><code>0</code></td><td class="num " data-sort="107">107</td></tr>
+<tr><td class=""><code class="k">poLastEnemyToAttack</code></td><td class=""><code>$</code></td><td class="num " data-sort="109">109</td></tr>
+<tr><td class=""><code class="k">piOverlayHotspot</code></td><td class=""><code>HS_LEFT_WEAPON</code></td><td class="num " data-sort="112">112</td></tr>
+<tr><td class=""><code class="k">vrShield_window_overlay</code></td><td class=""><code>SoldierShield_window_overlay_rsc</code></td><td class="num " data-sort="113">113</td></tr>
+<tr><td class=""><code class="k">viUse_amount</code></td><td class=""><code>1</code></td><td class="num " data-sort="114">114</td></tr>
+<tr><td class=""><code class="k">vrShield_overlay</code></td><td class=""><code>SoldierShield_icon_rsc</code></td><td class="num " data-sort="115">115</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor()</h4>
+<pre><code>{
+      
+      
+      Send(self,@SetPaletteTranslation,
+           #translation=Send(SYS,@EncodeTwoColorXLAT,#color1=viColor,
+                             #color2=viColor));
+
+      Send(self,@ResetRankLossCount);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:119</p>
+<h4>Delete()</h4>
+<pre><code>{
+      if poOwner &lt;&gt; $ AND IsClass(poOwner,&amp;Player)
+      {
+         if NOT IsClass(poOwner,&amp;DM)
+         {
+            if Send(poOwner,@GetFaction) = viFaction
+            {
+               if Send(poOwner,@IsLoggedOn)
+               {
+                  Post(poOwner,@MsgSendUser,
+                       #message_rsc=SoldierShield_lost_status);
+               }
+               else
+               {
+                  Send(poOwner,@ReceiveNestedMail,
+                       #from=Send(Send(SYS,@GetParliament),
+                                  @GetFactionLiegeName,#faction=viFaction),
+                       #dest_list=[poOwner],
+                       #nest_list=[4,SoldierShield_booted_mail]);
+               }
+            }
+            else
+            {
+               if Send(poOwner,@IsLoggedOn)
+               {
+                  Post(poOwner,@MsgSendUser,
+                       #message_rsc=SoldierShield_lost_status_nonfaction);
+               }
+
+               
+               
+            }
+         }
+
+         
+         
+         Send(self,@NewUnused,#what=poOwner,#Recalibrate=TRUE);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:132</p>
+<h4>GetFactionRank()</h4>
+<pre><code>{
+      return piFactionRank;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:177</p>
+<h4>GetFaction()</h4>
+<pre><code>{
+      return viFaction;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:182</p>
+<h4>ModifyFactionRank(amount = 0)</h4>
+<p>Adds 'amount' of rank.  Can be negative.  Binds value to acceptable ranges.</p>
+<pre><code>{
+      
+      piFactionRank = piFactionRank + amount;
+      piFactionRank = bound(piFactionRank,1,10);
+
+      Send(self,@UpdateRankPowers);
+
+      return piFactionRank;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:187</p>
+<h4>UpdateRankPowers()</h4>
+<p>Updates any rank powers.  EG, called after gaining a faction rank.</p>
+<pre><code>{
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:200</p>
+<h4>RemoveStats()</h4>
+<pre><code>{
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:206</p>
+<h4>KilledSomething(what = $)</h4>
+<p>Called when our owner killed something.</p>
+<pre><code>{
+      local oOwnerOwner, iAdvance;
+
+      
+      oOwnerOwner = Send(poOwner,@GetOwner);
+      if Send(what,@GetFaction) = FACTION_NEUTRAL
+         OR oOwnerOwner = $
+         OR Send(oOwnerOwner,@CheckRoomFlag,#flag=ROOM_SAFE_DEATH)
+      {
+         return;
+      }
+
+      if IsClass(what,&amp;Player)
+      {
+         
+         
+         if NOT Send(self,@IsEnemyAttack,#what=what)
+            OR Send(poOwner,@CanHelpPlayer)
+         {
+            return;
+         }
+
+         
+         iAdvance = 2;
+         Send(self,@ResetRankLossCount);
+         piFactionKills = piFactionKills + 1;
+      }
+      else
+      {
+         
+         if piFactionRank &gt;= MAX_RANK_FROM_MONSTERS
+            AND Send(SYS,@IsPKAllowed)
+         {
+            return;
+         }
+
+         if Send(what,@GetFaction) &lt;&gt; viFaction
+         {
+            
+            iAdvance = 1;
+         }
+         else
+         {
+            
+            iAdvance = -1;
+         }
+      }
+
+      Send(self,@ModifyFactionRank,#amount=iAdvance);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:212</p>
+<h4>ResetRankLossCount()</h4>
+<pre><code>{
+      piDaysUntilRankLoss = (DAYS_PER_RANK_LOSS * random(80,110)) / 100;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:267</p>
+<h4>NewDay()</h4>
+<p>Called every new M59 day.</p>
+<pre><code>{
+      piDaysUntilRankLoss = piDaysUntilRankLoss - 1;
+
+      if piDaysUntilRankLoss &lt;= 0
+      {
+         Send(self,@ModifyFactionRank,#amount=-1);
+         Send(self,@ResetRankLossCount);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:274</p>
+<h4>LostFaction()</h4>
+<p>Does cleanup when the player loses faction.</p>
+<pre><code>{
+      Post(self,@Delete);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:288</p>
+<h4>OwnerDied(what = $, logoff = FALSE)</h4>
+<p>Called when our owner dies due to 'what', or with 'logoff' to apply a penalty regardless.</p>
+<pre><code>{
+      local oSoldierShield;
+
+      
+      
+      if logoff
+         OR Send(self,@IsEnemyAttack,#what=what)
+      {
+         
+         if piFactionRank &lt;= 3
+         {
+            Post(self,@Delete);
+
+            return;
+         }
+
+         
+         Send(self,@ModifyFactionRank,#amount=-4);
+
+         
+         
+         if logoff
+            AND poLastEnemyToAttack &lt;&gt; $
+         {
+            oSoldierShield = Send(poLastEnemyToAttack,@FindUsing,
+                                  #class=&amp;SoldierShield);
+            Send(oSoldierShield,@KilledSomething,#what=poOwner);
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:296</p>
+<h4>IsEnemyAttack(what = $, damage = FALSE)</h4>
+<p>Returns TRUE if what is an enemy (opposing faction soldier).</p>
+<pre><code>{
+      local oSoldierShield;
+
+      if what &lt;&gt; $
+         AND IsClass(what,&amp;Player)
+         AND what &lt;&gt; poOwner
+      {
+         oSoldierShield = Send(what,@FindUsing,#class=&amp;SoldierShield);
+
+         
+         if oSoldierShield &lt;&gt; $
+         {
+            if Send(oSoldierShield,@GetFaction) &lt;&gt; viFaction
+            {
+               Send(oSoldierShield,@AttackedByEnemy,#who=what);
+
+               return TRUE;
+            }
+         }
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:332</p>
+<h4>AttackedByEnemy(who = $)</h4>
+<pre><code>{
+      poLastEnemyToAttack = who;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:358</p>
+<h4>ReqUse()</h4>
+<pre><code>{
+      if Send(poOwner,@GetFaction) = viFaction
+         OR IsClass(poOwner,&amp;DM)
+      {
+         Post(self,@UpdateRankPowers);
+
+         return TRUE;
+      }
+      else
+      {
+         
+         Post(self,@Delete);
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:367</p>
+<h4>ReqUnuse()</h4>
+<pre><code>{
+      
+      return IsClass(poOwner,&amp;DM);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:385</p>
+<h4>NewUnused(what = $, Recalibrate = FALSE)</h4>
+<pre><code>{
+      
+      if NOT (Recalibrate OR IsClass(what,&amp;DM))
+      {
+         return FALSE;
+      }
+
+      
+      Send(self,@RemoveFromBack);
+      Send(self,@RemoveStats);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:391</p>
+<h4>ReqNewOwner(what = $)</h4>
+<pre><code>{
+      if (NOT IsClass(what,&amp;Battler))
+         OR (Send(what,@GetFaction) &lt;&gt; viFaction
+             AND NOT IsClass(what,&amp;DM))
+      {
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:406</p>
+<h4>NewOwner(what = $)</h4>
+<pre><code>{
+      if what &lt;&gt; $
+         AND IsClass(what,&amp;Player)
+      {
+         if Send(what,@GetFaction) = viFaction
+            OR IsClass(what,&amp;DM)
+         {
+            Send(what,@FreeHands);
+            Post(what,@TryUseItem,#what=self);
+            if NOT IsClass(what,&amp;DM)
+            {
+               Send(what,@ReceiveNestedMail,
+                    #from=Send(Send(SYS,@GetParliament),@GetFactionLiegeName,
+                               #faction=viFaction),
+                    #dest_list=[what],
+                    #nest_list=[4,vrWelcomeMessage]);
+            }
+         }
+         else
+         {
+            
+            Post(self,@Delete);
+
+            return;
+         }
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:418</p>
+<h4>ReqLeaveOwner()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:449</p>
+<h4>SlingOnBack()</h4>
+<pre><code>{
+      if piOverlayHotspot &lt;&gt; HS_SHIELD_BACK
+      {
+         piOverlayHotspot = HS_SHIELD_BACK;
+
+         
+         Send(poOwner,@MsgSendUser,#message_rsc=SoldierShield_sling_on_back);
+
+         
+         
+         
+         Send(poOwner,@RemoveWindowOverlay,#what=self);
+
+         
+         viUse_amount = 0;
+
+         vrShield_overlay = SoldierShield_icon_back_rsc;
+         Send(poOwner,@SetOverlay,#what=self);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:458</p>
+<h4>RemoveFromBack()</h4>
+<pre><code>{
+      if piOverlayHotspot &lt;&gt; HS_LEFT_WEAPON
+      {
+         piOverlayHotspot = HS_LEFT_WEAPON;
+
+         
+         Send(poOwner,@MsgSendUser,
+              #message_rsc=SoldierShield_remove_from_back);
+
+         
+         vrShield_window_overlay = SoldierShield_window_overlay_rsc;
+         Send(poOwner,@SetWindowOverlay,#what=self);
+
+         
+         viUse_amount = 1;
+
+         vrShield_overlay = SoldierShield_icon_rsc;
+         Send(poOwner,@SetOverlay,#what=self);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:482</p>
+<h4>GetWindowOverlayHotspot()</h4>
+<pre><code>{
+      
+      if piUsed = UNUSED
+         OR piOverlayHotspot = HS_SHIELD_BACK
+      {
+         return 0;
+      }
+
+      return HS_SW;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:506</p>
+<h4>AppendDesc()</h4>
+<p>Appends faction rank to description.</p>
+<pre><code>{
+      AppendTempString(SoldierShield_rank_desc1);
+      AppendTempString(vrArmyName);
+      AppendTempString(SoldierShield_rank_desc2);
+
+      if piFactionRank &lt;= 2
+      {
+         AppendTempString(vrRank1);
+      }
+      else
+      {
+         if piFactionRank &lt;= 4
+         {
+            AppendTempString(vrRank2);
+         }
+         else
+         {
+            if piFactionRank &lt;= 6
+            {
+               AppendTempString(vrRank3);
+            }
+            else
+            {
+               if piFactionRank &lt;= 8
+               {
+                  AppendTempString(vrRank4);
+               }
+               else
+               {
+                  AppendTempString(vrRank5);
+               }
+            }
+         }
+      }
+
+      AppendTempString(SoldierShield_rank_desc3);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:520</p>
+<h4>DefendingHit()</h4>
+<p>Called when the item provides defense.</p>
+<pre><code>{
+      piUsed = DEFENDING;
+      if vrShield_window_overlay &lt;&gt; $
+      {
+         Send(poOwner,@ChangeWindowOverlay,#what=self);
+      }
+
+      if vrShield_overlay &lt;&gt; $
+      {
+         piUsed = USED;
+      }
+
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:563</p>
+<h4>GetBlockAbility(who = $)</h4>
+<pre><code>{
+      
+      if piOverlayHotspot = HS_SHIELD_BACK
+      {
+         return 0;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:581</p>
+<h4>ModifyDefenseDamage(who = $, what = $, damage = $, atype = 0, aspell = 0)</h4>
+<p>Affects damage done to owner.</p>
+<pre><code>{
+      local iDamageReduce;
+
+      iDamageReduce = 0;
+      if piDamage_reduce &lt;&gt; 0
+      {
+         iDamageReduce = random(piDamage_reduce/3,piDamage_reduce);
+         iDamageReduce = bound(iDamageReduce,0,(damage-1));
+      }
+
+      if aspell &lt;&gt; 0
+      {
+         
+         if atype &lt;&gt; 0
+         {
+            
+            
+            iDamageReduce = iDamageReduce * 2 / 3;
+         }
+         else
+         {
+            
+            iDamageReduce = 0;
+         }
+      }
+
+      return damage - iDamageReduce;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:594</p>
+<h4>GetBaseSpellModifier(oSpell = $)</h4>
+<pre><code>{
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:625</p>
+<h4>CanMend()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:631</p>
+<h4>CanShatter()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:637</p>
+<h4>CanSwap()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:642</p>
+<h4>DropOnDeath()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:648</p>
+<h4>GetOverlay()</h4>
+<pre><code>{
+      return vrShield_overlay;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:655</p>
+<h4>GetOverlayHotspot()</h4>
+<pre><code>{
+      return piOverlayHotspot;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:660</p>
+<h4>GetNumberOverlays()</h4>
+<pre><code>{
+      if (piOverlayHotspot = HS_LEFT_WEAPON
+          AND prShield_emblem_held &lt;&gt; $)
+         OR (piOverlayHotspot = HS_SHIELD_BACK
+             AND prShield_emblem_back &lt;&gt; $)
+      {
+         return 2;
+      }
+
+      return 1;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:665</p>
+<h4>SendOverlayInformation(iAnimation = $)</h4>
+<pre><code>{
+      AddPacket(4,vrShield_Overlay);
+      AddPacket(1,piOverlayHotspot);
+      Send(self,@SendHeldAnimation,#iAnimation=iAnimation);
+
+      if piOverlayHotspot = HS_LEFT_WEAPON
+      {
+         if prShield_emblem_held &lt;&gt; $
+         {
+            AddPacket(4,prShield_emblem_held);
+            AddPacket(1,piOverlayHotspot);
+            AddPacket(1,ANIMATE_NONE, 2,1);
+         }
+      }
+      else
+      {
+         
+         if prShield_emblem_back &lt;&gt; $
+         {
+            
+            
+            AddPacket(4,prShield_emblem_back);
+            AddPacket(1,piOverlayHotspot);
+            if iAnimation = PANM_BOW_FIRE
+            {
+               
+               AddPacket(1,ANIMATE_ONCE, 4,1200, 2,2, 2,2, 2,1);
+            }
+            else
+            {
+               
+               AddPacket(1,ANIMATE_NONE, 2,1);
+            }
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:678</p>
+<h4>SendHeldAnimation(iAnimation = $)</h4>
+<pre><code>{
+      local XLAT;
+
+      XLAT = Send(self,@GetPaletteTranslation);
+      AddPacket(1,ANIMATE_TRANSLATION,1,XLAT);
+
+      if piOverlayHotspot = HS_LEFT_WEAPON
+      {
+         AddPacket(1,ANIMATE_NONE,2,2);
+      }
+      else
+      {
+         
+         if iAnimation = PANM_BOW_FIRE
+         {
+            
+            AddPacket(1,ANIMATE_ONCE,4,1200,2,5,2,5,2,1);
+         }
+         else
+         {
+            
+            AddPacket(1,ANIMATE_NONE,2,1);
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:718</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      local XLAT;
+
+      XLAT = Send(self,@GetPaletteTranslation);
+      AddPacket(1,ANIMATE_TRANSLATION,1,XLAT);
+      AddPacket(1,ANIMATE_NONE,2,viGround_group);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:747</p>
+<h4>SendWindowOverlayAnimation()</h4>
+<pre><code>{
+      local XLAT;
+
+      XLAT = Send(self,@GetPaletteTranslation);
+      AddPacket(1,ANIMATE_TRANSLATION,1,XLAT);
+
+      if piUsed = DEFENDING
+      {
+         AddPacket(1,ANIMATE_ONCE, 4,1000, 2,2, 2,2, 2,1);
+
+         return;
+      }
+
+      AddPacket(1,ANIMATE_NONE, 2,1);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:758</p>
+<h4>SendOverlays()</h4>
+<pre><code>{
+      if prShield_emblem_drop &lt;&gt; $
+      {
+         AddPacket(1,1);
+         AddPacket(4,prShield_emblem_drop, 1,1, 1,ANIMATE_NONE, 2,2);
+      }
+      else
+      {
+         AddPacket(1,0);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:777</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      local XLAT;
+
+      XLAT = Send(self,@GetPaletteTranslation);
+      AddPacket(1,ANIMATE_TRANSLATION,1,XLAT);
+
+      AddPacket(1,ANIMATE_NONE, 2,viInventory_group);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:792</p>
+<h4>SendLookOverlays()</h4>
+<pre><code>{
+      if prShield_emblem_drop &lt;&gt; $
+      {
+         AddPacket(1,1);
+         AddPacket(4,prShield_emblem_drop, 1,1, 1,ANIMATE_NONE, 2,1);
+      }
+      else
+      {
+         AddPacket(1,0);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:804</p>
+<h4>SendInventoryAnimation()</h4>
+<pre><code>{
+      Send(self,@SendLookAnimation);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:819</p>
+<h4>SendInventoryOverlays()</h4>
+<pre><code>{
+      Send(self,@SendLookOverlays);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:826</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

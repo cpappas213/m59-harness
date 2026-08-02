@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>create weapon — Meridian 59 Compendium</title>
+<meta name="description" content="Kraanan Lv. 1: Creates a variety of weapons for use in defeating your foes.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › create weapon</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/icremace_g1.png" alt="create weapon" width="128" height="128"></div><div class="heroText"><h1>create weapon</h1><p class="lede">Kraanan Lv. 1: Creates a variety of weapons for use in defeating your foes.</p><div class="tags"><a class="tag school-3" href="../guides/kraanan.html">Kraanan</a><span class="tag ">Level 1</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/kraanan.html">Kraanan</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">1</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">15</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">500 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">56</div></div></div><div class="flavor">Materializes a weapon. Requires nothing but a violent will.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">15</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><span class="muted">none</span></td><td class="">This spell needs no material component.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">2</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">500 ms trance</td><td class="">You are locked in a casting trance for this long; taking damage can break it.</td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/creaweap.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/kraananpriestess.html">Priestess Qerti'nya</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">CastSpell</code></li><li><code class="k">GetDuration</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/icremace_g1.png" alt="create weapon group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/icremace_g2.png" alt="create weapon group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/creaweap.kod:11</p>
+<p><code class="k">CreateWeapon</code> is <code class="k">Spell</code> — full chain <code class="k">CreateWeapon</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>createweapon_name_rsc</code></td><td class=""><em>create weapon</em></td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>createweapon_icon_rsc</code></td><td class=""><em>icremace.bgf</em></td><td class="num " data-sort="33">33</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>createweapon_desc_rsc</code></td><td class=""><em>Materializes a weapon.  Requires nothing but a violent will.</em></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">vrSpell_intro</code></td><td class=""><code>createweapon_spell_intro</code></td><td class=""><em>Kraanan Lv. 1: Creates a variety of weapons for use in defeating your foes.</em></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_CREATE_WEAPON</code></td><td class="">56</td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_KRAANAN</code></td><td class="">3</td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>15</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viCast_time</code></td><td class=""><code>500</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>createweapon_sound</code></td><td class=""><em>kraanan.wav</em></td><td class="num " data-sort="44">44</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      plReagents = $;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/creaweap.kod:50</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/creaweap.kod:57</p>
+<h4>CastSpell(who = $, lTargets = $, iSpellPower = $)</h4>
+<pre><code>{
+      local oWeapon,iNum, oItemAtt;
+
+      
+      iNum = Random(iSpellPower/3,iSpellPower);
+      
+      if iNum &lt; 20 
+      {
+         oWeapon = Create(&amp;Mace);
+      }
+      else
+      {
+         if iNum &lt; 30
+         {
+            oWeapon = Create(&amp;ShortSword);
+         }
+         else
+         {
+            if iNum &lt; 45
+            {
+               oWeapon = Create(&amp;Hammer);
+            }
+            else
+            {
+               if iNum &lt; 60
+               {
+                  oWeapon = create(&amp;Axe);
+               }
+               else
+               {
+                  if iNum &lt; 75
+                  {
+                     oWeapon = Create(&amp;LongSword);
+                  }
+                  else
+                  {
+                     if iNum &lt; 95
+                     {
+                        oWeapon = Create(&amp;Scimitar);
+                     }
+                     else
+                     {
+                        oWeapon = Create(&amp;MysticSword);
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      
+      Send(oWeapon,@SetHits,#number=(Send(oWeapon,@GetHits)*(iSpellPower+100))/200);
+
+      if Send(who,@ReqNewHold,#what=oWeapon)
+      {
+         Send(who,@NewHold,#what=oWeapon);
+         Send(who,@MsgSendUser,#message_rsc=createweapon_cast_rsc,
+            #parm1=send(oWeapon,@GetCapIndef),#parm2=send(oWeapon,@GetName));
+
+         
+         oItemAtt = send(SYS,@FindItemAttByNum,#Num=IA_MADE);
+         send(oItemAtt,@AddtoItem,#oitem=oWeapon,#timer_duration=send(self,@getduration,#iSpellpower=iSpellpower));
+      }
+      else
+      {
+	      Send(oWeapon,@Delete);
+	      Send(who, @MsgSendUser, #message_rsc=createweapon_inv_full_rsc,#parm1=send(oWeapon,@GetCapIndef),#parm2=send(oWeapon,@GetName));
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/creaweap.kod:62</p>
+<h4>GetDuration(iSpellpower = $)</h4>
+<pre><code>{
+      local iDuration;
+
+      iDuration = iSpellpower * 2; 
+      iDuration = iDuration * 60 * 1000;
+
+      return iDuration;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/creaweap.kod:135</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

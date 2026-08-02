@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mollusk creature — Meridian 59 Compendium</title>
+<meta name="description" content="A recent arrival to the lands, this giant creature is rather peaceful. It roams the area, looking for food. It rarely attacks people unless it is attacked first">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › mollusk creature</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/mollusk_g1.png" alt="mollusk creature" width="93" height="50"></div><div class="heroText"><h1>mollusk creature</h1><p class="lede">A recent arrival to the lands, this giant creature is rather peaceful. It roams the area, looking for food. It rarely attacks people unless it is attacked first. But, be warned, its thick shell and powerful claw make it a tough foe to face.</p><div class="tags"><span class="tag ">Level 150</span><span class="tag ">Difficulty 7</span><span class="tag ">Good</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">150</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">7</div></div><div class="fact"><div class="lbl">Health</div><div class="val">135–225</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">8–19</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">90</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">tough</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>kolisith</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 150 + 60 × 7
+                = 870
+
+health          = Fuzzy(level × 120/100) = 135–225
+damage per hit  = Fuzzy(level / random(10,15))  = 8–19
+dodge           = difficulty × 10 = 70</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">81%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">38%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">10</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">10.9</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>bludgeon</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 150/55 + random(0, 7/3), $, 6)
+       = 3–5 items
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/tought.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="RedMushroom"><a href="../items/redmushroom.html">red mushroom</a></td><td class="num " data-sort="25.743">25.7%</td><td class=""></td><td class=""><code>tought.kod:33</code></td></tr>
+<tr><td class="" data-sort="BlueMushroom"><a href="../items/bluemushroom.html">blue mushroom</a></td><td class="num " data-sort="19.802">19.8%</td><td class=""></td><td class=""><code>tought.kod:34</code></td></tr>
+<tr><td class="" data-sort="Snack"><a href="../items/snack.html">edible mushroom</a></td><td class="num " data-sort="15.842">15.8%</td><td class=""></td><td class=""><code>tought.kod:35</code></td></tr>
+<tr><td class="" data-sort="Emerald"><a href="../items/emerald.html">emerald</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>tought.kod:36</code></td></tr>
+<tr><td class="" data-sort="Sapphire"><a href="../items/sapphire.html">sapphire</a></td><td class="num " data-sort="7.921">7.9%</td><td class=""></td><td class=""><code>tought.kod:37</code></td></tr>
+<tr><td class="" data-sort="Diamond"><a href="../items/diamond.html">diamond</a></td><td class="num " data-sort="5.941">5.9%</td><td class=""></td><td class=""><code>tought.kod:38</code></td></tr>
+<tr><td class="" data-sort="BlueDragonScale"><a href="../items/bluedragonscale.html">blue dragon scale</a></td><td class="num " data-sort="5.941">5.9%</td><td class=""></td><td class=""><code>tought.kod:39</code></td></tr>
+<tr><td class="" data-sort="Ruby"><a href="../items/ruby.html">ruby</a></td><td class="num " data-sort="3.96">4.0%</td><td class=""></td><td class=""><code>tought.kod:40</code></td></tr>
+<tr><td class="" data-sort="InkyCap"><a href="../items/inkycap.html">Inky-cap mushroom</a></td><td class="num " data-sort="3.96">4.0%</td><td class=""></td><td class=""><code>tought.kod:41</code></td></tr>
+<tr><td class="" data-sort="MartyrScroll"><a href="../items/martyrscroll.html">Martyr Scroll</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>tought.kod:42</code></td></tr></tbody></table></div><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>2 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 5.
+<span class="cite">kod/object/passive/trestype/tought.kod:27</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>2 places in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="Deep in the Forest of Farol"><a href="../zones/outdoorsd6.html">Deep in the Forest of Farol (Outdoors D6)</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="30">30%</td><td class=""><code>monsroom/d6.kod</code></td></tr>
+<tr><td class="" data-sort="The Great Ocean"><a href="../zones/outdoorse2.html">The Great Ocean</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="80">80%</td><td class=""><code>monsroom/e2.kod</code></td></tr></tbody></table></div><h2>What killing it does to your karma</h2>
+<p>Its karma is <code class="k">90</code>, and a kill is treated as an act whose karma is the
+<em>negative</em> of the victim's — so killing this creature pushes you
+<strong>towards evil</strong>.</p>
+<div class="formula">base   = your_karma − (−victim_karma) = your_karma + 90
+change = −( base³ / 2500 + 5 × base ) / (11 − swing)      % hundredths of a karma point
+       bounded to ±150 for a monster kill — at most 1.5 karma per kill</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code> · :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+<div class="note">No karma moves at all in the newbie region, in an arena, or when the victim's
+karma is neutral. And once you are already further from neutral than your victim in the same
+direction, killing them does nothing to you.</div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/mollusk_g1.png" alt="mollusk creature group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g2.png" alt="mollusk creature group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g3.png" alt="mollusk creature group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g4.png" alt="mollusk creature group 4" loading="lazy"><figcaption>group 4 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g5.png" alt="mollusk creature group 5" loading="lazy"><figcaption>group 5 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g6.png" alt="mollusk creature group 6" loading="lazy"><figcaption>group 6 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g7.png" alt="mollusk creature group 7" loading="lazy"><figcaption>group 7 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g8.png" alt="mollusk creature group 8" loading="lazy"><figcaption>group 8 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g9.png" alt="mollusk creature group 9" loading="lazy"><figcaption>group 9 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g10.png" alt="mollusk creature group 10" loading="lazy"><figcaption>group 10 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g11.png" alt="mollusk creature group 11" loading="lazy"><figcaption>group 11 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g12.png" alt="mollusk creature group 12" loading="lazy"><figcaption>group 12 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g13.png" alt="mollusk creature group 13" loading="lazy"><figcaption>group 13 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g14.png" alt="mollusk creature group 14" loading="lazy"><figcaption>group 14 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g15.png" alt="mollusk creature group 15" loading="lazy"><figcaption>group 15 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g16.png" alt="mollusk creature group 16" loading="lazy"><figcaption>group 16 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g17.png" alt="mollusk creature group 17" loading="lazy"><figcaption>group 17 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g18.png" alt="mollusk creature group 18" loading="lazy"><figcaption>group 18 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g19.png" alt="mollusk creature group 19" loading="lazy"><figcaption>group 19 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mollusk_g20.png" alt="mollusk creature group 20" loading="lazy"><figcaption>group 20 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/molx_g1.png" alt="mollusk creature corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:11</p>
+<p><code class="k">MolluskMonster</code> is <code class="k">Monster</code> — full chain <code class="k">MolluskMonster</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrKocName</code></td><td class=""><code>MolluskMonster_koc_name_rsc</code></td><td class=""><em>kolisith</em></td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>MolluskMonster_name_rsc</code></td><td class=""><em>mollusk creature</em></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>MolluskMonster_icon_rsc</code></td><td class=""><em>mollusk.bgf</em></td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>MolluskMonster_desc_rsc</code></td><td class=""><em>A recent arrival to the lands, this giant creature is rather peaceful.  It roams the area,</em></td><td class="num " data-sort="69">69</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>MolluskMonster_dead_icon_rsc</code></td><td class=""><em>molX.bgf</em></td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>MolluskMonster_dead_name_rsc</code></td><td class=""><em>slain mollusk creature</em></td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_TOUGH</code></td><td class="">6</td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_AVERAGE</code></td><td class="">12</td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_BLUDGEON</code></td><td class="">16</td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="76">76</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>150</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="77">77</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>7</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="78">78</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>90</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>MolluskMonster_sound_miss</code></td><td class=""><em>mol_atk.wav</em></td><td class="num " data-sort="81">81</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>MolluskMonster_sound_aware</code></td><td class=""><em>mol_awr.wav</em></td><td class="num " data-sort="82">82</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>MolluskMonster_sound_death</code></td><td class=""><em>mol_dth.wav</em></td><td class="num " data-sort="83">83</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="87">87</td></tr>
+<tr><td class=""><code class="k">pbSurfaced</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="88">88</td></tr>
+<tr><td class=""><code class="k">pbThrow</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="91">91</td></tr>
+<tr><td class=""><code class="k">ptPostPop</code></td><td class=""><code>$</code></td><td class="num " data-sort="93">93</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructed()</h4>
+<pre><code>{
+      plResistances = [ [ -10, ATCK_WEAP_MAGIC ],
+                        [  30, ATCK_WEAP_BLUDGEON ],
+                        [  50, -ATCK_SPELL_QUAKE ]
+                      ];
+
+      
+      Send(self,@SetBehaviorFlag,#flag=AI_NOMOVE,#value=TRUE);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:97</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if piAnimation = ANIM_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE, 4,ANIMATION_ATTACK_SPEED,
+                2,FRAME_ATTACK_START, 2,FRAME_ATTACK_END, 2,FRAME_STANDING);
+
+         return;
+      }
+
+      if piAnimation = ANIM_THROW
+      {
+         AddPacket(1,ANIMATE_ONCE, 4,ANIMATION_THROW_SPEED,
+                2,FRAME_THROW_START, 2,FRAME_THROW_END, 2,FRAME_STANDING);
+
+         return;
+      }
+
+      if piAnimation = ANIM_POPUP
+      {
+         AddPacket(1,ANIMATE_ONCE, 4,ANIMATION_POPUP_SPEED,
+                2,FRAME_POPUP_START, 2,FRAME_POPUP_END, 2,FRAME_STANDING);
+
+         return;
+      }
+
+      if pbSurfaced
+      {
+         AddPacket(1,ANIMATE_NONE,2,FRAME_STANDING);
+      }
+      else
+      {
+         AddPacket(1,ANIMATE_NONE,2,FRAME_UNDERGROUND);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:110</p>
+<h4>EnterStateChase()</h4>
+<pre><code>{
+      if NOT pbSurfaced
+      {
+         Send(self,@PopUp);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:148</p>
+<h4>PopUp()</h4>
+<pre><code>{
+      ptPostPop = createTimer(self,@PostPop,POPUP_DURATION);
+
+      
+      Send(self,@SetBehaviorFlag,#flag=AI_NOFIGHT,#value=TRUE);
+      
+      piAnimation = ANIM_POPUP;
+      Send(poOwner,@SomethingChanged,#what=self);
+      pbSurfaced = TRUE;
+      piAnimation = ANIM_NONE;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:158</p>
+<h4>PostPop()</h4>
+<pre><code>{
+      ptPostPop = $;
+
+      
+      Send(self,@SetBehaviorFlag,#flag=AI_NOMOVE,#value=FALSE);
+      Send(self,@SetBehaviorFlag,#flag=AI_NOFIGHT,#value=FALSE);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:173</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE, 4,ANIMATION_WALK_SPEED,
+                2,FRAME_WALK_START, 2,FRAME_WALK_END);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:184</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_NONE, 2,FRAME_STANDING);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:192</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      if pbThrow
+      {
+         piAnimation = ANIM_THROW;
+      }
+      else
+      {
+         piAnimation = ANIM_ATTACK;
+      }
+
+      pbThrow = FALSE;
+
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:199</p>
+<h4>TryAttack(what = $, stroke_obj = $)</h4>
+<pre><code>{
+      if NOT pbSurfaced
+      {
+         Send(self,@PopUp);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:218</p>
+<h4>MonsterCastSpell()</h4>
+<pre><code>{
+      local iDistance;
+
+      iDistance = Send(self,@SquaredDistanceTo,#what=poTarget);
+      if Random(1,100) &lt; THROW_CHANCE
+         AND iDistance &gt; Send(self,@GetAttackRange)
+         AND iDistance &lt;= ROCK_RANGE_SQUARED
+         AND Send(poOwner,@LineOfSight,#obj1=self,#obj2=poTarget)
+         AND Send(poOwner,@ReqSomethingAttack,#what=self,#victim=poTarget,
+                  #use_weapon=self)
+      {
+        Send(self,@DoMissileAttack);
+
+        return TRUE;
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:228</p>
+<h4>DoMissileAttack()</h4>
+<pre><code>{
+      pbThrow = TRUE;
+      send(poOwner,@SomethingShot,#who=self,#target=poTarget,#projectile=self);
+      Send(self,@TryAttack,#what=poTarget,#stroke_obj=self);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:248</p>
+<h4>GetProjectileSpeed()</h4>
+<pre><code>{
+      return 8;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:257</p>
+<h4>SendProjectileAnimation()</h4>
+<pre><code>{
+      
+      AddPacket(1,ANIMATE_CYCLE, 4,175, 2,1, 2,4);  
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:262</p>
+<h4>GetProjectileIcon()</h4>
+<pre><code>{
+      if Random(1,100) &lt; 30
+      {
+         return MolluskMonster_rock_large;
+      }
+
+      return MolluskMonster_rock_small;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:270</p>
+<h4>GetProjectileLightFlags()</h4>
+<pre><code>{
+      
+      return LIGHT_FLAG_NONE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:280</p>
+<h4>Delete()</h4>
+<pre><code>{
+      if ptPostPop &lt;&gt; $
+      {
+         DeleteTimer(ptPostPop);
+         ptPostPop = $;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mollusk.kod:286</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

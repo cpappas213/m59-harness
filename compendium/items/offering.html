@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offering — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Offering</p>
+<div class="hero"><div class="heroText"><h1>Offering</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">offering</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">25</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">30</div></div><div class="fact"><div class="lbl">Value</div><div class="val">1000 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/offering.kod:11</p>
+<p><code class="k">Offering</code> is <code class="k">PassiveItem</code> — full chain <code class="k">Offering</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">OfferingFaren</code>, <code class="k">OfferingJala</code>, <code class="k">OfferingKraanan</code>, <code class="k">OfferingQor</code>, <code class="k">OfferingRiija</code>, <code class="k">OfferingShalille</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>1000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="21">21</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="22">22</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>30</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="23">23</td></tr>
+<tr><td class=""><code class="k">vrAllegiance</code></td><td class=""><code>SS_DM_COMMAND</code></td><td class="">7</td><td class="num " data-sort="25">25</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>GetAllegiance()</h4>
+<pre><code>{
+      return vrAllegiance;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/offering.kod:31</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

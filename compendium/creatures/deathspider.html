@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>black spider — Meridian 59 Compendium</title>
+<meta name="description" content="Once thought to be a creature made up to frighten children, the black spider is said to be a product of evil sorcery, an unwholesome melding of human and insect">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › black spider</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/spidmagc_g1.png" alt="black spider" width="285" height="110"></div><div class="heroText"><h1>black spider</h1><p class="lede">Once thought to be a creature made up to frighten children, the black spider is said to be a product of evil sorcery, an unwholesome melding of human and insect. Its origin, however, is different depending on the story. In some, it is the fate of some poor soul who crossed a dark mage. In others, the dark spider is an evil mage transformed in return for longevity. All the old tales, however, warn travellers to beware of this malignant creature's extraordinarily poisonous bite.</p><div class="tags"><span class="tag ">Level 75</span><span class="tag ">Difficulty 5</span><span class="tag ">Evil</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">75</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">5</div></div><div class="fact"><div class="lbl">Health</div><div class="val">68–113</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">4–9</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">-30</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">black_spider</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>na'arkinich</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 75 + 60 × 5
+                = 525
+
+health          = Fuzzy(level × 120/100) = 68–113
+damage per hit  = Fuzzy(level / random(10,15))  = 4–9
+dodge           = difficulty × 10 = 50</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">49%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">63%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">20</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">3.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>bite</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 75/55 + random(0, 5/3), $, 6)
+       = 2–3 items
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/dethspdt.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="NeruditeArrow"><a href="../items/neruditearrow.html">nerudite arrows</a></td><td class="num " data-sort="10.891">10.9%</td><td class=""></td><td class=""><code>dethspdt.kod:31</code></td></tr>
+<tr><td class="" data-sort="NightVisionPotion"><a href="../items/nightvisionpotion.html">Night Vision Potion</a></td><td class="num " data-sort="8.911">8.9%</td><td class=""></td><td class=""><code>dethspdt.kod:32</code></td></tr>
+<tr><td class="" data-sort="FireRing"><a href="../items/firering.html">Fire Ring</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:33</code></td></tr>
+<tr><td class="" data-sort="ColdRing"><a href="../items/coldring.html">Cold Ring</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:34</code></td></tr>
+<tr><td class="" data-sort="ShockRing"><a href="../items/shockring.html">Shock Ring</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:35</code></td></tr>
+<tr><td class="" data-sort="AcidRing"><a href="../items/acidring.html">Acid Ring</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:36</code></td></tr>
+<tr><td class="" data-sort="StrengthPotion"><a href="../items/strengthpotion.html">Strength Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:37</code></td></tr>
+<tr><td class="" data-sort="ShadowFormPotion"><a href="../items/shadowformpotion.html">Shadow Form Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:38</code></td></tr>
+<tr><td class="" data-sort="RemoveCursePotion"><a href="../items/removecursepotion.html">Remove Curse Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:39</code></td></tr>
+<tr><td class="" data-sort="ResistShockPotion"><a href="../items/resistshockpotion.html">Resist Shock Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:40</code></td></tr>
+<tr><td class="" data-sort="ResistPoisonPotion"><a href="../items/resistpoisonpotion.html">Resist Poison Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:41</code></td></tr>
+<tr><td class="" data-sort="ResistMagicPotion"><a href="../items/resistmagicpotion.html">Resist Magic Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:42</code></td></tr>
+<tr><td class="" data-sort="ResistFirePotion"><a href="../items/resistfirepotion.html">Resist Fire Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:43</code></td></tr>
+<tr><td class="" data-sort="ResistColdPotion"><a href="../items/resistcoldpotion.html">Resist Cold Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:44</code></td></tr>
+<tr><td class="" data-sort="MagicShieldPotion"><a href="../items/magicshieldpotion.html">Magic Shield Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:45</code></td></tr>
+<tr><td class="" data-sort="KaraholsCursePotion"><a href="../items/karaholscursepotion.html">Karahols Curse Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:46</code></td></tr>
+<tr><td class="" data-sort="AnonymityPotion"><a href="../items/anonymitypotion.html">Anonymity Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:47</code></td></tr>
+<tr><td class="" data-sort="FeignDeathPotion"><a href="../items/feigndeathpotion.html">Feign Death Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:48</code></td></tr>
+<tr><td class="" data-sort="DetectInvisibilityPotion"><a href="../items/detectinvisibilitypotion.html">Detect Invisibility Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:49</code></td></tr>
+<tr><td class="" data-sort="DetectGoodPotion"><a href="../items/detectgoodpotion.html">Detect Good Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:50</code></td></tr>
+<tr><td class="" data-sort="DetectEvilPotion"><a href="../items/detectevilpotion.html">Detect Evil Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:51</code></td></tr>
+<tr><td class="" data-sort="CurePoisonPotion"><a href="../items/curepoisonpotion.html">Cure Poison Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:52</code></td></tr>
+<tr><td class="" data-sort="CureDiseasePotion"><a href="../items/curediseasepotion.html">Cure Disease Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:53</code></td></tr>
+<tr><td class="" data-sort="BaitPotion"><a href="../items/baitpotion.html">Bait Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:54</code></td></tr>
+<tr><td class="" data-sort="HastePotion"><a href="../items/hastepotion.html">Haste Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:55</code></td></tr>
+<tr><td class="" data-sort="PurifyPotion"><a href="../items/purifypotion.html">Purify Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:56</code></td></tr>
+<tr><td class="" data-sort="NodeBurstPotion"><a href="../items/nodeburstpotion.html">Node Burst Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:57</code></td></tr>
+<tr><td class="" data-sort="DenialPotion"><a href="../items/denialpotion.html">Denial Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:58</code></td></tr>
+<tr><td class="" data-sort="DeflectPotion"><a href="../items/deflectpotion.html">Deflect Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>dethspdt.kod:59</code></td></tr></tbody></table></div><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>2 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 4.
+<span class="cite">kod/object/passive/trestype/dethspdt.kod:24</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>5 places in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="Under the shadow of the Sentinel"><a href="../zones/outdoorsh9.html">Under the shadow of the Sentinel</a></td><td class="" data-sort="Set pieces">Set pieces</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="60">60%</td><td class=""><code>monsroom/objroom/h9.kod</code></td></tr>
+<tr><td class="" data-sort="An ancient place, its origin forgotten"><a href="../zones/outdoorsg9.html">An ancient place, its origin forgotten</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="20">20%</td><td class=""><code>monsroom/g9.kod</code></td></tr>
+<tr><td class="" data-sort="The Cragged Mountains"><a href="../zones/outdoorsg8.html">The Cragged Mountains (Outdoors G8)</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="40">40%</td><td class=""><code>monsroom/g8.kod</code></td></tr>
+<tr><td class="" data-sort="The Cragged Mountains"><a href="../zones/outdoorsi8.html">The Cragged Mountains (Outdoors I8)</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="40">40%</td><td class=""><code>monsroom/i8.kod</code></td></tr>
+<tr><td class="" data-sort="Winding Caverns"><a href="../zones/necropolis1.html">Winding Caverns</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="45">45%</td><td class=""><code>monsroom/necarea1.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_MOVE_REGROUP</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_SPASM</code></td><td class="">Has Spasm animation</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_BANKER</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>What killing it does to your karma</h2>
+<p>Its karma is <code class="k">-30</code>, and a kill is treated as an act whose karma is the
+<em>negative</em> of the victim's — so killing this creature pushes you
+<strong>towards good</strong>.</p>
+<div class="formula">base   = your_karma − (−victim_karma) = your_karma − 30
+change = −( base³ / 2500 + 5 × base ) / (11 − swing)      % hundredths of a karma point
+       bounded to ±150 for a monster kill — at most 1.5 karma per kill</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code> · :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+<div class="note">No karma moves at all in the newbie region, in an arena, or when the victim's
+karma is neutral. And once you are already further from neutral than your victim in the same
+direction, killing them does nothing to you.</div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/spidmagc_g1.png" alt="black spider group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/spidmagc_g2.png" alt="black spider group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/spidmagc_g3.png" alt="black spider group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/spidmagc_g4.png" alt="black spider group 4" loading="lazy"><figcaption>group 4 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/spidmagc_g5.png" alt="black spider group 5" loading="lazy"><figcaption>group 5 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/spidmagc_g6.png" alt="black spider group 6" loading="lazy"><figcaption>group 6 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/spidmagc_g7.png" alt="black spider group 7" loading="lazy"><figcaption>group 7 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/spidmagc_g8.png" alt="black spider group 8" loading="lazy"><figcaption>group 8 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/spidmagc_g9.png" alt="black spider group 9" loading="lazy"><figcaption>group 9 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/spidmagc_g10.png" alt="black spider group 10" loading="lazy"><figcaption>group 10 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/spidmagc_g11.png" alt="black spider group 11" loading="lazy"><figcaption>group 11 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/spidmagc_g12.png" alt="black spider group 12" loading="lazy"><figcaption>group 12 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/spidmagx_g1.png" alt="black spider corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dethspid.kod:11</p>
+<p><code class="k">DeathSpider</code> is <code class="k">Monster</code> — full chain <code class="k">DeathSpider</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrKocName</code></td><td class=""><code>DeathSpider_koc_name_rsc</code></td><td class=""><em>na'arkinich</em></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>DeathSpider_name_rsc</code></td><td class=""><em>black spider</em></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>DeathSpider_icon_rsc</code></td><td class=""><em>spidmagc.bgf</em></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>DeathSpider_desc_rsc</code></td><td class=""><em>Once thought to be a creature made up to frighten children, the black spider is said to be</em></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>DeathSpider_dead_icon_rsc</code></td><td class=""><em>spidmagX.bgf</em></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>DeathSpider_dead_name_rsc</code></td><td class=""><em>dead spider</em></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_BLACK_SPIDER</code></td><td class="">47</td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_AVERAGE</code></td><td class="">12</td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_BITE</code></td><td class="">1024</td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_SPASM</code></td><td class="">4</td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>75</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>-30</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_MOVE_REGROUP | AI_FIGHT_AGGRESSIVE</code></td><td class="">16448</td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viWimpy</code></td><td class=""><code>30</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>DeathSpider_sound_hit</code></td><td class=""><em>spd_atkh.wav</em></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>DeathSpider_sound_miss</code></td><td class=""><em>spd_atkm.wav</em></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>DeathSpider_sound_aware</code></td><td class=""><em>spd_awr.wav</em></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>DeathSpider_sound_death</code></td><td class=""><em>spd_dth.wav</em></td><td class="num " data-sort="63">63</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="67">67</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructed()</h4>
+<pre><code>{
+      plResistances = [ [ 75, -ATCK_SPELL_ALL ],
+                        [ 75, ATCK_WEAP_MAGIC ],
+                        [-15, ATCK_WEAP_NONMAGIC ] ];
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dethspid.kod:71</p>
+<h4>DoSpasm()</h4>
+<pre><code>{
+      Send(self,@DoLegSpasm);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dethspid.kod:79</p>
+<h4>MonsterAttack()</h4>
+<pre><code>{
+      Send(self,@DoLegSpasm);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dethspid.kod:86</p>
+<h4>DoLegSpasm()</h4>
+<pre><code>{
+      piAnimation = ANIM_ATTACK;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dethspid.kod:92</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE,4,150,2,2,2,7);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dethspid.kod:101</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE);
+      AddPacket(4,200,2,1,2,1);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dethspid.kod:108</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if piAnimation = ANIM_ATTACK
+      {
+	 AddPacket(1,ANIMATE_ONCE,4,200,2,8,2,12,2,1);
+	 return;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dethspid.kod:116</p>
+<h4>HitSideEffect(what = $)</h4>
+<pre><code>{
+      local oSpell;
+      if Random(1,POISON_CHANCE) = 1
+      {
+	 oSpell = Send(SYS,@FindSpellByNum,#num=SID_POISON);
+	 Send(oSpell,@MakePoisoned,#who=what,
+	      #lossrate=POISON_LOSSRATE,#duration=POISON_DURATION);
+      }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dethspid.kod:127</p>
+<h4>IsAlly(target = $)</h4>
+<pre><code>{
+      if target = $
+	  { return FALSE; }
+
+
+
+
+
+
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dethspid.kod:139</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,3146 @@
+#!/usr/bin/env node
+// The keeper: a background loop that holds a character's baseline state so the model
+// driving it does not have to.
+//
+// The problem this solves is a mismatch of clocks. The server runs at one action per
+// second and a fight takes half a minute; a model thinks in one burst and then is
+// gone until someone calls it again. In between, a character standing in a monster
+// room bleeds out, or sits at full health doing nothing for an hour.
+//
+// So: a small always-on loop per character with no language model in it at all. It
+// makes only the decisions that are genuinely mechanical — rest when hurt and safe,
+// break off and withdraw when losing, get out of the Underworld after dying, re-wield
+// a weapon — and it writes down everything it did so the model can read the history
+// and take over whenever it likes.
+//
+// Two rules it follows, both of them about not surprising its owner:
+//
+//   * it never picks a fight the owner did not ask for. `survive` only defends what
+//     is already happening; `farm` fights, but only what it was told to fight.
+//   * everything it does is in the journal with a reason. An agent that comes back to
+//     find itself somewhere else can find out why.
+
+import * as skills from './m59-skills.mjs';
+import { OF, affordances } from './m59-parse.mjs';
+import { loadSpawns, huntingGrounds, roomThreats } from './m59-spawns.mjs';
+import { findPath } from './m59-map.mjs';
+import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
+import { inboxIfAny } from './m59-inbox.mjs';
+
+// Built by: node tools/m59-spawns.mjs
+const SPAWN_FILE = process.env.M59_SPAWN_FILE ||
+  new URL('../substrate/m59-spawns.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+// Learned by standing in them. See SafeSpotBook.
+const SAFESPOT_FILE = process.env.M59_SAFESPOT_FILE ||
+  new URL('../substrate/m59-safespots.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+
+// How long a spot must go quiet, with something adjacent to us that wants to kill us,
+// before we believe it works. Two passes' worth: one quiet reading is also what you
+// get from a monster that happened to be walking away.
+const PROOF_MS = 12_000;
+// How far a swing carries, and how far away something still counts as part of a swarm.
+const REACH = 1.5;
+const CROWD_RADIUS = 4;
+// Where resting alone runs out. RestTimer stops awarding vigor at its threshold of 80
+// out of 200, so 0.4 is the ceiling of what sitting down can ever buy — asking for
+// more is asking to sit until the timeout expires. The rest comes from food.
+const REST_VIGOR_CAP = 0.4;
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const pct = v => (v && v.max ? v.value / v.max : null);
+
+// VIGOR IS NOT SHAPED LIKE THE OTHER TWO, and reading it as though it were has been
+// quietly disabling every vigor decision in this file.
+//
+// Health and mana report {value, max}. Vigor reports {value, scale_max, rest_threshold}
+// — there is no `max`, because its fourth field is the level the game counts as RESTED
+// (80 of 200) rather than a ceiling. So `pct(vitals.vigor)` returned null, every
+// `vig !== null` guard was false, and no character has ever rested because it was
+// tired. Morgan sat at 14 vigor on full health "fighting from a proven safe spot",
+// which is thirty seconds of swinging and no way back.
+const vigorOf = v => (v?.vigor?.value ?? null);
+const vigorPct = v => {
+  const g = v?.vigor;
+  if (!g || g.value == null) return null;
+  return g.value / (g.scale_max ?? 200);
+};
+
+// NOBODY STARTS A FIGHT TIRED.
+//
+// Attacking costs half a point a swing at one a second — thirty a minute — and vigor
+// is also what sets how fast health comes back between fights. Below about a third of
+// the bar a character cannot finish what it starts: it swings, runs dry, breaks off,
+// and recovers slower than it would have if it had simply waited.
+//
+// Seventy is chosen to be REACHABLE WITHOUT FOOD. Resting alone stops at the rest
+// threshold of 80, so a floor of 70 can always be met by sitting down; a floor of 100
+// could not, and would strand every character that has no food — which is currently
+// twenty of twenty-five.
+const MIN_FIGHT_VIGOR = 70;
+
+export const MODES = ['survive', 'farm', 'idle'];
+
+// Farming patterns, as a table rather than scattered conditionals, so that adding a
+// sixth is a row and so that the differences between them are readable side by side.
+//
+// The one thing they all share: what is being measured is MAX HEALTH GAINED PER
+// HOUR, not kills. Kills are cheap to produce and easy to fool yourself with — a
+// character killing something at or below its own level gains nothing at all.
+export const STRATEGIES = {
+  // WHAT THE VIGOR FLOORS NO LONGER VARY BY.
+  //
+  // These patterns used to disagree about how tired a character may be when it starts
+  // a fight — baseline and fieldrest said "any", wellfed said 120, trader and coop
+  // said 100 — and that comparison is finished. Nothing beats not fighting tired:
+  // swinging costs about thirty vigor a minute, vigor sets how fast health returns
+  // between fights, and a character that engages below the floor breaks off part-way
+  // and then recovers slower than if it had simply waited.
+  //
+  // So every pattern now starts from MIN_FIGHT_VIGOR and the strategies differ only in
+  // what they do about FOOD, which is the part still worth measuring: the floor is
+  // reachable by resting, everything above it has to be eaten.
+
+  // Control. Rest when hurt, fight from whatever vigor resting gives you.
+  baseline: {
+    fightAboveVigor: MIN_FIGHT_VIGOR, eatBeforeFighting: false, restInTown: true, sellLoot: false,
+    why: 'the obvious loop, and the thing every other pattern has to beat',
+  },
+  // Eat up to the stomach limit before going back out. Costs food; buys a faster
+  // health regeneration rate and more margin in every fight.
+  //
+  // A ZONE, NOT A THRESHOLD. See provision() — the point of the ceiling is to set out
+  // at the top of the band with an empty enough stomach to keep eating while
+  // fighting, so the fighting stretch lasts as long as the food does.
+  wellfed: {
+    vigorFloor: 120, vigorCeiling: 200,
+    eatBeforeFighting: true, restInTown: true, sellLoot: true,
+    why: 'vigor sets the regeneration rate, so being well fed should mean both ' +
+         'shorter recovery and more survivable fights — at the cost of food',
+  },
+  // Never walk back to town. Withdraw within the hunting area and rest there.
+  fieldrest: {
+    fightAboveVigor: MIN_FIGHT_VIGOR, eatBeforeFighting: false, restInTown: false, sellLoot: false,
+    why: 'a town trip is several minutes of walking each way at one square a second; ' +
+         'this trades safety and shopping for never paying that',
+  },
+  // The full economic loop: haul loot back, sell it, spend it on food, stay fed.
+  trader: {
+    vigorFloor: 100, vigorCeiling: 180,
+    eatBeforeFighting: true, restInTown: true, sellLoot: true,
+    maxCarry: 40,
+    why: 'tests whether the money loop pays for itself — reagents and drops fund the ' +
+         'food that funds the vigor that funds the uptime',
+  },
+  // Cooperative: heal each other, and hand herbs to the Shal'ille casters who need
+  // them rather than selling into an NPC spread.
+  coop: {
+    vigorFloor: 100, vigorCeiling: 180,
+    eatBeforeFighting: true, restInTown: true, sellLoot: false,
+    medic: true, share: true,
+    why: 'an NPC buys low and sells high; two players trading a herb for a loaf both ' +
+         'do better than either does against that spread',
+  },
+};
+
+export class Autopilot {
+  constructor(session, { mode = 'survive', policy = {} } = {}) {
+    this.s = session;
+    this.mode = mode;
+    this.policy = {
+      // Rest when health OR vigor falls below this and nothing is attacking us.
+      restBelow: 0.7,
+      // Break off and withdraw at this. Deliberately higher than fight()'s own
+      // threshold: the keeper is not watching a fight, it is watching a character.
+      fleeBelow: 0.4,
+      // What to hunt in `farm` mode. Never guessed — if it is empty, farm does nothing.
+      hunt: null,
+      // Stop farming when carrying this many things, so the character does not spend
+      // an hour filling up and dropping the overflow.
+      maxCarry: 14,
+      // How long to wait between passes when there is nothing to do.
+      idleMs: 8000,
+      // Move to a neighbouring room when this one has nothing left to hunt. Monsters
+      // do come back, but slowly, and a keeper that stands in a cleared room for an
+      // hour is not managing anything. Off by default: wandering changes where the
+      // owner left their character, which is a surprise, so it is opted into.
+      roam: false,
+      // How many empty passes to tolerate before moving on.
+      roamAfterEmptyPasses: 3,
+      // Never wander further than this from where roaming began, so a character can
+      // still be found. Counted in rooms travelled, not distance.
+      roamLimit: 6,
+      // How far above the character's own level the toughest thing a room can
+      // generate is allowed to be. See preyRooms.
+      maxThreatOver: 6,
+      // WHICH FARMING PATTERN THIS CHARACTER IS RUNNING. These exist to be compared
+      // against each other — the ledger records the strategy with every sample, so
+      // `history` can report health gained per hour by strategy rather than anyone
+      // having to argue about which ought to work. See STRATEGIES below.
+      strategy: 'baseline',
+      // Vigor to reach before picking a fight. Resting alone tops out at the rest
+      // threshold (80 of 200); anything above it has to be eaten.
+      fightAboveVigor: MIN_FIGHT_VIGOR,
+      // Disconnect rather than die when a single exchange could finish us. Set false
+      // to forbid it — but it is the most effective survival move available when we
+      // have nowhere safe to stand, and the penalties the game attaches to logging
+      // off exist for PvP, not for this.
+      panicLogoff: true,
+      // How long to stay frozen and unattackable after reconnecting.
+      freezeMs: 90_000,
+
+      // FIGHT FROM A WALL WHENEVER THE FIGHT IS WORTH ANYTHING. See holdWorthwhile().
+      useSafeSpots: true,
+      // ALWAYS TAKE THE FIGHT FROM FULL, when we are somewhere that lets us choose.
+      //
+      // Out in the open, health is spent capital: recovering it means disengaging,
+      // walking somewhere quiet and sitting down, so it is worth fighting well down
+      // the bar before paying that. In a safe spot none of that is true — stopping
+      // costs a pause and nothing else — so there is no reason to ever swing at
+      // anything below this. It is much higher than restBelow on purpose.
+      holdResumeAbove: 0.9,
+      // How far to go to fetch a monster that will not come to us. Beyond this the
+      // walk back is long enough to be its own fight.
+      // Eight was tuned on cramped indoor rooms and is wrong outdoors: the Tos gate
+      // is 58 by 44, and its centipedes sit twelve steps from the nearest usable
+      // wall, so every pull was refused and the keeper never fought at all. The walk
+      // is only dangerous on the way back, and the way back is toward safety.
+      pullWithin: 14,
+      // Reconnect before stepping off a spot that has a crowd on it. See breakOut().
+      breakOutViaLogoff: true,
+      // How many monsters camped on us make leaving worth a reconnect.
+      breakOutAbove: 2,
+      // HOW MANY TIMES A SESSION TO STOP AND ACTUALLY TEST A SPOT.
+      //
+      // Proof used to arrive only by accident: a character that swings every pass
+      // never produces a quiet window, so the one state that can prove a wall — being
+      // next to something and not hitting it — happened only when it got hurt enough
+      // to sit down. That is exactly backwards, because the proof is worth most BEFORE
+      // the fight goes badly.
+      //
+      // So: when a monster has come to the wall and the spot is untested, hold the
+      // swing for a couple of passes and watch. It costs a few seconds, once per
+      // fight, for the first few fights of a session. Not once ever — walls do not
+      // move but maps get rebuilt and rooms get renumbered, so a handful of fresh
+      // readings each session is what keeps the book honest.
+      spotTestsPerSession: 3,
+      // Below this fraction of health, in a safe spot, panic-logoff anyway. Out in
+      // the open the trigger is two of the biggest hit the game can land, which is
+      // around 70% for these characters — far too eager once a wall is doing the
+      // work, and every false alarm costs a minute of not healing. See the doomed
+      // check in pass().
+      doomedInSpotBelow: 0.35,
+      // Shillings to keep in hand for flasks and food; everything above this goes to
+      // the bank, where death cannot take it.
+      walkingMoney: 400,
+      ...policy,
+    };
+    // What we believe is in the stomach. Nothing reports it, so it is modelled from
+    // what we ate plus the documented drain rate, and corrected whenever the server
+    // refuses a mouthful. See provision().
+    this.stomach = new skills.Stomach();
+    this.climbing = false;
+    this.running = false;
+    this.stopping = false;
+    this.journal = [];
+    this.passes = 0;
+    this.startedAt = null;
+    this.lastError = null;
+    // What actually happened, so a returning model gets a summary rather than a tail.
+    this.tally = { kills: 0, deaths: 0, rests: 0, withdrawals: 0, rooms_moved: 0, looted: {} };
+    this.emptyPasses = 0;
+    this.roamedFrom = null;
+    this.roamedRooms = 0;
+    this.unreachable = new Set();   // spawn rooms we could not route to
+    this.foeId = null;             // the creature we are part-way through killing
+    // WHERE THE TIME ACTUALLY GOES.
+    //
+    // "Stalled" was doing too much work as a word. The commonest reason a keeper
+    // reported it was `waiting to be healthy enough to fight` — a character sitting
+    // down and regenerating, which is the correct thing to be doing and is not stuck
+    // in any sense. Counting that as a stall makes the fleet look broken while it is
+    // working, and hides the cases where it genuinely is.
+    //
+    // So: seconds by activity, and STALLED means only one thing — standing about not
+    // knowing what to do, while NOT recovering.
+    this.time = { fighting: 0, recovering: 0, travelling: 0, trading: 0, stalled: 0 };
+    this.doing = null;             // set during a pass; decides which bucket it lands in
+    this.visited = new Set();
+    // Where the hunting was actually good. Roaming without this wanders off down a
+    // one-way gradient and never comes back — it walked a character five rooms out
+    // of a rat warren into a town and oscillated there for twenty minutes.
+    this.homeRoom = null;
+    // Consecutive passes that achieved nothing. A keeper that has done nothing for
+    // ten passes is not idle, it is stuck, and the only way anyone found out before
+    // was by noticing a number had not moved.
+    this.idlePasses = 0;
+    this.stalledSince = null;
+    this.stalledWhy = null;
+    // Passes in which the server's room contents did not contain our own object.
+    // The usual cause is a save-game renumbering our object id out from under a live
+    // session, after which everything that keys on selfId quietly reads as "dead".
+    this.selfMissingPasses = 0;
+
+    // THE SAFE SPOT WE ARE STANDING IN, and whether we have any evidence it works.
+    // null when we are not holding one. See observe() for how `proven` is earned and
+    // holdWorks() for what it entitles us to do.
+    this.hold = null;
+    // What the world was doing last time we looked, so that "did anything hit me
+    // while I was sitting still?" can be answered at all. It is the only question
+    // that distinguishes a safe spot from a hopeful one.
+    this.lastObs = null;
+    // When we last did something a monster is entitled to answer. Damage arriving
+    // after one of these is retaliation and says nothing about the spot.
+    this.swungAt = 0;
+    this.movedAt = 0;
+    // When we last did anything at all that ends the entry grace period, and when we
+    // last reconnected. The pair exists to stop the keeper proving a safe spot with
+    // the grace period rather than with the walls — see observe(). That would be a
+    // false positive in the one direction that gets a character killed: believing a
+    // bad square is good, on evidence collected while nothing was allowed to hit us.
+    this.turnedAt = 0;
+    this.rejoinedAt = 0;
+    // Set after a reconnect made while holding: health regeneration is gated on
+    // having acted since entering the room, and in a safe spot we can afford to act.
+    this.needsArming = false;
+    this.book = safeSpotBook(SAFESPOT_FILE);
+    // EVERY WINDOW WE ADJUDICATED, INCLUDING THE ONES WE THREW AWAY.
+    //
+    // The verdict is the cheap thing to report and the useless thing to check. If
+    // this measurement is wrong it will be wrong in the DISCARDS — a window dropped
+    // as "we swung in it" that we did not swing in, a grace period believed over when
+    // it was not, an adjacent monster that was actually a corpse — and a log of
+    // conclusions cannot show that, because the conclusion is what is in doubt.
+    //
+    // So every window records its inputs and what became of them, counted or not, and
+    // someone standing in the room watching can disagree with a specific reading
+    // rather than with the summary. That is the only kind of disagreement that can
+    // find a measurement bug.
+    this.trials = [];
+  }
+
+  // HOW MUCH HEALTH IS ACTUALLY SAFE, derived rather than guessed.
+  //
+  // A lawful hit is capped at (base_max_health + 2) / 3 (player.kod:4612), so a
+  // single blow can take A THIRD of a 25-health character's bar. Breaking off is not
+  // instant either — the withdraw walk is a round or two during which it keeps
+  // swinging.
+  //
+  // A flat "flee at 40%" ignores all three. Forty percent of 25 is ten health, which
+  // is one hit plus change: Isolde was killed by a BABY SPIDER while nominally
+  // obeying that threshold. Three hits of margin is the number that actually
+  // survives, and before 30 it should never be tested at all — every death costs a
+  // point of max health permanently, which is the very thing being farmed.
+  // PROVISIONING: A ZONE AND A CYCLE, NOT A THRESHOLD.
+  //
+  // The old rule was one number — top up if below it, then fight regardless. That is
+  // not how the mechanic rewards you. Three facts from the kod set the shape:
+  //
+  //   the stomach caps at 100 and drains 0.12 a second, so a full one takes 13.9
+  //     minutes to clear (player.kod:45-51, 1347, 5703)
+  //   eating converts nutrition to vigor by removing exertion (player.kod:5738)
+  //   "Need empty stomach to get vigor boost from food" — the kod's own note
+  //
+  // So vigor is not a tap you open when low. Stomach room is the scarce resource,
+  // and it refills on a clock you cannot hurry. Eating at 199 vigor wastes the room;
+  // arriving at a fight with a full stomach means no top-ups for a quarter of an hour.
+  //
+  // What a player does, and what this now does:
+  //
+  //   CLIMB    eat what fits, wait for room, eat again, until vigor reaches the
+  //            ceiling. The waiting is not idleness — it is the digestion clock.
+  //   TOP OFF  at the ceiling, wait until there is room for one more meal before
+  //            setting out, so the fighting stretch can be fed as it goes.
+  //   FIGHT    eat opportunistically whenever there is room and vigor is off the
+  //            ceiling. This never blocks the fight.
+  //   FALL     when vigor drops through the FLOOR and the stomach is too full to do
+  //            anything about it, stop and climb again.
+  //
+  // The floor and ceiling are what give it hysteresis. A single threshold makes the
+  // character oscillate across one number, which is the thrashing this replaces.
+  //
+  // Returns true if the caller should NOT start a fight this pass.
+  async provision(plan, v) {
+    const p = this.policy;
+    // fightAboveVigor was the old single knob; it still works, as the floor.
+    // Never below the hard floor, whatever a strategy asks for. The variants that
+    // tested lower thresholds are settled: fighting tired loses to waiting.
+    const floor = Math.max(MIN_FIGHT_VIGOR,
+      p.vigorFloor ?? plan.vigorFloor ?? p.fightAboveVigor ?? plan.fightAboveVigor ?? 0);
+    const ceiling = p.vigorCeiling ?? plan.vigorCeiling ?? 0;
+    if (!floor && !ceiling) return false;              // baseline/fieldrest: unchanged
+
+    const s = this.s;
+    const vigor = v.vigor?.value ?? 0;
+    const larder = skills.larderOf(s.client);
+    const best = larder[0]?.food ?? null;
+
+    if (!best) {
+      // Out of food is a supply problem, not something the keeper can fix. Say it
+      // once and carry on fighting at whatever vigor resting gives — refusing to
+      // fight would just idle the character forever.
+      if (!this.warnedNoFood) {
+        this.warnedNoFood = true;
+        this.note('no food to raise vigor with', {
+          vigor, floor, ceiling,
+          hint: 'inky cap mushrooms give the most vigor per unit of stomach (50/25)' });
+      }
+      this.climbing = false;
+      return false;
+    }
+    this.warnedNoFood = false;
+
+    // Hysteresis: fall through the floor to start climbing, reach the ceiling to stop.
+    if (vigor < floor) this.climbing = true;
+
+    if (this.climbing) {
+      this.doing = 'recovering';
+      if (vigor < (ceiling || floor)) {
+        const e = await skills.eat(s, { stomach: this.stomach, upToVigor: ceiling || undefined })
+                              .catch(() => ({ ate: [] }));
+        if (e.ate?.length) {
+          this.tally.meals = (this.tally.meals || 0) + 1;
+          this.note('ate while stocking up', {
+            ate: e.ate, vigor: e.vigor, ceiling,
+            stomach: Math.round(this.stomach.level), strategy: p.strategy });
+          this.progress('ate to raise vigor');
+          return true;
+        }
+        // Too full to make progress: waiting IS the strategy. Report the clock so
+        // this does not read as a stall.
+        const wait = this.stomach.secondsUntilRoomFor(best.filling);
+        this.note('waiting to get hungry', {
+          vigor, ceiling, stomach: Math.round(this.stomach.level),
+          room_for_next_in_s: wait, next: larder[0].name,
+          why: 'the stomach drains 0.12/s and food is refused above 100 — vigor above ' +
+               'the resting threshold of 80 can only come from eating' });
+        return true;
+      }
+
+      // At the ceiling. Waiting for stomach room before setting out is only worth it
+      // if the wait buys something else, because the arithmetic is unforgiving:
+      // attacking costs 0.5 vigor a swing at one a second, or 30 a minute, while the
+      // very best food sustains 14.4. Nothing closes that gap, so vigor is spent
+      // capital and TIME SPENT FIGHTING is what it buys. Idling 3.5 minutes to make
+      // room is 3.5 minutes not fighting.
+      //
+      // The exception is being hurt: at 200 vigor health comes back at a point a
+      // second, so an idle spent healing is not idle at all. Wait then, not otherwise.
+      const wait = this.stomach.secondsUntilRoomFor(best.filling);
+      const hurt = (v.health?.value ?? 0) < (v.health?.max ?? 0) * 0.95;
+      if (!this.stomach.roomFor(best.filling) && (hurt || wait <= 60)) {
+        this.note('topping off before setting out', {
+          vigor, stomach: Math.round(this.stomach.level), room_for_next_in_s: wait,
+          healing: hurt, why: hurt
+            ? 'at this vigor health returns about a point a second, so the wait heals too'
+            : 'the wait is short enough to be worth the top-up' });
+        return true;
+      }
+      this.climbing = false;
+      this.note('setting out fed', { vigor, floor, ceiling,
+                                     stomach: Math.round(this.stomach.level) });
+    }
+
+    // FIGHTING: EAT EVERY TIME THERE IS ROOM. This is where the strategy actually
+    // pays, and the old code missed it — it topped up once before setting out and
+    // then let vigor sag for the whole hunt, which is the expensive half.
+    //
+    // Health regeneration goes as ((200-vigor)^2/6 + 1000) ms a point
+    // (player.kod:5617), so 200 vigor heals 2.67x as fast as 100 and 3.4x as fast as
+    // the 80 that resting alone reaches. Every minute spent fighting at 100 instead
+    // of 200 is most of a healing rate thrown away.
+    //
+    // Stomach room is the throttle, so take all of it whenever it appears rather than
+    // one item per pass — a pass is eight seconds and the room reappears on a clock
+    // measured in minutes. `eat` declines anything that would overshoot 200.
+    if (ceiling && this.stomach.roomFor(best.filling)) {
+      const e = await skills.eat(s, { stomach: this.stomach, upToVigor: ceiling })
+                            .catch(() => ({ ate: [] }));
+      if (e.ate?.length) {
+        this.tally.meals = (this.tally.meals || 0) + 1;
+        this.note('ate mid-hunt', { ate: e.ate, vigor: e.vigor,
+                                    stomach: Math.round(this.stomach.level) });
+      }
+    }
+
+    // Say once whether the larder can actually sustain a hunt. The stomach drains
+    // 0.12 filling a second, so the best food in the pack sets a hard ceiling on
+    // vigor per minute — and it is well under what swinging costs.
+    if (!this.warnedThroughput) {
+      this.warnedThroughput = true;
+      const perMin = +(best.nutrition / best.filling * 0.12 * 60).toFixed(1);
+      this.note('vigor throughput', {
+        food: larder[0].name, sustains_vigor_per_min: perMin,
+        attacking_costs_per_min: 30,
+        note: perMin < 30
+          ? 'vigor cannot be held while swinging; it is spent capital, and better food ' +
+            'buys more fighting time (inky cap 14.4/min vs wheel of cheese 5.4)'
+          : undefined });
+    }
+    return false;
+  }
+
+  safety() {
+    const v = this.s.client?.vitals?.();
+    const max = v?.health?.max ?? 0;
+    if (!max) return { fleeAt: this.policy.fleeBelow, engageAt: 0.85, maxHit: null };
+    const maxHit = Math.min(30, Math.floor((max + 2) / 3));
+    // Two hits of margin, not three. (base+2)/3 is the CAP on a single blow rather
+    // than what a giant rat typically lands, so budgeting three of them leaves so
+    // little of the bar to fight in that the character spends its life healing.
+    // Two is the number that survives the realistic bad case — one hit landing as
+    // the withdraw begins, and one more before it is out of reach — while still
+    // leaving a usable window to actually fight in.
+    const fleeAt = Math.max(this.policy.fleeBelow, Math.min(0.7, (2 * maxHit) / max));
+    return {
+      maxHit, fleeAt,
+      // Do not start a fight that cannot be finished. Below this, heal or rest
+      // first — going in at half health is how a survivable creature kills you.
+      engageAt: max < 30 ? 0.9 : 0.75,
+    };
+  }
+
+  // ------------------------------------------------------------- safe spots
+  //
+  // THE MOST VALUABLE THING ON THE MAP IS A PLACE TO STAND.
+  //
+  // In a working safe spot NO MONSTER CAN HIT YOU UNLESS YOU SWING AT IT FIRST. That
+  // one sentence reorganises the whole of the rest of this file, because every
+  // expensive decision the keeper makes is a decision about damage it cannot stop:
+  //
+  //   fleeing      is a walk of several seconds during which it is still being hit,
+  //                and it is a gamble that has killed characters here. From a spot
+  //                there is nothing to flee: stop swinging and the damage stops.
+  //   logging off  buys a minute of safety at the price of not healing, because the
+  //                same flag gates the grace period and HealthTimer. From a spot we
+  //                can spend the flag — turn, wake them, let them come, and heal to
+  //                full anyway, because none of them can reach us.
+  //   a swarm      is the commonest death in this fleet. Seven of the eight squares
+  //                a swarm needs are wall.
+  //
+  // So the policy is: fight from a wall whenever the fight is worth fighting, and
+  // treat "am I in a spot that is actually working?" as a question with an
+  // observable answer rather than a hope. That is what observe() is for.
+
+  // WHO IS ACTUALLY TRYING TO KILL US.
+  //
+  // The protocol never says, and there is no packet to ask with — the server keeps
+  // targeting on the monster's side and sends us positions and damage. So this is two
+  // estimates, and they answer different questions:
+  //
+  //   COULD reach us   things standing close enough to swing. A count, nothing more,
+  //                    and it is what decides whether walking out of here is safe.
+  //   IS reaching us   health going down while we sit still and do not swing. Ground
+  //                    truth, and the only evidence that says whether where we are
+  //                    standing works.
+  //
+  // `engaged` is the useful middle: things that have been camped next to us for more
+  // than one pass are trying to hit us whether or not they are landing anything. That
+  // is the number a reconnect resets to about one, and the reason breakOut() works.
+  threat() {
+    const c = this.s.client, me = c?.self;
+    const empty = { adjacent: [], near: [], engaged: 0, landing: 0, names: [] };
+    if (!c || !me) return empty;
+    const hostiles = [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER));
+    const d = o => Math.hypot(o.col - me.col, o.row - me.row);
+    const adjacent = hostiles.filter(o => d(o) <= REACH);
+    const camped = this.campedIds || new Set();
+    return {
+      adjacent,
+      near: hostiles.filter(o => d(o) <= CROWD_RADIUS),
+      engaged: adjacent.filter(o => camped.has(o.id)).length,
+      landing: this.idleDamage || 0,
+      names: [...new Set(hostiles.filter(o => d(o) <= CROWD_RADIUS).map(o => c.rsc.get(o.nameRsc)))],
+    };
+  }
+
+  // Are we standing somewhere we have EVIDENCE about, or somewhere that merely looks
+  // right? Nothing in this file may spend the safe-spot advantage on a guess: an
+  // unproven spot is treated exactly like open floor, which is what it might be.
+  holdWorks() { return !!(this.hold && this.hold.proven); }
+
+  // The experiment, run once per pass, for free, out of readings we already take.
+  //
+  // Between the last look and this one: did we stand still, did we refrain from
+  // swinging, was there something adjacent that wants us dead — and did our health
+  // hold? All four have to be true for the answer to mean anything, which is why this
+  // tracks when we last moved and last swung. Damage arriving after a swing is
+  // retaliation and says nothing at all about the square.
+  observe() {
+    const s = this.s, c = s.client, me = c?.self;
+    const room = s.world?.room, now = Date.now();
+    const health = c?.vitals?.()?.health?.value ?? null;
+    const prev = this.lastObs;
+
+    const hostiles = me ? [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER)) : [];
+    const adjacentIds = me
+      ? hostiles.filter(o => Math.hypot(o.col - me.col, o.row - me.row) <= REACH).map(o => o.id)
+      : [];
+    this.campedIds = new Set(adjacentIds.filter(id => (prev?.adjacentIds || []).includes(id)));
+
+    // A hold belongs to a room and to a square. Losing either loses it, and saying so
+    // out loud matters more than it looks: a keeper that believes it is behind a wall
+    // when it is not will make every following decision the wrong way round.
+    if (this.hold && room?.num != null && this.hold.room !== room.num)
+      this.releaseHold('we are not in that room any more');
+    if (this.hold && me && (me.col !== this.hold.col || me.row !== this.hold.row))
+      this.releaseHold('we are not standing on it any more');
+    if (this.hold && me && me.x != null) { this.hold.x = me.x; this.hold.y = me.y; }
+
+    // ARE THEY EVEN ALLOWED TO HIT US YET? On entry — including every reconnect —
+    // the server withholds the monsters until the player acts. A quiet window inside
+    // that period says nothing about the walls, and counting it would let the single
+    // most dangerous mistake in this file happen quietly: a bad square proved safe by
+    // evidence gathered while nothing was permitted to swing.
+    const acted = Math.max(this.swungAt, this.movedAt, this.turnedAt);
+    const awake = acted > this.rejoinedAt;
+
+    this.idleDamage = 0;
+    // Strictly before, not at: observe() runs at the top of a pass and everything else
+    // in that pass happens after it, so a swing stamped at the same instant as the last
+    // look is a swing we have not accounted for. Ambiguity here throws the window away,
+    // which costs one reading and can never invent evidence either way.
+    const stillness = prev ? (this.swungAt < prev.at && this.movedAt < prev.at) : false;
+    const company = (prev?.adjacentIds || []).length;
+    const lost = prev && health != null && prev.health != null ? prev.health - health : null;
+
+    // The reading, whatever became of it. `verdict` is the thing to argue with; the
+    // fields above it are what the argument is about. A discard is recorded exactly as
+    // carefully as a conclusion, because a wrong discard is invisible otherwise.
+    const trial = {
+      at: now, pass: this.passes,
+      room: room?.num ?? null,
+      at_col: me?.col ?? null, at_row: me?.row ?? null,
+      window_s: prev ? +((now - prev.at) / 1000).toFixed(1) : null,
+      health_before: prev?.health ?? null, health_after: health, lost,
+      adjacent_at_start: company, adjacent_now: adjacentIds.length,
+      swung_in_window: prev ? this.swungAt >= prev.at : null,
+      moved_in_window: prev ? this.movedAt >= prev.at : null,
+      monsters_awake: awake,
+      verdict: null, counted: false,
+    };
+    const settle = (verdict, counted = false) => {
+      trial.verdict = verdict;
+      trial.counted = counted;
+      if (this.hold) {
+        trial.quiet_total_s = Math.round(this.hold.quietMs / 1000);
+        trial.proven_after = this.hold.proven;
+      }
+      this.trials.push(trial);
+      if (this.trials.length > 120) this.trials.splice(0, this.trials.length - 120);
+      return trial;
+    };
+
+    if (!this.hold) settle('not holding a spot — nothing to test');
+    else if (!prev) settle('no previous reading to compare against');
+    else if (health == null || prev.health == null) settle('health unreadable in one of the two readings');
+    else if (!awake) settle('inside the entry grace period — the server is holding them back, so quiet proves nothing');
+    else if (!stillness) settle(this.swungAt >= prev.at ? 'we swung in this window — damage would be retaliation'
+                                                        : 'we moved in this window — we were not standing here throughout');
+    else if (company === 0) settle('nothing was in swing range — a quiet window with nothing to be quiet about');
+
+    if (this.hold && awake && prev && health != null && prev.health != null) {
+      if (stillness && company > 0) {
+        this.hold.mostAttackers = Math.max(this.hold.mostAttackers, company);
+        if (lost > 0) {
+          // It does not work. Say so loudly, forget the proof, and write it down so
+          // that the geometry cannot talk us back onto this square in ten minutes.
+          this.idleDamage = lost;
+          this.hold.failures++;
+          this.hold.damageWhileIdle += lost;
+          this.hold.quietMs = 0;
+          const wasProven = this.hold.proven;
+          this.hold.proven = false;
+          this.book.failed(this.hold.room, {
+            col: this.hold.col, row: this.hold.row, damage: lost, attackers: company });
+          this.book.save();
+          this.note('THIS IS NOT A SAFE SPOT', {
+            where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
+            lost_health: lost, attackers: company, was_proven: wasProven,
+            why: 'we were hit while standing still and not swinging, which is the one thing ' +
+                 'that cannot happen in a working spot',
+            caveat: 'poison and archers look the same from here, so one reading only demotes it; ' +
+                    'two stop it being recommended at all' });
+          // Settle the reading BEFORE letting the hold go, or the record loses the
+          // very state it is a record of.
+          settle(`HIT for ${lost} while standing still with ${company} adjacent — this square does not work`, true);
+          // And stop standing in it. Keeping the hold would mean fighting from a
+          // square we have just watched fail — refusing to approach, refusing to
+          // withdraw, and taking hits the whole time. Letting it go puts the next
+          // pass back on the ordinary path, which will either find a better square or
+          // fight in the open with the flee threshold live.
+          this.releaseHold('it does not work — we were hit standing still in it');
+        } else {
+          this.hold.quietMs += now - prev.at;
+          const alreadyProven = this.hold.proven;
+          if (!this.hold.proven && this.hold.quietMs >= PROOF_MS) {
+            this.hold.proven = true;
+            this.hold.provenAt = now;
+            this.book.held(this.hold.room, {
+              col: this.hold.col, row: this.hold.row, x: this.hold.x, y: this.hold.y,
+              seconds: this.hold.quietMs / 1000, attackers: this.hold.mostAttackers });
+            this.book.save();
+            this.note('this safe spot works', {
+              where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
+              quiet_for_s: Math.round(this.hold.quietMs / 1000), attackers: this.hold.mostAttackers,
+              why: 'things have been standing next to us for ' +
+                   Math.round(this.hold.quietMs / 1000) + 's and none of them has landed a blow',
+              means: 'we can now rest to full here instead of running, and break off any fight ' +
+                     'that turns against us at no cost',
+              ...(this.spotTest ? { learned_by: 'deliberately holding the swing to find out' } : {}) });
+            this.spotTest = null;      // the question is answered; get on with the fight
+          }
+          // Settled last, so that `proven_after` on this reading says what this
+          // reading concluded rather than what was believed before it.
+          settle(this.hold.proven && !alreadyProven
+            ? `PROVED: ${Math.round(this.hold.quietMs / 1000)}s quiet with up to ` +
+              `${this.hold.mostAttackers} adjacent, nothing landed`
+            : alreadyProven
+              ? `still holding: ${company} adjacent, nothing landed`
+              : `quiet with ${company} adjacent — ${Math.round(this.hold.quietMs / 1000)}s of the ` +
+                `${PROOF_MS / 1000}s needed`, true);
+        }
+      }
+    }
+
+    // Where we were standing, kept briefly after the hold itself is gone. A death
+    // releases the hold before anything gets to ask about it — the Underworld is a
+    // different room, so observe() drops it on the very pass that discovers we died —
+    // and "were we in a spot when we were killed?" is the question the whole thesis
+    // turns on. Thirty seconds is long enough to survive that ordering and short
+    // enough that it cannot be mistaken for where we are now.
+    if (this.hold) this.lastHold = { ...this.hold, at: now };
+
+    this.lastObs = { at: now, health, adjacentIds,
+                     col: me?.col ?? null, row: me?.row ?? null, room: room?.num ?? null };
+  }
+
+  releaseHold(why) {
+    if (!this.hold) return;
+    const h = this.hold;
+    this.note('gave up the safe spot', {
+      where: { col: h.col, row: h.row }, why, proven: h.proven,
+      held_s: Math.round((Date.now() - h.takenAt) / 1000) });
+    this.hold = null;
+    releaseSpot(this.s.name);
+    this.book.save();
+  }
+
+  // What level is this thing, so we can ask whether killing it pays.
+  creatureLevel(name) {
+    const all = loadSpawns(SPAWN_FILE)?.creatures;
+    const q = String(name || '').toLowerCase();
+    if (!all || !q) return null;
+    if (all[q]) return all[q].level ?? null;
+    // "rat" has to resolve to "giant rat". Where a partial name matches several,
+    // take the TOUGHEST: the cautious reading of an ambiguous name is the dangerous
+    // one, and being wrong in that direction only costs a walk to a corner.
+    let best = null;
+    for (const [k, v] of Object.entries(all)) {
+      if (!k.includes(q) && !q.includes(k)) continue;
+      if (v.level != null && (best == null || v.level > best)) best = v.level;
+    }
+    return best;
+  }
+
+  // IS THIS FIGHT WORTH A WALL? The owner's rule of thumb, which turns out to be
+  // exactly the rule the game already uses: if you can gain max health from it, fight
+  // it from a safe spot.
+  //
+  // AdvancementCheck only rolls when monster_level > base_max_health, and max health
+  // IS the level here — so "this kill can make me stronger" and "this creature is at
+  // or above my level" are the same statement, and something at or above your level
+  // is something that can take a third of your bar in one blow. The two halves of the
+  // rule are the same fact read from either end.
+  //
+  // The exception is the one the rule names: prey we outclass pays nothing, cannot
+  // realistically kill us, and the walk to the corner costs more than the fight.
+  holdWorthwhile(names = []) {
+    if (!this.policy.useSafeSpots) return { hold: false, why: 'safe spots are switched off in the policy' };
+    const mine = this.s.client?.vitals?.()?.health?.max ?? 0;
+    const levels = names.map(n => this.creatureLevel(n)).filter(x => x != null);
+    const worst = levels.length ? Math.max(...levels) : null;
+    const crowd = this.threat().near.length;
+    if (worst == null)
+      return { hold: true, crowd,
+               why: 'nothing is known about what is here, and the careful reading of an unknown ' +
+                    'creature is that it can hurt us' };
+    if (worst > mine)
+      return { hold: true, level: worst, my_level: mine, crowd,
+               why: `a level ${worst} kill can raise our maximum health of ${mine}. Anything that ` +
+                    'pays is by definition at or above our level, and anything at our level can ' +
+                    'take a third of the bar in one blow — so fight it from a wall' };
+    if (crowd >= 3)
+      return { hold: true, level: worst, my_level: mine, crowd,
+               why: `we outclass a level ${worst}, but there are ${crowd} of them within four ` +
+                    'squares and swarms are what actually kills characters here' };
+    return { hold: false, level: worst, my_level: mine, crowd,
+             why: `level ${worst} against our ${mine}: the kill pays nothing — AdvancementCheck ` +
+                  'needs the monster above our max health — and we are strong enough that the ' +
+                  'walk to a corner costs more than the fight does' };
+  }
+
+  // Go and stand somewhere defensible, preferring somewhere we have already proved —
+  // and somewhere the fight can actually be brought to.
+  async takeSafeSpot(why, quarry = null) {
+    const s = this.s, c = s.client;
+    const room = s.world?.room, geo = s.world?.geometry, me = c?.self;
+    if (!geo || !me || !room) return { took: false, why: 'no geometry for this room' };
+    // Squares we have already discovered nothing can be pulled to. Without this the
+    // keeper re-picks the same unusable corner every pass for ever, because the
+    // geometry's opinion of it never changes and neither does ours.
+    const barren = this.barrenSpots?.get(room.num);
+    const spot = nearestSafeSpot(geo, me, {
+      within: 12, minAvoided: 3, book: this.book, room: room.num,
+      toward: quarry ? { col: quarry.col, row: quarry.row } : null,
+      // Skip squares another keeper is already standing on, and squares nothing can be
+      // fetched to. Both are expressed as "unreachable" because that is the question
+      // the ranking already asks, and neither is worth a second mechanism.
+      reach: (col, r2) => {
+        if (barren?.has(`${col},${r2}`)) return { reachable: false };
+        if (spotTakenByAnother(this.s.name, room.num, col, r2)) return { reachable: false };
+        return s.world.reach(col, r2);
+      },
+    });
+    if (!spot) return { took: false, why: 'nothing in this room is more defensible than open floor' };
+
+    // CLAIM IT BEFORE WALKING, not after arriving. Choosing and taking are separated
+    // by a walk, and a walk is an await: three keepers each looked at the room, each
+    // saw (29,15) unclaimed because none of them had got there yet, and all three set
+    // off for it. Reserving at selection time is what makes the register mean
+    // anything; if the walk fails the reservation goes back.
+    claimSpot(this.s.name, room.num, spot.col, spot.row);
+
+    if ((spot.steps_away ?? 99) > 0) {
+      this.doing = 'travelling';
+      // Walk back to the exact FINE coordinate when we have one. moveToSquare aims at
+      // the middle of the square and a spot that works by hugging a wall may be most
+      // of a square off that — "the same square" and "where I was standing" are
+      // different requests, and only the second one is safe.
+      const arrival = spot.fine
+        ? await skills.returnToSpot(s, { col: spot.col, row: spot.row, ...spot.fine }, { maxSteps: 24 })
+                      .catch(e => ({ arrived: false, why: e.message }))
+        : await s.walkTo(spot.col, spot.row, { maxSteps: 24 })
+                 .catch(e => ({ arrived: false, why: e.message }));
+      this.movedAt = Date.now();
+      if (!arrival.arrived) {
+        releaseSpot(this.s.name);      // hand the reservation back
+        this.note('could not reach the safe spot', {
+          spot: { col: spot.col, row: spot.row }, why: arrival.why || arrival.reason });
+        return { took: false, why: arrival.why || arrival.reason || 'could not get there' };
+      }
+    }
+
+    const now = c.self;
+    const known = this.book.get(room.num, spot.col, spot.row);
+    const trusted = !!known?.held && !this.book.discredited(known);
+    this.hold = {
+      room: room.num, col: spot.col, row: spot.row,
+      x: now?.x ?? null, y: now?.y ?? null,
+      takenAt: Date.now(), quietMs: 0, damageWhileIdle: 0, failures: 0, mostAttackers: 0,
+      // Walls do not move, so a square that held on a previous visit is believed on
+      // arrival — that is the entire point of writing the book down. The experiment
+      // still runs, and a single failure takes the belief straight back off it.
+      // Inherit belief only from a CLEAN record. A square that has ever failed is
+      // discredited for good, and nearestSafeSpot will not offer one — but this is also
+      // reached by hand-picked and remembered spots, and trusting `held` alone would
+      // walk a character back onto the square that killed the last one.
+      proven: trusted, inherited: trusted, provenAt: trusted ? Date.now() : null,
+      canReachYou: spot.can_reach_you, backCover: spot.back_cover,
+    };
+    // Tell the other keepers this one is taken, so the next of them to look at this
+    // room ranks it out instead of walking into us.
+    claimSpot(this.s.name, room.num, spot.col, spot.row);
+    this.note('took a safe spot', {
+      where: { col: spot.col, row: spot.row }, why,
+      can_reach_you: spot.can_reach_you, back_cover: spot.back_cover,
+      proven_before: known?.failed ? `DISCREDITED — failed ${known.failed} time(s) here`
+                   : known?.held   ? `held ${known.held} time(s) before`
+                   :                 'never tested',
+      note: trusted
+        ? 'this square has held under attack before and never failed, so it is trusted on arrival'
+        : known?.failed
+        ? 'this square has failed before; it is treated as open floor and should not have ' +
+          'been offered — a failure is permanent'
+        : 'unproven: it will be treated as open floor until something stands next to us ' +
+          'for ' + Math.round(PROOF_MS / 1000) + 's without landing a blow',
+    });
+    return { took: true, spot: this.hold };
+  }
+
+  // GO AND FETCH IT.
+  //
+  // A safe spot only pays if the fight happens AT it, and monsters do not queue up:
+  // the generator drops them where it likes and plenty will simply stand there. So
+  // the move a player makes is to run out, hit it once so that it follows, and run
+  // back — the fight then happens where we chose rather than where it spawned.
+  //
+  // The single swing is the whole purpose of the trip. Standing out there trading
+  // blows is precisely what walking to the wall was meant to avoid.
+  async pull(want) {
+    const s = this.s, c = s.client;
+    if (!this.hold) return { pulled: false, why: 'not holding a spot to pull it back to' };
+    const spot = { ...this.hold };
+    // NEVER TRUST A CAPTURED OBJECT'S COORDINATES. BP_ROOM_CONTENTS replaces the
+    // whole object map with fresh instances, so anything picked up earlier in the
+    // pass — before we walked to the wall, say — still holds the position it was at
+    // then. Routing to that is routing to where the monster used to be.
+    const foe = c.room.objects.get(want.id);
+    if (!foe) return { pulled: false, why: 'it is not in the room any more' };
+    const name = c.rsc.get(foe.nameRsc);
+    const approach = s.world?.approachSquare?.(foe.col, foe.row);
+    if (!approach) return { pulled: false, why: 'no square beside it that we can reach' };
+    if (approach.steps > (this.policy.pullWithin ?? 8))
+      return { pulled: false, why: `${approach.steps} steps away — too far to fetch and get back` };
+
+    this.doing = 'fighting';
+    const out = await s.walkTo(approach.col, approach.row, { maxSteps: approach.steps + 8 })
+                       .catch(e => ({ arrived: false, reason: e.message }));
+    this.movedAt = Date.now();
+    if (!out.arrived) {
+      const home = await skills.returnToSpot(s, spot, { maxSteps: 24 }).catch(() => ({ arrived: false }));
+      this.movedAt = Date.now();
+      if (!home.arrived) this.releaseHold('could not get back after a failed pull');
+      return { pulled: false, why: out.reason || 'could not get to it' };
+    }
+
+    const it = c.room.objects.get(foe.id);
+    if (it) {
+      await s.faceToward(it);
+      await s.pacer.submit('attack', () => c.attack(foe.id), 1050);
+      this.swungAt = Date.now();
+      this.foeId = foe.id;
+    }
+
+    const home = await skills.returnToSpot(s, spot, { maxSteps: approach.steps + 12 })
+                             .catch(e => ({ arrived: false, why: e.message }));
+    this.movedAt = Date.now();
+    if (!home.arrived) {
+      this.releaseHold('could not get back to it after pulling');
+      return { pulled: true, back: false, target: name,
+               why: home.why || 'hit it but could not get back to the wall' };
+    }
+    // We left and returned, so nothing is proved about the square any more until the
+    // experiment runs again. The belief survives; the running clock does not.
+    this.hold.quietMs = 0;
+    this.note('pulled it to the wall', {
+      target: name, went: approach.steps, back_at: { col: spot.col, row: spot.row },
+      why: 'a safe spot is only worth anything if the fight happens at it' });
+    return { pulled: true, back: true, target: name, steps: approach.steps };
+  }
+
+  // LEAVING A SAFE SPOT WITH A CROWD ON IT.
+  //
+  // Everything that makes the spot good makes stepping off it bad. The things that
+  // could not reach us are standing in exactly the squares we have to walk through,
+  // and every one of them gets its attacks back the moment we come out from behind
+  // the wall — which is how a character survives twenty minutes of siege and then
+  // dies in the four seconds after it decides to leave.
+  //
+  // A reconnect resets that. The entry grace period is handed out again and monsters
+  // only wake as we act, so instead of walking out through five creatures that are
+  // already swinging we walk out through five of which about one has noticed. It
+  // costs a few seconds.
+  async breakOut(why) {
+    const t = this.threat();
+    if (!this.policy.breakOutViaLogoff) return { did: false, crowd: t.near.length };
+    if (t.near.length < (this.policy.breakOutAbove ?? 2)) return { did: false, crowd: t.near.length };
+    this.note('reconnecting before stepping out', {
+      why, crowd: t.near.length, camped_on_us: t.engaged, what: t.names,
+      how: 'a reconnect hands back the entry grace period, so we walk out past a crowd that ' +
+           'has to notice us one at a time rather than one that is already mid-swing' });
+    const r = await this.reconnect('breaking out of a crowded safe spot');
+    if (!r.ok) return { did: false, crowd: t.near.length };
+    this.tally.breakouts = (this.tally.breakouts || 0) + 1;
+    return { did: true, crowd: t.near.length };
+  }
+
+  // ------------------------------------------------------------- resting up
+  //
+  // A room nothing is generated in. The spawn table answers this directly and better
+  // than the name does: an inn is safe, but so is a bank, a shop and a stretch of
+  // road, and "tavern" is not a flag on anything.
+  sanctuary(room = this.s.world?.room) {
+    if (!room) return false;
+    const here = loadSpawns(SPAWN_FILE)?.rooms?.[room.num] || [];
+    return !here.some(x => x.huntable);
+  }
+
+  // A CLEAR PATCH OF FLOOR TO SIT ON.
+  //
+  // Bots do not merely share an inn, they stack: they all arrive by the same route
+  // and stop on the same square, so four of them end up on the identical coordinate.
+  // That is not cosmetic. Every character is ATTACKABLE, so a pile of friendly bots
+  // reads to each of them as a crowd of things that can kill it — which is exactly
+  // how one of them spent half an hour panic-logging-off at four health next to three
+  // of its own fleet.
+  //
+  // Sitting somewhere with space around it fixes that at the source, and it is free:
+  // walking there is itself the step that arms HealthTimer, so the character that
+  // moves aside is also the only one actually regenerating.
+  restingSquare({ within = 12, clear = 3 } = {}) {
+    const s = this.s, c = s.client;
+    const geo = s.world?.geometry, me = c?.self;
+    if (!geo || !me) return null;
+    const others = [...c.room.objects.values()].filter(o => o.id !== c.selfId);
+    const gap = (col, row) => others.length
+      ? Math.min(...others.map(o => Math.hypot(o.col - col, o.row - row))) : 99;
+    // TWO ANSWERS, BECAUSE THE GRID LIES ABOUT INNS.
+    //
+    // The movement grid is one byte per square, and a room full of furniture and
+    // doorways narrower than a square comes out of it disconnected: in the Limping
+    // Toad, 76 squares are both free and clear of everyone, and the grid says NOT ONE
+    // of them can be walked to from the middle of the floor. It is wrong — people sit
+    // at those tables — but it is wrong in the direction that makes a keeper conclude
+    // there is nowhere to go and stand in the doorway for ever.
+    //
+    // The server does not use that grid; it validates against the fine BSP geometry.
+    // So keep the best square the grid endorses AND the best one it merely dislikes,
+    // and let settle() walk to the second in fine coordinates, where the server is the
+    // judge of each step. Same rule the ledge-walking code already follows.
+    let best = null, byFine = null;
+    for (let row = 2; row < geo.rows; row++) {
+      for (let col = 2; col < geo.cols; col++) {
+        if (!geo.walkable(row, col)) continue;
+        const d = Math.max(Math.abs(col - me.col), Math.abs(row - me.row));
+        if (d > within) continue;
+        const space = gap(col, row);
+        if (space < clear) continue;
+        const p = s.world.reach(col, row);
+        // Elbow room first, then closeness — but cap the value of space, because the
+        // far corner of an inn is no safer than a clear table and costs the walk.
+        const value = Math.min(space, 6) * 2 - (p?.steps ?? d) * 0.3;
+        const cand = { col, row, steps: p?.steps ?? d, clearance: +space.toFixed(1), value };
+        if (p?.reachable) { if (!best || value > best.value) best = cand; }
+        else if (!byFine || value > byFine.value) byFine = { ...cand, viaFine: true };
+      }
+    }
+    return best || byFine;
+  }
+
+  // Take a seat, once, on arriving somewhere safe. Doing it on ENTRY rather than when
+  // the resting eventually starts is the whole point: the walk is what sets
+  // PFLAG_MOVED_SINCE_ENTRY, and until that is set the character recovers no health at
+  // all however long it sits. Arriving and stopping is the failure; arriving and
+  // crossing the room is the fix.
+  async settle(why) {
+    const room = this.s.world?.room;
+    if (!room) return { settled: false };
+    if (this.settledIn === room.num) return { settled: false, already: true };
+    // A FAILED ATTEMPT IS NOT A SEAT. Marking the room settled up front meant the
+    // first try was the only try — and the first try is exactly the one that fails,
+    // because the pass right after a reconnect can run before room contents have come
+    // back, so we do not yet know where we are standing and every square looks
+    // unreachable. Isolde spent that pass concluding there was nowhere to sit in a
+    // sixteen-by-sixteen room with a hundred and thirty-five free squares in it.
+    const tries = (this.settleTries || 0);
+    const spot = this.restingSquare();
+    if (!spot) {
+      this.settleTries = tries + 1;
+      // Say it once, and once more when giving up; not every eight seconds in between.
+      if (tries === 0 || tries === 2)
+        this.note('nowhere clear to rest here', {
+          room: room.name, why, attempt: tries + 1,
+          know_where_we_are: !!this.s.client?.self,
+          note: tries === 2
+            ? 'giving up on finding a clear corner in this room'
+            : 'resting anyway, but crowded — health regeneration still needs us to have moved' });
+      if (tries >= 2) this.settledIn = room.num;     // stop trying, but only after trying
+      return { settled: false };
+    }
+    if (spot.steps === 0) {
+      this.settledIn = room.num;
+      this.settleTries = 0;
+      return { settled: true, already: true, spot };
+    }
+    this.doing = 'recovering';
+    // Fine movement when the grid refuses the route, because in an inn the grid is
+    // usually the thing that is wrong. FINENESS is 64 units to the square and the
+    // centre is the half — the same arithmetic moveToSquare does.
+    const w = spot.viaFine
+      ? await this.s.walkFine(spot.col * 64 + 32, spot.row * 64 + 32,
+                              { maxSteps: 24, stride: 48, arriveWithin: 48 })
+                    .then(r => ({ arrived: r.arrived, reason: r.reason, fine: true }))
+                    .catch(e => ({ arrived: false, reason: e.message, fine: true }))
+      : await this.s.walkTo(spot.col, spot.row, { maxSteps: Math.max(20, spot.steps + 8) })
+                    .catch(e => ({ arrived: false, reason: e.message }));
+    this.movedAt = Date.now();
+    if (w.arrived) { this.settledIn = room.num; this.settleTries = 0; }
+    else this.settleTries = tries + 1;
+    this.note(w.arrived ? 'found a quiet corner to rest in' : 'could not reach the quiet corner', {
+      room: room.name, why, to: { col: spot.col, row: spot.row },
+      nearest_other_character: spot.clearance, steps: spot.steps, reason: w.reason,
+      routed: w.fine ? 'in fine coordinates — the square grid called this room disconnected'
+                     : 'through the movement grid',
+      because: 'characters stack on the square they arrive at, and every character is attackable — ' +
+               'a pile of friendly bots reads as a crowd of threats to every one of them. Walking ' +
+               'clear also arms the health timer, which sitting still never does.' });
+    return { settled: !!w.arrived, spot };
+  }
+
+  // Nothing to do and nowhere to be: sit down somewhere safe and get the bar back up.
+  // Vigor is what a character actually leaves an inn with, and resting is the only way
+  // to raise it without food — so idling on your feet is throwing away the one thing
+  // idle time is good for.
+  async hibernate(why) {
+    const s = this.s;
+    if (!this.sanctuary()) return false;
+    await this.settle(why);
+    const v = s.client?.vitals?.();
+    const vig = vigorPct(v), hp = pct(v?.health);
+    if ((vig ?? 1) >= REST_VIGOR_CAP && (hp ?? 1) >= 0.95) return false;
+    this.doing = 'recovering';
+    const r = await skills.restUntil(s, {
+      health: 0.98,
+      // Resting stops at 80 of 200 — RestTimer will not take vigor past its threshold,
+      // so asking for more is asking to sit until the timeout. Everything above this
+      // has to be eaten, which is a supply problem and not something to wait out.
+      vigor: REST_VIGOR_CAP, maxSeconds: 120 });
+    this.tally.rests++;
+    this.note('resting up', {
+      why, seconds: r.seconds, health: r.vitals?.health, vigor: r.vitals?.vigor,
+      reached: r.reached_target,
+      note: 'vigor tops out around 80 of 200 on rest alone; past that it has to come from food' });
+    this.progress('resting up between jobs');
+    return true;
+  }
+
+  // ------------------------------------------------------------- loot runs
+  //
+  // GO AND FETCH WHAT SOMEBODY ELSE CANNOT CARRY.
+  //
+  // A farmer that is doing well drops more than it can hold, and cannot leave to sell
+  // it without giving up a wall it spent twenty minutes proving. A character with no
+  // food is stuck at the resting cap of 80 vigor for ever and has no safe way to earn
+  // its way out. Those are the same problem from two ends.
+  //
+  // The errand takes priority over farming but NOT over staying alive: it is checked
+  // after the death, danger and rest branches, so a runner that gets into trouble on
+  // the way deals with that first and picks the errand up afterwards.
+  //
+  // Payment is deliberately asymmetric and deliberately not carried: food changes
+  // hands on the spot because a fed farmer earns back its value many times over, and
+  // anything owed in coin is settled in a town afterwards. Carrying money into the
+  // wilderness to settle a debt would put the one thing death takes into the one place
+  // death happens.
+  // WALK OVER AND MAKE THEM ONE.
+  //
+  // Both creation spells are self-only: creaweap.kod:117 and creafood.kod do
+  // Send(who,@NewHold,#what=...) where `who` is the CASTER, and lTargets is never
+  // read. So there is no such thing as casting a weapon onto someone else — the
+  // quartermaster casts for itself and then hands the result over, which is the same
+  // two-sided trade a loot run uses to pay a farmer.
+  //
+  // The caster travels, never the supplicant: a character with no weapon is the one
+  // that should be walking through the fewest monster rooms.
+  async runProvision(e) {
+    const s = this.s, c = s.need();
+    const room = s.world?.room;
+
+    if (room?.num !== e.room) {
+      this.doing = 'travelling';
+      await this.leaveHold('setting out to provision someone');
+      const r = await s.travel(e.room, { maxHops: 14 }).catch(x => ({ arrived: false, reason: x.message }));
+      if (!r.arrived) {
+        e.failures = (e.failures || 0) + 1;
+        this.note('could not reach the supplicant', { to_room: e.room, why: r.reason, attempt: e.failures });
+        if (e.failures >= 2) { e.done = true; e.why_done = 'could not get there'; }
+        this.noProgress('cannot reach the supplicant');
+        return true;
+      }
+      this.note('arrived to provision', { room: e.room_name, for: e.supplicant_name });
+      this.progress('reached the supplicant');
+      return true;
+    }
+
+    const them = [...c.room.objects.values()]
+      .find(o => (o.flags & OF.PLAYER) &&
+                 (c.rsc.get(o.nameRsc) || '').toLowerCase() === String(e.supplicant_name || '').toLowerCase());
+    if (!them) {
+      e.done = true; e.why_done = 'they had moved on';
+      this.note('supplicant not here', { wanted: e.supplicant_name, room: e.room_name });
+      return true;
+    }
+
+    // Cast it for ourselves, then find what appeared. Comparing inventory before and
+    // after is the only reliable way to know WHICH object to hand over — the spell
+    // rolls a random weapon or foodstuff and tells us nothing machine-readable.
+    // c.spells is empty until it is asked for — reading it cold is the phantom
+    // "the spell did not encode" bug.
+    await s.pacer.submit('read', () => c.requestSpells()).catch(() => {});
+    await new Promise(x => setTimeout(x, 500));
+    const want = String(e.service).toLowerCase();
+    const spell = (c.spells || []).find(sp => (c.rsc.get(sp.nameRsc) || '').toLowerCase() === want);
+    if (!spell) {
+      e.done = true; e.why_done = `does not know ${e.service}`;
+      this.note('cannot provide that', { spell: e.service,
+                                         knows: (c.spells || []).map(sp => c.rsc.get(sp.nameRsc)) });
+      return true;
+    }
+
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+
+    // DO NOT CAST TWICE FOR ONE ERRAND.
+    //
+    // The hand-over can fail on its own — a supplicant in the middle of a fight does
+    // not reach the branch that accepts gifts within our window — and the retry used to
+    // start again from the cast. Kraanite made a weapon, failed to hand it over, cast a
+    // second one at fifteen mana, and then had nothing left to cast with while carrying
+    // a perfectly good weapon it had already made. If what we made last pass is still in
+    // the pack, offer that instead.
+    const stillHave = (e.made_ids || []).filter(id => (c.inventory || []).some(o => o.id === id));
+    let made;
+    if (stillHave.length) {
+      made = (c.inventory || []).filter(o => stillHave.includes(o.id));
+      this.note('offering what we already made', { to: e.supplicant_name,
+        items: made.map(o => c.rsc.get(o.nameRsc)),
+        why: 'the previous hand-over did not complete; recasting would spend mana for nothing' });
+    } else {
+      const had = new Set((c.inventory || []).map(o => o.id));
+      // Both creation spells take no target, so the target list is empty.
+      await s.pacer.submit('cast', () => c.cast(spell.id, []), 1050);
+      await c.waitFor({ kinds: ['message', 'inventory'], timeoutMs: 4000 }).catch(() => {});
+      await new Promise(x => setTimeout(x, 1200));
+      await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+      made = (c.inventory || []).filter(o => !had.has(o.id));
+      e.made_ids = made.map(o => o.id);
+    }
+    if (!made.length) {
+      e.failures = (e.failures || 0) + 1;
+      this.note('the cast produced nothing we can see', {
+        spell: e.service, attempt: e.failures,
+        mana: c.vitals?.()?.mana,
+        // The server refuses both of these without a word, so the absence of an item is
+        // the only signal there is. Naming them saves the next reader an hour.
+        why: e.service === 'create food'
+          ? 'create food needs 2 ElderBerry and 2 Herbs in OUR pack, and refuses silently without them'
+          : 'create weapon costs 15 mana and refuses silently below it' });
+      if (e.failures >= 2) { e.done = true; e.why_done = 'cast produced nothing'; }
+      return true;
+    }
+
+    const before = c.evSeq;
+    await s.pacer.submit('trade', () => c.offer(them.id, made.map(o => o.id)));
+    // Their keeper counters from social(), which runs once per pass — so the window has
+    // to be wider than one of their passes or a supplicant that is mid-fight never
+    // answers in time and we conclude, wrongly, that nobody is home.
+    const ev = await c.waitFor({ since: before, kinds: ['countered', 'trade-ended'], timeoutMs: 20000 })
+                      .catch(() => ({ events: [] }));
+    if (!ev.events?.some(x => x.kind === 'countered')) {
+      await s.pacer.submit('trade', () => c.cancelOffer()).catch(() => {});
+      e.failures = (e.failures || 0) + 1;
+      this.note('they never countered', { to: e.supplicant_name,
+        why: 'a gift completes only when the other side counters; their keeper does that in social()' });
+      if (e.failures >= 2) { e.done = true; e.why_done = 'no counteroffer'; }
+      return true;
+    }
+    await s.pacer.submit('trade', () => c.acceptOffer());
+    await new Promise(x => setTimeout(x, 1200));
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+
+    e.done = true;
+    e.why_done = 'handed over';
+    e.gave = made.map(o => c.rsc.get(o.nameRsc));
+    this.note('provisioned', { to: e.supplicant_name, service: e.service, gave: e.gave,
+      caveat: e.service === 'create weapon'
+        ? 'a made weapon is temporary — it buys the walk to a shop, it is not a repair' : undefined });
+    this.progress('provisioned someone');
+    return true;
+  }
+
+  async runErrand() {
+    const e = this.errand;
+    if (!e) return false;
+    const s = this.s, c = s.client;
+    const room = s.world?.room;
+
+    if (e.done || (e.expires && Date.now() > e.expires)) {
+      if (e.kind === 'provision')
+        this.note('provisioning errand finished',
+                  { for: e.supplicant_name, service: e.service, gave: e.gave ?? [],
+                    why: e.why_done ?? 'timed out' });
+      else
+        this.note('loot run finished', { for: e.farmer_name, took: e.took ?? [], why: e.why_done ?? 'timed out' });
+      this.errand = null;
+      return false;
+    }
+
+    // A quartermaster errand is a different job with the same priority: it outranks
+    // farming and is outranked by staying alive, and we are already past those branches.
+    if (e.kind === 'provision') return this.runProvision(e);
+
+    // 1. Get there. Travel is the risky half and the keeper above us has already
+    //    decided we are healthy enough to be doing this at all.
+    if (room?.num !== e.room) {
+      this.doing = 'travelling';
+      await this.leaveHold('setting out on a loot run');
+      const r = await s.travel(e.room, { maxHops: 14 }).catch(x => ({ arrived: false, reason: x.message }));
+      if (!r.arrived) {
+        e.failures = (e.failures || 0) + 1;
+        this.note('could not reach the loot run', { to_room: e.room, why: r.reason, attempt: e.failures });
+        if (e.failures >= 2) { e.done = true; e.why_done = 'could not get there'; }
+        this.noProgress('cannot reach the loot run');
+        return true;
+      }
+      this.note('arrived for the loot run', { room: e.room_name, for: e.farmer_name });
+      this.progress('reached the loot run');
+      return true;
+    }
+
+    // 2. Hand over the food FIRST. It is the half of the bargain that pays for itself,
+    //    and doing it before looting means a runner that has to leave in a hurry has
+    //    already kept its side.
+    if (!e.paid) {
+      const paid = await this.payFarmer(e).catch(x => ({ gave: [], why: x.message }));
+      e.paid = true;
+      e.gave = paid.gave ?? [];
+      this.note(paid.gave?.length ? 'paid the farmer in food' : 'nothing to pay with yet', {
+        to: e.farmer_name, gave: paid.gave, why: paid.why,
+        owes: paid.gave?.length ? null : 'half the sale proceeds, to be settled in town' });
+    }
+
+    // 3. STAND WHERE THE FARMER STANDS. This is the deliberate exception to one wall
+    //    each: sharing a spot is pointless when both parties are fighting, and it is
+    //    exactly right when one is fighting and the other is picking up behind them.
+    //    The runner is the fragile one in the room and it is about to spend several
+    //    passes stationary with its hands full — the wall is worth more to it than to
+    //    anyone. Players have done this forever.
+    //
+    //    It is the farmer's claim, so we do not take it in the register; we just go
+    //    and stand there, and the farmer's own keeper still owns it.
+    if (!this.hold) {
+      const farmerSpot = spotHeldBy(e.farmer);
+      if (farmerSpot && farmerSpot.room === room?.num) {
+        const near = s.world?.approachSquare?.(farmerSpot.col, farmerSpot.row);
+        if (near && near.steps > 0 && near.steps <= 6) {
+          this.doing = 'travelling';
+          const w = await s.walkTo(near.col, near.row, { maxSteps: near.steps + 6 })
+                          .catch(() => ({ arrived: false }));
+          this.movedAt = Date.now();
+          if (w.arrived) this.note('sheltering beside the farmer', {
+            farmer: e.farmer_name, their_spot: { col: farmerSpot.col, row: farmerSpot.row },
+            why: 'a loot run is several passes of standing still with full hands — the safest ' +
+                 'place to do that is the wall the farmer already proved' });
+        }
+      }
+    }
+
+    //    Pick the floor clean. lootFloor already refuses cursed items and walks only
+    //    when it has to; seven squares of reach covers a kill site.
+    this.doing = 'trading';
+    const l = await s.lootFloor({ maxItems: 12 }).catch(x => ({ taken: [], refused: [], error: x.message }));
+    const took = (l.taken || []).map(t => t.name + (t.amount ? ` x${t.amount}` : ''));
+    e.took = [...(e.took || []), ...took];
+    this.countLoot(took);
+
+    const cap = this.policy.maxCarry ?? 14;
+    const full = (c.inventory?.length ?? 0) >= cap;
+    if (!took.length || full) {
+      e.done = true;
+      e.why_done = full ? 'pack is full' : 'nothing left on the floor';
+      this.note('loot run collected', {
+        for: e.farmer_name, took: e.took, carrying: c.inventory?.length, of: cap,
+        next: full ? 'go and sell it, then bank the money' : 'floor is clear' });
+      this.progress('collected a loot run');
+      return true;
+    }
+    this.note('picking up', { for: e.farmer_name, took, carrying: c.inventory?.length });
+    this.progress('picking up loot');
+    return true;
+  }
+
+  // Hand over every edible thing we are carrying. A runner is chosen for being poor,
+  // so this is usually nothing — and that is fine, it becomes a debt instead. When
+  // there IS food, giving all of it is correct: the runner is about to walk to a shop
+  // and the farmer is not going anywhere.
+  async payFarmer(e) {
+    const s = this.s, c = s.need();
+    const larder = skills.larderOf(c);
+    if (!larder.length) return { gave: [], why: 'carrying no food' };
+    const them = [...c.room.objects.values()]
+      .find(o => (o.flags & OF.PLAYER) &&
+                 (c.rsc.get(o.nameRsc) || '').toLowerCase() === String(e.farmer_name || '').toLowerCase());
+    if (!them) return { gave: [], why: 'the farmer is not in the room' };
+    const ids = larder.map(x => x.o.id);
+    const before = c.evSeq;
+    await s.pacer.submit('trade', () => c.offer(them.id, ids));
+
+    // FINISH THE HANDSHAKE. An offer alone moves nothing: the sequence is
+    // offer -> they counter (empty, which is how a gift is accepted) -> WE ACCEPT.
+    // Stopping at the counter leaves the food sitting on the table until the trade
+    // is cancelled, while the journal says "paid the farmer in food" — a hand-over
+    // that reads as done in every log we keep and never happened in the world. The
+    // farmer's own keeper counters for us in social(), so the only missing half was
+    // this one.
+    const ev = await c.waitFor({ since: before, kinds: ['countered', 'trade-ended'], timeoutMs: 8000 })
+                      .catch(() => ({ events: [] }));
+    if (!ev.events?.some(x => x.kind === 'countered')) {
+      await s.pacer.submit('trade', () => c.cancelOffer()).catch(() => {});
+      return { gave: [], why: 'they never countered, so the gift could not be completed' };
+    }
+    await s.pacer.submit('trade', () => c.acceptOffer());
+    await new Promise(r => setTimeout(r, 1200));
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    return { gave: larder.map(x => x.name) };
+  }
+
+  // EVERY RECONNECT GOES THROUGH HERE, because a reconnect establishes two things and
+  // both of them are easy to establish in only three of the four places it happens:
+  //
+  //   every object id we are holding is stale — the server reissues them at login
+  //   the entry grace period has been handed back, so from now until we act again,
+  //     nothing that fails to hit us proves anything about where we are standing
+  //
+  // The second is the subtle one and it is why this exists as a method. Without it a
+  // character reconnects into a corner, sits quietly for a minute because the server
+  // is holding the monsters back, and concludes the corner is safe. It is not; it was
+  // never tested; and the next time it stands there it will do so believing it can
+  // rest through anything.
+  async reconnect(why) {
+    const r = await this.s.rejoin().then(() => ({ ok: true }), e => ({ ok: false, why: e.message }));
+    // Stamped even on failure: if we do not know whether we came back, we certainly
+    // do not know whether the monsters are awake.
+    this.rejoinedAt = Date.now();
+    this.foeId = null;
+    this.lastObs = null;
+    this.campedIds = new Set();
+    if (!r.ok) this.note('reconnect failed', { why: r.why, trying_to: why });
+    return r;
+  }
+
+  // The one call every deliberate departure goes through, so that "we decided to
+  // leave" and "we got out alive" are not two different problems solved in five
+  // places. Breaks the siege first when there is one, then lets the hold go.
+  async leaveHold(why) {
+    if (!this.hold) return { left: false };
+    const out = await this.breakOut(why).catch(e => ({ did: false, why: e.message }));
+    this.releaseHold(why);
+    return { left: true, reconnected: !!out.did, crowd: out.crowd ?? 0 };
+  }
+
+  // HOLD THE SWING AND WATCH.
+  //
+  // The one state that can prove a wall is being next to something that wants to kill
+  // you and NOT hitting it — and a keeper that attacks every pass never enters it. So
+  // proof used to arrive only by accident, when a fight went badly enough to force a
+  // rest, which is precisely the moment the proof is too late to be worth anything.
+  //
+  // This makes it deliberate: a monster has walked to the wall, the spot is untested,
+  // so hold the attack for a pass or two and let observe() adjudicate. It costs a few
+  // seconds and it buys holdWorks() for the whole rest of the fight — which is what
+  // makes breaking off free, and resting to full possible.
+  //
+  // Budgeted per session rather than done once and trusted for ever: walls do not
+  // move, but maps get rebuilt and rooms renumbered, and a handful of fresh readings
+  // each session is what keeps the book from ageing into fiction.
+  //
+  // Returns true if the caller should NOT attack this pass.
+  maybeTestSpot(adjacent) {
+    if (!this.hold || this.holdWorks() || !adjacent.length) { this.spotTest = null; return false; }
+    const at = `${this.hold.col},${this.hold.row}`;
+    if (this.spotTest && this.spotTest.at !== at) this.spotTest = null;   // a different square
+    if (!this.spotTest) {
+      if (this.hold.failures) return false;                                // already disproved
+      if ((this.spotTestsRun || 0) >= (this.policy.spotTestsPerSession ?? 3)) return false;
+      this.spotTestsRun = (this.spotTestsRun || 0) + 1;
+      this.spotTest = { at, since: Date.now(), passes: 0 };
+      this.note('holding the swing to test this spot', {
+        where: { col: this.hold.col, row: this.hold.row },
+        adjacent: adjacent.length, test: this.spotTestsRun,
+        of: this.policy.spotTestsPerSession ?? 3,
+        why: 'something has come to the wall and we have never tested this square. Standing ' +
+             'still without swinging is the only thing that can prove it, and proving it now ' +
+             'is worth far more than proving it after the fight has gone wrong.' });
+    }
+    this.spotTest.passes++;
+    // Two passes covers the proof window; three is the cap, so a creature that
+    // wanders off again cannot leave us standing here indefinitely.
+    if (this.spotTest.passes > 3) {
+      this.note('stopped testing this spot — nothing conclusive', {
+        where: { col: this.hold.col, row: this.hold.row },
+        why: 'three passes without a clean verdict; getting on with the fight' });
+      this.spotTest = null;
+      return false;
+    }
+    // Standing still on purpose is not idling, and must not read as a stall.
+    this.doing = 'recovering';
+    this.progress('testing a safe spot');
+    return true;
+  }
+
+  // WHAT THIS CHARACTER IS DOING, in the words someone watching would use.
+  //
+  // `doing` is the time-accounting bucket and is too coarse to read — "recovering"
+  // covers eating, resting and waiting out a digestion clock. This is the one-line
+  // answer to "what is it up to?", which is the question a fleet page is for.
+  activity() {
+    if (!this.running) return 'stopped';
+    // A keeper whose session died keeps looping and keeps reporting whatever it was
+    // last doing, which is how twenty-five logged-out characters showed up on the
+    // board as sixteen of them holding walls. The loop is running; the character is
+    // not there.
+    if (!this.s?.live) return 'NOT IN GAME';
+    if (this.frozenUntil && Date.now() < this.frozenUntil) return 'playing dead';
+    if (this.hold) {
+      const proven = this.holdWorks() ? 'proven' : 'untested';
+      if (this.spotTest) return 'testing a safe spot';
+      if (this.doing === 'fighting') return `fighting from a ${proven} safe spot`;
+      return `holding a ${proven} safe spot`;
+    }
+    if (this.errand)
+      return this.errand.kind === 'provision'
+        ? `${this.errand.service} for ${this.errand.supplicant_name}`
+        : `loot run for ${this.errand.farmer_name}`;
+    if (this.mode === 'idle') return 'idle';
+    if (this.doing === 'travelling') return 'travelling';
+    if (this.doing === 'trading') return 'trading';
+    if (this.doing === 'recovering') return this.climbing ? 'eating to raise vigor' : 'resting';
+    if (this.mode === 'farm' && this.policy.hunt) return `hunting: ${this.policy.hunt}`;
+    return this.stalledSince ? `stuck: ${this.stalledWhy}` : 'waiting';
+  }
+
+  // Something useful happened; clear the stall.
+  progress(why) {
+    this.idlePasses = 0;
+    this.stalledSince = null;
+    this.stalledWhy = null;
+    if (why) this.lastProgress = { at: Date.now(), why };
+  }
+
+  // Nothing useful happened. After a few of these in a row, say so out loud.
+  noProgress(why) {
+    this.idlePasses++;
+    if (this.idlePasses >= 5 && !this.stalledSince) {
+      this.stalledSince = Date.now();
+      this.stalledWhy = why;
+      this.note('STALLED', { why, passes: this.idlePasses,
+                             hint: 'nothing has worked for several passes running' });
+    } else if (this.stalledSince) this.stalledWhy = why;
+  }
+
+  note(what, detail = {}) {
+    const e = { at: Date.now(), pass: this.passes, what, ...detail };
+    this.journal.push(e);
+    if (this.journal.length > 200) this.journal.splice(0, this.journal.length - 200);
+    return e;
+  }
+
+  status({ full = false } = {}) {
+    return {
+      running: this.running, mode: this.mode, policy: this.policy,
+      // What it is up to, in the words someone watching would use. Belongs here rather
+      // than only on the fleet snapshot: anything reading a keeper's status — the
+      // terminal board, another agent — wants the sentence, not the time buckets.
+      activity: this.activity(),
+      passes: this.passes,
+      running_for_seconds: this.startedAt ? Math.round((Date.now() - this.startedAt) / 1000) : 0,
+      // The summary is the part a returning model should read first; the journal is
+      // there for when the summary is surprising.
+      did: {
+        ...this.tally,
+        looted: Object.entries(this.tally.looted).map(([k, n]) => `${k}${n > 1 ? ` x${n}` : ''}`),
+        rooms_visited: [...this.visited],
+      },
+      last_error: this.lastError,
+      // The one field worth reading before anything else. Everything this keeper got
+      // wrong in practice was invisible: it kept running, kept journalling, and did
+      // no work. If this is set, it has been going through the motions.
+      stalled: this.stalledSince
+        ? { since_seconds: Math.round((Date.now() - this.stalledSince) / 1000),
+            idle_passes: this.idlePasses, why: this.stalledWhy }
+        : false,
+      home_room: this.homeRoom,
+      // WHERE WE ARE STANDING AND WHETHER IT WORKS. Read this before deciding
+      // anything about a fight: `works` true means the character cannot be hit unless
+      // it swings first, which makes breaking off free, makes resting to full
+      // possible in a monster room, and makes fleeing the wrong move.
+      safe_spot: this.hold ? {
+        at: { col: this.hold.col, row: this.hold.row },
+        works: this.holdWorks(),
+        evidence: this.hold.proven
+          ? (this.hold.inherited && !this.hold.provenAt
+              ? 'held under attack on an earlier visit'
+              : `nothing landed in ${Math.round(this.hold.quietMs / 1000)}s with ` +
+                `${this.hold.mostAttackers} thing(s) standing next to us`)
+          : (this.hold.failures
+              ? `hit ${this.hold.failures} time(s) while standing still — this square does not work`
+              : 'untested: treated as open floor until something stands next to us without landing a blow'),
+        sides_open: this.hold.canReachYou, back_cover: this.hold.backCover,
+        held_s: Math.round((Date.now() - this.hold.takenAt) / 1000),
+      } : false,
+      // Who is on us, and how that is known — the protocol never says outright.
+      threat: (() => {
+        const t = this.threat();
+        return { could_reach_us: t.near.length, camped_on_us: t.engaged,
+                 in_swing_range: t.adjacent.length, what: t.names,
+                 landing_damage: t.landing || 0,
+                 note: 'nothing in the protocol says who has targeted us. `camped_on_us` is things ' +
+                       'that have stayed next to us for more than one pass; `landing_damage` is the ' +
+                       'only direct evidence, and it is what proves or disproves a safe spot' };
+      })(),
+      // Where the time went. `stalled` here means only what it says: standing about
+      // not knowing what to do, while not recovering.
+      time: (() => {
+        const t = this.time, act = this.activeSeconds, total = act + t.stalled;
+        const r = n => Math.round(n);
+        return { fighting_s: r(t.fighting), recovering_s: r(t.recovering),
+                 travelling_s: r(t.travelling), trading_s: r(t.trading),
+                 stalled_s: r(t.stalled),
+                 active_s: r(act),
+                 stalled_pct: total ? +((100 * t.stalled) / total).toFixed(1) : 0 };
+      })(),
+      last_death: this.lastDeath ?? null,
+      recent: this.journal.slice(-12),
+      // THE MEASUREMENT, NOT THE CONCLUSION. Every window observe() looked at, with
+      // the readings it was looking at, so that someone standing in the room can
+      // disagree with a specific one. Discards are here too and are the interesting
+      // half: a window wrongly thrown away is how this would be quietly broken.
+      trials: this.trials.slice(-12),
+      ...(full ? { journal: this.journal, all_trials: this.trials } : {}),
+    };
+  }
+
+  countLoot(items = []) {
+    for (const it of items) {
+      const name = String(it).replace(/ x\d+$/, '');
+      const n = Number(/ x(\d+)$/.exec(String(it))?.[1] ?? 1);
+      this.tally.looted[name] = (this.tally.looted[name] || 0) + n;
+    }
+  }
+
+  // STOPPING IS NOT INSTANT, AND STARTING HAS TO KNOW THAT.
+  //
+  // stop() only sets a flag; the loop notices it when the pass it is in finishes,
+  // which can be most of a minute later if that pass is walking across the world. So
+  // the ordinary "stop it, move it, start it again" sequence lands its start while
+  // the old loop is still winding down — and the old code took `running` at face
+  // value, returned "already running", and was then switched off by the very loop it
+  // had just declined to replace. The keeper reported itself started and did nothing
+  // for ever after, which is exactly the silent stall the rest of this file exists to
+  // prevent. Three characters were sitting in it before it was noticed.
+  //
+  // Cancelling the pending stop is the whole fix; loop() re-checks the flag on its way
+  // out so a cancellation lands even at the last moment.
+  start() {
+    if (this.running && this.stopping) {
+      this.stopping = false;
+      this.note('start cancelled a stop that had not taken effect yet', {
+        why: 'the previous loop was still finishing a pass; it now carries on with the new orders' });
+      return this.status();
+    }
+    if (this.running) return this.status();
+    this.running = true; this.stopping = false; this.startedAt = Date.now();
+    // A fresh start is a new job: whatever room was worth hunting under the last
+    // orders is not evidence about these ones, and may not even be reachable now.
+    this.homeRoom = null;
+    this.roamedFrom = null;
+    this.roamedRooms = 0;
+    // A room we could not route to from the last job's starting point may be
+    // perfectly reachable from this one.
+    this.unreachable.clear();
+    // Whatever we believed about where we were standing was believed under the last
+    // orders and possibly in another room. The BOOK survives — walls do not move, and
+    // that is the whole reason it is written down — but the claim to be standing on
+    // one does not.
+    this.hold = null;
+    this.lastObs = null;
+    this.campedIds = new Set();
+    // A fresh session gets fresh readings. The book persists; the willingness to spend
+    // a few seconds re-checking it does not, or a keeper restarted twenty times would
+    // never test anything again.
+    this.spotTestsRun = 0;
+    this.spotTest = null;
+    this.progress('started');
+    this.note('started', { mode: this.mode, hunt: this.policy.hunt });
+    // Deliberately not awaited: the loop outlives the call that started it.
+    this.loop().catch(e => { this.lastError = e.message; this.running = false; this.note('crashed', { why: e.message }); });
+    return this.status();
+  }
+
+  stop() {
+    this.stopping = true;
+    // Everything learned about which squares hold, before this keeper goes away.
+    this.book.save();
+    this.note('stopping');
+    return this.status();
+  }
+
+  // Charge the elapsed time of a pass to whatever it turned out to be doing.
+  spend(ms) {
+    const k = this.doing || 'stalled';
+    this.time[k] = (this.time[k] || 0) + ms / 1000;
+    this.doing = null;
+  }
+
+  get activeSeconds() {
+    const t = this.time;
+    return t.fighting + t.recovering + t.travelling + t.trading;
+  }
+
+  async loop() {
+    // The outer loop is the other half of start()'s cancellation. Between leaving the
+    // inner loop and admitting we have stopped there is no await, so a start() can
+    // only ever be observed by the outer test — which means a cancelled stop is picked
+    // up rather than racing us to the exit.
+    do {
+      while (!this.stopping) {
+        this.passes++;
+        const began = Date.now();
+        try {
+          await this.pass();
+          this.spend(Date.now() - began);
+        } catch (e) {
+          this.spend(Date.now() - began);
+          // A pass that throws must not kill the keeper — the session may simply have
+          // gone away underneath it, and the next pass will find out properly.
+          this.lastError = e.message;
+          this.note('pass failed', { why: e.message });
+          await sleep(5000);
+        }
+        if (this.stopping) break;
+        await sleep(this.policy.idleMs);
+      }
+    } while (!this.stopping);
+    this.running = false;
+    this.note('stopped');
+  }
+
+  // One decision cycle. Ordered by urgency: being dead, then being in danger, then
+  // being hurt, then whatever the mode is for.
+  async pass() {
+    const s = this.s;
+    if (!s.live) { this.note('not in game'); return; }
+    const c = s.client;
+
+    // FROZEN after a panic logoff. Do nothing that the server counts as an action:
+    // no room-contents request, no movement, no turning, no fighting. Rest, read the
+    // stats, and wait. Anything else calls NotifyMonstersOfPresence and hands back
+    // the one thing this state is for.
+    if (this.frozenUntil && Date.now() < this.frozenUntil) {
+      this.doing = 'recovering';
+      await s.pacer.submit('read', () => c.stats(1));
+      await c.waitFor({ kinds: ['stat'], timeoutMs: 1500 });
+      await s.pacer.submit('rest', () => c.rest());
+      const vv = c.vitals();
+      this.note('frozen', { left_s: Math.round((this.frozenUntil - Date.now()) / 1000),
+                            health: vv?.health?.value, vigor: vv?.vigor?.value,
+                            note: 'recovering vigor; health needs us to move again first' });
+      this.progress('playing dead to avoid a death');
+      return;
+    }
+    if (this.frozenUntil) {
+      this.frozenUntil = null;
+      this.note('unfreezing', { note: 'moving again — monsters can see us from here on' });
+    }
+
+    await s.pacer.submit('read', () => c.roomContents());
+    await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 });
+    await s.pacer.submit('read', () => c.stats(1));
+    await c.waitFor({ kinds: ['stat'], timeoutMs: 1500 });
+
+    const room = s.world?.room;
+    const v = c.vitals();
+    const hp = pct(v.health);
+
+    // BEFORE ANY DECISION: do we still know where we are standing, and is it working?
+    // Every branch below reads differently depending on the answer — fleeing, resting
+    // and logging off all invert inside a working safe spot — so it has to be settled
+    // first and from evidence, not from what the geometry hoped.
+    this.observe();
+
+    // A SHORT MEMORY, kept only so that a death can be explained.
+    //
+    // The ledger samples every five minutes, which is far too coarse to catch a
+    // death: it reports where the character was up to five minutes BEFORE it died,
+    // which is why the last dozen death records all name inns and towns. Nobody died
+    // in an inn. They died somewhere else, minutes later, and the sample was stale.
+    //
+    // The keeper is the only thing running at the resolution a death happens at.
+    this.recent5 = (this.recent5 || []);
+    this.recent5.push({ at: Date.now(), room: room?.name ?? null, num: room?.num ?? null,
+                        col: c.self?.col ?? null, row: c.self?.row ?? null,
+                        health: v.health?.value ?? null, max: v.health?.max ?? null,
+                        vigor: v.vigor?.value ?? null,
+                        threats: [...c.room.objects.values()]
+                          .filter(o => o.id !== c.selfId && (o.flags & OF.ATTACKABLE))
+                          .map(o => c.rsc.get(o.nameRsc)).slice(0, 6) });
+    if (this.recent5.length > 8) this.recent5.shift();
+
+    // Answer people and take hand-outs before anything else. Cheap, and a player
+    // trying to help should not have to wait for a fight to finish.
+    await this.social().catch(e => this.note('social failed', { why: e.message }));
+
+    // 0. Do we still know who we are? A `save game` renumbers every object, and a
+    //    session that was live across one keeps a selfId the server no longer uses.
+    //    Nothing errors. Position reads null, our own object is missing from room
+    //    contents, and every check written as "am I still in the room?" concludes we
+    //    died — forever, at full health. Re-logging in is the whole fix, because the
+    //    id is handed out fresh at login.
+    if (!c.self) {
+      this.selfMissingPasses++;
+      if (this.selfMissingPasses >= 3) {
+        this.note('lost our own object id — reconnecting',
+                  { passes: this.selfMissingPasses,
+                    why: 'not in room contents; usually a save-game renumber' });
+        const again = await this.reconnect('recovering a renumbered object id');
+        this.selfMissingPasses = 0;
+        this.note(again.ok ? 'reconnected' : 'reconnect failed',
+                  again.ok ? { object_id: s.client?.selfId } : { why: again.why });
+        this.noProgress('reconnecting after losing our object id');
+        return;
+      }
+    } else this.selfMissingPasses = 0;
+
+    // 1. Dead. The Underworld has no graph exits, so a character left there stays
+    //    there forever unless something walks it onto a portal.
+    if (room && /underworld/i.test(room.name)) {
+      this.tally.deaths++;
+      this.deathsThisRun = (this.deathsThisRun || 0) + 1;
+
+      // Reconstruct the death from the short memory, ONCE, on the pass that first
+      // finds us here. The last frame that was not the Underworld is where it
+      // actually happened, and what was standing there is the best evidence of what
+      // did it.
+      if (!this.reportedDeath) {
+        this.reportedDeath = true;
+        // Were we behind a wall when it happened? See lastHold in observe().
+        const diedHolding = this.lastHold && Date.now() - this.lastHold.at < 30_000
+          ? this.lastHold : null;
+        const before = (this.recent5 || []).filter(f => !/underworld/i.test(f.room || ''));
+        const at = before[before.length - 1] || null;
+        const trail = before.slice(-4).map(f => `${f.health}/${f.max}`).join(' -> ');
+        this.lastDeath = {
+          at: Date.now(),
+          died_in: at?.room ?? null, room_num: at?.num ?? null,
+          at_col: at?.col ?? null, at_row: at?.row ?? null,
+          level: at?.max ?? null,
+          health_trail: trail || null,
+          last_health: at?.health ?? null,
+          last_vigor: at?.vigor ?? null,
+          killed_by: at?.threats?.length ? at.threats : null,
+          hunting: this.policy.hunt,
+          strategy: this.policy.strategy,
+          flee_threshold: this.safety().fleeAt,
+          // The two questions worth asking of any death.
+          fled_in_time: at && at.max ? (at.health / at.max) : null,
+          had_flasks: this.hadFlasks ?? null,
+          // DID WE DIE SOMEWHERE WE BELIEVED WAS SAFE? The whole safe-spot thesis
+          // predicts this should be close to never: a working spot cannot be hit out
+          // of unless we swing first, so anything that dies in one is either standing
+          // somewhere that does not work, or was killed on the way in or out. Which
+          // of those it is matters, and only recording it can tell them apart.
+          in_safe_spot: diedHolding ? {
+            at: { col: diedHolding.col, row: diedHolding.row },
+            proven: diedHolding.proven,
+            held_s: Math.round((Date.now() - diedHolding.takenAt) / 1000),
+          } : false,
+        };
+        if (diedHolding) {
+          this.tally.deaths_in_safe_spot = (this.tally.deaths_in_safe_spot || 0) + 1;
+          if (diedHolding.proven)
+            this.tally.deaths_in_proven_safe_spot = (this.tally.deaths_in_proven_safe_spot || 0) + 1;
+          // A square that got somebody killed has failed the only test that counts,
+          // whatever it had done before.
+          this.book.failed(diedHolding.room, {
+            col: diedHolding.col, row: diedHolding.row,
+            damage: diedHolding.proven ? 99 : 1, attackers: diedHolding.mostAttackers });
+          this.book.save();
+        }
+        this.note('DIED', this.lastDeath);
+      }
+      this.note('woke up dead', { room: room.name, attempt: (this.underworldTries || 0) + 1 });
+      // A tell costs nothing and we have no mana for anything else.
+      await this.answerWhere().catch(() => {});
+
+      // NEVER SIT HERE. The Underworld has no exits in the room graph — only
+      // portals you walk onto — so a character left in it stays in it until
+      // something acts. One failed attempt is not a reason to stop trying: the
+      // usable portal is the shifting one, and it changes destination every few
+      // seconds, so trying again IS the strategy.
+      this.underworldTries = (this.underworldTries || 0) + 1;
+      const e = await skills.escapeUnderworld(s, { maxSeconds: 120 });
+      if (e.left) {
+        this.reportedDeath = false;
+        this.tally.rooms_moved++;
+        this.underworldTries = 0;
+        this.needsRecovery = true;      // we lost everything we were carrying
+        this.progress('escaped the underworld');
+        this.note('escaped the underworld', { to: e.arrived_in, via: e.via });
+      } else {
+        this.noProgress('stuck in the Underworld: ' + (e.reason || 'no portal took us'));
+        this.note('could not escape — will keep trying', { why: e.reason, tried: e.tried });
+      }
+      return;
+    }
+
+    // Just came back from the dead. Everything carried dropped where we fell, so
+    // the character is unarmed and unarmoured and cannot fight anything. A human
+    // in this position rests somewhere safe and asks for help, which is a real and
+    // surprisingly effective move in a populated world — so do that rather than
+    // walk a naked character back into a monster room.
+    if (this.needsRecovery) {
+      this.needsRecovery = false;
+      await this.askForHelp();
+      return;
+    }
+
+    // 2. In danger. "Something attackable is adjacent and we are hurt" is the only
+    //    threat signal available — the protocol does not say who is targeting us.
+    //
+    //    OTHER PLAYERS ARE NOT THREATS, and leaving them in this list is not a
+    //    conservative choice, it is a catastrophic one. Every character is ATTACKABLE,
+    //    so a friendly bot standing next to you is indistinguishable from a monster
+    //    here — and they do not merely stand next to each other, they stack on the
+    //    identical square, because they all walk to the same inn by the same route.
+    //    Isolde sat at 4 of 25 health in the Limping Toad with Aurelia, Malig and
+    //    Yorick all on square (8,15) beside her, concluded she was about to be killed
+    //    by three of her own fleet, and panic-logged-off in a loop that could never
+    //    end: freezing is what stops health coming back, so she woke at 4 health,
+    //    counted the same three, and froze again. Thirty passes, no healing, no
+    //    stall reported, nothing wrong with any single decision.
+    //
+    //    The trade is real and worth stating: a genuinely hostile player will now not
+    //    register here. That costs us a fight we were losing anyway; the other way
+    //    round costs a character that never recovers.
+    const me = c.self;
+    const near = me ? [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER) &&
+      Math.hypot(o.col - me.col, o.row - me.row) <= 2) : [];
+
+    // ABOUT TO DIE. Below two hits of margin with something adjacent, withdrawing is
+    // a gamble — the walk takes seconds during which it keeps swinging, and losing
+    // that gamble costs a point of maximum health for ever. Logging off costs a
+    // minute and cannot fail.
+    //
+    // UNLESS WE ARE IN A SPOT THAT WORKS, in which case none of that applies: we are
+    // not about to die at all, we are merely hurt somewhere nothing can reach us. The
+    // correct move is to stop swinging and sit down, which the rest branch below
+    // does. Note the test is holdWorks() and not "we are standing in a corner" —
+    // spending this on an unproven square is exactly the mistake it exists to
+    // prevent, and an unproven square gets us the logoff, which is also how we
+    // survive long enough to prove it.
+    const worstHit = Math.min(30, Math.floor(((v.health?.max ?? 0) + 2) / 3));
+    const sheltered = this.holdWorks();
+    // THE TRIGGER IS DIFFERENT BEHIND A WALL, and it has to be, because the cost of a
+    // false alarm is not zero. Two of the biggest hit the game can land works out at
+    // about 70% of health for these characters — sensible in the open, absurd in a
+    // spot, where the things that could hit us are on squares they cannot reach us
+    // from and we choose which one we swing at. Cedric logged off three times in five
+    // minutes at 71%, and each of those minutes was a minute of not healing and not
+    // killing anything. Below a third of health it is still worth it.
+    const doomedAt = this.hold
+      ? Math.round((v.health?.max ?? 0) * (this.policy.doomedInSpotBelow ?? 0.35))
+      : worstHit * 2;
+    const doomed = hp !== null && near.length && v.health?.value != null &&
+                   v.health.value <= doomedAt && !sheltered;
+    if (doomed && this.policy.panicLogoff !== false) {
+      if (await this.playDead('at ' + v.health.value + ' health with ' + near.length +
+                              ' adjacent; a single hit can take ' + worstHit)) return;
+    }
+
+    // WITHDRAWING IS FOR THE OPEN FLOOR. Walking away is the only thing a plain
+    // character can do about a fight it is losing — out in the open. In a working
+    // safe spot it is the single worst available move: it costs the wall, hands every
+    // camped monster its attacks back, and spends several seconds being hit to reach
+    // a square that is no safer than the one it left. Staying put and not swinging
+    // stops the damage immediately and for free.
+    if (hp !== null && hp < this.policy.fleeBelow && near.length && !sheltered) {
+      this.tally.withdrawals++;
+      this.note('withdrawing', { health: Math.round(hp * 100) + '%', from: near.map(o => c.rsc.get(o.nameRsc)) });
+      await this.withdraw(near);
+      return;
+    }
+    if (hp !== null && hp < this.policy.fleeBelow && near.length && sheltered) {
+      this.tally.mulligans = (this.tally.mulligans || 0) + 1;
+      this.note('breaking off without moving', {
+        health: Math.round(hp * 100) + '%', crowd: near.length,
+        where: { col: this.hold.col, row: this.hold.row },
+        why: 'we are in a spot that has held under attack, so nothing can hit us unless we ' +
+             'swing first. Stopping is the whole withdrawal.',
+        next: 'rest to full here, then take the fight again from the top or leave on our own terms' });
+    }
+
+    // SIT DOWN PROPERLY THE MOMENT WE ARRIVE SOMEWHERE SAFE.
+    //
+    // Not when the resting eventually starts — on entry. The walk to a clear patch of
+    // floor is what sets PFLAG_MOVED_SINCE_ENTRY, and until it is set the character
+    // recovers no health at all no matter how long it sits there. A bot that walks
+    // into an inn and stops is not resting, it is waiting, and nothing in its own
+    // journal will ever say so.
+    //
+    // It also un-stacks the pile. They all arrive on the same square by the same
+    // route, and since every character is attackable, a heap of friendly bots is
+    // indistinguishable from a mob to every bot in it.
+    if (this.sanctuary(room) && this.settledIn !== room?.num &&
+        ((hp !== null && hp < 0.95) || (vigorPct(v) ?? 1) < REST_VIGOR_CAP))
+      await this.settle('arrived somewhere safe and not at full strength').catch(() => {});
+    // Leaving a room means the next safe one gets its own seat, and its own attempts.
+    if (this.settledIn != null && room?.num !== this.settledIn && !this.sanctuary(room)) {
+      this.settledIn = null;
+      this.settleTries = 0;
+    }
+
+    // 3. Hurt but safe. Resting next to something hostile just feeds it — out in the
+    //    open. In a proven safe spot "next to something hostile" is not a danger at
+    //    all, and refusing to rest there is refusing the single largest advantage the
+    //    game offers: a free heal to full, in the middle of a monster room, with
+    //    three things standing next to us that cannot do anything about it.
+    //
+    //    THIS IS THE MULLIGAN. A fight going badly stops being a death and becomes a
+    //    draw we can re-take at full health.
+    const vig = vigorPct(v);
+    // Sheltered, rest at whatever it takes to be fit to fight — never leave a gap
+    // between "too hurt to start" and "hurt enough to rest", because a character
+    // standing at a wall in that gap does neither and simply stops. engageAt is in
+    // here for exactly that reason.
+    // NEVER LEAVE A GAP BETWEEN "TOO HURT TO START" AND "HURT ENOUGH TO REST".
+    //
+    // This was applied to the sheltered case and not to the ordinary one, and the
+    // ordinary one is where the whole fleet lives. restBelow is 0.6; engageAt is 0.9
+    // for anything under thirty max health. A character at 64% is therefore too hurt
+    // to pick a fight and not hurt enough to sit down, so it does NEITHER — and the
+    // branch that declines the fight calls progress(), so it does not even register
+    // as stalled. Cedric held that state at the Tos gate with full vigor, a wall
+    // available and centipedes wandering past, reporting a healthy-looking journal
+    // line every eight seconds.
+    //
+    // The fix is to say it once: whatever health it takes to be willing to fight is
+    // the health worth resting to. Anything less is a keeper that waits for a number
+    // nothing will ever move.
+    const wantsToFight = this.mode === 'farm' && !!this.policy.hunt;
+    const restAt = Math.max(
+      this.policy.restBelow,
+      sheltered ? this.policy.holdResumeAbove : 0,
+      wantsToFight ? this.safety().engageAt : 0);
+    // NEVER SIT DOWN FOR SOMETHING SITTING DOWN CANNOT FIX.
+    //
+    // restBelow is one threshold used for two vitals that recover by different means.
+    // Resting restores vigor only as far as RestTimer's threshold — 80 of 200, which is
+    // REST_VIGOR_CAP — and everything above that has to be eaten. Comparing vigor
+    // against restBelow (0.6, i.e. 120) therefore asks for a level resting can never
+    // reach, so the character was still "hurt" when it stood up and went straight back
+    // down on the next pass. Hungry characters spent entire sessions in that loop.
+    // For vigor the trigger is what resting can actually deliver; the shortfall above
+    // it is a food problem, and eat()/loot runs are what answer it.
+    const vigorRestAt = Math.min(this.policy.restBelow, REST_VIGOR_CAP);
+    const hurt = (hp !== null && hp < restAt) || (vig !== null && vig < vigorRestAt);
+
+    // RUN THE EXPERIMENT ON PURPOSE. A spot is only proved by standing in it without
+    // swinging while something tries to kill us — and every other branch here is
+    // gated on already having that proof, so without this the keeper can fight from
+    // an untested corner forever and never find out whether it works.
+    //
+    // The window it needs is the same window resting needs, so testing costs nothing
+    // beyond the pause. Bounded twice, because being wrong here means sitting still
+    // while something eats us: only while we still have flee margin in hand, and for
+    // one pass at a time, so observe() gets to adjudicate quickly either way.
+    const testing = !sheltered && !!this.hold && !this.hold.failures &&
+                    hp !== null && hp >= this.policy.fleeBelow;
+    if ((!near.length || sheltered || testing) && hurt) {
+      if (testing && near.length)
+        this.note('testing this spot the only way there is', {
+          where: { col: this.hold.col, row: this.hold.row }, crowd: near.length,
+          health: Math.round(hp * 100) + '%',
+          why: 'sitting still without swinging is the experiment. If nothing lands we can rest to ' +
+               'full here from now on; if something does, we find out in one pass and with two ' +
+               'hits of margin still in hand' });
+      // HEALTH AND VIGOR COME BACK BY COMPLETELY DIFFERENT MEANS, and only one of
+      // them comes back by resting. RestTimer restores vigor and never touches
+      // health (player.kod:10033). Having a high vigor then enhances your health regeneration.
+      this.doing = 'recovering';
+      // Arm whenever we are here for HEALTH, at whichever threshold brought us — a
+      // sheltered character resting at 85% still needs the flag set, and gating this
+      // on the open-floor threshold would have it sit there collecting vigor and
+      // wondering why its health never moved.
+      if (hp !== null && hp < restAt) {
+        // ARM THE TIMER FIRST. HealthTimer only awards a point if
+        // PFLAG_MOVED_SINCE_ENTRY is set, so a character that walked into an inn and
+        // stopped regenerates nothing at all — which is precisely what happened to one
+        // of mine for twenty-nine consecutive rest attempts.
+        //
+        // HOW we arm it depends entirely on where we are standing. A step arms it and
+        // gives up the square; a TURN arms it and does not. Out in the open that
+        // distinction does not exist, which is why the original only ever stepped —
+        // but stepping off a safe spot to start healing is giving away the reason the
+        // healing is safe, and it is worth being exact about.
+        const n = this.hold
+          ? await skills.turnInPlace(s).catch(() => ({ turned: false }))
+          : await skills.nudge(s).catch(() => ({ moved: false }));
+        // Both of these end the entry grace period, which is the point: from here on
+        // anything that fails to hit us is failing because of the walls.
+        if (n.turned) this.turnedAt = Date.now();
+        if (n.moved) this.movedAt = Date.now();
+        if (n.moved && this.hold) {
+          // Should be impossible — REQ_TURN carries no coordinates — but a safe spot
+          // we have silently walked off is the one failure worth being loud about.
+          this.releaseHold('a turn moved us off the square');
+        } else if (n.turned) {
+          this.note('turned to arm health regeneration', {
+            ...n, kept: this.hold ? { col: this.hold.col, row: this.hold.row } : null,
+            why: 'this wakes the monsters, and in a working safe spot that costs nothing — ' +
+                 'they cannot reach us, and the flag it sets is what lets health come back' });
+        } else if (n.moved) {
+          this.note('stepped to arm health regeneration', n);
+        }
+        const h = await skills.healUp(s, { target: 0.9 }).catch(e => ({ healed: false, reason: e.message }));
+        if (h.healed) {
+          this.tally.heals = (this.tally.heals || 0) + 1;
+          this.progress('healed');
+          this.note('healed', { used: h.used, health: h.health });
+        } else if (h.reason === 'nothing to heal with') {
+          // No flask and no heal spell is NOT a dead end — health comes back on its
+          // own now that we have moved. It is only slow, at roughly
+          // ((200-vigor)^2/6 + 1000) milliseconds a point, which is why resting
+          // matters: it is vigor, not time, that sets the rate. Only ask for help if
+          // we are badly hurt AND cannot rest safely.
+          this.note('healing the slow way', {
+            health: h.health, armed_by: n.turned ? 'turning in place' : (n.moved ? 'a step' : 'nothing'),
+            note: 'no flask or heal spell; regenerating on the vigor timer' });
+          // Being out of flasks is only an emergency when we have nowhere safe to be.
+          // In a spot that holds, it is a wait.
+          if ((hp ?? 1) < 0.25 && !sheltered)
+            await this.askForHelp('badly hurt and out of flasks').catch(() => {});
+        }
+      }
+      this.tally.rests++;
+      // Sheltered, resting is free and uninterruptible, so take it all the way to
+      // full rather than to a threshold — the next fight starts from whatever we
+      // stand up with, and there is nothing to spend the difference on.
+      const r = await skills.restUntil(s, {
+        // Always finish above the threshold that sent us here, or the next pass sends
+        // us straight back and the character rests in one-second slices forever.
+        health: Math.min(0.99, Math.max(0.95, restAt + 0.02)),
+        // Not 0.95. RestTimer stops awarding vigor at 80 of 200, so asking for more
+        // guarantees the full timeout is burned every single rest and reached_target
+        // is always false.
+        vigor: REST_VIGOR_CAP,
+        // A short leash while the spot is only a hypothesis: resting does not look at
+        // anything, so a two-minute rest in a corner that does not work is two minutes
+        // of being hit with nobody watching.
+        maxSeconds: testing ? 15 : (sheltered ? 150 : 90) });
+      this.note('rested', { seconds: r.seconds, to: r.vitals?.health, reached: r.reached_target, why: r.note,
+                            in_safe_spot: sheltered || undefined,
+                            crowd: sheltered ? near.length : undefined,
+                            note: sheltered
+                              ? 'resting to full in a monster room, which the safe spot is what makes possible'
+                              : 'resting restores vigor, and vigor sets how fast health regenerates' });
+      return;
+    }
+
+    // An errand outranks farming and is outranked by everything above it: we are past
+    // the death, danger and rest branches, so a runner in trouble has already dealt
+    // with the trouble.
+    if (this.errand && await this.runErrand().catch(e => {
+      this.note('loot run failed', { why: e.message }); this.errand = null; return false;
+    })) return;
+
+    // Standing in a bank? Put the takings away before anything can take them.
+    await this.bankSurplus().catch(() => {});
+
+    // Someone else is standing here and we can mend them: do that first. It costs a
+    // second and it is the only action available that helps another character.
+    if ((STRATEGIES[this.policy.strategy] || {}).medic) await this.medic().catch(() => {});
+
+    // HIBERNATING IS NOT DOING NOTHING. A keeper with no job still has a bar to fill,
+    // and vigor is what a character walks out of an inn with — it sets the health
+    // regeneration rate and it is what swinging spends. Standing about at 30 of 200
+    // because nobody gave us a task is throwing away the one thing idle time is for.
+    if (this.mode === 'idle') {
+      if (await this.hibernate('idle: no job to do').catch(() => false)) return;
+      return;
+    }
+
+    // 4. Work. Only in farm mode, and only on what we were told to hunt.
+    if (this.mode === 'farm') {
+      // NEVER STAND IN A ROOM THAT CANNOT PRODUCE THE PREY.
+      //
+      // This does not need to be discovered by waiting. The spawn table says up
+      // front whether a giant rat can ever appear here, so tolerating three empty
+      // passes first is three passes of pretending. Riven spent them standing in
+      // Quintor's Smithy "hunting giant rats" — a shop, where nothing is generated,
+      // nothing can be fought, and no amount of patience would have changed either.
+      //
+      // The check is on GENERATORS, not on the room's object list: a smithy contains
+      // the blacksmith, who is placed once at construction, so "does anything spawn
+      // here" is true of every shop in the game unless you distinguish the two.
+      if (room) {
+        const spawns0 = loadSpawns(SPAWN_FILE);
+        const here = (spawns0?.rooms?.[room.num] || []).filter(x => x.huntable);
+        const want0 = String(this.policy.hunt || '').toLowerCase();
+        const preyHere = here.some(x => (x.creature || '').toLowerCase().includes(want0));
+        if (!preyHere) {
+          const known = this.preyRooms(room);
+          if (known.length) {
+            const target = known[0];
+            this.note('this room cannot produce our prey — leaving now', {
+              room: room.name, hunting: this.policy.hunt,
+              generates: here.map(x => x.creature),
+              going_to: target.room_name,
+              why: here.length ? 'none of what spawns here is what we hunt'
+                               : 'nothing is generated here at all — it is not a hunting ground' });
+            this.doing = 'travelling';
+            await this.leaveHold('travelling to a room that generates our prey');
+            const r0 = await s.travel(target.room, { maxHops: 14 })
+                             .catch(e => ({ arrived: false, reason: e.message }));
+            if (r0.arrived) {
+              this.homeRoom = target.room;
+              this.emptyPasses = 0;
+              this.progress('moved to a room that generates the prey');
+            } else {
+              this.unreachable.add(target.room);
+              this.noProgress('cannot reach anywhere that generates ' + this.policy.hunt);
+            }
+            return;
+          }
+        }
+      }
+
+      if (!this.policy.hunt) {
+        // No quarry named is the same situation as idle mode: rest up rather than
+        // stand there, so that whenever a job does arrive it starts from a full bar.
+        if (await this.hibernate('farm mode with nothing named to hunt').catch(() => false)) return;
+        this.note('idle: nothing to hunt', { hint: 'set policy.hunt to a creature name' });
+        return;
+      }
+      // Bags full. This used to stop and say so, and then say so again every eight
+      // seconds for as long as you left it — a third of one run spent announcing a
+      // problem it could have solved. Sell to anyone here who buys; failing that,
+      // drop the biggest pile of junk. Keep money, gems, and anything in use.
+      if (c.inventory.length >= this.policy.maxCarry) {
+        const freed = await this.makeRoom();
+        this.note('bags full — ' + freed.did, { carrying: c.inventory.length, max: this.policy.maxCarry, ...freed.detail });
+        if (freed.ok) this.progress('made room in bags'); else this.noProgress('bags full and could not make room');
+        return;
+      }
+      const found = skills.findCreature(s, this.policy.hunt);
+      if (!found.length) {
+        this.emptyPasses++;
+        // Monsters do come back, so an empty room is not a dead end — but standing in
+        // one for an hour is not work either. Wait a few passes, then move on if the
+        // owner allowed it.
+        if (this.policy.roam && this.emptyPasses >= this.policy.roamAfterEmptyPasses) {
+          await this.roam(room);
+        } else {
+          this.note('nothing to hunt here', {
+            looking_for: this.policy.hunt, room: room?.name, empty_passes: this.emptyPasses,
+            hint: this.policy.roam ? undefined
+              : 'they respawn eventually; set roam:true to move on instead of waiting',
+          });
+        }
+        return;
+      }
+      this.emptyPasses = 0;
+
+      // EAT BEFORE FIGHTING, if this pattern says to. Resting stops at the rest
+      // threshold of 80; everything above that has to come from food, and vigor is
+      // what sets the health regeneration rate — so a well-fed character recovers
+      // between fights several times faster than a merely rested one.
+      const plan = STRATEGIES[this.policy.strategy] || STRATEGIES.baseline;
+      if (await this.provision(plan, v)) return;   // still stocking up — do not engage
+
+      // Resume the creature we already hurt rather than whatever is nearest now. A
+      // kill scores nothing unless we damaged it and it was our current target, and
+      // each new attack resets both flags — so breaking off at 40% health and then
+      // starting fresh on a different monster silently throws away every point of
+      // progress the first fight earned.
+
+      // Refuse the fight outright if we are not healthy enough to take it. Heal
+      // first — that is a real action now, not a euphemism for resting.
+      const safe = this.safety();
+      if (hp !== null && hp < safe.engageAt) {
+        const h = await skills.healUp(s, { target: 0.95 }).catch(() => ({ healed: false }));
+        if (h.healed) this.note('healed before engaging', { used: h.used, health: h.health });
+        else {
+          this.note('too hurt to start a fight', {
+            health: Math.round(hp * 100) + '%', need: Math.round(safe.engageAt * 100) + '%',
+            worst_single_hit: safe.maxHit,
+            why: 'a single hit can take ' + safe.maxHit + ' of ' + (s.client.vitals()?.health?.max) +
+                 ', and health does not come back on its own' });
+          // ONLY WHEN ACTUALLY BADLY HURT. engageAt is a "do not START a fight" line,
+          // not a distress signal — for a character under thirty max health it sits at
+          // 90%, so this was broadcasting for a rescue at 89% health, every five
+          // minutes, in front of everybody. Being unready to pick a fight and being in
+          // trouble are different states and only one of them is worth asking about.
+          if ((hp ?? 1) < 0.35)
+            await this.askForHelp('badly hurt and out of flasks').catch(() => {});
+          // NOT A STALL — PROVIDED WE ARE ACTUALLY RECOVERING. Regenerating on the
+          // vigor timer is the most useful thing available and calling it a stall made
+          // a working system look broken. But the claim has to be true: if we got here
+          // it means the rest branch above declined, which now happens only when
+          // something hostile is stood over us, and a character being hit while
+          // refusing to fight or flee is the definition of stuck. Reporting progress
+          // in that state is what let the dead zone hide for so long.
+          this.doing = 'recovering';
+          if (near.length) {
+            this.note('cornered while too hurt to engage', {
+              health: Math.round(hp * 100) + '%', crowd: near.length,
+              what: near.map(o => c.rsc.get(o.nameRsc)),
+              why: 'cannot rest with something on us and not healthy enough to start a fight' });
+            this.noProgress('too hurt to fight and not safe enough to rest');
+          } else {
+            this.progress('recovering to fighting strength');
+          }
+          return;
+        }
+      }
+      // TOO TIRED TO START. Checked before choosing a wall, not after, because the
+      // answer is the same either way — go and sit down — and doing it here means a
+      // character that is out of vigor spends its pass recovering rather than walking
+      // somewhere to be out of vigor in.
+      //
+      // The retreat is deliberately TO A SAFE SPOT rather than away: resting is what
+      // is needed, resting next to a monster is only possible behind a wall, and a
+      // character that has to leave the room to recover has to walk back afterwards
+      // through everything it just walked past.
+      const vigorNow = vigorOf(v);
+      const vigorFloor = Math.max(MIN_FIGHT_VIGOR, this.policy.fightAboveVigor ?? 0);
+      if (vigorNow != null && vigorNow < vigorFloor) {
+        this.doing = 'recovering';
+        // A wall first, if one is going and we do not already have it — resting with
+        // something adjacent is only safe behind one.
+        if (!this.hold && this.policy.useSafeSpots && room)
+          await this.takeSafeSpot('too tired to fight — need somewhere safe to rest',
+                                  found[0] ?? null).catch(() => {});
+        const r = await skills.restUntil(s, {
+          health: 0.98, vigor: REST_VIGOR_CAP, maxSeconds: 120 }).catch(() => null);
+        this.tally.rests++;
+        this.note('too tired to start a fight', {
+          vigor: vigorNow, need: vigorFloor, after_resting: r?.vitals?.vigor?.value,
+          behind_a_wall: !!this.hold,
+          why: 'attacking costs about thirty vigor a minute and vigor also sets how fast health ' +
+               'comes back, so starting a fight below ' + vigorFloor + ' means breaking off ' +
+               'part-way and recovering slower than if we had waited',
+          note: (r?.vitals?.vigor?.value ?? 0) < vigorFloor && !this.hadFood
+            ? 'resting alone stops at 80; if this does not clear, the character needs food'
+            : undefined });
+        this.progress('resting up to fighting vigor');
+        return;
+      }
+
+      // PUT YOUR BACK TO A WALL BEFORE FIGHTING ANYTHING WORTH FIGHTING.
+      //
+      // This used to trigger on a crowd of three, which reads as caution and is
+      // actually the wrong test: it made the safe spot an emergency measure for when
+      // things had already gone wrong, when it is really the normal way to fight.
+      // Every fight the keeper picks on purpose is against something at or above its
+      // own level — that is what makes the kill pay at all — and something at your
+      // own level can take a third of your bar in one blow.
+      //
+      // So the test is the owner's rule of thumb, which is also the game's own
+      // advancement rule: IF YOU CAN GAIN MAX HEALTH FROM IT, FIGHT IT FROM A WALL.
+      // See holdWorthwhile(). Against prey we genuinely outclass, and only then, the
+      // walk to the corner costs more than the fight does.
+      const foundNames = [...new Set(found.map(o => c.rsc.get(o.nameRsc)))];
+      const worth = this.holdWorthwhile([...new Set([...foundNames, ...this.threat().names])]);
+      if (worth.hold && !this.hold && room) {
+        // Aim at the fight, not just at the nicest wall. `found` is sorted nearest
+        // first by findCreature, so its head is the thing we are about to go and get.
+        const t = await this.takeSafeSpot(worth.why, found[0] ?? null);
+        if (t.took) {
+          // Do not burn the pass on arriving. The whole point of the spot is that the
+          // fight happens here, and the fight is directly below.
+          this.progress('took up a defensible position');
+        } else if (!this.warnedNoSpot || this.warnedNoSpot !== room.num) {
+          // Say this once per room rather than every eight seconds: a room with no
+          // corner in it is a fact about the room, not an event.
+          this.warnedNoSpot = room.num;
+          this.note('no safe spot available here', {
+            room: room.name, why: t.why,
+            consequence: 'fighting in the open, so the flee threshold is doing all the work',
+            hint: 'somewhere with a wall to put our back to would be worth moving to' });
+        }
+      }
+
+      // FIGHT WHAT IS ACTUALLY HITTING YOU, not only what you came for.
+      //
+      // Farm mode named one creature and fought only that, which is correct as a
+      // statement of intent and fatal as a policy: the rooms are shared. Every room a
+      // Qor character can legally hunt in is 50-75% BABY SPIDER and only 25-50%
+      // centipede, so a Qor student attacks its centipede while two or three spiders
+      // it is deliberately ignoring chew on it from behind. Thirteen of the last
+      // twenty deaths in this fleet were the five Qor characters, and this is why —
+      // not their karma, which is the story I first reached for, but the fact that
+      // they alone are hunting the MINORITY spawn in every room open to them.
+      //
+      // So: if something attackable is adjacent and it is not the prey, it is the
+      // prey now. Refusing to hit back is not a strategy.
+      // Re-read where we are: taking a spot may have walked us across the room, and
+      // "adjacent" computed from before the walk is a different question.
+      const here = c.self;
+      // NOT FLEETMATES. This is the list "hit back at whatever is on us" chooses from,
+      // and without the player filter it chose a fleetmate 131 times out of 132 — the
+      // characters stand next to each other by design now, on walls and in inns, and
+      // every one of them is ATTACKABLE. They cannot hurt each other while their
+      // guardian angels hold, so it never showed up as damage; it showed up as
+      // twenty-five characters busy all night and three kills to show for it.
+      const adjacent = here ? [...c.room.objects.values()].filter(o =>
+        o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER) &&
+        Math.hypot(o.col - here.col, o.row - here.row) <= REACH) : [];
+      const want = String(this.policy.hunt || '').toLowerCase();
+      const bystander = adjacent.find(o =>
+        !(c.rsc.get(o.nameRsc) || '').toLowerCase().includes(want));
+      const engageName = bystander ? c.rsc.get(bystander.nameRsc) : this.policy.hunt;
+      if (bystander)
+        this.note('hitting back', { at: engageName, instead_of: this.policy.hunt,
+                                    why: 'it is adjacent and attacking; ignoring it is how these characters die' });
+
+      // Something has come to the wall and we have never tested this square: watch it
+      // for a pass before hitting it. This is the only way proof ever arrives on
+      // purpose rather than by accident. See maybeTestSpot().
+      if (this.maybeTestSpot(adjacent)) return;
+
+      this.doing = 'fighting';
+      const holding = !!this.hold;
+      const f = await skills.fight(s, { target: engageName,
+                                        preferId: bystander ? bystander.id : this.foeId,
+                                        disengageAt: safe.fleeAt, loot: true,
+                                        holdPosition: holding, reach: REACH });
+
+      // NOTHING IN REACH, AND WE ARE NOT GOING TO CHASE IT. fight() refuses to walk
+      // while we are holding, which is correct and leaves the interesting half to us:
+      // a monster that will not come to the wall has to be fetched. Hit it once and
+      // walk back, and the fight happens where we chose.
+      if (f.out_of_reach) {
+        const quarry = found.find(o => o.id === f.nearest?.id) || found[0];
+        const p = quarry ? await this.pull(quarry) : { pulled: false, why: 'nothing to pull' };
+        if (p.pulled && p.back) {
+          this.progress('pulled something to the wall');
+          this.note('waiting for it at the wall', {
+            target: p.target,
+            why: 'it has been hit and is following; the next pass fights it from here' });
+        } else {
+          // Fetching failed. Give the spot up — but REMEMBER that it cannot be used,
+          // or the next pass picks the identical square for the identical reason and
+          // the keeper spends its life walking between a wall and a decision. Cedric
+          // did exactly that at the Tos gate: take, fail, release, take, fail.
+          const room2 = s.world?.room;
+          if (room2?.num != null && this.hold) {
+            (this.barrenSpots ??= new Map());
+            const set = this.barrenSpots.get(room2.num) ?? new Set();
+            set.add(`${this.hold.col},${this.hold.row}`);
+            this.barrenSpots.set(room2.num, set);
+          }
+          this.note('could not bring it to the wall', {
+            why: p.why, target: p.target,
+            note: 'that square is now excluded in this room — nothing can be fetched to it' });
+          this.releaseHold('nothing can be pulled to it from here');
+          this.noProgress('holding a spot nothing will come to');
+        }
+        return;
+      }
+      this.swungAt = Date.now();
+      this.foeId = f.foe_id ?? null;
+      // fight() can now tell death apart from a stale object id. If it is the
+      // latter, reconnecting fixes it; treating it as death would loop forever.
+      if (f.stale_identity) {
+        this.note('stale object id during a fight — reconnecting', { why: f.note });
+        await this.reconnect('clearing a stale object id mid-fight');
+        this.noProgress('reconnected after a stale object id');
+        return;
+      }
+      const looted = (f.looted || []).map(x => x.name + (x.amount ? ` x${x.amount}` : ''));
+      if (f.killed) {
+        this.tally.kills++;
+        // Remember where the work is. This is what roaming steers back toward.
+        if (room?.num != null) this.homeRoom = room.num;
+        this.progress('killed something');
+      } else this.noProgress(f.died ? 'died in a fight' : 'broke off without a kill');
+      this.countLoot(looted);
+      this.note(f.killed ? 'killed' : (f.died ? 'died' : 'broke off'), {
+        target: f.target, rounds: f.rounds, looted,
+        health: f.health?.after?.value, why: f.note,
+        ...(holding ? { from_safe_spot: { col: this.hold?.col, row: this.hold?.row,
+                                          proven: this.holdWorks() } } : {}),
+        ...(f.refused?.length ? { left_on_the_floor: f.refused.length } : {}),
+      });
+      return;
+    }
+
+    this.note('nothing to do', { health: v.health, vigor: v.vigor, room: room?.name });
+  }
+
+  // BE ANSWERABLE. A character that never replies is not just rude, it is a dead
+  // end: someone offering a newly-killed bot a weapon has no way to tell whether
+  // anyone is home, and gives up. Two things are worth doing every pass, both
+  // cheap because they read state we already have.
+  async social() {
+    const s = this.s, c = s.need();
+
+    // 1. Take gifts. A trade where the other side has put something up and we have
+    //    put up nothing is a hand-out, and the way to accept one is to counter with
+    //    nothing — countering is what grants the other side permission to accept.
+    //    Only ever counter EMPTY, so this can never give our own things away.
+    const t = c.trade;
+    if (t && t.withId && (t.theirs?.length) && !(t.ours?.length)) {
+      try {
+        await s.pacer.submit('trade', () => c.counterOffer([]));
+        this.note('accepted a gift', { from: t.withName,
+                                       items: t.theirs.map(i => i.name + (i.amount > 1 ? ` x${i.amount}` : '')) });
+        this.progress('someone gave us something');
+        // Put it to use immediately — a donated sword is no help in the pack.
+        await skills.equipBest(s).catch(() => {});
+      } catch (e) { this.note('could not accept a gift', { why: e.message }); }
+    }
+
+    // 2. Answer anyone who says our name. Rate-limited, because the reply goes to
+    //    the whole room and a keeper that chatters every eight seconds is worse
+    //    than one that says nothing.
+    const evs = c.eventsSince(this.socialCursor || 0).filter(e => e.kind === 'said');
+    this.socialCursor = c.evSeq;
+    const myName = (c.me?.name || '').toLowerCase();
+    if (!myName) return;
+    const toMe = evs.filter(e => e.speaker !== c.selfId &&
+                                 String(e.text || '').toLowerCase().includes(myName));
+    if (!toMe.length) return;
+    if (Date.now() - (this.lastReply || 0) < 25000) return;
+    this.lastReply = Date.now();
+
+    const v = c.vitals();
+    const hp = v.health ? `${v.health.value}/${v.health.max}` : '?';
+    const wielding = (c.inventory || []).length ? '' : ' I have nothing on me.';
+    const what = this.policy.hunt ? `hunting ${this.policy.hunt}` : 'not hunting anything';
+    const stalled = this.stalledSince ? ` I am stuck: ${this.stalledWhy}.` : '';
+    const reply = `${c.me.name}: ${what}, ${hp} health.${wielding}${stalled} ` +
+                  (this.needsRecovery || !(c.inventory || []).length
+                    ? 'Gear or shillings would help enormously.'
+                    : 'Thanks for asking.');
+    try {
+      await s.pacer.submit('say', () => c.say(reply));
+      this.note('answered someone', { heard: toMe[toMe.length - 1].text?.slice(0, 80), said: reply });
+    } catch (e) { this.note('could not answer', { why: e.message }); }
+  }
+
+  // Rearm after dying, and if we cannot, say so out loud where people are.
+  //
+  // Dying drops everything, so the character wakes with nothing. First try the
+  // obvious: re-wield whatever survived. If there is genuinely no weapon, ask —
+  // broadcasting for a hand-out at an inn is what a newly-dead player actually
+  // does, and in a world with other agents in it, it is a strategy rather than a
+  // gesture. Kept to one message per death: the same channel carries a mana cost
+  // and a social one.
+  // Heal whoever else is standing here, if we can.
+  //
+  // Minor heal (heal.kod:100) is worth far more in this fleet than its name suggests:
+  //     iHeal = random(1,5) + (power+1)/20 + target_karma/20, bounded to 10
+  //     ... PLUS random(2,5) again if the target is not yet PKILL_ENABLE
+  // Every character here is under 30 base health, so every one of them qualifies for
+  // that newbie bonus — up to ten points for three mana and one herb. It also pays
+  // the CASTER: healing someone whose karma is higher than yours awards karma, which
+  // is exactly the direction a Shal'ille student needs to move.
+  //
+  // And casting is how abilities improve at all, so a Shal'ille character with a
+  // wounded ally in the room has a move that heals the ally, trains the spell, and
+  // raises its own karma in one action. There is no reason not to take it.
+  async medic() {
+    const s = this.s, c = s.need();
+    const MEDIC_GAP_MS = 45_000;
+    if (this.lastHealAt && Date.now() - this.lastHealAt < MEDIC_GAP_MS) return;
+
+    const spell = (c.spells || []).find(sp => /^(minor heal|heal)$/i.test(c.rsc.get(sp.nameRsc) || ''));
+    if (!spell) return;
+    const mana = c.vitals()?.mana;
+    if (mana && mana.value < 4) return;                    // 3 to cast, leave a margin
+
+    // Another player, not us, not a monster.
+    // Raw room objects carry flags, not the snapshot's derived booleans — `is_player`
+    // is computed in the world model and does not exist here.
+    const other = [...c.room.objects.values()]
+      .find(o => o.id !== c.selfId && (o.flags & OF.PLAYER));
+    if (!other) return;
+
+    this.lastHealAt = Date.now();
+    await s.pacer.submit('cast', () => c.cast(spell.id, [other.id]), 1050);
+    const ev = await c.waitFor({ kinds: ['message', 'stat'], timeoutMs: 3000 }).catch(() => ({ events: [] }));
+    this.tally.heals_given = (this.tally.heals_given || 0) + 1;
+    this.note('healed someone', {
+      target: c.rsc.get(other.nameRsc), spell: c.rsc.get(spell.nameRsc),
+      said: ev.events?.filter(e => e.text).map(e => e.text).slice(0, 2),
+      why: 'heals them, trains the spell, and raises our karma if theirs is higher' });
+    this.progress('cast a heal on an ally');
+  }
+
+  // TELL PEOPLE WHERE THE BODY IS.
+  //
+  // A death is broadcast to the whole world ("### Yorick was just killed by a
+  // troll."), and the usual reply is somebody asking "where?". The dead player is
+  // the one person who cannot answer at scale: dying costs all your mana, and a
+  // broadcast costs mana. But a TELL is cheap, and whoever asked still has theirs —
+  // so the protocol players actually use is: the corpse tells one person, that
+  // person broadcasts, and the room fills up.
+  //
+  // Everything needed is already recorded. `lastDeath` has the room and the health
+  // trail; all that was missing was answering the question.
+  async answerWhere() {
+    const s = this.s, c = s.need();
+    const box = inboxIfAny(this.s.name);
+    if (!box || !this.lastDeath) return;
+
+    // Anything recent that reads like someone asking after the body.
+    const since = this.lastDeath.at - 60_000;
+    const asks = box.select({ since, limit: 20 })
+      .filter(m => /where|where\?|what room|which room|loc|location/i.test(m.text || ''));
+    for (const m of asks) {
+      if (this.answered?.has(m.id)) continue;
+      (this.answered ??= new Set()).add(m.id);
+      const d = this.lastDeath;
+      const where = d.died_in || 'somewhere I could not name';
+      const at = d.room_num != null ? ` (room ${d.room_num})` : '';
+      const spot = d.at_col != null ? `, around col ${d.at_col} row ${d.at_row}` : '';
+      const text = `${where}${at}${spot}. Killed by ${d.killed_by?.join(' and ') || 'something'}. ` +
+                   `I have no mana to broadcast it — please pass it on if you would.`;
+      try {
+        await s.pacer.submit('say', () => c.tell(m.from_id ?? m.fromId, text));
+        this.note('told someone where the body is', { to: m.from ?? m.from_name, where, text });
+        this.progress('answered a where');
+      } catch (e) {
+        this.note('could not answer where', { why: e.message });
+      }
+    }
+  }
+
+  // BANK THE MONEY BEFORE GOING BACK OUT.
+  //
+  // Dying drops your ENTIRE inventory on a corpse you usually cannot return to, and
+  // shillings are inventory. Bank deposits are not. This fleet has already proved the
+  // point the expensive way: twenty-three deaths, and an audit afterwards found
+  // nineteen of twenty-five characters wearing nothing and most carrying no money at
+  // all — everything they had earned was lying on corpses across the world.
+  //
+  // With a balance, a death costs a point of maximum health and an errand. Without
+  // one it costs everything and the character restarts from nothing, which is the
+  // difference between a setback and a spiral. Jasper and Tos share one banking
+  // system, so either counter will do.
+  //
+  // Keep a float in hand for flasks and food; bank the rest.
+  async bankSurplus() {
+    const s = this.s, c = s.need();
+    const FLOAT = this.policy.walkingMoney ?? 400;
+    const room = s.world?.room;
+    if (!room) return;
+    const teller = [...c.room.objects.values()]
+      .find(o => /bank/i.test(c.rsc.get(o.nameRsc) || '') ||
+                 affordances(o.flags).includes('bank'));
+    // Only when we happen to be standing in a bank — a special trip is not worth the
+    // walk, and the trader/wellfed loops already pass through town.
+    if (!teller && !/bank/i.test(room.name || '')) return;
+
+    await s.pacer.submit('read', () => c.requestInventory());
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+    const purse = c.inventory.find(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''));
+    const carried = purse?.amount ?? 0;
+    if (carried <= FLOAT) return;
+
+    const put = carried - FLOAT;
+    this.doing = 'trading';
+    // The client speaks to the teller directly; there is no skills wrapper for this.
+    const r = await s.pacer.submit('bank', () => c.deposit(put))
+                    .then(() => c.waitFor({ kinds: ['message'], timeoutMs: 3000 }))
+                    .then(ev => ({ said: ev.events?.filter(e => e.text).map(e => e.text).slice(0, 2) }))
+                    .catch(e => ({ error: e.message }));
+    this.note(r.error ? 'could not bank' : 'banked the surplus', {
+      deposited: r.error ? undefined : put, kept: FLOAT, why: r.error, said: r.said,
+      because: 'money in hand is lost on death; money in the bank is not' });
+    if (!r.error) { this.tally.banked = (this.tally.banked || 0) + put; this.progress('banked money'); }
+  }
+
+  // LOG OFF RATHER THAN DIE.
+  //
+  // This is the single most effective survival move in the game and it is not a
+  // trick so much as a documented mechanic. NotifyMonstersOfPresence
+  // (user.kod:3114) carries the comment: "When a player first enters the room, the
+  // game will prevent AIs from attacking that player until that player takes an
+  // action." That grace period is real, it applies on every entry including a
+  // reconnect, and PFLAG_MOVED_SINCE_ENTRY is what ends it.
+  //
+  // Crucially, UC_REST goes straight to StartResting (user.kod:1480) WITHOUT calling
+  // NotifyMonstersOfPresence — so resting does not wake anything. Moving, turning,
+  // attacking, casting and picking things up all do.
+  //
+  // The honest limit, because the same flag gates two different things: HealthTimer
+  // also requires PFLAG_MOVED_SINCE_ENTRY, so while frozen we recover VIGOR and not
+  // health. That is still the right trade. A death costs a point of maximum health
+  // permanently plus everything carried; this costs a minute and buys back the vigor
+  // that sets the regeneration rate for when we do move.
+  //
+  // ALL OF THAT CHANGES IF WE ARE STANDING IN A SAFE SPOT, and it changes for the
+  // better, because the reason to stay frozen disappears. Logging back in puts us
+  // back exactly where we logged off; the walls have not moved; so the grace period
+  // is no longer the thing keeping us alive — the geometry is. That means we can
+  // afford to SPEND the grace period rather than hoard it: turn once, which wakes
+  // everything and arms HealthTimer, and then rest to full while the things that
+  // noticed us stand there unable to do anything about it.
+  //
+  // The frozen version buys a minute of vigor. This version buys a full heal in the
+  // middle of a monster room, and it is the difference between a fight we lost and a
+  // fight we get to have again.
+  async playDead(why) {
+    const s = this.s;
+    // A FREEZE THAT CHANGED NOTHING MUST NOT BE REPEATED.
+    //
+    // Freezing buys safety by not acting, and the same flag that keeps the monsters
+    // off also keeps HealthTimer off — so it recovers vigor and NEVER health. That is
+    // the right trade exactly once. Do it twice from the same health and it is a
+    // livelock: wake, see the same danger, freeze again, for ever, at four health,
+    // reporting a sensible-looking journal line every eight seconds.
+    //
+    // So: remember the health we last froze at. If we are back here no better off,
+    // the freeze is not working and the answer has to be something that moves.
+    const nowHp = s.client?.vitals?.()?.health?.value ?? null;
+    if (this.frozeAt != null && nowHp != null && nowHp <= this.frozeAt) {
+      this.freezesWithoutGain = (this.freezesWithoutGain || 0) + 1;
+      if (this.freezesWithoutGain >= 2) {
+        this.note('refusing to freeze again — it is not helping', {
+          health: nowHp, froze_at: this.frozeAt, times: this.freezesWithoutGain,
+          why: 'playing dead recovers vigor and never health, so repeating it from the same ' +
+               'health cannot ever end. Something that moves has to happen instead.' });
+        return false;      // the caller falls through to withdrawing or resting
+      }
+    } else this.freezesWithoutGain = 0;
+    this.frozeAt = nowHp;
+    // Keep our own copy: rejoin() renumbers everything, and observe() will not have
+    // run again by the time we need to know where we were standing.
+    const spot = this.hold ? { ...this.hold } : null;
+    const inSpot = this.holdWorks();
+    this.note('LOGGING OFF TO AVOID DYING', {
+      why, health: s.client?.vitals?.()?.health,
+      in_safe_spot: inSpot || undefined,
+      how: inSpot
+        ? 'disconnect, reconnect, and then deliberately turn — we come back standing in a spot ' +
+          'nothing can reach us in, so waking the room costs nothing and buys the health timer'
+        : 'disconnect, wait, reconnect, and then do NOTHING that counts as an action' });
+    this.tally.logoffs = (this.tally.logoffs || 0) + 1;
+    this.doing = 'recovering';
+
+    const came = await this.reconnect('logging off rather than dying');
+    if (!came.ok) {
+      this.note('reconnect after logoff failed', { why: came.why });
+      return false;
+    }
+
+    if (spot) {
+      const me = s.client?.self;
+      const back = me && me.col === spot.col && me.row === spot.row;
+      if (back) {
+        // Not frozen: the walls are doing the work, so the grace period is ours to
+        // spend. The ordinary rest branch takes it from here — it turns to arm the
+        // timer, rests to full, and observe() keeps checking that nothing lands.
+        this.hold = { ...spot, takenAt: Date.now(), quietMs: 0, reclaimed: true };
+        this.tally.mulligans = (this.tally.mulligans || 0) + 1;
+        this.note('back on the safe spot', {
+          where: { col: spot.col, row: spot.row }, proven: spot.proven,
+          plan: 'turn to wake the room and arm health regeneration, then rest to full here',
+          why: 'a reconnect puts us back exactly where we were, and nothing about the walls ' +
+               'changed while we were gone' });
+        return true;
+      }
+      // We came back somewhere else. Say so rather than carry on believing in a
+      // square we are not standing on — every branch above trusts this flag.
+      this.hold = null;
+      this.note('did not come back on the safe spot', {
+        expected: { col: spot.col, row: spot.row },
+        actually: me ? { col: me.col, row: me.row } : null,
+        why: 'falling back to staying completely still, which needs no geometry to work' });
+    }
+
+    // Frozen. Rest only — no movement, no turning, no looking around, and in
+    // particular no room-contents request, because anything that reads as an action
+    // hands the grace period back.
+    this.frozenUntil = Date.now() + (this.policy.freezeMs ?? 90_000);
+    this.note('playing dead', {
+      until_s: Math.round((this.frozenUntil - Date.now()) / 1000),
+      note: 'monsters cannot attack until this character acts; resting is not an action' });
+    return true;
+  }
+
+  // Ask other players for what the game will not give us.
+  //
+  // Rate-limited hard, because a broadcast costs a share of max mana and a keeper
+  // loops every eight seconds; unthrottled this would be indistinguishable from
+  // spam, and would empty the mana bar of the very character that needs it.
+  async askForHelp(reason = null) {
+    const s = this.s, c = s.need();
+    const PLEA_GAP_MS = 5 * 60 * 1000;
+    if (this.lastPleaAt && Date.now() - this.lastPleaAt < PLEA_GAP_MS) return;
+
+    // NOBODY NEEDS RESCUING IN AN INN.
+    //
+    // Being hurt is not being in danger, and broadcasting as though it were is both
+    // embarrassing and expensive — it costs a share of maximum mana and it spends
+    // other players' attention on a character that is in no trouble whatsoever.
+    // Isolde did it from the middle of the Limping Toad, where monsters cannot attack
+    // at all. The remedy there is entirely in our own hands: move, which is what arms
+    // the regeneration timer, then sit down. That reaches full health and the 80
+    // vigor that resting can reach, without anybody being asked for anything.
+    //
+    // (The pedantic exception is an assassin's game blade, which can strike you in an
+    // inn — but it costs no health, no stats and no inventory, so it is not a reason
+    // to call for help either.)
+    //
+    // Being unarmed after a death is different and still worth asking about: no
+    // amount of resting produces a sword.
+    const hurtOnly = /hurt|heal|flask/i.test(reason || '');
+    if (hurtOnly && this.sanctuary()) {
+      if (!this.quietedPleaIn || this.quietedPleaIn !== this.s.world?.room?.num) {
+        this.quietedPleaIn = this.s.world?.room?.num ?? null;
+        this.note('not asking for help — we are somewhere safe', {
+          room: this.s.world?.room?.name, reason,
+          why: 'nothing can attack us here, so being hurt is a wait rather than an emergency: ' +
+               'moving arms the health timer and resting does the rest' });
+      }
+      return;
+    }
+
+    await s.pacer.submit('read', () => c.requestInventory());
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+
+    const eq = await skills.equipBest(s).catch(() => null);
+    const armed = !!eq?.wielding;
+    const where = c.rsc.get(c.roomNameRsc) || 'somewhere';
+    const hurt = /hurt|heal|flask/i.test(reason || '');
+    this.note(hurt ? 'asking for a heal' : 'recovering after death',
+              { armed, wielding: eq?.wielding, room: where, reason });
+
+    // Rearming solves the post-death case by itself; being hurt never does.
+    if (armed && !hurt) { this.progress('rearmed after dying'); return; }
+
+    const v = c.vitals()?.health;
+    const name = c.me?.name || 'a traveller';
+    const plea = hurt
+      ? `${name} here at ${where} — I am down to ${v ? `${v.value} of ${v.max}` : 'almost no'} health ` +
+        `and I have nothing to heal with. Resting brings health back slowly in these lands. ` +
+        `If anyone can spare a flask or cast a heal on me I would be in your debt.`
+      : `${name} here — I was killed and lost everything. I am at ${where} with no weapon ` +
+        `or armour. If anyone can spare a blade or a few shillings I would be grateful, ` +
+        `and I will pay it forward once I am on my feet.`;
+    this.lastPleaAt = Date.now();
+    try {
+      await s.pacer.submit('say', () => c.broadcast(plea));
+      this.note('asked for help', { channel: 'broadcast', room: where });
+    } catch (e) {
+      // Broadcast costs a share of max mana and is refused when squelched; the
+      // room is free and someone may well be standing in the inn.
+      try { await s.pacer.submit('say', () => c.say(plea)); this.note('asked for help', { channel: 'say', room: where }); }
+      catch { this.note('could not ask for help', { why: e.message }); }
+    }
+    this.noProgress(hurt ? 'hurt with no way to heal — waiting on a passer-by'
+                         : 'dead broke and unarmed — waiting on charity');
+  }
+
+  // Free up carrying space rather than announcing that we cannot. Sell if anyone
+  // here buys; otherwise drop the largest pile of the least valuable thing. Money,
+  // gems and anything we are wearing or wielding are never touched.
+  async makeRoom() {
+    this.doing = 'trading';
+    const s = this.s, c = s.need();
+    const buyer = [...c.room.objects.values()].find(o => affordances(o.flags).includes('buy'));
+    if (buyer) {
+      const sold = await skills.sellAll(s, { merchant: buyer.id }).catch(e => ({ error: e.message }));
+      if (!sold.error && sold.sold?.length) {
+        return { ok: true, did: 'sold to ' + c.rsc.get(buyer.nameRsc),
+                 detail: { earned: sold.total_received, sold: sold.sold.length } };
+      }
+    }
+    // No buyer. Drop the biggest stack of something expendable.
+    await s.pacer.submit('read', () => c.requestInventory());
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+    // The keep list doubles as the equipment guard: weapons and armour are named in
+    // it, so "drop the biggest pile of junk" can never strip the character.
+    const keep = /shilling|coin|diamond|ruby|emerald|sapphire|armor|armour|shield|sword|mace|hammer|axe|bow|helm|gauntlet/i;
+    const junk = (c.inventory || [])
+      .filter(o => !keep.test(c.rsc.get(o.nameRsc) || ''))
+      .sort((a, b) => (b.amount || 1) - (a.amount || 1));
+    if (!junk.length) {
+      return { ok: false, did: 'nothing safe to drop',
+               detail: { hint: 'raise maxCarry, or go and sell — everything carried looks worth keeping' } };
+    }
+    const drop = junk[0];
+    const name = c.rsc.get(drop.nameRsc);
+    await s.pacer.submit('drop', () => c.drop([drop.id]));
+    await new Promise(r => setTimeout(r, 900));
+    await s.pacer.submit('read', () => c.requestInventory());
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+    return { ok: true, did: `dropped ${name}${drop.amount > 1 ? ` x${drop.amount}` : ''}`,
+             detail: { now_carrying: c.inventory.length } };
+  }
+
+  // Move to a neighbouring room and look there instead. Prefers somewhere not yet
+  // visited, so the character sweeps outward rather than bouncing between two rooms.
+  // Rooms whose spawn table generates what we are hunting, safest-and-likeliest
+  // first, excluding where we already are and anywhere we have failed to reach.
+  //
+  // The threat ceiling is expressed relative to the character's own level, because
+  // that is what makes it portable: prey worth killing is ABOVE your level (the
+  // advancement roll needs monster_level > base_max_health), so a flat "nothing
+  // above your level" rule would reject every room worth being in. Six over is the
+  // gap between prey that pays and prey that kills — level-30 rats are right for a
+  // level-25 character; the level-35 larvae sharing room 567 with them are not.
+  preyRooms(room) {
+    const want = this.policy.hunt;
+    if (!want) return [];
+    const spawns = loadSpawns(SPAWN_FILE);
+    if (!spawns) return [];
+    const level = this.s.client?.vitals?.()?.health?.max ?? 0;
+    const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
+    return huntingGrounds(spawns, want, { maxDanger: ceiling, limit: 8 })
+      .filter(r => !r.rejected && r.room !== room?.num && !this.unreachable.has(r.room));
+  }
+
+  async roam(room) {
+    const s = this.s;
+    // Getting out is its own move when there is a crowd standing on us. Doing it here
+    // rather than at each of the three departures below means it cannot be forgotten
+    // at one of them.
+    await this.leaveHold('roaming to look for hunting elsewhere');
+
+    // GO BACK TO WHERE THE WORK WAS. Roaming outward is a one-way gradient: each
+    // empty room justifies moving to the next, and nothing ever argues for turning
+    // round. Left alone it walked out of a rat warren, through four rooms, into a
+    // town square, and spent twenty minutes there alternating between "nothing to
+    // hunt" and "the guardian angel will not let me leave". If we know somewhere
+    // that produced a kill, that is where to be.
+    if (this.homeRoom != null && room?.num !== this.homeRoom) {
+      this.note('heading back to where the hunting was', { from: room?.name, to_room: this.homeRoom });
+      const back = await s.travel(this.homeRoom, { maxHops: 8 }).catch(e => ({ arrived: false, reason: e.message }));
+      this.emptyPasses = 0;
+      if (back.arrived) {
+        this.tally.rooms_moved++;
+        this.roamedRooms = 0;
+        this.progress('returned to the hunting ground');
+        this.note('back at the hunting ground', { room: this.homeRoom });
+      } else {
+        // FORGET IT RATHER THAN RETRY FOREVER. Some rooms cannot be returned to at
+        // all — the newbie zone is behind a one-way portal, and a character that
+        // graduated out of it keeps a homeRoom it can never reach again. Retrying
+        // that route every eight seconds is exactly the silent stall this whole
+        // mechanism was meant to prevent.
+        this.note('cannot get back — forgetting that hunting ground',
+                  { to_room: this.homeRoom, why: back.reason });
+        this.homeRoom = null;
+        this.noProgress('lost the way back; will look for new hunting from here');
+      }
+      return;
+    }
+
+    // ASK WHERE THE PREY LIVES BEFORE WALKING ANYWHERE.
+    //
+    // Creatures do not wander in this world: each room has a generator with a fixed
+    // table, and a giant rat appears in a room if and only if that room's table
+    // names it. So the room to go to is a lookup, and walking the exit graph hoping
+    // to stumble across one is searching for something that was never going to move.
+    // Left to do that, a character walked out of a rat warren and into the
+    // Princess's castle — a room whose table contains no vermin at all and never
+    // will.
+    //
+    // The threat ceiling is the other half. Two rooms both list giant rats at 60-70%;
+    // one of them also rolls a level-35 groundworm larva, and that is the room that
+    // kept killing a level-26 character of mine. Filtering on the toughest thing the
+    // TABLE can produce — not on what happens to be standing there now — is what
+    // separates them.
+    const known = this.preyRooms(room);
+    if (known.length) {
+      const target = known[0];
+      this.note('going where this creature is actually generated', {
+        to_room: target.room, room_name: target.room_name,
+        spawn_chance: target.chance, also_here: target.also_here,
+      });
+      this.doing = 'travelling';
+      const r = await s.travel(target.room, { maxHops: 12 })
+                       .catch(e => ({ arrived: false, reason: e.message }));
+      this.emptyPasses = 0;
+      if (r.arrived) {
+        this.tally.rooms_moved++;
+        this.roamedRooms = 0;
+        this.homeRoom = target.room;
+        this.progress('reached a room that generates the prey');
+        return;
+      }
+      // Unreachable from here — remember not to keep choosing it, and fall through
+      // to the exit walk rather than retrying the same failed route forever.
+      this.unreachable.add(target.room);
+      this.note('could not reach that spawn room', { to_room: target.room, why: r.reason });
+    }
+
+    if (this.roamedFrom === null) { this.roamedFrom = room?.num ?? null; this.roamedRooms = 0; }
+    if (this.roamedRooms >= this.policy.roamLimit) {
+      this.note('roamed far enough', { rooms: this.roamedRooms, limit: this.policy.roamLimit,
+                                       hint: 'raise roamLimit, or move the character yourself' });
+      this.emptyPasses = 0;
+      this.noProgress('roam limit reached with nothing to hunt');
+      return;
+    }
+    // DO NOT WALK INTO A ROOM YOU CANNOT WALK OUT OF.
+    //
+    // Thirty-two rooms in this world have no route back to any hunting ground, and
+    // they are not marked as anything: Marion is a perfectly ordinary-looking town
+    // whose room object has plEdge_Exits = $, so you can walk in from the West
+    // Merchant Way and then there is no edge to walk out of. The Marion crypt below
+    // it is worse. Eight characters roamed in and spent half an hour cycling between
+    // an inn and a sanctuary, reporting a roam limit rather than a trap, because
+    // from the inside it looks exactly like a room with nothing to hunt in it.
+    //
+    // The graph already knows. Ask it before stepping through, not after.
+    const map = s.world?.map;
+    const goals = this.preyRooms(room).map(r => r.room);
+    // CAN I GET BACK? That is the whole test, and it is local — no global notion of
+    // "sealed" is needed, and none of the ones I tried worked: Marion reaches its own
+    // crypt, and the crypt has a spawn table, so every reachability-to-anything test
+    // declared the pocket healthy right up until twenty-three characters were in it.
+    //
+    // Asking instead whether the DESTINATION can route back HERE catches a one-way
+    // door exactly, because that is what a one-way door is.
+    const escapable = (to) => {
+      if (!map || room?.num == null) return true;
+      if (to === room.num) return true;
+      if (!findPath(map, to, room.num).found) return false;
+      if (!goals.length) return true;
+      return goals.includes(to) || goals.some(g => findPath(map, to, g).found);
+    };
+    // AND DO NOT WALK INTO A ROOM THAT WILL KILL YOU.
+    //
+    // Escapability is only half of it. Room 2602, "Affirmation of the Forsaken",
+    // is one door off a quiet Marion crypt and its generator is thrashers — level
+    // 150, cap fifteen, a hundred percent of the table. Eight characters of mine
+    // stood in it and lived only because nothing had spawned yet. The room next
+    // door rolls level-75 skeletons at 80%.
+    //
+    // None of this is visible from inside the room, and none of it is in the room's
+    // name. It is in the spawn table, which we already have, so there is no excuse
+    // for stepping through the door to find out.
+    const spawns = loadSpawns(SPAWN_FILE);
+    const level = s.client?.vitals?.()?.health?.max ?? 0;
+    const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
+    const tooDangerous = (to) => {
+      if (!spawns || ceiling == null) return null;
+      const worst = (roomThreats(spawns, to) || [])[0];
+      return worst && (worst.level ?? 0) > ceiling ? worst : null;
+    };
+
+    const all = (s.world?.exits() || []).filter(e => e.to != null && e.reachable !== false);
+    const dangerous = [];
+    const exits = all.filter(e => {
+      const d = tooDangerous(e.to);
+      if (d) { dangerous.push(`${e.to_name} (${e.to}): ${d.creature} is level ${d.level}`); return false; }
+      return escapable(e.to);
+    });
+    if (dangerous.length)
+      this.note('refused to roam somewhere lethal', { rejected: dangerous, my_ceiling: ceiling });
+    if (all.length && !exits.length) {
+      this.note('every way out of here is a dead end', {
+        room: room?.name,
+        rejected: all.map(e => `${e.to_name} (${e.to})`),
+        why: 'none of these can route back to a room that generates ' + this.policy.hunt });
+      this.noProgress('surrounded by rooms with no way back to the hunting grounds');
+      this.emptyPasses = 0;
+      return;
+    }
+    if (!exits.length) { this.note('nowhere to roam to', { room: room?.name }); this.emptyPasses = 0; return; }
+    const fresh = exits.filter(e => !this.visited.has(e.to));
+    const pick = (fresh.length ? fresh : exits)
+      .sort((a, b) => (a.steps_away ?? 999) - (b.steps_away ?? 999))[0];
+
+    const r = await s.leaveVia(pick);
+    this.emptyPasses = 0;
+    if (r.left) {
+      this.roamedRooms++;
+      this.tally.rooms_moved++;
+      if (room?.num != null) this.visited.add(room.num);
+      const now = s.world?.room;
+      if (now?.num != null) this.visited.add(now.num);
+      this.note('roamed', { from: room?.name, to: r.arrived_in, rooms_so_far: this.roamedRooms });
+    } else {
+      this.note('could not roam', { toward: pick.to_name, why: r.reason });
+    }
+  }
+
+  // Put distance between us and whatever is hitting us. Walking away is the only
+  // option a plain character has — there is no flee command — and it costs a second
+  // per square while still being hit, so it aims for the furthest reachable square
+  // rather than shuffling one step.
+  async withdraw(threats) {
+    const s = this.s, c = s.client;
+    // We only get here when the spot we are in is not working — otherwise the pass
+    // stopped swinging and sat down instead. Leaving one is still the dangerous part,
+    // so break the siege before walking.
+    await this.leaveHold('withdrawing from a fight we are losing');
+    const me = c.self, geo = s.world?.geometry;
+    if (!me || !geo) { this.note('cannot withdraw', { why: 'no geometry' }); return; }
+    const away = (r, col) => Math.min(...threats.map(t => Math.hypot(col - t.col, r - t.row)));
+
+    let best = null;
+    for (let r = 1; r <= geo.rows; r++) {
+      for (let col = 1; col <= geo.cols; col++) {
+        if (!geo.walkable(r, col)) continue;
+        const d = away(r, col);
+        if (d < 6) continue;                       // not far enough to be worth it
+        const p = geo.path(me.row, me.col, r, col);
+        if (!p.found) continue;
+        // Prefer close-to-reach among the far-enough, so we spend the fewest seconds
+        // being hit on the way out.
+        if (!best || p.steps.length < best.steps) best = { row: r, col, steps: p.steps.length, dist: d };
+      }
+    }
+    if (!best) { this.note('nowhere to withdraw to', { why: 'no reachable square far enough away' }); return; }
+    const walk = await s.walkTo(best.col, best.row, { maxSteps: Math.max(30, best.steps + 10) });
+    this.note('withdrew', { to: { col: best.col, row: best.row }, steps: walk.steps, arrived: walk.arrived });
+  }
+}
+
+// ONE WALL EACH.
+//
+// The geometry is deterministic, so every keeper in a room ranks the same squares in
+// the same order and they all walk to the identical corner — which is how three
+// characters ended up on square (50,21) of the same room, and four stacked on (8,15)
+// of the Limping Toad. Sharing a safe spot buys nothing: the wall covers a square, not
+// a queue, and standing in a heap makes every one of them look to the others like a
+// crowd of attackable things.
+//
+// A player might share a wall deliberately — one tanking while another heals past them
+// is a real tactic. The autopilot is not doing anything of the sort, so the honest
+// default is one each.
+//
+// The register lives in the module rather than in a keeper because that is the only
+// place all of them can see: every session in a broker shares this process.
+const claimedSpots = new Map();        // "room:col,row" -> agent name
+const spotKey = (room, col, row) => `${room}:${col},${row}`;
+
+export function claimSpot(agent, room, col, row) {
+  for (const [k, who] of claimedSpots) if (who === agent) claimedSpots.delete(k);
+  claimedSpots.set(spotKey(room, col, row), agent);
+}
+export function releaseSpot(agent) {
+  for (const [k, who] of claimedSpots) if (who === agent) claimedSpots.delete(k);
+}
+export function spotTakenByAnother(agent, room, col, row) {
+  const who = claimedSpots.get(spotKey(room, col, row));
+  return who && who !== agent ? who : null;
+}
+export const claimedSpotList = () =>
+  [...claimedSpots.entries()].map(([k, who]) => ({ at: k, agent: who }));
+
+// Where a particular keeper is standing, for the one case that WANTS to share: a loot
+// runner sheltering on the farmer's wall while it picks up behind them.
+export function spotHeldBy(agent) {
+  for (const [k, who] of claimedSpots) {
+    if (who !== agent) continue;
+    const [room, rc] = k.split(':');
+    const [col, row] = rc.split(',');
+    return { room: Number(room), col: Number(col), row: Number(row) };
+  }
+  return null;
+}
+
+// One keeper per agent, held by the broker.
+const pilots = new Map();
+export function autopilotFor(session) {
+  if (!pilots.has(session.name)) pilots.set(session.name, new Autopilot(session));
+  return pilots.get(session.name);
+}
+export function dropAutopilot(name) {
+  const p = pilots.get(name);
+  if (p) p.stop();
+  pilots.delete(name);
+}
+export const autopilotIfAny = (name) => pilots.get(name) || null;
+export const allAutopilots = () => [...pilots.entries()].map(([name, p]) => ({ name, ...p.status() }));

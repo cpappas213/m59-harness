@@ -1,0 +1,2273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watcher — Meridian 59 Compendium</title>
+<meta name="description" content="The son of Priestess Qerti'nya and General Cylill, young Cort has been appointed the Watcher of the Glorious Arena of Kraanan. A calm smile graces his face as h">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Watcher</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/tswatch_g1.png" alt="Watcher" width="220" height="432"></div><div class="heroText"><h1>Watcher</h1><p class="lede">The son of Priestess Qerti'nya and General Cylill, young Cort has been appointed the Watcher of the Glorious Arena of Kraanan. A calm smile graces his face as he oversees the mock combats held in the name of Kraanan the Fist.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Neutral</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 0
+                = 75
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>hit</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>1 place in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="The Arena of Kraanan"><a href="../zones/tosarena.html">The Arena of Kraanan (Tos Arena)</a></td><td class="" data-sort="Tos">Tos</td><td class="" data-sort="placed">placed</td><td class="num " data-sort="-1"><span class="muted">—</span></td><td class=""><code>tosrm/tosarena.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_NPC</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_NOMOVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_NOFIGHT</code></td><td class="">Doesn't fight</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_BARTENDER</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_NOMOVE</code></td><td class="">Doesn't move</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_APOTHECARY</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_LISTEN</code></td><td class="">Responds to speech</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_TAILOR</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_FULL_TALK</code></td><td class="">Isn't affected by the say ranges</td></tr>
+<tr><td class=""><code class="k">MOB_NOQUEST</code></td><td class="">Prohibited from participating in quests</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:11</p>
+<p><code class="k">TosWatcher</code> is <code class="k">TosTown</code> — full chain <code class="k">TosWatcher</code> ← <code class="k">TosTown</code> ← <code class="k">Towns</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>TosWatcher_name_rsc</code></td><td class=""><em>Watcher</em></td><td class="num " data-sort="238">238</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>TosWatcher_icon_rsc</code></td><td class=""><em>tswatch.bgf</em></td><td class="num " data-sort="239">239</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>TosWatcher_desc_rsc</code></td><td class=""><em>The son of Priestess Qerti'nya and General Cylill, young Cort has been appointed the Watch</em></td><td class="num " data-sort="240">240</td></tr>
+<tr><td class=""><code class="k">viDefinite</code></td><td class=""><code>ARTICLE_THE</code></td><td class="">1</td><td class="num " data-sort="242">242</td></tr>
+<tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_THE</code></td><td class="">1</td><td class="num " data-sort="243">243</td></tr>
+<tr><td class=""><code class="k">vrUnwanted_give</code></td><td class=""><code>TosWatcher_unwanted_give</code></td><td class=""><em>~k%s%s ignores your bribe.~n~k</em></td><td class="num " data-sort="245">245</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_NOMOVE | MOB_FULL_TALK | MOB_LISTEN | MOB_NOFIGHT  | MOB_NOQUEST</code></td><td class="">1081363</td><td class="num " data-sort="247">247</td></tr>
+<tr><td class=""><code class="k">viOccupation</code></td><td class=""><code>MOB_ROLE_WATCHER</code></td><td class="">10</td><td class="num " data-sort="249">249</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piCombat_style</code></td><td class=""><code>STYLE_NO_FIGHT</code></td><td class="num " data-sort="253">253</td></tr>
+<tr><td class=""><code class="k">ptAdvert</code></td><td class=""><code>$</code></td><td class="num " data-sort="257">257</td></tr>
+<tr><td class=""><code class="k">ptAccept</code></td><td class=""><code>$</code></td><td class="num " data-sort="260">260</td></tr>
+<tr><td class=""><code class="k">ptCommence</code></td><td class=""><code>$</code></td><td class="num " data-sort="263">263</td></tr>
+<tr><td class=""><code class="k">ptFight</code></td><td class=""><code>$</code></td><td class="num " data-sort="266">266</td></tr>
+<tr><td class=""><code class="k">plCombatants</code></td><td class=""><code>$</code></td><td class="num " data-sort="269">269</td></tr>
+<tr><td class=""><code class="k">plKill_list</code></td><td class=""><code>$</code></td><td class="num " data-sort="272">272</td></tr>
+<tr><td class=""><code class="k">poChampion</code></td><td class=""><code>$</code></td><td class="num " data-sort="276">276</td></tr>
+<tr><td class=""><code class="k">poChampion_Guild</code></td><td class=""><code>$</code></td><td class="num " data-sort="279">279</td></tr>
+<tr><td class=""><code class="k">pbAccept</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="282">282</td></tr>
+<tr><td class=""><code class="k">pbLastMinute</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="285">285</td></tr>
+<tr><td class=""><code class="k">plChampions</code></td><td class=""><code>$</code></td><td class="num " data-sort="288">288</td></tr>
+<tr><td class=""><code class="k">piKill_counter</code></td><td class=""><code>0</code></td><td class="num " data-sort="291">291</td></tr>
+<tr><td class=""><code class="k">pbTournament</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="295">295</td></tr>
+<tr><td class=""><code class="k">piMissing_Actor</code></td><td class=""><code>0</code></td><td class="num " data-sort="298">298</td></tr>
+<tr><td class=""><code class="k">pbMax_Lock</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="302">302</td></tr>
+<tr><td class=""><code class="k">plUserStats</code></td><td class=""><code>$</code></td><td class="num " data-sort="306">306</td></tr>
+<tr><td class=""><code class="k">poMarshal</code></td><td class=""><code>$</code></td><td class="num " data-sort="309">309</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor()</h4>
+<pre><code>{
+      
+      
+      
+
+      plChampions = [ [STYLE_ONE_ON_ONE,
+                       [[$,0],[$,0],[$,0],[$,0],[$,0]]],
+                      [STYLE_LAST_MAN_STANDING,
+                       [[$,0],[$,0],[$,0],[$,0],[$,0]]],
+                      [STYLE_GUILD_VS_GUILD,
+                       [[$,0],[$,0],[$,0],[$,0],[$,0]]],
+                      [STYLE_LAST_GUILD_STANDING,
+                       [[$,0],[$,0],[$,0],[$,0],[$,0]]]
+                    ];
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:314</p>
+<h4>NewOwner(what = $)</h4>
+<p>If the watcher is ever loaded someplace other than the arena of Tos, delete self.</p>
+<pre><code>{
+      local iDelay;
+
+      if poOwner &lt;&gt; $
+      {
+         Send(poOwner,@SetRoomFlagToDefault,#flag=ROOM_SAFE_DEATH);
+      }
+
+      Send(what,@SetRoomFlag,#flag=ROOM_SAFE_DEATH,#value=TRUE);
+      if ptAdvert = $
+      {
+         iDelay = Random(ADVERT_DELAY_MIN,ADVERT_DELAY_MAX);
+         ptAdvert = CreateTimer(self,@AdvertTimer,iDelay);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:333</p>
+<h4>AdvertTimer()</h4>
+<pre><code>{
+      local rand, lPhrases, iDelay;
+
+      ptAdvert = $;
+
+      if pbTournament
+      {
+         if Send(self,@GetActor) = $
+         {
+            piMissing_actor = piMissing_actor + 1;
+            if piMissing_actor &gt;= 8
+            {
+               Send(self,@ClearCombatants);
+               pbTournament = FALSE;
+               Send(poOwner,@EndTournament,#Marshal=$);
+               if Send(poOwner,@GetRoomNum) = RID_TOS_ARENA
+               {
+                  Send(poOwner,@UnlockArena);
+               }
+            }
+         }
+         else
+         {
+            piMissing_actor = 0;
+         }
+
+         iDelay = Random(ADVERT_DELAY_MIN,ADVERT_DELAY_MAX);
+         ptAdvert = CreateTimer(self,@AdvertTimer,iDelay);
+
+         return;
+      }
+
+      if plCombatants = $
+      {
+         lPhrases = [ TosWatcher_ad_need_champion1,
+                      TosWatcher_ad_need_champion2,
+                      TosWatcher_ad_need_champion3,
+                      TosWatcher_ad_need_champion4
+                    ];
+         rand = Random(1,Length(lPhrases));
+
+         Send(self,@Say,#message_rsc=Nth(lPhrases,rand));
+      }
+      else
+      {
+         if NOT Send(self,@ValidateFight)
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_ad_need_challenger,
+                 #parm1=Send(First(plCombatants),@GetDef),
+                 #parm2=Send(First(plCombatants),@GetName));
+         }
+         else
+         {
+            lPhrases = [ TosWatcher_ad_good_fight1,
+                         TosWatcher_ad_good_fight2,
+                         TosWatcher_ad_good_fight3
+                       ];
+            rand = Random(1,Length(lPhrases));
+
+            Send(self,@Say,#message_rsc=Nth(lPhrases,rand));
+         }
+      }
+
+      iDelay = Random(ADVERT_DELAY_MIN,ADVERT_DELAY_MAX);
+      ptAdvert = CreateTimer(self,@AdvertTimer,iDelay);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:359</p>
+<h4>SetChampion(who = $)</h4>
+<pre><code>{
+      if poChampion &lt;&gt; who
+         AND (piCombat_style = STYLE_ONE_ON_ONE
+              OR piCombat_style = STYLE_LAST_MAN_STANDING)
+      {
+         poChampion = who;
+         poChampion_guild = Send(who,@GetGuild);
+         piKill_counter = 0;
+
+         return;
+      }
+
+      if Send(who,@GetGuild) &lt;&gt; poChampion_guild
+      {
+         poChampion = who;
+         poChampion_guild = Send(who,@GetGuild);
+         piKill_counter = 0;
+
+         return;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:435</p>
+<h4>ResetChampion()</h4>
+<pre><code>{
+      local i;
+      poChampion = $;
+ 
+      if piCombat_Style = STYLE_GUILD_VS_GUILD
+         OR piCOmbat_style = STYLE_LAST_GUILD_STANDING
+      {
+         for i in plCombatants
+         {
+            if Send(i,@GetGuild) = poChampion_guild
+            {
+               
+               poChampion = i;
+
+               return;
+            }
+         }
+      }
+
+      piKill_counter = 0;
+      poChampion_guild = $;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:460</p>
+<h4>ValidateFight()</h4>
+<pre><code>{
+      local oGuild, i;
+
+      if piCombat_Style = STYLE_ONE_ON_ONE
+         OR piCombat_Style = STYLE_LAST_MAN_STANDING
+      {
+         if Length(plCombatants) &gt; 1
+         {
+            return TRUE;
+         }
+      }
+
+      if piCombat_Style = STYLE_GUILD_VS_GUILD
+         OR piCombat_Style = STYLE_LAST_GUILD_STANDING
+      {
+         oGuild = $;
+         for i in plCombatants
+         {
+            if oGuild = $
+            {
+               oGuild = Send(i,@GetGuild);
+            }
+            else
+            {
+               if oGuild &lt;&gt; Send(i,@GetGuild)
+               {
+                  
+                  return TRUE;
+               }
+            }
+         }
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:486</p>
+<h4>AcceptingChampions()</h4>
+<pre><code>{
+      return (Length(plCombatants) &lt; 1);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:523</p>
+<h4>AcceptingChallengers()</h4>
+<pre><code>{
+      if Length(plCombatants) &lt; 2 OR piCombat_Style &lt;&gt; STYLE_ONE_ON_ONE
+      {
+         return TRUE;
+      }
+
+       return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:528</p>
+<h4>NewCombatant(who = $)</h4>
+<pre><code>{
+      Send(self,@teleport,#what=who,#goinplay=TRUE);
+      if plCombatants = $
+      {
+         Send(self,@SetChampion,#who=who);
+      }
+
+      plCombatants = cons(who,plCombatants);
+
+      return; 
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:538</p>
+<h4>FightInSession()</h4>
+<pre><code>{
+      return (ptFight &lt;&gt; $);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:551</p>
+<h4>Challenge(who = $)</h4>
+<pre><code>{
+      local i, bFound;
+
+      if who = poChampion
+      {
+         Send(self,@SayToOne,#target=who,
+              #message_rsc=TosWatcher_Already_champion);
+
+         return;
+      }
+
+      if Send(self,@IsCombatant,#who=who)
+      {
+         Send(self,@SayToOne,#target=who,
+              #message_rsc=TosWatcher_Already_combatant);
+
+         return;
+      }
+
+      if (piCombat_style = STYLE_LAST_GUILD_STANDING
+          OR piCombat_style = STYLE_GUILD_VS_GUILD)
+          AND NOT Send(self,@ChallengeGuildCheck,#Who=who)
+      {
+         return FALSE;
+      }
+
+      if NOT Send(self,@MaxCombatantCheck,#who=who)
+      {
+         return FALSE;
+      }
+
+      if piCombat_style = STYLE_ONE_ON_ONE
+      {
+         if pbTournament
+         {
+             Send(self,@Say,#message_rsc=TosWatcher_tournament_combatant,
+                  #parm1=Send(who,@GetDef),#parm2=Send(who,@GetName));
+             Send(self,@NewCombatant,#who=who);
+             Send(self,@ReadyFight); 
+
+             return;
+         }
+
+         Send(self,@Say,#message_rsc=TosWatcher_challenge_offered,
+              #parm1=Send(who,@GetCapDef),#parm2=Send(who,@GetName),
+              #parm3=Send(who,@GetHimHer));
+
+         pbAccept = FALSE;
+         ptAccept = CreateTimer(self,@AcceptTimer,ACCEPT_DELAY); 
+      }
+      else
+      {
+         if piCombat_style = STYLE_GUILD_VS_GUILD
+            or piCombat_style = STYLE_LAST_GUILD_STANDING              
+         {
+            bFound = FALSE;
+            for i in plCombatants
+            {
+               if Send(i,@GetGuild) = Send(who,@GetGuild) AND NOT bFound
+               {
+                  Send(self,@Say,#message_rsc=TosWatcher_new_combatant,
+                       #parm1=Send(who,@GetCapDef),#parm2=Send(who,@GetName));
+                  bFound = TRUE;
+
+                  break;
+               }
+            }
+
+            if NOT bFound
+            {
+               Send(self,@Say,#message_rsc = TosWatcher_new_guild_combatant,
+                    #parm1=Send(who,@GetCapDef),#parm2=Send(who,@GetName),
+                    #parm3=Send(Send(who,@GetGuild),@GetDef),
+                    #parm4=Send(Send(who,@GetGuild),@GetName));
+            }
+         }
+         else
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_new_combatant,
+                 #parm1=Send(who,@GetCapDef),#parm2=Send(who,@GetName));
+         }
+
+         if ptAccept = $ AND NOT pbTournament
+         {
+            pbAccept = FALSE;
+            Send(self,@Say,#message_rsc=TosWatcher_more_combatants,#parm1=30);
+            ptAccept = CreateTimer(self,@AcceptTimer,ACCEPT_DELAY);
+         }
+      }
+
+      Send(self,@NewCombatant,#who=who);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:556</p>
+<h4>ChallengeGuildCheck(who = $)</h4>
+<pre><code>{
+      local aGuild, bGuild, oGuild, i;
+
+      oGuild = Send(who,@GetGuild);
+      if oGuild = $
+      {
+         if pbTournament
+         {
+            Send(self,@TellActors,#message_rsc=TosWatcher_no_guild_tourny,
+                 #parm1=Send(who,@GetCapDef),#parm2=Send(who,@GetName),
+                 #parm3=Send(who,@GetHeShe));
+         }
+         else
+         {
+            Send(self,@SayToOne,#target=who,
+                 #message_rsc=TosWatcher_need_guild);
+         }
+
+         return FALSE;
+      }
+
+      if piCombat_Style = STYLE_GUILD_VS_GUILD
+      {
+         aGuild = $;
+         bGuild = $;
+
+         for i in plCombatants
+         {
+            if aGuild = $
+            {
+               aGuild = Send(i,@GetGuild);
+            }
+            else
+            {
+
+               if bGuild = $ AND aGuild &lt;&gt; Send(i,@GetGuild)
+               {
+                  bGuild = Send(i,@GetGuild);
+               }
+            }
+         }         
+
+         if oGuild &lt;&gt; aGuild
+            AND oGuild &lt;&gt; bGuild
+            AND aGuild &lt;&gt; $
+            AND bGuild &lt;&gt; $
+         {
+            if pbTournament
+            {
+               Send(self,@TellActors,
+                    #message_rsc=Toswatcher_wrong_guild_tourny,
+                    #parm1=Send(who,@GetCapDef),#parm2=Send(who,@GetName));
+            }
+            else
+            {
+               Send(self,@SayToOne,#target=who,
+                    #message_rsc=TosWatcher_only_two);
+            }
+
+            return FALSE;
+         }
+      }
+
+      if (ptAccept = $ AND NOT pbTournament)
+         AND oGuild = Send(First(plCombatants),@GetGuild)
+      {
+         if pbTournament
+         {
+            Send(self,@TellActors,#message_rsc=TosWatcher_not_more_members_yet,
+                 #parm1=Send(oGuild,@GetDef),#parm2=Send(oGuild,@GetName));
+         }
+         else
+         {
+            Send(self,@SayToOne,#target=who,
+                 #message_rsc=TosWatcher_not_more_members_yet,
+                 #parm1=Send(oGuild,@GetDef),#parm2=Send(oGuild,@GetName));
+         }
+
+         return FALSE;
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:652</p>
+<h4>MaxCombatantCheck(who = $)</h4>
+<pre><code>{
+      local iGuild_max, iGuild_num, i, oGuild;
+
+      if NOT pbMax_lock
+      {
+         
+         
+         return TRUE;     
+      }
+
+      if Length(plCombatants) &gt;= 25
+      {
+         if pbTournament
+         {
+            Send(self,@TellActors,#message_rsc=TosWatcher_Not_more);
+         }
+         else
+         {
+            Send(self,@SayToOne,#target=who,#message_rsc=TosWatcher_Not_more);
+         }
+
+         return FALSE;
+      }
+
+      iGuild_max = 0;
+      if piCombat_Style = STYLE_GUILD_VS_GUILD
+      {
+         iGuild_max = 10;
+      }
+
+      if piCOmbat_style = STYLE_LAST_GUILD_STANDING
+      {
+         iGuild_max = 5;
+      }
+
+      iGuild_num = iGuild_max;
+      if iGuild_max &gt; 0
+      {
+         oGuild = Send(who,@GetGuild);
+
+         for i in plCombatants
+         {
+            if Send(i,@GetGuild) = oGuild AND oGuild &lt;&gt; $
+            {
+               iGuild_num = iGuild_num - 1;
+            }
+         }
+
+         if iGuild_num &lt;=0
+         {
+
+            if pbTournament
+            {
+               Send(self,@TellActors,
+                    #message_rsc=TosWatcher_tournament_over_guild_limit,
+                    #parm1=Send(who,@GetCapDef),#parm2=Send(who,@GetName),
+                    #parm3=Send(oGuild,@GetDef),#parm4=Send(oGuild,@GetName),
+                    #parm5=iGuild_max);
+            }
+            else
+            {
+               Send(self,@SayToOne,#target=who,
+                    #message_rsc=TosWatcher_over_guild_limit,
+                    #parm1=iGuild_max);
+            }
+
+            return FALSE;
+         }
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:737</p>
+<h4>Accept(who = $)</h4>
+<pre><code>{
+       if who = poChampion AND ptAccept &lt;&gt; $
+       {
+          DeleteTimer(ptAccept);
+          ptAccept = $;
+       }
+
+       Send(self,@ReadyFight,#who=who);
+
+       return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:811</p>
+<h4>ReadyFight()</h4>
+<pre><code>{
+      local i, each_obj, oGuild, iDelay;
+
+      if NOT Send(self,@ValidateFight)
+      {
+         if pbTournament
+         {
+            Send(self,@TellActors,#message_rsc=TosWatcher_tourny_invalid);
+
+            return FALSE;
+         }
+
+         Debug(&quot;INVALID FIGHT!  Something went wrong!&quot;);
+         Send(self,@Say,#message_rsc=TosWatcher_invalid_fight);
+         Send(self,@ClearCombatants);
+
+         return FALSE;
+      }
+
+      if piCombat_style = STYLE_ONE_ON_ONE
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_ready_to_fight,
+              #parm1=Send(First(plCombatants),@GetCapDef),
+              #parm2=Send(First(plCombatants),@GetName),
+              #parm3=Send(Nth(plCombatants,2),@GetDef),
+              #parm4=Send(Nth(plCombatants,2),@GetName));
+      }
+
+      if piCombat_style = STYLE_LAST_MAN_STANDING
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_ready_last_man);
+      }
+
+      if piCombat_style = STYLE_GUILD_VS_GUILD
+      {
+         oGuild = $;
+         for i in plCombatants
+         {
+
+            if Send(i,@GetGuild) &lt;&gt; poChampion_guild
+            {
+               oGuild = Send(i,@GetGuild);
+
+               break;
+            }
+         }
+
+         Send(self,@Say,#message_rsc=TosWatcher_ready_guild_vs_guild,
+              #parm1=Send(poChampion_guild,@GetCapDef),
+              #parm2=Send(poChampion_guild,@GetName),
+              #parm3=Send(oGuild,@GetDef),#parm4=Send(oGuild,@GetName));
+      }
+
+      if piCombat_style = STYLE_LAST_GUILD_STANDING
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_ready_battle_royale);
+      }
+
+      iDelay = Random(COMMENCE_DELAY_MIN,COMMENCE_DELAY_MAX);
+      ptCommence = CreateTimer(self,@CommenceTimer,iDelay);
+
+      for i in Send(poOwner,@GetHolderActive)
+      {
+         each_obj = Send(poOwner,@HolderExtractObject,#data=i);
+         if Send(self,@IsCombatant,#who=each_obj)
+         {
+            Send(self,@Teleport,#what=each_obj,#goinplay=TRUE);
+         }
+
+         Send(each_obj,@MidiSendUser,#midi_rsc=TosWatcher_battle_midi_rsc);
+      }
+     
+      Send(poOwner,@BeginFight,#lCombatants=plCombatants);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:824</p>
+<h4>Commence()</h4>
+<p>Called by CommenceTimer.</p>
+<pre><code>{
+      local iDelay;
+
+      Send(self,@Say,#message_rsc=TosWatcher_commence);
+      Send(poOwner,@CommenceFight);
+      pbLastMinute = FALSE;
+
+      iDelay = FIGHT_DELAY_LAST_MAN_STANDING;
+
+      if piCombat_style = STYLE_ONE_ON_ONE
+      {
+         iDelay = FIGHT_DELAY_ONE_ON_ONE;
+      }
+
+      ptFight = CreateTimer(self,@FightTimer,iDelay);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:902</p>
+<h4>FightIsDraw()</h4>
+<p>Called by FightTimer.</p>
+<pre><code>{
+      Send(self,@Say,#message_rsc=TosWatcher_draw);
+      Send(self,@ClearCombatants);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:923</p>
+<h4>CombatantReneges(who = $)</h4>
+<pre><code>{
+      local i;
+
+      for i in plCombatants
+      {
+         if i = who
+         {
+            plCombatants = DelListElem(plCombatants,i);
+         }
+      }
+
+      Send(self,@Teleport,#what=who,#outofplay=TRUE);
+
+      if who = poChampion
+      {
+         Send(self,@ResetChampion);
+      }
+
+      if ptAccept &lt;&gt; $ AND NOT Send(self,@ValidateFight)
+      {
+         DeleteTimer(ptAccept);
+         ptAccept = $;
+
+         if Send(poOwner,@GetRoomNum) = RID_TOS_ARENA
+         {
+            Send(poOwner,@CheckBehindBars);
+         }
+
+         Send(self,@Say,#message_rsc=TosWatcher_invalid_fight);
+      }
+
+      if ptCommence &lt;&gt; $ and not Send(self,@validatefight)
+      {
+         DeleteTimer(ptCommence);
+         ptCommence = $;
+         Send(self,@Say,#message_rsc=TosWatcher_invalid_fight);
+
+         if pbTournament
+         {
+            Post(self,@ClearCombatants);
+         }
+         else
+         {
+            Send(poOwner,@EndFight);
+         }
+      }
+
+      Send(self,@CheckForWinner);
+      
+      
+      if poChampion = $ AND Length(plCombatants) &gt;= 2
+      {
+         if piCombat_Style = STYLE_LAST_MAN_STANDING
+         {   
+            
+            poChampion = First(plCombatants);
+         }
+      }
+     
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:932</p>
+<h4>SomethingKilled(what = $, victim = $)</h4>
+<pre><code>{
+      
+      
+
+      
+      if IsClass(victim,&amp;Reflection) AND
+         Send(self,@IsCombatant,#who=what)
+      {
+         if Send(self,@IsCombatant,#who=Send(victim,@GetIllusionForm))
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_summoned_reflection_killed,
+               #parm1=Send(what,@GetName),#parm2=Send(victim,@GetName));
+
+            propagate;
+         }
+      }
+
+      if IsClass(victim,&amp;EvilTwin) AND
+         Send(self,@IsCombatant,#who=what)
+      {
+         if Send(victim,@GetIllusionForm) = what
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_summoned_twin_self_kill,
+               #parm1=Send(what,@GetName));
+         }
+         else
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_summoned_twin_killed_other,
+               #parm1=Send(what,@GetName),#parm2=Send(victim,@GetName));
+         }
+         propagate;
+      }
+      
+      if IsClass(victim,&amp;Monster)
+      {
+         propagate;
+      }
+
+      if IsClass(what,&amp;Spell) AND Send(self,@isCombatant,#who=victim)
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_killed_by_spell,
+              #parm1=Send(victim,@GetCapDef),#parm2=Send(victim,@GetName),
+              #parm3=Send(what,@GetName));
+      }
+      else
+      {
+
+         if victim = poChampion
+         {
+                Send(self,@Say,#message_rsc=TosWatcher_killed_champion,
+                     #parm1=Send(what,@GetCapDef),#parm2=Send(what,@GetName),
+                     #parm3=Send(victim,@GetDef),#parm4=Send(victim,@GetName));
+         }
+         else
+         {
+
+            if what = poChampion
+            {
+                Send(self,@Say,#message_rsc=TosWatcher_champion_killed,
+                     #parm1=Send(victim,@GetDef),#parm2=Send(victim,@GetName));
+            }
+            else
+            {
+                Send(self,@Say,#message_rsc=TosWatcher_someone_killed,
+                     #parm1=Send(what,@GetCapDef),#parm2=Send(what,@GetName),
+                     #parm3=Send(victim,@GetDef),#parm4=Send(victim,@GetName));
+            }
+         }
+      }
+
+      Send(self,@CombatantReneges,#who=victim);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:995</p>
+<h4>CheckForWinner()</h4>
+<p>Checks to see if there is only one combatant left.  If so, then declare him the winner.</p>
+<pre><code>{
+      local oldChamp, i, j;
+
+      if plCombatants = $
+      {
+         return;
+      }
+
+      if piCombat_style = STYLE_GUILD_VS_GUILD
+         OR piCombat_style = STYLE_LAST_GUILD_STANDING
+      {
+         Send(self,@CheckForWinnerGuild);
+
+         return;
+      }
+
+      if Length(plCombatants) &lt;&gt; 1
+      {
+         return;
+      }
+      else
+      {
+         oldChamp = poChampion;
+         poChampion = First(plCombatants);
+
+         
+         if ptFight &lt;&gt; $
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_victor);
+            DeleteTimer(ptFight);
+            ptFight = $;
+
+            
+            Send(self,@RewardWinner);
+
+            if pbTournament
+            {
+               Send(self,@Say,#message_rsc=TosWatcher_tournament_win,
+                    #parm1=Send(poChampion,@GetCapDef),
+                    #parm2=Send(poChampion,@GetName));
+               Send(self,@ClearCombatants);
+
+               return;
+            }
+            else
+            {
+               if Send(poOwner,@CheckDefaultRoomFlag,#flag=ROOM_SAFE_DEATH)
+               {
+                  for i in Send(poOwner,@GetHolderActive)
+                  {
+                     j = Send(poOwner,@HolderExtractObject,#data=i);
+                     if IsClass(j,&amp;Monster)
+                        AND NOT (Send(j,@GetBehavior) &amp; AI_NPC)
+                     {
+                        Post(j,@Delete);
+                     }
+                  }
+               }
+            }
+
+            if oldChamp &lt;&gt; poChampion
+            {
+               Send(self,@Say,#message_rsc=TosWatcher_new_champion,
+                    #parm1=Send(poChampion,@GetDef),
+                    #parm2=Send(poChampion,@GetName));
+            }
+            else
+            {
+               Send(self,@Say,#message_rsc=TosWatcher_retain_title,
+                    #parm1=Send(poChampion,@GetCapDef),
+                    #parm2=Send(poChampion,@GetName),
+                    #parm3=Send(poChampion,@GetHisHer));
+            }
+
+            return;
+         }   
+
+         if oldChamp &lt;&gt; poChampion
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_new_champion,
+                 #parm1=Send(poChampion,@GetDef),
+                 #parm2=Send(poChampion,@GetName));
+         }
+         else
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_retain_title,
+                 #parm1=Send(poChampion,@GetCapDef),
+                 #parm2=Send(poChampion,@GetName),
+                 #parm3=Send(poChampion,@GetHisHer));
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1071</p>
+<h4>CheckForWinnerGuild()</h4>
+<pre><code>{
+      local oGuild, oldChamp, oldGuild, i;
+
+      oGuild = $;
+      for i in plCombatants
+      {
+         
+         if oGuild = $
+         {
+            oGuild = Send(i,@GetGuild);
+         }
+
+         if oGuild &lt;&gt; $ AND oGuild &lt;&gt; Send(i,@GetGuild)
+         {
+            return;
+         }
+      }
+
+      oldChamp = poChampion;
+      oldGuild = poChampion_guild;
+         
+      Send(self,@setchampion,#who=First(plCombatants));
+
+      
+      if ptFight &lt;&gt; $
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_victor);
+         DeleteTimer(ptFight);
+         ptFight = $;
+
+         
+         Send(self,@RewardWinner);
+         if pbTournament
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_tournament_win_guild,
+                 #parm1=Send(poChampion_guild,@GetCapDef),
+                 #parm2=Send(poChampion_guild,@GetName));
+            Send(self,@ClearCombatants);
+
+            return;
+         }
+
+         if oldGuild &lt;&gt; poChampion_guild
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_new_champion_guild_win,
+                 #parm1=Send(poChampion_guild,@GetCapDef),
+                 #parm2=Send(poChampion_guild,@GetName));
+         }
+         else
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_defended_guild_title,
+                 #parm1=Send(poChampion_guild,@GetCapDef),
+                 #parm2=Send(poChampion_guild,@GetName));
+         }
+
+         return;
+      }   
+
+      if oldChamp &lt;&gt; poChampion
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_new_champion_guild_win,
+              #parm1=Send(poChampion_guild,@GetCapDef),
+              #parm2=Send(poChampion_guild,@GetName));
+      }
+      else
+      {
+         Send(self,@Say,#message_rsc = TosWatcher_defended_guild_title,
+              #parm1=Send(poChampion_guild,@GetDef),
+              #parm2=Send(poChampion_guild,@GetName));
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1169</p>
+<h4>RewardWinner()</h4>
+<pre><code>{
+      local index, i;
+
+      
+      Send(self,@AddChampionToChampList);
+
+      
+      Send(poOwner,@EndFight,#lCombatants=plCombatants);
+
+      
+      for i in plCombatants
+      {
+         index = (Send(i,@GetMaxHealth)+15) - Send(i,@GetHealth);
+         Send(i,@GainHealth,#amount=bound(index,0,15));
+         index = (Send(i,@GetMaxMana)+25) - Send(i,@GetMana);
+         Send(i,@GainMana,#amount=bound(index,0,25));
+
+         
+         if ptFight &lt;&gt; $
+         {
+            DeleteTimer(ptFight);
+            ptFight = $;
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1244</p>
+<h4>AcceptTimer()</h4>
+<p>Runs through twice.  The First time, it says 'accept or lose yourcrown.  The second time, it reneges the champ.</p>
+<pre><code>{
+      ptAccept = $;
+      if piCombat_style = STYLE_ONE_ON_ONE
+      {
+          Send(self,@AcceptTimerOneOnOne);
+
+          return;
+      }
+
+      if NOT pbAccept
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_more_combatants,
+              #parm1=(ACCEPT_DELAY/1000));
+         ptAccept = CreateTimer(self,@AcceptTimer,ACCEPT_DELAY);
+         pbAccept = TRUE;
+      }
+      else
+      {
+         Send(self,@ReadyFight);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1275</p>
+<h4>AcceptTimerOneOnOne()</h4>
+<pre><code>{
+      if NOT pbAccept
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_must_accept,
+              #parm1=(ACCEPT_DELAY/1000),
+              #parm2=Send(First(plCombatants),@GetDef),
+              #parm3=Send(First(plCombatants),@GetName));
+         ptAccept = CreateTimer(self,@AcceptTimer,ACCEPT_DELAY);
+         pbAccept = TRUE;
+      }
+      else
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_Champ_reneges,
+              #parm1=Send(poChampion,@GetCapDef),
+              #parm2=Send(poChampion,@GetName),
+              #parm3=Send(poChampion,@GetHisHer));
+         Send(self,@CombatantReneges,#who=poChampion);
+      }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1302</p>
+<h4>CommenceTimer()</h4>
+<p>Starts the fight.</p>
+<pre><code>{
+      ptCommence = $;
+      Send(self,@Commence);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1324</p>
+<h4>FightTimer()</h4>
+<pre><code>{
+     local i;
+
+     ptFight = $;
+     if NOT pbLastMinute
+     {
+        pbLastMinute = TRUE;
+        Send(self,@Say,#message_rsc=TosWatcher_last_minute);
+        ptFight = CreateTimer(self,@FightTimer,LAST_MINUTE);
+     }
+     else
+     {
+         if NOT pbTournament
+         {
+            Send(self,@FightIsDraw);
+         }
+         else
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_speed_up);
+            for i in plCombatants
+            {
+               Send(poOwner,@SomethingShot,#who=self,#target=i,
+                    #projectile=Send(SYS,@FindSpellByNum,#num=SID_FIREBALL));
+               Send(i,@AssessDamage,#damage=Send(i,@GetHealth)/3,#what=self,
+                    #report=FALSE,#report_resistance=FALSE,#absolute=TRUE);
+            }
+
+            ptFight = CreateTimer(self,@FightTimer,LAST_MINUTE/3);            
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1333</p>
+<h4>SomeoneSaid(what = $, type = $, string = $)</h4>
+<p>Checks for keywords which activate commands.</p>
+<pre><code>{
+      local i, oActor;
+
+      if IsClass(what,&amp;Player)
+         AND type = SAY_DM
+         AND (StringEqual(string,TosWatcher_arena_help_command)
+              OR StringEqual(string,&quot;arena help&quot;))
+         AND Send(what,@IsActor) 
+      {
+         Send(what,@MsgSendUser,#message_rsc=TosWatcher_arena_help);
+
+         propagate;
+      }
+
+      if IsClass(what,&amp;Player)
+         AND type = SAY_DM
+         AND (StringEqual(string,TosWatcher_start_tournament_command)
+              OR StringEqual(string,&quot;start tournament&quot;))
+         AND (NOT pbTournament)
+         AND Send(what,@IsActor) 
+      {
+         Send(self,@ClearCombatants);
+         pbTournament = TRUE;
+         Send(poOwner,@StartTournament,#marshal=what);
+         poMarshal = what;
+
+         propagate;
+      }
+      
+      if (NOT Send(self,@FightInSession)) 
+         AND ptCommence = $
+         AND IsClass(what,&amp;Player)
+      {
+         if NOT pbTournament
+         {
+            if StringEqual(string,TosWatcher_champion_command)
+               OR StringEqual(string,&quot;champion&quot;)
+            {
+               Post(self,@TrigChampion,#what=what);
+
+               return FALSE;
+            }
+
+            if StringEqual(string,TosWatcher_challenge_command)
+               OR StringEqual(string,&quot;challenge&quot;)
+            {
+               Post(self,@TrigChallenge,#what=what);
+
+               return FALSE;
+            }
+
+            if StringEqual(string,TosWatcher_accept_command)
+               OR StringEqual(string,&quot;accept&quot;)
+            {
+               Post(self,@TrigAccept,#what=what);
+
+               return FALSE;
+            }
+
+            if StringEqual(string,TosWatcher_renege_command)
+               OR StringEqual(string,&quot;renege&quot;)
+            {
+               Post(self,@TrigRenege,#what=what);
+
+               return FALSE;
+            }
+         }
+         else
+         {
+            if IsClass(what,&amp;Player) AND NOT Send(what,@IsActor)
+            {
+               if StringEqual(string,TosWatcher_renege_command)
+                  OR StringEqual(string,TosWatcher_accept_command)
+                  OR StringEqual(string,TosWatcher_champion_command)
+                  OR StringEqual(string,TosWatcher_challenge_command)
+                  OR StringEqual(string,TosWatcher_traditional_command)
+                  OR StringEqual(string,TosWatcher_last_man_standing_command)
+                  OR StringEqual(string,TosWatcher_guild_vs_guild_command)
+                  OR StringEqual(string,TosWatcher_battle_royale_command)
+               {
+                  oActor = Send(self,@GetActor);
+                  if oActor &lt;&gt; $
+                  {
+                     Send(what,@MsgSendUser,
+                          #message_rsc=TosWatcher_only_grand_marshal);
+                  }
+
+                  return FALSE;
+               }
+            }
+         }
+
+         if StringEqual(string,TosWatcher_traditional_command)
+            OR StringEqual(string,&quot;traditional&quot;)
+         {
+            if (NOT pbTournament) OR (Send(what,@IsActor) AND type = SAY_DM)
+            {
+               Post(self,@ChooseCombat,#style=STYLE_ONE_ON_ONE,#actor=what);
+            }
+
+            return FALSE;
+         }
+         
+         if StringEqual(string,TosWatcher_last_man_standing_command)
+            OR StringEqual(string,&quot;last man standing&quot;)
+         {
+            if (NOT pbTournament) OR (Send(what,@IsActor) AND type = SAY_DM)
+            {
+               Post(self,@ChooseCombat,#style=STYLE_LAST_MAN_STANDING,
+                    #actor=what);
+            }
+
+            return FALSE;
+         }
+         
+         if StringEqual(string,TosWatcher_guild_vs_guild_command)
+            OR StringEqual(string,&quot;guild vs guild&quot;)
+         {
+            if (NOT pbTournament) OR (Send(what,@IsActor) AND type = SAY_DM)
+            {
+               Post(self,@ChooseCombat,#style=STYLE_GUILD_VS_GUILD,
+                    #actor=what);
+            }
+
+            return FALSE;
+         }
+         
+         if StringEqual(string,TosWatcher_battle_royale_command)
+            OR StringEqual(string,&quot;battle royale&quot;)
+         {
+            if (NOT pbTournament) OR (Send(what,@IsActor) AND type = SAY_DM)
+            {
+               Post(self,@ChooseCombat,#style=STYLE_LAST_GUILD_STANDING,
+                    #actor=what);
+            }
+
+            return FALSE;
+         }
+
+         if type = SAY_DM
+            AND pbTournament
+            AND Send(what,@IsActor)
+         {
+            if StringEqual(string,TosWatcher_end_tournament_command)
+               OR StringEqual(string,&quot;end tournament&quot;)
+            {
+               if plCombatants &lt;&gt; $
+               {
+                  Send(what,@MsgSendUser,
+                       #message_rsc=TosWatcher_cant_start_end);
+               }
+
+               pbTournament = FALSE;
+               Send(poOwner,@endTournament,#Marshal=what);
+               poMarshal = $;
+
+               propagate;
+            }
+            
+            if StringEqual(string,TosWatcher_clear_all_command)
+               OR stringEqual(string,&quot;Clear all&quot;)
+            {
+               Send(poOwner,@someonesaid,
+                    #string=TosWatcher_tournament_cancelled,
+                    #parm1=Send(what,@GetHisHer),#parm2=Send(what,@GetDef),
+                    #parm3=Send(what,@GetName),#type=SAY_MESSAGE,#what=self);
+                    
+                Send(self,@ClearCombatants);
+
+                return FALSE;
+            }
+            
+            if StringEqual(string,TosWatcher_fight_command)
+               OR stringEqual(string,&quot;fight&quot;)
+            {
+               if ptCommence = $ AND ptFight = $
+               {
+                  Send(self,@ReadyFight);
+               }
+
+               return FALSE;
+            }
+
+            for i in Send(poOwner,@GetHolderActive)
+            {
+               if IsClass(First(i),&amp;Player)
+                  AND StringEqual(string,Send(First(i),@GetName))
+               {
+
+                  if plCombatants = $
+                  {
+                     Send(self,@TrigChampion,#what=First(i));
+
+                     return FALSE;
+                  }
+                  else
+                  {
+                     if Send(self,@isCombatant,#who=First(i))
+                     {
+                        Send(what,@MsgSendUser,
+                             #message_rsc=Toswatcher_already_tourny_combatant,
+                             #parm1=Send(First(i),@GetCapDef),
+                             #parm2=Send(First(i),@GetName));
+
+                        return;
+                     }
+
+                     Send(self,@TrigChallenge,#what=First(i));
+
+                     return FALSE;
+                  }
+               }
+            }
+         }
+      }
+      
+      if Send(self,@FightInSession)
+      {
+         if StringEqual(string,TosWatcher_champion_command)
+            OR StringEqual(string,TosWatcher_challenge_command)
+            OR StringEqual(string,TosWatcher_traditional_command)
+            OR StringEqual(string,TosWatcher_last_man_standing_command)
+            OR StringEqual(string,TosWatcher_guild_vs_guild_command)
+            OR StringEqual(string,TosWatcher_battle_royale_command)
+         {
+            if NOT pbTournament
+               OR (IsClass(what,&amp;Player) AND Send(what,@IsActor))
+            {
+               Send(what,@MsgSendUser,
+                    #message_rsc=TosWatcher_not_during_fight);
+
+               return FALSE;
+            }
+
+            oActor = Send(self,@GetActor);
+            if oActor &lt;&gt; $
+            {
+               Send(what,@MsgSendUser,
+                    #message_rsc=TosWatcher_only_grand_marshal,
+                    #parm1 = Send(oActor,@GetName));
+            }
+
+            return FALSE;
+         }
+
+         if IsClass(what,&amp;Player)
+            AND type = SAY_DM
+            AND (stringEqual(string,TosWatcher_clear_all_command)
+                OR stringEqual(string,&quot;Clear all&quot;))
+            AND pbTournament 
+            AND Send(what,@IsActor)
+         {
+            Send(poOwner,@someonesaid,#string=TosWatcher_tournament_cancelled,
+                 #parm1=Send(what,@GetHisHer),#parm2=Send(what,@GetDef),
+                 #parm3=Send(what,@GetName),#type=SAY_MESSAGE,#what=self);
+            Send(self,@clearcombatants);
+
+            return FALSE;
+         }
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1375</p>
+<h4>TrigChampion(what = $)</h4>
+<p>Someone in the room said 'champion'.  Net effect, if there is no champion, then make the talker the new champion.</p>
+<pre><code>{
+      if piCombat_style = STYLE_NO_FIGHT
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_must_choose_style);
+
+         return;     
+      }
+
+      if NOT Send(self,@AcceptingChampions)
+      {
+         if Send(self,@AcceptingChallengers)
+         {
+            if poChampion = what
+            {
+               Send(self,@SayToOne,#target=what,
+                    #message_rsc=TosWatcher_Already_champion);
+            }
+            else
+            {
+               Send(self,@SayToOne,#target=what,
+                    #message_rsc=Toswatcher_already_have_champion,
+                    #parm1=Send(poChampion,@GetDef),
+                    #parm2=Send(poChampion,@GetName),
+                    #parm3=Send(poChampion,@GetHimHer));
+            }
+         }
+         else
+         {
+            Send(self,@SayToOne,#target=what,#message_rsc=TosWatcher_no_need);
+         }
+      }
+      else   
+      {
+         
+         if piCombat_Style = STYLE_GUILD_VS_GUILD
+            OR piCombat_style = STYLE_LAST_GUILD_STANDING
+         {
+            if Send(what,@GetGuild) = $
+            {
+               if pbTournament
+               {
+                  Send(self,@TellActors,
+                       #message_rsc=TosWatcher_no_guild_tourny,
+                       #parm1=Send(what,@GetCapDef),#parm2=Send(what,@GetName),
+                       #parm3=Send(what,@GetHeShe));
+               }
+               else
+               {
+                  Send(self,@Saytoone,#target=what,
+                       #message_rsc=TosWatcher_need_guild);
+               }
+            }
+            else
+            {
+               Send(self,@NewCombatant,#who=what);
+               Send(self,@Say,#message_rsc=Toswatcher_new_champion_guild,
+                    #parm1=Send(what,@GetDef),#parm2=Send(what,@GetName),
+                    #parm3=Send(poChampion_guild,@GetDef),
+                    #parm4=Send(poChampion_guild,@GetName));
+            }
+         }
+         else
+         {
+            Send(self,@NewCombatant,#who=what);
+            if pbTournament
+            {
+               Send(self,@Say,#message_rsc=Toswatcher_tournament_combatant,
+                    #parm1=Send(what,@GetDef),#parm2=Send(what,@GetName));
+            }
+            else
+            {
+               Send(self,@Say,#message_rsc=Toswatcher_new_champion,
+                    #parm1=Send(poChampion,@GetDef),
+                    #parm2=Send(poChampion,@GetName));
+            }
+         }
+      }
+
+      return;  
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1641</p>
+<h4>TrigChallenge(what = $)</h4>
+<p>Catches when someone says the word 'challenge'.  What happens depends on the match, but in general, this will fail if there is no champion, and will succeed only if there is a challenger spot open.</p>
+<pre><code>{
+      if piCombat_style = STYLE_NO_FIGHT
+      {
+         Send(self,@SaytoOne,#target=what,
+              #message_rsc=TosWatcher_must_choose_style);
+
+         return;     
+      }
+
+      if Send(self,@FightInSession)
+      {
+         Send(self,@SayToOne,#target=what,
+              #message_rsc=TosWatcher_fight_in_progress);
+
+         return;
+      } 
+
+      if Send(self,@AcceptingChampions)
+      {
+         Send(self,@SayToOne,#target=what,
+              #message_rsc=TosWatcher_need_champion);
+
+         return;
+      }
+
+      if NOT Send(self,@AcceptingChallengers)
+      {
+         Send(self,@SayToOne,#target=what,
+              #message_rsc=TosWatcher_dont_need_challenger);
+
+         return;
+      }
+
+      Send(self,@Challenge,#who=what);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1725</p>
+<h4>TrigAccept(what = $)</h4>
+<pre><code>{
+      if piCombat_style &lt;&gt; STYLE_ONE_ON_ONE
+      {
+         
+         return FALSE;    
+      }
+
+      if what &lt;&gt; poChampion
+      {
+         
+         return FALSE;   
+      } 
+
+      if Send(self,@FightInSession)
+      {
+         return FALSE;
+      }
+
+      if (ptAccept &lt;&gt; $)
+      { 
+         Send(self,@Accept,#who=what);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1767</p>
+<h4>TrigRenege(what = $)</h4>
+<p>Call this when someone says 'renege'.  This now works for anyone,and does not need to be said twice.</p>
+<pre><code>{
+      if Send(self,@IsCombatant,#who=what)
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_combatant_reneges,
+              #parm1=Send(what,@GetCapDef),#parm2=Send(what,@GetName));
+         Send(self,@CombatantReneges,#who=what);
+      }
+      else
+      {
+         Send(self,@SayToOne,#target=what,#message_rsc=TosWatcher_cant_renege);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1794</p>
+<h4>ChooseCombat(style = STYLE_NO_FIGHT, actor = $)</h4>
+<pre><code>{
+      if piCombat_style &lt;&gt; STYLE_NO_FIGHT
+         AND plCombatants &lt;&gt; $
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_cant_switch);
+
+         return;
+      }
+
+      piCombat_style = style;
+      if piCombat_style &lt;&gt; STYLE_NO_FIGHT
+      {
+         if pbTournament
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_tournament_style,
+                 #parm1=Send(actor,@GetCapDef),#parm2=Send(actor,@GetName),
+                 #parm3=Send(self,@GetCombatName));
+         }
+         else
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_new_combat_style,
+                 #parm1=Send(self,@GetCombatName));
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1812</p>
+<h4>Delete()</h4>
+<pre><code>{
+      if ptAdvert &lt;&gt; $
+      {
+         DeleteTimer(ptAdvert);
+         ptAdvert = $;
+      }
+
+      if ptCommence &lt;&gt; $
+      {
+         DeleteTimer(ptCommence);
+         ptCommence = $;
+      }
+
+      if ptAccept &lt;&gt; $
+      {
+         DeleteTimer(ptAccept);
+         ptAccept = $;
+      }
+
+      if ptFight &lt;&gt; $
+      {
+         DeleteTimer(ptFight);
+         ptFight = $;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1843</p>
+<h4>DestroyDisposable()</h4>
+<pre><code>{
+      
+      return FALSE;    
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1872</p>
+<h4>IsCombatant(who = $)</h4>
+<pre><code>{
+      local i, count;
+
+      count = 1;
+      for i in plCombatants
+      {
+         if i = who
+         {
+            return count;
+         }
+
+         count = count + 1;
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1878</p>
+<h4>ReqSomethingLeft(what = $)</h4>
+<pre><code>{
+      if Send(self,@isCombatant,#who=what) AND (ptFight &lt;&gt; $ OR ptAccept &lt;&gt; $)
+      {
+         Send(self,@SayToOne,#target=what,#message_rsc=TosWatcher_cant_leave);
+
+         return FALSE;
+      }
+
+      return TRUE; 
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1896</p>
+<h4>Teleport(what = $, goinplay = FALSE, outofplay = FALSE)</h4>
+<pre><code>{
+      local i, bInList, iAmount;
+
+      if goinplay OR Send(self,@IsCombatant,#who=what)   
+      {
+         
+         bInList = FALSE;
+         for i in plUserStats
+         {
+            if First(i) = what
+            {
+               bInList = TRUE;
+            }   
+         }
+
+         if NOT bInList
+         {
+            plUserStats = Cons([ what,Send(what,@GetHealth),
+                                 Send(what,@GetMana),Send(what,@GetVigor)
+                               ],plUserStats);     
+         }
+
+         if Send(what,@GetHealth) &lt; Send(what,@GetMaxHealth)
+         {
+            Send(what,@GainHealthNormal,#amount=200);
+         }
+
+         if Send(what,@GetMana) &lt; Send(what,@GetMaxMana)
+         {
+            iAmount = Send(what,@GetMaxMana) - Send(what,@GetMana);
+            Send(what,@GainMana,#amount=iAmount);
+         }
+
+         Send(what,@AddExertion,#settothreshold=TRUE);
+      }
+      else
+      {
+         
+         for i in plUserStats
+         {
+            if First(i) = what
+            {
+               Send(what,@LoseHealth,#amount=Send(what,@GetHealth)-Nth(i,2));
+               Send(what,@GainMana,#amount=Nth(i,3)-Send(what,@GetMana));
+               iAmount = -10000*(Nth(i,2)-Send(what,@GetVigor));
+               Send(what,@AddExertion,#amount=iAmount);
+               plUserStats = DelListElem(plUserStats,i);
+            }
+         }     
+      }
+
+      Send(poOwner,@Teleport,#what=what,#goinplay=goinplay,
+           #outofplay=outofplay);
+
+      return;
+    }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1908</p>
+<h4>ClearCombatants()</h4>
+<pre><code>{
+      local i, j;
+
+      for i in plCombatants
+      {
+         Send(self,@Teleport,#what=i,#outofplay=TRUE);
+      }
+
+      plCombatants = $;
+      Send(self,@ResetChampion);
+      Send(poOwner,@EndFight,#lCombatants=plCombatants);
+      pbAccept = FALSE;
+
+      if pbTournament
+         OR Send(poOwner,@CheckDefaultRoomFlag,#flag=ROOM_SAFE_DEATH)
+      {
+         for i in Send(poOwner,@getholderactive)
+         {
+            j = First(i);
+
+            if IsClass(j,&amp;Monster)
+               AND (NOT (Send(j,@GetBehavior) &amp; AI_NPC))
+            {
+               Post(j,@Delete);
+            }
+
+            
+            
+            if IsClass(j,&amp;ActiveWallElement)
+               OR IsClass(j,&amp;PassiveWallOfFire)
+               OR IsClass(j,&amp;PassiveWallOfLightning)
+               OR IsClass(j,&amp;SporeCloud)
+               OR IsClass(j,&amp;FogCloud)
+               OR IsClass(j,&amp;Brambles)
+            {
+               Send(j,@Delete);
+            }
+         }
+      }
+
+      if ptFight &lt;&gt; $
+      {
+         DeleteTimer(ptFight);
+         ptFight = $;
+      }
+
+      if ptAccept &lt;&gt; $
+      {
+         DeleteTimer(ptAccept);
+         ptAccept = $;
+      }
+
+      if ptCommence &lt;&gt; $
+      {
+         DeleteTimer(ptCommence);
+         ptCommence = $;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1966</p>
+<h4>SomethingLeft(what = $)</h4>
+<pre><code>{
+      if Send(self,@IsCombatant,#who=what)
+      {
+         if ptFight &lt;&gt; $
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_pitifully_fled,
+                 #parm1=Send(what,@GetCapDef),#parm2=Send(what,@GetName));
+         }
+         else
+         {
+            Send(self,@Say,#message_rsc=TosWatcher_wont_fight,
+                 #parm1=Send(what,@GetDef),#parm2=Send(what,@GetName));               
+         }
+
+         Send(self,@CombatantReneges,#who=what);
+
+         if pbTournament AND NOT Send(self,@ValidateFight)
+         {
+            Send(self,@ClearCombatants);
+
+            propagate;
+         }
+
+         propagate;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2028</p>
+<h4>ReqSomethingAttack(what = $, victim = $)</h4>
+<pre><code>{
+      
+      if NOT Send(self,@FightInSession)
+      {
+         return FALSE;
+      }
+
+      
+      if IsClass(victim,&amp;Player)
+         AND NOT Send(self,@IsCombatant,#who=victim)
+      {
+         return FALSE;
+      }
+
+      
+      if IsClass(what,&amp;Monster)
+         AND Send(self,@IsCombatant,#who=victim)
+      {
+         propagate;
+      }
+
+      
+      if NOT Send(self,@IsCombatant,#who=what)
+      {
+         return FALSE;
+      }
+
+      
+      if victim = $
+      {
+         if NOT Send(self,@IsCombatant,#who=what)         
+         {
+            if IsClass(what,&amp;Player)
+            {
+               Send(self,@SayToOne,#target=what,
+                    #message_rsc=toswatcher_only_combatants);
+            }
+
+            return FALSE;
+         }
+
+         if ptFight = $
+         {
+
+            if IsClass(what,&amp;Player)
+            {
+               Send(self,@SayToOne,#target=what,
+                    #message_rsc=toswatcher_no_fighting_yet);
+            }
+
+            return FALSE;
+         }
+
+         return TRUE;
+      }
+
+      
+      if (NOT Send(self,@isCombatant,#who=what)
+         OR NOT Send(self,@isCombatant,#who=victim))
+         AND IsClass(victim,&amp;Player)
+      {
+         if IsClass(what,&amp;Player)
+         {
+            Send(self,@SayToOne,#target=what,
+                 #message_rsc=toswatcher_only_combatants);
+         }
+
+         return FALSE;
+      }
+
+      if ptFight = $
+      {
+         if IsClass(what,&amp;Player)
+         {
+            Send(self,@SayToOne,#target=what,
+                 #message_rsc=toswatcher_no_fighting_yet);
+         }
+
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2058</p>
+<h4>ReqSpellCast(who = $, oSpell = $, lItems = $)</h4>
+<pre><code>{
+      local i, rTarget;
+
+      
+      if IsClass(who,&amp;DM) AND Send(who,@PlayerIsImmortal)
+      {
+         propagate;
+      }
+
+      
+
+      
+      if (not Send(self,@isCombatant,#who=who) AND IsClass(who,&amp;Player))      
+      {
+         Send(self,@SayToOne,#target=who,
+              #message_rsc=TosWatcher_only_combatants_cast);
+
+         return FALSE;
+      }
+   
+      
+      for i in lItems
+      {
+         if NOT Send(self,@isCombatant,#who=i) AND IsClass(i,&amp;Player)
+         {
+            Send(self,@SayToOne,#target=who,
+                 #message_rsc=TosWatcher_only_target_combatants);
+
+            return FALSE;
+         }
+      }
+
+      
+      if ptFight = $
+      {
+         if IsClass(who,&amp;Player)
+         {
+            Send(self,@SayToOne,#target=who,
+                 #message_rsc=toswatcher_no_fighting_yet);
+         }
+
+         return FALSE;
+      }
+
+      
+      if Send(oSpell,@SpellBannedInArena)
+      {
+         Send(self,@SayToOne,#target=who,#message_rsc=toswatcher_spell_banned,
+              #parm1=Send(oSpell,@GetName));
+
+         return FALSE;
+      }
+
+      if poMarshal &lt;&gt; $
+      {
+         if (lItems = $)
+         {
+            rTarget = TosWatcher_nothing_string;
+         }
+         else
+         {
+            rTarget = Send(First(lItems),@GetTrueName);
+         }
+
+         Send(self,@SayToOne,#target=poMarshal,
+              #message_rsc=TosWatcher_spell_cast,#parm1=Send(who,@GetTrueName),
+              #parm2=Send(oSpell,@GetName),#parm3=rTarget);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2143</p>
+<h4>GetCombatName(style = $)</h4>
+<pre><code>{
+      local iStyle;
+
+      iStyle = style;
+      if iStyle = $
+      {
+         
+         iStyle = piCombat_style;
+      }
+
+      if iStyle = STYLE_ONE_ON_ONE
+      {
+         return TosWatcher_style_one_on_one;
+      }
+
+      if iStyle = STYLE_LAST_MAN_STANDING
+      {
+         return TosWatcher_style_last_man_standing;
+      }
+         
+      if iStyle = STYLE_GUILD_VS_GUILD
+      {
+         return TosWatcher_style_guild_vs_guild;
+      }
+
+      if iStyle = STYLE_LAST_GUILD_STANDING
+      {
+         return TosWatcher_style_battle_royale;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2216</p>
+<h4>SomethingEntered(what = $)</h4>
+<pre><code>{
+      local lSublist, lTemp, i;
+
+      if IsClass(what,&amp;Admin) AND Send(what,@IsGreetable)
+      {
+         Post(self,@Say,#message_rsc=TosWatcher_worship_admin,
+              #parm1=Send(what,@GetTrueName),#parm2=Send(what,@GetHeShe));
+         if NOT pbTournament
+         {
+            Post(poOwner,@SpecialGreeting);
+         }
+
+         propagate;
+      }
+
+      if IsClass(what,&amp;DM) AND Send(what,@IsGreetable)
+      {
+         Post(self,@Say,#message_rsc=TosWatcher_worship_dm,
+              #parm1=Send(what,@GetLordLady),#parm2=Send(what,@GetName));
+         if NOT pbTournament
+         {
+            Post(poOwner,@SpecialGreeting);
+         }
+
+         propagate;
+      }     
+
+      if IsClass(what,&amp;Player)
+      {   
+         for lSublist in plChampions
+         {
+            lTemp = Nth(lSublist,2);
+            for i in lTemp
+            {
+               if First(i) = what
+               {
+                  Send(self,@Say,#message_rsc=TosWatcher_welcome_champion,
+                       #parm1=Send(what,@GetDef),#parm2=Send(what,@GetName));
+                  if NOT pbTournament
+                  {
+                     Post(poOwner,@SpecialGreeting);
+                  }
+
+                  propagate;
+               }
+
+               if Send(what,@GetGuild) &lt;&gt; $ AND Send(what,@GetGuild) = First(i)
+               {
+                  Send(self,@Say,
+                       #message_rsc=TosWatcher_welcome_champion_guild,
+                       #parm1=Send(what,@GetDef),#parm2=Send(what,@GetName),
+                       #parm3=Send(First(i),@GetDef),
+                       #parm4=Send(First(i),@GetName));
+                  Post(poOwner,@SpecialGreeting);
+
+                  propagate;
+               }
+            }
+         }
+
+         Send(what,@MsgSendUser,#message_rsc=TosWatcher_welcome);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2250</p>
+<h4>GetCombatantList()</h4>
+<pre><code>{
+      return plCombatants;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2317</p>
+<h4>AddChampiontoChampList()</h4>
+<p>This is called whenever a winner of a fight is declared.  Note that it is not called when a match is a draw, or when the last challenger leaves by logging off.</p>
+<pre><code>{
+      local i, oChamp, lChampList, bFound;
+
+      bFound = FALSE;
+      piKill_counter = piKill_counter + 1;
+
+      if piCombat_style = STYLE_ONE_ON_ONE
+         OR piCombat_style = STYLE_LAST_MAN_STANDING
+      {
+         oChamp = poChampion;
+      }
+      else
+      {
+         oChamp = poChampion_guild;
+      }
+
+      if oChamp = $
+      {
+         return;
+      }
+
+      lChampList = Send(self,@GetChampionsList,#style=piCombat_style);
+
+      
+      
+      for i in lChampList
+      {
+         if First(i) = oChamp
+         {
+            bFound = TRUE;
+            if Nth(i,2) &lt; piKill_counter
+            {
+               SetNth(i,1,oChamp);
+               SetNth(i,2,piKill_counter);
+            }
+            else
+            {
+               return;
+            }
+         }
+      }
+
+      
+      
+
+      if NOT bFound
+      {
+         for i in lChamplist
+         {
+            if Nth(i,2) &lt; piKill_counter
+            {
+                SetNth(i,1,oChamp);
+                SetNth(i,2,piKill_counter);
+
+                break;
+            }             
+         }
+      }
+
+      Send(self,@SortChampionList,#lChamplist=lChamplist);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2328</p>
+<h4>RemoveFromChampionLists(oldChamp = $)</h4>
+<pre><code>{
+      local lSublist, lTemp, i;
+
+      for lSublist in plChampions
+      {
+         lTemp = Nth(lSublist,2);
+         for i in lTemp
+         {
+            if First(i) = oldChamp
+            {
+               SetNth(i,1,$);
+               SetNth(i,2,0);
+            }
+         }
+
+         Send(self,@SortChampionList,#lChamplist=lTemp);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2396</p>
+<h4>SortChampionList(lChamplist = $)</h4>
+<p>Used by both Addchampiontochamplist and removechampionfromchamplist after a change to be sure that the champions are in a proper order.</p>
+<pre><code>{
+      local bCheckAgain, iCount, i, lTemp, oSwap, iSwap;
+
+      bCheckAgain = TRUE;
+      while bCheckAgain
+      {
+         bCheckAgain = FALSE;
+         iCount = 0;
+         for i in lChamplist
+         {
+            iCount = iCount + 1;
+            if iCount &lt; 5
+            {
+               lTemp = Nth(lChamplist,iCount+1);
+               if Nth(i,2) &lt; Nth(lTemp,2)
+               {
+                  oSwap = Nth(lTemp,1);
+                  iSwap = Nth(lTemp,2);
+                  SetNth(lTemp,1,First(i));
+                  SetNth(lTemp,2,Nth(i,2));
+                  SetNth(i,1,oSwap);
+                  SetNth(i,2,iSwap);
+                  bCheckAgain = TRUE;
+               }
+            }
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2418</p>
+<h4>GetChampionsList(style = STYLE_ONE_ON_ONE)</h4>
+<pre><code>{
+      local i;
+
+      if style = -1
+      {
+         return plChampions;
+      }
+
+      for i in plChampions
+      {
+         if First(i) = STYLE
+         {
+            return Nth(i,2);
+         }
+      }
+
+      Debug(&quot;GetChampionsList requested a combat style that doesn't exist!&quot;);
+
+      return $;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2452</p>
+<h4>GetActor()</h4>
+<pre><code>{
+      return poMarshal;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2474</p>
+<h4>PlayerQuitGuild(who = $)</h4>
+<pre><code>{
+      if (piCombat_Style = STYLE_GUILD_VS_GUILD
+         OR piCombat_style = STYLE_LAST_GUILD_STANDING)
+         AND Send(self,@IsCombatant,#who=who)
+      {
+         Send(self,@Say,#message_rsc=TosWatcher_quit_guild,
+              #parm1=Send(who,@GetDef),#parm2=Send(who,@GetName),
+              #parm3=Send(who,@GetHisHer));
+         Send(self,@CombatantReneges,#who=who);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2479</p>
+<h4>TellActors(message_rsc = $, parm1 = $, parm2 = $, parm3 = $, parm4 = $, parm5 = $, parm6 = $, parm7 = $, parm8 = $)</h4>
+<pre><code>{
+      local i;
+
+      for i in Send(poOwner,@GetHolderActive)
+      {
+         if IsClass(First(i),&amp;DM) AND Send(First(i),@IsActor)
+         {
+            Send(First(i),@MsgSendUser,#Message_rsc=message_rsc,
+                 #parm1=parm1,#parm2=parm2,#parm3=parm3,#parm4=parm4,
+                 #parm5=parm5,#parm6=parm6,#parm7=parm7,#parm8=parm8);
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2494</p>
+<h4>ReqAssassinGameAttack(what = $)</h4>
+<pre><code>{
+      if pbTournament
+      {
+         Send(self,@SayToOne,#target=what,#message_rsc=toswatcher_no_assgame);
+
+         return FALSE;
+      }
+      
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:2512</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

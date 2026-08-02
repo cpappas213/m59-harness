@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ranged Weapon — Meridian 59 Compendium</title>
+<meta name="description" content="This is a ranged weapon.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Ranged Weapon</p>
+<div class="hero"><div class="heroText"><h1>Ranged Weapon</h1><p class="lede">This is a ranged weapon.</p><div class="tags"><span class="tag ">weapon</span><span class="tag ">hand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">10</div></div><div class="fact"><div class="lbl">Value</div><div class="val">10 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">200–250</div></div><div class="fact"><div class="lbl">Spell penalty</div><div class="val">-25%</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">hand</div></div></div><h2>As a weapon</h2><div class="formula">base       = random(3, 8)            % thrust weapon
+quality    +0                           % normal quality
+stroke     × 80/100                     % Slash stroke damage factor
+might      × (100 + bound(might−25, 0, 40))/100
+proficiency+ (proficiency + 1) × 5/100</div><p class="cite">kod/object/item/passitem/weapon.kod:241 <code class="k">GetBaseDamage</code> · kod/object/passive/skill/stroke.kod:201 <code class="k">FindDamage</code> · :332 <code class="k">DamageFactors</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Wielder</th><th class="num ">Damage per hit</th><th class=""></th></tr></thead>
+<tbody><tr><td class="">novice — 0 proficiency, might 25</td><td class="num ">2–6</td><td class="">before the target’s armour</td></tr>
+<tr><td class="">expert — 99 proficiency, might 65</td><td class="num ">7–13</td><td class="">before the target’s armour</td></tr></tbody></table></div><div class="facts"><div class="fact"><div class="lbl">Weapon type</div><div class="val sm">thrust</div></div><div class="fact"><div class="lbl">Quality</div><div class="val sm">normal</div></div><div class="fact"><div class="lbl">To-hit bonus</div><div class="val">+125</div></div><div class="fact"><div class="lbl">Reach</div><div class="val">3</div></div><div class="fact"><div class="lbl">Disarm</div><div class="val">10</div></div><div class="fact"><div class="lbl">Spell penalty</div><div class="val">-10%</div></div><div class="fact"><div class="lbl">Proficiency</div><div class="val sm">bow</div></div></div><p>Damage type matters because armour resists by type. See
+<a href="../guides/armor.html">Armour</a> for what each armour does to each type, and
+<a href="../weapons/index.html">Weapons</a> to compare this against everything else.</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/weapon/ranged.kod:21</p>
+<p><code class="k">RangedWeapon</code> is <code class="k">Weapon</code> — full chain <code class="k">RangedWeapon</code> ← <code class="k">Weapon</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">Bow</code>, <code class="k">Crossbow</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>200</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>250</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viProficiency_Needed</code></td><td class=""><code>SKID_PROFICIENCY_BOW</code></td><td class="">456</td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viAmmo_type</code></td><td class=""><code>AMMO_ARROW</code></td><td class="">1</td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viHit_roll_modifier</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viSpell_modifier</code></td><td class=""><code>-25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viUse_Amount</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>ranged_desc_rsc</code></td><td class=""><em>This is a ranged weapon.</em></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viWeaponDamage</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viRange</code></td><td class=""><code>100</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAttack_Type</code></td><td class=""><code>ATCK_WEAP_PIERCE</code></td><td class="num " data-sort="57">57</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>GetParryAbility(who = $)</h4>
+<pre><code>{
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged.kod:65</p>
+<h4>GetDefaultStrokeNumber()</h4>
+<pre><code>{
+      return SKID_FIRE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged.kod:72</p>
+<h4>GetAmmoType()</h4>
+<pre><code>{
+      return viAmmo_type;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged.kod:77</p>
+<h4>GetAttackType()</h4>
+<pre><code>{
+      local iAttackType, ammotype, i;
+
+      if poOwner = $
+      {
+         return 0;
+      }
+
+      iAttackType = 0;
+      ammotype = send(self,@GetAmmoType);
+      for i in send(poOwner,@GetPlayerUsing)
+      {
+         if send(i,@GetItemUseType) = ITEM_USE_QUIVER
+         {
+            if send(i,@GetAmmoType) = ammotype
+            { 
+               iAttackType = send(i,@GetAttackType);
+               
+               break;
+            }
+         }
+      }
+      
+      iAttackType = iAttackType |  piAttack_Type;
+
+      return iAttackType;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged.kod:83</p>
+<h4>GetAttackSpell()</h4>
+<pre><code>{
+      local iAttackType, ammotype, i;
+
+      if poOwner = $
+      {
+         return 0;
+      }
+
+      iAttackType = 0;
+      ammotype = send(self,@GetAmmoType);
+
+      for i in send(poOwner,@GetPlayerUsing)
+      {
+         if send(i,@GetItemUseType) = ITEM_USE_QUIVER
+         {
+            if (send(i,@GetAmmoType) = ammotype)
+            { 
+               iAttackType = send(i,@GetAttackSpell);
+               
+               break;
+            }
+         }
+      }
+      
+      iAttackType = iAttackType | piAttack_Spell;
+
+      return iAttackType;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged.kod:112</p>
+<h4>ModifyHitRoll(hit_roll = 0, target = $)</h4>
+<p>When someone attacks with this weapon, they send us their attack value and we change it based on quality of weapon</p>
+<pre><code>{
+      local iBaseHit, oWeapAtt, i, iWeapHit;
+
+      iBaseHit = hit_roll;
+
+      if viHit_roll_modifier &lt; 0
+      {
+         hit_roll = hit_roll + (-viHit_Roll_modifier);
+      }
+      else
+      {
+         hit_roll = hit_roll + ((viHit_roll_modifier*piHits)/piHits_Init);
+      }
+      
+      iWeapHit = hit_roll;
+
+      for i in plItem_Attributes
+      {
+         oWeapAtt = send(SYS,@FindItemAttByNum,
+                         #num=send(self,@GetNumFromCompound,#compound=first(i)));
+         if isClass(oWeapAtt,&amp;WeaponAttribute)
+         {
+            hit_roll = send(oWeapAtt,@ModifyHitRoll,#hitroll=hit_roll,#wielder=poOwner,
+                            #target=target,#lData=i);
+         }
+      }     
+      
+      return hit_roll;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged.kod:142</p>
+<h4>GetBaseDamage(who = $, target = $)</h4>
+<pre><code>{
+      local iDamage, ammotype, i;
+
+      if poOwner = $
+      {
+         return 0;
+      }
+
+      iDamage = 0;
+
+      ammotype = send(self,@GetAmmoType);
+      for i in send(poOwner,@GetPlayerUsing)
+      {
+         if send(i,@GetItemUseType) = ITEM_USE_QUIVER
+         {
+            if (send(i,@GetAmmoType) = ammotype)
+            {
+               iDamage = send(i,@GetDamage,#who=who,#target=target);
+               break;
+            }
+         }
+      }
+	  
+	  iDamage = iDamage + viWeaponDamage;
+	  
+      return iDamage;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged.kod:175</p>
+<h4>GetRange()</h4>
+<pre><code>{
+      return viRange;
+   }   </code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged.kod:204</p>
+<h4>GetBaseSpellModifier(oSpell = $)</h4>
+<pre><code>{
+      return viSpell_modifier;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged.kod:209</p>
+<h4>GetAttackName()</h4>
+<pre><code>{
+      return ranged_ammo_name;      
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged.kod:215</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

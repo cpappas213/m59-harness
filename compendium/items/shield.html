@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shield — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Shield</p>
+<div class="hero"><div class="heroText"><h1>Shield</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">shield</span><span class="tag ">hand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">10</div></div><div class="fact"><div class="lbl">Value</div><div class="val">10 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">hand</div></div></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:11</p>
+<p><code class="k">Shield</code> is <code class="k">DefenseModifier</code> — full chain <code class="k">Shield</code> ← <code class="k">DefenseModifier</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">GoldShield</code>, <code class="k">GuildShield</code>, <code class="k">Knightshield</code>, <code class="k">MetalShield</code>, <code class="k">OrcShield</code>, <code class="k">SoldierShield</code>, <code class="k">Torch</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viUse_type</code></td><td class=""><code>ITEM_USE_HAND</code></td><td class="">8</td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">viUse_amount</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="33">33</td></tr>
+<tr><td class=""><code class="k">vrposs_article</code></td><td class=""><code>object_article_cap_this_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">vrShield_window_overlay</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">vrShield_overlay</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viBroken_group</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">vbShow_condition</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrCondition_exc</code></td><td class=""><code>shield_condition_exc</code></td><td class=""><em> shines with smooth perfection.</em></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrCondition_exc_mended</code></td><td class=""><code>shield_condition_exc_mended</code></td><td class=""><em> is in great condition, but has been patched before.</em></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vrCondition_good</code></td><td class=""><code>shield_condition_good</code></td><td class=""><em> is marred by a deep gouge but otherwise is in fine condition.</em></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">vrCondition_med</code></td><td class=""><code>shield_condition_med</code></td><td class=""><em> is deeply scarred from battle but still functional.</em></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">vrCondition_poor</code></td><td class=""><code>shield_condition_poor</code></td><td class=""><em> is cracked in several places and may not last much longer.</em></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">vrCondition_broken</code></td><td class=""><code>shield_condition_broken</code></td><td class=""><em> has been shattered by a forceful blow, leaving it useless.</em></td><td class="num " data-sort="47">47</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piUsed</code></td><td class=""><code>UNUSED</code></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">piBlockBonus</code></td><td class=""><code>0</code></td><td class="num " data-sort="54">54</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>GetBlockAbility(who = $)</h4>
+<pre><code>{
+      return bound(send(who,@GetSkillAbility,#skill_num=SKID_BLOCK) + piDefense_bonus,1,120);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:61</p>
+<h4>ModifyDefensePower(who = $, what = $, defense_power = 0)</h4>
+<pre><code>{
+      return defense_power;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:67</p>
+<h4>ModifyDefenseDamage(who = $, what = $, damage = $, atype = 0, aspell = 0)</h4>
+<pre><code>{
+      local oBlock;
+
+      oBlock = Send(SYS,@FindSkillByNum,#num=SKID_BLOCK);
+      
+      
+      
+      if (send(who,@GetSkillAbility,#skill_num=SKID_BLOCK) &gt; 0)
+         AND Send(oBlock,@SuccessChance,#who=who,#modifier=piDefense_bonus)
+      {
+         
+         propagate;
+      }
+      
+      return damage;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:73</p>
+<h4>ReqUseSomething(what = $)</h4>
+<pre><code>{
+      if isClass(what,&amp;Shield)
+      {
+         if not send(poOwner,@TryUnuseItem,#what=self)
+         {
+            return FALSE;
+         }
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:93</p>
+<h4>NewUsed()</h4>
+<pre><code>{
+      piUsed = USED;
+
+      
+      if vrShield_window_overlay &lt;&gt; $
+      {
+         Send(poOwner,@SetWindowOverlay,#what=self);
+      }
+
+      
+      if vrShield_overlay &lt;&gt; $
+      {
+         Send(poOwner,@SetOverlay,#what=self);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:106</p>
+<h4>NewUnused()</h4>
+<pre><code>{
+      piUsed = UNUSED;
+      if vrShield_window_overlay &lt;&gt; $
+      {
+         Send(poOwner,@RemoveWindowOverlay,#what=self);
+      }
+
+      Send(poOwner,@RemoveOverlay,#what=self);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:125</p>
+<h4>DefendingHit()</h4>
+<pre><code>{
+      piUsed = DEFENDING;
+      if vrShield_window_overlay &lt;&gt; $
+      {
+         Send(poOwner,@ChangeWindowOverlay,#what=self);
+      }
+      
+      if vrShield_overlay &lt;&gt; $
+      {
+         piUsed = USED;
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:138</p>
+<h4>ReqRepair()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:154</p>
+<h4>GetWindowOverlay()</h4>
+<pre><code>{
+      return vrShield_window_overlay;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:163</p>
+<h4>GetWindowOverlayID()</h4>
+<pre><code>{
+      return PWO_LEFT_HAND;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:168</p>
+<h4>GetWindowOverlayHotspot()</h4>
+<pre><code>{
+      
+      if piUsed = UNUSED
+      {
+         return 0;
+      } 
+
+      return HS_SW;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:173</p>
+<h4>SendWindowOverlayAnimation()</h4>
+<pre><code>{
+      if piUsed = DEFENDING
+      { 
+         AddPacket(1,ANIMATE_ONCE,4,1000,2,2,2,2,2,1);
+         return;
+      }
+      
+      AddPacket(1,ANIMATE_NONE,2,1);
+      
+      return;      
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:184</p>
+<h4>SendWindowOverlayOverlays()</h4>
+<pre><code>{
+      AddPacket(1,0); 
+
+      return; 
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:197</p>
+<h4>GetOverlay()</h4>
+<pre><code>{
+      return vrShield_overlay;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:208</p>
+<h4>GetOverlayHotspot()</h4>
+<pre><code>{
+      return HS_LEFT_WEAPON;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:213</p>
+<h4>SendOverlayAnimation()</h4>
+<pre><code>{
+      if (piItem_flags &amp; ITEM_PALETTE_MASK) &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,piItem_flags &amp; ITEM_PALETTE_MASK);
+      }
+      
+      AddPacket(1,ANIMATE_NONE,2,2); 
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:218</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

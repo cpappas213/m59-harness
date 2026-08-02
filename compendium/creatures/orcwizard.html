@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>orc wizard — Meridian 59 Compendium</title>
+<meta name="description" content="Harnessing dark powers from deep underground, the Orc Wizards enforce the mandates of their chieftain, such as extermination of the enemy shadow beasts. How the">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › orc wizard</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/orcwiza_g1.png" alt="orc wizard" width="87" height="194"></div><div class="heroText"><h1>orc wizard</h1><p class="lede">Harnessing dark powers from deep underground, the Orc Wizards enforce the mandates of their chieftain, such as extermination of the enemy shadow beasts. How the orcs came upon the powers of magic is unknown, but the thought of man's greatest enemy armed with arcane power is enough to make any warrior queasy.</p><div class="tags"><span class="tag ">Level 80</span><span class="tag ">Difficulty 7</span><span class="tag ">Evil</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">80</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">7</div></div><div class="fact"><div class="lbl">Health</div><div class="val">72–120</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">4–10</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">-60</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">orc_wizard</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>utomya</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 80 + 60 × 7
+                = 660
+
+health          = Fuzzy(level × 120/100) = 72–120
+damage per hit  = Fuzzy(level / random(10,15))  = 4–10
+dodge           = difficulty × 10 = 70</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">62%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">50%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">19</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">4.3</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>bludgeon</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 80/55 + random(0, 7/3), $, 6)
+       = 2–4 items
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/orcwizt.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="OrcTooth"><a href="../items/orctooth.html">orc tooth</a></td><td class="num " data-sort="35.644">35.6%</td><td class=""></td><td class=""><code>orcwizt.kod:30</code></td></tr>
+<tr><td class="" data-sort="UncutSeraphym"><a href="../items/uncutseraphym.html">uncut seraphym</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>orcwizt.kod:31</code></td></tr>
+<tr><td class="" data-sort="SlitherWand"><a href="../items/slitherwand.html">Slither Wand</a></td><td class="num " data-sort="7.921">7.9%</td><td class=""></td><td class=""><code>orcwizt.kod:32</code></td></tr>
+<tr><td class="" data-sort="DragonflyEye"><a href="../items/dragonflyeye.html">dragonfly eye</a></td><td class="num " data-sort="5.941">5.9%</td><td class=""></td><td class=""><code>orcwizt.kod:33</code></td></tr>
+<tr><td class="" data-sort="Solagh"><a href="../items/solagh.html">vial of solagh</a></td><td class="num " data-sort="5.941">5.9%</td><td class=""></td><td class=""><code>orcwizt.kod:34</code></td></tr>
+<tr><td class="" data-sort="PurpleMushroom"><a href="../items/purplemushroom.html">purple mushroom</a></td><td class="num " data-sort="5.941">5.9%</td><td class=""></td><td class=""><code>orcwizt.kod:35</code></td></tr>
+<tr><td class="" data-sort="Torch"><a href="../items/torch.html">torch</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>orcwizt.kod:36</code></td></tr>
+<tr><td class="" data-sort="DiscipleRobe"><a href="../items/disciplerobe.html">robes of the disciple</a></td><td class="num " data-sort="3.96">4.0%</td><td class=""></td><td class=""><code>orcwizt.kod:37</code></td></tr>
+<tr><td class="" data-sort="Gauntlet"><a href="../items/gauntlet.html">gauntlets</a></td><td class="num " data-sort="3.96">4.0%</td><td class=""></td><td class=""><code>orcwizt.kod:38</code></td></tr>
+<tr><td class="" data-sort="Flask"><a href="../items/flask.html">flask</a></td><td class="num " data-sort="3.96">4.0%</td><td class=""></td><td class=""><code>orcwizt.kod:39</code></td></tr>
+<tr><td class="" data-sort="Lute"><a href="../items/lute.html">lute</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>orcwizt.kod:40</code></td></tr>
+<tr><td class="" data-sort="PolishedSeraphym"><a href="../items/polishedseraphym.html">polished seraphym</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>orcwizt.kod:41</code></td></tr>
+<tr><td class="" data-sort="Money"><a href="../items/money.html">shilling</a></td><td class="num " data-sort="1.98">2.0%</td><td class="">81–241 shillings</td><td class=""><code>orcwizt.kod:42</code></td></tr>
+<tr><td class="" data-sort="StaffOfJolting"><a href="../items/staffofjolting.html">gnarled staff</a></td><td class="num " data-sort="1.98">2.0%</td><td class=""></td><td class=""><code>orcwizt.kod:43</code></td></tr>
+<tr><td class="" data-sort="DispellIllusionScroll"><a href="../items/dispellillusionscroll.html">Dispell Illusion Scroll</a></td><td class="num " data-sort="1.98">2.0%</td><td class=""></td><td class=""><code>orcwizt.kod:44</code></td></tr></tbody></table></div><div class="formula">shillings = 1 + (MoneyFactor × 2 × bound(random(level/2, 3×level/2), 1, ∞)) / 100
+          = 81–241 at level 80     % MoneyFactor = 100</div>
+<p class="cite">kod/object/passive/trestype.kod:302</p><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>8 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 4.
+<span class="cite">kod/object/passive/trestype/orcwizt.kod:23</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>5 places in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="An Enigmatic Chamber"><a href="../zones/orccave2.html">An Enigmatic Chamber</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="30">30%</td><td class=""><code>monsroom/orccave2.kod</code></td></tr>
+<tr><td class="" data-sort="Aqueducts of Merb"><a href="../zones/orccave4.html">Aqueducts of Merb</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="60">60%</td><td class=""><code>monsroom/orccave4.kod</code></td></tr>
+<tr><td class="" data-sort="Grog's Antechamber"><a href="../zones/orcpita.html">Grog's Antechamber</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="40">40%</td><td class=""><code>monsroom/orcpita.kod</code></td></tr>
+<tr><td class="" data-sort="Konima's Ascension"><a href="../zones/orccave6.html">Konima's Ascension</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="30">30%</td><td class=""><code>monsroom/orccave6.kod</code></td></tr>
+<tr><td class="" data-sort="Obfal's Sepulchre"><a href="../zones/orccave5.html">Obfal's Sepulchre</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="25">25%</td><td class=""><code>monsroom/orccave5.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_MOVE_FLEE_FRIGHTENERS</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_HYPERAGGRESSIVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>What killing it does to your karma</h2>
+<p>Its karma is <code class="k">-60</code>, and a kill is treated as an act whose karma is the
+<em>negative</em> of the victim's — so killing this creature pushes you
+<strong>towards good</strong>.</p>
+<div class="formula">base   = your_karma − (−victim_karma) = your_karma − 60
+change = −( base³ / 2500 + 5 × base ) / (11 − swing)      % hundredths of a karma point
+       bounded to ±150 for a monster kill — at most 1.5 karma per kill</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code> · :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+<div class="note">No karma moves at all in the newbie region, in an arena, or when the victim's
+karma is neutral. And once you are already further from neutral than your victim in the same
+direction, killing them does nothing to you.</div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/orcwiza_g1.png" alt="orc wizard group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g2.png" alt="orc wizard group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g3.png" alt="orc wizard group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g4.png" alt="orc wizard group 4" loading="lazy"><figcaption>group 4 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g5.png" alt="orc wizard group 5" loading="lazy"><figcaption>group 5 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g6.png" alt="orc wizard group 6" loading="lazy"><figcaption>group 6 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g7.png" alt="orc wizard group 7" loading="lazy"><figcaption>group 7 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g8.png" alt="orc wizard group 8" loading="lazy"><figcaption>group 8 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g9.png" alt="orc wizard group 9" loading="lazy"><figcaption>group 9 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g10.png" alt="orc wizard group 10" loading="lazy"><figcaption>group 10 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g11.png" alt="orc wizard group 11" loading="lazy"><figcaption>group 11 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g12.png" alt="orc wizard group 12" loading="lazy"><figcaption>group 12 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g13.png" alt="orc wizard group 13" loading="lazy"><figcaption>group 13 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g14.png" alt="orc wizard group 14" loading="lazy"><figcaption>group 14 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g15.png" alt="orc wizard group 15" loading="lazy"><figcaption>group 15 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g16.png" alt="orc wizard group 16" loading="lazy"><figcaption>group 16 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g17.png" alt="orc wizard group 17" loading="lazy"><figcaption>group 17 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g18.png" alt="orc wizard group 18" loading="lazy"><figcaption>group 18 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwiza_g19.png" alt="orc wizard group 19" loading="lazy"><figcaption>group 19 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/orcwizax_g1.png" alt="orc wizard corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:11</p>
+<p><code class="k">OrcWizard</code> is <code class="k">Monster</code> — full chain <code class="k">OrcWizard</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_AN</code></td><td class="">3</td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">vrKocName</code></td><td class=""><code>OrcWizard_koc_name_rsc</code></td><td class=""><em>utomya</em></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>OrcWizard_name_rsc</code></td><td class=""><em>orc wizard</em></td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>OrcWizard_icon_rsc</code></td><td class=""><em>orcwiza.bgf</em></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>OrcWizard_desc_rsc</code></td><td class=""><em>Harnessing dark powers from deep underground, the Orc Wizards enforce the mandates of thei</em></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>OrcWizard_dead_icon_rsc</code></td><td class=""><em>orcwizaX.bgf</em></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>OrcWizard_dead_name_rsc</code></td><td class=""><em>dead orc</em></td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_ORC_WIZARD</code></td><td class="">35</td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_AVERAGE</code></td><td class="">12</td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_BLUDGEON</code></td><td class="">16</td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="69">69</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>80</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>7</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>-60</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="72">72</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_AGGRESSIVE | AI_FIGHT_HYPERAGGRESSIVE | AI_MOVE_FLEE_FRIGHTENERS</code></td><td class="">4210720</td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">viWimpy</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>OrcWizard_sound_hit</code></td><td class=""><em>orc_atkh.wav</em></td><td class="num " data-sort="77">77</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>OrcWizard_sound_miss</code></td><td class=""><em>orc_atkm.wav</em></td><td class="num " data-sort="78">78</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>OrcWizard_sound_aware</code></td><td class=""><em>wor_awr.wav</em></td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>OrcWizard_sound_death</code></td><td class=""><em>wor_dth.wav</em></td><td class="num " data-sort="80">80</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="84">84</td></tr>
+<tr><td class=""><code class="k">piMana</code></td><td class=""><code>10</code></td><td class="num " data-sort="85">85</td></tr>
+<tr><td class=""><code class="k">ptMana</code></td><td class=""><code>$</code></td><td class="num " data-sort="86">86</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ManaTimer()</h4>
+<pre><code>{
+      piMana = piMana + 1;
+      if piMana &gt;=10
+      {
+    ptMana = $;
+    return;
+      }
+      ptMana = CreateTimer(self,@ManaTimer,MANA_REGEN_TIME);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:90</p>
+<h4>Delete()</h4>
+<pre><code>{
+      if ptMana &lt;&gt; $
+      {
+    deletetimer(ptMana);
+    ptMana = $;
+      }
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:102</p>
+<h4>Constructed()</h4>
+<pre><code>{
+      plResistances = [ [ 40, -ATCK_SPELL_UNHOLY ],
+                        [ 40, ATCK_WEAP_PIERCE ],
+                        [ 40, ATCK_WEAP_SLASH ],
+                        [-25, -ATCK_SPELL_HOLY ] ];
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:112</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      Send(self,@DoSlash);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:121</p>
+<h4>DoSlash()</h4>
+<pre><code>{
+      piAnimation = ANIM_ATTACK;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:128</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE);
+      AddPacket(4,125,2,FRAME_CASTSTAFF_START,2,FRAME_CASTSTAFF_END);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:137</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      
+      
+      AddPacket(1,ANIMATE_CYCLE,4,125,2,FRAME_WALK_START,2,FRAME_WALK_END);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:145</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if piAnimation = ANIM_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,125,2,FRAME_ATTACK_START,2,FRAME_ATTACK_END,2,FRAME_STAND);
+
+         return;
+      } 
+
+      if piAnimation = ANIM_CASTARMS
+      {
+         AddPacket(1,ANIMATE_ONCE,4,125,2,FRAME_CASTARMS_START,2,FRAME_CASTARMS_END,2,FRAME_STAND);
+
+         return;
+      } 
+
+      if piAnimation = ANIM_CASTSTAFF
+      {
+         AddPacket(1,ANIMATE_ONCE,4,125,2,FRAME_CASTSTAFF_START,2,FRAME_CASTSTAFF_END,2,FRAME_STAND);
+
+         return;
+      } 
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:154</p>
+<h4>MonsterCastSpell()</h4>
+<pre><code>{
+      local iSpell, iBase, oSpell, iManaCost, iRandom, lTargets;
+
+      iBase = Send(self,@AdjustedChanceBase,#base=SPELL_CHANCE);
+      if random(1,iBase) &lt;&gt; 1
+      {
+         return FALSE;
+      }
+
+      iRandom = random(1,100);
+      
+      if iRandom &lt; 40
+      {
+         iSpell = SID_SLITHERBOLT;
+         iManaCost = 5;
+         piAnimation = ANIM_CASTSTAFF;
+      }
+      else
+      {
+         if iRandom &lt; 50
+         {
+            iSpell = SID_KILLING_FIELDS;
+            iManaCost = 10;
+            piAnimation = ANIM_CASTARMS;
+         }
+         else
+         {
+            if iRandom &lt; 85
+            {
+               iSpell = SID_PURGE;
+               iManaCost = 4;
+               piAnimation = ANIM_CASTSTAFF;
+            }
+            else
+            {
+               if iRandom &lt; 90
+               {
+                  iSpell = SID_MANA_BOMB;
+                  iManaCost = 6;
+                  piAnimation = ANIM_CASTARMS;
+               }
+               else
+               {
+                  iSpell = SID_FORGET;
+                  iManaCost = 4;
+                  piAnimation = ANIM_CASTSTAFF;
+               }
+            }
+         }
+      }
+              
+      if piMana &lt; iManaCost
+      {
+         return FALSE;
+      }
+
+      piMana = piMana - iManaCost;
+
+      if piMana &lt; 10
+      {
+         ptMana = CreateTimer(self,@ManaTimer,MANA_REGEN_TIME);
+      }
+
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;             
+    
+      oSpell = send(SYS,@FindSpellByNum,#num=iSpell);
+
+      if send(oSpell,@GetNumSpellTargets) &gt; 0
+         AND NOT send(poOwner,@LineOfSight,#obj1=self,#obj2=poTarget)
+      {
+         return FALSE;
+      }
+
+      lTargets = send(oSpell,@GetTargets,#who=self,#lTargets=[poTarget]);
+
+      if send(oSpell,@CanPayMonsterCosts,#who=self,#lTargets=lTargets,#iSpellPower=75)
+         AND send(poOwner,@ReqSpellCast,#who=self,#oSpell=oSpell,#litems=lTargets)
+      {
+         send(oSpell,@CastSpell,#who=self,#ltargets=lTargets,#iSpellPower=75);
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:180</p>
+<h4>IsWizard()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:266</p>
+<h4>IsAlly(target = $)</h4>
+<pre><code>{
+      if target = $
+      {
+         return FALSE;
+      }
+
+      if isClass(target,&amp;Orc)          
+         OR isClass(target,&amp;CaveOrc)
+         OR isClass(target,&amp;OrcPitBoss)
+         OR isClass(target,&amp;OrcWizard)
+      {
+         return TRUE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:271</p>
+<h4>IsFrightenedOf(target = $)</h4>
+<pre><code>{
+      if target &lt;&gt; $ AND isClass(target,&amp;ShadowBeast)
+      {
+         return TRUE;
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/orcwiza.kod:289</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

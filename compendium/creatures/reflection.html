@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reflection — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Reflection</p>
+<div class="hero"><div class="heroText"><h1>Reflection</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">Level 45</span><span class="tag ">Difficulty 4</span><span class="tag ">Neutral</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">45</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">4</div></div><div class="fact"><div class="lbl">Health</div><div class="val">41–68</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">3–5</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 45 + 60 × 4
+                = 375
+
+health          = Fuzzy(level × 120/100) = 41–68
+damage per hit  = Fuzzy(level / random(10,15))  = 3–5
+dodge           = difficulty × 10 = 40</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">35%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">88%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">33</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">1.4</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>slash</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>No room in the world declares this creature. It is summoned by another creature, placed by an
+administrator, or left over from content that is no longer reachable.</p><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_FIGHT_MONSTERS</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_NEWBIESAFE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/amoebax_g1.png" alt="Reflection corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:11</p>
+<p><code class="k">Reflection</code> is <code class="k">Monster</code> — full chain <code class="k">Reflection</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viDefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>reflection_dead_icon_rsc</code></td><td class=""><em>amoebaX.bgf</em></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>reflection_dead_name_rsc</code></td><td class=""><em>dead reflection</em></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_NONE</code></td><td class="">1</td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_AVERAGE</code></td><td class="">12</td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_SLASH</code></td><td class="">128</td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>45</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>reflection_sound_hit</code></td><td class=""><em>orc_atkh.wav</em></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>reflection_sound_miss</code></td><td class=""><em>orc_atkm.wav</em></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>reflection_sound_aware</code></td><td class=""><em>orc_awr.wav</em></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>reflection_sound_death</code></td><td class=""><em>orc_dth.wav</em></td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_MONSTERS | AI_FIGHT_NEWBIESAFE  | AI_FIGHT_AGGRESSIVE</code></td><td class="">155648</td><td class="num " data-sort="65">65</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">ptManaDrain</code></td><td class=""><code>—</code></td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>reflection_name_rsc</code></td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">piDrawfx</code></td><td class=""><code>4</code></td><td class="num " data-sort="72">72</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>reflection_male_icon_rsc</code></td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>PANM_NONE</code></td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">poOriginal</code></td><td class=""><code>$</code></td><td class="num " data-sort="76">76</td></tr>
+<tr><td class=""><code class="k">piGender</code></td><td class=""><code>GENDER_MALE</code></td><td class="num " data-sort="77">77</td></tr>
+<tr><td class=""><code class="k">pbIllusion</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="78">78</td></tr>
+<tr><td class=""><code class="k">piSpellpower</code></td><td class=""><code>1</code></td><td class="num " data-sort="80">80</td></tr>
+<tr><td class=""><code class="k">poArrow</code></td><td class=""><code>$</code></td><td class="num " data-sort="81">81</td></tr>
+<tr><td class=""><code class="k">vbSummoned</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="83">83</td></tr>
+<tr><td class=""><code class="k">ptSomethingChanged</code></td><td class=""><code>$</code></td><td class="num " data-sort="85">85</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(iSpellPower = 1, oMaster = $)</h4>
+<pre><code>{
+      if oMaster &lt;&gt; $
+      {
+         poMaster = oMaster;
+      }
+      
+      piSpellpower = iSpellpower;
+      ptManaDrain = CreateTimer(self,@ManaDrainTimer,MANA_DRAIN_DELAY);
+      poArrow = Create(&amp;Arrow);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:89</p>
+<h4>KilledSomething(what = $, use_weapon = $)</h4>
+<pre><code>{
+      if IsClass(poOriginal,&amp;Player)
+         AND (NOT Send(poOriginal,@CheckPlayerFlag,#flag=PFLAG_MURDERER))
+         AND IsClass(what,&amp;Player)
+         AND NOT (Send(what,@CheckPlayerFlag,#Flag=PFLAG_OUTLAW)
+                  OR Send(what,@CheckPlayerFlag,#Flag=PFLAG_MURDERER))
+         AND what &lt;&gt; poOriginal
+      {
+	      Send(poOriginal,@MsgSendUser,#message_rsc=Reflection_trouble);
+      }
+      
+      return Send(poOriginal,@KilledSomething,#what=what,
+                  #use_weapon=use_weapon);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:103</p>
+<h4>GetApparentName()</h4>
+<pre><code>{
+      return Send(poOriginal,@GetApparentName);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:119</p>
+<h4>GetName(cap = FALSE)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetName,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:124</p>
+<h4>GetDef(cap = FALSE)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetDef,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:129</p>
+<h4>GetIndef(cap = FALSE)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetIndef,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:134</p>
+<h4>GetHisHer(cap = FALSE)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetHisHer,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:139</p>
+<h4>GetHeShe(cap = FALSE)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetHeShe,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:144</p>
+<h4>GetLordLady(cap = FALSE)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetLordLady,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:149</p>
+<h4>GetHisHers(cap = FALSE)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetHisHers,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:154</p>
+<h4>GetHimHer(cap = FALSE)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetHimHer,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:159</p>
+<h4>ReqSomethingEntered(what = $)</h4>
+<pre><code>{
+      if poOriginal = $
+      {
+         Send(self,@Delete);
+      }
+      
+      if IsClass(poOriginal,&amp;Player)
+         AND NOT Send(poOriginal,@IsLoggedOn)
+      {
+         Send(self,@Delete);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:164</p>
+<h4>SomethingLeft(what = $)</h4>
+<pre><code>{
+      if poOriginal = $
+      {
+         Send(self,@Delete);
+      }
+      else
+      {
+         if IsClass(poOriginal,&amp;Player)
+            and not Send(poOriginal,@IsLoggedOn)
+         {
+            Send(self,@Delete);
+         }
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:180</p>
+<h4>SomethingKilled(what = $, victim = $, use_weapon = $)</h4>
+<p>Someone just died, perhaps we need to clear our target.</p>
+<pre><code>{
+      if victim = poOriginal
+      {
+         post(self,@Delete);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:198</p>
+<h4>ManaDrainTimer()</h4>
+<pre><code>{
+      ptManaDrain = $;
+
+      if poOriginal = $
+      {
+         Send(self,@Delete);
+      }
+
+      
+      if IsClass(poOriginal,&amp;Monster)
+      {
+         return;
+      }
+      
+      if not Send(poOriginal,@IsLoggedOn)
+      {
+         Send(self,@Delete);
+         return;
+      }
+
+      if Send(poOriginal,@GetMana) &lt; MANA_DRAIN_AMOUNT
+      {
+         Send(self,@Delete);
+
+         return;
+      }
+
+      Send(poOriginal,@LoseMana,#amount=MANA_DRAIN_AMOUNT);
+      Send(self,@GetOriginalInfo);
+      Send(poOwner,@Somethingchanged,#what=self);
+      ptManaDrain = CreateTimer(self,@ManaDrainTimer,MANA_DRAIN_DELAY);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:209</p>
+<h4>Delete(bMonsterReport = TRUE)</h4>
+<pre><code>{
+      Send(SYS,@RemoveReflection,#oReflection=self);
+
+      if poOriginal &lt;&gt; $
+         AND IsClass(poOriginal,&amp;Monster)
+         AND bMonsterReport
+      {
+         Send(poOriginal,@SummonDeleted,#what=self);
+      }
+
+      if poOwner &lt;&gt; $
+         AND (IsClass(poOriginal,&amp;Monster)
+              OR Send(poOriginal,@isLoggedOn))
+      {
+         Send(poOwner,@SomeoneSaid,#type=SAY_MESSAGE,#string=reflection_delete,
+              #parm1=Send(self,@GetDef,#cap=TRUE),
+              #parm2=Send(self,@GetName,#cap=FALSE));
+      }
+      
+      if ptManaDrain &lt;&gt; $
+      {
+         deletetimer(ptManaDrain);
+         ptManaDrain = $;
+      }
+
+      if ptSomethingChanged &lt;&gt; $
+      {
+         DeleteTimer(ptSomethingChanged);
+         ptSomethingChanged = $;
+      }
+      
+      poOriginal = $;
+      Send(poArrow,@Delete);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:245</p>
+<h4>GetOriginal()</h4>
+<pre><code>{
+      if poOriginal &lt;&gt; $
+      {
+         return poOriginal;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:283</p>
+<h4>GetOriginalInfo()</h4>
+<pre><code>{
+      if poOriginal = $
+      {
+         Send(self,@Delete);
+      }
+
+      if IsClass(poOriginal,&amp;Player)
+      {
+         vrIcon = Send(poOriginal,@GetPlayerIcon);
+         piDrawfx = Send(poOriginal,@GetPlayerDrawfx);
+         vrName = Send(poOriginal,@GetTrueName);
+      }
+      else
+      {
+         vrIcon = Send(poOriginal,@GetIcon);
+         piDrawfx = Send(poOriginal,@GetDrawfx);
+         vrName = Send(poOriginal,@GetName);
+      }
+      
+      piGender = Send(poOriginal,@GetGender);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:293</p>
+<h4>GetObjectFlags()</h4>
+<pre><code>{
+      local iFlags;
+
+      if poOriginal = $
+      {
+         post(self,@Delete);
+      }
+
+      iFlags = Send(poOriginal,@GetObjectFlags);
+      if IsClass(poOriginal,&amp;Player)
+         AND (iFlags &amp; USER_YES)
+      {
+         iFlags = (iFlags | FALSEPLAYER_YES);
+      }
+      
+      return iFlags;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:318</p>
+<h4>GetAttackRange()</h4>
+<pre><code>{
+      local iWeapon;
+
+      if poOriginal = $
+      {
+         post(self,@Delete);
+      }
+
+      if IsClass(poOriginal,&amp;Player)
+      {
+         iWeapon = Send(poOriginal,@LookupPlayerWeapon);
+
+         if iWeapon &lt;&gt; $
+         {  
+            return Send(iWeapon,@GetRange);  
+         }
+      }
+      else
+      {
+         return Send(poOriginal,@GetAttackRange);
+      }
+      
+      return 1;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:337</p>
+<h4>GetOffense(what = $, stroke_obj = $)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetOffense,#what=what,#stroke_obj=stroke_obj);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:363</p>
+<h4>GetDefense(what = $, stroke_obj = $)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetDefense,#what=what,#stroke_obj=stroke_obj);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:368</p>
+<h4>GetDamage(what = $, stroke_obj = $)</h4>
+<pre><code>{
+      local oStroke;
+
+      oStroke = stroke_obj;
+      if IsClass(poOriginal,&amp;Player)
+      {
+         oStroke = $;
+      }
+      
+      return Send(poOriginal,@GetDamage,#what=what,#stroke_obj=oStroke);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:373</p>
+<h4>SomethingChanged(what = $)</h4>
+<pre><code>{
+      if poOriginal = $
+      {
+         post(self,@Delete);
+      }
+
+      
+      if (what = poOriginal)
+         AND IsClass(poOriginal,&amp;Player)
+      {
+         piDrawfx = Send(poOriginal,@GetPlayerDrawfx);
+
+         
+         
+         
+         
+         
+         
+         
+         
+         if ptSomethingChanged &lt;&gt; $ 
+         {
+            ptSomethingChanged = CreateTimer(self, @SomethingChangedTimer, 
+                                             500 + Random(0, 10) * 1000 / 4);
+         }
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:386</p>
+<h4>SomethingChangedTimer()</h4>
+<p>Tell room that we've changed.  This is on a timer to avoid tons of changes sent all at once.</p>
+<pre><code>{
+      ptSomethingChanged = $;
+      if (poOwner &lt;&gt; $) 
+      {
+         Post(poOwner,@SomethingChanged,#what=self);
+      }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:417</p>
+<h4>SetOriginal(who = $)</h4>
+<pre><code>{
+      if who = $
+      {
+         debug(&quot;Reflection called with invalid $ SetOriginal&quot;);
+      }
+      poOriginal = who;
+      piMax_Hit_Points = piSpellpower / 5;
+      piMax_hit_points = bound(piMax_hit_points,1,$);
+      piHit_Points = piMax_Hit_Points;
+
+      Send(self,@GetOriginalInfo);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:428</p>
+<h4>GetIcon()</h4>
+<pre><code>{
+      return Send(poOriginal,@GetIcon);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:444</p>
+<h4>TryAttack(what = $, stroke_obj = $)</h4>
+<pre><code>{
+      local bWasBad;
+
+      if IsClass(poOriginal,&amp;Player)
+      {
+         
+         bWasBad = (Send(poOriginal,@CheckPlayerFlag,#flag=PFLAG_OUTLAW)
+                    OR Send(poOriginal,@CheckPlayerFlag,#flag=PFLAG_MURDERER));
+   
+         if NOT Send(poOriginal,@AllowPlayerAttack,#victim=what)
+         {
+            return FALSE;
+         }
+
+         
+         if NOT bWasBad
+            AND (Send(poOriginal,@CheckPlayerFlag,#flag=PFLAG_OUTLAW)
+                 OR Send(poOriginal,@CheckPlayerFlag,#flag=PFLAG_MURDERER))
+         {
+            Send(poOriginal,@MsgSendUser,#message_rsc=Reflection_trouble);
+         }
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:449</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      
+      Send(self,@DoAttack);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:476</p>
+<h4>GetParryAbility(stroke_obj = $)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetParryAbility,#stroke_obj=stroke_obj);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:487</p>
+<h4>GetBlockAbility(stroke_obj = $)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetBlockAbility,#stroke_obj=stroke_obj);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:492</p>
+<h4>GetDodgeAbility(stroke_obj = $)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetDodgeAbility,#stroke_obj=stroke_obj);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:497</p>
+<h4>DoAttack()</h4>
+<pre><code>{
+      local Weapon, ammotype, i;
+
+      Send(self,@GetOriginalInfo);
+
+      if IsClass(poOriginal,&amp;Player)
+      {
+         Weapon = Send(poOriginal,@LookupPlayerWeapon);
+         ammotype = poArrow;
+
+         if Weapon &lt;&gt; $
+         {
+            if IsClass(Weapon,&amp;Bow)
+            {
+               piAnimation = PANM_BOW_FIRE;
+
+               for i in Send(poOriginal,@GetPlayerUsing)
+               {
+                  if Send(i,@GetItemUseType) = ITEM_USE_QUIVER
+                  {
+                     AmmoType = i;
+                  }
+               }
+               
+               Send(poOwner,@SomethingShot,#who=self,#target=poTarget,
+                    #projectile=AmmoType);
+            }
+            else
+            {
+               piAnimation = PANM_WEAPON_ATTACK;
+            }
+         }
+         else
+         {
+            piAnimation = PANM_FIST_ATTACK;
+         }
+      }
+      else
+      {
+         
+         
+         
+         piAnimation = ANIM_ATTACK;
+         if Send(poOriginal,@GetProjectileIcon) &lt;&gt; $
+         {
+            Send(poOwner,@SomethingShot,#who=self,#target=poTarget,
+                 #projectile=poOriginal);
+         }
+      }
+      
+      Send(poOwner,@SomethingChanged,#what=self);
+      
+      if IsClass(poOriginal,&amp;Player)
+      {
+         piAnimation = PANM_NONE;
+      }
+      else
+      {
+         piAnimation = ANIM_NONE;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:502</p>
+<h4>TryLook(what = $)</h4>
+<pre><code>{
+      if IsClass(poOriginal,&amp;Player)
+      {
+         if Send(poOriginal,@CheckPlayerFlag,#flag=PFLAG_INVISIBLE)
+            AND (what &lt;&gt; poOriginal)
+         {
+            return;
+         }
+
+         Send(what,@SendLookPlayer,#what=poOriginal);
+      }
+      else
+      {
+         Send(poOriginal,@TryLook,#what=what);
+      }
+        
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:567</p>
+<h4>ShowDesc()</h4>
+<pre><code>{
+      return Send(poOriginal,@ShowDesc);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:587</p>
+<h4>ShowExtraInfo()</h4>
+<pre><code>{
+      return Send(poOriginal,@ShowExtraInfo);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:592</p>
+<h4>GetURL()</h4>
+<pre><code>{
+      return Send(poOriginal,@GetURL);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:597</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      return Send(poOriginal,@SendMoveAnimation);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:602</p>
+<h4>SendMoveOverlays()</h4>
+<pre><code>{
+      return Send(poOriginal,@SendMoveOverlays);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:607</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+       return Send(poOriginal,@SendAnimation,#iAnimation=piAnimation);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:612</p>
+<h4>SendOverlays()</h4>
+<pre><code>{
+      return Send(poOriginal,@SendOverlays,#iAnimation=piAnimation);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:617</p>
+<h4>GetIllusionForm()</h4>
+<pre><code>{
+      return poOriginal;
+   }  </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:622</p>
+<h4>SendLightingInformation()</h4>
+<pre><code>{
+      return Send(poOriginal,@SendLightingInformation);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:627</p>
+<h4>SpecialHatredBehavior(what = $)</h4>
+<pre><code>{
+      
+      
+      if (IsClass(what,&amp;Reflection)
+          AND Send(what,@GetIllusionForm) = poOriginal)
+         OR what = poOriginal
+         OR (IsClass(poOriginal,&amp;Monster)
+             AND IsClass(what,GetClass(poOriginal)))
+      {
+         return -100;
+      }
+      
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/reflectn.kod:632</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

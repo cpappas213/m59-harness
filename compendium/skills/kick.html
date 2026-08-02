@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kick — Meridian 59 Compendium</title>
+<meta name="description" content="One of several agile skills.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html" class="on">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Skills</a> › kick</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/light_g1.png" alt="kick" width="128" height="128"></div><div class="heroText"><h1>kick</h1><p class="lede">One of several agile skills.</p><div class="tags"><span class="tag ">stroke</span><span class="tag ">brawling</span><span class="tag ">Level 50</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Discipline</div><div class="val sm">brawling</div></div><div class="fact"><div class="lbl">Level</div><div class="val">50</div></div><div class="fact"><div class="lbl">Vigour per use</div><div class="val">2000</div></div><div class="fact"><div class="lbl">Improve chance</div><div class="val">25%</div></div><div class="fact"><div class="lbl">Skill number</div><div class="val">431</div></div><div class="fact"><div class="lbl">Hit factor</div><div class="val">30</div></div><div class="fact"><div class="lbl">Damage factor</div><div class="val">100%</div></div></div><div class="flavor">This is a damaging but costly combat move.</div><h2>What kind of skill this is</h2><p>A <strong>stroke</strong> is a way of swinging. You do not invoke it; the weapon
+picks one, and its ability decides both how often you connect and how hard. Improving a stroke
+improves every weapon that uses it.</p><h2>What it is worth in a fight</h2><div class="formula">damage = weapon_base × 100 / 100</div>
+<p class="cite">kod/object/passive/skill/stroke.kod:210 <code class="k">FindDamage</code></p>
+<p>Its hit factor is <code class="k">30</code>; the default for a stroke
+is 100, so this stroke is harder
+to land than an ordinary one.</p>
+<p class="cite">kod/object/passive/skill/stroke.kod:61</p>
+<p>Proficiency adds at most <code class="k">(99 + 1) × 5 / 100 = 5</code>
+damage at a perfect ability of 99.</p>
+<p class="cite">kod/object/passive/skill/stroke.kod:342</p><h2>Learning and improving it</h2><p>No teacher in the world data offers this skill. It is either granted at creation,
+awarded by a quest, or reserved for monsters.</p><p>Ability runs 0–99 and rises by <em>use against something hard enough to matter</em>,
+with a 25% roll on each qualifying use. It also atrophies: stop using a skill and
+the number falls. See <a href="../guides/advancing.html">Advancing Your Character</a>.</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/passive/skill/stroke/unarmed/kick.kod:11</p>
+<p><code class="k">Kick</code> is <code class="k">Unarmed</code> — full chain <code class="k">Kick</code> ← <code class="k">Unarmed</code> ← <code class="k">Stroke</code> ← <code class="k">Skill</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>kick_name_rsc</code></td><td class=""><em>kick</em></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>kick_icon_rsc</code></td><td class=""><em>light.bgf</em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>kick_desc_rsc</code></td><td class=""><em>This is a damaging but costly combat move.</em></td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">vrPlayer_was_hit</code></td><td class=""><code>kick_player_was_hit</code></td><td class=""><em>%s%s kicks you in the unmentionables.</em></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">vrPlayer_hit_something</code></td><td class=""><code>kick_player_hit_something</code></td><td class=""><em>%sYou kick %s%s hard in the groin.</em></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">vrPlayer_was_killed</code></td><td class=""><code>kick_player_was_killed</code></td><td class=""><em>%s%s's kick shuffles you off this mortal coil.</em></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">vrPlayer_killed_something</code></td><td class=""><code>kick_player_killed_something</code></td><td class=""><em>%s%s is knocked to the ground by your kick - and doesn't get up.</em></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viDefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viSkill_num</code></td><td class=""><code>SKID_KICK</code></td><td class="">431</td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SKS_BRAWLING</code></td><td class="">11</td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viSkill_level</code></td><td class=""><code>50</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viskillExertion</code></td><td class=""><code>2000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viHit_Factor</code></td><td class=""><code>30</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viDamage_Min</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viDamage_Max</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">VbAutomatic</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viAttack_Type</code></td><td class=""><code>ATCK_WEAP_UNARMED+ATCK_WEAP_KICK</code></td><td class="">40960</td><td class="num " data-sort="56">56</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">plPrerequisites</code></td><td class=""><code>$</code></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">piChanceToIncrease</code></td><td class=""><code>100</code></td><td class="num " data-sort="62">62</td></tr></tbody></table></div>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

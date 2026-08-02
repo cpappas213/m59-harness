@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>swap — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › swap</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/iswap_g1.png" alt="swap" width="128" height="128"></div><div class="heroText"><h1>swap</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><a class="tag school-2" href="../guides/qor.html">Qor</a><span class="tag ">Level 5</span><span class="tag ">Harmful</span><span class="tag ">Outlaw cast</span><span class="tag ">Banned in safe zones</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/qor.html">Qor</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">5</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">9</div></div><div class="fact"><div class="lbl">Karma required</div><div class="val">≤ -50</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">1</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">3000 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">55</div></div></div><div class="flavor">The darker gods grant you the power to randomly exchange one item from your inventory with one from the target's. Requires dark angel feathers, yrxl sap, and purple mushrooms to cast.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">9</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/darkangelfeather.html">dark angel feather</a>, <a href="../items/yrxlsap.html">yrxl sap</a>, <a href="../items/purplemushroom.html">purple mushroom</a></td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">at most -50</td><td class="">Derived, not stored: <code class="k">GetRequiredKarma</code> returns level × −10 for this school.</td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">2</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">3000 ms trance</td><td class="">You are locked in a casting trance for this long; taking damage can break it.</td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">5</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/swap.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/qorpriestess.html">Priestess Zuxana</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">CanPayCosts</code></li><li><code class="k">CastSpell</code></li><li><code class="k">SpellBannedInArena</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/iswap_g1.png" alt="swap group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/iswap_g2.png" alt="swap group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/swap.kod:11</p>
+<p><code class="k">Swap</code> is <code class="k">Spell</code> — full chain <code class="k">Swap</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>swap_name_rsc</code></td><td class=""><em>swap</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>swap_icon_rsc</code></td><td class=""><em>iswap.bgf</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>swap_desc_rsc</code></td><td class=""><em>The darker gods grant you the power to randomly exchange one item from your inventory with</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_SWAP</code></td><td class="">55</td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_QOR</code></td><td class="">2</td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viChance_To_Increase</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viOutlaw</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viHarmful</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viNoNewbieOffense</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viFlash</code></td><td class=""><code>FLASH_BAD</code></td><td class="">2</td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>swap_sound</code></td><td class=""><em>qswap.wav</em></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viCast_time</code></td><td class=""><code>3000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">viPostCast_time</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">vbCastable_in_HappyLand</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="61">61</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      
+
+      plReagents = $;
+      plReagents = Cons([&amp;DarkAngelFeather,1],plReagents);
+      plReagents = Cons([&amp;Yrxlsap,1],plReagents);
+      plReagents = Cons([&amp;PurpleMushroom,1],plReagents);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/swap.kod:67</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 1;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/swap.kod:79</p>
+<h4>CanPayCosts(who = $, lTargets = $, bItemCast = FALSE)</h4>
+<pre><code>{
+      local target;
+      
+      
+      
+      if Length(lTargets) &lt;&gt; 1
+      {
+         return FALSE;
+      }
+
+      target = First(lTargets);
+      if NOT IsClass(target, &amp;User) OR IsClass(target,&amp;DM)
+      {
+         if not bItemCast
+         {
+            Send(who, @MsgSendUser,#message_rsc=spell_bad_target, 
+                 #parm1=vrName,#parm2=Send(target,@GetDef),#parm3=Send(target,@GetName));
+         }
+         
+         return FALSE;
+      }
+
+      if target = who
+      {
+         if NOT bItemCast
+         {
+            Send(who,@MsgSendUser,#message_rsc=spell_no_self_target, #parm1=vrName);
+         }
+         
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/swap.kod:84</p>
+<h4>CastSpell(who = $, lTargets = $, iSpellPower = 0)</h4>
+<pre><code>{
+      local oItem_victim, oItem_caster, oVictim, oCaster, rVerb, iRepeat, oNew_item, oTempHolder;
+
+      oCaster = who ;
+      oVictim = First(lTargets);
+      oItem_caster = Send(oCaster,@GetRandomItem);
+      if oItem_caster = $  
+      { 
+          send(oCaster,@MsgSendUser,#message_rsc=swap_failed_caster,
+               #parm1=send(oVictim,@GetDef),#parm2=send(oVictim,@getname));
+          send(oVictim,@MsgSendUser,#message_rsc=swap_failed_victim,
+               #parm1=send(oCaster,@GetCapDef),#parm2=send(oCaster,@getname));
+               
+          propagate;
+      }
+      
+      oItem_victim = Send(oVictim,@GetRandomItem);
+      if oItem_victim = $
+      { 
+          send(oCaster,@MsgSendUser,#message_rsc=swap_failed_caster,
+               #parm1=send(oVictim,@GetDef),#parm2=send(oVictim,@getname));
+          send(oVictim,@MsgSendUser,#message_rsc=swap_failed_victim,
+               #parm1=send(oCaster,@GetCapDef),#parm2=send(oCaster,@getname));
+               
+          propagate;
+      }
+      
+      iRepeat = iSpellpower / 25;
+      while iRepeat &gt; 0
+      { 
+         oNew_item = Send(oVictim,@GetRandomItem);
+         if send(oNew_item,@GetValue) &gt; send(oItem_victim,@GetValue)
+         {
+            oItem_victim = oNew_item;
+         }
+         
+         iRepeat = iRepeat - 1;
+      }
+
+      if NOT Send(oVictim,@ReqLeaveHold,#what=oItem_victim)
+         OR NOT Send(oCaster,@ReqLeaveHold,#what=oItem_caster)
+         OR NOT Send(oItem_caster,@CanSwap)
+         OR NOT Send(oItem_victim,@CanSwap)
+         OR NOT send(oVictim,@CanHoldWeightAndBulk,#weight=send(oItem_caster,@GetWeight),
+                     #bulk=send(oItem_caster,@GetBulk))
+         OR NOT send(oCaster,@CanHoldWeightAndBulk,#weight=send(oItem_victim,@GetWeight),
+                     #bulk=send(oItem_victim,@GetBulk))
+      {
+         
+         send(oCaster,@MsgSendUser,#message_rsc=swap_failed_caster,
+              #parm1=send(oVictim,@GetDef),#parm2=send(oVictim,@GetName));
+         send(oVictim,@MsgSendUser,#message_rsc=swap_failed_victim,
+              #parm1=send(oCaster,@GetCapDef),#parm2=send(oCaster,@GetName));
+
+         
+         return;
+      }
+
+      rVerb = swap_be_sing_pres ;
+      if IsClass(oItem_victim,&amp;NumberItem)
+         AND Send(oItem_victim,@GetNumber) &gt; 1
+      {
+         rVerb = swap_be_plur_pres ;
+      }
+      
+      Send(oVictim,@MsgSendUser,#message_rsc=swap_cast_rsc,
+           #parm1=Send(oItem_victim,@GetName),#parm2=rVerb,
+           #parm3=Send(oItem_caster,@GetIndef),
+           #parm4=Send(oItem_caster,@GetName));
+           
+      rVerb = swap_be_sing_pres ;
+      if IsClass(oItem_caster,&amp;NumberItem)
+         AND Send(oItem_caster,@GetNumber) &gt; 1
+      {
+         rVerb = swap_be_plur_pres ;
+      }
+      
+      send(oCaster,@MsgSendUser,#message_rsc=swap_cast_rsc,
+           #parm1=Send(oItem_caster,@GetName),#parm2=rVerb,
+           #parm3=Send(oItem_victim,@GetIndef),
+           #parm4=Send(oItem_victim,@GetName));
+           
+      oTempHolder = create(&amp;Holder);
+      send(oTempHolder,@NewHold,#what=oItem_victim);
+
+      send(oVictim,@NewHold,#what=oItem_caster);
+      send(oCaster,@NewHold,#what=oItem_victim);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/swap.kod:120</p>
+<h4>SpellBannedInArena()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/swap.kod:212</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

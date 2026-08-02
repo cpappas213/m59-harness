@@ -1,0 +1,1371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A tastefully appointed room — Meridian 59 Compendium</title>
+<meta name="description" content="Outlying areas. 0 creature types, 0 exits.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html" class="on">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Zones</a> › A tastefully appointed room</p>
+<h1>A tastefully appointed room</h1><p class="lede">A tastefully appointed room is in <strong>Outlying areas</strong>, city and shop terrain. Nothing spawns here.</p><figure class="mapfig"><svg class="roomap" viewBox="0 0 736 592" width="736" height="592" xmlns="http://www.w3.org/2000/svg" role="img"><path class="portal" d="M296.0 296.0L440.0 296.0M440.0 296.0L584.0 296.0M152.0 296.0L296.0 296.0M8.0 296.0L152.0 296.0M584.0 296.0L728.0 296.0M512.0 584.0L512.0 512.0M584.0 584.0L584.0 296.0M152.0 296.0L152.0 584.0M296.0 152.0L296.0 296.0M296.0 8.0L296.0 152.0M8.0 152.0L296.0 152.0M440.0 152.0L728.0 152.0M440.0 296.0L440.0 152.0M440.0 152.0L440.0 8.0"/><path class="solid" d="M512.0 584.0L440.0 584.0M584.0 584.0L512.0 584.0M152.0 584.0L8.0 584.0M440.0 584.0L296.0 584.0M296.0 584.0L152.0 584.0M728.0 584.0L584.0 584.0M728.0 296.0L728.0 584.0M8.0 584.0L8.0 296.0M8.0 296.0L8.0 152.0M152.0 8.0L296.0 8.0M8.0 8.0L152.0 8.0M8.0 152.0L8.0 8.0M728.0 152.0L728.0 296.0M440.0 8.0L728.0 8.0M296.0 8.0L440.0 8.0M728.0 8.0L728.0 152.0"/></svg><figcaption>18 × 23 squares, 30 walls, from <code>barrent.roo</code>. <span class="mk-key"><span class="mk-entry"></span> arrival <span class="mk-gen"></span> creature generator <span class="mk-npc"></span> someone standing here <span class="mk-node"></span> mana node <span class="mk-exit"></span> exit</span></figcaption></figure><h2>The place itself</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class=""></th><th class=""></th></tr></thead>
+<tbody><tr><td class=""><strong>Region</strong></td><td class="">Outlying areas</td></tr>
+<tr><td class=""><strong>Room id</strong></td><td class="">—</td></tr>
+<tr><td class=""><strong>Map file</strong></td><td class=""><code>barrent.roo</code></td></tr>
+<tr><td class=""><strong>Terrain</strong></td><td class="">city, shop</td></tr>
+<tr><td class=""><strong>You arrive at</strong></td><td class="">row 16, column 6</td></tr>
+<tr><td class=""><strong>Music</strong></td><td class=""><code>bar.mid</code></td></tr></tbody></table></div><p class="cite">kod/object/active/holder/room/rentroom.kod:11</p><h2>Who is here</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class=""></th><th class="">Name</th><th class="">Standing at</th></tr></thead>
+<tbody><tr><td class=""><img class="icon rowicon" src="../assets/img/faerie-g_g1.png" alt="" loading="lazy"></td><td class=""><a href="../creatures/decorator.html">interior design consultant</a></td><td class=""><span class="muted">—</span></td></tr></tbody></table></div><p class="muted">1 pieces of scenery — trees, braziers, furniture — are also placed here.</p><h2 id="setpiece">Set piece</h2>
+<p>This room runs machinery of its own — timers, trigger areas, or handlers that fire on
+something other than walking in. None of it is visible while you are standing in it.</p><h3>Timers</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Fires</th><th class="">After</th><th class="">Constant</th><th class="">Armed by</th></tr></thead>
+<tbody><tr><td class=""><code class="k">DecoratorArrives</code></td><td class="" data-sort="3000">3 s</td><td class=""><code>DECORATOR_DELAY</code></td><td class=""><code class="k">SummonDecorator</code></td></tr>
+<tr><td class=""><code class="k">DisposeTimer</code></td><td class="" data-sort="0">—</td><td class=""><code>piDispose_delay</code></td><td class=""><code class="k">DisposeTimer</code></td></tr></tbody></table></div><p class="cite">kod/object/active/holder/room/rentroom.kod — <code class="k">CreateTimer</code></p><h3>What the room reacts to</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Handler</th><th class="">What it does</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">SetBedSector</code></td><td class="">deletes objects; moves a floor or ceiling</td><td class="num " data-sort="326">326</td></tr>
+<tr><td class=""><code class="k">TryRemoveObject</code></td><td class="">deletes objects</td><td class="num " data-sort="958">958</td></tr>
+<tr><td class=""><code class="k">SummonDecorator</code></td><td class="">sets a timer</td><td class="num " data-sort="1085">1085</td></tr>
+<tr><td class=""><code class="k">DecoratorArrives</code></td><td class="">creates <a href="../creatures/decorator.html">interior design consultant</a></td><td class="num " data-sort="1101">1101</td></tr>
+<tr><td class=""><code class="k">RoomExpired</code></td><td class="">deletes objects</td><td class="num " data-sort="1432">1432</td></tr>
+<tr><td class=""><code class="k">DisposeTimer</code></td><td class=""><em>Called by the dispose timer.</em> sets a timer</td><td class="num " data-sort="1443">1443</td></tr></tbody></table></div><p>The full text of each is under <a href="#src">In the source</a>.</p><h3>Numbers this room declares</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Constant</th><th class="">Value</th></tr></thead>
+<tbody><tr><td class=""><code class="k">BED_DOWN</code></td><td class="">0</td></tr>
+<tr><td class=""><code class="k">BED_UP</code></td><td class="">25</td></tr>
+<tr><td class=""><code class="k">CARPET_SECTOR</code></td><td class="">8</td></tr>
+<tr><td class=""><code class="k">WALLPAPER_ID</code></td><td class="">10</td></tr>
+<tr><td class=""><code class="k">CARPET_A</code></td><td class="">50050</td></tr>
+<tr><td class=""><code class="k">CARPET_B</code></td><td class="">50051</td></tr>
+<tr><td class=""><code class="k">CARPET_C</code></td><td class="">50052</td></tr>
+<tr><td class=""><code class="k">CARPET_D</code></td><td class="">9588</td></tr>
+<tr><td class=""><code class="k">CARPET_E</code></td><td class="">9637</td></tr>
+<tr><td class=""><code class="k">CARPET_G</code></td><td class="">8961</td></tr>
+<tr><td class=""><code class="k">WALLPAPER_A</code></td><td class="">50053</td></tr>
+<tr><td class=""><code class="k">WALLPAPER_B</code></td><td class="">50057</td></tr>
+<tr><td class=""><code class="k">WALLPAPER_C</code></td><td class="">50065</td></tr>
+<tr><td class=""><code class="k">WALLPAPER_D</code></td><td class="">50069</td></tr>
+<tr><td class=""><code class="k">WALLPAPER_E</code></td><td class="">9583</td></tr>
+<tr><td class=""><code class="k">WALLPAPER_F</code></td><td class="">9586</td></tr>
+<tr><td class=""><code class="k">WALLPAPER_G</code></td><td class="">50078</td></tr>
+<tr><td class=""><code class="k">BEDSPREAD_A</code></td><td class="">50061</td></tr>
+<tr><td class=""><code class="k">BEDSPREAD_B</code></td><td class="">50063</td></tr>
+<tr><td class=""><code class="k">BEDSPREAD_C</code></td><td class="">50073</td></tr>
+<tr><td class=""><code class="k">BEDSPREAD_D</code></td><td class="">50075</td></tr>
+<tr><td class=""><code class="k">PICTURE_NONE</code></td><td class="">0</td></tr>
+<tr><td class=""><code class="k">PICTURE_A</code></td><td class="">1</td></tr>
+<tr><td class=""><code class="k">PICTURE_B</code></td><td class="">2</td></tr>
+<tr><td class=""><code class="k">PICTURE_C</code></td><td class="">3</td></tr>
+<tr><td class=""><code class="k">DECORATOR_DELAY</code></td><td class="">3000 <span class="muted">(3 s)</span></td></tr>
+<tr><td class=""><code class="k">ITEMS_FROM_HEARTSTONES</code></td><td class="">10</td></tr>
+<tr><td class=""><code class="k">LIGHT_STEP</code></td><td class="">40</td></tr></tbody></table></div><h2>Ways out</h2><p>No room in the source declares an exit from here. It is reached
+      and left by a teleporter, a portal, or a spell.</p><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:11</p>
+<p><code class="k">RentableRoom</code> is <code class="k">Room</code> — full chain <code class="k">RentableRoom</code> ← <code class="k">Room</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>. Subclasses: <code class="k">BarloqueRentableRoom</code>, <code class="k">KocatanRentableRoom</code>, <code class="k">MarionRentableRoom</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>RentableRoom_name</code></td><td class=""><em>A tastefully appointed room</em></td><td class="num " data-sort="179">179</td></tr>
+<tr><td class=""><code class="k">viTeleport_row</code></td><td class=""><code>16</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="181">181</td></tr>
+<tr><td class=""><code class="k">viTeleport_col</code></td><td class=""><code>6</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="182">182</td></tr>
+<tr><td class=""><code class="k">viTerrain_Type</code></td><td class=""><code>TERRAIN_CITY | TERRAIN_SHOP</code></td><td class="">6</td><td class="num " data-sort="184">184</td></tr>
+<tr><td class=""><code class="k">viBedSectorMin</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="186">186</td></tr>
+<tr><td class=""><code class="k">viBedSectorMax</code></td><td class=""><code>7</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="187">187</td></tr>
+<tr><td class=""><code class="k">viPictureLocationMax</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="188">188</td></tr>
+<tr><td class=""><code class="k">vrLandlord</code></td><td class=""><code>RentableRoom_landlord</code></td><td class=""><em>The Landlord</em></td><td class="num " data-sort="190">190</td></tr>
+<tr><td class=""><code class="k">viLocation</code></td><td class=""><code>RID_BAR_INN</code></td><td class="">106</td><td class="num " data-sort="191">191</td></tr>
+<tr><td class=""><code class="k">viDecorator_row</code></td><td class=""><code>15</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="193">193</td></tr>
+<tr><td class=""><code class="k">viDecorator_col</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="194">194</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viPermanent_flags</code></td><td class=""><code>ROOM_NO_COMBAT | ROOM_HOMETOWN | ROOM_SANCTUARY | ROOM_SAFELOGOFF | ROOM_HARD_LEARN</code></td><td class="num " data-sort="198">198</td></tr>
+<tr><td class=""><code class="k">prRoom</code></td><td class=""><code>RentableRoom_roo</code></td><td class="num " data-sort="200">200</td></tr>
+<tr><td class=""><code class="k">piRoom_num</code></td><td class=""><code>$</code></td><td class="num " data-sort="201">201</td></tr>
+<tr><td class=""><code class="k">piBaseLight</code></td><td class=""><code>LIGHT_DARK</code></td><td class="num " data-sort="204">204</td></tr>
+<tr><td class=""><code class="k">piOutside_factor</code></td><td class=""><code>1</code></td><td class="num " data-sort="205">205</td></tr>
+<tr><td class=""><code class="k">prMusic</code></td><td class=""><code>RentableRoom_music</code></td><td class="num " data-sort="207">207</td></tr>
+<tr><td class=""><code class="k">poRenter</code></td><td class=""><code>$</code></td><td class="num " data-sort="209">209</td></tr>
+<tr><td class=""><code class="k">piBedSector</code></td><td class=""><code>1</code></td><td class="num " data-sort="211">211</td></tr>
+<tr><td class=""><code class="k">piBedSpread</code></td><td class=""><code>BEDSPREAD_A</code></td><td class="num " data-sort="212">212</td></tr>
+<tr><td class=""><code class="k">piCarpet</code></td><td class=""><code>CARPET_A</code></td><td class="num " data-sort="213">213</td></tr>
+<tr><td class=""><code class="k">piWallpaper</code></td><td class=""><code>WALLPAPER_A</code></td><td class="num " data-sort="214">214</td></tr>
+<tr><td class=""><code class="k">piPicture</code></td><td class=""><code>PICTURE_NONE</code></td><td class="num " data-sort="215">215</td></tr>
+<tr><td class=""><code class="k">piPictureLocation</code></td><td class=""><code>1</code></td><td class="num " data-sort="216">216</td></tr>
+<tr><td class=""><code class="k">plBedCoords</code></td><td class=""><code>$</code></td><td class="num " data-sort="218">218</td></tr>
+<tr><td class=""><code class="k">plPictureCoords</code></td><td class=""><code>$</code></td><td class="num " data-sort="219">219</td></tr>
+<tr><td class=""><code class="k">ptDecoratorArrives</code></td><td class=""><code>$</code></td><td class="num " data-sort="220">220</td></tr>
+<tr><td class=""><code class="k">plObjects</code></td><td class=""><code>$</code></td><td class="num " data-sort="222">222</td></tr>
+<tr><td class=""><code class="k">piCredit</code></td><td class=""><code>0</code></td><td class="num " data-sort="224">224</td></tr>
+<tr><td class=""><code class="k">piDaysLeft</code></td><td class=""><code>85</code></td><td class="num " data-sort="227">227</td></tr>
+<tr><td class=""><code class="k">piRedHeartstone</code></td><td class=""><code>4</code></td><td class="num " data-sort="231">231</td></tr>
+<tr><td class=""><code class="k">piBlueHeartstone</code></td><td class=""><code>4</code></td><td class="num " data-sort="232">232</td></tr>
+<tr><td class=""><code class="k">piBrownHeartstone</code></td><td class=""><code>4</code></td><td class="num " data-sort="233">233</td></tr>
+<tr><td class=""><code class="k">piSkyHeartstone</code></td><td class=""><code>4</code></td><td class="num " data-sort="234">234</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(iRID = RID_RENTABLE_START)</h4>
+<pre><code>{
+      piRoom_num = iRID;
+      plObjects = [ [ 
+                     Create(&amp;OrnamentalObject,#type=OO_RR_BASIN),
+                     Create(&amp;OrnamentalObject,#type=OO_RR_TABLE),
+                     Create(&amp;OrnamentalObject,#type=OO_RR_PLANT2),
+                     Create(&amp;Stool)
+                    ],
+                    [ 
+                     Create(&amp;OrnamentalObject,#type=OO_STONECHAIR),
+                     Create(&amp;OrnamentalObject,#type=OO_BIGURN),
+                     Create(&amp;OrnamentalObject,#type=OO_BIGURN2),
+                     Create(&amp;OrnamentalObject,#type=OO_BLUEJUG),
+                     Create(&amp;Pillar)
+                    ],
+                    [ 
+                     Create(&amp;SkullBrazier),
+                     Create(&amp;Brazier),
+                     Create(&amp;OrcTorch),
+                     Create(&amp;TableLamp),
+                     Create(&amp;Candle)
+                    ],
+                    [ 
+                     Create(&amp;OrnamentalObject,#type=OO_JUG),
+                     Create(&amp;OrnamentalObject,#type=OO_GREY_JUG),
+                     Create(&amp;OrnamentalObject,#type=OO_RR_PLANT1),
+                     Create(&amp;OrnamentalObject,#type=OO_BIGIRON)
+                    ],
+                    [ 
+                     Create(&amp;OrnamentalObject,#type=OO_JALA_BOOK),
+                     Create(&amp;OrnamentalObject,#type=OO_3_CLOTH_BOLTS),
+                     Create(&amp;OrnamentalObject,#type=OO_BOX_WITH_SNAKE),
+                     Create(&amp;OrnamentalObject,#type=OO_SKULL4)
+                    ],
+                    [ 
+                     Create(&amp;DragonflyCage),
+                     Create(&amp;SmallBox)
+                    ]
+                  ];
+
+      Post(self,@InitializeDecor);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:238</p>
+<h4>InitializeDecor()</h4>
+<pre><code>{
+      Send(self,@SetBedSector);
+      Send(self,@SetBedSpread);
+      Send(self,@SetCarpet);
+      Send(self,@SetWallpaper);
+      Send(self,@SetPicture,#num=random(1,3));
+      Send(self,@SetPictureLocation,#num=random(1,viPictureLocationMax));
+      Send(self,@NewHold,#what=create(&amp;Mint),
+           #new_row=nth(nth(nth(plBedCoords,piBedSector),1),1),
+           #new_col=nth(nth(nth(plBedCoords,piBedSector),1),2),
+           #fine_row=nth(nth(nth(plBedCoords,piBedSector),3),1),
+           #fine_col=nth(nth(nth(plBedCoords,piBedSector),3),2),
+           #new_angle= nth(nth(plBedCoords,piBedSector),5) );
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:284</p>
+<h4>GetRenter()</h4>
+<pre><code>{
+      return poRenter;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:302</p>
+<h4>SetRenter(who = $)</h4>
+<pre><code>{
+      if who &lt;&gt; $ AND IsClass(who,&amp;User)
+      {
+         poRenter = who;
+      }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:307</p>
+<h4>GetLocation()</h4>
+<pre><code>{
+      return viLocation;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:316</p>
+<h4>GetLocationName()</h4>
+<pre><code>{
+      return Send(Send(SYS,@FindRoomByNum,#num=viLocation),@GetName);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:321</p>
+<h4>SetBedSector(sector = $)</h4>
+<pre><code>{
+      local i;
+
+      if sector = $
+      {
+         sector = random(viBedSectorMin,viBedSectorMax);
+      }
+      else
+      {
+         if piBedSector = sector
+            OR sector &lt; viBedSectorMin
+            OR sector &gt; viBedSectorMax
+         {
+            return;
+         }
+      }
+
+      piBedSector = sector;
+
+      i = viBedSectorMin - 1;
+      while i &lt; viBedSectorMax
+      {
+         i = i + 1;
+         Send(self,@SetSector,#sector=i,#animation=ANIMATE_FLOOR_LIFT,
+              #height=BED_DOWN,#speed=0);
+         Send(self,@ChangeTexture,#id=i,#new_texture=piCarpet,#flags=CTF_FLOOR);
+      }
+
+      Send(self,@SetSector,#sector=piBedSector,#animation=ANIMATE_FLOOR_LIFT,
+           #height=BED_UP,#speed=0);
+      Send(self,@ChangeTexture,#id=piBedSector,#new_texture=piBedSpread,
+           #flags=CTF_FLOOR);
+      Send(self,@ChangeTexture,#id=piBedSector,#new_texture=(piBedSpread+1),
+           #flags=CTF_BELOWWALL);
+
+      for i in Send(self,@GetHolderPassive)
+      {
+         if isClass(first(i),&amp;Pillow)
+         {
+            Send(first(i),@Delete);
+         }
+      }
+
+      if plBedCoords &lt;&gt; $
+      {
+         Send(self,@NewHold,#what=create(&amp;Pillow),
+              #new_row=nth(nth(nth(plBedCoords,piBedSector),1),1),
+              #new_col=nth(nth(nth(plBedCoords,piBedSector),1),2),
+              #fine_row=nth(nth(nth(plBedCoords,piBedSector),3),1),
+              #fine_col=nth(nth(nth(plBedCoords,piBedSector),3),2),
+              #new_angle= nth(nth(plBedCoords,piBedSector),5) );
+
+         Send(self,@NewHold,#what=create(&amp;Pillow),
+              #new_row=nth(nth(nth(plBedCoords,piBedSector),1),1),
+              #new_col=nth(nth(nth(plBedCoords,piBedSector),1),2),
+              #fine_row=nth(nth(nth(plBedCoords,piBedSector),4),1),
+              #fine_col=nth(nth(nth(plBedCoords,piBedSector),4),2),
+              #new_angle= nth(nth(plBedCoords,piBedSector),5) );
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:326</p>
+<h4>SetBedSpread(num = BEDSPREAD_A)</h4>
+<pre><code>{
+      if piBedSpread = num
+      {
+         return FALSE;
+      }
+
+      piBedSpread = num;
+      Send(self,@ChangeTexture,#id=piBedSector,#new_texture=piBedSpread,
+           #flags=CTF_FLOOR);
+      Send(self,@ChangeTexture,#id=piBedSector,#new_texture=(piBedSpread+1),
+           #flags=CTF_BELOWWALL);
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:390</p>
+<h4>SetCarpet(num = CARPET_A)</h4>
+<pre><code>{
+      local i;
+
+      if piCarpet = num
+      {
+         return FALSE;
+      }
+
+      piCarpet = num;
+
+      i = viBedSectorMin - 1;
+      while i &lt; viBedSectorMax
+      {
+         i = i + 1;
+         if i = piBedSector
+         {
+            continue;
+         }
+
+         Send(self,@ChangeTexture,#id=i,#new_texture=piCarpet,#flags=CTF_FLOOR);
+      }
+
+      Send(self,@ChangeTexture,#id=CARPET_SECTOR,#new_texture=piCarpet,#flags=CTF_FLOOR);
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:406</p>
+<h4>SetWallpaper(num = WALLPAPER_A)</h4>
+<pre><code>{
+      local i;
+
+      if piWallpaper = num
+      {
+         return FALSE;
+      }
+
+      piWallpaper = num;
+
+      i = WALLPAPER_ID - 1;
+      while i &lt; (WALLPAPER_ID + viPictureLocationMax)
+      {
+         i = i + 1;
+         if i = (WALLPAPER_ID + piPictureLocation)
+         {
+            continue;
+         }
+
+         Send(self,@ChangeTexture,#id=i,#new_texture=piWallpaper,#flags=CTF_NORMALWALL);
+      }
+
+      Send(self,@ChangeTexture,#id=(WALLPAPER_ID+piPictureLocation),
+           #new_texture=(piWallpaper+piPicture),#flags=CTF_NORMALWALL);
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:434</p>
+<h4>SetPicture(num = PICTURE_A)</h4>
+<pre><code>{
+      if piPicture = num
+      {
+         return FALSE;
+      }
+
+      piPicture = num;
+      Send(self,@ChangeTexture,#id=(WALLPAPER_ID+piPictureLocation),
+           #new_texture=(piWallpaper+piPicture),#flags=CTF_NORMALWALL);
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:463</p>
+<h4>SetPictureLocation(num = 1)</h4>
+<pre><code>{
+      local i;
+
+      if piPictureLocation = num
+         OR num &lt; 1
+         OR num &gt; viPictureLocationMax
+      {
+         return FALSE;
+      }
+
+      piPictureLocation = num;
+
+      i = WALLPAPER_ID - 1;
+      while i &lt; (WALLPAPER_ID + viPictureLocationMax)
+      {
+         i = i + 1;
+         if i = (WALLPAPER_ID + piPictureLocation) { continue; }
+         Send(self,@ChangeTexture,#id = i,#new_texture=piWallpaper,#flags=CTF_NORMALWALL);
+      }
+
+      Send(self,@ChangeTexture,#id = (WALLPAPER_ID+piPictureLocation),
+           #new_texture=(piWallpaper+piPicture),#flags=CTF_NORMALWALL);
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:477</p>
+<h4>TrySetBedSector(who = $, string = $, oDecorator = $)</h4>
+<pre><code>{
+      local iBedSector, i;
+
+      if string = $
+      {
+         return FALSE;
+      }
+
+      if StringContain(string,RentableRoom_command_here)
+      {
+         iBedSector = Send(self,@GetBedSectorNear,#who=who);
+         if iBedSector &lt;&gt; $
+         {
+            for i in Send(self,@GetHolderPassive)
+            {
+               if Send(self,@GetBedSectorNear,#who=first(i))=iBedSector
+               {
+                  if oDecorator &lt;&gt; $
+                  {
+                     Send(oDecorator,@SendBedBlockedMessage,#who=who);
+                  }
+
+                  return FALSE;
+               }
+            }
+
+            Send(self,@SetBedSector,#sector=iBedSector);
+
+            return TRUE;
+         }
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:511</p>
+<h4>TrySetBedSpread(string = $)</h4>
+<pre><code>{
+      local iBlue, iRed, iBlack, iWhite;
+
+      if string = $ { return FALSE; }
+      iBlue = StringContain(string,RentableRoom_command_blue);
+      iRed = StringContain(string,RentableRoom_command_red);
+      iBlack = (StringContain(string,RentableRoom_command_black)
+                OR StringContain(string,RentableRoom_command_floral));
+      iWhite = (StringContain(string,RentableRoom_command_white)
+                OR StringContain(string,RentableRoom_command_linen));
+
+      if (iBlue+iRed+iBlack+iWhite) &gt; 1
+      {
+         
+         return $;
+      }
+
+      if iBlue
+      {
+         return Send(self,@SetBedSpread,#num=BEDSPREAD_A);
+      }
+
+      if iRed
+      {
+         return Send(self,@SetBedSpread,#num=BEDSPREAD_B);
+      }
+
+      if iBlack
+      {
+         return Send(self,@SetBedSpread,#num=BEDSPREAD_C);
+      }
+
+      if iWhite
+      {
+         return Send(self,@SetBedSpread,#num=BEDSPREAD_D);
+      }
+
+      return $;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:547</p>
+<h4>TrySetCarpet(string = $)</h4>
+<pre><code>{
+      local iLtGray, iDkGray, iLtWood, iDkWood, iKcWood;
+
+      if string = $
+      {
+         return FALSE;
+      }
+
+      iLtGray = (StringContain(string,RentableRoom_command_light_gray)
+                 OR StringContain(string,RentableRoom_command_light_grey));
+      iDkGray = (StringContain(string,RentableRoom_command_dark_gray)
+                 OR StringContain(string,RentableRoom_command_dark_grey));
+      iLtWood = (StringContain(string,RentableRoom_command_light_wood)
+                 OR StringContain(string,RentableRoom_command_light_hardwood));
+      iDkWood = (StringContain(string,RentableRoom_command_dark_wood)
+                 OR StringContain(string,RentableRoom_command_dark_hardwood));
+      iKcWood = (StringContain(string,RentableRoom_command_island_floor)
+                 OR StringContain(string,RentableRoom_command_island_floor_two));
+
+      if (iLtGray + iDkGray + iLtWood + iDkWood + iKcWood) &gt; 1
+      {
+         
+         return $;
+      }
+
+      if iLtGray
+      {
+         return Send(self,@SetCarpet,#num=CARPET_A);
+      }
+
+      if iDkGray
+      {
+         return Send(self,@SetCarpet,#num=CARPET_C);
+      }
+
+      if iLtWood
+      {
+         return Send(self,@SetCarpet,#num=CARPET_D);
+      }
+
+      if iDkWood
+      {
+         return Send(self,@SetCarpet,#num=CARPET_E);
+      }
+
+      if iKcWood
+      {
+         return Send(self,@SetCarpet,#num=CARPET_G);
+      }
+
+      return $;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:588</p>
+<h4>TrySetWallpaper(string = $)</h4>
+<pre><code>{
+      local iCream,iBrown,iBlack,iWhite,iBrick,iWood,iStripe;
+
+      if string = $
+      {
+         return FALSE;
+      }
+
+      iCream = (StringContain(string,RentableRoom_command_cream)
+                OR StringContain(string,RentableRoom_command_vine));
+      iBrown = (StringContain(string,RentableRoom_command_brown)
+                OR StringContain(string,RentableRoom_command_formal)
+                OR StringContain(string,RentableRoom_command_traditional)
+                OR StringContain(string,RentableRoom_command_Barloq)
+                OR StringContain(string,RentableRoom_command_medallion));
+      iBlack = (StringContain(string,RentableRoom_command_black)
+                OR StringContain(string,RentableRoom_command_floral)
+                OR StringContain(string,RentableRoom_command_flower));
+      iWhite = (StringContain(string,RentableRoom_command_white)
+                OR StringContain(string,RentableRoom_command_paisley));
+      iBrick = StringContain(string,RentableRoom_command_brick);
+      iWood = StringContain(string,RentableRoom_command_wood);
+      iStripe = (StringContain(string,RentableRoom_command_bluestripe)
+                OR StringContain(string,RentableRoom_command_bluestripe_two)
+                OR StringContain(string,RentableRoom_command_bluestripe_three));
+
+      if (iCream+iBrown+iBlack+iWhite+iBrick+iWood+iStripe) &gt; 1
+      {
+         
+         return $;
+      }
+
+      if iCream
+      {
+         return Send(self,@SetWallpaper,#num=WALLPAPER_A);
+      }
+
+      if iBrown
+      {
+         return Send(self,@SetWallpaper,#num=WALLPAPER_B);
+      }
+
+      if iBlack
+      {
+         return Send(self,@SetWallpaper,#num=WALLPAPER_C);
+      }
+
+      if iWhite
+      {
+         return Send(self,@SetWallpaper,#num=WALLPAPER_D);
+      }
+
+      if iBrick
+      {
+         Send(self,@SetPicture,#num=PICTURE_NONE);
+
+         return Send(self,@SetWallpaper,#num=WALLPAPER_E);
+      }
+
+      if iWood
+      {
+         Send(self,@SetPicture,#num=PICTURE_NONE);
+
+         return Send(self,@SetWallpaper,#num=WALLPAPER_F);
+      }
+
+      if iStripe
+      {
+         Send(self,@SetPicture,#num=PICTURE_NONE);
+
+         return Send(self,@SetWallpaper,#num=WALLPAPER_G);
+      }
+
+      return $;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:642</p>
+<h4>TrySetPicture(string = $, bRemove = FALSE)</h4>
+<pre><code>{
+      local iStillLife,iTapestry,iPortrait,iNothing;
+
+      if (string = $ AND NOT bRemove)
+         OR (piWallPaper = WALLPAPER_E)
+         OR (piWallPaper = WALLPAPER_F)
+         OR (piWallPaper = WALLPAPER_G)
+      {
+         return FALSE;
+      }
+
+      iStillLife = (StringContain(string,RentableRoom_command_still_life)
+                    OR StringContain(string,RentableRoom_command_still_life_dashed)
+                    OR StringContain(string,RentableRoom_command_stilllife)
+                    OR StringContain(string,RentableRoom_command_flowers)
+                    OR StringContain(string,RentableRoom_command_monet));
+      iTapestry = (StringContain(string,RentableRoom_command_tapestry)
+                   OR StringContain(string,RentableRoom_command_reproduction)
+                   OR StringContain(string,RentableRoom_command_battle));
+      iPortrait = (StringContain(string,RentableRoom_command_portrait)
+                   OR StringContain(string,RentableRoom_command_charcoal));
+      iNothing =  (StringContain(string,RentableRoom_command_nothing)
+                   OR StringContain(string,RentableRoom_command_no_painting)
+                   OR StringContain(string,RentableRoom_command_no_picture)
+                   OR StringContain(string,RentableRoom_command_no_portrait)
+                   OR StringContain(string,RentableRoom_command_no_still_life)
+                   OR StringContain(string,RentableRoom_command_no_tapestry)
+                   OR StringContain(string,RentableRoom_command_none));
+
+      if (iStillLife+iTapestry+iPortrait+iNothing) &gt; 1
+      {
+         
+         return $;
+      }
+
+      if iStillLife
+      {
+         return Send(self,@SetPicture,#num=PICTURE_A);
+      }
+
+      if iTapestry
+      {
+         return Send(self,@SetPicture,#num=PICTURE_B);
+      }
+
+      if iPortrait
+      {
+         return Send(self,@SetPicture,#num=PICTURE_C);
+      }
+
+      if iNothing or bRemove
+      {
+         return Send(self,@SetPicture,#num=PICTURE_NONE);
+      }
+
+      return $;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:719</p>
+<h4>TrySetPictureLocation(who = $, string = $)</h4>
+<pre><code>{
+      local iPictureLocation;
+
+      if string = $
+         OR (piWallPaper = WALLPAPER_E)
+         OR (piWallPaper = WALLPAPER_F)
+      {
+         return FALSE;
+      }
+
+      if StringContain(string,RentableRoom_command_here)
+      {
+         iPictureLocation = Send(self,@GetPictureLocationNear,#who=who);
+         if iPictureLocation &lt;&gt; $
+         {
+            return Send(self,@SetPictureLocation,#num=iPictureLocation);
+         }
+      }
+
+      return $;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:778</p>
+<h4>GetObjectCategory(oItem = $)</h4>
+<pre><code>{
+      local iLoop, oObj;
+
+      iLoop = 0;
+      while iLoop &lt; length(plObjects)
+      {
+         iLoop = iLoop + 1;
+         for oObj in nth(plObjects,iLoop)
+         {
+            if Send(oObj,@GetName) = Send(oItem,@GetName)
+            {
+               return iLoop;
+            }
+         }
+      }
+
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:801</p>
+<h4>ParseObject(string = $, who = $, oDecorator = $)</h4>
+<pre><code>{
+      local i, j;
+
+      for i in plObjects
+      {
+         for j in i
+         {
+            if StringContain(string,Send(j,@GetName))
+            {
+               return j;
+            }
+         }
+      }
+
+      return $;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:821</p>
+<h4>GetObjectList(who = $, oDecorator = $)</h4>
+<pre><code>{
+      local i, j, oPreviousObject, sObjectList;
+
+      
+      
+
+      ClearTempString();
+      oPreviousObject = $;
+
+      i = 0;
+      while i &lt; length(plObjects)
+      {
+         i = i + 1;
+         if Send(self,@CanAccessObject,#category=i,#who=who)
+         {
+            for j in nth(plObjects,i)
+            {
+               if oPreviousObject &lt;&gt; $
+               {
+                  AppendTempString(Send(oPreviousObject,@GetIndef));
+                  AppendTempString(Send(oPreviousObject,@GetName));
+                  AppendTempString(RentableRoom_comma);
+               }
+
+               oPreviousObject = j;
+            }
+         }
+      }
+
+      if oPreviousObject &lt;&gt; $
+      {
+         AppendTempString(RentableRoom_and);
+         AppendTempString(Send(oPreviousObject,@GetIndef));
+         AppendTempString(Send(oPreviousObject,@GetName));
+      }
+
+      sObjectList = CreateString();
+      SetString(sObjectList,GetTempString());
+
+      return sObjectList;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:839</p>
+<h4>TryPlaceObject(who = $, string = $, template = $, oDecorator = $)</h4>
+<pre><code>{
+      local oDecorativeObject, i, iSnapFineRow, iSnapFineCol;
+
+      if who = $ OR string = $ OR template = $
+      {
+         return FALSE;
+      }
+
+      
+      if NOT Send(self,@CanAccessObject,#who=who,
+                  #category=Send(self,@GetObjectCategory,#oItem=template))
+      {
+         return FALSE;
+      }
+
+      
+      if IsClass(template,&amp;StorageBox)
+         AND (Send(self,@CountHoldingHowMany,#class=&amp;StorageBox) &gt; 1)
+      {
+         return FALSE;
+      }
+
+      if StringContain(string, RentableRoom_command_here)
+      {
+         iSnapFineRow = Send(self,@GetSnappedFineCoord,
+                             #unsnappedCoord=Send(who,@GetFineRow));
+         iSnapFineCol = Send(self,@GetSnappedFineCoord,
+                             #unsnappedCoord=Send(who,@GetFineCol));
+
+         for i in Send(self,@GetHolderPassive)
+         {
+            if (Send(first(i),@GetRow)=Send(who,@GetRow))
+               AND (Send(first(i),@GetCol)=Send(who,@GetCol))
+               AND (Send(first(i),@GetFineRow)=iSnapFineRow)
+               AND (Send(first(i),@GetFineCol)=iSnapFineCol)
+            {
+               if oDecorator &lt;&gt; $
+               {
+                  Send(oDecorator,@SendNoObjectStacking,#who=who);
+               }
+
+               return $;
+            }
+         }
+
+         if IsClass(template,&amp;OrnamentalObject)
+         {
+            oDecorativeObject = Send(template,@Duplicate); 
+         }
+         else
+         {
+            oDecorativeObject = Create(getClass(template)); 
+         }
+
+         Send(self,@NewHold,#what=oDecorativeObject,#new_angle=Send(who,@GetAngle),
+             #new_row=Send(who,@GetRow),#new_col=Send(who,@GetCol),
+             #fine_row=iSnapFineRow,#fine_col=iSnapFineCol);
+
+         return TRUE;
+      }
+
+      return $;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:882</p>
+<h4>GetSnappedFineCoord(unsnappedCoord = 32)</h4>
+<p>Returns a fine coordinate snapped to a specific grid.</p>
+<pre><code>{
+      if unsnappedCoord &gt; 32
+      {
+         return 48;
+      }
+
+      return 16;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:947</p>
+<h4>TryRemoveObject(who = $, template = $)</h4>
+<pre><code>{
+      local i, lInventory, oClosest, iClosestDistance, iCurrentDistance, iTemp,
+            iFirst, iSecond, iRowDiff, iColDiff, bConfused;
+
+      if who = $ OR template = $
+      {
+         return FALSE;
+      }
+
+      oClosest = $;
+
+      
+      iClosestDistance = FINENESS + FINENESS_HALF;
+
+      
+      iClosestDistance = (iClosestDistance*iClosestDistance);
+      iClosestDistance = iClosestDistance * 2;
+
+      
+      bConfused = FALSE;          
+
+      
+      if Send(template,@GetObjectType) = ACTIVE
+      {
+         lInventory = Send(self,@GetHolderActive);
+      }
+      else
+      {
+         lInventory = Send(self,@GetHolderPassive);
+      }
+      
+      for i in lInventory
+      {
+         if isClass(first(i),GetClass(template))
+            AND StringEqual(Send(first(i),@GetName),Send(template,@GetName))
+         {
+            
+            
+            
+            
+            
+            
+            
+            
+            iRowDiff = Send(first(i),@GetRow) - Send(who,@GetRow);
+            iColDiff = Send(first(i),@GetCol) - Send(who,@GetCol);
+
+            
+            if abs(iRowDiff) &gt; 2 OR abs(iColDiff) &gt; 2
+            {
+               continue;
+            }
+
+            if iRowDiff &lt; 0
+            {
+               iFirst = FINENESS - Send(first(i),@GetFineRow);
+               iSecond = Send(who,@GetFineRow);
+               iTemp = iFirst + iSecond + ((abs(iRowDiff) - 1) * FINENESS);
+            }
+            else
+            {
+               if iRowDiff &gt; 0
+               {
+                  iFirst = FINENESS - Send(who,@GetFineRow);
+                  iSecond = Send(first(i),@GetFineRow);
+                  iTemp = iFirst + iSecond + ((abs(iRowDiff) - 1) * FINENESS);
+               }
+               else
+               {
+                  
+                  iTemp = abs((Send(first(i),@GetFineRow) - Send(who,@GetFineRow)));
+               }
+            }
+
+            iCurrentDistance = (iTemp * iTemp);
+
+            if iColDiff &lt; 0
+            {
+               iFirst = FINENESS - Send(first(i),@GetFineCol);
+               iSecond = Send(who,@GetFineCol);
+               iTemp = iFirst + iSecond + ((abs(iColDiff) - 1) * FINENESS);
+            }
+            else
+            {
+               if iColDiff &gt; 0
+               {
+                  iFirst = FINENESS - Send(who,@GetFineCol);
+                  iSecond = Send(first(i),@GetFineCol);
+                  iTemp = iFirst + iSecond + ((abs(iColDiff) - 1) * FINENESS);
+               }
+               else
+               {
+                  
+                  iTemp = abs((Send(first(i),@GetFineCol) - Send(who,@GetFineCol)));
+               }
+            }
+
+            iCurrentDistance = (iCurrentDistance + (iTemp * iTemp));
+
+            if iCurrentDistance &lt; iClosestDistance
+            {
+               
+               
+               if (iClosestDistance - iCurrentDistance) &gt; ((FINENESS/4) * (FINENESS/4))
+               {
+                  iClosestDistance = iCurrentDistance;
+                  oClosest = first(i);
+               }
+               else
+               {
+                  bConfused = TRUE;
+               }
+            }
+         }
+      }
+
+      if NOT bConfused AND oClosest &lt;&gt; $
+      {
+         Send(oClosest,@Delete);
+
+   % … truncated, see source</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:958</p>
+<h4>SummonDecorator()</h4>
+<pre><code>{
+      if Send(self,@FindHoldingActive,#class=&amp;Decorator) &lt;&gt; $
+      {
+         
+         return;
+      }
+
+      if ptDecoratorArrives = $
+      {
+         ptDecoratorArrives = createTimer(self,@DecoratorArrives,DECORATOR_DELAY);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1085</p>
+<h4>DecoratorArrives()</h4>
+<pre><code>{
+      ptDecoratorArrives = $;
+      Send(self,@NewHold,#what=Create(&amp;Decorator),
+           #new_row=viDecorator_Row,#new_col=viDecorator_col);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1101</p>
+<h4>GetBedSectorNear(who = $, iRow = $, iCol = $)</h4>
+<pre><code>{
+      local i;
+
+      if who &lt;&gt; $ AND Send(who,@GetOwner) &lt;&gt; $
+      {
+         iRow = Send(who,@GetRow);
+         iCol = Send(who,@GetCol);
+      }
+
+      if iRow = $ OR iCol = $
+      {
+         return 0;
+      }
+
+      i = 0;
+      while i &lt; length(plBedCoords)
+      {
+         i = i + 1;
+         if (iRow = nth(nth(nth(plBedCoords,i),1),1)
+             AND iCol = nth(nth(nth(plBedCoords,i),1),2))
+            OR (iRow = nth(nth(nth(plBedCoords,i),2),1)
+                AND iCol = nth(nth(nth(plBedCoords,i),2),2))
+         {
+            return i;
+         }
+      }
+
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1110</p>
+<h4>GetPictureLocationNear(who = $, iRow = $, iCol = $)</h4>
+<pre><code>{
+      local i,j;
+
+      if who &lt;&gt; $ AND Send(who,@GetOwner) &lt;&gt; $
+      {
+         iRow = Send(who,@GetRow);
+         iCol = Send(who,@GetCol);
+      }
+
+      if iRow = $ OR iCol = $
+      {
+         return 0;
+      }
+
+      i = 0;
+      while i &lt; length(plPictureCoords)
+      {
+         i = i + 1;
+
+         j = 0;
+         while j &lt; length(nth(plPictureCoords,i))
+         {
+            j = j + 1;
+            if iRow = nth(nth(nth(plPictureCoords,i),j),1)
+               AND iCol = nth(nth(nth(plPictureCoords,i),j),2)
+            {
+               return i;
+            }
+         }
+      }
+
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1141</p>
+<h4>GetCarpetOptions()</h4>
+<pre><code>{
+      return RentableRoom_carpet_options;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1176</p>
+<h4>GetBedSpreadOptions()</h4>
+<pre><code>{
+      return RentableRoom_bedspread_options;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1181</p>
+<h4>GetWallpaperOptions()</h4>
+<pre><code>{
+      return RentableRoom_wallpaper_options;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1186</p>
+<h4>GetPictureOptions()</h4>
+<pre><code>{
+      return RentableRoom_picture_options;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1191</p>
+<h4>ChangeRoomLight(iChange = 0)</h4>
+<pre><code>{
+      local iAmount;
+      
+      if iChange &gt; 0
+      {
+         
+         iAmount = LIGHT_STEP;
+      }
+      else
+      {
+         if iChange &lt; 0
+         {
+            
+            iAmount = -LIGHT_STEP;
+         }
+      }
+
+      
+      
+      
+      iAmount = bound((piBaseLight + iAmount),44,244);
+      Send(self,@SetBaseLight,#amount=iAmount);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1196</p>
+<h4>CanAccessObject(category = 1, who = $)</h4>
+<pre><code>{
+      
+      if NOT Send(Send(SYS,@GetNodeAttack),@GetAttacks)
+      {
+         if category &lt;&gt; 6
+         {
+            return TRUE;
+         }
+         else
+         {
+            return FALSE;
+         }
+      }
+   
+      
+      
+      
+      if (category = 1)
+         OR ((category = 2) AND piBrownHeartStone)
+         OR ((category = 3) AND piRedHeartStone)
+         OR ((category = 4) AND piBlueHeartStone)
+         OR ((category = 5) AND piSkyHeartStone)
+         OR ((category = 6)
+             AND (piRedHeartStone &gt;= ITEMS_FROM_HEARTSTONES)
+             AND (piBlueHeartStone &gt;= ITEMS_FROM_HEARTSTONES)
+             AND (piSkyHeartStone &gt;= ITEMS_FROM_HEARTSTONES)
+             AND (piBrownHeartStone &gt;= ITEMS_FROM_HEARTSTONES))
+      {
+         return TRUE;
+      }
+      
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1223</p>
+<h4>AddHeartStone(oStone = $, oDecorator = $)</h4>
+<pre><code>{
+      local bGotAll;
+      
+      bGotAll = (piRedHeartStone AND piBlueHeartStone
+                 AND piSkyHeartStone AND piBrownHeartStone);
+      
+      
+      if IsClass(oStone,&amp;RedHeartStone)
+      {
+         piRedHeartStone = piRedHeartStone + ITEMS_FROM_HEARTSTONES;
+         Post(self,@SomeoneSaid,#type=SAY_RESOURCE,#what=oDecorator,
+              #string=RentableRoom_heartstone_red);
+      }
+      
+      if IsClass(oStone,&amp;BlueHeartStone)
+      {
+         piBlueHeartStone = piBlueHeartStone + ITEMS_FROM_HEARTSTONES;
+         Post(self,@SomeoneSaid,#type=SAY_RESOURCE,#what=oDecorator,
+              #string=RentableRoom_heartstone_blue);
+      }
+      
+      if IsClass(oStone,&amp;BrownHeartStone)
+      {
+         piBrownHeartStone = piBrownHeartStone + ITEMS_FROM_HEARTSTONES;
+         Post(self,@SomeoneSaid,#type=SAY_RESOURCE,#what=oDecorator,
+              #string=RentableRoom_heartstone_brown);
+      }
+      
+      if IsClass(oStone,&amp;SkyHeartStone)
+      {
+         piSkyHeartStone = piSkyHeartStone + ITEMS_FROM_HEARTSTONES;
+         Post(self,@SomeoneSaid,#type=SAY_RESOURCE,#what=oDecorator,
+              #string=RentableRoom_heartstone_sky);
+      }
+
+      if (NOT bGotAll)
+         AND (piRedHeartStone AND piBlueHeartStone
+              AND piSkyHeartStone AND piBrownHeartStone)
+      {
+         Post(self,@SomeoneSaid,#type=SAY_RESOURCE,#what=oDecorator,
+              #string=RentableRoom_heartstone_all);
+      }      
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1258</p>
+<h4>UpdateHeartStones(oItem = $)</h4>
+<pre><code>{
+      local iCategory;
+
+      
+      if not Send(Send(SYS,@GetNodeAttack),@GetAttacks)
+      {
+         return;
+      }
+
+      
+      iCategory = Send(self,@GetObjectCategory,#oItem=oItem);
+
+      if iCategory = 2
+      {
+         piBrownHeartStone = piBrownHeartStone - 1;
+      }
+      
+      if iCategory = 3
+      {
+         piRedHeartStone = piRedHeartStone - 1;
+      }
+      
+      if iCategory = 4
+      {
+         piBlueHeartStone = piBlueHeartStone - 1;
+      }
+      
+      if iCategory = 5
+      {
+         piSkyHeartStone = piSkyHeartStone - 1;
+      }
+      
+      if iCategory = 6
+      {
+         piBrownHeartStone = piBrownHeartStone - ITEMS_FROM_HEARTSTONES;
+         piRedHeartStone = piRedHeartStone - ITEMS_FROM_HEARTSTONES;
+         piSkyHeartStone = piSkyHeartStone - ITEMS_FROM_HEARTSTONES;
+         piBlueHeartStone = piBlueHeartStone - ITEMS_FROM_HEARTSTONES;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1305</p>
+<h4>GetCreditBalance()</h4>
+<pre><code>{
+      return piCredit;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1349</p>
+<h4>DeductCredit(amount = 0)</h4>
+<pre><code>{
+      if piCredit &lt; amount
+      {
+         DEBUG(&quot;DeductCredit:: amount is too big&quot;);
+         piCredit = 0;
+      }
+
+      piCredit = piCredit - amount;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1354</p>
+<h4>AddCredit(amount = 0)</h4>
+<pre><code>{
+      Send(self,@DeductCredit,#amount=(-amount));
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1367</p>
+<h4>GetDaysLeft()</h4>
+<pre><code>{
+      return piDaysLeft;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1374</p>
+<h4>DecrementDaysLeft()</h4>
+<pre><code>{
+      piDaysLeft = piDaysLeft - 1;
+
+      if piDaysLeft &lt;= 0
+      {
+         Post(self,@RoomExpired);
+         return;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1379</p>
+<h4>RenewRental(iTimeAdded = 12)</h4>
+<p>Adds time to the room.  Default is 12 Meridian days = 1 offline day.  Returns total days left.</p>
+<pre><code>{
+      piDaysLeft = piDaysLeft + iTimeAdded;
+      
+      return piDaysLeft;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1392</p>
+<h4>RenterLoggedOn()</h4>
+<pre><code>{
+      if Send(self, @IsRoomExpiringSoon)
+      {
+         Send(self, @SendExpiryWarningMessage);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1401</p>
+<h4>SendExpiryWarningMessage()</h4>
+<pre><code>{
+      if poRenter &lt;&gt; $
+      {
+         Send(poRenter, @MsgSendUser, #message_rsc=RentableRoom_expiry_warning,
+            #parm1=vrLandlord, #parm2=piDaysLeft);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1411</p>
+<h4>IsRoomExpiringSoon()</h4>
+<pre><code>{
+      if piDaysLeft &lt; Send(Send(SYS, @GetRentableRoomMaintenance), @WarningDaysThreshold)
+      {
+         return TRUE;
+     }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1422</p>
+<h4>RoomExpired()</h4>
+<pre><code>{
+      Send(poRenter,@ReceiveNestedMail,#from=vrLandlord,
+            #dest_list=[poRenter],
+            #nest_list=[4,RentableRoom_expiry]);
+
+      Send(self,@Delete);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1432</p>
+<h4>DisposeTimer()</h4>
+<p>Called by the dispose timer.</p>
+<pre><code>{
+      
+      if pbUser_in_room
+      {
+         ptDispose = $;
+         ptDispose = CreateTimer(self,@DisposeTimer,piDispose_delay);
+
+         return;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1443</p>
+<h4>NewHold(what = $)</h4>
+<pre><code>{
+      
+      if what &lt;&gt; $ AND isClass(what,&amp;Token)
+      {
+         Post(what,@RandomTeleport);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1458</p>
+<h4>Delete()</h4>
+<pre><code>{
+      local oMaintenance, oMasterKey;
+
+      oMaintenance = Send(SYS, @GetRentableRoomMaintenance);
+      oMasterKey = Send(oMaintenance, @FindKeyByPlayer, #who=poRenter, #iLocation=viLocation);
+      Send(oMasterKey, @DeleteCopies);
+      Send(oMaintenance, @RoomDeleted,#what=self);
+      Send(oMasterKey, @RoomExpired);
+
+      if ptDecoratorArrives &lt;&gt; $
+      {
+         DeleteTimer(ptDecoratorArrives);
+         ptDecoratorArrives = $;
+      }
+
+      poRenter = $;
+      plBedCoords = $;
+      plPictureCoords = $;
+      plObjects = $;
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/rentroom.kod:1469</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

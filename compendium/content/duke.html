@@ -1,0 +1,152 @@
+<h1>The Duke and Politics</h1>
+
+<p class="lede">Above the fighting there is a second game, played by three courts, scored
+continuously, and worth real combat statistics to everyone who joins in. Parliament recomputes
+the standings every twenty minutes from two contests — who holds the territory flags, and who
+holds the loyalty of the Senate — and hands the winners measurable bonuses to hit, defence,
+damage, spell power, regeneration and vigour.</p>
+
+<h2>The three courts</h2>
+
+<table class="data">
+<thead><tr><th>Liege</th><th>Faction</th><th>Where</th><th>What the game says about them</th></tr></thead>
+<tbody>
+<tr><td><a href="../creatures/dukeliege.html"><strong>Duke Akardius</strong></a></td>
+    <td><code class="k">FACTION_DUKE</code></td><td><code class="k">RID_DUKE3</code></td>
+    <td>Sixteen years old, in the seat of his murdered uncle, and a devotee of Riija — the
+    Trickster. The description says the quiet part aloud: some doubt the sincerity of his grief.</td></tr>
+<tr><td><a href="../creatures/princessliege.html"><strong>The Princess</strong></a></td>
+    <td><code class="k">FACTION_PRINCESS</code></td><td>her own court</td>
+    <td>The rival claim. Her soldiers' shields reduce spellcasting mana costs.</td></tr>
+<tr><td><a href="../creatures/rebelliege.html"><strong>The Rebel leader</strong></a></td>
+    <td><code class="k">FACTION_REBEL</code></td><td>the rebel camp</td>
+    <td>The third way. Rebels carry a flat +1 to damage.</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/duke.kod:11 · kod/include/blakston.khd:2347–2351 · kod/util/parlia.kod:379 <code class="k">FactionLiegeClass</code></p>
+
+<p>Each liege is a Monster with <code class="k">MOB_NOFIGHT | MOB_LISTEN | MOB_RECEIVE |
+MOB_PERM_QUESTER | MOB_TEACHER</code> and the occupation <code class="k">MOB_ROLE_ROYALTY</code>.
+They cannot be attacked, they will accept gifts, they run a permanent quest, and they teach.
+Parliament deletes and recreates them when the political state changes.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/duke.kod:46–48 · kod/util/parlia.kod:184 <code class="k">DeleteLieges</code>, :199 <code class="k">RecreateLieges</code></p>
+
+<h2>How power is scored</h2>
+
+<p>Parliament sums the points of every running faction game, for each faction:</p>
+
+<div class="formula">for each faction:
+    count = Σ  game.GetPoints(faction)   over every faction game
+    raw power(faction) = count
+    standing = FigurePowerFromCount(count)
+
+total_power_points = Σ  game.GetTotalPoints()
+balance            = total_power_points × balance_factor / 100</div>
+<p class="cite">kod/util/parlia.kod:417 <code class="k">RedoTotalPower</code>, :434 <code class="k">RedoPower</code></p>
+
+<h3>Game one: territory</h3>
+<p>Faction flags are planted and counted; a faction's share of the total flags is its share of the
+territory points. Every flag on the board contributes to somebody.</p>
+<p class="cite">kod/util/factgame/territry.kod:848 <code class="k">GetPoints</code></p>
+
+<h3>Game two: the Senate</h3>
+<p>Each councillor in the Senate is loyal to one faction and contributes exactly
+<strong>one</strong> point to it. Tokens delivered to a councillor set and hold that loyalty —
+and the source is explicit that giving a councillor <em>extra</em> tokens buys stability, not
+score:</p>
+<blockquote>Giving counselors extra tokens keeps them from swinging to other factions too
+easily, but doesn't increase value.</blockquote>
+<p class="cite">kod/util/factgame/tokngame.kod:962–980</p>
+
+<p>That is a deliberate anti-hoarding rule. Spreading tokens across many councillors is worth
+strictly more than piling them onto one, and the optimal play is breadth.</p>
+
+<div class="note">Delivering a token to the Duke gets you a distinctive response, quoted directly
+from the game: <em>"I will see that this gets returned to its rightful councilor. Of course, he
+will owe me."</em> The political game is explicitly a game of debts.
+<span class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/duke.kod:31</span></div>
+
+<h2>What a faction's standing buys its members</h2>
+
+<div class="formula">balance = total_power_points × balance_factor / 100
+
+power contribution:
+    power ≤ balance:   p = (110 × power / balance) − 10
+    power &gt; balance:   p = 100 + 50 × (power − balance) / balance
+    p = bound(p, −10, 150)
+
+membership contribution:
+    m = 100                              if members ≤ balance, or balance &lt; 3
+      = −50 × members / mbalance + 150   otherwise
+    m = bound(m, 25, 100)
+
+bonus = base × p × m / 10000    if p &gt; 0
+      = base × p / 100          if p ≤ 0</div>
+<p class="cite">kod/util/parlia.kod:998 <code class="k">CalcFactionBonus</code></p>
+
+<table class="data">
+<thead><tr><th>Bonus</th><th>Base</th><th>Unaligned player</th><th>Stated maximum</th></tr></thead>
+<tbody>
+<tr><td>Defence</td><td>200</td><td>+50</td><td>+200</td></tr>
+<tr><td>Hit roll</td><td>100</td><td>+50</td><td>+125</td></tr>
+<tr><td>Regeneration</td><td>700</td><td>—</td><td>—</td></tr>
+<tr><td>Vigour cost reduction</td><td>30</td><td>+5%</td><td>+30%</td></tr>
+<tr><td>Spell power</td><td>10</td><td>+3</td><td>+10</td></tr>
+<tr><td>Learning chance</td><td>10</td><td>+3</td><td>+10</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/util/parlia.kod:1125, :1210, :1274, :1353, :1401, :1449 — the base passed to <code class="k">CalcFactionBonus</code> in each</p>
+
+<p>The full treatment of what this means at the table is on <a href="factions.html">Factions</a>.
+The short version: a faction above balance makes its members roughly four times better off than
+neutrality on six statistics at once, and a faction below balance makes them worse off than
+neutrality — which cannot go negative at all.</p>
+
+<h2>The clock</h2>
+
+<table class="data">
+<thead><tr><th>Constant</th><th>Value</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code class="k">FACTION_UPDATE_TIME</code></td><td>20 minutes</td><td>Standings and every bonus are recomputed</td></tr>
+<tr><td><code class="k">FACTION_RESIGN_TIME</code></td><td>24 hours</td><td>How long leaving takes</td></tr>
+<tr><td><code class="k">FACTION_WARN_TIME</code></td><td>20 hours</td><td>When you are warned it is about to complete</td></tr>
+<tr><td><code class="k">FACTION_MIN_REVISIT_TIME</code></td><td>4 hours</td><td>How long before you may rejoin</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:2323–2329</p>
+
+<p>The asymmetry is the point. The standings move on a twenty-minute clock; you move on a
+twenty-eight-hour one. You cannot chase the bonus, only bet on it.</p>
+
+<h2>Joining, and being turned away</h2>
+
+<p>Only <em>intriguing</em> players participate: player-killing enabled, and either advanced
+enough in health or adept enough in ability. Everyone else collects the flat unaligned bonus and
+is untouched by any of this.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:11316 <code class="k">PlayerIsIntriguing</code></p>
+
+<p>A liege will refuse you if their faction is already too strong — the Duke says so in as many
+words: <em>"If we were not already a very powerful faction, I would offer to let you join us."</em>
+The system actively resists snowballing, in the recruiting as well as in the membership dilution
+term of the bonus formula.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/duke.kod:35</p>
+
+<h2>Politics and the law</h2>
+
+<ul>
+<li><strong>Enemy soldiers do 15% more damage to each other</strong>, applied after both damage
+caps — the only thing in the game that breaks the 30-per-hit ceiling.
+<span class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4620</span></li>
+<li><strong>Killing an enemy soldier is not murder.</strong> The murderer check is skipped when
+your soldier shield says the target was a legitimate enemy.
+<span class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4870</span></li>
+<li><strong>Faction pressure can override a lawful merchant's refusal</strong> to trade with a
+murderer. <span class="cite">kod/util/parlia.kod:1468</span></li>
+<li><strong>Parliament can be shut down entirely</strong>, at which point everyone stops being
+intriguing and the whole layer goes dormant.
+<span class="cite">kod/util/parlia.kod:399 <code class="k">Shutdown</code></span></li>
+</ul>
+
+<p>Related: <a href="factions.html">Factions</a> — the numbers in play terms ·
+<a href="guilds.html">Guilds</a> · <a href="death.html">Death, the Underworld and PvP</a> ·
+<a href="karma.html">Karma</a> · <a href="../npcs/index.html">NPCs</a></p>

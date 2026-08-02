@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>treaty — Meridian 59 Compendium</title>
+<meta name="description" content="This treaty will create an alliance between %s%s and %s%s.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › treaty</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/light_g1.png" alt="treaty" width="128" height="128"></div><div class="heroText"><h1>treaty</h1><p class="lede">This treaty will create an alliance between %s%s and %s%s.</p><div class="tags"><span class="tag ">active</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">0</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">0</div></div><div class="fact"><div class="lbl">Value</div><div class="val">0 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">50</div></div></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/actitem/treaty.kod:11</p>
+<p><code class="k">GuildTreaty</code> is <code class="k">ActiveItem</code> — full chain <code class="k">GuildTreaty</code> ← <code class="k">ActiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>treaty_name_rsc</code></td><td class=""><em>treaty</em></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>treaty_icon_rsc</code></td><td class=""><em>light.bgf</em></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>treaty_desc_rsc</code></td><td class=""><em>This treaty will create an alliance between %s%s and %s%s.</em></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viUse_type</code></td><td class=""><code>ITEM_SINGLE_USE</code></td><td class="">2</td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viUse_amount</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>50</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>50</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">poInductor</code></td><td class=""><code>$</code></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">poInductee</code></td><td class=""><code>$</code></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">poInductorGuild</code></td><td class=""><code>$</code></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">poInducteeGuild</code></td><td class=""><code>$</code></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">ptRatify</code></td><td class=""><code>$</code></td><td class="num " data-sort="58">58</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(inductor = $, inductee = $)</h4>
+<pre><code>{
+      debug(&quot;Constructor in treaty.&quot;,inductor,inductee);
+      poInductor = inductor;
+      poInductee = Inductee;
+      poInductorGuild = send(poInductor,@getguild);
+      poInducteeGuild = send(poInductee,@getguild);
+      send(poInductorGuild,@Addtreaty,#treaty_obj = self);
+      ptRatify = createtimer(self,@ratifytimer,SELF_DELETE_DELAY);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/actitem/treaty.kod:62</p>
+<h4>RatifyTimer()</h4>
+<pre><code>{
+      send(poInductorGuild,@Removetreaty,#treaty_obj=self);
+      send(poInductor,@msgsenduser,#message_rsc=treaty_expires,
+          #parm1=send(poInducteeGuild,@getdef), #parm2=send(poInducteeGuild,@getname) );
+      send(poInductee,@msgsenduser,#message_rsc=treaty_vanishes,
+          #parm1=send(poInductorGuild,@getdef), #parm2=send(poInductorGuild,@getname) );
+
+      send(self,@delete,#timerdelete=TRUE);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/actitem/treaty.kod:74</p>
+<h4>treatyVanish()</h4>
+<pre><code>{
+      send(poInductor,@msgsenduser,#message_rsc=treaty_expires,
+          #parm1=send(poInducteeGuild,@getdef), #parm2=send(poInducteeGuild,@getname) );
+      send(poInductee,@msgsenduser,#message_rsc=treaty_vanishes,
+          #parm1=send(poInductorGuild,@getdef), #parm2=send(poInductorGuild,@getname) );
+
+      send(self,@delete);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/actitem/treaty.kod:86</p>
+<h4>GetInductor()</h4>
+<p>A player may not offer more than one treaty at once.</p>
+<pre><code>{
+      return poInductor;      
+   }</code></pre>
+<p class="cite">kod/object/item/actitem/treaty.kod:97</p>
+<h4>ShowDesc()</h4>
+<p>Tells those already in guilds that they cannot ratify unless they quit current guild.</p>
+<pre><code>{
+      AddPacket(4,treaty_desc_rsc,4,send(poInductorGuild,@getdef),4,Send(poInductorGuild,@GetName),
+                 send(poInducteeGuild,@getdef),4,Send(poInducteeGuild,@GetName));
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/actitem/treaty.kod:103</p>
+<h4>ReqNewOwner()</h4>
+<pre><code>{
+      send(poOwner,@msgsenduser,#message_rsc=treaty_cant_ditch);
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/actitem/treaty.kod:111</p>
+<h4>SomethingLeft(what = $)</h4>
+<p>If carrier leaves the room, delete with cutesy messages.</p>
+<pre><code>{
+      debug(&quot;something left reached treaty.&quot;);
+      if what = poInductor or what = poInductee
+        {
+          send(poInductorGuild,@Removetreaty,#treaty_obj=self);
+          send(self,@treatyVanish);
+        }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/actitem/treaty.kod:117</p>
+<h4>OwnerChangedOwner(what = $, where = $)</h4>
+<p>If carrier leaves the room, delete with cutesy messages.</p>
+<pre><code>{
+      debug(&quot;ownerchangedowner reached in treaty.&quot;);
+      if what = poInductor or what = poInductee
+        {
+          send(poInductorGuild,@Removetreaty,#treaty_obj=self);
+          send(self,@treatyVanish);
+        }
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/actitem/treaty.kod:129</p>
+<h4>ReqNewApply()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/actitem/treaty.kod:142</p>
+<h4>NewApplied(what = $)</h4>
+<pre><code>{
+      if send(poInductorGuild,@canally,#otherguild = poInducteeGuild,
+         #rep = poInductor, #otherrep = poInductee)
+      and send(poInducteeGuild,@canally,#otherguild = poInductorGuild,
+         #rep = poInductee, #otherrep = poInductor)
+        {
+          send(poInductorGuild,@newally,#otherguild=poInducteeGuild);
+          send(poInducteeGuild,@newally,#otherguild=poInductorGuild);
+         }
+      else
+        {
+          post(poInductor,@msgsenduser,#message_rsc = treaty_fell_apart,
+             #parm1=send(poInducteeGuild,@getdef),#parm2=send(poInducteeGuild,@getname));
+          post(poInductee,@msgsenduser,#message_rsc = treaty_fell_apart,
+             #parm1=send(poInductorGuild,@getdef),#parm2=send(poInductorGuild,@getname));
+
+        }
+      send(poInductorGuild,@removetreaty,#treaty_obj = self);
+      send(self, @delete);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/actitem/treaty.kod:147</p>
+<h4>Delete(timerdelete = FALSE)</h4>
+<pre><code>{
+      if ptRatify &lt;&gt; $ and TimerDelete = FALSE
+        {
+          deletetimer(ptRatify);
+        }
+      ptRatify = $;
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/actitem/treaty.kod:171</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

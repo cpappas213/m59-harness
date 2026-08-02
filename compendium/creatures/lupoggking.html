@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lupogg king — Meridian 59 Compendium</title>
+<meta name="description" content="The ancient King of the Lupoggs lords over these dark caves, knowing no creature to be its equal. The rock walls rumble and shake whenever this monstrosity wail">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › lupogg king</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/lupking_g1.png" alt="lupogg king" width="127" height="111"></div><div class="heroText"><h1>lupogg king</h1><p class="lede">The ancient King of the Lupoggs lords over these dark caves, knowing no creature to be its equal. The rock walls rumble and shake whenever this monstrosity wails. You feel as though you have already outlived most people who encounter the Lupogg King, but that thought does not comfort you any.</p><div class="tags"><span class="tag ">Level 200</span><span class="tag ">Difficulty 9</span><span class="tag ">Neutral</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">200</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">9</div></div><div class="fact"><div class="lbl">Health</div><div class="val">180–300</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">10–25</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">slow</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">lupogg_king</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 200 + 60 × 9
+                = 1140
+
+health          = Fuzzy(level × 120/100) = 180–300
+damage per hit  = Fuzzy(level / random(10,15))  = 10–25
+dodge           = difficulty × 10 = 90</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">95%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">29%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">8</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">16.6</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>claw</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 200/55 + random(0, 9/3), $, 6)
+       = 4–6 items
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/lupkingt.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="LongSword"><a href="../items/longsword.html">long sword</a></td><td class="num " data-sort="20.792">20.8%</td><td class=""></td><td class=""><code>lupkingt.kod:31</code></td></tr>
+<tr><td class="" data-sort="Scimitar"><a href="../items/scimitar.html">scimitar</a></td><td class="num " data-sort="19.802">19.8%</td><td class=""></td><td class=""><code>lupkingt.kod:32</code></td></tr>
+<tr><td class="" data-sort="PlateArmor"><a href="../items/platearmor.html">plate armor</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>lupkingt.kod:33</code></td></tr>
+<tr><td class="" data-sort="IvyCirclet"><a href="../items/ivycirclet.html">ivy circlet</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>lupkingt.kod:34</code></td></tr>
+<tr><td class="" data-sort="OrcShield"><a href="../items/orcshield.html">orc shield</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>lupkingt.kod:35</code></td></tr>
+<tr><td class="" data-sort="Knightshield"><a href="../items/knightshield.html">knight's shield</a></td><td class="num " data-sort="7.921">7.9%</td><td class=""></td><td class=""><code>lupkingt.kod:36</code></td></tr>
+<tr><td class="" data-sort="RingInvisibility"><a href="../items/ringinvisibility.html">Ring Invisibility</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>lupkingt.kod:37</code></td></tr>
+<tr><td class="" data-sort="AcidRing"><a href="../items/acidring.html">Acid Ring</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>lupkingt.kod:38</code></td></tr>
+<tr><td class="" data-sort="MysticSword"><a href="../items/mysticsword.html">mystic sword</a></td><td class="num " data-sort="3.96">4.0%</td><td class=""></td><td class=""><code>lupkingt.kod:39</code></td></tr>
+<tr><td class="" data-sort="FineLute"><a href="../items/finelute.html">fine lute</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>lupkingt.kod:40</code></td></tr>
+<tr><td class="" data-sort="ResistAcidPotion"><a href="../items/resistacidpotion.html">Resist Acid Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>lupkingt.kod:41</code></td></tr>
+<tr><td class="" data-sort="JalaNecklace"><a href="../items/jalanecklace.html">necklace of Jala</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>lupkingt.kod:42</code></td></tr>
+<tr><td class="" data-sort="DiscordScroll"><a href="../items/discordscroll.html">Discord Scroll</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>lupkingt.kod:43</code></td></tr></tbody></table></div><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>10 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 10.
+<span class="cite">kod/object/passive/trestype/lupkingt.kod:23</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>No room in the world declares this creature. It is summoned by another creature, placed by an
+administrator, or left over from content that is no longer reachable.</p><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_WIZARD_KILLER</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_HYPERAGGRESSIVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_SPASM</code></td><td class="">Has Spasm animation</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_BANKER</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/lupking_g1.png" alt="lupogg king group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g2.png" alt="lupogg king group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g3.png" alt="lupogg king group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g4.png" alt="lupogg king group 4" loading="lazy"><figcaption>group 4 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g5.png" alt="lupogg king group 5" loading="lazy"><figcaption>group 5 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g6.png" alt="lupogg king group 6" loading="lazy"><figcaption>group 6 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g7.png" alt="lupogg king group 7" loading="lazy"><figcaption>group 7 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g8.png" alt="lupogg king group 8" loading="lazy"><figcaption>group 8 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g9.png" alt="lupogg king group 9" loading="lazy"><figcaption>group 9 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g10.png" alt="lupogg king group 10" loading="lazy"><figcaption>group 10 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g11.png" alt="lupogg king group 11" loading="lazy"><figcaption>group 11 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g12.png" alt="lupogg king group 12" loading="lazy"><figcaption>group 12 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g13.png" alt="lupogg king group 13" loading="lazy"><figcaption>group 13 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g14.png" alt="lupogg king group 14" loading="lazy"><figcaption>group 14 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g15.png" alt="lupogg king group 15" loading="lazy"><figcaption>group 15 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g16.png" alt="lupogg king group 16" loading="lazy"><figcaption>group 16 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g17.png" alt="lupogg king group 17" loading="lazy"><figcaption>group 17 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g18.png" alt="lupogg king group 18" loading="lazy"><figcaption>group 18 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g19.png" alt="lupogg king group 19" loading="lazy"><figcaption>group 19 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g20.png" alt="lupogg king group 20" loading="lazy"><figcaption>group 20 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupking_g21.png" alt="lupogg king group 21" loading="lazy"><figcaption>group 21 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupkingx_g1.png" alt="lupogg king corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:11</p>
+<p><code class="k">LupoggKing</code> is <code class="k">Monster</code> — full chain <code class="k">LupoggKing</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>lupoggking_name_rsc</code></td><td class=""><em>lupogg king</em></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>lupoggking_icon_rsc</code></td><td class=""><em>lupking.bgf</em></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>lupoggking_desc_rsc</code></td><td class=""><em>The ancient King of the Lupoggs lords over these dark caves, knowing no creature to be its</em></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>lupoggking_dead_icon_rsc</code></td><td class=""><em>lupkingx.bgf</em></td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>lupoggking_dead_name_rsc</code></td><td class=""><em>dead lupogg king</em></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_LUPOGG_KING</code></td><td class="">40</td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_SLOW</code></td><td class="">8</td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_CLAW</code></td><td class="">512</td><td class="num " data-sort="64">64</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>200</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_AGGRESSIVE |  AI_FIGHT_WIZARD_KILLER | AI_FIGHT_HYPERAGGRESSIVE</code></td><td class="">6307840</td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_SPASM</code></td><td class="">4</td><td class="num " data-sort="69">69</td></tr>
+<tr><td class=""><code class="k">viGender</code></td><td class=""><code>GENDER_MALE</code></td><td class="">1</td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>lupoggking_sound_hit</code></td><td class=""><em>lup_atkm.wav</em></td><td class="num " data-sort="72">72</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>lupoggking_sound_miss</code></td><td class=""><em>lup_atkm.wav</em></td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>lupoggking_sound_aware</code></td><td class=""><em>lup_awr.wav</em></td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>lupoggking_sound_death</code></td><td class=""><em>lup_dth.wav</em></td><td class="num " data-sort="75">75</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">plAttackers</code></td><td class=""><code>$</code></td><td class="num " data-sort="80">80</td></tr>
+<tr><td class=""><code class="k">piHoldAttackChance</code></td><td class=""><code>12</code></td><td class="num " data-sort="82">82</td></tr>
+<tr><td class=""><code class="k">piHoldCounterChance</code></td><td class=""><code>5</code></td><td class="num " data-sort="83">83</td></tr>
+<tr><td class=""><code class="k">piHoldDurationMax</code></td><td class=""><code>45</code></td><td class="num " data-sort="84">84</td></tr>
+<tr><td class=""><code class="k">piHoldDurationMin</code></td><td class=""><code>30</code></td><td class="num " data-sort="85">85</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructed()</h4>
+<pre><code>{
+      pimax_Hit_Points = pimax_hit_Points * 3;
+      piHit_Points = pimax_hit_points;
+
+      plResistances = [ [ 40, ATCK_WEAP_ALL ],
+                        [ 90, ATCK_WEAP_PIERCE ],
+                        [ 90, -ATCK_SPELL_COLD ],
+                        [ 90, -ATCK_SPELL_SHOCK],
+                        [-20, -ATCK_SPELL_ACID ],
+                        [-20, -ATCK_SPELL_FIRE ],
+                        [-40, ATCK_WEAP_NERUDITE ]
+                      ];
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:89</p>
+<h4>AssessDamage(what = $, damage = $, atype = 0, aspell = 0, bonus = 0)</h4>
+<p>This is called when something causes damage to us</p>
+<pre><code>{
+      local i;
+
+      for i in plAttackers
+      {
+         if i = what
+         {
+            propagate;
+         }
+      }
+
+      plAttackers = cons(what,plAttackers);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:106</p>
+<h4>DoSpasm()</h4>
+<pre><code>{
+      Send(self,@DoBreath);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:124</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      piAnimation = ANIM_BITE;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:131</p>
+<h4>SomethingMoved(what = $)</h4>
+<pre><code>{
+      if what &lt;&gt; self OR poOwner = $
+      {
+         propagate;
+      }
+
+      
+      
+
+      Send(poOwner,@Rumble,#duration=250,#disruption=50);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:140</p>
+<h4>DoCast()</h4>
+<pre><code>{
+      piAnimation = ANIM_SPIT;
+      Send(poOwner,@SomethingChanged,#what=self);
+      Send(poOwner,@SomethingShot,#who=self,#target=poTarget,#projectile = self);
+      piAnimation = ANIM_NONE;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:155</p>
+<h4>GetProjectileIcon()</h4>
+<pre><code>{
+      return lupoggking_spit;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:165</p>
+<h4>GetProjectileSpeed()</h4>
+<pre><code>{
+      return 8;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:170</p>
+<h4>SendProjectileAnimation()</h4>
+<pre><code>{
+      AddPacket(1, ANIMATE_CYCLE, 4, 40, 2, 1, 2, 5);   
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:175</p>
+<h4>GetProjectileLightFlags()</h4>
+<pre><code>{
+      
+      return LIGHT_FLAG_NONE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:182</p>
+<h4>DoBreath()</h4>
+<pre><code>{
+      piAnimation = ANIM_BREATH;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:188</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE, 4,200, 2,7, 2,11);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:197</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE, 4,200, 2,2, 2,21);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:204</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if piAnimation = ANIM_BITE
+      {
+         AddPacket(1,ANIMATE_ONCE, 4,200, 2,12, 2,16, 2,1);
+
+         return;
+      }
+
+      if piAnimation = ANIM_SPIT
+      {
+         AddPacket(1,ANIMATE_ONCE, 4,200, 2,17, 2,21, 2,1);
+
+         return;
+      }
+
+      if piAnimation = ANIM_BREATH
+      {
+         AddPacket(1,ANIMATE_ONCE, 4,200, 2,2, 2,6, 2,1);
+
+         return;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:211</p>
+<h4>ReqSpellCast(who = $, oSpell = $, lItems = $)</h4>
+<pre><code>{
+      if oSpell = Send(SYS,@FindSpellByNum,#num=SID_TRUCE)
+      {  
+         Send(who,@MsgSendUser,#message_rsc=lupoggking_no_truce);            
+
+         return FALSE; 
+      }
+
+      if Random(1,piHoldCounterChance) = 1 AND Send(self,@CanSee,#what=who)
+      {
+         Send(self,@MonsterCastAttackSpell,#what=who);
+
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:237</p>
+<h4>ReqSomethingAttack(what = $, victim = $, use_weapon = $)</h4>
+<pre><code>{
+      if use_weapon &lt;&gt; $
+         AND IsClass(use_weapon,&amp;RangedWeapon)
+         AND victim = self
+         AND Send(self,@CanSee,#what=what)
+         AND Random(1,piHoldCounterChance) = 1 
+      {
+         Send(self,@MonsterCastAttackSpell,#What=what);
+
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:256</p>
+<h4>MonsterCastAttackSpell(what = $)</h4>
+<pre><code>{
+      local oSpell, iRandom, oTarget;
+
+      if what = $
+      {
+         oTarget = poTarget;
+      }
+      else
+      {
+         oTarget = what;
+      }
+
+      if not Send(self,@CanSee,#what=poTarget)
+      {
+         return;
+      }
+
+      oSpell = Send(SYS,@FindSpellByNum,#num=SID_HOLD);
+      iRandom = Random(piHoldDurationMin,piHoldDurationMax);
+
+      if NOT Send(poOwner,@ReqSomethingAttack,#what=self,#victim=poTarget,#use_weapon=self)
+      {
+         return;
+      }
+
+      Send(poOwner,@SomethingWaveRoom,#what=self,#wave_rsc=lupoggking_cast_sound);
+      Send(self,@DoCast);
+      Send(oSpell,@DoHold,#what=self,#oTarget=oTarget,#iDurationSecs=iRandom);
+      Send(oTarget,@MsgSendUser,#message_rsc=lupoggking_cast_spell);
+      Send(oTarget,@EffectSendUserDurationAndXlat,#effect=EFFECT_FLASHXLAT,#duration=iRandom*1000,#xlat=SPIT_COLOR); 
+
+      
+
+      return; 
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:272</p>
+<h4>AttackTimer(timer = $)</h4>
+<p>We were bashing on something before, and now its time to hit it again.</p>
+<pre><code>{
+      local oSpell, iRandom;
+      
+      iRandom = Random(1,piHoldAttackChance);
+      oSpell = Send(SYS,@FindSpellByNum,#num=SID_HOLD);
+      Send(self,@ClearBehavior,#timer=timer);
+
+      
+
+      if poOwner = $
+      {
+         debug(&quot;Unreachable. Null Owner&quot;); 
+         Send(self,@EnterStateLimbo);
+
+         return;
+      }
+
+      if poTarget=$
+      {
+         debug(&quot;Unreachable. Null poTarget&quot;,&quot;monster&quot;,self); 
+         Send(self,@EnterStateWait);
+
+         return;
+      }
+
+      Send(self,@FindNewTarget);
+      if NOT Send(self,@CanReach,#what=poTarget) 
+         AND Send(poTarget,@IsEnchanted,#what=oSpell)
+      {
+         Send(self,@EnterStateChase,#Target=poTarget);
+
+         return;
+      }
+      else
+      {
+         if NOT Send(self,@CanReach,#what=poTarget) 
+         {
+            Send(self,@MonsterCastAttackSpell);
+            Send(poBrain,@PostAttackTimer,#mob=self,#state=piState);
+
+            return;
+         }
+      }
+ 
+      if NOT Send(poTarget,@IsEnchanted,#what=oSpell)
+         AND iRandom = 1
+      { 
+         Send(self,@MonsterCastAttackSpell); 
+      }
+      else 
+      {
+         Send(self,@TryAttack,#what=poTarget); 
+      }
+
+      Send(poBrain,@PostAttackTimer,#mob=self,#state=piState);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:309</p>
+<h4>ReqMonsterMove(new_row = $, new_col = $)</h4>
+<p>Called by monster moving code to check if we really want to goto &lt;new_row&gt;,&lt;new_col&gt;.</p>
+<pre><code>{
+      if poOwner &lt;&gt; $
+         AND Send(poOwner,@GetRoomNum) = RID_SEWER_KING
+         AND (new_row &gt; 17 OR new_col &gt; 43 OR new_row &lt; 2 OR new_col &lt; 12)
+      {
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:370</p>
+<h4>CanSee(what = $)</h4>
+<pre><code>{
+      local iRow, iCol;
+
+      if poOwner &lt;&gt; $
+         AND Send(poOwner,@GetRoomNum) = RID_SEWER_KING
+         AND what &lt;&gt; $
+      {
+         iRow = Send(what,@GetRow);
+         iCol = Send(what,@GetCol);
+
+         if iRow &gt; 18 and iCol &gt; 43
+         {
+            return FALSE;
+         }
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:384</p>
+<h4>FindNewTarget()</h4>
+<pre><code>{
+      local oHold, lActive, iRandom, iDistance, iBestDistance, i, each_obj;
+
+      
+      
+      
+      
+
+      oHold = Send(SYS,@FindSpellByNum,#num=SID_HOLD);
+      lActive = Send(poOwner,@getholderactive);
+      iRandom = Random(1,30);
+      iBestDistance = 10000;
+
+      if Send(poTarget,@isenchanted,#what=oHold)
+      {
+         for i in lActive
+         {
+            each_obj = Send(poOwner,@HolderExtractObject,#data=i);
+            iDistance = Send(self,@SquaredDistanceTo,#what=each_obj);
+
+            if IsClass(each_obj,&amp;User)
+               AND Send(self,@CanSee,#what=each_obj)
+               AND NOT Send(each_obj,@isenchanted,#what=oHold)
+               AND (iRandom &lt; 10 OR iDistance &lt; iBestDistance)
+            {
+               iBestDistance = iDistance;
+               poTarget = each_obj;
+               if iRandom &lt; 5
+               {
+                  return;
+               }
+            }
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:404</p>
+<h4>Killed(what = $)</h4>
+<pre><code>{
+      local oSpell, NumAttackers, i;
+
+      NumAttackers = length(plAttackers);
+ 
+      for i in plAttackers
+      {
+         if i = what
+         {
+            Send(i,@MsgSendUser,#message_rsc=lupoggking_death_blow );      
+         }
+
+         if NumAttackers = 1
+         {
+            Send(i,@MsgSendUser,#message_rsc=lupoggking_single_killer );
+         }
+
+         if NumAttackers = 2
+         {
+            Send(i,@MsgSendUser,#message_rsc=lupoggking_double_killer );
+         }
+
+         if NumAttackers &gt; 2
+         {
+            Send(i,@MsgSendUser,#message_rsc=lupoggking_helper_killer );
+         }
+
+      }
+   
+      
+      
+      oSpell = Send(SYS,@FindSpellByNum,#num=SID_EARTHQUAKE);
+      Post(oSpell,@DoEarthQuake,#where=poOwner,#severity=2,
+           #rDeathSourceDef=Send(self,@GetDef),#rDeathSourceName=Send(self,@GetName));
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:443</p>
+<h4>CanMorphTo()</h4>
+<pre><code>{
+      return FALSE;
+   }      </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:482</p>
+<h4>DMCanArmageddon()</h4>
+<pre><code>{
+      
+      if poOwner &lt;&gt; $
+         AND Send(poOwner,@GetRoomNum) = RID_SEWER_KING
+      {
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupking.kod:487</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

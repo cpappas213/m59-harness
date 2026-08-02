@@ -1,0 +1,148 @@
+<h1>Riija — the School of Illusion</h1>
+
+<p class="lede">Riija is the Trickster, and the school named for him is the only one in the game
+built around not being where you appear to be. Twenty-three spells: teleports, disguises, false
+walls, false wounds, false <em>selves</em>. It has no karma requirement, its power waxes and wanes
+with the moon, and — uniquely — it rewards you for carrying more rather than less.</p>
+
+<h2>Where Riija stands</h2>
+
+<table class="data">
+<thead><tr><th></th><th></th></tr></thead>
+<tbody>
+<tr><td>School constant</td><td><code class="k">SS_RIIJA</code> = 5</td></tr>
+<tr><td>Polarity</td><td>Neutral — no karma requirement at any level</td></tr>
+<tr><td>Requisite attribute</td><td><strong>Intellect</strong></td></tr>
+<tr><td>Learning division</td><td>Lore, shared with Jala</td></tr>
+<tr><td>Spells</td><td>23, across levels 1–6</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:2027 · kod/object/passive/spell.kod:376 <code class="k">GetDivision</code>, :392 <code class="k">GetDivisionReq</code>, :482 <code class="k">GetRequiredKarma</code></p>
+
+<p>Intellect is the best requisite attribute in the game to be saddled with, because it pays
+three times over: it sets the floor under Riija's success chance, it adds up to 50% to the first
+learning gate for <em>everything</em> you learn, and it damps atrophy across your whole ability
+list. A Riija caster's core attribute is quietly working for their fighting skills too.</p>
+<p class="cite">kod/object/passive/spell.kod:1693 <code class="k">GetInitialChance</code> · kod/object/active/holder/nomoveon/battler/player.kod:7201 <code class="k">ActivateSpellAtrophy</code></p>
+
+<h2>The two things that make Riija strange</h2>
+
+<div class="formula">primary bonus   (0–30) = the moon's overlay height in the sky / 12
+secondary bonus (0–10) = bulk_held × 10 / bulk_max</div>
+<p class="cite">kod/object/passive/spell.kod:2146–2160</p>
+
+<p><strong>The moon.</strong> Riija's world-state bonus is read off the position of the moon
+among the background objects — the source notes its range as −16 to 30 before bounding. No other
+school's power varies on a cycle the player cannot influence at all. A Riija caster is measurably
+stronger at some hours than others, and there is nothing to be done about it but notice.</p>
+
+<p><strong>The pack.</strong> Every other school treats encumbrance as pure cost. Riija turns it
+into up to 10 points of spell power: the fuller your bulk, the stronger you cast. A Riija caster
+who empties their pack to move quickly is throwing away a tenth of the scale. This is the only
+place in the game where the correct answer is <em>carry more</em>.</p>
+
+<div class="note">Both bonuses are added to half your ability in the spell, so at low ability they
+dominate. A new Riija caster standing under a high moon with a full pack casts meaningfully
+better than the same character empty-handed at moonset. See
+<a href="spells.html">Spells and Spellcasting</a> for the whole spell-power calculation.</div>
+
+<h2>Every Riija spell</h2>
+
+<table class="data">
+<thead><tr><th>Lvl</th><th>Spell</th><th>Mana</th><th>Cast time</th><th>Reagents</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><a href="../spells/anonymity.html">anonymity</a></td><td>15</td><td>5,000 ms</td><td>rainbow fern ×2, firesand</td></tr>
+<tr><td>1</td><td><a href="../spells/blink.html">blink</a></td><td>15</td><td>10,000 ms</td><td>none</td></tr>
+<tr><td>1</td><td><a href="../spells/feigndeath.html">feign death</a></td><td>5</td><td>instant</td><td>solagh, rainbow fern</td></tr>
+<tr><td>1</td><td><a href="../spells/flash.html">flash</a></td><td>15</td><td>instant</td><td>dragonfly eye ×2</td></tr>
+<tr><td>1</td><td><a href="../spells/shadowform.html">shadow form</a></td><td>5</td><td>3,000 ms</td><td>rainbow fern ×3</td></tr>
+<tr><td>2</td><td><a href="../spells/bait.html">bait</a></td><td>8</td><td>2,000 ms</td><td>web moss, firesand</td></tr>
+<tr><td>2</td><td><a href="../spells/eavesdrop.html">eavesdrop</a></td><td>8</td><td>instant</td><td>dragonfly eye ×2</td></tr>
+<tr><td>2</td><td><a href="../spells/foresight.html">foresight</a></td><td>5</td><td>instant</td><td>uncut seraphym ×2</td></tr>
+<tr><td>2</td><td><a href="../spells/forgetspell.html">forget</a></td><td>20</td><td>instant</td><td>firesand ×2, uncut seraphym ×2</td></tr>
+<tr><td>3</td><td><a href="../spells/illusionaryfirewall.html">illusionary firewall</a></td><td>15</td><td>1,000 ms</td><td>rainbow fern ×3, firesand ×2</td></tr>
+<tr><td>3</td><td><a href="../spells/illusionaryform.html">illusionary form</a></td><td>15</td><td>6,000 ms</td><td>web moss ×2, rainbow fern ×3</td></tr>
+<tr><td>3</td><td><a href="../spells/illusionarywounds.html">illusionary wounds</a></td><td>10</td><td>instant</td><td>solagh, firesand</td></tr>
+<tr><td>3</td><td><a href="../spells/summonreflection.html">reflection</a></td><td>15</td><td>1,000 ms</td><td>firesand ×2, rainbow fern ×2, uncut seraphym ×2</td></tr>
+<tr><td>3</td><td><a href="../spells/vertigo.html">vertigo</a></td><td>12</td><td>instant</td><td>dragonfly eye ×2, solagh</td></tr>
+<tr><td>4</td><td><a href="../spells/summonapparition.html">apparition</a></td><td>30</td><td>4,000 ms</td><td>web moss, rainbow fern ×2</td></tr>
+<tr><td>4</td><td><a href="../spells/dement.html">dement</a></td><td>6</td><td>instant</td><td>solagh ×2, uncut seraphym</td></tr>
+<tr><td>4</td><td><a href="../spells/denial.html">denial</a></td><td>15</td><td>1,000 ms</td><td>firesand ×2, solagh</td></tr>
+<tr><td>5</td><td><a href="../spells/artifice.html">artifice</a></td><td>10</td><td>10,000 ms</td><td>firesand ×3, uncut seraphym ×3</td></tr>
+<tr><td>5</td><td><a href="../spells/summoneviltwin.html">evil twin</a></td><td>10</td><td>500 ms</td><td>solagh ×3, web moss ×3</td></tr>
+<tr><td>5</td><td><a href="../spells/morph.html">morph</a></td><td>20</td><td>20,000 ms</td><td>web moss ×3, dragonfly eye ×2</td></tr>
+<tr><td>6</td><td><a href="../spells/elusion.html">elusion</a></td><td>20</td><td>instant</td><td>kriipa claw ×2</td></tr>
+<tr><td>6</td><td><a href="../spells/seduce.html">seduce</a></td><td>15</td><td>instant</td><td>web moss ×5, firesand ×5</td></tr>
+<tr><td>6</td><td><a href="../spells/summoncow.html">summon bovine</a></td><td>5</td><td>2,000 ms</td><td>polished seraphym ×5</td></tr>
+</tbody>
+</table>
+<p class="cite">Compiled from every <code class="k">Spell</code> subclass with <code class="k">viSchool = SS_RIIJA</code>. Per-spell citations are on each spell's own page.</p>
+
+<h2>What the school is actually for</h2>
+
+<h3>Not being there</h3>
+<p><a href="../spells/blink.html">Blink</a>, <a href="../spells/elusion.html">elusion</a> and
+<a href="../spells/feigndeath.html">feign death</a> are three different answers to the same
+question. Blink is a teleport but costs a <strong>ten-second</strong> trance — an eternity in a
+fight, and only survivable if you start it before you need it. Elusion at level 6 is instant.
+Feign death costs 5 mana and no cast time at all, and is the cheapest exit in the school.</p>
+
+<h3>Not being who you are</h3>
+<p><a href="../spells/anonymity.html">Anonymity</a>,
+<a href="../spells/shadowform.html">shadow form</a>,
+<a href="../spells/illusionaryform.html">illusionary form</a> and
+<a href="../spells/morph.html">morph</a> form a ladder of concealment.
+<strong>Morph is the real prize and the real commitment</strong>: a twenty-second trance, and
+while morphed your offence, defence, damage, parry, block and dodge are all taken from the
+creature you have become rather than from you.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4232, :4300, :4322, :4416 — every combat accessor checks <code class="k">PFLAG_MORPHED</code> first</p>
+
+<div class="warn">Morphing has an advancement penalty attached. If your maximum health is more
+than double its base and you kill something weaker than that, your health gain is halved and the
+roll is skipped entirely. The game explicitly calls this "cheesing the situation."
+<span class="cite">kod/object/active/holder/nomoveon/battler/player.kod:7809–7816</span></div>
+
+<h3>Not being alone</h3>
+<p><a href="../spells/summonreflection.html">Reflection</a>,
+<a href="../spells/summonapparition.html">apparition</a> and
+<a href="../spells/summoneviltwin.html">evil twin</a> put copies of you on the board.</p>
+<div class="warn"><strong>You cannot advance on anything you summon.</strong> Illusions and
+revenants both refuse — <code class="k">CanPlayerAdvanceOnMe</code> returns false — and summoned
+creatures drop no treasure at all. Summons are for winning fights, never for farming them.
+<span class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4944 · kod/object/passive/spell.kod:1624</span></div>
+
+<h3>Ruining someone else's day</h3>
+<p><a href="../spells/dement.html">Dement</a> is the school's quiet weapon: it subtracts
+<code class="k">random(n, 2n)</code> directly from the target's spell power, which cuts their
+success chance, raises their mana costs and slows their casting all at once.
+<a href="../spells/vertigo.html">Vertigo</a>, <a href="../spells/flash.html">flash</a> and
+<a href="../spells/forgetspell.html">forget</a> attack perception and memory;
+<a href="../spells/seduce.html">seduce</a> at level 6 attacks loyalty.</p>
+<p class="cite">kod/object/passive/spell.kod:2229–2236 — dementia is applied inside <code class="k">GetSpellPower</code> itself</p>
+
+<h2>Playing it</h2>
+
+<ul>
+<li><strong>Cast under a high moon.</strong> Up to 30 of the 99-point spell power scale is the
+moon's position. Nothing else you do moves the number that far.</li>
+<li><strong>Stay loaded.</strong> Bulk is spell power here. Empty your pack only when you have to.</li>
+<li><strong>Level 1 is unusually strong.</strong> Feign death and shadow form both cost 5 mana,
+and blink is a free teleport home. A level-1 Riija caster has a full escape kit.</li>
+<li><strong>Watch the trances.</strong> Blink is 10 seconds, morph is 20, artifice is 10. Those
+are pre-fight spells. Everything you want mid-fight in this school — flash, vertigo, dement,
+elusion, feign death — is instant, and that split is not an accident.</li>
+<li><strong>Firesand, rainbow fern, solagh, web moss, uncut seraphym and dragonfly eye</strong>
+between them cover almost the whole school. See <a href="../reagents/index.html">Reagents</a> for
+where they drop and what they cost.</li>
+</ul>
+
+<div class="note">A piece of lore that is also a mechanical hint: the game says Duke Akardius is
+"a zealous devotee of Riija," and his description points at "the manipulative, deceitful aspect
+of the Trickster God." The school and the political layer are written as the same theme.
+<span class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/duke.kod:22</span></div>
+
+<h2>Related</h2>
+<p><a href="schools.html">The Six Schools</a> · <a href="spells.html">How casting works</a> ·
+<a href="../spells/index.html">Every spell</a> (filter by Riija) ·
+<a href="../reagents/index.html">Reagents</a> · <a href="attributes.html">Attributes</a> ·
+<a href="duke.html">The Duke and Politics</a></p>

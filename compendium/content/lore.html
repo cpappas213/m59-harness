@@ -1,0 +1,175 @@
+<h1>The World of Meridian</h1>
+
+<p class="lede">Everything on this page is the game's own text — the strings the server sends when
+you look at something, the descriptions written into the class files, the words the lieges say
+when you hand them a token. Nothing here is invented, and where the game is silent it says so.
+The world's shape is a murdered Duke, three claims to a throne, six gods with incompatible
+demands, and an Underworld that does not let go easily.</p>
+
+<h2>Three claims to a crown</h2>
+
+<p>The old Duke was murdered. What follows is the political layer of the game, and the game
+introduces its three claimants in their own words.</p>
+
+<h3>Duke Akardius</h3>
+<blockquote>Despite being only 16 years old Duke Akardius skillfully maneuvered himself into
+position to succeed his murdered uncle. The young Duke simply radiates confidence and power.
+Rumor has it that he is a zealous devotee of Riija and his cunning smile suggests the
+manipulative, deceitful aspect of the Trickster God. In spite of his lavish and very public
+displays of mourning for his Uncle, there are some who doubt the sincerity of his grief.</blockquote>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/duke.kod:22 <code class="k">duke_desc_rsc</code></p>
+
+<p>There is a second description, used when you find him standing over his uncle's body: his face
+"awash in grief," and "a core of iron will that suggests strength and cunning greater than you
+have ever seen in a boy of only sixteen years." The game shows you the murder scene and then
+tells you the boy is a devotee of the god of deception. It does not say he did it.</p>
+<p class="cite">ibid., <code class="k">duke_murder_desc_rsc</code></p>
+
+<p>When you bring him a councillor's token, he says: <em>"I will see that this gets returned to
+its rightful councilor. Of course, he will owe me."</em> The whole political system is debts, and
+he is the one who says it out loud.</p>
+
+<h3>Princess Kateriina</h3>
+<blockquote>Age has made Princess Kateriina stronger and more certain of herself, but has done
+little to temper her naivete. She has developed great disdain for the Duke and all who engage in
+political maneuvering. She considers matters of political intrigue to be below her, trusting that
+if she rules wisely and justly all will accept her. Magic continues to fascinate her and she
+sometimes dreams of running away to study the arcane arts.</blockquote>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/princess.kod <code class="k">princess_desc_rsc</code></p>
+
+<p>She speaks in archaic second person — <em>"Since thou possess a like mind, please support my
+faction. Put thy name to the roll hither."</em> — where the Duke speaks like a modern politician.
+Her fascination with magic is not only characterisation: the Princess soldier's shield is the
+item that reduces spellcasting mana costs, and her faction is the one with the price discount.</p>
+<p class="cite">kod/object/passive/spell.kod:1578 · kod/util/parlia.kod:1144</p>
+
+<h3>Jonas D'Accor, the Rebel</h3>
+<blockquote>Time and anger have weathered Jonas D'Accor into a hard man. He stands steadfastly in
+place, contemplating the future of the lands. The actions of the other lieges have forced him to
+make an attempt for the crown. He believes that the other lieges are not strong enough to rule,
+even if they have a rightful claim to the throne. He organizes his rebels and hopes to gain
+support in his quest to take the crown and bring peace and order back to the lands.</blockquote>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/rebel.kod <code class="k">RebelLiege_desc_rsc</code></p>
+
+<p>The rebel leader is the one who refuses murderers: <em>"I am a servant of the Law, and as such
+my conscience will not allow me to help you."</em> The rebellion against the crown is the faction
+with a conscience about killing, which is the sort of joke the game makes quietly and does not
+explain.</p>
+
+<div class="note">There are three quest chains named <code class="k">QST_ID_MURDER_PRINCESS_1…3</code>,
+<code class="k">QST_ID_MURDER_DUKE_1…3</code> and <code class="k">QST_ID_MURDER_JONAS_1…3</code>.
+The game is prepared for any of the three to be assassinated, by players, in the same structure
+that killed the old Duke.
+<span class="cite">kod/include/blakston.khd:2760–2768</span></div>
+
+<h2>The six gods</h2>
+
+<p>The clearest statement of what each god is comes from their priestesses, who are written as
+people rather than as doctrine.</p>
+
+<h3>Shal'ille — Priestess Xiana</h3>
+<blockquote>Clean and prim, this priestess of peaceful serenity speaks only kind words. She even
+wishes peace on those of Qor and prays for their redemption.</blockquote>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/temples/shalprst.kod</p>
+
+<h3>Qor — Priestess Zuxana</h3>
+<blockquote>The perfect servant of Qor the Vile. Shadows deepen where this malevolent woman
+stands. She has a devious sensuality that she will exploit to turn men and women to succumb to
+the dark will of Qor. If she can not seduce others to Qor, she would rather see them dead.</blockquote>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/temples/qorprst.kod</p>
+
+<p>Note the asymmetry the game builds in: Shal'ille's priestess prays for Qor's followers to be
+redeemed; Qor's priestess would rather Shal'ille's were dead. That asymmetry is enforced
+mechanically — the two schools' karma gates make them mutually exclusive, and it is the Qor caster
+who must go hunting good creatures to stay eligible.</p>
+<p class="cite">kod/object/passive/spell.kod:482 · see <a href="karma.html">Karma</a></p>
+
+<h3>Kraanan — Priestess Qerti'nya</h3>
+<blockquote>Qerti'nya is very judgmental of the strength of those who come before her. Blood and
+hellfire are the tools of this priestess, for only the strong and good meaning deserve to live.
+She is quick to make accusations or statements. Although she delivers a powerful sermon, she is
+likely to go out drinking with the men after it is over.</blockquote>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/temples/kranprst.kod</p>
+
+<p>The war god's priestess goes drinking afterwards. Kraanan is the school whose spell power rises
+with the number of people in the room and with how healthy you are — a god of company and of
+vigour, not of grimness.</p>
+
+<h3>Faren — Priestess Tenuv'vyal</h3>
+<blockquote>Hair unkempt and anger barely checked. Some say she is on the brink of madness, others
+say she is a terrible menace waiting to be released like a raging storm. She despises
+civilization and feels humans must return to the ways of the wilds.</blockquote>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/temples/farnprst.kod</p>
+
+<h3>Riija — the Monk</h3>
+<blockquote>Floating several feet above the ground, this enigma of a being watches you. When it
+speaks, the monk's voice crackles like century old parchment. You have a very uneasy feeling that
+all is not as it seems.</blockquote>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/temples/kcrjmonk.kod</p>
+
+<p>Riija's servant is the only one the game will not call a person. "This enigma of a being."
+"All is not as it seems" — which is both characterisation and a warning, since Riija is the school
+of illusion and the Duke is said to be its devotee. See <a href="riija.html">Riija</a>.</p>
+
+<h3>Jala</h3>
+<p>Jala has no temple priestess in the same pattern. It is the bard's god, reached through the
+Minstrel and through instruments, and its presence in the world is a song: when two bards compete,
+the game says <em>"A nearby bard of Jala begins to sing a song, but quits when they realize they
+can't be heard over the song sung by another."</em></p>
+<p class="cite">kod/object/passive/spell/jala.kod <code class="k">jala_song_failed</code></p>
+
+<h2>The settlements</h2>
+
+<table class="data">
+<thead><tr><th>Place</th><th>What the game puts there</th></tr></thead>
+<tbody>
+<tr><td><strong>Barloque</strong></td><td>The capital. The Office of the Justicar, the Old Jailhouse, the Adventurer's Hall, the Brownestone Inn, Joguer's Herbs and Roots — and the guild creator. Law and institutions.</td></tr>
+<tr><td><strong>Tos</strong></td><td>East Ende, the Arena of Kraanan, the First Royal Bank, the Hall of the Forgotten Heroes, a graveyard and a crypt.</td></tr>
+<tr><td><strong>Cor Noth</strong></td><td>The Hall of Genealogy, the Weapon Master's Abode, the Spindle and the Spinster, the Cibilo Creek Inn. Bloodlines and craft.</td></tr>
+<tr><td><strong>Jasper</strong></td><td>The Royal Bank of Jasper and a large grid of streets.</td></tr>
+<tr><td><strong>Ko'catan</strong></td><td>The island settlement. Two Lizards Magic Shop, the Hungry Vaults, the Hall of Heroes, the East and West Towers — and the jungle beyond it, where the Avar live.</td></tr>
+<tr><td><strong>Marion</strong></td><td>Small. An Adventurer's Hall and Lady Aftyn's Sanctuary.</td></tr>
+<tr><td><strong>Raza</strong></td><td>The guest area: an inn, a blacksmith, a magic shop, a pub, and the Grand Museum of Raza.</td></tr>
+</tbody>
+</table>
+<p class="cite">room classes under kod/object/active/holder/room/ — see <a href="places.html">Places and Travel</a></p>
+
+<h2>The Koc'atan</h2>
+
+<p>Something the compendium surfaces that is easy to miss in play: many creatures carry a
+<em>second</em> name, <code class="k">vrKocName</code>, which is what the Koc'atan call them. The
+ant is <em>yokinich</em>. There is a whole parallel naming of the world's fauna belonging to the
+island culture, and every <a href="../creatures/index.html">bestiary page</a> shows it where it
+exists.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:170 <code class="k">vrKocName</code> · e.g. monster/ant.kod:19</p>
+
+<h2>The Underworld</h2>
+
+<p>Death is not an ending here; it is a place. <code class="k">RID_UNDERWORLD</code> is region 1,
+and it has no ordinary exits. Everything you were carrying stays on your corpse in the world you
+left. See <a href="death.html">Death, the Underworld and PvP</a> for the mechanics.</p>
+<p class="cite">kod/include/blakston.khd:375</p>
+
+<h2>Where the game is silent</h2>
+
+<p>Three things a reader might expect to find here and will not, because the source does not
+contain them:</p>
+
+<ul>
+<li><strong>Who killed the old Duke.</strong> The game shows you the body, tells you the nephew
+worships the god of deception, and stops.</li>
+<li><strong>A creation myth or a chronology.</strong> There is no dated history in the class files.
+The gods are described through their servants and their spells, never through a cosmology.</li>
+<li><strong>What Riija wants.</strong> Every other school states a value — compassion, corruption,
+war, the wild, song. Riija's is left as "all is not as it seems."</li>
+</ul>
+
+<div class="note">The client's string resources under <code class="k">run/localclient/resource/*.rsc</code>
+and the printed material in <code class="k">manual/</code> contain further material that this page
+does not cover; everything above is from the server source, where it can be cited to a line.</div>
+
+<h2>Related</h2>
+<p><a href="duke.html">The Duke and Politics</a> · <a href="factions.html">Factions</a> ·
+<a href="schools.html">The Six Schools</a> · <a href="karma.html">Karma</a> ·
+<a href="places.html">Places and Travel</a> · <a href="quests.html">Quests</a> ·
+<a href="death.html">Death and the Underworld</a> · <a href="../creatures/index.html">Bestiary</a></p>

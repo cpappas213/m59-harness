@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resist Ring — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Resist Ring</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/ring3_g1.png" alt="Resist Ring" width="128" height="58"></div><div class="heroText"><h1>Resist Ring</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">jewellery</span><span class="tag ">finger</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">5</div></div><div class="fact"><div class="lbl">Value</div><div class="val">280 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">15–30</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">finger</div></div></div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/ring3_g1.png" alt="Resist Ring inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/ring3_g2.png" alt="Resist Ring group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/ring/resring.kod:13</p>
+<p><code class="k">ResistRing</code> is <code class="k">Ring</code> — full chain <code class="k">ResistRing</code> ← <code class="k">Ring</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">AcidRing</code>, <code class="k">ColdRing</code>, <code class="k">FireRing</code>, <code class="k">ShockRing</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>resistring_icon_rsc</code></td><td class=""><em>ring3.bgf</em></td><td class="num " data-sort="28">28</td></tr>
+<tr><td class=""><code class="k">vrUseMessage</code></td><td class=""><code>resistring_use_rsc</code></td><td class=""><em>You put the ring on.</em></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrDeadMessage</code></td><td class=""><code>resistring_dead_rsc</code></td><td class=""><em>The ring crumbles!</em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">viChargeRate</code></td><td class=""><code>60000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>15</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>30</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>280</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viUnrevealedColor</code></td><td class=""><code>PT_ITEM_XLAT_BLUE_TO_WHITE</code></td><td class="">155</td><td class="num " data-sort="45">45</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piResistanceType</code></td><td class=""><code>0</code></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">piResistanceChange</code></td><td class=""><code>50</code></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">ptCharge</code></td><td class=""><code>$</code></td><td class="num " data-sort="52">52</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Delete()</h4>
+<pre><code>{
+      if ptCharge &lt;&gt; $
+      {
+         DeleteTimer(ptCharge);
+         ptCharge = $;
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/resring.kod:56</p>
+<h4>NewUsed(what = $)</h4>
+<pre><code>{
+
+      if vrName = vrRealName
+      {
+         
+         Send(poOwner, @MsgSendUser, #message_rsc=vrUseMessage);
+      }
+      
+      send(self,@AddResistances);
+      
+      if ptCharge &lt;&gt; $
+      {
+         DeleteTimer(ptCharge);
+      }
+      
+      ptCharge = CreateTimer(self,@ChargeTimer,viChargeRate);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/resring.kod:67</p>
+<h4>NewUnused(what = $)</h4>
+<pre><code>{
+      send(self,@RemoveResistances);
+      
+      if ptCharge &lt;&gt; $ 
+      {
+         DeleteTimer(ptCharge);
+         ptCharge = $;
+      }
+      
+      piHits = piHits - 1;
+      if piHits &lt;= 0
+      {
+         Send(poOwner,@MsgSendUser,#message_rsc=vrDeadMessage);
+         Send(self,@Delete);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/resring.kod:88</p>
+<h4>AddResistances()</h4>
+<pre><code>{
+      local i;
+      
+      for i in send(self,@GetResistanceModifiers)
+      {
+         Send(poOwner,@AddResistance,#what=nth(i,1),#value=nth(i,2));
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/resring.kod:108</p>
+<h4>RemoveResistances()</h4>
+<pre><code>{
+      local i;
+      
+      for i in send(self,@GetResistanceModifiers)
+      {
+         Send(poOwner,@RemoveResistance,#what=nth(i,1),#value=nth(i,2));
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/resring.kod:120</p>
+<h4>GetResistanceModifiers()</h4>
+<pre><code>{
+      return [[piResistanceType,piResistanceChange]];
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/resring.kod:132</p>
+<h4>ChargeTimer()</h4>
+<p>Called each minute to drain a hit.</p>
+<pre><code>{
+      ptCharge = $;
+      piHits = piHits - 1;
+
+      if piHits = 0
+      {
+         Send(poOwner, @TryUnuseItem, #what = self);
+         
+         return;
+      }
+      
+      ptCharge = CreateTimer(self, @ChargeTimer, viChargeRate);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/resring.kod:137</p>
+<h4>UserLogoff()</h4>
+<pre><code>{
+      Send(poOwner,@TryUnuseItem,#what=self);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/resring.kod:155</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

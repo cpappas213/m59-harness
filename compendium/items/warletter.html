@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>personal letter — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › personal letter</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/scr01_g1.png" alt="personal letter" width="118" height="40"></div><div class="heroText"><h1>personal letter</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">sundry</span><span class="tag ">hand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">3</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">10</div></div><div class="fact"><div class="lbl">Value</div><div class="val">40 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">hand</div></div></div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/scr01_g1.png" alt="personal letter inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/scr01_g2.png" alt="personal letter group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/warlettr.kod:11</p>
+<p><code class="k">WarLetter</code> is <code class="k">PassiveItem</code> — full chain <code class="k">WarLetter</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>WarLetter_name_rsc</code></td><td class=""><em>personal letter</em></td><td class="num " data-sort="286">286</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>WarLetter_icon_rsc</code></td><td class=""><em>scr01.bgf</em></td><td class="num " data-sort="287">287</td></tr>
+<tr><td class=""><code class="k">viUse_type</code></td><td class=""><code>ITEM_USE_HAND</code></td><td class="">8</td><td class="num " data-sort="289">289</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>40</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="290">290</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="291">291</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="292">292</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piState</code></td><td class=""><code>WARLETTER_CLOSED</code></td><td class="num " data-sort="296">296</td></tr>
+<tr><td class=""><code class="k">viInventory_group</code></td><td class=""><code>WARLETTER_CLOSED</code></td><td class="num " data-sort="297">297</td></tr>
+<tr><td class=""><code class="k">psAssembledText</code></td><td class=""><code>$</code></td><td class="num " data-sort="298">298</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>WarLetter_desc_closed_rsc</code></td><td class="num " data-sort="299">299</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor()</h4>
+<pre><code>{
+      post(self,@UpdateText);
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warlettr.kod:303</p>
+<h4>NewUsed(what = $)</h4>
+<pre><code>{
+      piState = WARLETTER_OPEN;
+
+      if poOwner = $
+      {
+         propagate;
+      }
+      if isClass(poOwner, &amp;Player)
+      {
+         Send(poOwner,@MsgSendUser,#message_rsc=WarLetter_open_rsc);
+      }
+      vrDesc = WarLetter_desc_opened_rsc;
+      viInventory_group = WARLETTER_OPEN;
+      Send(poOwner,@SomethingChanged,#what=self);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warlettr.kod:309</p>
+<h4>NewUnused(what = $)</h4>
+<pre><code>{
+      piState = WARLETTER_CLOSED;
+
+      if poOwner = $
+      {
+         propagate;
+      }
+      if isClass(poOwner, &amp;Player)
+      {
+         Send(poOwner,@MsgSendUser,#message_rsc=WarLetter_close_rsc);
+      }
+      vrDesc = WarLetter_desc_closed_rsc;
+      viInventory_group = WARLETTER_CLOSED;
+      Send(poOwner,@SomethingChanged,#what=self);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warlettr.kod:328</p>
+<h4>AppendDesc()</h4>
+<pre><code>{
+      if piState = WARLETTER_OPEN
+      {
+         AppendTempString(WarLetter_intro_rsc);
+         AppendTempString(psAssembledText);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warlettr.kod:347</p>
+<h4>UpdateText()</h4>
+<pre><code>{
+      local lQuestInfo, iRandomNumber, rText;
+      
+      lQuestInfo = Send(self,@GetAttributeData,#ItemAtt=IA_QUEST_CARGO);
+      iRandomNumber = random(1,15);
+
+      if iRandomNumber = 1
+      {
+         rText = Warletter_text1_rsc;
+      } else {
+         if iRandomNumber = 2
+         {
+            rText = Warletter_text2_rsc;
+         } else {
+            if iRandomNumber = 3
+            {
+               rText = Warletter_text3_rsc;
+            } else {
+               if iRandomNumber = 4
+               {
+                  rText = Warletter_text4_rsc;
+               } else { 
+                  if iRandomNumber = 5
+                  {
+                     rText = Warletter_text5_rsc;
+                  } else {
+                     if iRandomNumber = 6
+                     {
+                        rText = Warletter_text6_rsc;
+                     } else {
+                        if iRandomNumber = 7
+                        {
+                           rText = Warletter_text7_rsc;
+                        } else {
+                           if iRandomNumber = 8
+                           {  
+                              rText = Warletter_text8_rsc;
+                           } else {
+                              if iRandomNumber = 9
+                              {
+                                 rText = Warletter_text9_rsc;
+                              } else {
+                                 if iRandomNumber = 10
+                                 {
+                                    rText = Warletter_text10_rsc;
+                                 } else {
+                                    if iRandomNumber = 11
+                                    {
+                                       rText = Warletter_text11_rsc;
+                                    } else {
+                                       if iRandomNumber = 12
+                                       {
+                                          rText = Warletter_text12_rsc;
+                                       } else {
+                                          if iRandomNumber = 13
+                                          {
+                                             rText = Warletter_text13_rsc;
+                                          } else {
+                                             if iRandomNumber = 14
+                                             {
+                                                rText = Warletter_text14_rsc;
+                                             } else {
+                                                if iRandomNumber = 15
+                                                {
+                                                   rText = Warletter_text15_rsc;
+                                                } else {
+                                                   rText = Warletter_text_default;
+                                                }
+                                             }
+                                          }
+                                       }
+                                    }
+                                 }
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      psAssembledText = createString();
+      SetString(psAssembledText,rText);
+      StringSubstitute(psAssembledText,Warletter_percent_s,Send(Send(nth(lQuestInfo,2),@GetDestNPC),@GetName));
+      StringSubstitute(psAssembledText,Warletter_percent_s,Send(Send(nth(lQuestInfo,2),@GetSourceNPC),@GetName));
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warlettr.kod:359</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

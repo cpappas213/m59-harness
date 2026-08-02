@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scry — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › scry</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/lightnin_g1.png" alt="scry" width="128" height="64"></div><div class="heroText"><h1>scry</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><span class="tag school-7">Administrative</span><span class="tag ">Level 50</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><span class="muted">Administrative</span></div></div><div class="fact"><div class="lbl">Level</div><div class="val">50</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">0</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">1</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">0 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">71</div></div></div><div class="flavor">This scrys a person of your choice, revealing their status for spell advancement.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">0</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><span class="muted">none</span></td><td class="">This spell needs no material component.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">0</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">instant</td><td class=""></td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/dmspell/scry.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>No teacher in the current world data offers this spell. It may be granted by a quest, by an item, or reserved for monsters and administrators.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">Constructor</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">GetSchoolStr</code></li><li><code class="k">CastSpell</code></li><li><code class="k">SendEffectData</code></li><li><code class="k">ComputeScryInfo</code> — This routine does all the top level work for the scry spell. It checksto see what the player in question needs for each spell school.</li><li><code class="k">ReportMastery</code></li><li><code class="k">ReportSkillMastery</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/lightnin_g1.png" alt="scry group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/lightnin_g2.png" alt="scry group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lightnin_g3.png" alt="scry group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/dmspell/scry.kod:11</p>
+<p><code class="k">Scry</code> is <code class="k">DMSpell</code> — full chain <code class="k">Scry</code> ← <code class="k">DMSpell</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>scry_name_rsc</code></td><td class=""><em>scry</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>scry_icon_rsc</code></td><td class=""><em>lightnin.bgf</em></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>scry_desc_rsc</code></td><td class=""><em>This scrys a person of your choice, revealing their status for spell advancement.</em></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_SCRY</code></td><td class="">71</td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="45">45</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">plSchools</code></td><td class=""><code>$</code></td><td class="num " data-sort="49">49</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor()</h4>
+<pre><code>{
+      plSchools = [SS_SHALILLE, SS_FAREN, SS_RIIJA, SS_KRAANAN, SS_QOR, SS_JALA,
+	 SKS_FENCING ];
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/dmspell/scry.kod:53</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 1;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/dmspell/scry.kod:59</p>
+<h4>GetSchoolStr(iSchool = 0)</h4>
+<pre><code>{
+      if iSchool = SKS_FENCING  
+      { return scry_weaponcraft; }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/dmspell/scry.kod:64</p>
+<h4>CastSpell(who = $, lTargets = $)</h4>
+<pre><code>{
+      local  i, oRoom, lActive, each_obj;
+      oRoom = Send(who,@GetOwner);
+      lActive = Send(oRoom,@GetHolderActive);
+
+      Send(who,@MsgSendUser,#message_rsc=caster_scry_msg,
+         #parm1=Send(First(lTargets),@getdef),
+         #parm2=Send(First(lTargets),@getname));
+
+      if (IsClass(First(lTargets),&amp;Player))
+         {
+         Send(First(lTargets),@EffectSendUser,#what=self,#effect=EFFECT_INVERT);
+         Send(First(lTargets),@MsgSendUser,#message_rsc=scryd_scry_msg,
+		    #parm1=Send(who,@getindef),
+			#parm2=Send(who,@getname));
+         Send(self,@ComputeScryInfo,#who=First(lTargets),#dmis=who);
+         }
+
+      for i in lActive
+         {
+
+         each_obj = Send(oRoom,@HolderExtractObject,#data=i);
+         if (IsClass(each_obj,&amp;Player) and (each_obj &lt;&gt; who) and (each_obj &lt;&gt; First(lTargets)))
+            {
+            if (IsClass(First(lTargets),&amp;Battler))
+               {
+               send(each_obj,@MsgSendUser,#message_rsc=allinroom_scry_msg1,
+                 #parm1=Send(who,@getindef),
+				 #parm2=Send(who,@getname),
+                 #parm3=Send(First(lTargets),@getdef),
+                 #parm4=Send(First(lTargets),@getname));
+               }
+            else
+               {
+               send(each_obj,@MsgSendUser,#message_rsc=allinroom_scry_msg2,
+                #parm1=Send(who,@getindef),
+				#parm2=Send(who,@getname),
+                #parm3=Send(First(lTargets),@getdef),
+                #parm4=Send(First(lTargets),@getname));
+               }
+            }
+         }
+   propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/dmspell/scry.kod:72</p>
+<h4>SendEffectData()</h4>
+<pre><code>{
+      
+      AddPacket(4,10000);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/dmspell/scry.kod:118</p>
+<h4>ComputeScryInfo(who = $, dmis = $)</h4>
+<p>This routine does all the top level work for the scry spell. It checksto see what the player in question needs for each spell school.</p>
+<pre><code>{
+      local i;
+
+      for i in plSchools
+      {	 
+	 send(self,@ReportMastery,#dmis=dmis,#who=who,#school=i);
+     }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/dmspell/scry.kod:126</p>
+<h4>ReportMastery(who = $, dmis = $, school = -1)</h4>
+<pre><code>{  
+      local i, high_level, obj, rName, rMastery;
+
+      if school &gt; 9 { send(self,@ReportSkillMastery,#who=who,#dmis=dmis,#school=school); return;  }
+
+      high_level = 0;
+      for i in send(who,@GetSpellList)
+      {
+         obj = send(sys,@FindSpellByNum,#num=send(who,@DecodeSpellNum,#compound=i));
+         if send(obj,@GetSchool) = school
+         {
+            if send(obj,@GetLevel) &gt; high_level
+            {  high_level = send(obj,@GetLevel);  }
+         }
+      }
+      if high_level = 0  { return; }   
+
+      rName = send(self,@GetSchoolStr,#iSchool=school);
+      rMastery = scry_apprentice;
+      if high_level = 2   { rMastery = scry_adept;  }
+      if high_level = 3   { rMastery = scry_scholar;  }
+      if high_level = 4   { rMastery = scry_journeyman;  }
+      if high_level = 5   { rMastery = scry_master;  }
+      if high_level = 6   { rMastery = scry_archmage;  }
+      send(dmis,@msgsenduser,#message_rsc=scry_mastery_report,
+            #parm1=send(who,@getname),#parm2=rMastery,#parm3=rName);
+
+      if send(DMis,@GetSpellAbility,#spell_num=viSpell_num) &lt; 50 { return; }
+
+      
+      if send(SYS,@GetNumAtLevel,#school=school,#level=high_level+1) &lt;&gt; 0
+      {
+         for i in send(SYS,@GetSpells)
+         {
+            if not isClass(i,&amp;Spell)  {  continue;  }
+            if (send(i,@getlevel) = (high_level + 1))
+                  and (school = send(i,@getSchool))
+            {
+               send(who,@PlayerCanLearn,#spell_num=send(i,@GetSpellNum),#scryer=dmis);
+               return;
+            }
+         }
+      }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/dmspell/scry.kod:140</p>
+<h4>ReportSkillMastery(who = $, dmis = $, school = -1)</h4>
+<pre><code>{  
+      local i, high_level, obj, rName, rMastery, num;
+            
+      high_level = 0;
+      for i in send(who,@GetSkillList)
+      {
+         num = send(who,@DecodeSkillNum,#compound=i);
+         obj = send(sys,@FindSkillByNum,#num=num);	 
+         if send(obj,@GetSchool) = school
+         {
+            if send(obj,@GetLevel) &gt; high_level
+            {  high_level = send(obj,@GetLevel);  }
+         }
+      }
+      if high_level = 0  { return; }   
+      
+      rName = send(self,@GetSchoolStr,#iSchool=school);
+      rMastery = scry_apprentice;
+      if high_level = 2   { rMastery = scry_adept;  }
+      if high_level = 3   { rMastery = scry_scholar;  }
+      if high_level = 4   { rMastery = scry_journeyman;  }
+      if high_level = 5   { rMastery = scry_master;  }
+      if high_level = 6   { rMastery = scry_archmage;  }
+      send(dmis,@msgsenduser,#message_rsc=scry_mastery_report,
+            #parm1=send(who,@getname),#parm2=rMastery,#parm3=rName);
+
+      if send(DMis,@GetSpellAbility,#spell_num=viSpell_num) &lt; 50 { return; }
+
+      
+      if send(SYS,@GetNumAtLevel,#school=school,#level=high_level+1) &lt;&gt; 0
+      {
+         for i in send(SYS,@GetSkills)
+         {
+            if (send(i,@getlevel) = (high_level + 1))
+                  and (school = send(i,@getSchool))
+            {
+               send(who,@PlayerCanLearn,#skill_num=send(i,@GetSkillNum),#scryer=dmis);
+               return;
+            }
+         }
+      }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/dmspell/scry.kod:187</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>disarm — Meridian 59 Compendium</title>
+<meta name="description" content="One of several agile skills.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html" class="on">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Skills</a> › disarm</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/idisarm_g1.png" alt="disarm" width="128" height="128"></div><div class="heroText"><h1>disarm</h1><p class="lede">One of several agile skills.</p><div class="tags"><span class="tag ">skill</span><span class="tag ">fencing</span><span class="tag ">Level 6</span><span class="tag ">Automatic</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Discipline</div><div class="val sm">fencing</div></div><div class="fact"><div class="lbl">Level</div><div class="val">6</div></div><div class="fact"><div class="lbl">Vigour per use</div><div class="val">10</div></div><div class="fact"><div class="lbl">Improve chance</div><div class="val">30%</div></div><div class="fact"><div class="lbl">Skill number</div><div class="val">406</div></div></div><div class="flavor">A technique that allows a warrior to strike at his or her opponent's weapon. Often successful use of this skill will put the opponent at a disadvantage, and occasionally throw the weapon from an opponent's grasp.</div><h2>What kind of skill this is</h2><p>A <strong>skill</strong> proper is something you invoke, or that fires automatically
+when its condition is met. It costs vigour, it can fail, and its ability is both the success
+chance and the size of the effect.</p><h2>Learning and improving it</h2><p>Taught by <a href="../creatures/threecouncilor.html">Cylill</a>.</p><p>Ability runs 0–99 and rises by <em>use against something hard enough to matter</em>,
+with a 30% roll on each qualifying use. It also atrophies: stop using a skill and
+the number falls. See <a href="../guides/advancing.html">Advancing Your Character</a>.</p><h2>What it does</h2><ul><li><code class="k">GetRequisiteStat</code> — Varies from skill to skill and spell to spell.</li><li><code class="k">PayCosts</code> — Some skills may require certain stats to be depleted.return TRUE if they were successfully depleted.</li><li><code class="k">SuccessChance</code> — Modifier indicates the plusses (or minuses, if negative) to apply to the chance</li><li><code class="k">DoSkill</code></li></ul><hr><h2>In the source</h2>
+<p class="cite">kod/object/passive/skill/disarm.kod:11</p>
+<p><code class="k">Disarm</code> is <code class="k">Skill</code> — full chain <code class="k">Disarm</code> ← <code class="k">Skill</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>Disarm_name_rsc</code></td><td class=""><em>disarm</em></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>Disarm_icon_rsc</code></td><td class=""><em>idisarm.bgf</em></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>Disarm_desc_rsc</code></td><td class=""><em>A technique that allows a warrior to strike at his or her opponent's weapon.  Often succes</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viDefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viSkill_num</code></td><td class=""><code>SKID_DISARM</code></td><td class="">406</td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SKS_FENCING</code></td><td class="">10</td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viSkill_Level</code></td><td class=""><code>6</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viChance_to_Increase</code></td><td class=""><code>30</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viSkillExertion</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">vbCheck_exertion</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">vbAutomatic</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="51">51</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>GetRequisiteStat(who = $)</h4>
+<p>Varies from skill to skill and spell to spell.</p>
+<pre><code>{
+      return Send(who,@GetAgility);
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/disarm.kod:57</p>
+<h4>PayCosts(who = $, modifier = 0)</h4>
+<p>Some skills may require certain stats to be depleted.return TRUE if they were successfully depleted.</p>
+<pre><code>{
+      if not send(self,@successchance,#who=who,#modifier=modifier)
+      {
+         return FALSE;
+      }
+      
+      send(who,@AddExertion,#amount=1000*viSkillExertion);
+      
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/disarm.kod:63</p>
+<h4>SuccessChance(who = $, modifier = 0)</h4>
+<p>Modifier indicates the plusses (or minuses, if negative) to apply to the chance</p>
+<pre><code>{
+       local reqstat,iAbility,num;
+
+       reqstat=send(self,@GetRequisiteStat,#who=who);
+       iAbility=send(who,@GetSkillAbility,#skill_num=viSkill_num);
+       num = ((100-reqstat)*iAbility/100) + reqstat;
+       num = (num + 1 + modifier) / DISARM_FACTOR;
+       
+       if random(1,100) &lt; num
+       {
+         return TRUE;
+       }
+         
+       return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/disarm.kod:77</p>
+<h4>DoSkill(who = $, oTarget = $, oWeapon = $)</h4>
+<pre><code>{
+      local iAbil,iModifier,oOppWeapon, oHoldSpell;
+   
+      if (who=$)
+      {
+         debug(&quot;DoSkill called with bad who.&quot;);
+         return FALSE;
+      }
+
+      if oWeapon=$
+      {
+         
+         iAbil = Send(who,@GetSkillAbility,#Skill_num=SKID_BRAWLING);
+         if iAbil &lt; BRAWL_THRESHOLD
+         {
+            return FALSE;
+         }
+         
+         iModifier = iAbil - 100;
+      }
+      else
+      {
+         iModifier = Send(oWeapon,@GetDisarmBonus);
+      }
+      
+      if not (Send(self,@CanPayCosts,#who=who) and Send(self,@PayCosts,#who=who,#modifier=iModifier))
+      {
+         return FALSE;
+      }
+
+      
+      iAbil = Send(who,@GetSkillAbility,#Skill_num=viSkill_num);
+
+      if (IsClass(oTarget,&amp;Player)) and (Send(SYS,@IsPKAllowed) or Send(Send(who,@GetOwner),@IsArena))
+      {
+         
+
+         oOppWeapon = Send(oTarget,@LookupPlayerWeapon);
+         if oOppWeapon = $
+         {
+            return FALSE;
+         }
+
+         if Send(oTarget,@TryUnuseItem,#what=oOppWeapon)
+         {
+            
+            iAbil = (iAbil + 1 + iModifier) / DISARM_FACTOR;
+
+            
+            
+            
+            
+            
+            if (Random(1, 100) &lt; iAbil)
+               AND NOT IsClass(oTarget, &amp;DM)
+               AND NOT Send(Send(oTarget, @GetOwner), @IsArena)
+               AND Send(oOppWeapon, @DropOnDeath)
+               AND Send(oOppWeapon, @ReqLeaveOwner)
+            {
+               
+               Send(oTarget,@DropItem,#droppedItem=oOppWeapon);
+               send(who,@MsgSendUser,#message_rsc=Disarm_dropped,
+                    #parm1=Send(oTarget,@GetDef),#parm2=Send(oTarget,@GetName));
+               send(oTarget,@MsgSendUser,#message_rsc=Disarm_opp_dropped,
+                    #parm1=Send(who,@GetDef),#parm2=Send(who,@GetName));
+            }
+               else
+            {
+               Send(oTarget,@UnuseItem,#what=oOppWeapon);
+               send(who,@MsgSendUser,#message_rsc=Disarm_unwield,
+                    #parm1=Send(oTarget,@GetDef),#parm2=Send(oTarget,@GetName));
+               send(oTarget,@MsgSendUser,#message_rsc=Disarm_opp_unwield,
+                    #parm1=Send(who,@GetDef),#parm2=Send(who,@GetName));
+            }
+            
+            
+            
+            send(who,@AddExertion,#amount=4 * (1000 * viSkillExertion));
+         }
+      }
+      else
+      {
+         
+         oHoldSpell = Send(SYS,@FindSpellByNum,#num=SID_HOLD);
+         
+         if Send(oTarget,@IsEnchanted,#what=oHoldSpell)
+         {
+            return FALSE;
+         }
+         
+         send(who,@MsgSendUser,#message_rsc=Disarm_unwield,
+              #parm1=Send(oTarget,@GetDef),#parm2=Send(oTarget,@GetName));
+              
+         
+         
+         
+         iAbil = bound((iAbil + iModifier - Send(oTarget,@GetLevel)/2)/10,2,6);
+         Send(oHoldSpell,@DoHold,#what=who,#otarget=oTarget,#idurationsecs=iAbil,#report=FALSE);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/disarm.kod:95</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

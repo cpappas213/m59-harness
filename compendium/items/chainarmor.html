@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>chain armor — Meridian 59 Compendium</title>
+<meta name="description" content="Thousands of tiny, steel links make up this chain armor. Although light and reasonably comfortable, it provides a fair measure of protection.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › chain armor</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/chainamr_g1.png" alt="chain armor" width="96" height="116"></div><div class="heroText"><h1>chain armor</h1><p class="lede">Thousands of tiny, steel links make up this chain armor. Although light and reasonably comfortable, it provides a fair measure of protection.</p><div class="tags"><span class="tag ">armour</span><span class="tag ">body</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">200</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">250</div></div><div class="fact"><div class="lbl">Value</div><div class="val">1000 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">550–650</div></div><div class="fact"><div class="lbl">Spell penalty</div><div class="val">-15%</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">body</div></div></div><h2>As protection</h2><div class="facts"><div class="fact"><div class="lbl">Defence bonus</div><div class="val">-50</div></div><div class="fact"><div class="lbl">Flat reduction</div><div class="val sm">random(0, 2)</div></div></div><div class="warn">This item's defence bonus is <strong>negative</strong>: wearing it
+makes you <em>easier</em> to hit. The trade is that it absorbs damage when a hit lands. Heavy
+armour in this game buys mitigation with accuracy, not on top of it.</div><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Attack type</th><th class="num ">Resistance</th><th class="num ">A 20-point hit becomes</th></tr></thead>
+<tbody><tr><td class=""><code class="k">ATCK_WEAP_THRUST</code></td><td class="num " data-sort="5">5%</td><td class="num ">18.1</td></tr>
+<tr><td class=""><code class="k">ATCK_WEAP_PIERCE</code></td><td class="num " data-sort="25">25%</td><td class="num ">14.3</td></tr>
+<tr><td class=""><code class="k">ATCK_WEAP_BLUDGEON</code></td><td class="num " data-sort="15">15%</td><td class="num ">16.1</td></tr>
+<tr><td class=""><code class="k">ATCK_WEAP_SLASH</code></td><td class="num " data-sort="20">20%</td><td class="num ">15.2</td></tr></tbody></table></div><p class="cite">kod/object/item/passitem/defmod/armor/chain.kod <code class="k">GetResistanceModifiers</code> · applied by kod/object/active/holder/nomoveon/battler.kod:189 <code class="k">ResistanceCheck</code> and :251 <code class="k">GetDamageFromResistance</code></p><p>The "20-point hit" column assumes this is the only thing you are wearing and
+uses the average of the flat reduction, which is rolled fresh every blow. Unarmoured, the same
+hit costs you the full 20.</p><h2>Where to buy it</h2><p><a href="../creatures/barloqueblacksmith.html">Fehr'loi Qan</a>, <a href="../creatures/hazarblacksmith.html">Tomas</a>, <a href="../creatures/kocatanblacksmith.html">Ixla cha'Totlak</a>, <a href="../creatures/tosblacksmith.html">Fehr'loi Qan</a></p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/chainamr_g1.png" alt="chain armor inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/chainamr_g2.png" alt="chain armor on the ground" loading="lazy"><figcaption>on the ground</figcaption></figure><figure><img class="icon" src="../assets/img/chainamr_g3.png" alt="chain armor broken" loading="lazy"><figcaption>broken</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/defmod/armor/chain.kod:11</p>
+<p><code class="k">ChainArmor</code> is <code class="k">Armor</code> — full chain <code class="k">ChainArmor</code> ← <code class="k">Armor</code> ← <code class="k">DefenseModifier</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>chainarmor_name_rsc</code></td><td class=""><em>chain armor</em></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>chainarmor_icon_rsc</code></td><td class=""><em>chainamr.bgf</em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>chainarmor_desc_rsc</code></td><td class=""><em>Thousands of tiny, steel links make up this chain armor.  Although light and reasonably co</em></td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>550</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>650</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">viSpell_modifier</code></td><td class=""><code>-15</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>1000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>200</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>250</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viDefense_base</code></td><td class=""><code>-50</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viDamage_base</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="43">43</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrIcon_male</code></td><td class=""><code>chainarmor_male_icon_rsc</code></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">vrIcon_female</code></td><td class=""><code>chainarmor_female_icon_rsc</code></td><td class="num " data-sort="48">48</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ShowShirt()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/chain.kod:52</p>
+<h4>GetResistanceModifiers()</h4>
+<pre><code>{
+      return [ [ATCK_WEAP_THRUST,5],
+               [ATCK_WEAP_PIERCE,25],
+               [ATCK_WEAP_BLUDGEON,15],
+               [ATCK_WEAP_SLASH,20]
+             ];
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/chain.kod:57</p>
+<h4>GetHeatDamage()</h4>
+<pre><code>{
+      return 2;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/armor/chain.kod:66</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

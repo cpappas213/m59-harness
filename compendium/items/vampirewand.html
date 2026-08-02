@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wand of vampiric shock — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › wand of vampiric shock</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/wand3_g1.png" alt="wand of vampiric shock" width="128" height="128"></div><div class="heroText"><h1>wand of vampiric shock</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">wand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">25</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">25</div></div><div class="fact"><div class="lbl">Value</div><div class="val">200 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">10–18</div></div></div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/wand3_g1.png" alt="wand of vampiric shock inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/wand3_g2.png" alt="wand of vampiric shock on the ground" loading="lazy"><figcaption>on the ground</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/specwand/vampwand.kod:21</p>
+<p><code class="k">VampireWand</code> is <code class="k">SpecialWand</code> — full chain <code class="k">VampireWand</code> ← <code class="k">SpecialWand</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>vampireWand_name_rsc</code></td><td class=""><em>wand of vampiric shock</em></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>vampireWand_icon_rsc</code></td><td class=""><em>wand3.bgf</em></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>200</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">viAttack_spell_type</code></td><td class=""><code>ATCK_SPELL_UNHOLY + ATCK_SPELL_SHOCK + ATCK_SPELL_ALL</code></td><td class="">37</td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">vihits_init_max</code></td><td class=""><code>18</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="61">61</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>vampireWand_desc_rsc</code></td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">piDamage_min</code></td><td class=""><code>2</code></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">piDamage_max</code></td><td class=""><code>6</code></td><td class="num " data-sort="68">68</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ReqNewApply(what = $, apply_on = $)</h4>
+<pre><code>{
+
+      if not Send(Send(what,@GetOwner),@ReqSomethingAttack,#what=what,
+             #victim=apply_on,#use_weapon=self)
+      {return False;}
+
+      
+      
+      
+      if send(apply_on,@GetOwner) &lt;&gt; send(poOwner,@GetOwner)
+      {
+         send(poOwner,@msgsenduser,#message_rsc=wand_target_gone,
+               #parm1=send(apply_on,@getdef),#parm2=send(apply_on,@getname));
+		   return FALSE;
+      }
+
+      
+      if IsClass(apply_on, &amp;battler)
+      {
+	 
+	 if poOwner = apply_on
+	 {
+	    Send(poOwner, @MsgSendUser, #message_rsc = vampirewand_used_self_rsc);
+	    return False;
+	 }
+	 
+	 
+	 if not Send(poOwner, @AllowPlayerAttack, #victim = apply_on)
+	 {
+	    Send(poOwner, @WaveSendUser, #wave_rsc = wand_fail_snd);
+	    return False;
+	 }
+
+         if isClass(apply_on,&amp;Monster) and
+            (not Send(apply_on,@CanMonsterFight,#who=poOwner,#oStroke=self))
+         {
+            return False;
+         }
+	 return True;
+      }
+      
+      
+      Send(poOwner, @MsgSendUser, #message_rsc = vampwand_fail_rsc);
+      Send(poOwner, @WaveSendUser, #wave_rsc = wand_fail_snd);
+      return False;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/vampwand.kod:72</p>
+<h4>CastSpell(apply_on = $)</h4>
+<p>Do its thing on single target--target already checked to be valid</p>
+<pre><code>{
+      local iDamage, bGained, iKarma_change, oRoom;
+      
+      
+      send(poOwner, @setkilltarget, #target=apply_on);
+      send(poOwner, @setplayerflag, #flag=PFLAG_DID_DAMAGE, #value = TRUE);
+      
+      
+      
+      iKarma_change = send(poOwner,@CalculateKarmaChangeFromAct, #karma_act = -80, 
+                           #karma_doer = send(poOwner,@getKarma), #swing_factor = 6);
+      send(poOwner,@AddKarma,#amount = iKarma_Change);
+      
+      if random(1,100) &lt; bound(send(poOwner,@getMysticism) + send(poOwner,@GetAim),10,90)
+      {
+         
+         
+         
+         
+         iDamage = Random(piDamage_min, piDamage_max);
+         Send(poOwner, @MsgSendUser, #message_rsc = wand_used_rsc);
+         
+         bGained = FALSE;
+         if Send(poOwner, @GainHealthNormal, #amount = iDamage - 1) &gt; 0
+         {
+            bGained = TRUE;  
+         }
+         
+         
+         
+         Send(apply_on, @MsgSendUser, #message_rsc = vampirewand_target_hit_rsc,
+              #parm1=send(poOwner,@getdef), #parm2=send(poOwner,@getname));
+         Send(apply_on, @EffectSendUser, #what = self, #effect = EFFECT_SHAKE);
+         
+         if Send(apply_on, @AssessDamage, #report = FALSE, #what = poOwner,
+                 #damage = iDamage, #aspell = viAttack_spell_type) = $
+         {
+            Send(poOwner, @KilledSomething, #what = apply_on, #use_weapon = self);
+         }
+         else
+         {
+            if bGained
+            {
+               Send(poOwner, @MsgSendUser, #message_rsc=vampirewand_hit_target_rsc,
+                    #parm1=send(apply_on,@getdef),#parm2=send(apply_on,@getname));
+            }
+            else
+            {
+               Send(poOwner, @MsgSendUser, #message_rsc=vampirewand_hit_target_full_rsc,
+                    #parm1=send(apply_on,@getdef),#parm2=send(apply_on,@getname));
+            }
+            oRoom = Send(poOwner, @GetOwner);
+            Send(oRoom, @SomethingWaveRoom, #what = poOwner, 
+                 #wave_rsc = vampireWand_success_wav_rsc);
+         }
+      }
+      else
+      {
+         
+         
+         
+         send(poOwner,@msgsenduser,#message_rsc = vampirewand_missed_target,
+              #parm1=send(apply_on,@getCapdef), #parm2=send(apply_on,@getname));
+         if isClass(apply_on,&amp;user)
+         {
+            send(apply_on,@msgsenduser,#message_rsc = vampirewand_missed_you,
+                 #parm1=send(poOwner,@getdef), #parm2=send(poOwner,@getname));
+         }
+      }
+      
+      send(send(poOwner,@getowner),@somethingattacked,#what=poOwner,
+           #victim=apply_on,#use_weapon=self);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/vampwand.kod:120</p>
+<h4>SendEffectData()</h4>
+<p>For the EffectSendUser procedure</p>
+<pre><code>{
+      AddPacket(4, 1000);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/vampwand.kod:198</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

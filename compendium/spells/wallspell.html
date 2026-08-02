@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spell — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › spell</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/light_g1.png" alt="spell" width="128" height="128"></div><div class="heroText"><h1>spell</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><span class="tag ">Level 1</span><span class="tag ">Harmful</span><span class="tag ">Not directly castable</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><span class="muted">None</span></div></div><div class="fact"><div class="lbl">Level</div><div class="val">1</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">1</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">0 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val"><span class="muted">—</span></div></div></div><div class="flavor">This is a spell.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">1</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><span class="muted">none</span></td><td class="">This spell needs no material component.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">2</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">instant</td><td class=""></td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/walspell.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Not a spell you learn. <code class="k">WallSpell</code> has no spell number, so it never appears in a spell list; it exists to be used by other spells, by items, or by monsters.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">CanPayCosts</code></li><li><code class="k">DoubleCheckAfterTrance</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">CastSpell</code></li><li><code class="k">PlaceWallElements</code> — Does the actual work of placing wall elements.</li><li><code class="k">CheckForSummoningLimit</code> — Checks to see if we'll go over room's summon limit. Returns TRUE if not.</li><li><code class="k">GetExtraDesc</code></li></ul><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/walspell.kod:11</p>
+<p><code class="k">WallSpell</code> is <code class="k">Spell</code> — full chain <code class="k">WallSpell</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>. Subclasses: <code class="k">BrambleWall</code>, <code class="k">FireWall</code>, <code class="k">IllusionaryFireWall</code>, <code class="k">LightningWall</code>, <code class="k">RingOfFlames</code>, <code class="k">SporeBurst</code>, <code class="k">SummonFog</code>, <code class="k">SummonPoisonFog</code>, <code class="k">SummonWeb</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viHarmful</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">viWallCanKill</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">viNumElements</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">vrSummonLimitMsg</code></td><td class=""><code>WallSpell_failed_rsc</code></td><td class=""><em>There is too much summoning magic focused here to cast that spell.</em></td><td class="num " data-sort="40">40</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>CanPayCosts(who = $)</h4>
+<pre><code>{
+      if NOT Send(self,@CheckForSummoningLimit,#who=who)
+      {
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell.kod:47</p>
+<h4>DoubleCheckAfterTrance(who = $, lTargets = $, iSpellPower = 0)</h4>
+<pre><code>{
+      if NOT Send(self,@CheckForSummoningLimit,#who=who)
+      {
+         return FALSE;
+      }
+
+      propagate;
+   }      </code></pre>
+<p class="cite">kod/object/passive/spell/walspell.kod:57</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell.kod:67</p>
+<h4>CastSpell(who = $, lTargets = $, iSpellPower = 1)</h4>
+<pre><code>{
+      Send(self,@PlaceWallElements,#who=who,#lTargets=lTargets,
+           #iSpellPower=iSpellPower);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell.kod:72</p>
+<h4>PlaceWallElements(who = $, lTargets = $, iSpellPower = 0)</h4>
+<p>Does the actual work of placing wall elements.</p>
+<pre><code>{
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell.kod:80</p>
+<h4>CheckForSummoningLimit(who = $)</h4>
+<p>Checks to see if we'll go over room's summon limit.  Returns TRUE if not.</p>
+<pre><code>{
+      local oRoom;
+
+      oRoom = Send(who,@GetOwner);
+      if ((Send(oRoom,@CountHoldingSummoned) + viNumElements)
+          &gt; Send(Send(SYS, @GetSettings), @GetPlayerSummonedObjectLimit))
+      {
+         Send(who,@MsgSendUser,#message_rsc=vrSummonLimitMsg);
+
+         return FALSE;
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell.kod:86</p>
+<h4>GetExtraDesc()</h4>
+<pre><code>{
+      if viHarmful
+         AND Send(SYS,@IsPKAllowed)
+      {
+         if viWallCanKill
+         {
+            
+            return WallSpell_outlaw_murderer;
+         }
+
+         
+         return WallSpell_outlaw;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell.kod:103</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>death link — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › death link</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/ideathli_g1.png" alt="death link" width="128" height="128"></div><div class="heroText"><h1>death link</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><a class="tag school-2" href="../guides/qor.html">Qor</a><span class="tag ">Level 5</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/qor.html">Qor</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">5</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">20</div></div><div class="fact"><div class="lbl">Karma required</div><div class="val">≤ -50</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">5000 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">111</div></div></div><div class="flavor">This dark spell feeds off the souls of any poor creature that should happen to fall in your vicinity. Requires shaman blood and polished seraphym to cast.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">20</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/shamanblood.html">shaman blood</a>, <a href="../items/polishedseraphym.html">polished seraphym</a></td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">at most -50</td><td class="">Derived, not stored: <code class="k">GetRequiredKarma</code> returns level × −10 for this school.</td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">10</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">5000 ms trance</td><td class="">You are locked in a casting trance for this long; taking damage can break it.</td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/roomench/dethlink.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/darkwizard.html">Maleval</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">DoubleCheckAfterTrance</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">CanPayCosts</code></li><li><code class="k">GiveKilledBenefits</code></li><li><code class="k">CastSpell</code></li><li><code class="k">StartEnchantmentNewOccupant</code> — Called on new occupants of the enchanted room.</li><li><code class="k">StartEnchantment</code> — Starts enchantment effect on one player</li><li><code class="k">EndSpell</code> — Called when spell expires.</li><li><code class="k">EndRoomEnchantment</code> — Remove enchantment effects on this occupant</li><li><code class="k">ModifyHitRoll</code></li><li><code class="k">ModifyDamage</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/ideathli_g1.png" alt="death link group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/ideathli_g2.png" alt="death link group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:11</p>
+<p><code class="k">DeathLink</code> is <code class="k">RoomEnchantment</code> — full chain <code class="k">DeathLink</code> ← <code class="k">RoomEnchantment</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>deathlink_name_rsc</code></td><td class=""><em>death link</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>deathlink_icon_rsc</code></td><td class=""><em>ideathli.bgf</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>deathlink_desc_rsc</code></td><td class=""><em>This dark spell feeds off the souls of any poor creature that should happen to fall in you</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_DEATH_LINK</code></td><td class="">111</td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_QOR</code></td><td class="">2</td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viCast_time</code></td><td class=""><code>5000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viChance_To_Increase</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>deathlink_sound</code></td><td class=""><em>qdeathlk.wav</em></td><td class="num " data-sort="50">50</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      plReagents = $;
+      plReagents = Cons([&amp;ShamanBlood,1],plReagents);
+      plReagents = Cons([&amp;PolishedSeraphym,1],plReagents);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:56</p>
+<h4>DoubleCheckAfterTrance(who = $, lTargets = $)</h4>
+<pre><code>{
+      local oRoom;
+
+      oRoom = Send(who,@GetOwner);
+    
+      if Send(oRoom,@CheckRoomFlag,#flag=ROOM_NO_MAGIC)       
+      {
+         Send(who,@MsgSendUser,#message_rsc=spell_bad_location,#parm1=vrName);
+
+         return FALSE;
+      }
+      
+      if (send(oRoom,@IsEnchanted,#what=self))
+      {
+         Send(who,@MsgSendUser,#message_rsc=spell_already_in_effect,#parm1=vrName);
+
+         return FALSE;
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:65</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:88</p>
+<h4>CanPayCosts(who = $, lTargets = $)</h4>
+<pre><code>{
+      local oRoom;
+
+      oRoom = Send(who,@GetOwner);
+
+      
+      if Send(oRoom,@IsEnchanted,#what=self)
+      {
+         Send(who,@MsgSendUser,#message_rsc=deathlink_already_enchanted);
+         
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:93</p>
+<h4>GiveKilledBenefits(caster = $, victim = $)</h4>
+<pre><code>{
+      local iAmountHPInc, iAmountManaInc;
+   
+      if Caster = $ OR Victim = $
+      {
+         return;
+      }
+   
+      iAmountHPInc = Random(1,5);
+      iAmountManaInc = Random(1,5);
+      if isClass(Victim,&amp;player)
+      {
+         iAmountHPInc = iAmountHPInc * 4;
+         iAmountManaInc = iAmountManaInc * 4;
+      }
+      
+      send(Caster,@GainHealthNormal,#Amount=iAmountHPInc);   
+      send(Caster,@GainMana,#Amount=iAmountManaInc);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:110</p>
+<h4>CastSpell(who = $, iSpellPower = 20)</h4>
+<pre><code>{
+      local oRoom, duration;
+
+      duration = (70 + iSpellpower + Random(1,30)) * 1000;
+
+      oRoom = Send(who,@GetOwner);
+
+      
+      Send(oRoom,@SomeoneSaid,#type=SAY_MESSAGE,#string=deathlink_on,
+           #what=self,#parm1=send(who,@GetCapDef),#parm2=send(who,@GetName));
+
+      Send(oRoom,@RoomStartEnchantment,#what=self,#time=duration,#state=who);
+      Send(oRoom,@EnchantAllOccupants,#what=self);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:133</p>
+<h4>StartEnchantmentNewOccupant(who = $)</h4>
+<p>Called on new occupants of the enchanted room.</p>
+<pre><code>{
+      Send(who,@MsgSendUser,#message_rsc=deathlink_on_new_entrant);
+      Send(self,@StartEnchantment,#who=who);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:151</p>
+<h4>StartEnchantment(who = $)</h4>
+<p>Starts enchantment effect on one player</p>
+<pre><code>{
+      Send(who,@AddAttackModifier,#what=self);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:160</p>
+<h4>EndSpell(where = $, state = $)</h4>
+<p>Called when spell expires.</p>
+<pre><code>{
+      Send(where,@SomeoneSaid,#type=SAY_MESSAGE,#string=deathlink_off,
+           #what=self);
+      Send(where,@UnenchantAllOccupants,#what=self,#state=state);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:168</p>
+<h4>EndRoomEnchantment(who = $, state = $)</h4>
+<p>Remove enchantment effects on this occupant</p>
+<pre><code>{
+      Send(who,@RemoveAttackModifier,#what=self);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:178</p>
+<h4>ModifyHitRoll(who = $, what = $, hit_roll = $)</h4>
+<pre><code>{
+      return hit_roll;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:187</p>
+<h4>ModifyDamage(who = $, what = $, damage = $)</h4>
+<pre><code>{
+      return damage;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/dethlink.kod:192</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

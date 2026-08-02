@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Money, Merchants and the Economy — Meridian 59 Compendium</title>
+<meta name="description" content="Every item in the game has one declared value, and every price a merchant quotes is that number run through two multipliers: a markup band set per merchant, and — for weapons and armour — the item's own condition. A normal shopkeeper sells at 160% of value and buys at 70%, so the spread is a factor of 2.3. Where you shop matters more than what you carry.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html" class="on">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Guides</a> › Money, Merchants and the Economy</p>
+<h1>Money, Merchants and the Economy</h1>
+
+<p class="lede">Every item in the game has one declared value, and every price a merchant quotes is
+that number run through two multipliers: a markup band set per merchant, and — for weapons and
+armour — the item's own condition. A normal shopkeeper sells at 160% of value and buys at 70%,
+so the spread is a factor of 2.3. Where you shop matters more than what you carry.</p>
+
+<h2>The two price formulas</h2>
+
+<div class="formula">what you PAY:
+    price = viValue_average × (100 + 20 × markup) / 100
+            × faction price bonus / 100
+            bounded to at least 1
+
+what you are OFFERED:
+    offer = GetValue()      × (100 − 10 × markup) / 100
+            bounded to at least 1</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4880 <code class="k">GetPrice</code> · :3137 (the buying-from-you path)</p>
+
+<p><code class="k">markup</code> is a small integer from 0 to 5 declared per merchant. Note the
+asymmetry: it is worth <strong>20 points per step</strong> when you buy and only
+<strong>10</strong> when you sell.</p>
+
+<table class="data">
+<thead><tr><th>Markup</th><th>Constant</th><th>You pay</th><th>You are offered</th><th>Spread</th><th>Merchants</th></tr></thead>
+<tbody>
+<tr><td>0</td><td><code class="k">MERCHANT_FLAT</code></td><td>100%</td><td>100%</td><td>×1.00</td><td>none in the current world</td></tr>
+<tr><td>1</td><td><code class="k">MERCHANT_BARGAIN</code></td><td>120%</td><td>90%</td><td>×1.33</td><td>4</td></tr>
+<tr><td>2</td><td><code class="k">MERCHANT_DISCOUNT</code></td><td>140%</td><td>80%</td><td>×1.75</td><td>7</td></tr>
+<tr><td>3</td><td><code class="k">MERCHANT_NORMAL</code></td><td>160%</td><td>70%</td><td>×2.29</td><td>3, and the default for everyone unset</td></tr>
+<tr><td>4</td><td><code class="k">MERCHANT_EXPENSIVE</code></td><td>180%</td><td>60%</td><td>×3.00</td><td>21</td></tr>
+<tr><td>5</td><td><code class="k">MERCHANT_RIPOFF</code></td><td>200%</td><td>50%</td><td>×4.00</td><td>9</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:1368–1373 · counted from <code class="k">viMerchant_markup</code> across every Monster subclass that declares it</p>
+
+<div class="warn"><strong>Buying from a ripoff merchant and selling back to them loses you 75% of
+the item's value in one round trip.</strong> Buying from a bargain merchant and selling to a
+different bargain merchant loses 25%. Over a career the difference is enormous, and nothing in
+the game tells you which is which — the <a href="../npcs/index.html">NPC list</a> does.</div>
+
+<p>The four bargain merchants are <strong>Ravi, Tomas, Quintor and Skivlat</strong>. The nine
+ripoff merchants include <strong>Esseldi, Roq, Rook, Zhieu B'hob, Xacal ko'Ixca</strong> and
+<strong>Cital ko'Manca</strong> — note how many of those are in outlying or hostile territory.
+You pay for convenience.</p>
+
+<h2>Condition is price, for anything that wears out</h2>
+
+<p>What you are <em>offered</em> uses <code class="k">GetValue</code>, not the flat average, and
+that function multiplies by a condition term that is quadratic in the item's history:</p>
+
+<div class="formula">percent = 100 × piHits_init × piHits / viHits_init_max²
+value   = viValue_average × percent / 100
+          bounded to [10, viValue_average]</div>
+<p class="cite">kod/object/item.kod:408 <code class="k">GetValue</code>, :403 <code class="k">GetInitValue</code></p>
+
+<p><code class="k">piHits_init</code> is the maximum this <em>particular</em> item rolled when it
+was created, and <code class="k">piHits</code> is its current condition. Both divide by the class
+maximum, so the two losses compound:</p>
+
+<table class="data">
+<thead><tr><th>Rolled max</th><th>Current condition</th><th>Worth</th></tr></thead>
+<tbody>
+<tr><td>100% of class max</td><td>100%</td><td>100% of value</td></tr>
+<tr><td>100%</td><td>80%</td><td>80%</td></tr>
+<tr><td>80%</td><td>80%</td><td>64%</td></tr>
+<tr><td>80%</td><td>60%</td><td>48%</td></tr>
+<tr><td>60%</td><td>40%</td><td>24%</td></tr>
+<tr><td>40%</td><td>20%</td><td>8% — floored at 10 shillings</td></tr>
+</tbody>
+</table>
+<p class="cite">the curve is drawn out in the comment at kod/object/item.kod:414–430</p>
+
+<p>Two practical consequences. <strong>A fresh item that happened to roll a low maximum is
+permanently worth less</strong>, however carefully you treat it — and there is no way to see the
+roll except by comparing prices. And <strong>selling worn gear is close to worthless</strong>: a
+half-worn item at a normal merchant returns 70% of 48%, about a third of what you paid, before
+the markup on what you buy next.</p>
+
+<p>Mending restores <code class="k">piHits</code> but not <code class="k">piHits_init</code> — the
+first term of that product never recovers. Items say so themselves: armour "in great condition,
+but has been repaired before" is a different string from armour "without blemish or flaw."</p>
+<p class="cite">kod/object/item/passitem/defmod/armor.kod:19–20</p>
+
+<h2>Where money comes from</h2>
+
+<p>Almost all of it comes off corpses. Money is not a separate roll on a treasure table — it is
+an ordinary weighted row, competing with every other drop:</p>
+
+<div class="formula">shillings = 1 + (MoneyFactor × 2 × bound(random(level/2, 3 × level/2), 1, ∞)) / 100
+            with MoneyFactor = 100, so roughly  level/2 … 3×level/2  ×2</div>
+<p class="cite">kod/object/passive/trestype.kod:302 · <code class="k">MoneyFactor</code> at kod/util/settings.kod</p>
+
+<p>So a level-80 creature that rolls the money row yields about 81–241 shillings, and the chance
+of rolling that row is whatever weight the table gives it — 2% for a
+<a href="../creatures/caveorc.html">cave orc</a>. <strong>Coin is a rare drop, not a
+reliable one.</strong> The reliable income is selling what does drop, which is why the markup band
+of the merchant you sell to is the single biggest lever on your income.</p>
+
+<p>How many items a corpse yields at all:</p>
+<div class="formula">rolls = 1                                              if MOB_ONE_TREASURE
+      = bound(1 + level/55 + random(0, difficulty/3), $, 6)   otherwise
+      then × ItemFactor / 100, floored at 1</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973</p>
+
+<p>Difficulty is what makes a corpse rich, not level: a level-100 creature at difficulty 0 rolls
+twice, and a level-40 creature at difficulty 9 rolls up to four times. Sort
+<a href="../creatures/index.html">the bestiary</a> by difficulty to find the profitable fights.</p>
+
+<h2>Faction pricing</h2>
+
+<p>One faction gets a discount, and only one:</p>
+
+<div class="formula">if your faction is not Princess:   multiplier = 100   (no change)
+Princess soldiers:                  a percentage change in your favour, both directions</div>
+<p class="cite">kod/util/parlia.kod:1144 <code class="k">GetFactionPriceBonus</code></p>
+
+<p>The bonus applies to what you pay. It is stated in the source as around 5%, and it scales with
+the faction's standing like every other faction benefit — see <a href="factions.html">Factions</a>.</p>
+
+<h2>Who will not trade with you</h2>
+
+<p>Merchants flagged <code class="k">MOB_LAWFUL</code> refuse to do business publicly with
+murderers. Faction pressure can override that refusal, which is one of the quieter arguments for
+joining a side.</p>
+<p class="cite">kod/include/blakston.khd:1407 · kod/util/parlia.kod:1468 <code class="k">GetFactionSellToMurderer</code></p>
+
+<p>Some merchants are <code class="k">MOB_COND_SELLER</code>: they have goods that must be asked
+for by name rather than browsed. If a shop's list looks short, try naming the thing you want.</p>
+<p class="cite">kod/include/blakston.khd:1405</p>
+
+<h2>Fixed prices</h2>
+
+<p>A merchant may override the formula entirely. If <code class="k">plFor_Sale</code> has a fourth
+element, it is a list of <code class="k">[item, price]</code> pairs, and those prices are returned
+unmodified — no markup, no faction bonus, no condition term.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4886–4895</p>
+
+<p>Spells and skills are also exempt: <code class="k">GetPrice</code> returns the ability's own
+<code class="k">GetValue</code> with <em>no markup at all</em>. A teacher who is a ripoff merchant
+for goods charges the standard rate for tuition.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4904–4907</p>
+
+<h2>Practical advice</h2>
+
+<ul>
+<li><strong>Sell to bargain merchants, buy from bargain merchants.</strong> Ravi, Tomas, Quintor
+and Skivlat. The difference against a ripoff merchant is a factor of three on the round trip.</li>
+<li><strong>Do not carry worn gear home to sell.</strong> Condition is quadratic; below about half
+condition an item is worth a tenth of new, and the weight and bulk are better spent on reagents
+or gems.</li>
+<li><strong>Gems and reagents hold their value</strong> — they have no condition term, so they
+sell at exactly <code class="k">value × (100 − 10 × markup) / 100</code>. They are the efficient
+way to carry wealth out of a dungeon.</li>
+<li><strong>Fight difficulty, not level, for loot.</strong> The number of drops keys off
+difficulty; the value of each keys off the creature's treasure table.</li>
+<li><strong>Check the fixed-price list.</strong> Some things are priced outside the formula and
+are bargains or traps regardless of the merchant's band.</li>
+</ul>
+
+<p>Related: <a href="../npcs/index.html">Every merchant</a>, what they sell and teach ·
+<a href="../items/index.html">Items</a> with their declared values ·
+<a href="../creatures/index.html">Bestiary</a> — sort by difficulty for loot ·
+<a href="../reagents/index.html">Reagents</a> · <a href="factions.html">Factions</a></p>
+
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

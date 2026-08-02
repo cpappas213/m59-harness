@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>prism — Meridian 59 Compendium</title>
+<meta name="description" content="When held up to the light, this prism refracts a pretty rainbow of colors. If the legends of these magical items hold true, however, its true worth lies in its ">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › prism</p>
+<div class="hero"><div class="heroText"><h1>prism</h1><p class="lede">When held up to the light, this prism refracts a pretty rainbow of colors. If the legends of these magical items hold true, however, its true worth lies in its ability to focus the magical energies of multiple spellcasters for the casting of certain special spells. According to the mages of antiquity, a prism must be placed upon the ground before a spell may be focused through it. Once casting has begun, as many mages as the prism has sides may contribute to the energies stored within, and at least one mage must be casting at all times to keep the stored energy from dissipating. The spell being chanted will fire when enough magical power has been stored in the prism and there is exactly one caster for each side of the prism. This prism has</p><div class="tags"><span class="tag ">sundry</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">10</div></div><div class="fact"><div class="lbl">Value</div><div class="val">200 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/prism.kod:11</p>
+<p><code class="k">Prism</code> is <code class="k">PassiveItem</code> — full chain <code class="k">Prism</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>prism_name_rsc</code></td><td class=""><em>prism</em></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>prism_desc_rsc</code></td><td class=""><em>When held up to the light, this prism refracts a pretty rainbow of colors.  If the legends</em></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">vrPrismProjectile</code></td><td class=""><code>prism_projectile</code></td><td class=""><em>lightnin.bgf</em></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>200</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="62">62</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>prism_3_icon_rsc</code></td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">poSpell</code></td><td class=""><code>$</code></td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">piSpellPowerNeeded</code></td><td class=""><code>0</code></td><td class="num " data-sort="69">69</td></tr>
+<tr><td class=""><code class="k">piSpellPowerSoFar</code></td><td class=""><code>0</code></td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">plCasters</code></td><td class=""><code>$</code></td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">plTargets</code></td><td class=""><code>$</code></td><td class="num " data-sort="72">72</td></tr>
+<tr><td class=""><code class="k">piNumSides</code></td><td class=""><code>3</code></td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">piGlowing</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">plLocation</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="80">80</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(numSides = 0)</h4>
+<pre><code>{
+      send(self,@SetNumSides,#numSides=numSides);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:84</p>
+<h4>AppendDesc()</h4>
+<pre><code>{
+      local lDescs, oRoom;
+
+      
+      send(SYS,@AppendCardinalToTempString,#number=piNumSides);
+
+      lDescs = [prism_desc2_rsc, prism_desc2a_rsc, prism_desc2b_rsc, prism_desc2d_rsc];
+
+      
+      AppendTempString(Nth(lDescs,(send(self,@GetChargeLevel)+1)));
+
+      if IsList(plLocation) AND plLocation &lt;&gt; $
+      {
+         oRoom = Send(SYS, @FindRoomByNum, #num = First(plLocation));
+         AppendTempString(prism_desc_location_rsc);
+         AppendTempString(send(oRoom,@GetCapDef));
+         AppendTempString(send(oRoom,@GetName));
+         AppendTempString(&quot;.&quot;);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:91</p>
+<h4>SetNumSides(numSides = 0)</h4>
+<pre><code>{
+      if numSides = 0
+      {
+         piNumSides = ((random(0,2)*2)+3);
+      }
+      else
+      {
+         piNumSides = numSides;
+      }
+
+      if (piNumSides &lt;&gt; 3) and (piNumSides &lt;&gt; 5) and (piNumSides &lt;&gt; 7)
+      {
+         piNumSides = 3;
+      }
+      
+      if piNumSides = 3
+      {
+         vrIcon = prism_3_icon_rsc;
+      }
+
+      if piNumSides = 5
+      {
+         vrIcon = prism_5_icon_rsc;
+      }
+
+      if piNumSides = 7
+      {
+         vrIcon = prism_7_icon_rsc;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:115</p>
+<h4>CanAcceptCasters()</h4>
+<pre><code>{
+      if piNumSides &lt;&gt; 3 AND piNumSides &lt;&gt; 5 AND piNumSides &lt;&gt; 7
+      {
+         send(self,@SetNumSides,#numSides=3);
+      }
+
+      if Length(plCasters) &gt;= piNumSides
+      {
+         return FALSE;
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:149</p>
+<h4>GetTargets()</h4>
+<pre><code>{
+      return plTargets;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:164</p>
+<h4>GetCasters()</h4>
+<pre><code>{
+      return plCasters;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:169</p>
+<h4>GetSpell()</h4>
+<pre><code>{
+      return poSpell;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:174</p>
+<h4>SpellCast(What = $, Who = $, lTargets = $)</h4>
+<pre><code>{
+      local i, each_obj;
+
+      if NOT IsClass(poOwner,&amp;Room)
+      {
+         return FALSE;
+      }
+
+      if poSpell = $
+      {
+         if NOT send(what,@IsMulticaster)
+         {
+            return FALSE;
+         }
+
+         plTargets = lTargets;
+         poSpell = What;
+         plCasters = $;
+         plCasters = cons(who,plCasters);
+         piSpellPowerNeeded = send(what,@GetTotalSpellPower,#oPrism=self);
+
+         for i in send(poOwner,@GetHolderActive)
+         {
+            each_obj = send(poOwner,@HolderExtractObject,#data=i);
+            if isclass(each_obj,&amp;Player)
+            {
+               if each_obj = who
+               {
+                  Send(each_obj,@MsgSendUser,#message_rsc=prism_new_spell_tocaster);
+               }
+               else
+               {
+                  Send(each_obj,@MsgSendUser,#message_rsc=prism_new_spell,
+                       #parm1=Send(who,@GetCapDef),#parm2=Send(who,@GetName));
+               }
+            }
+         }
+
+         return TRUE;
+      }
+
+      if plCasters &lt;&gt; $ AND FindListElem(plCasters,who) &lt;&gt; 0
+      {
+         DEBUG(&quot;Caster already in multicast list is trying to get on again!&quot;);
+         return FALSE;
+      }
+
+      for i in send(poOwner,@GetHolderActive)
+      {
+         each_obj = send(poOwner,@HolderExtractObject,#data=i);
+         if IsClass(each_obj,&amp;Player)
+         {
+            if each_obj = who
+            {
+               Send(each_obj,@MsgSendUser,#message_rsc=prism_new_caster_tocaster);
+            }
+            else
+            {
+               Send(each_obj,@MsgSendUser,#message_rsc=prism_new_caster,
+                     #parm1=Send(who,@GetCapDef),#parm2=Send(who,@GetName));
+            }
+         }
+      }
+
+      plCasters = cons(who,plCasters);
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:179</p>
+<h4>ContributeSpellPower(amount = 0, who = $)</h4>
+<pre><code>{
+      local iOldLevel, iNewLevel;
+
+      if poSpell = $ OR poOwner = $
+      {
+         return FALSE;
+      }
+
+      iOldLevel = send(self,@GetChargeLevel);
+
+      piSpellPowerSoFar = piSpellPowerSoFar + amount;
+      iNewLevel = send(self,@GetChargeLevel);
+
+      
+      if random(1,5) = 5 AND IsClass(poOwner,&amp;Room)
+      {
+         Send(poOwner,@SomethingShot,#who=who,#target=self,#projectile=self,#flags=PROJ_FLAG_LIGHT_SOURCE);
+      }
+
+      if iNewLevel &lt;&gt; iOldLevel
+      {
+         
+         if iNewLevel = 3
+         {
+            
+            piGlowing = TRUE;
+         }
+
+         send(poOwner,@SomethingChanged,#what=self);
+
+         
+         Send(poOwner, @SomethingWaveRoom, #what = self,
+              #wave_rsc = prism_charged_wav_rsc);
+      }
+
+      if piSpellPowerSoFar &gt;= piSpellPowerNeeded
+      {
+         send(self,@CastSpell);
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:249</p>
+<h4>ReqNewOwner(what = $)</h4>
+<pre><code>{
+      if poSpell &lt;&gt; $
+      {
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:293</p>
+<h4>NewOwner()</h4>
+<pre><code>{
+      send(Self,@EndCeremony);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:303</p>
+<h4>EndCeremony()</h4>
+<pre><code>{
+      local i;
+
+      for i in plCasters
+      {
+         Send(i,@ClearTranceFlag);
+         Send(i,@RemoveEnchantment,#what=poSpell);
+      }
+
+      if piSpellPowerSoFar &gt; 0
+      {
+         Send(send(SYS,@UtilGetRoomRecurse,#what=self),@SomeoneSaid,#type=SAY_MESSAGE,#string=prism_chant_over,#what=self);
+      }
+
+      piSpellPowerSoFar = 0;
+      piSpellPowerNeeded = 0;
+      piGlowing = FALSE;
+
+      poSpell = $;
+      plCasters = $;
+      plTargets = $;
+
+      if poOwner &lt;&gt; $
+      {
+         send(poOwner,@SomethingChanged,#what=self);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:310</p>
+<h4>CastSpell()</h4>
+<pre><code>{
+      if length(plCasters) &gt;= piNumSides
+      {     
+         send(poSpell,@PrismCast,#SpellPower=piSpellPowerSoFar,
+              #lCasters=plCasters,#lTargets=plTargets,#oPrism=self);
+         send(self,@EndCeremony);
+      }
+      else
+      {
+         if random(1,30) = 1
+         {
+            Send(first(plCasters),@MsgSendUser,#message_rsc=prism_lack_casters);
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:341</p>
+<h4>CasterBrokeTrance(who = $)</h4>
+<pre><code>{
+      if plCasters &lt;&gt; $ AND FindListElem(plCasters,who) &lt;&gt; 0
+      {
+         plCasters = DelListElem(plCasters,who);
+         if Length(plCasters) = 0
+         {
+            send(self,@EndCeremony);
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:368</p>
+<h4>GetChargeLevel()</h4>
+<p>Simply returns an integer between 0 and 3 inclusive to indicate relative charge level. </p>
+<pre><code>{
+      if piSpellPowerNeeded &gt; 0 AND piSpellPowerSoFar &gt; 0
+      {
+         if piSpellPowerSoFar &gt; 0 AND piSpellPowerSoFar &lt; (piSpellPowerNeeded/3)
+         { 
+            return 1;
+         }
+
+         if piSpellPowerSoFar &gt;= (piSpellPowerNeeded/3) AND piSpellPowerSoFar &lt; (piSpellPowerNeeded*2/3)
+         {
+            return 2;
+         }
+
+         if piSpellPowerSoFar &gt;= (piSpellPowerNeeded*2/3)
+         {
+            return 3;
+         }
+      }
+
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:382</p>
+<h4>GetObjectFlags()</h4>
+<pre><code>{
+      local iNewFlags;
+
+      iNewFlags = viObject_flags;
+
+      if piGlowing
+      {
+         iNewFlags = iNewFlags | FLICKERING_YES;
+      }
+
+      return iNewFlags;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:406</p>
+<h4>Delete()</h4>
+<pre><code>{
+      send(Self,@EndCeremony);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:420</p>
+<h4>GetProjectileIcon()</h4>
+<pre><code>{
+      return vrPrismProjectile;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:429</p>
+<h4>GetProjectileSpeed()</h4>
+<pre><code>{
+      return 12;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:434</p>
+<h4>SendProjectileAnimation()</h4>
+<pre><code>{
+      AddPacket(1, ANIMATE_CYCLE, 4, 40, 2, 2, 2, 3);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:439</p>
+<h4>GetProjectileLightFlags()</h4>
+<pre><code>{
+      
+      return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:446</p>
+<h4>GetProjectileLightIntensity()</h4>
+<pre><code>{
+      
+      return 25;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:452</p>
+<h4>GetProjectileLightColor()</h4>
+<pre><code>{
+      
+      return LIGHT_LIGHTNING;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:458</p>
+<h4>GetTeleportLocation()</h4>
+<pre><code>{
+      return plLocation;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:466</p>
+<h4>LearnLocation(lLocation = $)</h4>
+<pre><code>{
+      plLocation = lLocation;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:471</p>
+<h4>ResetLocationIfIllegal()</h4>
+<p>Resets the prism's target location if it is no longer legal to teleport there. Used to fix up existing prisms when the set of restricted areas changes.</p>
+<pre><code>{
+      local oRoom;
+
+      if IsList(plLocation) AND plLocation &lt;&gt; $
+      {
+         oRoom = Send(SYS, @FindRoomByNum, #num = First(plLocation));
+         if oRoom &lt;&gt; $ AND Send(oRoom, @CanHavePlayerPortal)
+         {
+            return;
+         }
+
+         
+         plLocation = FALSE;
+      }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:478</p>
+<h4>SendLightingInformation()</h4>
+<pre><code>{
+      local iIntensity;
+
+      AddPacket(2,(LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC));
+      
+      iIntensity = bound((send(self,@GetChargeLevel)*20),1,255);
+      AddPacket(1,iIntensity);
+      
+      AddPacket(2,LIGHT_WHITE);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:500</p>
+<h4>DestroyDisposable()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/prism.kod:516</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

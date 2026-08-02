@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qor — the School of Corruption — Meridian 59 Compendium</title>
+<meta name="description" content="Qor is the mirror of Shal'ille and costs the same thing in the opposite direction: karma at or below minus ten times the spell's level, which means living at −60 for the deepest magic. It is a night school in the most literal sense — its power is computed from the distance between the current hour and noon — and it is the most expensive polarity in the game to hold, because lawful merchants notice.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html" class="on">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Guides</a> › Qor — the School of Corruption</p>
+<h1>Qor — the School of Corruption</h1>
+
+<p class="lede">Qor is the mirror of Shal'ille and costs the same thing in the opposite direction:
+karma at or below minus ten times the spell's level, which means living at −60 for the deepest
+magic. It is a night school in the most literal sense — its power is computed from the distance
+between the current hour and noon — and it is the most expensive polarity in the game to hold,
+because lawful merchants notice.</p>
+
+<h2>Where Qor stands</h2>
+<table class="data">
+<tbody>
+<tr><td>Polarity</td><td>Evil — <code class="k">karma ≤ level × −10</code></td></tr>
+<tr><td>Requisite attribute</td><td><strong>Mysticism</strong></td></tr>
+<tr><td>Learning division</td><td>Magic</td></tr>
+<tr><td>Spells</td><td>26, across levels 1–6</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:376 <code class="k">GetDivision</code>, :392 <code class="k">GetDivisionReq</code>, :482 <code class="k">GetRequiredKarma</code></p>
+
+<h2>Where its power comes from</h2>
+<p>Spell power is half your ability in the spell plus the bonuses below, on a scale of 1 to 99.
+It decides your success chance, your mana cost, your casting speed and the strength of the
+effect — see <a href="spells.html">Spells and Spellcasting</a>.</p>
+<table class="data">
+<thead><tr><th>Bonus</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td><strong>Primary, 0–30</strong></td><td><code class="k">2 + abs(hour − 12) × 2</code> — 2 at noon, 26 at
+       midnight — plus a bonus inside a <a href="../spells/darkness.html">Darkness</a> enchantment</td></tr>
+<tr><td><strong>Secondary, 0–10</strong></td><td><code class="k">abs(karma) / 10</code></td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:2126–2144</p>
+
+<h2>What the school is for</h2>
+<p><strong>Killing things.</strong> Qor holds the deepest directly offensive magic in the game,
+and spell damage largely bypasses armour: the flat reduction every worn piece grants is set to
+<em>zero</em> against a pure spell attack. A fighter's armour is his largest mitigation and it
+mostly does not apply to you.</p>
+<p class="cite">kod/object/item/passitem/defmod.kod:110–122</p>
+<p><strong>Debilitation.</strong> The curse and poison lines take an enemy apart over time rather
+than at once, which suits a caster who expects to be outlasted in a straight exchange.</p>
+<div class="warn">Being at −60 karma has consequences outside the spell list. Creatures flagged
+<code class="k">MOB_KARMA_AG</code> will leave you alone — a real defensive benefit — but lawful
+merchants become difficult, and you are a legitimate target for anyone who wants to be a hero.</div>
+
+<h2>Every Qor spell</h2>
+<table class="data">
+<thead><tr><th>Lvl</th><th>Spell</th><th>Mana</th><th>Cast time</th><th>Reagents</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><a href="../spells/cloak.html">cloak</a></td><td>5</td><td>2,000 ms</td><td>entroot berry ×2</td></tr>
+<tr><td>1</td><td><a href="../spells/darkness.html">darkness</a></td><td>8</td><td>instant</td><td>fairy wing, entroot berry</td></tr>
+<tr><td>1</td><td><a href="../spells/detectgood.html">detect good</a></td><td>10</td><td>3,000 ms</td><td>fairy wing</td></tr>
+<tr><td>1</td><td><a href="../spells/resistgood.html">unholy resolve</a></td><td>3</td><td>instant</td><td>fairy wing, vial of solagh</td></tr>
+<tr><td>2</td><td><a href="../spells/acidtouch.html">acid touch</a></td><td>10</td><td>instant</td><td>entroot berry</td></tr>
+<tr><td>2</td><td><a href="../spells/fade.html">fade</a></td><td>12</td><td>instant</td><td>dark angel feather</td></tr>
+<tr><td>2</td><td><a href="../spells/karaholscurse.html">Kara'hol's curse</a></td><td>9</td><td>instant</td><td>entroot berry ×2</td></tr>
+<tr><td>2</td><td><a href="../spells/unholyweapon.html">unholy weapon</a></td><td>17</td><td>30,000 ms</td><td>fairy wing ×3, orc tooth</td></tr>
+<tr><td>3</td><td><a href="../spells/defile.html">defile</a></td><td>0</td><td>10,000 ms</td><td>fairy wing</td></tr>
+<tr><td>3</td><td><a href="../spells/enfeeble.html">enfeeble</a></td><td>5</td><td>instant</td><td>orc tooth</td></tr>
+<tr><td>3</td><td><a href="../spells/summonpoisonfog.html">poison fog</a></td><td>20</td><td>2,000 ms</td><td>entroot berry ×2</td></tr>
+<tr><td>3</td><td><a href="../spells/silence.html">silence</a></td><td>10</td><td>instant</td><td>dark angel feather ×2, purple mushroom</td></tr>
+<tr><td>3</td><td><a href="../spells/vampiricdrain.html">vampiric drain</a></td><td>10</td><td>instant</td><td>shaman blood</td></tr>
+<tr><td>4</td><td><a href="../spells/animate.html">animate</a></td><td>20</td><td>20,000 ms</td><td>shaman blood</td></tr>
+<tr><td>4</td><td><a href="../spells/curseweapon.html">curse weapon</a></td><td>25</td><td>20,000 ms</td><td>shaman blood ×2, orc tooth</td></tr>
+<tr><td>4</td><td><a href="../spells/hold.html">hold</a></td><td>15</td><td>instant</td><td>purple mushroom ×2</td></tr>
+<tr><td>4</td><td><a href="../spells/deathsdoor.html">shadow rift</a></td><td>30</td><td>instant</td><td>dark angel feather ×4</td></tr>
+<tr><td>4</td><td><a href="../spells/shalillebane.html">Shal'illebane</a></td><td>15</td><td>5,000 ms</td><td>yrxl sap, fairy wing</td></tr>
+<tr><td>4</td><td><a href="../spells/splashofacid.html">splash of acid</a></td><td>10</td><td>instant</td><td>entroot berry ×2</td></tr>
+<tr><td>5</td><td><a href="../spells/blind.html">blind</a></td><td>15</td><td>instant</td><td>entroot berry ×2, purple mushroom</td></tr>
+<tr><td>5</td><td><a href="../spells/bloodinheritance.html">blood inheritance</a></td><td>50</td><td>20,000 ms</td><td>shaman blood ×2, entroot berry ×2, orc tooth</td></tr>
+<tr><td>5</td><td><a href="../spells/deathlink.html">death link</a></td><td>20</td><td>5,000 ms</td><td>shaman blood, polished seraphym</td></tr>
+<tr><td>5</td><td><a href="../spells/invisibility.html">invisibility</a></td><td>12</td><td>instant</td><td>dark angel feather</td></tr>
+<tr><td>5</td><td><a href="../spells/nodeburst.html">nodeburst</a></td><td>1</td><td>3,000 ms</td><td>fairy wing ×3, entroot berry ×3</td></tr>
+<tr><td>5</td><td><a href="../spells/swap.html">swap</a></td><td>9</td><td>3,000 ms</td><td>dark angel feather, yrxl sap, purple mushroom</td></tr>
+<tr><td>6</td><td><a href="../spells/paralyze.html">gaze of the basilisk</a></td><td>15</td><td>5,000 ms</td><td>yrxl sap, purple mushroom</td></tr>
+</tbody>
+</table>
+<p class="cite">Compiled from every <code class="k">Spell</code> subclass declaring this school. Per-spell citations are on each spell's own page.</p>
+
+<h2>Playing it</h2>
+<ul>
+<li><strong>Play at night.</strong> The primary bonus swings from 2 at midday to 26 at midnight
+       on the server's clock. That is a quarter of the entire spell-power scale, for free, for
+       choosing when to fight.</li>
+<li>Karma feeds the secondary bonus as well as the gate, so a committed Qor caster is stronger
+       than a hesitant one. Half-measures are the worst position on this axis.</li>
+<li>Moving karma costs at most 1.5 points per monster kill, and only creatures with a positive
+       karma value move you downward. Plan for dozens of kills, not a session.</li>
+<li><a href="../spells/darkness.html">Darkness</a> is worth casting first: it raises the
+       primary bonus for everything you cast inside it.</li>
+</ul>
+
+<h2>Related</h2>
+<p><a href="schools.html">The Six Schools</a> · <a href="spells.html">How casting works</a> ·
+<a href="../spells/index.html">Every spell</a> · <a href="../reagents/index.html">Reagents</a> ·
+<a href="karma.html">Karma</a> · <a href="attributes.html">Attributes</a> ·
+<a href="advancing.html">Advancing Your Character</a></p>
+
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bonkstick — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › bonkstick</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/hammer_g1.png" alt="bonkstick" width="74" height="34"></div><div class="heroText"><h1>bonkstick</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">wand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">25</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">25</div></div><div class="fact"><div class="lbl">Value</div><div class="val">150 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">20</div></div></div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/hammer_g1.png" alt="bonkstick inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/hammer_g2.png" alt="bonkstick on the ground" loading="lazy"><figcaption>on the ground</figcaption></figure><figure><img class="icon" src="../assets/img/hammer_g3.png" alt="bonkstick group 3" loading="lazy"><figcaption>group 3</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/specwand/bonkstik.kod:11</p>
+<p><code class="k">BonkStick</code> is <code class="k">SpecialWand</code> — full chain <code class="k">BonkStick</code> ← <code class="k">SpecialWand</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>BonkStick_name_rsc</code></td><td class=""><em>bonkstick</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>BonkStick_icon_rsc</code></td><td class=""><em>hammer.bgf</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>150</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viDamage_min</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">viDamage_max</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="54">54</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>BonkStick_desc_rsc</code></td><td class="num " data-sort="58">58</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ReqNewApply(what = $, apply_on = $)</h4>
+<pre><code>{
+      
+      if apply_on = poOwner
+      {
+         send(poOwner,@MsgSendUser,#message_rsc=bonkstick_not_self);
+
+         return FALSE;
+      }
+
+      if (NOT IsClass(apply_on,&amp;Battler))
+         OR IsClass(apply_on,&amp;Admin)
+      {
+         send(poOwner,@MsgSendUser,#message_rsc=bonkstick_bad_target,
+              #parm1=send(apply_on,@GetDef),#parm2=send(apply_on,@GetName));
+              
+         return FALSE;
+      }
+   
+      if send(apply_on,@GetOwner) &lt;&gt; send(poOwner,@GetOwner)
+      {
+         send(poOwner,@MsgSendUser,#message_rsc=wand_target_gone,
+              #parm1=send(apply_on,@GetDef),#parm2=send(apply_on,@GetName));
+              
+         return FALSE;
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/bonkstik.kod:62</p>
+<h4>CastSpell(apply_on = $)</h4>
+<pre><code>{
+      local  i, oRoom, lActive, each_obj;
+
+      oRoom = Send(apply_on,@GetOwner);
+      lActive = Send(oRoom,@GetHolderActive);
+
+      send(poOwner,@DoAttackSwing);
+
+      
+      Send(oRoom,@SomethingShot,#who=poOwner,#target=apply_on,#projectile=self,#flags=PROJ_FLAG_LIGHT_SOURCE);
+
+      Send(poOwner,@MsgSendUser,#message_rsc=caster_bonkstick_msg,
+           #parm1=Send(apply_on,@GetDef),#parm2=Send(apply_on,@GetName));
+
+      Send(apply_on,@EffectSendUser,#what=self,#effect=EFFECT_INVERT);
+      Send(apply_on,@MsgSendUser,#message_rsc=bonked_bonkstick_msg,
+           #parm1=Send(poOwner,@GetDef),#parm2=Send(poOwner,@GetName),
+           #parm3=Send(poOwner,@GetHisHer));
+
+      Send(Send(apply_on, @GetOwner), @SomethingWaveRoom, #what=apply_on,#wave_rsc=BonkStick_wav_rsc);
+
+      for i in lActive
+      {
+         each_obj = Send(oRoom,@HolderExtractObject,#data=i);
+         
+         if (IsClass(each_obj,&amp;Player) AND (each_obj &lt;&gt; poOwner) AND (each_obj &lt;&gt; apply_on))
+         {
+            if (IsClass(apply_on,&amp;Battler))
+            {
+               send(each_obj,@MsgSendUser,#message_rsc=allinroom_bonkstick_msg1,
+                    #parm1=Send(apply_on,@GetDef,#cap=TRUE),#parm2=Send(apply_on,@GetName),
+                    #parm3=Send(poOwner,@GetDef),#parm4=Send(poOwner,@GetName),
+                    #parm5=Send(apply_on,@GetHimHer),#parm6=Send(poOwner,@GetHisHer));
+            }
+            else
+            {
+               send(each_obj,@MsgSendUser,#message_rsc=allinroom_bonkstick_msg2,
+                    #parm1=Send(poOwner,@GetDef),#parm2=Send(poOwner,@GetName),
+                    #parm3=Send(apply_on,@GetDef),#parm4=Send(apply_on,@GetName),
+                    #parm5=Send(poOwner,@GetHisHer));
+            }
+         }
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/bonkstik.kod:92</p>
+<h4>SendEffectData()</h4>
+<pre><code>{
+      
+      AddPacket(4,10000);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/bonkstik.kod:140</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_NONE,2,1);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/bonkstik.kod:148</p>
+<h4>GetProjectileIcon()</h4>
+<pre><code>{
+      return bonkstick_proj;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/bonkstik.kod:155</p>
+<h4>GetProjectileSpeed()</h4>
+<pre><code>{
+      return 12;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/bonkstik.kod:160</p>
+<h4>SendProjectileAnimation()</h4>
+<pre><code>{
+      
+      AddPacket(1,ANIMATE_CYCLE, 4,40, 2,2, 2,3);   
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/bonkstik.kod:165</p>
+<h4>GetProjectileLightFlags()</h4>
+<pre><code>{
+      
+      return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/bonkstik.kod:173</p>
+<h4>GetProjectileLightIntensity()</h4>
+<pre><code>{
+      
+      return 25;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/bonkstik.kod:179</p>
+<h4>GetProjectileLightColor()</h4>
+<pre><code>{
+      
+      return LIGHT_LIGHTNING;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/specwand/bonkstik.kod:185</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bow — Meridian 59 Compendium</title>
+<meta name="description" content="This bow offers the advantage of long ranged attacks.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › bow</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/bow_g3.png" alt="bow" width="77" height="120"></div><div class="heroText"><h1>bow</h1><p class="lede">This bow offers the advantage of long ranged attacks.</p><div class="tags"><span class="tag ">weapon</span><span class="tag ">hand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">70</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">80</div></div><div class="fact"><div class="lbl">Value</div><div class="val">2500 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">200–250</div></div><div class="fact"><div class="lbl">Spell penalty</div><div class="val">-25%</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">hand</div></div></div><h2>As a weapon</h2><div class="formula">base       = random(3, 8)            % thrust weapon
+quality    +0                           % normal quality
+stroke     × 80/100                     % Slash stroke damage factor
+might      × (100 + bound(might−25, 0, 40))/100
+proficiency+ (proficiency + 1) × 5/100</div><p class="cite">kod/object/item/passitem/weapon.kod:241 <code class="k">GetBaseDamage</code> · kod/object/passive/skill/stroke.kod:201 <code class="k">FindDamage</code> · :332 <code class="k">DamageFactors</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Wielder</th><th class="num ">Damage per hit</th><th class=""></th></tr></thead>
+<tbody><tr><td class="">novice — 0 proficiency, might 25</td><td class="num ">2–6</td><td class="">before the target’s armour</td></tr>
+<tr><td class="">expert — 99 proficiency, might 65</td><td class="num ">7–13</td><td class="">before the target’s armour</td></tr></tbody></table></div><div class="facts"><div class="fact"><div class="lbl">Weapon type</div><div class="val sm">thrust</div></div><div class="fact"><div class="lbl">Quality</div><div class="val sm">normal</div></div><div class="fact"><div class="lbl">To-hit bonus</div><div class="val">+125</div></div><div class="fact"><div class="lbl">Reach</div><div class="val">3</div></div><div class="fact"><div class="lbl">Disarm</div><div class="val">10</div></div><div class="fact"><div class="lbl">Spell penalty</div><div class="val">-10%</div></div><div class="fact"><div class="lbl">Proficiency</div><div class="val sm">bow</div></div></div><p>Damage type matters because armour resists by type. See
+<a href="../guides/armor.html">Armour</a> for what each armour does to each type, and
+<a href="../weapons/index.html">Weapons</a> to compare this against everything else.</p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/bow_g1.png" alt="bow on the ground" loading="lazy"><figcaption>on the ground</figcaption></figure><figure><img class="icon" src="../assets/img/bow_g2.png" alt="bow broken" loading="lazy"><figcaption>broken</figcaption></figure><figure><img class="icon" src="../assets/img/bow_g3.png" alt="bow inventory" loading="lazy"><figcaption>inventory</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:11</p>
+<p><code class="k">Bow</code> is <code class="k">RangedWeapon</code> — full chain <code class="k">Bow</code> ← <code class="k">RangedWeapon</code> ← <code class="k">Weapon</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">BattleBow</code>, <code class="k">Longbow</code>, <code class="k">MagicBow</code>, <code class="k">NeruditeBow</code>, <code class="k">PracticeBow</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>bow_name_rsc</code></td><td class=""><em>bow</em></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>bow_icon_rsc</code></td><td class=""><em>bow.bgf</em></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>bow_desc_rsc</code></td><td class=""><em>This bow offers the advantage of long ranged attacks.</em></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">vcAmmo</code></td><td class=""><code>&amp;Arrow</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">vrWeapon_window_attack_start</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">vrWeapon_window_attack_end</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">vrWeapon_window_hold</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viInventory_group</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">viBroken_group</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viWeaponDamage</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viRange</code></td><td class=""><code>100</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>2500</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>80</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>70</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">viSpell_modifier</code></td><td class=""><code>-25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="64">64</td></tr>
+<tr><td class=""><code class="k">viBaseXLAT</code></td><td class=""><code>XLAT_TO_SKIN4</code></td><td class="">3</td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">vrCondition_good</code></td><td class=""><code>bow_condition_good</code></td><td class=""><em> is slightly worn but in generally good condition.</em></td><td class="num " data-sort="69">69</td></tr>
+<tr><td class=""><code class="k">vrCondition_med</code></td><td class=""><code>bow_condition_med</code></td><td class=""><em> is starting to crack and fray but is still effective.</em></td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">vrCondition_broken</code></td><td class=""><code>bow_condition_broken</code></td><td class=""><em> is broken and in pieces.</em></td><td class="num " data-sort="71">71</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">prBowTop</code></td><td class=""><code>bow_top</code></td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">prBowBottom</code></td><td class=""><code>bow_bottom</code></td><td class="num " data-sort="76">76</td></tr>
+<tr><td class=""><code class="k">prBowOverlay</code></td><td class=""><code>bow_window_overlay_rsc</code></td><td class="num " data-sort="77">77</td></tr>
+<tr><td class=""><code class="k">vrWeapon_window_overlay</code></td><td class=""><code>bow_window_overlay_rsc</code></td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">vrWeapon_overlay</code></td><td class=""><code>bow_bottom</code></td><td class="num " data-sort="80">80</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor()</h4>
+<pre><code>{
+      send(self,@UpdateColor);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:84</p>
+<h4>WeaponAttack(what = $)</h4>
+<p>Called by ReqWeaponAttack when the weapon is actually used in an attack.</p>
+<pre><code>{
+      piUsed = ATTACKING;
+      
+      if vrWeapon_window_overlay &lt;&gt; $
+      {
+         Send(poOwner,@ChangeWindowOverlay,#what=self);
+      }
+      
+      if vrWeapon_overlay &lt;&gt; $
+      {
+         Send(poOwner,@DoBowFire);
+      }
+      
+      piUsed = USED;
+
+      return;
+   }   </code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:91</p>
+<h4>NewUsed()</h4>
+<pre><code>{
+      local oSoldierShield, iFaction, iTranslation;
+      
+      if poOwner &lt;&gt; $
+         AND IsClass(poOwner,&amp;User)
+      {
+         iFaction = FACTION_NEUTRAL;
+
+         
+         oSoldierShield = send(poOwner,@FindUsing,#class=&amp;SoldierShield);
+
+         
+         
+         if oSoldierShield &lt;&gt; $
+         {
+            iFaction = send(oSoldierShield,@GetFaction);
+            send(oSoldierShield,@SlingOnBack);
+         }
+
+         if iFaction = FACTION_NEUTRAL
+         {
+            prBowTop = bow_top;
+            prBowBottom = bow_bottom;
+            prBowOverlay = bow_window_overlay_rsc;
+            
+            iTranslation = 0;
+         }
+         else
+         {
+            prBowTop = bow_top_faction;
+            prBowBottom = bow_bottom_faction;
+            prBowOverlay = bow_window_overlay_faction_rsc;
+
+            if iFaction = FACTION_DUKE
+            {
+               iTranslation = XLAT_TO_PURPLE;
+            }
+
+            if iFaction = FACTION_PRINCESS
+            {
+               iTranslation = XLAT_TO_ORANGE;
+            }
+
+            if iFaction = FACTION_REBEL
+            {
+               iTranslation = XLAT_TO_RED;
+            }
+
+         }
+
+         send(self,@UpdateColor,#iFactionColor=iTranslation);
+      }
+
+      vrWeapon_window_overlay = prBowOverlay;
+      vrWeapon_overlay = prBowBottom;
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:111</p>
+<h4>NewUnused()</h4>
+<pre><code>{
+      local oSoldierShield;
+      
+      
+      oSoldierShield = send(poOwner,@FindUsing,#class=&amp;SoldierShield);
+
+      if oSoldierShield &lt;&gt; $
+      {
+         send(oSoldierShield,@RemoveFromBack);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:171</p>
+<h4>GetOverlayHotspot(animation = $)</h4>
+<pre><code>{
+      return HS_BOTTOM_BOW;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:186</p>
+<h4>GetSecondOverlay()</h4>
+<pre><code>{
+      return prBowTop;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:191</p>
+<h4>SendOverlayInformation(iAnimation = $)</h4>
+<pre><code>{
+      if piUsed = ATTACKING and iAnimation &lt;&gt; $
+      {
+         AddPacket(4,prBowTop);
+         AddPacket(1,HS_TOP_BOW);
+         Send(self,@SendSecondaryOverlayAnimation,#iAnimation=iAnimation);       
+      
+         AddPacket(4,prBowBottom);
+         AddPacket(1,HS_BOTTOM_BOW);
+         Send(self,@SendOverlayAnimation,#iAnimation=iAnimation);      
+      }
+      else
+      {
+         propagate;
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:196</p>
+<h4>SendSecondaryOverlayAnimation(iAnimation = $)</h4>
+<pre><code>{
+      if (piItem_flags &amp; ITEM_PALETTE_MASK) &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,piItem_flags &amp; ITEM_PALETTE_MASK);
+      }
+      
+      if piUsed = ATTACKING and iAnimation &lt;&gt; $
+      {
+         AddPacket(1,ANIMATE_ONCE,4,1200,2,1,2,1,2,2);
+         
+         return;	 
+      }
+      else
+      { 
+         AddPacket(1,ANIMATE_NONE,2,2);
+         
+         return;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:216</p>
+<h4>SendOverlayAnimation(ianimation = $)</h4>
+<pre><code>{
+      if (piItem_flags &amp; ITEM_PALETTE_MASK) &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,piItem_flags &amp; ITEM_PALETTE_MASK);
+      }
+      
+      if  piUsed = ATTACKING and iAnimation &lt;&gt; $
+      {
+         AddPacket(1,ANIMATE_ONCE,4,1200,2,1,2,1,2,2);	 
+      }
+      else
+      { 
+         AddPacket(1,ANIMATE_NONE,2,2);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:239</p>
+<h4>GetNumberOverlays(iAnimation = $)</h4>
+<pre><code>{
+      
+      if piUsed = ATTACKING
+         AND iAnimation &lt;&gt; $
+      {  
+         return 2;  
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:258</p>
+<h4>GetWindowOverlayHotspot()</h4>
+<pre><code>{
+      
+      if piUsed = UNUSED
+      {
+         return 0;
+      } 
+
+      return HS_SW;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:270</p>
+<h4>GetDisarmBonus()</h4>
+<pre><code>{
+      
+      return -90;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:281</p>
+<h4>UpdateColor(iFactionColor = 0)</h4>
+<pre><code>{
+      local iTranslation;
+      
+      iTranslation = send(SYS,@EncodeTwoColorXlat,#color1=iFactionColor,#color2=viBaseXLAT);
+      send(self,@SetPaletteTranslation,#translation=iTranslation);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon/ranged/bow.kod:287</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

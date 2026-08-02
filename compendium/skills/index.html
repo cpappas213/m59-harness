@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skills — Meridian 59 Compendium</title>
+<meta name="description" content="Every skill: what it does, what it costs, who teaches it and how it improves.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html" class="on">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main class="wide">
+<p class="crumbs"><a href="../index.html">Home</a> › Skills</p>
+<h1>Skills</h1>
+<p class="lede">22 skills, in three families that behave completely differently:
+strokes decide how your weapon swings, proficiencies decide how well you handle a class of
+weapon, and skills proper are things you invoke. All three share one number — an ability from
+0 to 99 that rises with use and falls with neglect.</p>
+
+<h2>The three families</h2>
+<dl>
+<dt>Stroke</dt><dd>A <strong>stroke</strong> is a way of swinging. You do not invoke it; the weapon
+picks one, and its ability decides both how often you connect and how hard. Improving a stroke
+improves every weapon that uses it.</dd>
+<dt>Proficiency</dt><dd>A <strong>proficiency</strong> is a weapon class. It contributes to your
+chance to hit and adds a small flat bonus to damage — <code class="k">(proficiency + 1) × 5 / 100</code>
+per swing — and it is what the weapon checks before you can use it well at all.</dd>
+<dt>Skill</dt><dd>A <strong>skill</strong> proper is something you invoke, or that fires automatically
+when its condition is met. It costs vigour, it can fail, and its ability is both the success
+chance and the size of the effect.</dd>
+</dl>
+<p class="cite">kod/object/passive/skill.kod · kod/object/passive/skill/stroke.kod · kod/object/passive/skill/profic</p>
+
+<h2>What ability is worth</h2>
+<p>Ability enters combat in three places, and it is worth knowing which, because they are not
+equally valuable. Your <em>stroke</em> ability is multiplied by 3 in your offence; your
+<em>proficiency</em> by 2; your aim by 4. Defence weights dodge by 3, parry by 2 and block by 1.</p>
+<div class="formula">offence = stroke×3 + proficiency×2 + aim×4 + max_health×3/2
+defence = parry×2 + block×1 + dodge×3 + agility×4 + max_health×3/2
+chance to hit = bound(attacker_offence × 55 / defender_defence, 10, 95)  %</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4227 and :4294 · kod/object/active/holder/nomoveon/battler.kod:19,330</p>
+<p>The consequence: <strong>dodge is the single most valuable defensive skill</strong> and it
+needs no equipment, while block requires a shield and parry requires a weapon in hand.</p>
+
+<div class="filterbar" data-for="skilltable">
+  <input type="search" placeholder="filter…" aria-label="Filter skills">
+  <select data-filter="family"><option value="">every family</option><option>stroke</option><option>proficiency</option><option>skill</option></select>
+  <span class="count"></span>
+</div>
+<div class="tablewrap"><table class="data" id="skilltable">
+<thead><tr><th class="sortable" data-col="0"></th><th class="sortable" data-col="1">Skill</th><th class="sortable" data-col="2">Family</th><th class="sortable" data-col="3">Discipline</th><th class="num sortable" data-col="4">Lvl</th><th class="num sortable" data-col="5">Vigour</th><th class="num sortable" data-col="6">Improve</th><th class="sortable" data-col="7">Taught by</th><th class="sortable" data-col="8">What it does</th></tr></thead>
+<tbody><tr data-family="proficiency"><td class=""><img class="icon rowicon" src="../assets/img/archrico_g1.png" alt="" loading="lazy"></td><td class=""><a href="archery.html">archery</a></td><td class="" data-sort="proficiency">proficiency</td><td class="">fencing</td><td class="num " data-sort="5">5</td><td class="num " data-sort="2">2</td><td class="num " data-sort="15">15%</td><td class=""><a href="../creatures/kocatanweaponsmaster.html">Kochtal ko'Tulca</a></td><td class="">One of several agile skills.</td></tr>
+<tr data-family="skill"><td class=""><img class="icon rowicon" src="../assets/img/light_g1.png" alt="" loading="lazy"></td><td class=""><a href="assess.html">assess</a></td><td class="" data-sort="skill">skill</td><td class="">brawling</td><td class="num " data-sort="50">50</td><td class="num " data-sort="2">2</td><td class="num " data-sort="25">25%</td><td class=""><span class="muted">—</span></td><td class="">One of several agile skills.</td></tr>
+<tr data-family="proficiency"><td class=""><img class="icon rowicon" src="../assets/img/axeico_g1.png" alt="" loading="lazy"></td><td class=""><a href="axeproficiency.html">axe wielding</a></td><td class="" data-sort="proficiency">proficiency</td><td class="">fencing</td><td class="num " data-sort="3">3</td><td class="num " data-sort="2">2</td><td class="num " data-sort="20">20%</td><td class=""><a href="../creatures/cornothsergeant.html">Rook</a></td><td class="">One of several agile skills.</td></tr>
+<tr data-family="skill"><td class=""><img class="icon rowicon" src="../assets/img/iblock_g1.png" alt="" loading="lazy"></td><td class=""><a href="block.html">block</a></td><td class="" data-sort="skill">skill</td><td class="">fencing</td><td class="num " data-sort="1">1</td><td class="num " data-sort="0">0</td><td class="num " data-sort="60">60%</td><td class=""><a href="../creatures/rebelliege.html">Rebel Liege</a>, <a href="../creatures/jealousgeneral.html">Jonas D'Accor</a></td><td class="">Weaponcraft Lv. 1: The ability to block blows in combat, and thus stay alive longer.</td></tr>
+<tr data-family="proficiency"><td class=""></td><td class=""><a href="brawling.html">Brawling</a></td><td class="" data-sort="proficiency">proficiency</td><td class="">fencing</td><td class="num " data-sort="2">2</td><td class="num " data-sort="2">2</td><td class="num " data-sort="25">25%</td><td class=""><a href="../creatures/cornothsergeant.html">Rook</a></td><td class="">Weaponcraft Lv. 2: Advanced tricks in unarmed combat, building on the punch skill.</td></tr>
+<tr data-family="skill"><td class=""><img class="icon rowicon" src="../assets/img/idisarm_g1.png" alt="" loading="lazy"></td><td class=""><a href="disarm.html">disarm</a></td><td class="" data-sort="skill">skill</td><td class="">fencing</td><td class="num " data-sort="6">6</td><td class="num " data-sort="10">10</td><td class="num " data-sort="30">30%</td><td class=""><a href="../creatures/threecouncilor.html">Cylill</a></td><td class="">One of several agile skills.</td></tr>
+<tr data-family="skill"><td class=""><img class="icon rowicon" src="../assets/img/dodgeico_g1.png" alt="" loading="lazy"></td><td class=""><a href="dodge.html">dodge</a></td><td class="" data-sort="skill">skill</td><td class="">fencing</td><td class="num " data-sort="2">2</td><td class="num " data-sort="0">0</td><td class="num " data-sort="20">20%</td><td class=""><a href="../creatures/cornothsergeant.html">Rook</a></td><td class="">Weaponcraft Lv. 2: The ability to avoid blows in combat, and thus stay alive longer.</td></tr>
+<tr data-family="stroke"><td class=""><img class="icon rowicon" src="../assets/img/fibowico_g1.png" alt="" loading="lazy"></td><td class=""><a href="fire.html">fire</a></td><td class="" data-sort="stroke">stroke</td><td class="">fencing</td><td class="num " data-sort="4">4</td><td class="num " data-sort="2">2</td><td class="num " data-sort="50">50%</td><td class=""><a href="../creatures/kocatanweaponsmaster.html">Kochtal ko'Tulca</a></td><td class="">Weaponcraft Lv. 4: Key to mastering any type of missile weapon.</td></tr>
+<tr data-family="proficiency"><td class=""><img class="icon rowicon" src="../assets/img/hammrico_g1.png" alt="" loading="lazy"></td><td class=""><a href="hammerproficiency.html">hammer wielding</a></td><td class="" data-sort="proficiency">proficiency</td><td class="">fencing</td><td class="num " data-sort="3">3</td><td class="num " data-sort="2">2</td><td class="num " data-sort="30">30%</td><td class=""><a href="../creatures/cornothsergeant.html">Rook</a></td><td class="">One of several agile skills.</td></tr>
+<tr data-family="stroke"><td class=""><img class="icon rowicon" src="../assets/img/light_g1.png" alt="" loading="lazy"></td><td class=""><a href="kick.html">kick</a></td><td class="" data-sort="stroke">stroke</td><td class="">brawling</td><td class="num " data-sort="50">50</td><td class="num " data-sort="2000">2000</td><td class="num " data-sort="25">25%</td><td class=""><span class="muted">—</span></td><td class="">One of several agile skills.</td></tr>
+<tr data-family="proficiency"><td class=""><img class="icon rowicon" src="../assets/img/maceico_g1.png" alt="" loading="lazy"></td><td class=""><a href="maceproficiency.html">mace fighting</a></td><td class="" data-sort="proficiency">proficiency</td><td class="">fencing</td><td class="num " data-sort="1">1</td><td class="num " data-sort="2">2</td><td class="num " data-sort="40">40%</td><td class=""><a href="../creatures/cornothsergeant.html">Rook</a></td><td class="">Weaponcraft Lv. 1: Skills in the land's most common, but least powerful, weapon.</td></tr>
+<tr data-family="skill"><td class=""><img class="icon rowicon" src="../assets/img/parryico_g1.png" alt="" loading="lazy"></td><td class=""><a href="parry.html">parry</a></td><td class="" data-sort="skill">skill</td><td class="">fencing</td><td class="num " data-sort="4">4</td><td class="num " data-sort="0">0</td><td class="num " data-sort="20">20%</td><td class=""><a href="../creatures/cornothsergeant.html">Rook</a></td><td class="">One of several agile skills.</td></tr>
+<tr data-family="proficiency"><td class=""><img class="icon rowicon" src="../assets/img/light_g1.png" alt="" loading="lazy"></td><td class=""><a href="proficiency.html">Weapon proficiency</a></td><td class="" data-sort="proficiency">proficiency</td><td class="">fencing</td><td class="num " data-sort="1">1</td><td class="num " data-sort="2">2</td><td class="num " data-sort="25">25%</td><td class=""><span class="muted">—</span></td><td class="">One of several agile skills.</td></tr>
+<tr data-family="stroke"><td class=""><img class="icon rowicon" src="../assets/img/punchico_g1.png" alt="" loading="lazy"></td><td class=""><a href="punch.html">punch</a></td><td class="" data-sort="stroke">stroke</td><td class="">fencing</td><td class="num " data-sort="1">1</td><td class="num " data-sort="5">5</td><td class="num " data-sort="60">60%</td><td class=""><a href="../creatures/cornothsergeant.html">Rook</a></td><td class="">Weaponcraft Lv. 1: The most basic of fighting skills, used by fighters and mages alike.</td></tr>
+<tr data-family="proficiency"><td class=""><img class="icon rowicon" src="../assets/img/scimico_g1.png" alt="" loading="lazy"></td><td class=""><a href="scimitarproficiency.html">scimitar wielding</a></td><td class="" data-sort="proficiency">proficiency</td><td class="">fencing</td><td class="num " data-sort="4">4</td><td class="num " data-sort="2">2</td><td class="num " data-sort="20">20%</td><td class=""><a href="../creatures/jasperblacksmith.html">Quintor</a></td><td class="">One of several agile skills.</td></tr>
+<tr data-family="skill"><td class=""><img class="icon rowicon" src="../assets/img/isecwind_g1.png" alt="" loading="lazy"></td><td class=""><a href="secondwind.html">second wind</a></td><td class="" data-sort="skill">skill</td><td class="">fencing</td><td class="num " data-sort="4">4</td><td class="num " data-sort="0">0</td><td class="num " data-sort="50">50%</td><td class=""><a href="../creatures/fourcouncilor.html">Drechx</a></td><td class="">Weaponcraft Lv. 4: The ability to press on even when exhausted.</td></tr>
+<tr data-family="proficiency"><td class=""><img class="icon rowicon" src="../assets/img/shswdico_g1.png" alt="" loading="lazy"></td><td class=""><a href="shortswordproficiency.html">short sword fighting</a></td><td class="" data-sort="proficiency">proficiency</td><td class="">fencing</td><td class="num " data-sort="2">2</td><td class="num " data-sort="2">2</td><td class="num " data-sort="60">60%</td><td class=""><span class="muted">—</span></td><td class="">Weaponcraft Lv. 2: Skill with the common short sword.</td></tr>
+<tr data-family="stroke"><td class=""><img class="icon rowicon" src="../assets/img/slashico_g1.png" alt="" loading="lazy"></td><td class=""><a href="slash.html">slash</a></td><td class="" data-sort="stroke">stroke</td><td class="">fencing</td><td class="num " data-sort="1">1</td><td class="num " data-sort="2">2</td><td class="num " data-sort="20">20%</td><td class=""><a href="../creatures/cornothsergeant.html">Rook</a></td><td class="">Weaponcraft Lv. 1: The most basic skill of armed combat. A must for those who live by the blade.</td></tr>
+<tr data-family="stroke"><td class=""><img class="icon rowicon" src="../assets/img/light_g1.png" alt="" loading="lazy"></td><td class=""><a href="stroke.html">Weapon stroke</a></td><td class="" data-sort="stroke">stroke</td><td class="">fencing</td><td class="num " data-sort="1">1</td><td class="num " data-sort="2">2</td><td class="num " data-sort="25">25%</td><td class=""><span class="muted">—</span></td><td class="">One of several agile skills.</td></tr>
+<tr data-family="proficiency"><td class=""><img class="icon rowicon" src="../assets/img/fenceico_g1.png" alt="" loading="lazy"></td><td class=""><a href="swordproficiency.html">fencing</a></td><td class="" data-sort="proficiency">proficiency</td><td class="">fencing</td><td class="num " data-sort="3">3</td><td class="num " data-sort="2">2</td><td class="num " data-sort="30">30%</td><td class=""><a href="../creatures/cornothsergeant.html">Rook</a></td><td class="">One of several agile skills.</td></tr>
+<tr data-family="stroke"><td class=""><img class="icon rowicon" src="../assets/img/light_g1.png" alt="" loading="lazy"></td><td class=""><a href="thrust.html">thrust</a></td><td class="" data-sort="stroke">stroke</td><td class="">fencing</td><td class="num " data-sort="50">50</td><td class="num " data-sort="500">500</td><td class="num " data-sort="12">12%</td><td class=""><span class="muted">—</span></td><td class="">One of several agile skills.</td></tr>
+<tr data-family="stroke"><td class=""><img class="icon rowicon" src="../assets/img/light_g1.png" alt="" loading="lazy"></td><td class=""><a href="unarmed.html">Unarmed Combat</a></td><td class="" data-sort="stroke">stroke</td><td class="">brawling</td><td class="num " data-sort="1">1</td><td class="num " data-sort="10">10</td><td class="num " data-sort="25">25%</td><td class=""><span class="muted">—</span></td><td class="">One of several agile skills.</td></tr></tbody></table></div>
+
+<p>See <a href="../guides/combat.html">Combat</a> for how these numbers resolve a swing, and
+<a href="../guides/advancing.html">Advancing Your Character</a> for how to raise them.</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

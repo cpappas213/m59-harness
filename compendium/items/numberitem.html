@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Number Item — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Number Item</p>
+<div class="hero"><div class="heroText"><h1>Number Item</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">stackable</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">0</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">0</div></div><div class="fact"><div class="lbl">Value</div><div class="val">10 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div></div><h2>Where to buy it</h2><p><a href="../creatures/kocatanshopkeeper.html">Pacal ix'Anoak</a>, <a href="../creatures/izzio.html">Izzio</a></p><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/numbitem.kod:11</p>
+<p><code class="k">NumberItem</code> is <code class="k">PassiveItem</code> — full chain <code class="k">NumberItem</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">Ammo</code>, <code class="k">BlueDragonScale</code>, <code class="k">DarkAngelFeather</code>, <code class="k">DragonflyEye</code>, <code class="k">Diamond</code>, <code class="k">ElderBerry</code>, <code class="k">Emerald</code>, <code class="k">EntrootBerry</code>, <code class="k">FairyWing</code>, <code class="k">FireSand</code>, <code class="k">Food</code>, <code class="k">Herbs</code>, <code class="k">KriipaClaw</code>, <code class="k">Money</code>, <code class="k">BlueMushroom</code>, <code class="k">PurpleMushroom</code>, <code class="k">RedMushroom</code>, <code class="k">Mushroom</code>, <code class="k">OrcTooth</code>, <code class="k">PolishedSeraphym</code>, <code class="k">RainbowFern</code>, <code class="k">Ruby</code>, <code class="k">Sapphire</code>, <code class="k">ShamanBlood</code>, <code class="k">Solagh</code>, <code class="k">UncutSeraphym</code>, <code class="k">WebMoss</code>, <code class="k">Yrxlsap</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrDisp_name</code></td><td class=""><code>NumberItem_dispenser_name</code></td><td class=""><em>magic item creator</em></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">vrDisp_desc</code></td><td class=""><code>NumberItem_dispenser_desc</code></td><td class=""><em>This is a magic item creator.  It creates thingies.</em></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrDisp_icon</code></td><td class=""><code>NumberItem_dispenser_icon</code></td><td class=""><em>lever.bgf</em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">vrName_plural</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viIndefinite_plural</code></td><td class=""><code>ARTICLE_SOME</code></td><td class="">6</td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viItem_type</code></td><td class=""><code>ITEMTYPE_REAGENT</code></td><td class="">8</td><td class="num " data-sort="40">40</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piNumber</code></td><td class=""><code>1</code></td><td class="num " data-sort="44">44</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(number = $)</h4>
+<pre><code>{
+      if number &lt;&gt; $
+      {
+         piNumber = number;
+      }
+
+      Send(self,@NewNumber);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:50</p>
+<h4>Delete()</h4>
+<pre><code>{
+      
+      
+      
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:62</p>
+<h4>GetNumber()</h4>
+<pre><code>{
+      return piNumber;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:71</p>
+<h4>GetWeight()</h4>
+<pre><code>{
+      if viWeight &lt; 0
+      {
+         return (-viWeight) * piNumber / 100;
+      }
+      
+      return viWeight * piNumber;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:76</p>
+<h4>GetBulk()</h4>
+<pre><code>{
+      if viBulk &lt; 0
+      {
+         return (-viBulk) * piNumber / 100;
+      }
+      
+      return viBulk * piNumber;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:86</p>
+<h4>GetNumberCanHold(what = $, weight = 0, bulk = 0)</h4>
+<pre><code>{
+      local iBulk_can_hold, iWeight_can_hold;
+
+      if viBulk = 0
+      {
+         iBulk_can_hold = INFINITE_COUNT;
+      }
+      else
+      {
+         if viBulk &gt; 0
+         {
+            iBulk_can_hold = bulk / viBulk;
+         }
+         else
+         {
+            iBulk_can_hold = bulk * 100 / (-viBulk);
+         }
+      }
+
+      if viWeight = 0
+      {
+         iWeight_can_hold = INFINITE_COUNT;
+      }
+      else
+      {
+         if viWeight &gt; 0
+         {
+            iWeight_can_hold = weight / viWeight;
+         }
+         else
+         {
+            iWeight_can_hold = weight * 100 / (-viWeight);
+         }
+      }
+
+      if iBulk_can_hold = INFINITE_COUNT
+      {
+         return iWeight_can_hold;
+      }
+      
+      if iWeight_can_hold = INFINITE_COUNT
+      {
+         return iBulk_can_hold;
+      }
+      
+      if iBulk_can_hold &lt; iWeight_can_hold
+      {
+         return iBulk_can_hold;
+      }
+      
+      return iWeight_can_hold;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:96</p>
+<h4>GetName()</h4>
+<pre><code>{
+      if piNumber = 1
+      {
+         propagate;
+      }
+      
+      if vrName_plural &lt;&gt; $
+      {
+         return vrName_plural;
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:150</p>
+<h4>AppendDesc()</h4>
+<pre><code>{
+      
+      AppendTempString(NumberItem_desc_rsc);
+      
+      send(SYS,@AppendCardinalToTempString,#number=piNumber);
+      AppendTempString(&quot; &quot;);
+      AppendTempString(Send(self,@GetName));
+      AppendTempString(&quot;.&quot;);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:165</p>
+<h4>GetValue()</h4>
+<pre><code>{
+      return piNumber * Send(self,@GetInitValue);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:178</p>
+<h4>AddNumber(number = 0)</h4>
+<p>Admin supported\nIncreases the number amount of a number object by the parameter &lt;number&gt;,which must be positive!</p>
+<pre><code>{
+      local iOld_weight,iOld_bulk;
+
+      if number &lt; 0
+      {
+	      return;
+      }
+      
+      iOld_weight = Send(self,@GetWeight);
+      iOld_bulk = Send(self,@GetBulk);
+
+      piNumber = piNumber + number;
+      Send(self,@NewNumber);
+
+      if poOwner &lt;&gt; $
+      {
+         Send(poOwner,@ChangeBulkAndWeight,#what=self,
+              #bulk_change=Send(self,@GetBulk)-iOld_bulk,
+              #weight_change=Send(self,@GetWeight)-iOld_weight);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:183</p>
+<h4>SubtractNumber(number = 0)</h4>
+<p>Admin supported\nDecreases the number amount of a number object by the parameter &lt;number&gt;&lt;number&gt; must be positive!</p>
+<pre><code>{
+      local iOld_weight,iOld_bulk;
+
+      
+
+      if (piNumber - number) &lt;= 0
+      {
+	      Send(self,@Delete);
+	      return;
+      }
+
+      iOld_weight = Send(self,@GetWeight);
+      iOld_bulk = Send(self,@GetBulk);
+      
+      piNumber = piNumber - number;
+
+      Send(self,@NewNumber);
+
+      if poOwner &lt;&gt; $
+      {
+         Send(poOwner,@ChangeBulkAndWeight,#what=self,
+              #bulk_change=Send(self,@GetBulk)-iOld_bulk,
+              #weight_change=Send(self,@GetWeight)-iOld_weight);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:211</p>
+<h4>NewNumber()</h4>
+<pre><code>{
+      if poOwner &lt;&gt; $
+      {
+         Send(poOwner,@SomethingChanged,#what=self);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:243</p>
+<h4>Split(number = $)</h4>
+<pre><code>{
+      local oSplit;
+
+      if number &gt;= 1 and number &lt;= piNumber
+      {
+         oSplit = Create(GetClass(self),#number=number);
+         Send(self,@SubtractNumber,#number=number);
+
+         return oSplit;
+      }
+
+      return $;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:253</p>
+<h4>Join(what = $)</h4>
+<pre><code>{
+      if GetClass(self) = GetClass(what)
+      {
+         Send(self,@AddNumber,#number=Send(what,@GetNumber));
+         Send(what,@Delete);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:268</p>
+<h4>GetCapDef()</h4>
+<pre><code>{
+      
+      return Send(self,@LookupCapitalArticle,#article_num=viDefinite);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:279</p>
+<h4>GetCapIndef()</h4>
+<pre><code>{
+      
+      if piNumber &lt;&gt; 1
+      {
+         return Send(self,@LookupCapitalArticle,
+                     #article_num=viIndefinite_plural);
+      }
+      
+      return Send(self,@LookupCapitalArticle,#article_num=viIndefinite);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:285</p>
+<h4>GetIndef()</h4>
+<pre><code>{
+      
+      if piNumber &lt;&gt; 1
+      {
+         return Send(self,@LookupArticle,#article_num=viIndefinite_plural);
+      }
+
+      return Send(self,@LookupArticle,#article_num=viIndefinite);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:297</p>
+<h4>NewHoldMessage(who = $, disp = $)</h4>
+<p>Called whenever a number item is created from a dispenser.</p>
+<pre><code>{
+      Send(who,@MsgSendUser,#message_rsc=NumberItem_got_one,
+           #parm1=send(self,@GetIndef),#parm2=send(self,@GetName),
+           #parm3=send(disp,@GetDef),#parm4=send(disp,@GetName));
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:308</p>
+<h4>GetDispenserName()</h4>
+<pre><code>{
+      return vrDisp_name;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:318</p>
+<h4>GetDispenserDesc()</h4>
+<pre><code>{
+      return vrDisp_desc;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:323</p>
+<h4>GetDispenserIcon()</h4>
+<pre><code>{
+      return vrDisp_icon;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:328</p>
+<h4>IsPlural()</h4>
+<pre><code>{
+      return (piNumber &gt; 1);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/numbitem.kod:333</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

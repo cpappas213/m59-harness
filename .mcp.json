@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "meridian59": {
+      "command": "node",
+      "args": ["C:/code/m59-harness/tools/m59-mcp-attach.mjs", "--port", "8901"],
+      "env": {
+        "M59_HOST": "127.0.0.1",
+        "M59_PORT": "5959"
+      }
+    }
+  }
+}

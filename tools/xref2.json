@@ -1,0 +1,2668 @@
+{
+ "Revenant": [
+  {
+   "room": "?",
+   "cite": "object/active/holder/nomoveon/battler/player.kod:1450",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "?",
+   "cite": "object/active/holder/nomoveon/battler/player.kod:4911",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Reflection": [
+  {
+   "room": "dark angel",
+   "cite": "object/active/holder/nomoveon/battler/monster/dangel.kod:244",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "reflection",
+   "cite": "object/passive/spell/summrefl.kod:112",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "EvilTwin": [
+  {
+   "room": "dark angel",
+   "cite": "object/active/holder/nomoveon/battler/monster/dangel.kod:248",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "evil twin",
+   "cite": "object/passive/spell/summtwin.kod:121",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "OrcPitBossBody": [
+  {
+   "room": "orc pit boss",
+   "cite": "object/active/holder/nomoveon/battler/monster/orcboss.kod:195",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "GraphicTester": [
+  {
+   "room": "?",
+   "cite": "object/active/holder/nomoveon/battler/player/user/dm.kod:1261",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanBowMaker": [
+  {
+   "room": "The Bowmaker's Hut",
+   "cite": "object/active/holder/room/bowhut.kod:86",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "PrincessGuard": [
+  {
+   "room": "Banquet Hall of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2a.kod:98",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Banquet Hall of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2a.kod:99",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Banquet Hall of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2a.kod:100",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Royal Library of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2d.kod:187",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Royal Library of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2d.kod:189",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Royal Library of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2d.kod:192",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Royal Library of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2d.kod:194",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Royal Library of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2d.kod:197",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Royal Library of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2d.kod:199",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Royal Library of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2d.kod:203",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Royal Library of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2d.kod:205",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Royal Library of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2d.kod:207",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Royal Library of the Bourgeois Castle",
+   "cite": "object/active/holder/room/castle2d.kod:209",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Bourgeois Castle",
+   "cite": "object/active/holder/room/monsroom/castle2b.kod:105",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Bourgeois Castle",
+   "cite": "object/active/holder/room/monsroom/castle2b.kod:106",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Bourgeois Castle",
+   "cite": "object/active/holder/room/monsroom/castle2b.kod:108",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Bourgeois Castle",
+   "cite": "object/active/holder/room/monsroom/castle2b.kod:110",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Bourgeois Castle",
+   "cite": "object/active/holder/room/monsroom/castle2b.kod:112",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Bourgeois Castle",
+   "cite": "object/active/holder/room/monsroom/castle2b.kod:114",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Bourgeois Castle",
+   "cite": "object/active/holder/room/monsroom/castle2b.kod:116",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Bourgeois Castle",
+   "cite": "object/active/holder/room/monsroom/castle2b.kod:118",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Bourgeois Castle",
+   "cite": "object/active/holder/room/monsroom/castle2b.kod:119",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Bourgeois Castle",
+   "cite": "object/active/holder/room/monsroom/castle2b.kod:120",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Bourgeois Castle",
+   "cite": "object/active/holder/room/monsroom/castle2b.kod:122",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Assembly Chamber",
+   "cite": "object/active/holder/room/monsroom/castle2c.kod:61",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Assembly Chamber",
+   "cite": "object/active/holder/room/monsroom/castle2c.kod:63",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Assembly Chamber",
+   "cite": "object/active/holder/room/monsroom/castle2c.kod:65",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Assembly Chamber",
+   "cite": "object/active/holder/room/monsroom/castle2c.kod:67",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Queen's Way",
+   "cite": "object/active/holder/room/monsroom/j3.kod:69",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Barloquetailor": [
+  {
+   "room": "room_name_Castle2E",
+   "cite": "object/active/holder/room/castle2e.kod:64",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "DukeGuard": [
+  {
+   "room": "The Courtyard of Blackstone Keep",
+   "cite": "object/active/holder/room/duke1.kod:98",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Courtyard of Blackstone Keep",
+   "cite": "object/active/holder/room/duke1.kod:100",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Blackstone Keep",
+   "cite": "object/active/holder/room/duke2.kod:235",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Office of the Justicar",
+   "cite": "object/active/holder/room/barlqrm/barcourt.kod:117",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Old Jailhouse",
+   "cite": "object/active/holder/room/barlqrm/barjail.kod:47",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Old Jailhouse",
+   "cite": "object/active/holder/room/barlqrm/barjail.kod:50",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Old Jailhouse",
+   "cite": "object/active/holder/room/barlqrm/barjail.kod:53",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Duke's Feast Hall",
+   "cite": "object/active/holder/room/monsroom/objroom/duke4.kod:110",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Duke's Feast Hall",
+   "cite": "object/active/holder/room/monsroom/objroom/duke4.kod:112",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Duke's Feast Hall",
+   "cite": "object/active/holder/room/monsroom/objroom/duke4.kod:114",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Duke's Feast Hall",
+   "cite": "object/active/holder/room/monsroom/objroom/duke4.kod:116",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Duke's Grand Ballroom",
+   "cite": "object/active/holder/room/monsroom/objroom/duke5.kod:336",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Duke's Grand Ballroom",
+   "cite": "object/active/holder/room/monsroom/objroom/duke5.kod:338",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Duke's Grand Ballroom",
+   "cite": "object/active/holder/room/monsroom/objroom/duke5.kod:340",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Duke's Grand Ballroom",
+   "cite": "object/active/holder/room/monsroom/objroom/duke5.kod:342",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Minstrel": [
+  {
+   "room": "The meeting place of the Gods",
+   "cite": "object/active/holder/room/godroom.kod:68",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Heretic": [
+  {
+   "room": "The meeting place of the Gods",
+   "cite": "object/active/holder/room/godroom.kod:69",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "DarkWizard": [
+  {
+   "room": "The meeting place of the Gods",
+   "cite": "object/active/holder/room/godroom.kod:70",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "HunterGhost": [
+  {
+   "room": "The meeting place of the Gods",
+   "cite": "object/active/holder/room/godroom.kod:71",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Izzio": [
+  {
+   "room": "The meeting place of the Gods",
+   "cite": "object/active/holder/room/godroom.kod:72",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "HazarInnKeeper": [
+  {
+   "room": "The Inn of Hazar",
+   "cite": "object/active/holder/room/guest1.kod:98",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "HazarBlacksmith": [
+  {
+   "room": "The Blacksmith of Hazar",
+   "cite": "object/active/holder/room/guest3.kod:86",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "HazarElder": [
+  {
+   "room": "The Home of Roderic D'Stane",
+   "cite": "object/active/holder/room/guest5.kod:82",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "HazarBartender": [
+  {
+   "room": "Eric's Stout Spirits",
+   "cite": "object/active/holder/room/guest7.kod:81",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Goad": [
+  {
+   "room": "Goad's Grinder",
+   "cite": "object/active/holder/room/necarena.kod:234",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Decorator": [
+  {
+   "room": "A tastefully appointed room",
+   "cite": "object/active/holder/room/rentroom.kod:1104",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KraananPriestess": [
+  {
+   "room": "The Temple of Kraanan",
+   "cite": "object/active/holder/room/tempkra.kod:151",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "ShalillePriestess": [
+  {
+   "room": "The Temple of Shal'ille",
+   "cite": "object/active/holder/room/temple.kod:116",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "QorPriestess": [
+  {
+   "room": "The Temple of Qor",
+   "cite": "object/active/holder/room/tempqor.kod:140",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "RiijaMonk": [
+  {
+   "room": "The Temple of Riija",
+   "cite": "object/active/holder/room/temprii.kod:508",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "kocatanTradeMaster": [
+  {
+   "room": "The Remote Trading Post of Wulfgang zax'Ak",
+   "cite": "object/active/holder/room/tpost1.kod:85",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Assassin": [
+  {
+   "room": "A shadowy corner",
+   "cite": "object/active/holder/room/barlqrm/asshq.kod:110",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "BarloqueApothecary": [
+  {
+   "room": "Joguer's Herbs and Roots",
+   "cite": "object/active/holder/room/barlqrm/barapoth.kod:63",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "BarloqueClerk": [
+  {
+   "room": "Office of the Justicar",
+   "cite": "object/active/holder/room/barlqrm/barcourt.kod:109",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "BarloqueMerchant": [
+  {
+   "room": "Adventurer's Hall of Barloque",
+   "cite": "object/active/holder/room/barlqrm/barhall.kod:71",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The Sparkling Stone Shop",
+   "cite": "object/active/holder/room/barlqrm/barmerch.kod:65",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "BarloqueInnkeeper": [
+  {
+   "room": "Brownestone Inn",
+   "cite": "object/active/holder/room/barlqrm/barinn.kod:84",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "BarloqueBlacksmith": [
+  {
+   "room": "The Royal Blacksmith of Barloque",
+   "cite": "object/active/holder/room/barlqrm/barsmith.kod:62",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "barloqueVaultman": [
+  {
+   "room": "Office of the Barloque Vaultman",
+   "cite": "object/active/holder/room/barlqrm/barvault.kod:68",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "GuildCreator": [
+  {
+   "room": "The Guildmaster's Hall",
+   "cite": "object/active/holder/room/barlqrm/gmhall.kod:74",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "CornothGrocer": [
+  {
+   "room": "Solomon's Edibles",
+   "cite": "object/active/holder/room/crnthrm/corgroc.kod:61",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "CorNothInnkeeper": [
+  {
+   "room": "Cibilo Creek Inn",
+   "cite": "object/active/holder/room/crnthrm/corinn.kod:65",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "CorNothTailor": [
+  {
+   "room": "The Spindle and the Spinster",
+   "cite": "object/active/holder/room/crnthrm/cortail.kod:64",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "CorNothSergeant": [
+  {
+   "room": "The Weapon Master's Abode",
+   "cite": "object/active/holder/room/crnthrm/corwepm.kod:69",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "DeadLich": [
+  {
+   "room": "Inner Sanctum of Queen Venya'cyr",
+   "cite": "object/active/holder/room/ghall/guildh15.kod:213",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Lich": [
+  {
+   "room": "Inner Sanctum of Queen Venya'cyr",
+   "cite": "object/active/holder/room/ghall/guildh15.kod:218",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Cow": [
+  {
+   "room": "Raza",
+   "cite": "object/active/holder/room/guest2/newb2.kod:42",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Raza",
+   "cite": "object/active/holder/room/guest2/newb2.kod:43",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Raza",
+   "cite": "object/active/holder/room/guest2/newb2.kod:44",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "summon bovine",
+   "cite": "object/passive/spell/multicst/summcow.kod:90",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "JasperBanker": [
+  {
+   "room": "The Royal Bank of Jasper",
+   "cite": "object/active/holder/room/jasperrm/jasbank.kod:65",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "JasperElder": [
+  {
+   "room": "room_name_jasperelder",
+   "cite": "object/active/holder/room/jasperrm/jaselder.kod:48",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "JasperInnKeeper": [
+  {
+   "room": "room_name_jasperInn",
+   "cite": "object/active/holder/room/jasperrm/jasinn.kod:56",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "JasperBlacksmith": [
+  {
+   "room": "room_name_jaspersmith",
+   "cite": "object/active/holder/room/jasperrm/jassmith.kod:47",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "JasperMerchant": [
+  {
+   "room": "room_name_jasperstore",
+   "cite": "object/active/holder/room/jasperrm/jasstore.kod:48",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "JasperBartender": [
+  {
+   "room": "room_name_jaspertavern",
+   "cite": "object/active/holder/room/jasperrm/jastavrn.kod:51",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanApothecary": [
+  {
+   "room": "Two Lizards Magic Shop",
+   "cite": "object/active/holder/room/kocarm/kocapoth.kod:82",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanVaultman": [
+  {
+   "room": "The Hungry Vaults",
+   "cite": "object/active/holder/room/kocarm/kocbank.kod:87",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanBanker": [
+  {
+   "room": "The Hungry Vaults",
+   "cite": "object/active/holder/room/kocarm/kocbank.kod:89",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Kocatansentry": [
+  {
+   "room": "The Hungry Vaults",
+   "cite": "object/active/holder/room/kocarm/kocbank.kod:92",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The East Tower",
+   "cite": "object/active/holder/room/kocarm/koctower.kod:192",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The East Tower",
+   "cite": "object/active/holder/room/kocarm/koctower.kod:194",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The East Tower",
+   "cite": "object/active/holder/room/kocarm/koctower.kod:196",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "The East Tower",
+   "cite": "object/active/holder/room/kocarm/koctower.kod:198",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Konima's Ascension",
+   "cite": "object/active/holder/room/monsroom/orccave6.kod:124",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanBlacksmith": [
+  {
+   "room": "The Chimney House",
+   "cite": "object/active/holder/room/kocarm/kocblack.kod:85",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanWeaponsMaster": [
+  {
+   "room": "The Hall of Heroes West",
+   "cite": "object/active/holder/room/kocarm/kochoha.kod:63",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanLanguageMaster": [
+  {
+   "room": "The Hall of Heroes East",
+   "cite": "object/active/holder/room/kocarm/kochohb.kod:125",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanInnkeeper": [
+  {
+   "room": "The Aerie Guest House",
+   "cite": "object/active/holder/room/kocarm/kocinn.kod:126",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanShopkeeper": [
+  {
+   "room": "The Neglected Arsenal",
+   "cite": "object/active/holder/room/kocarm/kocstore.kod:93",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanTailor": [
+  {
+   "room": "The Crooked Hem Garment Shop",
+   "cite": "object/active/holder/room/kocarm/koctail.kod:95",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanBartender": [
+  {
+   "room": "The Barking Monster",
+   "cite": "object/active/holder/room/kocarm/koctav.kod:104",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanCaptainGood": [
+  {
+   "room": "The East Tower",
+   "cite": "object/active/holder/room/kocarm/koctower.kod:58",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanCaptainEvil": [
+  {
+   "room": "The East Tower",
+   "cite": "object/active/holder/room/kocarm/koctower.kod:59",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "MarionHealer": [
+  {
+   "room": "Lady Aftyn's Sanctuary",
+   "cite": "object/active/holder/room/marnrm/marhlshp.kod:62",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "MarionElder": [
+  {
+   "room": "Marion",
+   "cite": "object/active/holder/room/marnrm/marion.kod:174",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "RedAnt": [
+  {
+   "room": "Seafarer's Peak",
+   "cite": "object/active/holder/room/monsroom/a5.kod:62",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Hills",
+   "cite": "object/active/holder/room/monsroom/a6.kod:57",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Berdonne Canyons",
+   "cite": "object/active/holder/room/monsroom/objroom/canyon1.kod:64",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:208",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:238",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Troll": [
+  {
+   "room": "Seafarer's Peak",
+   "cite": "object/active/holder/room/monsroom/a5.kod:62",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Hills",
+   "cite": "object/active/holder/room/monsroom/a6.kod:57",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Cragged Mountains",
+   "cite": "object/active/holder/room/monsroom/g8.kod:54",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The border of the Badlands",
+   "cite": "object/active/holder/room/monsroom/h5.kod:56",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Twisted Wood",
+   "cite": "object/active/holder/room/monsroom/i7.kod:58",
+   "w": "45",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Cragged Mountains",
+   "cite": "object/active/holder/room/monsroom/i8.kod:57",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Ukgoth, Holy Land of Trolls",
+   "cite": "object/active/holder/room/monsroom/i9.kod:77",
+   "w": "100",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Druid Hills",
+   "cite": "object/active/holder/room/monsroom/objroom/b6.kod:58",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Dreaded Caves of Ice",
+   "cite": "object/active/holder/room/monsroom/objroom/icecave1.kod:67",
+   "w": "45",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Badlands",
+   "cite": "object/active/holder/room/monsroom/objroom/k5.kod:62",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:228",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Ant": [
+  {
+   "room": "The Badlands",
+   "cite": "object/active/holder/room/monsroom/badland1.kod:45",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Source of the River Ille",
+   "cite": "object/active/holder/room/monsroom/f3.kod:58",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Forests of Meridian",
+   "cite": "object/active/holder/room/monsroom/forest2.kod:61",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Forests of Meridian",
+   "cite": "object/active/holder/room/monsroom/forest3.kod:53",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Deep Dark Woods of Tos",
+   "cite": "object/active/holder/room/monsroom/forest4.kod:47",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Deep Dark Woods of Marion",
+   "cite": "object/active/holder/room/monsroom/objroom/forest5.kod:48",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Flatlands",
+   "cite": "object/active/holder/room/monsroom/objroom/h4.kod:61",
+   "w": "55",
+   "src": "plMonsters"
+  }
+ ],
+ "GroundWorm": [
+  {
+   "room": "The Badlands",
+   "cite": "object/active/holder/room/monsroom/badland1.kod:45",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The border of the Badlands",
+   "cite": "object/active/holder/room/monsroom/h5.kod:56",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Outskirts of Tos",
+   "cite": "object/active/holder/room/monsroom/i6.kod:57",
+   "w": "50",
+   "src": "plMonsters"
+  }
+ ],
+ "FarenPriestess": [
+  {
+   "room": "The Badlands",
+   "cite": "object/active/holder/room/monsroom/badland1.kod:56",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "GiantRat": [
+  {
+   "room": "The Sewers of Barloque",
+   "cite": "object/active/holder/room/monsroom/barlsew.kod:59",
+   "w": "94",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Sewers of Barloque",
+   "cite": "object/active/holder/room/monsroom/barlsew2.kod:60",
+   "w": "55",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Sewers of Barloque",
+   "cite": "object/active/holder/room/monsroom/barlsew3.kod:60",
+   "w": "20",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Off the beaten path",
+   "cite": "object/active/holder/room/monsroom/f7.kod:59",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The King's Way",
+   "cite": "object/active/holder/room/monsroom/g5.kod:57",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Outskirts of Barloque",
+   "cite": "object/active/holder/room/monsroom/h3.kod:58",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Main gate to the city of Tos",
+   "cite": "object/active/holder/room/monsroom/h6.kod:66",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Queen's Way",
+   "cite": "object/active/holder/room/monsroom/j3.kod:61",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Sewers of Jasper",
+   "cite": "object/active/holder/room/monsroom/jassew1.kod:98",
+   "w": "95",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Sewers of Jasper",
+   "cite": "object/active/holder/room/monsroom/jassew2.kod:58",
+   "w": "39",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Sewers of Jasper",
+   "cite": "object/active/holder/room/monsroom/jassew3.kod:59",
+   "w": "15",
+   "src": "plMonsters"
+  },
+  {
+   "room": "West Merchant Way through Ilerian Woods",
+   "cite": "object/active/holder/room/monsroom/objroom/c5.kod:59",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:201",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:244",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Lupogg": [
+  {
+   "room": "The Sewers of Barloque",
+   "cite": "object/active/holder/room/monsroom/barlsew.kod:59",
+   "w": "6",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Sewers of Barloque",
+   "cite": "object/active/holder/room/monsroom/barlsew2.kod:60",
+   "w": "45",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Sewers of Barloque",
+   "cite": "object/active/holder/room/monsroom/barlsew3.kod:60",
+   "w": "80",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Sewers of Jasper",
+   "cite": "object/active/holder/room/monsroom/jassew1.kod:98",
+   "w": "5",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Sewers of Jasper",
+   "cite": "object/active/holder/room/monsroom/jassew2.kod:58",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Sewers of Jasper",
+   "cite": "object/active/holder/room/monsroom/jassew3.kod:59",
+   "w": "85",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Ancient Smuggler's Crossing",
+   "cite": "object/active/holder/room/monsroom/bossroom/sewking.kod:138",
+   "w": "100",
+   "src": "plMonsters"
+  }
+ ],
+ "SpiderBaby": [
+  {
+   "room": "Deep Woods of Ileria",
+   "cite": "object/active/holder/room/monsroom/c4.kod:53",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "West Merchant Way",
+   "cite": "object/active/holder/room/monsroom/d5.kod:59",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "East Merchant Way through Ilerian Woods",
+   "cite": "object/active/holder/room/monsroom/e4.kod:56",
+   "w": "65",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Lake of Jala's Song",
+   "cite": "object/active/holder/room/monsroom/f8.kod:80",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Main gate to Cor Noth",
+   "cite": "object/active/holder/room/monsroom/g4.kod:60",
+   "w": "75",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The King's Way",
+   "cite": "object/active/holder/room/monsroom/g5.kod:57",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Main gate of Barloque-- Royal City of Meridian",
+   "cite": "object/active/holder/room/monsroom/i3.kod:77",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Queen's Way",
+   "cite": "object/active/holder/room/monsroom/j3.kod:61",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Spider Nest",
+   "cite": "object/active/holder/room/monsroom/nest1.kod:61",
+   "w": "80",
+   "src": "plMonsters"
+  },
+  {
+   "room": "West Merchant Way through Ilerian Woods",
+   "cite": "object/active/holder/room/monsroom/objroom/c5.kod:59",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:198",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:218",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Ent": [
+  {
+   "room": "Deep Woods of Ileria",
+   "cite": "object/active/holder/room/monsroom/c4.kod:53",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Forest of Farol",
+   "cite": "object/active/holder/room/monsroom/c6.kod:58",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Deep in the Forest of Farol",
+   "cite": "object/active/holder/room/monsroom/d6.kod:58",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Deep in the Forest of Farol",
+   "cite": "object/active/holder/room/monsroom/d7.kod:55",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Faronath, home of the TreeFolk",
+   "cite": "object/active/holder/room/monsroom/objroom/c7.kod:58",
+   "w": "95",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Deep Forest of Farol",
+   "cite": "object/active/holder/room/monsroom/objroom/e6.kod:58",
+   "w": "15",
+   "src": "plMonsters"
+  }
+ ],
+ "Spider": [
+  {
+   "room": "Forest of Farol",
+   "cite": "object/active/holder/room/monsroom/c6.kod:58",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "East Merchant Way",
+   "cite": "object/active/holder/room/monsroom/f4.kod:58",
+   "w": "45",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Forests of Meridian",
+   "cite": "object/active/holder/room/monsroom/forest2.kod:61",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Forests of Meridian",
+   "cite": "object/active/holder/room/monsroom/forest3.kod:53",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Deep Dark Woods of Tos",
+   "cite": "object/active/holder/room/monsroom/forest4.kod:47",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Western border of the Twisted Wood",
+   "cite": "object/active/holder/room/monsroom/h7.kod:58",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Outskirts of Tos",
+   "cite": "object/active/holder/room/monsroom/i6.kod:57",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Twisted Wood",
+   "cite": "object/active/holder/room/monsroom/i7.kod:58",
+   "w": "55",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Spider Nest",
+   "cite": "object/active/holder/room/monsroom/nest1.kod:61",
+   "w": "20",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Faronath, home of the TreeFolk",
+   "cite": "object/active/holder/room/monsroom/objroom/c7.kod:58",
+   "w": "5",
+   "src": "plMonsters"
+  },
+  {
+   "room": "A Deep, Dark, Spooky, Icky Cave",
+   "cite": "object/active/holder/room/monsroom/objroom/cave2.kod:78",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Deep Forest of Farol",
+   "cite": "object/active/holder/room/monsroom/objroom/e6.kod:58",
+   "w": "55",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Deep Dark Woods of Marion",
+   "cite": "object/active/holder/room/monsroom/objroom/forest5.kod:48",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Flatlands",
+   "cite": "object/active/holder/room/monsroom/objroom/h4.kod:61",
+   "w": "45",
+   "src": "plMonsters"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:193",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Zombie": [
+  {
+   "room": "Upstairs in Castle Victoria",
+   "cite": "object/active/holder/room/monsroom/castle1b.kod:49",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Throne Room of Victoria Castle",
+   "cite": "object/active/holder/room/monsroom/throne1.kod:59",
+   "w": "20",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Crypt",
+   "cite": "object/active/holder/room/monsroom/toscrypt.kod:44",
+   "w": "80",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Graveyard of Tos",
+   "cite": "object/active/holder/room/monsroom/tosgrave.kod:51",
+   "w": "85",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Castle Victoria",
+   "cite": "object/active/holder/room/monsroom/objroom/castle1.kod:49",
+   "w": "20",
+   "src": "plMonsters"
+  },
+  {
+   "room": "animate",
+   "cite": "object/passive/spell/animate.kod:151",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "BatteredSkeleton": [
+  {
+   "room": "Upstairs in Castle Victoria",
+   "cite": "object/active/holder/room/monsroom/castle1b.kod:49",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "An ancient place, its origin forgotten",
+   "cite": "object/active/holder/room/monsroom/g9.kod:547",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Resting place of Marion's ancestors",
+   "cite": "object/active/holder/room/monsroom/marcryp2.kod:79",
+   "w": "20",
+   "src": "plMonsters"
+  },
+  {
+   "room": "animate",
+   "cite": "object/passive/spell/animate.kod:158",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "FungusBeast": [
+  {
+   "room": "Valley of Ileria",
+   "cite": "object/active/holder/room/monsroom/d4.kod:56",
+   "w": "65",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The sandy shores of the Great Ocean",
+   "cite": "object/active/holder/room/monsroom/f2.kod:67",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Source of the River Ille",
+   "cite": "object/active/holder/room/monsroom/f3.kod:58",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:233",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "GroundWormLarva": [
+  {
+   "room": "Valley of Ileria",
+   "cite": "object/active/holder/room/monsroom/d4.kod:56",
+   "w": "35",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Deep in the Forest of Farol",
+   "cite": "object/active/holder/room/monsroom/d7.kod:55",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Sweet Grass Prairies",
+   "cite": "object/active/holder/room/monsroom/e7.kod:57",
+   "w": "75",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Off the beaten path",
+   "cite": "object/active/holder/room/monsroom/f6.kod:58",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Off the beaten path",
+   "cite": "object/active/holder/room/monsroom/f7.kod:59",
+   "w": "40",
+   "src": "plMonsters"
+  }
+ ],
+ "Centipede": [
+  {
+   "room": "West Merchant Way",
+   "cite": "object/active/holder/room/monsroom/d5.kod:59",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "East Merchant Way through Ilerian Woods",
+   "cite": "object/active/holder/room/monsroom/e4.kod:56",
+   "w": "35",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Sweet Grass Prairies",
+   "cite": "object/active/holder/room/monsroom/e7.kod:57",
+   "w": "25",
+   "src": "plMonsters"
+  },
+  {
+   "room": "East Merchant Way",
+   "cite": "object/active/holder/room/monsroom/f4.kod:58",
+   "w": "55",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Off the beaten path",
+   "cite": "object/active/holder/room/monsroom/f6.kod:58",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Lake of Jala's Song",
+   "cite": "object/active/holder/room/monsroom/f8.kod:80",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Main gate to Cor Noth",
+   "cite": "object/active/holder/room/monsroom/g4.kod:60",
+   "w": "25",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The King's Way",
+   "cite": "object/active/holder/room/monsroom/g6.kod:61",
+   "w": "10",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Main gate to the city of Tos",
+   "cite": "object/active/holder/room/monsroom/h6.kod:66",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Western border of the Twisted Wood",
+   "cite": "object/active/holder/room/monsroom/h7.kod:58",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Main gate of Barloque-- Royal City of Meridian",
+   "cite": "object/active/holder/room/monsroom/i3.kod:77",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Deep Forest of Farol",
+   "cite": "object/active/holder/room/monsroom/objroom/e6.kod:58",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:221",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "MolluskMonster": [
+  {
+   "room": "Deep in the Forest of Farol",
+   "cite": "object/active/holder/room/monsroom/d6.kod:58",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Great Ocean",
+   "cite": "object/active/holder/room/monsroom/e2.kod:58",
+   "w": "80",
+   "src": "plMonsters"
+  }
+ ],
+ "Frogman": [
+  {
+   "room": "The Great Ocean",
+   "cite": "object/active/holder/room/monsroom/e2.kod:58",
+   "w": "20",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The King's Way",
+   "cite": "object/active/holder/room/monsroom/g6.kod:61",
+   "w": "90",
+   "src": "plMonsters"
+  }
+ ],
+ "Slime": [
+  {
+   "room": "The sandy shores of the Great Ocean",
+   "cite": "object/active/holder/room/monsroom/f2.kod:67",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Outskirts of Barloque",
+   "cite": "object/active/holder/room/monsroom/h3.kod:58",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:213",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:241",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Fairy": [
+  {
+   "room": "?",
+   "cite": "object/active/holder/room/monsroom/feyforst.kod:140",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "EvilFairy": [
+  {
+   "room": "?",
+   "cite": "object/active/holder/room/monsroom/feyforst.kod:145",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "DeathSpider": [
+  {
+   "room": "The Cragged Mountains",
+   "cite": "object/active/holder/room/monsroom/g8.kod:54",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "An ancient place, its origin forgotten",
+   "cite": "object/active/holder/room/monsroom/g9.kod:167",
+   "w": "20",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Cragged Mountains",
+   "cite": "object/active/holder/room/monsroom/i8.kod:57",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Winding Caverns",
+   "cite": "object/active/holder/room/monsroom/necarea1.kod:58",
+   "w": "45",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Under the shadow of the Sentinel",
+   "cite": "object/active/holder/room/monsroom/objroom/h9.kod:59",
+   "w": "60",
+   "src": "plMonsters"
+  }
+ ],
+ "Orc": [
+  {
+   "room": "An ancient place, its origin forgotten",
+   "cite": "object/active/holder/room/monsroom/g9.kod:167",
+   "w": "80",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Ugol's Warren Entrance",
+   "cite": "object/active/holder/room/monsroom/orccave1.kod:55",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "An Enigmatic Chamber",
+   "cite": "object/active/holder/room/monsroom/orccave2.kod:55",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Berdonne Canyons",
+   "cite": "object/active/holder/room/monsroom/objroom/canyon1.kod:64",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "A Deep, Dark, Spooky, Icky Cave",
+   "cite": "object/active/holder/room/monsroom/objroom/cave2.kod:78",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Under the shadow of the Sentinel",
+   "cite": "object/active/holder/room/monsroom/objroom/h9.kod:59",
+   "w": "40",
+   "src": "plMonsters"
+  }
+ ],
+ "Skeleton": [
+  {
+   "room": "An ancient place, its origin forgotten",
+   "cite": "object/active/holder/room/monsroom/g9.kod:543",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Resting place of Marion's ancestors",
+   "cite": "object/active/holder/room/monsroom/marcryp2.kod:79",
+   "w": "80",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Winding Caverns",
+   "cite": "object/active/holder/room/monsroom/necarea1.kod:58",
+   "w": "55",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Crypt",
+   "cite": "object/active/holder/room/monsroom/toscrypt.kod:44",
+   "w": "20",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Graveyard of Tos",
+   "cite": "object/active/holder/room/monsroom/tosgrave.kod:51",
+   "w": "15",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Castle Victoria",
+   "cite": "object/active/holder/room/monsroom/objroom/castle1.kod:49",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "animate",
+   "cite": "object/passive/spell/animate.kod:165",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Mummy": [
+  {
+   "room": "Mausoleum",
+   "cite": "object/active/holder/room/monsroom/guest6.kod:174",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Mausoleum",
+   "cite": "object/active/holder/room/monsroom/guest6.kod:604",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Mausoleum",
+   "cite": "object/active/holder/room/monsroom/guest6.kod:606",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Mausoleum",
+   "cite": "object/active/holder/room/monsroom/guest6.kod:608",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Mausoleum",
+   "cite": "object/active/holder/room/monsroom/guest6.kod:610",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "animate",
+   "cite": "object/passive/spell/animate.kod:144",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "MummyNoTreasure": [
+  {
+   "room": "Mausoleum",
+   "cite": "object/active/holder/room/monsroom/guest6.kod:174",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Mausoleum",
+   "cite": "object/active/holder/room/monsroom/guest6.kod:330",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "BlackMummy": [
+  {
+   "room": "Mausoleum",
+   "cite": "object/active/holder/room/monsroom/guest6.kod:613",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "StoneTroll": [
+  {
+   "room": "Ukgoth, Holy Land of Trolls",
+   "cite": "object/active/holder/room/monsroom/i9.kod:195",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Ukgoth, Holy Land of Trolls",
+   "cite": "object/active/holder/room/monsroom/i9.kod:197",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Ukgoth, Holy Land of Trolls",
+   "cite": "object/active/holder/room/monsroom/i9.kod:199",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Martyr's Battleground",
+   "cite": "object/active/holder/room/monsroom/objroom/canyon2.kod:72",
+   "w": "85",
+   "src": "plMonsters"
+  }
+ ],
+ "RebelTroop": [
+  {
+   "room": "The Sewers of Jasper",
+   "cite": "object/active/holder/room/monsroom/jassew2.kod:58",
+   "w": "1",
+   "src": "plMonsters"
+  }
+ ],
+ "DuskRat": [
+  {
+   "room": "A foul place to wander",
+   "cite": "object/active/holder/room/monsroom/kocsew1.kod:64",
+   "w": "95",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Up Chuk Creek without a paddle",
+   "cite": "object/active/holder/room/monsroom/kocsew2.kod:62",
+   "w": "100",
+   "src": "plMonsters"
+  }
+ ],
+ "DaemonSkeleton": [
+  {
+   "room": "The Dungeon of Castle Brax",
+   "cite": "object/active/holder/room/monsroom/lichmaze.kod:62",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Ancient Building",
+   "cite": "object/active/holder/room/monsroom/necare3a.kod:56",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Ancient Building",
+   "cite": "object/active/holder/room/monsroom/necare3b.kod:56",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Ancient Graveyard of Brax",
+   "cite": "object/active/holder/room/monsroom/necarea2.kod:56",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Within the Walls of Castle Brax",
+   "cite": "object/active/holder/room/monsroom/necarea4.kod:56",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Ruins of Castle Brax",
+   "cite": "object/active/holder/room/monsroom/necarea5.kod:62",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "animate",
+   "cite": "object/passive/spell/animate.kod:177",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "TuskedSkeleton": [
+  {
+   "room": "The Dungeon of Castle Brax",
+   "cite": "object/active/holder/room/monsroom/lichmaze.kod:62",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Ancient Building",
+   "cite": "object/active/holder/room/monsroom/necare3b.kod:56",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Decaying City of Brax",
+   "cite": "object/active/holder/room/monsroom/necarea3.kod:68",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Within the Walls of Castle Brax",
+   "cite": "object/active/holder/room/monsroom/necarea4.kod:56",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Throne Room of Victoria Castle",
+   "cite": "object/active/holder/room/monsroom/throne1.kod:59",
+   "w": "80",
+   "src": "plMonsters"
+  },
+  {
+   "room": "animate",
+   "cite": "object/passive/spell/animate.kod:172",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Thrasher": [
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:230",
+   "w": "100",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:477",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:506",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:509",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:532",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:535",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:538",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:824",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:832",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:835",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:844",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:847",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Affirmation of the Forsaken",
+   "cite": "object/active/holder/room/monsroom/marcry3a.kod:850",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "SpectralMummy": [
+  {
+   "room": "The crypt in Marion",
+   "cite": "object/active/holder/room/monsroom/marcryp1.kod:101",
+   "w": "100",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The crypt in Marion",
+   "cite": "object/active/holder/room/monsroom/marcryp1.kod:571",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "LivingStatue": [
+  {
+   "room": "The crypt in Marion",
+   "cite": "object/active/holder/room/monsroom/marcryp1.kod:562",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "Resting place of Marion's ancestors",
+   "cite": "object/active/holder/room/monsroom/marcryp2.kod:173",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "NarthylWorm": [
+  {
+   "room": "Ancient Building",
+   "cite": "object/active/holder/room/monsroom/necare3a.kod:56",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Ancient Graveyard of Brax",
+   "cite": "object/active/holder/room/monsroom/necarea2.kod:56",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Decaying City of Brax",
+   "cite": "object/active/holder/room/monsroom/necarea3.kod:68",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Ruins of Castle Brax",
+   "cite": "object/active/holder/room/monsroom/necarea5.kod:62",
+   "w": "40",
+   "src": "plMonsters"
+  }
+ ],
+ "SpiderQueen": [
+  {
+   "room": "The Spider Nest",
+   "cite": "object/active/holder/room/monsroom/nest1.kod:105",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "CaveOrc": [
+  {
+   "room": "Ugol's Warren Entrance",
+   "cite": "object/active/holder/room/monsroom/orccave1.kod:55",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Archaic Hollows",
+   "cite": "object/active/holder/room/monsroom/orccave3.kod:54",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Obfal's Sepulchre",
+   "cite": "object/active/holder/room/monsroom/orccave5.kod:56",
+   "w": "75",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Konima's Ascension",
+   "cite": "object/active/holder/room/monsroom/orccave6.kod:63",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Grog's Antechamber",
+   "cite": "object/active/holder/room/monsroom/orcpita.kod:60",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Brog's Antechamber",
+   "cite": "object/active/holder/room/monsroom/orcpitb.kod:75",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Lair of the Orc Pit Boss",
+   "cite": "object/active/holder/room/monsroom/bossroom/orcpit1.kod:95",
+   "w": "100",
+   "src": "plMonsters"
+  }
+ ],
+ "OrcWizard": [
+  {
+   "room": "An Enigmatic Chamber",
+   "cite": "object/active/holder/room/monsroom/orccave2.kod:55",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Aqueducts of Merb",
+   "cite": "object/active/holder/room/monsroom/orccave4.kod:55",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Obfal's Sepulchre",
+   "cite": "object/active/holder/room/monsroom/orccave5.kod:56",
+   "w": "25",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Konima's Ascension",
+   "cite": "object/active/holder/room/monsroom/orccave6.kod:63",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Grog's Antechamber",
+   "cite": "object/active/holder/room/monsroom/orcpita.kod:60",
+   "w": "40",
+   "src": "plMonsters"
+  }
+ ],
+ "Shadowbeast": [
+  {
+   "room": "The Archaic Hollows",
+   "cite": "object/active/holder/room/monsroom/orccave3.kod:54",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Aqueducts of Merb",
+   "cite": "object/active/holder/room/monsroom/orccave4.kod:55",
+   "w": "40",
+   "src": "plMonsters"
+  }
+ ],
+ "GroundWormQueen": [
+  {
+   "room": "Brog's Antechamber",
+   "cite": "object/active/holder/room/monsroom/orcpitb.kod:75",
+   "w": "30",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Martyr's Battleground",
+   "cite": "object/active/holder/room/monsroom/objroom/canyon2.kod:72",
+   "w": "15",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Badlands",
+   "cite": "object/active/holder/room/monsroom/objroom/k5.kod:62",
+   "w": "70",
+   "src": "plMonsters"
+  }
+ ],
+ "Ghost": [
+  {
+   "room": "The Throne Room of Victoria Castle",
+   "cite": "object/active/holder/room/monsroom/throne1.kod:121",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "DragonFly": [
+  {
+   "room": "Cliff Hive",
+   "cite": "object/active/holder/room/monsroom/kcforest/ka1.kod:57",
+   "w": "90",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Jungle Cliffs",
+   "cite": "object/active/holder/room/monsroom/kcforest/ka2.kod:56",
+   "w": "100",
+   "src": "plMonsters"
+  },
+  {
+   "room": "A notch in the jungle",
+   "cite": "object/active/holder/room/monsroom/kcforest/ka3.kod:56",
+   "w": "100",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Into the Jungle",
+   "cite": "object/active/holder/room/monsroom/kcforest/ka4.kod:56",
+   "w": "90",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Outside the Guard Tower",
+   "cite": "object/active/holder/room/monsroom/kcforest/ka5.kod:56",
+   "w": "5",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Cliffs",
+   "cite": "object/active/holder/room/monsroom/kcforest/kb1.kod:55",
+   "w": "90",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Into the Jungle",
+   "cite": "object/active/holder/room/monsroom/kcforest/kb5.kod:63",
+   "w": "100",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Origin of the Kriipa",
+   "cite": "object/active/holder/room/monsroom/kcforest/kc4.kod:54",
+   "w": "30",
+   "src": "plMonsters"
+  }
+ ],
+ "DragonFlyQueen": [
+  {
+   "room": "Cliff Hive",
+   "cite": "object/active/holder/room/monsroom/kcforest/ka1.kod:57",
+   "w": "10",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Outside the Mad Scientist's Hut",
+   "cite": "object/active/holder/room/monsroom/kcforest/kc5.kod:58",
+   "w": "100",
+   "src": "plMonsters"
+  }
+ ],
+ "Avar": [
+  {
+   "room": "Into the Jungle",
+   "cite": "object/active/holder/room/monsroom/kcforest/ka4.kod:56",
+   "w": "10",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Outside the Guard Tower",
+   "cite": "object/active/holder/room/monsroom/kcforest/ka5.kod:56",
+   "w": "95",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Cliffs",
+   "cite": "object/active/holder/room/monsroom/kcforest/kb1.kod:55",
+   "w": "10",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Headquarters for the Avar Warriors",
+   "cite": "object/active/holder/room/monsroom/kcforest/kb2.kod:56",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Camp of the Warrior Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/kb3.kod:55",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Chasm",
+   "cite": "object/active/holder/room/monsroom/kcforest/kc1.kod:56",
+   "w": "90",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Turf of the Warrior Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/kc2.kod:56",
+   "w": "50",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Ruins of the Riija Temple",
+   "cite": "object/active/holder/room/monsroom/kcforest/kc3.kod:54",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Origin of the Kriipa",
+   "cite": "object/active/holder/room/monsroom/kcforest/kc4.kod:54",
+   "w": "70",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Lair of the Bone Priestess",
+   "cite": "object/active/holder/room/monsroom/kcforest/kd1.kod:56",
+   "w": "90",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Territory of the Noble Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/kd2.kod:54",
+   "w": "80",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Deep in the Jungle",
+   "cite": "object/active/holder/room/monsroom/kcforest/kd3.kod:54",
+   "w": "80",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Clearing of the Trading Post",
+   "cite": "object/active/holder/room/monsroom/kcforest/kd4.kod:59",
+   "w": "80",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Headquarters of the Noble Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/ke2.kod:54",
+   "w": "60",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Avar Village",
+   "cite": "object/active/holder/room/monsroom/kcforest/ke4.kod:118",
+   "w": "40",
+   "src": "plMonsters"
+  }
+ ],
+ "AvarShaman": [
+  {
+   "room": "Headquarters for the Avar Warriors",
+   "cite": "object/active/holder/room/monsroom/kcforest/kb2.kod:56",
+   "w": "18",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Camp of the Warrior Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/kb3.kod:55",
+   "w": "18",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Turf of the Warrior Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/kc2.kod:56",
+   "w": "10",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Ruins of the Riija Temple",
+   "cite": "object/active/holder/room/monsroom/kcforest/kc3.kod:54",
+   "w": "25",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Territory of the Noble Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/kd2.kod:54",
+   "w": "15",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Deep in the Jungle",
+   "cite": "object/active/holder/room/monsroom/kcforest/kd3.kod:54",
+   "w": "18",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Clearing of the Trading Post",
+   "cite": "object/active/holder/room/monsroom/kcforest/kd4.kod:59",
+   "w": "10",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Headquarters of the Noble Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/ke2.kod:54",
+   "w": "25",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Avar Village",
+   "cite": "object/active/holder/room/monsroom/kcforest/ke4.kod:118",
+   "w": "25",
+   "src": "plMonsters"
+  }
+ ],
+ "AvarChieftain": [
+  {
+   "room": "Headquarters for the Avar Warriors",
+   "cite": "object/active/holder/room/monsroom/kcforest/kb2.kod:56",
+   "w": "7",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Camp of the Warrior Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/kb3.kod:55",
+   "w": "5",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Chasm",
+   "cite": "object/active/holder/room/monsroom/kcforest/kc1.kod:56",
+   "w": "10",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Ruins of the Riija Temple",
+   "cite": "object/active/holder/room/monsroom/kcforest/kc3.kod:54",
+   "w": "15",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Lair of the Bone Priestess",
+   "cite": "object/active/holder/room/monsroom/kcforest/kd1.kod:56",
+   "w": "10",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Territory of the Noble Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/kd2.kod:54",
+   "w": "5",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Deep in the Jungle",
+   "cite": "object/active/holder/room/monsroom/kcforest/kd3.kod:54",
+   "w": "2",
+   "src": "plMonsters"
+  },
+  {
+   "room": "The Clearing of the Trading Post",
+   "cite": "object/active/holder/room/monsroom/kcforest/kd4.kod:59",
+   "w": "10",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Headquarters of the Noble Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/ke2.kod:54",
+   "w": "15",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Avar Village",
+   "cite": "object/active/holder/room/monsroom/kcforest/ke4.kod:118",
+   "w": "35",
+   "src": "plMonsters"
+  }
+ ],
+ "Kriipa": [
+  {
+   "room": "Headquarters for the Avar Warriors",
+   "cite": "object/active/holder/room/monsroom/kcforest/kb2.kod:56",
+   "w": "15",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Camp of the Warrior Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/kb3.kod:55",
+   "w": "27",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Path to the Ruins",
+   "cite": "object/active/holder/room/monsroom/kcforest/kb4.kod:54",
+   "w": "100",
+   "src": "plMonsters"
+  },
+  {
+   "room": "Turf of the Warrior Avars",
+   "cite": "object/active/holder/room/monsroom/kcforest/kc2.kod:56",
+   "w": "40",
+   "src": "plMonsters"
+  }
+ ],
+ "KocatanBonePriestess": [
+  {
+   "room": "Lair of the Bone Priestess",
+   "cite": "object/active/holder/room/monsroom/kcforest/kd1.kod:93",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "KocatanMadScientist": [
+  {
+   "room": "Hut of the Mad Scientist",
+   "cite": "object/active/holder/room/monsroom/kcforest/kmadscih.kod:68",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Scorpion": [
+  {
+   "room": "Druid Hills",
+   "cite": "object/active/holder/room/monsroom/objroom/b6.kod:58",
+   "w": "40",
+   "src": "plMonsters"
+  },
+  {
+   "room": "apparition",
+   "cite": "object/passive/spell/apparitn.kod:188",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "BarloqueBartender": [
+  {
+   "room": "The Bhrama & Falcon",
+   "cite": "object/active/holder/room/monsroom/objroom/barlbar1.kod:101",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "BasicInnKeeper": [
+  {
+   "room": "The Duke's Grand Ballroom",
+   "cite": "object/active/holder/room/monsroom/objroom/duke5.kod:334",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "SnowRat": [
+  {
+   "room": "The Dreaded Caves of Ice",
+   "cite": "object/active/holder/room/monsroom/objroom/icecave1.kod:67",
+   "w": "55",
+   "src": "plMonsters"
+  }
+ ],
+ "Yeti": [
+  {
+   "room": "The Dreaded Caves of Ice",
+   "cite": "object/active/holder/room/monsroom/objroom/icecave1.kod:124",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "Brambles": [
+  {
+   "room": "The Badlands",
+   "cite": "object/active/holder/room/monsroom/objroom/k5.kod:145",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "bramble wall",
+   "cite": "object/passive/spell/walspell/brmblwll.kod:225",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "bramble wall",
+   "cite": "object/passive/spell/walspell/brmblwll.kod:230",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "bramble wall",
+   "cite": "object/passive/spell/walspell/brmblwll.kod:236",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "bramble wall",
+   "cite": "object/passive/spell/walspell/brmblwll.kod:242",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "bramble wall",
+   "cite": "object/passive/spell/walspell/brmblwll.kod:248",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "MarionInnkeeper": [
+  {
+   "room": "The Limping Toad Inn and Tavern",
+   "cite": "object/active/holder/room/monsroom/objroom/marinn.kod:124",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "MarionBartender": [
+  {
+   "room": "The Limping Toad Inn and Tavern",
+   "cite": "object/active/holder/room/monsroom/objroom/marinn.kod:126",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "MarionBlacksmith": [
+  {
+   "room": "Ye Olde Slasher Salesman",
+   "cite": "object/active/holder/room/monsroom/objroom/marsmith.kod:61",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "TosInnKeeper": [
+  {
+   "room": "Familiars",
+   "cite": "object/active/holder/room/monsroom/objroom/tosinn.kod:101",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "TosApothecary": [
+  {
+   "room": "Frisconar's Mysticals",
+   "cite": "object/active/holder/room/tosrm/tosapoth.kod:211",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "TosWatcher": [
+  {
+   "room": "The Arena of Kraanan",
+   "cite": "object/active/holder/room/tosrm/tosarena.kod:213",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "TosBanker": [
+  {
+   "room": "First Royal Bank of Tos",
+   "cite": "object/active/holder/room/tosrm/tosbank.kod:63",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "XeoWater": [
+  {
+   "room": "blue heartstone",
+   "cite": "object/item/passitem/hstone/hstonblu.kod:42",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "?",
+   "cite": "util/nodeattk.kod:427",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "XeoEarth": [
+  {
+   "room": "brown heartstone",
+   "cite": "object/item/passitem/hstone/hstonbrn.kod:42",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "?",
+   "cite": "util/nodeattk.kod:432",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "XeoFire": [
+  {
+   "room": "red heartstone",
+   "cite": "object/item/passitem/hstone/hstonred.kod:42",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "?",
+   "cite": "util/nodeattk.kod:422",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ],
+ "XeoAir": [
+  {
+   "room": "sky heartstone",
+   "cite": "object/item/passitem/hstone/hstonsky.kod:42",
+   "w": "fixed",
+   "src": "Create"
+  },
+  {
+   "room": "?",
+   "cite": "util/nodeattk.kod:437",
+   "w": "fixed",
+   "src": "Create"
+  }
+ ]
+}

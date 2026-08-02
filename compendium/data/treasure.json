@@ -1,0 +1,5420 @@
+{
+  "builtFrom": {
+    "source": "C:/code/Meridian59",
+    "generator": "tools/extract-treasure.mjs",
+    "when": "2026-07-31T23:43:08.355Z"
+  },
+  "rules": {
+    "summary": "A monster drops treasure only when it dies with an owner room and is neither an illusion nor summoned (kod/object/active/holder/nomoveon/battler/monster.kod:4944). CreateTreasure picks how many items to roll: monsters flagged MOB_ONE_TREASURE roll exactly one (kod/object/active/holder/nomoveon/battler/monster.kod:4964); everyone else rolls 1 + viLevel/55 + random(0, viDifficulty/3), capped at 6, then scaled by the server ItemFactor and floored at 1 (kod/object/active/holder/nomoveon/battler/monster.kod:4973). Each of those rolls is one call to GenerateTreasure (kod/object/passive/trestype.kod:223), which rolls the type's weighted table exactly once and returns one object; the loop only advances when a roll returns an object, so a table that returns nil is retried forever. Money is NOT a separate roll and is not extra: &Money is an ordinary weighted row in the table, and when that row wins, the pile is sized from the dead monster's viLevel (kod/object/passive/trestype.kod:300). Each type's weights are normalised to sum to 100 when the type object is constructed, with the integer-division shortfall added to the first row (kod/object/passive/trestype.kod:62); the raw numbers in the source are therefore relative weights, not percentages, though most tables are already written to sum to 100. The roll itself is iRnd = Random(0,100) against a running total (kod/object/passive/trestype.kod:285) -- that is 101 equally likely values against a 100-wide table, so the first row silently gains one extra outcome. chancePercent is the game's own normalised weight; exactChancePercent is the true probability, w/101 (and (w+1)/101 for the first row). Three things can pre-empt the table on any single roll: a game token, a newbie signet ring, and an item-attributed weapon -- see rules.preempt. Nothing scales the table itself by level or difficulty: level and difficulty change only HOW MANY items roll and HOW MUCH money a winning &Money row is worth. Which items exist is fixed per treasure type.",
+    "formula": "items rolled:\n  if (viAttributes & MOB_ONE_TREASURE)  n = 1\n  else  n = bound(1 + viLevel/55 + random(0, viDifficulty/3), nil, 6)\n        n = bound((ItemFactor * n)/100, 1, nil)          [ItemFactor = 100]\nper roll, in order:\n  1. token:  if a token game is running and the killer is an intriguing User and an open token exists,\n             random(1,100) <= 20 returns the token instead (TOKEN_GENERATION_CHANCE).\n  2. signet: if the killer is a non-PK newbie-eligible User in the default region,\n             random(1,100) <= 3 returns a newbie signet ring instead (GetSignetChance).\n  3. magic:  if piDiff_seed > 0 and the killer is a User,\n             random(1,400) <= (MagicItemModifier * piItem_att_chance)/100 returns an item-attributed item.\n             Its difficulty is bound(piDiff_seed +/- GetRandomDiffBonus, 1, 10); the bonus is 0 76% of the\n             time, +1 13%, +2 5%, +3 2%, +4 2%, +5 1%, and its sign is flipped 49% of the time.\n  4. table:  iRnd = random(0,100); walk plTreasure accumulating normalised weights; the first row whose\n             running total >= iRnd wins; Create(that class).\nweights, applied once when the type object is constructed:\n  adjust = sum(weights) or 100 if that is 0\n  w_i    = (w_i * 100) / adjust                 (integer division, truncating)\n  w_1   += 100 - sum(w_i)   when that sum fell short\ntrue probability of row i:  (w_1 + 1)/101 for the first row, w_i/101 for every other row\nmoney, only when the &Money row wins:\n  shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, nil))/100   [MoneyFactor = 100]\n  level is the dead monster's viLevel; the leading 1 is Create(&Money)'s starting piNumber.",
+    "cites": [
+      "kod/object/active/holder/nomoveon/battler/monster.kod:3108",
+      "kod/object/active/holder/nomoveon/battler/monster.kod:4938",
+      "kod/object/active/holder/nomoveon/battler/monster.kod:4944",
+      "kod/object/active/holder/nomoveon/battler/monster.kod:4962",
+      "kod/object/active/holder/nomoveon/battler/monster.kod:4964",
+      "kod/object/active/holder/nomoveon/battler/monster.kod:4973",
+      "kod/object/active/holder/nomoveon/battler/monster.kod:4975",
+      "kod/object/active/holder/nomoveon/battler/monster.kod:4982",
+      "kod/object/active/holder/nomoveon/battler/monster.kod:4984",
+      "kod/object/passive/trestype.kod:33",
+      "kod/object/passive/trestype.kod:45",
+      "kod/object/passive/trestype.kod:62",
+      "kod/object/passive/trestype.kod:69",
+      "kod/object/passive/trestype.kod:101",
+      "kod/object/passive/trestype.kod:176",
+      "kod/object/passive/trestype.kod:223",
+      "kod/object/passive/trestype.kod:228",
+      "kod/object/passive/trestype.kod:246",
+      "kod/object/passive/trestype.kod:270",
+      "kod/object/passive/trestype.kod:284",
+      "kod/object/passive/trestype.kod:285",
+      "kod/object/passive/trestype.kod:289",
+      "kod/object/passive/trestype.kod:300",
+      "kod/object/passive/trestype.kod:302",
+      "kod/util/system.kod:1201",
+      "kod/util/system.kod:1363",
+      "kod/util/settings.kod:31",
+      "kod/util/settings.kod:34",
+      "kod/util/settings.kod:37",
+      "kod/util/library.kod:743",
+      "kod/include/blakston.khd:1400",
+      "kod/include/blakston.khd:2339",
+      "kod/object/item/passitem/numbitem.kod:44",
+      "kod/object/item/passitem/numbitem.kod:183",
+      "blakserv/ccode.c:1911"
+    ],
+    "preempt": [
+      {
+        "what": "game token",
+        "chance": "random(1,100) <= 20",
+        "cite": "kod/object/passive/trestype.kod:228",
+        "constant": "TOKEN_GENERATION_CHANCE = 20 (kod/include/blakston.khd:2339)",
+        "notes": "Only while a token game is running, only for a User the game considers intriguing, and only if FindOpenToken finds a free token in the killer's room. Returns the token in place of a table roll; the monster's remaining rolls then run with tokengen = FALSE (kod/object/active/holder/nomoveon/battler/monster.kod:5004)."
+      },
+      {
+        "what": "newbie signet ring",
+        "chance": "random(1,100) <= 3",
+        "cite": "kod/object/passive/trestype.kod:246",
+        "constant": "piSignetChance = 3 (kod/util/library.kod:743)",
+        "notes": "Killer must be a User, not PK-enabled, signet-eligible, and in RID_DEFAULT."
+      },
+      {
+        "what": "item-attributed (\"magic\") item",
+        "chance": "random(1,400) <= (MagicItemModifier * piItem_att_chance)/100",
+        "cite": "kod/object/passive/trestype.kod:270",
+        "constant": "MagicItemModifier = 100 (kod/util/settings.kod:37); piItem_att_chance is per treasure type",
+        "notes": "Only when piDiff_seed > 0 and the killer is a User. The item class comes from SYS's per-difficulty ItemAtt list (kod/util/system.kod:5436), not from plTreasure, so it cannot be enumerated from the treasure tables."
+      }
+    ],
+    "overrides": [
+      {
+        "cls": "Skeleton",
+        "cite": "kod/object/active/holder/nomoveon/battler/monster/skel.kod:173",
+        "what": "Drops a LongSword with hits set to GetHits/random(2,4) on top of its normal table roll, then propagates."
+      },
+      {
+        "cls": "OrcPitBossBody",
+        "cite": "kod/object/active/holder/nomoveon/battler/monster/BossBody.kod:66",
+        "what": "Drops an OrcPitBossHead on top of its normal table roll, then propagates."
+      },
+      {
+        "cls": "LivingStatue",
+        "cite": "kod/object/active/holder/nomoveon/battler/monster/lvstatue.kod:1084",
+        "what": "Soldiers only: random(0,100) = 59, i.e. 1 in 101, drops a Rose on top of the normal roll."
+      },
+      {
+        "cls": "FactionTroop",
+        "cite": "kod/object/active/holder/nomoveon/battler/monster/troop.kod:1034",
+        "what": "Does NOT propagate: ignores plTreasure entirely and instead drops each equipped item with a 20% chance (EQUIPMENT_DROP_PERCENT, troop.kod:33), never the shield."
+      },
+      {
+        "cls": "Zombie",
+        "cite": "kod/object/active/holder/nomoveon/battler/monster/zombie.kod:63",
+        "what": "Declares viTreasure_type (TID_ZOMBIE) and viLevel (55) as PROPERTIES rather than classvars, which blakcomp turns into a TAG_OVERRIDE redirect (blakcomp/actions.c:780). Its Constructor then sets viTreasure_type = TID_NONE and vbSummoned = TRUE when called with DropsTreasure = FALSE (zombie.kod:85), so summoned zombies drop nothing."
+      },
+      {
+        "cls": "Avar / AvarShaman / AvarChieftain",
+        "cite": "kod/object/active/holder/nomoveon/battler/monster/avar.kod:270",
+        "what": "GetTreasureType returns TID_NONE while the monster stands in RID_KC3, so those spawns drop nothing."
+      }
+    ],
+    "notDerivable": [
+      "The contents of the item-attribute (\"magic weapon\") lists are built at runtime on SYS (kod/util/system.kod:5436) and are not declared in any class, so which weapon a magic roll yields cannot be read out of the source tree.",
+      "Server operators can change MoneyFactor, ItemFactor and MagicItemModifier at runtime (kod/util/settings.kod:31-37); this file assumes the shipped defaults of 100. The Settings constructor also applies per-server overrides for server_num 101 and 102 (kod/util/settings.kod:170-188).",
+      "Room-specific treasure such as the Marion crypt chest (kod/object/active/holder/room/monsroom/marcry3a.kod:1090) uses its own plTreasuresList and has nothing to do with the TID_ system.",
+      "The per-type \"monsters\" list is every Monster subclass whose viTreasure_type resolves to that TID at compile time. It cannot account for spawns that change the value at runtime: Zombie's Constructor (zombie.kod:85), the Avar family's RID_KC3 check (avar.kod:270), or any monster created with pbIllusion / vbSummoned set, all of which drop nothing (kod/object/active/holder/nomoveon/battler/monster.kod:4944).",
+      "Whether a given item class is reachable in play also depends on the monster actually spawning somewhere; this file says only what the tables contain, not what the world spawns."
+    ]
+  },
+  "types": {
+    "TID_AVAR_CHIEF": {
+      "value": 39,
+      "cite": "kod/include/blakston.khd:1579",
+      "class": "AvarChieftainTreasure",
+      "classCite": "kod/object/passive/trestype/avarcht.kod:11",
+      "numCite": "kod/object/passive/trestype/avarcht.kod:22",
+      "diffSeed": 8,
+      "diffSeedCite": "kod/object/passive/trestype/avarcht.kod:25",
+      "itemAttChancePer400": 4,
+      "itemAttChanceCite": "kod/object/passive/trestype/avarcht.kod:24",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 135,
+        "max": 405,
+        "levelRange": [
+          135,
+          135
+        ],
+        "chancePercent": 10,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 135..135, the levels of the 1 Monster subclass(es) that resolve to TID_AVAR_CHIEF. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "Longbow",
+          "chancePercent": 30,
+          "exactChancePercent": 30.693,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarcht.kod:31"
+        },
+        {
+          "cls": "Arrow",
+          "chancePercent": 19,
+          "exactChancePercent": 18.812,
+          "weight": 19,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarcht.kod:32"
+        },
+        {
+          "cls": "NeruditeArrow",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarcht.kod:33"
+        },
+        {
+          "cls": "BattleBow",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarcht.kod:34"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarcht.kod:35"
+        },
+        {
+          "cls": "Lute",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarcht.kod:36"
+        },
+        {
+          "cls": "PurifyWand",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarcht.kod:37"
+        },
+        {
+          "cls": "NeruditeArmor",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarcht.kod:38"
+        },
+        {
+          "cls": "BrittleWand",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarcht.kod:39"
+        },
+        {
+          "cls": "KillingFieldScroll",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarcht.kod:40"
+        }
+      ],
+      "monsters": [
+        "AvarChieftain"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 4/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 8 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_AVAR_SHAMAN": {
+      "value": 38,
+      "cite": "kod/include/blakston.khd:1578",
+      "class": "AvarShamanTreasure",
+      "classCite": "kod/object/passive/trestype/avarsht.kod:11",
+      "numCite": "kod/object/passive/trestype/avarsht.kod:22",
+      "diffSeed": 4,
+      "diffSeedCite": "kod/object/passive/trestype/avarsht.kod:24",
+      "itemAttChancePer400": 8,
+      "itemAttChanceCite": "kod/object/passive/trestype/avarsht.kod:23",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "ShamanBlood",
+          "chancePercent": 40,
+          "exactChancePercent": 40.594,
+          "weight": 40,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarsht.kod:30"
+        },
+        {
+          "cls": "Yrxlsap",
+          "chancePercent": 13,
+          "exactChancePercent": 12.871,
+          "weight": 13,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarsht.kod:31"
+        },
+        {
+          "cls": "WebMoss",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarsht.kod:32"
+        },
+        {
+          "cls": "RainbowFern",
+          "chancePercent": 9,
+          "exactChancePercent": 8.911,
+          "weight": 9,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarsht.kod:33"
+        },
+        {
+          "cls": "KriipaClaw",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarsht.kod:34"
+        },
+        {
+          "cls": "CurePoisonPotion",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarsht.kod:35"
+        },
+        {
+          "cls": "CureDiseasePotion",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarsht.kod:36"
+        },
+        {
+          "cls": "RemoveCursePotion",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarsht.kod:37"
+        },
+        {
+          "cls": "PurifyPotion",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarsht.kod:38"
+        },
+        {
+          "cls": "UncutSeraphym",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarsht.kod:39"
+        },
+        {
+          "cls": "PolishedSeraphym",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avarsht.kod:40"
+        }
+      ],
+      "monsters": [
+        "AvarShaman"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 8/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 4 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_AVAR": {
+      "value": 37,
+      "cite": "kod/include/blakston.khd:1577",
+      "class": "AvarTreasure",
+      "classCite": "kod/object/passive/trestype/avart.kod:11",
+      "numCite": "kod/object/passive/trestype/avart.kod:22",
+      "diffSeed": 2,
+      "diffSeedCite": "kod/object/passive/trestype/avart.kod:24",
+      "itemAttChancePer400": 4,
+      "itemAttChanceCite": "kod/object/passive/trestype/avart.kod:23",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 121,
+        "max": 361,
+        "levelRange": [
+          120,
+          120
+        ],
+        "chancePercent": 14,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 120..120, the levels of the 1 Monster subclass(es) that resolve to TID_AVAR. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "RainbowFern",
+          "chancePercent": 30,
+          "exactChancePercent": 30.693,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avart.kod:30"
+        },
+        {
+          "cls": "Bread",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avart.kod:31"
+        },
+        {
+          "cls": "KriipaClaw",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avart.kod:32"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 14,
+          "exactChancePercent": 13.861,
+          "weight": 14,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avart.kod:33"
+        },
+        {
+          "cls": "WebMoss",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avart.kod:34"
+        },
+        {
+          "cls": "UncutSeraphym",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avart.kod:35"
+        },
+        {
+          "cls": "TurkeyLeg",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avart.kod:36"
+        },
+        {
+          "cls": "RemoveCursePotion",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avart.kod:37"
+        },
+        {
+          "cls": "Yrxlsap",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avart.kod:38"
+        },
+        {
+          "cls": "NeruditeSword",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avart.kod:39"
+        },
+        {
+          "cls": "NeruditeArmor",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avart.kod:40"
+        },
+        {
+          "cls": "IvyCirclet",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/avart.kod:41"
+        }
+      ],
+      "monsters": [
+        "Avar"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 4/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 2 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_CAVE_ORC": {
+      "value": 34,
+      "cite": "kod/include/blakston.khd:1574",
+      "class": "CaveOrcTreasure",
+      "classCite": "kod/object/passive/trestype/caveorct.kod:11",
+      "numCite": "kod/object/passive/trestype/caveorct.kod:22",
+      "diffSeed": 3,
+      "diffSeedCite": "kod/object/passive/trestype/caveorct.kod:24",
+      "itemAttChancePer400": 3,
+      "itemAttChanceCite": "kod/object/passive/trestype/caveorct.kod:23",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 81,
+        "max": 241,
+        "levelRange": [
+          80,
+          80
+        ],
+        "chancePercent": 2,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 80..80, the levels of the 1 Monster subclass(es) that resolve to TID_CAVE_ORC. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "OrcTooth",
+          "chancePercent": 30,
+          "exactChancePercent": 30.693,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:30"
+        },
+        {
+          "cls": "OreChunk",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:31"
+        },
+        {
+          "cls": "Scimitar",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:32"
+        },
+        {
+          "cls": "GoldShield",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:33"
+        },
+        {
+          "cls": "SimpleHelm",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:34"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:35"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:36"
+        },
+        {
+          "cls": "Diamond",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:37"
+        },
+        {
+          "cls": "Ruby",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:38"
+        },
+        {
+          "cls": "NeruditeOreChunk",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:39"
+        },
+        {
+          "cls": "FireRing",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:40"
+        },
+        {
+          "cls": "ColdRing",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:41"
+        },
+        {
+          "cls": "ShockRing",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:42"
+        },
+        {
+          "cls": "AcidRing",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:43"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:44"
+        },
+        {
+          "cls": "UncutSeraphym",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:45"
+        },
+        {
+          "cls": "CurePoisonPotion",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:46"
+        },
+        {
+          "cls": "CureDiseasePotion",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:47"
+        },
+        {
+          "cls": "RemoveCursePotion",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:48"
+        },
+        {
+          "cls": "PurifyPotion",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:49"
+        },
+        {
+          "cls": "RingofLethargy",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:50"
+        },
+        {
+          "cls": "Knightshield",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:51"
+        },
+        {
+          "cls": "FlashScroll",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/caveorct.kod:52"
+        }
+      ],
+      "monsters": [
+        "CaveOrc"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 3/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 3 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_DARK_ANGEL": {
+      "value": 51,
+      "cite": "kod/include/blakston.khd:1591",
+      "class": "DarkAngelTreasure",
+      "classCite": "kod/object/passive/trestype/dangelt.kod:11",
+      "numCite": "kod/object/passive/trestype/dangelt.kod:22",
+      "diffSeed": 5,
+      "diffSeedCite": "kod/object/passive/trestype/dangelt.kod:26",
+      "itemAttChancePer400": 2,
+      "itemAttChanceCite": "kod/object/passive/trestype/dangelt.kod:27",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "DarkAngelFeather",
+          "chancePercent": 45,
+          "exactChancePercent": 45.545,
+          "weight": 45,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dangelt.kod:33"
+        },
+        {
+          "cls": "BlueDragonScale",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dangelt.kod:34"
+        },
+        {
+          "cls": "EntrootBerry",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dangelt.kod:35"
+        },
+        {
+          "cls": "FairyWing",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dangelt.kod:36"
+        },
+        {
+          "cls": "ShamanBlood",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dangelt.kod:37"
+        },
+        {
+          "cls": "InkyCap",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dangelt.kod:38"
+        }
+      ],
+      "monsters": [
+        "DarkAngel"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 2/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 5 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_BLACK_SPIDER": {
+      "value": 47,
+      "cite": "kod/include/blakston.khd:1587",
+      "class": "DeathSpiderTreasure",
+      "classCite": "kod/object/passive/trestype/dethspdt.kod:11",
+      "numCite": "kod/object/passive/trestype/dethspdt.kod:22",
+      "diffSeed": 4,
+      "diffSeedCite": "kod/object/passive/trestype/dethspdt.kod:25",
+      "itemAttChancePer400": 2,
+      "itemAttChanceCite": "kod/object/passive/trestype/dethspdt.kod:24",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "NeruditeArrow",
+          "chancePercent": 10,
+          "exactChancePercent": 10.891,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:31"
+        },
+        {
+          "cls": "NightVisionPotion",
+          "chancePercent": 9,
+          "exactChancePercent": 8.911,
+          "weight": 9,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:32"
+        },
+        {
+          "cls": "FireRing",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:33"
+        },
+        {
+          "cls": "ColdRing",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:34"
+        },
+        {
+          "cls": "ShockRing",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:35"
+        },
+        {
+          "cls": "AcidRing",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:36"
+        },
+        {
+          "cls": "StrengthPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:37"
+        },
+        {
+          "cls": "ShadowFormPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:38"
+        },
+        {
+          "cls": "RemoveCursePotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:39"
+        },
+        {
+          "cls": "ResistShockPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:40"
+        },
+        {
+          "cls": "ResistPoisonPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:41"
+        },
+        {
+          "cls": "ResistMagicPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:42"
+        },
+        {
+          "cls": "ResistFirePotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:43"
+        },
+        {
+          "cls": "ResistColdPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:44"
+        },
+        {
+          "cls": "MagicShieldPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:45"
+        },
+        {
+          "cls": "KaraholsCursePotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:46"
+        },
+        {
+          "cls": "AnonymityPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:47"
+        },
+        {
+          "cls": "FeignDeathPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:48"
+        },
+        {
+          "cls": "DetectInvisibilityPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:49"
+        },
+        {
+          "cls": "DetectGoodPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:50"
+        },
+        {
+          "cls": "DetectEvilPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:51"
+        },
+        {
+          "cls": "CurePoisonPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:52"
+        },
+        {
+          "cls": "CureDiseasePotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:53"
+        },
+        {
+          "cls": "BaitPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:54"
+        },
+        {
+          "cls": "HastePotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:55"
+        },
+        {
+          "cls": "PurifyPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:56"
+        },
+        {
+          "cls": "NodeBurstPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:57"
+        },
+        {
+          "cls": "DenialPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:58"
+        },
+        {
+          "cls": "DeflectPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dethspdt.kod:59"
+        }
+      ],
+      "monsters": [
+        "DeathSpider"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 2/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 4 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_DRAGONFLY": {
+      "value": 41,
+      "cite": "kod/include/blakston.khd:1581",
+      "class": "DragonflyTreasure",
+      "classCite": "kod/object/passive/trestype/dflyt.kod:11",
+      "numCite": "kod/object/passive/trestype/dflyt.kod:22",
+      "diffSeed": 3,
+      "diffSeedCite": "kod/object/passive/trestype/dflyt.kod:24",
+      "itemAttChancePer400": 3,
+      "itemAttChanceCite": "kod/object/passive/trestype/dflyt.kod:23",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 121,
+        "max": 481,
+        "levelRange": [
+          120,
+          160
+        ],
+        "chancePercent": 7,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 120..160, the levels of the 3 Monster subclass(es) that resolve to TID_DRAGONFLY. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "DragonflyEye",
+          "chancePercent": 30,
+          "exactChancePercent": 30.693,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dflyt.kod:30"
+        },
+        {
+          "cls": "WebMoss",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dflyt.kod:31"
+        },
+        {
+          "cls": "Meatpie",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dflyt.kod:32"
+        },
+        {
+          "cls": "RainbowFern",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dflyt.kod:33"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 7,
+          "exactChancePercent": 6.931,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dflyt.kod:34"
+        },
+        {
+          "cls": "KriipaClaw",
+          "chancePercent": 7,
+          "exactChancePercent": 6.931,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dflyt.kod:35"
+        },
+        {
+          "cls": "Yrxlsap",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/dflyt.kod:36"
+        }
+      ],
+      "monsters": [
+        "DragonFly",
+        "DragonFlyQueen",
+        "Kriipa"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 3/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 3 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_ENT": {
+      "value": 29,
+      "cite": "kod/include/blakston.khd:1567",
+      "class": "EntTreasure",
+      "classCite": "kod/object/passive/trestype/entt.kod:11",
+      "numCite": "kod/object/passive/trestype/entt.kod:22",
+      "diffSeed": 4,
+      "diffSeedCite": "kod/object/passive/trestype/entt.kod:26",
+      "itemAttChancePer400": 1,
+      "itemAttChanceCite": "kod/object/passive/trestype/entt.kod:25",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "EntrootBerry",
+          "chancePercent": 40,
+          "exactChancePercent": 40.594,
+          "weight": 40,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/entt.kod:32"
+        },
+        {
+          "cls": "Snack",
+          "chancePercent": 30,
+          "exactChancePercent": 29.703,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/entt.kod:33"
+        },
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 9,
+          "exactChancePercent": 8.911,
+          "weight": 9,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/entt.kod:34"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/entt.kod:35"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/entt.kod:36"
+        },
+        {
+          "cls": "PurpleMushroom",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/entt.kod:37"
+        },
+        {
+          "cls": "LightningWand",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/entt.kod:38"
+        }
+      ],
+      "monsters": [
+        "Ent",
+        "EvilEnt"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 1/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 4 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_FAIRY": {
+      "value": 26,
+      "cite": "kod/include/blakston.khd:1564",
+      "class": "FairyTreasure",
+      "classCite": "kod/object/passive/trestype/fairytrs.kod:11",
+      "numCite": "kod/object/passive/trestype/fairytrs.kod:25",
+      "diffSeed": 0,
+      "diffSeedCite": null,
+      "itemAttChancePer400": 0,
+      "itemAttChanceCite": null,
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "FairyWing",
+          "chancePercent": 30,
+          "exactChancePercent": 30.693,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/fairytrs.kod:31"
+        },
+        {
+          "cls": "Mushroom",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/fairytrs.kod:32"
+        },
+        {
+          "cls": "ElderBerry",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/fairytrs.kod:33"
+        },
+        {
+          "cls": "Herbs",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/fairytrs.kod:34"
+        },
+        {
+          "cls": "Snack",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/fairytrs.kod:35"
+        },
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/fairytrs.kod:36"
+        },
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/fairytrs.kod:37"
+        },
+        {
+          "cls": "EntrootBerry",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/fairytrs.kod:38"
+        },
+        {
+          "cls": "IllusionaryFormPotion",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/fairytrs.kod:39"
+        }
+      ],
+      "monsters": [
+        "EvilFairy",
+        "Fairy"
+      ],
+      "notes": "piDiff_seed is 0, so this type never generates item-attributed (\"magic\") items."
+    },
+    "TID_FROGMAN": {
+      "value": 54,
+      "cite": "kod/include/blakston.khd:1594",
+      "class": "FrogmanTreasure",
+      "classCite": "kod/object/passive/trestype/frogmant.kod:11",
+      "numCite": "kod/object/passive/trestype/frogmant.kod:22",
+      "diffSeed": 5,
+      "diffSeedCite": "kod/object/passive/trestype/frogmant.kod:23",
+      "itemAttChancePer400": 3,
+      "itemAttChanceCite": "kod/object/passive/trestype/frogmant.kod:24",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 24,
+          "exactChancePercent": 24.752,
+          "weight": 24,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/frogmant.kod:30"
+        },
+        {
+          "cls": "Mushroom",
+          "chancePercent": 24,
+          "exactChancePercent": 23.762,
+          "weight": 24,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/frogmant.kod:31"
+        },
+        {
+          "cls": "ElderBerry",
+          "chancePercent": 24,
+          "exactChancePercent": 23.762,
+          "weight": 24,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/frogmant.kod:32"
+        },
+        {
+          "cls": "EntrootBerry",
+          "chancePercent": 9,
+          "exactChancePercent": 8.911,
+          "weight": 9,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/frogmant.kod:33"
+        },
+        {
+          "cls": "PurpleMushroom",
+          "chancePercent": 9,
+          "exactChancePercent": 8.911,
+          "weight": 9,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/frogmant.kod:34"
+        },
+        {
+          "cls": "DarkAngelFeather",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/frogmant.kod:35"
+        },
+        {
+          "cls": "InkyCap",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/frogmant.kod:36"
+        },
+        {
+          "cls": "MagicShieldPotion",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/frogmant.kod:37"
+        }
+      ],
+      "monsters": [
+        "Frogman"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 3/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 5 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_GHOST": {
+      "value": 24,
+      "cite": "kod/include/blakston.khd:1562",
+      "class": "GhostTreasure",
+      "classCite": "kod/object/passive/trestype/ghostt.kod:11",
+      "numCite": "kod/object/passive/trestype/ghostt.kod:22",
+      "diffSeed": 6,
+      "diffSeedCite": "kod/object/passive/trestype/ghostt.kod:27",
+      "itemAttChancePer400": 7,
+      "itemAttChanceCite": "kod/object/passive/trestype/ghostt.kod:28",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "MysticSword",
+          "chancePercent": 10,
+          "exactChancePercent": 10.891,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:34"
+        },
+        {
+          "cls": "RingInvisibility",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:35"
+        },
+        {
+          "cls": "Gauntlet",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:36"
+        },
+        {
+          "cls": "PlateArmor",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:37"
+        },
+        {
+          "cls": "Knightshield",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:38"
+        },
+        {
+          "cls": "FineLute",
+          "chancePercent": 9,
+          "exactChancePercent": 8.911,
+          "weight": 9,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:39"
+        },
+        {
+          "cls": "Scimitar",
+          "chancePercent": 7,
+          "exactChancePercent": 6.931,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:40"
+        },
+        {
+          "cls": "VampireWand",
+          "chancePercent": 7,
+          "exactChancePercent": 6.931,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:41"
+        },
+        {
+          "cls": "DiscipleRobe",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:42"
+        },
+        {
+          "cls": "Diamond",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:43"
+        },
+        {
+          "cls": "Ruby",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:44"
+        },
+        {
+          "cls": "LightningWand",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:45"
+        },
+        {
+          "cls": "FireWand",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:46"
+        },
+        {
+          "cls": "HoldWand",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:47"
+        },
+        {
+          "cls": "TruceScroll",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/ghostt.kod:48"
+        }
+      ],
+      "monsters": [
+        "Ghost"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 7/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 6 instead (kod/object/passive/trestype.kod:270). 1 monster(s) using this type carry MOB_ONE_TREASURE and roll exactly one item."
+    },
+    "TID_HIGH_HUMAN": {
+      "value": 33,
+      "cite": "kod/include/blakston.khd:1572",
+      "class": "HighHumanTreasure",
+      "classCite": "kod/object/passive/trestype/highhumt.kod:11",
+      "numCite": "kod/object/passive/trestype/highhumt.kod:22",
+      "diffSeed": 3,
+      "diffSeedCite": "kod/object/passive/trestype/highhumt.kod:24",
+      "itemAttChancePer400": 2,
+      "itemAttChanceCite": "kod/object/passive/trestype/highhumt.kod:25",
+      "rawWeightTotal": 104,
+      "money": {
+        "min": 91,
+        "max": 271,
+        "levelRange": [
+          90,
+          90
+        ],
+        "chancePercent": 6,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 90..90, the levels of the 1 Monster subclass(es) that resolve to TID_HIGH_HUMAN. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "Meatpie",
+          "chancePercent": 25,
+          "exactChancePercent": 25.743,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:31"
+        },
+        {
+          "cls": "GoldShield",
+          "chancePercent": 7,
+          "exactChancePercent": 6.931,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:32"
+        },
+        {
+          "cls": "Gauntlet",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:33"
+        },
+        {
+          "cls": "LongSword",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:34"
+        },
+        {
+          "cls": "HealWand",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:35"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:36"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:37"
+        },
+        {
+          "cls": "Diamond",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:38"
+        },
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:39"
+        },
+        {
+          "cls": "RingofLethargy",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:40"
+        },
+        {
+          "cls": "AcidRing",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:41"
+        },
+        {
+          "cls": "FireRing",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:42"
+        },
+        {
+          "cls": "ColdRing",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:43"
+        },
+        {
+          "cls": "ShockRing",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:44"
+        },
+        {
+          "cls": "ScaleArmor",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:45"
+        },
+        {
+          "cls": "VampireWand",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:46"
+        },
+        {
+          "cls": "Scepter",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:47"
+        },
+        {
+          "cls": "DarkAngelFeather",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:48"
+        },
+        {
+          "cls": "BlueDragonScale",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:49"
+        },
+        {
+          "cls": "FreeActionPotion",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/highhumt.kod:50"
+        }
+      ],
+      "monsters": [
+        "Troll"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 2/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 3 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_ICE_PERSON": {
+      "value": 55,
+      "cite": "kod/include/blakston.khd:1595",
+      "class": "IcePersonTreasure",
+      "classCite": "kod/object/passive/trestype/icepert.kod:11",
+      "numCite": "kod/object/passive/trestype/icepert.kod:22",
+      "diffSeed": 6,
+      "diffSeedCite": "kod/object/passive/trestype/icepert.kod:24",
+      "itemAttChancePer400": 4,
+      "itemAttChanceCite": "kod/object/passive/trestype/icepert.kod:23",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "Waterskin",
+          "chancePercent": 30,
+          "exactChancePercent": 30.693,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/icepert.kod:31"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 25,
+          "exactChancePercent": 24.752,
+          "weight": 25,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/icepert.kod:32"
+        },
+        {
+          "cls": "Diamond",
+          "chancePercent": 25,
+          "exactChancePercent": 24.752,
+          "weight": 25,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/icepert.kod:33"
+        },
+        {
+          "cls": "InkyCap",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/icepert.kod:34"
+        },
+        {
+          "cls": "PurpleMushroom",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/icepert.kod:35"
+        },
+        {
+          "cls": "FireRing",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/icepert.kod:36"
+        }
+      ],
+      "monsters": [
+        "Iceperson"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 4/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 6 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_LICH": {
+      "value": 42,
+      "cite": "kod/include/blakston.khd:1582",
+      "class": "LichTreasure",
+      "classCite": "kod/object/passive/trestype/licht.kod:11",
+      "numCite": "kod/object/passive/trestype/licht.kod:22",
+      "diffSeed": 10,
+      "diffSeedCite": "kod/object/passive/trestype/licht.kod:24",
+      "itemAttChancePer400": 10,
+      "itemAttChanceCite": "kod/object/passive/trestype/licht.kod:23",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "IvyCirclet",
+          "chancePercent": 20,
+          "exactChancePercent": 20.792,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/licht.kod:31"
+        },
+        {
+          "cls": "Scimitar",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/licht.kod:32"
+        },
+        {
+          "cls": "PlateArmor",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/licht.kod:33"
+        },
+        {
+          "cls": "LongSword",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/licht.kod:34"
+        },
+        {
+          "cls": "OrcShield",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/licht.kod:35"
+        },
+        {
+          "cls": "Knightshield",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/licht.kod:36"
+        },
+        {
+          "cls": "MysticSword",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/licht.kod:37"
+        },
+        {
+          "cls": "RingInvisibility",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/licht.kod:38"
+        },
+        {
+          "cls": "FireRing",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/licht.kod:39"
+        },
+        {
+          "cls": "SeduceWand",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/licht.kod:40"
+        },
+        {
+          "cls": "BlindWand",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/licht.kod:41"
+        }
+      ],
+      "monsters": [
+        "Lich"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 10/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 10 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_LOW_HUMAN": {
+      "value": 31,
+      "cite": "kod/include/blakston.khd:1570",
+      "class": "LowHumanTreasure",
+      "classCite": "kod/object/passive/trestype/lowhumt.kod:11",
+      "numCite": "kod/object/passive/trestype/lowhumt.kod:22",
+      "diffSeed": 0,
+      "diffSeedCite": null,
+      "itemAttChancePer400": 0,
+      "itemAttChanceCite": null,
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 61,
+        "max": 181,
+        "levelRange": [
+          60,
+          60
+        ],
+        "chancePercent": 10,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 60..60, the levels of the 1 Monster subclass(es) that resolve to TID_LOW_HUMAN. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "Herbs",
+          "chancePercent": 17,
+          "exactChancePercent": 17.822,
+          "weight": 17,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lowhumt.kod:28"
+        },
+        {
+          "cls": "Mushroom",
+          "chancePercent": 13,
+          "exactChancePercent": 12.871,
+          "weight": 13,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lowhumt.kod:29"
+        },
+        {
+          "cls": "Mace",
+          "chancePercent": 12,
+          "exactChancePercent": 11.881,
+          "weight": 12,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lowhumt.kod:30"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lowhumt.kod:31"
+        },
+        {
+          "cls": "Mug",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lowhumt.kod:32"
+        },
+        {
+          "cls": "ElderBerry",
+          "chancePercent": 9,
+          "exactChancePercent": 8.911,
+          "weight": 9,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lowhumt.kod:33"
+        },
+        {
+          "cls": "Apple",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lowhumt.kod:34"
+        },
+        {
+          "cls": "ShortSword",
+          "chancePercent": 7,
+          "exactChancePercent": 6.931,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lowhumt.kod:35"
+        },
+        {
+          "cls": "MetalShield",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lowhumt.kod:36"
+        },
+        {
+          "cls": "LeatherArmor",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lowhumt.kod:37"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lowhumt.kod:38"
+        }
+      ],
+      "monsters": [
+        "flytrap"
+      ],
+      "notes": "piDiff_seed is 0, so this type never generates item-attributed (\"magic\") items."
+    },
+    "TID_LUPOGG_KING": {
+      "value": 40,
+      "cite": "kod/include/blakston.khd:1580",
+      "class": "LupoggKingTreasure",
+      "classCite": "kod/object/passive/trestype/lupkingt.kod:11",
+      "numCite": "kod/object/passive/trestype/lupkingt.kod:22",
+      "diffSeed": 10,
+      "diffSeedCite": "kod/object/passive/trestype/lupkingt.kod:24",
+      "itemAttChancePer400": 10,
+      "itemAttChanceCite": "kod/object/passive/trestype/lupkingt.kod:23",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "LongSword",
+          "chancePercent": 20,
+          "exactChancePercent": 20.792,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:31"
+        },
+        {
+          "cls": "Scimitar",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:32"
+        },
+        {
+          "cls": "PlateArmor",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:33"
+        },
+        {
+          "cls": "IvyCirclet",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:34"
+        },
+        {
+          "cls": "OrcShield",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:35"
+        },
+        {
+          "cls": "Knightshield",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:36"
+        },
+        {
+          "cls": "RingInvisibility",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:37"
+        },
+        {
+          "cls": "AcidRing",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:38"
+        },
+        {
+          "cls": "MysticSword",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:39"
+        },
+        {
+          "cls": "FineLute",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:40"
+        },
+        {
+          "cls": "ResistAcidPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:41"
+        },
+        {
+          "cls": "JalaNecklace",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:42"
+        },
+        {
+          "cls": "DiscordScroll",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/lupkingt.kod:43"
+        }
+      ],
+      "monsters": [
+        "LupoggKing"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 10/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 10 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_MEDIUM_HUMAN": {
+      "value": 32,
+      "cite": "kod/include/blakston.khd:1571",
+      "class": "MediumHumanTreasure",
+      "classCite": "kod/object/passive/trestype/medhumt.kod:11",
+      "numCite": "kod/object/passive/trestype/medhumt.kod:22",
+      "diffSeed": 2,
+      "diffSeedCite": "kod/object/passive/trestype/medhumt.kod:23",
+      "itemAttChancePer400": 2,
+      "itemAttChanceCite": "kod/object/passive/trestype/medhumt.kod:24",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "Solagh",
+          "chancePercent": 40,
+          "exactChancePercent": 40.594,
+          "weight": 40,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/medhumt.kod:30"
+        },
+        {
+          "cls": "DragonflyEye",
+          "chancePercent": 30,
+          "exactChancePercent": 29.703,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/medhumt.kod:31"
+        },
+        {
+          "cls": "UncutSeraphym",
+          "chancePercent": 30,
+          "exactChancePercent": 29.703,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/medhumt.kod:32"
+        }
+      ],
+      "monsters": [
+        "StoneTroll"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 2/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 2 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_MEDIUM_TOUGH": {
+      "value": 5,
+      "cite": "kod/include/blakston.khd:1555",
+      "class": "MediumToughTreasure",
+      "classCite": "kod/object/passive/trestype/med-tght.kod:11",
+      "numCite": "kod/object/passive/trestype/med-tght.kod:22",
+      "diffSeed": 4,
+      "diffSeedCite": "kod/object/passive/trestype/med-tght.kod:25",
+      "itemAttChancePer400": 1,
+      "itemAttChanceCite": "kod/object/passive/trestype/med-tght.kod:26",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 30,
+          "exactChancePercent": 30.693,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:32"
+        },
+        {
+          "cls": "Snack",
+          "chancePercent": 16,
+          "exactChancePercent": 15.842,
+          "weight": 16,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:33"
+        },
+        {
+          "cls": "PurpleMushroom",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:34"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:35"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:36"
+        },
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:37"
+        },
+        {
+          "cls": "Diamond",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:38"
+        },
+        {
+          "cls": "Ruby",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:39"
+        },
+        {
+          "cls": "LeatherArmor",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:40"
+        },
+        {
+          "cls": "LongSword",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:41"
+        },
+        {
+          "cls": "Hammer",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:42"
+        },
+        {
+          "cls": "Axe",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:43"
+        },
+        {
+          "cls": "ChainArmor",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:44"
+        },
+        {
+          "cls": "LightScroll",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/med-tght.kod:45"
+        }
+      ],
+      "monsters": [
+        "LivingStatue",
+        "Scorpion",
+        "Spider"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 1/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 4 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_MEDIUM": {
+      "value": 4,
+      "cite": "kod/include/blakston.khd:1554",
+      "class": "MediumTreasure",
+      "classCite": "kod/object/passive/trestype/mediumt.kod:11",
+      "numCite": "kod/object/passive/trestype/mediumt.kod:22",
+      "diffSeed": 1,
+      "diffSeedCite": "kod/object/passive/trestype/mediumt.kod:23",
+      "itemAttChancePer400": 1,
+      "itemAttChanceCite": "kod/object/passive/trestype/mediumt.kod:24",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "ElderBerry",
+          "chancePercent": 30,
+          "exactChancePercent": 30.693,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mediumt.kod:30"
+        },
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 17,
+          "exactChancePercent": 16.832,
+          "weight": 17,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mediumt.kod:31"
+        },
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 17,
+          "exactChancePercent": 16.832,
+          "weight": 17,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mediumt.kod:32"
+        },
+        {
+          "cls": "PurpleMushroom",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mediumt.kod:33"
+        },
+        {
+          "cls": "Snack",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mediumt.kod:34"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mediumt.kod:35"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mediumt.kod:36"
+        }
+      ],
+      "monsters": [
+        "FungusBeast"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 1/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 1 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_MUMMY": {
+      "value": 52,
+      "cite": "kod/include/blakston.khd:1592",
+      "class": "MummyTreasure",
+      "classCite": "kod/object/passive/trestype/mummytrs.kod:11",
+      "numCite": "kod/object/passive/trestype/mummytrs.kod:22",
+      "diffSeed": 1,
+      "diffSeedCite": "kod/object/passive/trestype/mummytrs.kod:25",
+      "itemAttChancePer400": 4,
+      "itemAttChanceCite": "kod/object/passive/trestype/mummytrs.kod:26",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 41,
+        "max": 121,
+        "levelRange": [
+          40,
+          40
+        ],
+        "chancePercent": 17,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 40..40, the levels of the 1 Monster subclass(es) that resolve to TID_MUMMY. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "Money",
+          "chancePercent": 17,
+          "exactChancePercent": 17.822,
+          "weight": 17,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:32"
+        },
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:33"
+        },
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:34"
+        },
+        {
+          "cls": "Mushroom",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:35"
+        },
+        {
+          "cls": "Herbs",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:36"
+        },
+        {
+          "cls": "ElderBerry",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:37"
+        },
+        {
+          "cls": "Torch",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:38"
+        },
+        {
+          "cls": "EntrootBerry",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:39"
+        },
+        {
+          "cls": "Mace",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:40"
+        },
+        {
+          "cls": "ShortSword",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:41"
+        },
+        {
+          "cls": "LongSword",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:42"
+        },
+        {
+          "cls": "OrcTooth",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:43"
+        },
+        {
+          "cls": "MetalShield",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/mummytrs.kod:44"
+        }
+      ],
+      "monsters": [
+        "SpectralMummy"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 4/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 1 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_NARTHYL_WORM": {
+      "value": 43,
+      "cite": "kod/include/blakston.khd:1583",
+      "class": "NarthylWormTreasure",
+      "classCite": "kod/object/passive/trestype/narthylt.kod:11",
+      "numCite": "kod/object/passive/trestype/narthylt.kod:22",
+      "diffSeed": 7,
+      "diffSeedCite": "kod/object/passive/trestype/narthylt.kod:25",
+      "itemAttChancePer400": 4,
+      "itemAttChanceCite": "kod/object/passive/trestype/narthylt.kod:24",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "BlueDragonScale",
+          "chancePercent": 15,
+          "exactChancePercent": 15.842,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:31"
+        },
+        {
+          "cls": "DarkAngelFeather",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:32"
+        },
+        {
+          "cls": "NightVisionPotion",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:33"
+        },
+        {
+          "cls": "KaraholsCursePotion",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:34"
+        },
+        {
+          "cls": "CloakPotion",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:35"
+        },
+        {
+          "cls": "FireRing",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:36"
+        },
+        {
+          "cls": "ColdRing",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:37"
+        },
+        {
+          "cls": "ShockRing",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:38"
+        },
+        {
+          "cls": "BerserkerRing",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:39"
+        },
+        {
+          "cls": "ResistShockPotion",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:40"
+        },
+        {
+          "cls": "FeignDeathPotion",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:41"
+        },
+        {
+          "cls": "ResistMagicPotion",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:42"
+        },
+        {
+          "cls": "BaitPotion",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/narthylt.kod:43"
+        }
+      ],
+      "monsters": [
+        "NarthylWorm"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 4/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 7 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_NEWBIE_AREA": {
+      "value": 30,
+      "cite": "kod/include/blakston.khd:1568",
+      "class": "NewbieAreaTreasure",
+      "classCite": "kod/object/passive/trestype/newbietrs.kod:11",
+      "numCite": "kod/object/passive/trestype/newbietrs.kod:25",
+      "diffSeed": 0,
+      "diffSeedCite": null,
+      "itemAttChancePer400": 0,
+      "itemAttChanceCite": null,
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 30,
+          "exactChancePercent": 30.693,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/newbietrs.kod:31"
+        },
+        {
+          "cls": "EntrootBerry",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/newbietrs.kod:32"
+        },
+        {
+          "cls": "Ruby",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/newbietrs.kod:33"
+        },
+        {
+          "cls": "Snack",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/newbietrs.kod:34"
+        },
+        {
+          "cls": "OrcTooth",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/newbietrs.kod:35"
+        },
+        {
+          "cls": "Mace",
+          "chancePercent": 7,
+          "exactChancePercent": 6.931,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/newbietrs.kod:36"
+        },
+        {
+          "cls": "Herbs",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/newbietrs.kod:37"
+        }
+      ],
+      "monsters": [
+        "BlackMummy",
+        "Mummy"
+      ],
+      "notes": "piDiff_seed is 0, so this type never generates item-attributed (\"magic\") items."
+    },
+    "TID_NONE": {
+      "value": 1,
+      "cite": "kod/include/blakston.khd:1549",
+      "class": "NoTreasure",
+      "classCite": "kod/object/passive/trestype/notres.kod:11",
+      "numCite": "kod/object/passive/trestype/notres.kod:22",
+      "diffSeed": 0,
+      "diffSeedCite": null,
+      "itemAttChancePer400": 0,
+      "itemAttChanceCite": null,
+      "rawWeightTotal": 0,
+      "money": null,
+      "items": [],
+      "monsters": [
+        "Assassin",
+        "BarloqueApothecary",
+        "BarloqueBanker",
+        "BarloqueBartender",
+        "BarloqueBlacksmith",
+        "BarloqueClerk",
+        "BarloqueInnkeeper",
+        "BarloqueMerchant",
+        "BarloqueTown",
+        "Barloquetailor",
+        "BasicInnKeeper",
+        "Brambles",
+        "CorNothInnkeeper",
+        "CorNothSergeant",
+        "CorNothTailor",
+        "CorNothTown",
+        "CornothGrocer",
+        "Council",
+        "Cow",
+        "DarkWizard",
+        "DeadLich",
+        "Decorator",
+        "DragonFlyPet",
+        "DukeGuard",
+        "DukeLiege",
+        "DukeTroop",
+        "EvilTwin",
+        "FactionTroop",
+        "Factions",
+        "FarenPriestess",
+        "FiveCouncilor",
+        "Goad",
+        "GraphicTester",
+        "Guard",
+        "GuildCreator",
+        "HazarApothecary",
+        "HazarBartender",
+        "HazarBlacksmith",
+        "HazarElder",
+        "HazarInnKeeper",
+        "HazarTown",
+        "Heretic",
+        "HunterGhost",
+        "Izzio",
+        "JasperBanker",
+        "JasperBartender",
+        "JasperBlacksmith",
+        "JasperElder",
+        "JasperInnKeeper",
+        "JasperMerchant",
+        "JasperTown",
+        "JealousGeneral",
+        "KocatanApothecary",
+        "KocatanBanker",
+        "KocatanBartender",
+        "KocatanBlacksmith",
+        "KocatanBonePriestess",
+        "KocatanBowMaker",
+        "KocatanCaptainEvil",
+        "KocatanCaptainGood",
+        "KocatanInnkeeper",
+        "KocatanLanguageMaster",
+        "KocatanMadScientist",
+        "KocatanShopkeeper",
+        "KocatanTailor",
+        "KocatanTown",
+        "KocatanVaultman",
+        "KocatanWeaponsMaster",
+        "Kocatansentry",
+        "KraananPriestess",
+        "MarionBartender",
+        "MarionBlacksmith",
+        "MarionElder",
+        "MarionHealer",
+        "MarionInnkeeper",
+        "MarionTown",
+        "Minstrel",
+        "MummyNoTreasure",
+        "NecromancerTroop",
+        "OneCouncilor",
+        "OrcPitBossBody",
+        "Priestess",
+        "PrincessGuard",
+        "PrincessLiege",
+        "PrincessTroop",
+        "QorPriestess",
+        "RebelLiege",
+        "RebelTroop",
+        "Reflection",
+        "Revenant",
+        "RiijaMonk",
+        "ShalillePriestess",
+        "Temples",
+        "Thief",
+        "ThreeCouncilor",
+        "TosApothecary",
+        "TosBanker",
+        "TosBlacksmith",
+        "TosInnKeeper",
+        "TosTown",
+        "TosWatcher",
+        "Towns",
+        "TwoCouncilor",
+        "Wanderer",
+        "XeoAir",
+        "XeoEarth",
+        "XeoFire",
+        "XeoWater",
+        "Xeochicatl",
+        "barloqueVaultman",
+        "fourCouncilor",
+        "kocatanTradeMaster"
+      ],
+      "notes": "Declares no plTreasure table: GenerateTreasure falls through and returns $. piDiff_seed is 0, so this type never generates item-attributed (\"magic\") items."
+    },
+    "TID_ORC_CHIEF": {
+      "value": 36,
+      "cite": "kod/include/blakston.khd:1576",
+      "class": "OrcPitBossTreasure",
+      "classCite": "kod/object/passive/trestype/orcpitt.kod:11",
+      "numCite": "kod/object/passive/trestype/orcpitt.kod:22",
+      "diffSeed": 6,
+      "diffSeedCite": "kod/object/passive/trestype/orcpitt.kod:24",
+      "itemAttChancePer400": 6,
+      "itemAttChanceCite": "kod/object/passive/trestype/orcpitt.kod:23",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 115,
+        "max": 345,
+        "levelRange": [
+          115,
+          115
+        ],
+        "chancePercent": 2,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 115..115, the levels of the 1 Monster subclass(es) that resolve to TID_ORC_CHIEF. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "OrcTooth",
+          "chancePercent": 40,
+          "exactChancePercent": 40.594,
+          "weight": 40,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:31"
+        },
+        {
+          "cls": "Scimitar",
+          "chancePercent": 12,
+          "exactChancePercent": 11.881,
+          "weight": 12,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:32"
+        },
+        {
+          "cls": "Arrow",
+          "chancePercent": 12,
+          "exactChancePercent": 11.881,
+          "weight": 12,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:33"
+        },
+        {
+          "cls": "NeruditeArmor",
+          "chancePercent": 9,
+          "exactChancePercent": 8.911,
+          "weight": 9,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:34"
+        },
+        {
+          "cls": "NeruditeSword",
+          "chancePercent": 9,
+          "exactChancePercent": 8.911,
+          "weight": 9,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:35"
+        },
+        {
+          "cls": "OreChunk",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:36"
+        },
+        {
+          "cls": "UncutSeraphym",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:37"
+        },
+        {
+          "cls": "Flask",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:38"
+        },
+        {
+          "cls": "OrcShield",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:39"
+        },
+        {
+          "cls": "PlateArmor",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:40"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:41"
+        },
+        {
+          "cls": "HoldWand",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:42"
+        },
+        {
+          "cls": "BlindWand",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:43"
+        },
+        {
+          "cls": "HeatScroll",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcpitt.kod:44"
+        }
+      ],
+      "monsters": [
+        "OrcPitBoss"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 6/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 6 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_ORC": {
+      "value": 25,
+      "cite": "kod/include/blakston.khd:1563",
+      "class": "OrcTreasure",
+      "classCite": "kod/object/passive/trestype/orctres.kod:11",
+      "numCite": "kod/object/passive/trestype/orctres.kod:22",
+      "diffSeed": 1,
+      "diffSeedCite": "kod/object/passive/trestype/orctres.kod:26",
+      "itemAttChancePer400": 5,
+      "itemAttChanceCite": "kod/object/passive/trestype/orctres.kod:25",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 45,
+        "max": 135,
+        "levelRange": [
+          45,
+          45
+        ],
+        "chancePercent": 2,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 45..45, the levels of the 1 Monster subclass(es) that resolve to TID_ORC. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "OrcTooth",
+          "chancePercent": 40,
+          "exactChancePercent": 40.594,
+          "weight": 40,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orctres.kod:32"
+        },
+        {
+          "cls": "PurpleMushroom",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orctres.kod:33"
+        },
+        {
+          "cls": "Scimitar",
+          "chancePercent": 16,
+          "exactChancePercent": 15.842,
+          "weight": 16,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orctres.kod:34"
+        },
+        {
+          "cls": "MetalShield",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orctres.kod:35"
+        },
+        {
+          "cls": "LeatherArmor",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orctres.kod:36"
+        },
+        {
+          "cls": "ShadowAmulet",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orctres.kod:37"
+        },
+        {
+          "cls": "RingofLethargy",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orctres.kod:38"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orctres.kod:39"
+        },
+        {
+          "cls": "DarknessScroll",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orctres.kod:40"
+        }
+      ],
+      "monsters": [
+        "Orc"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 5/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 1 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_ORC_WIZARD": {
+      "value": 35,
+      "cite": "kod/include/blakston.khd:1575",
+      "class": "OrcWizardTreasure",
+      "classCite": "kod/object/passive/trestype/orcwizt.kod:11",
+      "numCite": "kod/object/passive/trestype/orcwizt.kod:22",
+      "diffSeed": 4,
+      "diffSeedCite": "kod/object/passive/trestype/orcwizt.kod:24",
+      "itemAttChancePer400": 8,
+      "itemAttChanceCite": "kod/object/passive/trestype/orcwizt.kod:23",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 81,
+        "max": 241,
+        "levelRange": [
+          80,
+          80
+        ],
+        "chancePercent": 2,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 80..80, the levels of the 1 Monster subclass(es) that resolve to TID_ORC_WIZARD. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "OrcTooth",
+          "chancePercent": 35,
+          "exactChancePercent": 35.644,
+          "weight": 35,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:30"
+        },
+        {
+          "cls": "UncutSeraphym",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:31"
+        },
+        {
+          "cls": "SlitherWand",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:32"
+        },
+        {
+          "cls": "DragonflyEye",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:33"
+        },
+        {
+          "cls": "Solagh",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:34"
+        },
+        {
+          "cls": "PurpleMushroom",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:35"
+        },
+        {
+          "cls": "Torch",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:36"
+        },
+        {
+          "cls": "DiscipleRobe",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:37"
+        },
+        {
+          "cls": "Gauntlet",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:38"
+        },
+        {
+          "cls": "Flask",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:39"
+        },
+        {
+          "cls": "Lute",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:40"
+        },
+        {
+          "cls": "PolishedSeraphym",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:41"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:42"
+        },
+        {
+          "cls": "StaffOfJolting",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:43"
+        },
+        {
+          "cls": "DispellIllusionScroll",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/orcwizt.kod:44"
+        }
+      ],
+      "monsters": [
+        "OrcWizard"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 8/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 4 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_RAT": {
+      "value": 27,
+      "cite": "kod/include/blakston.khd:1565",
+      "class": "RatTreasure",
+      "classCite": "kod/object/passive/trestype/rattres.kod:11",
+      "numCite": "kod/object/passive/trestype/rattres.kod:22",
+      "diffSeed": 0,
+      "diffSeedCite": null,
+      "itemAttChancePer400": 0,
+      "itemAttChanceCite": null,
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 31,
+        "max": 181,
+        "levelRange": [
+          30,
+          60
+        ],
+        "chancePercent": 10,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 30..60, the levels of the 3 Monster subclass(es) that resolve to TID_RAT. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "Herbs",
+          "chancePercent": 30,
+          "exactChancePercent": 30.693,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/rattres.kod:28"
+        },
+        {
+          "cls": "Mushroom",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/rattres.kod:29"
+        },
+        {
+          "cls": "ElderBerry",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/rattres.kod:30"
+        },
+        {
+          "cls": "Snack",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/rattres.kod:31"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/rattres.kod:32"
+        },
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/rattres.kod:33"
+        },
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/rattres.kod:34"
+        }
+      ],
+      "monsters": [
+        "DuskRat",
+        "GiantRat",
+        "SnowRat"
+      ],
+      "notes": "piDiff_seed is 0, so this type never generates item-attributed (\"magic\") items."
+    },
+    "TID_SKELETON2": {
+      "value": 44,
+      "cite": "kod/include/blakston.khd:1584",
+      "class": "Skeleton2Treasure",
+      "classCite": "kod/object/passive/trestype/skel2t.kod:11",
+      "numCite": "kod/object/passive/trestype/skel2t.kod:22",
+      "diffSeed": 2,
+      "diffSeedCite": "kod/object/passive/trestype/skel2t.kod:25",
+      "itemAttChancePer400": 6,
+      "itemAttChanceCite": "kod/object/passive/trestype/skel2t.kod:24",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 61,
+        "max": 181,
+        "levelRange": [
+          60,
+          60
+        ],
+        "chancePercent": 15,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 60..60, the levels of the 1 Monster subclass(es) that resolve to TID_SKELETON2. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "Mushroom",
+          "chancePercent": 25,
+          "exactChancePercent": 25.743,
+          "weight": 25,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel2t.kod:31"
+        },
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel2t.kod:32"
+        },
+        {
+          "cls": "Snack",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel2t.kod:33"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel2t.kod:34"
+        },
+        {
+          "cls": "NeruditeArrow",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel2t.kod:35"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel2t.kod:36"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel2t.kod:37"
+        },
+        {
+          "cls": "InkyCap",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel2t.kod:38"
+        },
+        {
+          "cls": "Knightshield",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel2t.kod:39"
+        },
+        {
+          "cls": "DiscordScroll",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel2t.kod:40"
+        },
+        {
+          "cls": "IdentifyWand",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel2t.kod:41"
+        }
+      ],
+      "monsters": [
+        "BatteredSkeleton"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 6/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 2 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_SKELETON3": {
+      "value": 45,
+      "cite": "kod/include/blakston.khd:1585",
+      "class": "Skeleton3Treasure",
+      "classCite": "kod/object/passive/trestype/skel3t.kod:11",
+      "numCite": "kod/object/passive/trestype/skel3t.kod:22",
+      "diffSeed": 6,
+      "diffSeedCite": "kod/object/passive/trestype/skel3t.kod:25",
+      "itemAttChancePer400": 3,
+      "itemAttChanceCite": "kod/object/passive/trestype/skel3t.kod:24",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 101,
+        "max": 301,
+        "levelRange": [
+          100,
+          100
+        ],
+        "chancePercent": 12,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 100..100, the levels of the 1 Monster subclass(es) that resolve to TID_SKELETON3. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "NeruditeArrow",
+          "chancePercent": 15,
+          "exactChancePercent": 15.842,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel3t.kod:31"
+        },
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel3t.kod:32"
+        },
+        {
+          "cls": "Snack",
+          "chancePercent": 14,
+          "exactChancePercent": 13.861,
+          "weight": 14,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel3t.kod:33"
+        },
+        {
+          "cls": "InkyCap",
+          "chancePercent": 13,
+          "exactChancePercent": 12.871,
+          "weight": 13,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel3t.kod:34"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 12,
+          "exactChancePercent": 11.881,
+          "weight": 12,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel3t.kod:35"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel3t.kod:36"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel3t.kod:37"
+        },
+        {
+          "cls": "Diamond",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel3t.kod:38"
+        },
+        {
+          "cls": "ScaleArmor",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel3t.kod:39"
+        },
+        {
+          "cls": "Gauntlet",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel3t.kod:40"
+        },
+        {
+          "cls": "SimpleHelm",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel3t.kod:41"
+        }
+      ],
+      "monsters": [
+        "TuskedSkeleton"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 3/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 6 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_SKELETON4": {
+      "value": 46,
+      "cite": "kod/include/blakston.khd:1586",
+      "class": "Skeleton4Treasure",
+      "classCite": "kod/object/passive/trestype/skel4t.kod:11",
+      "numCite": "kod/object/passive/trestype/skel4t.kod:25",
+      "diffSeed": 9,
+      "diffSeedCite": "kod/object/passive/trestype/skel4t.kod:28",
+      "itemAttChancePer400": 3,
+      "itemAttChanceCite": "kod/object/passive/trestype/skel4t.kod:27",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 131,
+        "max": 391,
+        "levelRange": [
+          130,
+          130
+        ],
+        "chancePercent": 7,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 130..130, the levels of the 1 Monster subclass(es) that resolve to TID_SKELETON4. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 25,
+          "exactChancePercent": 25.743,
+          "weight": 25,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:34"
+        },
+        {
+          "cls": "BlueDragonScale",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:35"
+        },
+        {
+          "cls": "SilverArrow",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:36"
+        },
+        {
+          "cls": "DarkAngelFeather",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:37"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:38"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:39"
+        },
+        {
+          "cls": "Diamond",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:40"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 7,
+          "exactChancePercent": 6.931,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:41"
+        },
+        {
+          "cls": "InkyCap",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:42"
+        },
+        {
+          "cls": "KillingFieldScroll",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:43"
+        },
+        {
+          "cls": "Circlet",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:44"
+        },
+        {
+          "cls": "DementWand",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:45"
+        },
+        {
+          "cls": "EnfeebleWand",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:46"
+        },
+        {
+          "cls": "ForgetWand",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/skel4t.kod:47"
+        }
+      ],
+      "monsters": [
+        "DaemonSkeleton"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 3/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 9 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_SPIDER_QUEEN": {
+      "value": 23,
+      "cite": "kod/include/blakston.khd:1561",
+      "class": "SpiderQueenTreasure",
+      "classCite": "kod/object/passive/trestype/spquent.kod:11",
+      "numCite": "kod/object/passive/trestype/spquent.kod:22",
+      "diffSeed": 5,
+      "diffSeedCite": "kod/object/passive/trestype/spquent.kod:26",
+      "itemAttChancePer400": 5,
+      "itemAttChanceCite": "kod/object/passive/trestype/spquent.kod:27",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "SpiderEgg",
+          "chancePercent": 40,
+          "exactChancePercent": 40.594,
+          "weight": 40,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/spquent.kod:33"
+        },
+        {
+          "cls": "BerserkerRing",
+          "chancePercent": 11,
+          "exactChancePercent": 10.891,
+          "weight": 11,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/spquent.kod:34"
+        },
+        {
+          "cls": "FireRing",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/spquent.kod:35"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/spquent.kod:36"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/spquent.kod:37"
+        },
+        {
+          "cls": "Diamond",
+          "chancePercent": 7,
+          "exactChancePercent": 6.931,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/spquent.kod:38"
+        },
+        {
+          "cls": "BlueDragonScale",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/spquent.kod:39"
+        },
+        {
+          "cls": "Ruby",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/spquent.kod:40"
+        },
+        {
+          "cls": "DarkAngelFeather",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/spquent.kod:41"
+        }
+      ],
+      "monsters": [
+        "SpiderQueen"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 5/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 5 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_THRASHER": {
+      "value": 53,
+      "cite": "kod/include/blakston.khd:1593",
+      "class": "ThrasherTreasure",
+      "classCite": "kod/object/passive/trestype/thrasht.kod:11",
+      "numCite": "kod/object/passive/trestype/thrasht.kod:22",
+      "diffSeed": 6,
+      "diffSeedCite": "kod/object/passive/trestype/thrasht.kod:24",
+      "itemAttChancePer400": 6,
+      "itemAttChanceCite": "kod/object/passive/trestype/thrasht.kod:23",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 151,
+        "max": 451,
+        "levelRange": [
+          150,
+          150
+        ],
+        "chancePercent": 4,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 150..150, the levels of the 1 Monster subclass(es) that resolve to TID_THRASHER. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "BlueDragonScale",
+          "chancePercent": 18,
+          "exactChancePercent": 18.812,
+          "weight": 18,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/thrasht.kod:31"
+        },
+        {
+          "cls": "DarkAngelFeather",
+          "chancePercent": 18,
+          "exactChancePercent": 17.822,
+          "weight": 18,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/thrasht.kod:32"
+        },
+        {
+          "cls": "PurpleMushroom",
+          "chancePercent": 16,
+          "exactChancePercent": 15.842,
+          "weight": 16,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/thrasht.kod:33"
+        },
+        {
+          "cls": "InkyCap",
+          "chancePercent": 11,
+          "exactChancePercent": 10.891,
+          "weight": 11,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/thrasht.kod:34"
+        },
+        {
+          "cls": "ScaleArmor",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/thrasht.kod:35"
+        },
+        {
+          "cls": "LongSword",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/thrasht.kod:36"
+        },
+        {
+          "cls": "Torch",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/thrasht.kod:37"
+        },
+        {
+          "cls": "NightVisionPotion",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/thrasht.kod:38"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/thrasht.kod:39"
+        },
+        {
+          "cls": "BerserkerRing",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/thrasht.kod:40"
+        },
+        {
+          "cls": "MysticSword",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/thrasht.kod:41"
+        }
+      ],
+      "monsters": [
+        "Thrasher"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 6/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 6 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_TOUGH": {
+      "value": 6,
+      "cite": "kod/include/blakston.khd:1556",
+      "class": "ToughTreasure",
+      "classCite": "kod/object/passive/trestype/tought.kod:11",
+      "numCite": "kod/object/passive/trestype/tought.kod:22",
+      "diffSeed": 5,
+      "diffSeedCite": "kod/object/passive/trestype/tought.kod:26",
+      "itemAttChancePer400": 2,
+      "itemAttChanceCite": "kod/object/passive/trestype/tought.kod:27",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 25,
+          "exactChancePercent": 25.743,
+          "weight": 25,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/tought.kod:33"
+        },
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/tought.kod:34"
+        },
+        {
+          "cls": "Snack",
+          "chancePercent": 16,
+          "exactChancePercent": 15.842,
+          "weight": 16,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/tought.kod:35"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/tought.kod:36"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/tought.kod:37"
+        },
+        {
+          "cls": "Diamond",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/tought.kod:38"
+        },
+        {
+          "cls": "BlueDragonScale",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/tought.kod:39"
+        },
+        {
+          "cls": "Ruby",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/tought.kod:40"
+        },
+        {
+          "cls": "InkyCap",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/tought.kod:41"
+        },
+        {
+          "cls": "MartyrScroll",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/tought.kod:42"
+        }
+      ],
+      "monsters": [
+        "GroundWorm",
+        "MolluskMonster",
+        "RedAnt",
+        "Skeleton"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 2/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 5 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_VERY_TOUGH": {
+      "value": 7,
+      "cite": "kod/include/blakston.khd:1557",
+      "class": "VeryToughTreasure",
+      "classCite": "kod/object/passive/trestype/verytght.kod:11",
+      "numCite": "kod/object/passive/trestype/verytght.kod:22",
+      "diffSeed": 8,
+      "diffSeedCite": "kod/object/passive/trestype/verytght.kod:26",
+      "itemAttChancePer400": 2,
+      "itemAttChanceCite": "kod/object/passive/trestype/verytght.kod:25",
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 25,
+          "exactChancePercent": 25.743,
+          "weight": 25,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:32"
+        },
+        {
+          "cls": "InkyCap",
+          "chancePercent": 14,
+          "exactChancePercent": 13.861,
+          "weight": 14,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:33"
+        },
+        {
+          "cls": "PurpleMushroom",
+          "chancePercent": 12,
+          "exactChancePercent": 11.881,
+          "weight": 12,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:34"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 12,
+          "exactChancePercent": 11.881,
+          "weight": 12,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:35"
+        },
+        {
+          "cls": "Diamond",
+          "chancePercent": 9,
+          "exactChancePercent": 8.911,
+          "weight": 9,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:36"
+        },
+        {
+          "cls": "Ruby",
+          "chancePercent": 7,
+          "exactChancePercent": 6.931,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:37"
+        },
+        {
+          "cls": "BlueDragonScale",
+          "chancePercent": 7,
+          "exactChancePercent": 6.931,
+          "weight": 7,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:38"
+        },
+        {
+          "cls": "DarkAngelFeather",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:39"
+        },
+        {
+          "cls": "CloakPotion",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:40"
+        },
+        {
+          "cls": "HoldWand",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:41"
+        },
+        {
+          "cls": "MysticSword",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:42"
+        },
+        {
+          "cls": "PlateArmor",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:43"
+        },
+        {
+          "cls": "Key",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:44"
+        },
+        {
+          "cls": "EarthquakeScroll",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/verytght.kod:45"
+        }
+      ],
+      "monsters": [
+        "Lupogg",
+        "Shadowbeast",
+        "Yeti"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 2/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 8 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_WIMPY_MEDIUM": {
+      "value": 3,
+      "cite": "kod/include/blakston.khd:1553",
+      "class": "WimpyMediumTreasure",
+      "classCite": "kod/object/passive/trestype/wmp-medt.kod:11",
+      "numCite": "kod/object/passive/trestype/wmp-medt.kod:22",
+      "diffSeed": 0,
+      "diffSeedCite": null,
+      "itemAttChancePer400": 0,
+      "itemAttChanceCite": null,
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "Herbs",
+          "chancePercent": 20,
+          "exactChancePercent": 20.792,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wmp-medt.kod:28"
+        },
+        {
+          "cls": "Snack",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wmp-medt.kod:29"
+        },
+        {
+          "cls": "Mushroom",
+          "chancePercent": 17,
+          "exactChancePercent": 16.832,
+          "weight": 17,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wmp-medt.kod:30"
+        },
+        {
+          "cls": "ElderBerry",
+          "chancePercent": 15,
+          "exactChancePercent": 14.851,
+          "weight": 15,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wmp-medt.kod:31"
+        },
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wmp-medt.kod:32"
+        },
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wmp-medt.kod:33"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wmp-medt.kod:34"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wmp-medt.kod:35"
+        }
+      ],
+      "monsters": [
+        "Ant",
+        "Centipede",
+        "Slime"
+      ],
+      "notes": "piDiff_seed is 0, so this type never generates item-attributed (\"magic\") items."
+    },
+    "TID_WIMPY": {
+      "value": 2,
+      "cite": "kod/include/blakston.khd:1552",
+      "class": "WimpyTreasure",
+      "classCite": "kod/object/passive/trestype/wimptres.kod:11",
+      "numCite": "kod/object/passive/trestype/wimptres.kod:22",
+      "diffSeed": 0,
+      "diffSeedCite": null,
+      "itemAttChancePer400": 0,
+      "itemAttChanceCite": null,
+      "rawWeightTotal": 100,
+      "money": null,
+      "items": [
+        {
+          "cls": "Herbs",
+          "chancePercent": 30,
+          "exactChancePercent": 30.693,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wimptres.kod:28"
+        },
+        {
+          "cls": "ElderBerry",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wimptres.kod:29"
+        },
+        {
+          "cls": "Mushroom",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wimptres.kod:30"
+        },
+        {
+          "cls": "Snack",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wimptres.kod:31"
+        },
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wimptres.kod:32"
+        },
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wimptres.kod:33"
+        }
+      ],
+      "monsters": [
+        "BarloqueUrchin",
+        "CorNothUrchin",
+        "JasperUrchin",
+        "MarionUrchin",
+        "SpiderBaby",
+        "TosUrchin"
+      ],
+      "notes": "piDiff_seed is 0, so this type never generates item-attributed (\"magic\") items."
+    },
+    "TID_WORM_LARVA": {
+      "value": 48,
+      "cite": "kod/include/blakston.khd:1588",
+      "class": "WormLarvaTreasure",
+      "classCite": "kod/object/passive/trestype/wrmlarvt.kod:11",
+      "numCite": "kod/object/passive/trestype/wrmlarvt.kod:22",
+      "diffSeed": 0,
+      "diffSeedCite": null,
+      "itemAttChancePer400": 0,
+      "itemAttChanceCite": null,
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 35,
+        "max": 105,
+        "levelRange": [
+          35,
+          35
+        ],
+        "chancePercent": 20,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 35..35, the levels of the 1 Monster subclass(es) that resolve to TID_WORM_LARVA. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "Mushroom",
+          "chancePercent": 30,
+          "exactChancePercent": 30.693,
+          "weight": 30,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmlarvt.kod:28"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmlarvt.kod:29"
+        },
+        {
+          "cls": "Herbs",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmlarvt.kod:30"
+        },
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 20,
+          "exactChancePercent": 19.802,
+          "weight": 20,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmlarvt.kod:31"
+        },
+        {
+          "cls": "OrcTooth",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmlarvt.kod:32"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmlarvt.kod:33"
+        }
+      ],
+      "monsters": [
+        "GroundWormLarva"
+      ],
+      "notes": "piDiff_seed is 0, so this type never generates item-attributed (\"magic\") items."
+    },
+    "TID_WORM_QUEEN": {
+      "value": 49,
+      "cite": "kod/include/blakston.khd:1589",
+      "class": "WormQueenTreasure",
+      "classCite": "kod/object/passive/trestype/wrmquent.kod:11",
+      "numCite": "kod/object/passive/trestype/wrmquent.kod:22",
+      "diffSeed": 0,
+      "diffSeedCite": null,
+      "itemAttChancePer400": 0,
+      "itemAttChanceCite": null,
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 131,
+        "max": 391,
+        "levelRange": [
+          130,
+          130
+        ],
+        "chancePercent": 5,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 130..130, the levels of the 1 Monster subclass(es) that resolve to TID_WORM_QUEEN. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 13,
+          "exactChancePercent": 13.861,
+          "weight": 13,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:29"
+        },
+        {
+          "cls": "Diamond",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:30"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:31"
+        },
+        {
+          "cls": "Hammer",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:32"
+        },
+        {
+          "cls": "ChainArmor",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:33"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:34"
+        },
+        {
+          "cls": "Ruby",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:35"
+        },
+        {
+          "cls": "InkyCap",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:36"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:37"
+        },
+        {
+          "cls": "Axe",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:38"
+        },
+        {
+          "cls": "SimpleHelm",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:39"
+        },
+        {
+          "cls": "LongSword",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:40"
+        },
+        {
+          "cls": "GoldShield",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:41"
+        },
+        {
+          "cls": "MetalShield",
+          "chancePercent": 4,
+          "exactChancePercent": 3.96,
+          "weight": 4,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:42"
+        },
+        {
+          "cls": "Gauntlet",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:43"
+        },
+        {
+          "cls": "PurpleMushroom",
+          "chancePercent": 3,
+          "exactChancePercent": 2.97,
+          "weight": 3,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:44"
+        },
+        {
+          "cls": "ScaleArmor",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:45"
+        },
+        {
+          "cls": "UncutSeraphym",
+          "chancePercent": 2,
+          "exactChancePercent": 1.98,
+          "weight": 2,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:46"
+        },
+        {
+          "cls": "BerserkerRing",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:47"
+        },
+        {
+          "cls": "PlateArmor",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/wrmquent.kod:48"
+        }
+      ],
+      "monsters": [
+        "GroundWormQueen"
+      ],
+      "notes": "piDiff_seed is 0, so this type never generates item-attributed (\"magic\") items."
+    },
+    "TID_ZOMBIE": {
+      "value": 28,
+      "cite": "kod/include/blakston.khd:1566",
+      "class": "ZombieTreasure",
+      "classCite": "kod/object/passive/trestype/zombiet.kod:11",
+      "numCite": "kod/object/passive/trestype/zombiet.kod:22",
+      "diffSeed": 2,
+      "diffSeedCite": "kod/object/passive/trestype/zombiet.kod:25",
+      "itemAttChancePer400": 2,
+      "itemAttChanceCite": "kod/object/passive/trestype/zombiet.kod:26",
+      "rawWeightTotal": 100,
+      "money": {
+        "min": 55,
+        "max": 165,
+        "levelRange": [
+          55,
+          55
+        ],
+        "chancePercent": 8,
+        "formula": "shillings = 1 + (MoneyFactor * 2 * bound(random(level/2, 3*level/2), 1, inf)) / 100  [MoneyFactor = 100]",
+        "cite": "kod/object/passive/trestype.kod:302",
+        "notes": "min/max evaluated over viLevel 55..55, the levels of the 1 Monster subclass(es) that resolve to TID_ZOMBIE. level is the killed monster's viLevel (kod/object/active/holder/nomoveon/battler/monster.kod:4984); the +1 is Create(&Money)'s starting piNumber (kod/object/item/passitem/numbitem.kod:44)."
+      },
+      "items": [
+        {
+          "cls": "RedMushroom",
+          "chancePercent": 26,
+          "exactChancePercent": 26.733,
+          "weight": 26,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:32"
+        },
+        {
+          "cls": "Waterskin",
+          "chancePercent": 14,
+          "exactChancePercent": 13.861,
+          "weight": 14,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:33"
+        },
+        {
+          "cls": "Flask",
+          "chancePercent": 10,
+          "exactChancePercent": 9.901,
+          "weight": 10,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:34"
+        },
+        {
+          "cls": "Arsenic",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:35"
+        },
+        {
+          "cls": "Money",
+          "chancePercent": 8,
+          "exactChancePercent": 7.921,
+          "weight": 8,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:36"
+        },
+        {
+          "cls": "PurpleMushroom",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:37"
+        },
+        {
+          "cls": "Sapphire",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:38"
+        },
+        {
+          "cls": "Bread",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:39"
+        },
+        {
+          "cls": "Emerald",
+          "chancePercent": 6,
+          "exactChancePercent": 5.941,
+          "weight": 6,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:40"
+        },
+        {
+          "cls": "ShadowAmulet",
+          "chancePercent": 5,
+          "exactChancePercent": 4.95,
+          "weight": 5,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:41"
+        },
+        {
+          "cls": "BlueMushroom",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:42"
+        },
+        {
+          "cls": "GoldShield",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:43"
+        },
+        {
+          "cls": "ChainArmor",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:44"
+        },
+        {
+          "cls": "Axe",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:45"
+        },
+        {
+          "cls": "Hammer",
+          "chancePercent": 1,
+          "exactChancePercent": 0.99,
+          "weight": 1,
+          "count": 1,
+          "cite": "kod/object/passive/trestype/zombiet.kod:46"
+        }
+      ],
+      "monsters": [
+        "Zombie"
+      ],
+      "notes": "Before the table is consulted, a player-killed monster has a 2/400 chance (MagicItemModifier 100) of an item-attributed item at difficulty seed 2 instead (kod/object/passive/trestype.kod:270)."
+    },
+    "TID_UNDEAD": {
+      "value": 21,
+      "cite": "kod/include/blakston.khd:1559",
+      "class": null,
+      "classCite": null,
+      "numCite": null,
+      "diffSeed": 0,
+      "diffSeedCite": null,
+      "itemAttChancePer400": 0,
+      "itemAttChanceCite": null,
+      "rawWeightTotal": 0,
+      "money": null,
+      "items": [],
+      "monsters": [],
+      "notes": "Constant is declared but no TreasureType class claims it, so FindTreasureByNum returns $ and CreateTreasure bails with a debug line (kod/object/active/holder/nomoveon/battler/monster.kod:4952). Dead constant."
+    },
+    "TID_SPIDER_LAIR": {
+      "value": 22,
+      "cite": "kod/include/blakston.khd:1560",
+      "class": null,
+      "classCite": null,
+      "numCite": null,
+      "diffSeed": 0,
+      "diffSeedCite": null,
+      "itemAttChancePer400": 0,
+      "itemAttChanceCite": null,
+      "rawWeightTotal": 0,
+      "money": null,
+      "items": [],
+      "monsters": [],
+      "notes": "Constant is declared but no TreasureType class claims it, so FindTreasureByNum returns $ and CreateTreasure bails with a debug line (kod/object/active/holder/nomoveon/battler/monster.kod:4952). Dead constant."
+    },
+    "TID_FACTION_TROOP": {
+      "value": 50,
+      "cite": "kod/include/blakston.khd:1590",
+      "class": null,
+      "classCite": null,
+      "numCite": null,
+      "diffSeed": 0,
+      "diffSeedCite": null,
+      "itemAttChancePer400": 0,
+      "itemAttChanceCite": null,
+      "rawWeightTotal": 0,
+      "money": null,
+      "items": [],
+      "monsters": [],
+      "notes": "Constant is declared but no TreasureType class claims it, so FindTreasureByNum returns $ and CreateTreasure bails with a debug line (kod/object/active/holder/nomoveon/battler/monster.kod:4952). Dead constant."
+    }
+  },
+  "itemDroppedBy": {
+    "Longbow": [
+      "TID_AVAR_CHIEF"
+    ],
+    "Arrow": [
+      "TID_AVAR_CHIEF",
+      "TID_ORC_CHIEF"
+    ],
+    "NeruditeArrow": [
+      "TID_AVAR_CHIEF",
+      "TID_BLACK_SPIDER",
+      "TID_SKELETON2",
+      "TID_SKELETON3"
+    ],
+    "BattleBow": [
+      "TID_AVAR_CHIEF"
+    ],
+    "Money": [
+      "TID_AVAR",
+      "TID_AVAR_CHIEF",
+      "TID_CAVE_ORC",
+      "TID_DRAGONFLY",
+      "TID_HIGH_HUMAN",
+      "TID_LOW_HUMAN",
+      "TID_MUMMY",
+      "TID_ORC",
+      "TID_ORC_CHIEF",
+      "TID_ORC_WIZARD",
+      "TID_RAT",
+      "TID_SKELETON2",
+      "TID_SKELETON3",
+      "TID_SKELETON4",
+      "TID_THRASHER",
+      "TID_WORM_LARVA",
+      "TID_WORM_QUEEN",
+      "TID_ZOMBIE"
+    ],
+    "Lute": [
+      "TID_AVAR_CHIEF",
+      "TID_ORC_WIZARD"
+    ],
+    "PurifyWand": [
+      "TID_AVAR_CHIEF"
+    ],
+    "NeruditeArmor": [
+      "TID_AVAR",
+      "TID_AVAR_CHIEF",
+      "TID_ORC_CHIEF"
+    ],
+    "BrittleWand": [
+      "TID_AVAR_CHIEF"
+    ],
+    "KillingFieldScroll": [
+      "TID_AVAR_CHIEF",
+      "TID_SKELETON4"
+    ],
+    "ShamanBlood": [
+      "TID_AVAR_SHAMAN",
+      "TID_DARK_ANGEL"
+    ],
+    "Yrxlsap": [
+      "TID_AVAR",
+      "TID_AVAR_SHAMAN",
+      "TID_DRAGONFLY"
+    ],
+    "WebMoss": [
+      "TID_AVAR",
+      "TID_AVAR_SHAMAN",
+      "TID_DRAGONFLY"
+    ],
+    "RainbowFern": [
+      "TID_AVAR",
+      "TID_AVAR_SHAMAN",
+      "TID_DRAGONFLY"
+    ],
+    "KriipaClaw": [
+      "TID_AVAR",
+      "TID_AVAR_SHAMAN",
+      "TID_DRAGONFLY"
+    ],
+    "CurePoisonPotion": [
+      "TID_AVAR_SHAMAN",
+      "TID_BLACK_SPIDER",
+      "TID_CAVE_ORC"
+    ],
+    "CureDiseasePotion": [
+      "TID_AVAR_SHAMAN",
+      "TID_BLACK_SPIDER",
+      "TID_CAVE_ORC"
+    ],
+    "RemoveCursePotion": [
+      "TID_AVAR",
+      "TID_AVAR_SHAMAN",
+      "TID_BLACK_SPIDER",
+      "TID_CAVE_ORC"
+    ],
+    "PurifyPotion": [
+      "TID_AVAR_SHAMAN",
+      "TID_BLACK_SPIDER",
+      "TID_CAVE_ORC"
+    ],
+    "UncutSeraphym": [
+      "TID_AVAR",
+      "TID_AVAR_SHAMAN",
+      "TID_CAVE_ORC",
+      "TID_MEDIUM_HUMAN",
+      "TID_ORC_CHIEF",
+      "TID_ORC_WIZARD",
+      "TID_WORM_QUEEN"
+    ],
+    "PolishedSeraphym": [
+      "TID_AVAR_SHAMAN",
+      "TID_ORC_WIZARD"
+    ],
+    "Bread": [
+      "TID_AVAR",
+      "TID_ZOMBIE"
+    ],
+    "TurkeyLeg": [
+      "TID_AVAR"
+    ],
+    "NeruditeSword": [
+      "TID_AVAR",
+      "TID_ORC_CHIEF"
+    ],
+    "IvyCirclet": [
+      "TID_AVAR",
+      "TID_LICH",
+      "TID_LUPOGG_KING"
+    ],
+    "OrcTooth": [
+      "TID_CAVE_ORC",
+      "TID_MUMMY",
+      "TID_NEWBIE_AREA",
+      "TID_ORC",
+      "TID_ORC_CHIEF",
+      "TID_ORC_WIZARD",
+      "TID_WORM_LARVA"
+    ],
+    "OreChunk": [
+      "TID_CAVE_ORC",
+      "TID_ORC_CHIEF"
+    ],
+    "Scimitar": [
+      "TID_CAVE_ORC",
+      "TID_GHOST",
+      "TID_LICH",
+      "TID_LUPOGG_KING",
+      "TID_ORC",
+      "TID_ORC_CHIEF"
+    ],
+    "GoldShield": [
+      "TID_CAVE_ORC",
+      "TID_HIGH_HUMAN",
+      "TID_WORM_QUEEN",
+      "TID_ZOMBIE"
+    ],
+    "SimpleHelm": [
+      "TID_CAVE_ORC",
+      "TID_SKELETON3",
+      "TID_WORM_QUEEN"
+    ],
+    "Emerald": [
+      "TID_CAVE_ORC",
+      "TID_ENT",
+      "TID_LOW_HUMAN",
+      "TID_MEDIUM",
+      "TID_MEDIUM_TOUGH",
+      "TID_SKELETON2",
+      "TID_SKELETON3",
+      "TID_SKELETON4",
+      "TID_SPIDER_QUEEN",
+      "TID_TOUGH",
+      "TID_WIMPY_MEDIUM",
+      "TID_WORM_QUEEN",
+      "TID_ZOMBIE"
+    ],
+    "Sapphire": [
+      "TID_CAVE_ORC",
+      "TID_ENT",
+      "TID_HIGH_HUMAN",
+      "TID_ICE_PERSON",
+      "TID_MEDIUM",
+      "TID_MEDIUM_TOUGH",
+      "TID_SKELETON2",
+      "TID_SKELETON3",
+      "TID_SKELETON4",
+      "TID_SPIDER_QUEEN",
+      "TID_TOUGH",
+      "TID_VERY_TOUGH",
+      "TID_WIMPY_MEDIUM",
+      "TID_WORM_LARVA",
+      "TID_WORM_QUEEN",
+      "TID_ZOMBIE"
+    ],
+    "Diamond": [
+      "TID_CAVE_ORC",
+      "TID_GHOST",
+      "TID_HIGH_HUMAN",
+      "TID_ICE_PERSON",
+      "TID_MEDIUM_TOUGH",
+      "TID_SKELETON3",
+      "TID_SKELETON4",
+      "TID_SPIDER_QUEEN",
+      "TID_TOUGH",
+      "TID_VERY_TOUGH",
+      "TID_WORM_QUEEN"
+    ],
+    "Ruby": [
+      "TID_CAVE_ORC",
+      "TID_GHOST",
+      "TID_MEDIUM_TOUGH",
+      "TID_NEWBIE_AREA",
+      "TID_SPIDER_QUEEN",
+      "TID_TOUGH",
+      "TID_VERY_TOUGH",
+      "TID_WORM_QUEEN"
+    ],
+    "NeruditeOreChunk": [
+      "TID_CAVE_ORC"
+    ],
+    "FireRing": [
+      "TID_BLACK_SPIDER",
+      "TID_CAVE_ORC",
+      "TID_HIGH_HUMAN",
+      "TID_ICE_PERSON",
+      "TID_LICH",
+      "TID_NARTHYL_WORM",
+      "TID_SPIDER_QUEEN"
+    ],
+    "ColdRing": [
+      "TID_BLACK_SPIDER",
+      "TID_CAVE_ORC",
+      "TID_HIGH_HUMAN",
+      "TID_NARTHYL_WORM"
+    ],
+    "ShockRing": [
+      "TID_BLACK_SPIDER",
+      "TID_CAVE_ORC",
+      "TID_HIGH_HUMAN",
+      "TID_NARTHYL_WORM"
+    ],
+    "AcidRing": [
+      "TID_BLACK_SPIDER",
+      "TID_CAVE_ORC",
+      "TID_HIGH_HUMAN",
+      "TID_LUPOGG_KING"
+    ],
+    "RingofLethargy": [
+      "TID_CAVE_ORC",
+      "TID_HIGH_HUMAN",
+      "TID_ORC"
+    ],
+    "Knightshield": [
+      "TID_CAVE_ORC",
+      "TID_GHOST",
+      "TID_LICH",
+      "TID_LUPOGG_KING",
+      "TID_SKELETON2"
+    ],
+    "FlashScroll": [
+      "TID_CAVE_ORC"
+    ],
+    "DarkAngelFeather": [
+      "TID_DARK_ANGEL",
+      "TID_FROGMAN",
+      "TID_HIGH_HUMAN",
+      "TID_NARTHYL_WORM",
+      "TID_SKELETON4",
+      "TID_SPIDER_QUEEN",
+      "TID_THRASHER",
+      "TID_VERY_TOUGH"
+    ],
+    "BlueDragonScale": [
+      "TID_DARK_ANGEL",
+      "TID_HIGH_HUMAN",
+      "TID_NARTHYL_WORM",
+      "TID_SKELETON4",
+      "TID_SPIDER_QUEEN",
+      "TID_THRASHER",
+      "TID_TOUGH",
+      "TID_VERY_TOUGH"
+    ],
+    "EntrootBerry": [
+      "TID_DARK_ANGEL",
+      "TID_ENT",
+      "TID_FAIRY",
+      "TID_FROGMAN",
+      "TID_MUMMY",
+      "TID_NEWBIE_AREA"
+    ],
+    "FairyWing": [
+      "TID_DARK_ANGEL",
+      "TID_FAIRY"
+    ],
+    "InkyCap": [
+      "TID_DARK_ANGEL",
+      "TID_FROGMAN",
+      "TID_ICE_PERSON",
+      "TID_SKELETON2",
+      "TID_SKELETON3",
+      "TID_SKELETON4",
+      "TID_THRASHER",
+      "TID_TOUGH",
+      "TID_VERY_TOUGH",
+      "TID_WORM_QUEEN"
+    ],
+    "NightVisionPotion": [
+      "TID_BLACK_SPIDER",
+      "TID_NARTHYL_WORM",
+      "TID_THRASHER"
+    ],
+    "StrengthPotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "ShadowFormPotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "ResistShockPotion": [
+      "TID_BLACK_SPIDER",
+      "TID_NARTHYL_WORM"
+    ],
+    "ResistPoisonPotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "ResistMagicPotion": [
+      "TID_BLACK_SPIDER",
+      "TID_NARTHYL_WORM"
+    ],
+    "ResistFirePotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "ResistColdPotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "MagicShieldPotion": [
+      "TID_BLACK_SPIDER",
+      "TID_FROGMAN"
+    ],
+    "KaraholsCursePotion": [
+      "TID_BLACK_SPIDER",
+      "TID_NARTHYL_WORM"
+    ],
+    "AnonymityPotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "FeignDeathPotion": [
+      "TID_BLACK_SPIDER",
+      "TID_NARTHYL_WORM"
+    ],
+    "DetectInvisibilityPotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "DetectGoodPotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "DetectEvilPotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "BaitPotion": [
+      "TID_BLACK_SPIDER",
+      "TID_NARTHYL_WORM"
+    ],
+    "HastePotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "NodeBurstPotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "DenialPotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "DeflectPotion": [
+      "TID_BLACK_SPIDER"
+    ],
+    "DragonflyEye": [
+      "TID_DRAGONFLY",
+      "TID_MEDIUM_HUMAN",
+      "TID_ORC_WIZARD"
+    ],
+    "Meatpie": [
+      "TID_DRAGONFLY",
+      "TID_HIGH_HUMAN"
+    ],
+    "Snack": [
+      "TID_ENT",
+      "TID_FAIRY",
+      "TID_MEDIUM",
+      "TID_MEDIUM_TOUGH",
+      "TID_NEWBIE_AREA",
+      "TID_RAT",
+      "TID_SKELETON2",
+      "TID_SKELETON3",
+      "TID_TOUGH",
+      "TID_WIMPY",
+      "TID_WIMPY_MEDIUM"
+    ],
+    "RedMushroom": [
+      "TID_ENT",
+      "TID_FAIRY",
+      "TID_MEDIUM",
+      "TID_MEDIUM_TOUGH",
+      "TID_MUMMY",
+      "TID_NEWBIE_AREA",
+      "TID_RAT",
+      "TID_SKELETON2",
+      "TID_TOUGH",
+      "TID_WIMPY",
+      "TID_WIMPY_MEDIUM",
+      "TID_WORM_LARVA",
+      "TID_ZOMBIE"
+    ],
+    "PurpleMushroom": [
+      "TID_ENT",
+      "TID_FROGMAN",
+      "TID_ICE_PERSON",
+      "TID_MEDIUM",
+      "TID_MEDIUM_TOUGH",
+      "TID_ORC",
+      "TID_ORC_WIZARD",
+      "TID_THRASHER",
+      "TID_VERY_TOUGH",
+      "TID_WORM_QUEEN",
+      "TID_ZOMBIE"
+    ],
+    "LightningWand": [
+      "TID_ENT",
+      "TID_GHOST"
+    ],
+    "Mushroom": [
+      "TID_FAIRY",
+      "TID_FROGMAN",
+      "TID_LOW_HUMAN",
+      "TID_MUMMY",
+      "TID_RAT",
+      "TID_SKELETON2",
+      "TID_WIMPY",
+      "TID_WIMPY_MEDIUM",
+      "TID_WORM_LARVA"
+    ],
+    "ElderBerry": [
+      "TID_FAIRY",
+      "TID_FROGMAN",
+      "TID_LOW_HUMAN",
+      "TID_MEDIUM",
+      "TID_MUMMY",
+      "TID_RAT",
+      "TID_WIMPY",
+      "TID_WIMPY_MEDIUM"
+    ],
+    "Herbs": [
+      "TID_FAIRY",
+      "TID_LOW_HUMAN",
+      "TID_MUMMY",
+      "TID_NEWBIE_AREA",
+      "TID_RAT",
+      "TID_WIMPY",
+      "TID_WIMPY_MEDIUM",
+      "TID_WORM_LARVA"
+    ],
+    "BlueMushroom": [
+      "TID_FAIRY",
+      "TID_FROGMAN",
+      "TID_HIGH_HUMAN",
+      "TID_MEDIUM",
+      "TID_MEDIUM_TOUGH",
+      "TID_MUMMY",
+      "TID_RAT",
+      "TID_SKELETON3",
+      "TID_SKELETON4",
+      "TID_TOUGH",
+      "TID_VERY_TOUGH",
+      "TID_WIMPY",
+      "TID_WIMPY_MEDIUM",
+      "TID_WORM_QUEEN",
+      "TID_ZOMBIE"
+    ],
+    "IllusionaryFormPotion": [
+      "TID_FAIRY"
+    ],
+    "MysticSword": [
+      "TID_GHOST",
+      "TID_LICH",
+      "TID_LUPOGG_KING",
+      "TID_THRASHER",
+      "TID_VERY_TOUGH"
+    ],
+    "RingInvisibility": [
+      "TID_GHOST",
+      "TID_LICH",
+      "TID_LUPOGG_KING"
+    ],
+    "Gauntlet": [
+      "TID_GHOST",
+      "TID_HIGH_HUMAN",
+      "TID_ORC_WIZARD",
+      "TID_SKELETON3",
+      "TID_WORM_QUEEN"
+    ],
+    "PlateArmor": [
+      "TID_GHOST",
+      "TID_LICH",
+      "TID_LUPOGG_KING",
+      "TID_ORC_CHIEF",
+      "TID_VERY_TOUGH",
+      "TID_WORM_QUEEN"
+    ],
+    "FineLute": [
+      "TID_GHOST",
+      "TID_LUPOGG_KING"
+    ],
+    "VampireWand": [
+      "TID_GHOST",
+      "TID_HIGH_HUMAN"
+    ],
+    "DiscipleRobe": [
+      "TID_GHOST",
+      "TID_ORC_WIZARD"
+    ],
+    "FireWand": [
+      "TID_GHOST"
+    ],
+    "HoldWand": [
+      "TID_GHOST",
+      "TID_ORC_CHIEF",
+      "TID_VERY_TOUGH"
+    ],
+    "TruceScroll": [
+      "TID_GHOST"
+    ],
+    "LongSword": [
+      "TID_HIGH_HUMAN",
+      "TID_LICH",
+      "TID_LUPOGG_KING",
+      "TID_MEDIUM_TOUGH",
+      "TID_MUMMY",
+      "TID_THRASHER",
+      "TID_WORM_QUEEN"
+    ],
+    "HealWand": [
+      "TID_HIGH_HUMAN"
+    ],
+    "ScaleArmor": [
+      "TID_HIGH_HUMAN",
+      "TID_SKELETON3",
+      "TID_THRASHER",
+      "TID_WORM_QUEEN"
+    ],
+    "Scepter": [
+      "TID_HIGH_HUMAN"
+    ],
+    "FreeActionPotion": [
+      "TID_HIGH_HUMAN"
+    ],
+    "Waterskin": [
+      "TID_ICE_PERSON",
+      "TID_ZOMBIE"
+    ],
+    "OrcShield": [
+      "TID_LICH",
+      "TID_LUPOGG_KING",
+      "TID_ORC_CHIEF"
+    ],
+    "SeduceWand": [
+      "TID_LICH"
+    ],
+    "BlindWand": [
+      "TID_LICH",
+      "TID_ORC_CHIEF"
+    ],
+    "Mace": [
+      "TID_LOW_HUMAN",
+      "TID_MUMMY",
+      "TID_NEWBIE_AREA"
+    ],
+    "Mug": [
+      "TID_LOW_HUMAN"
+    ],
+    "Apple": [
+      "TID_LOW_HUMAN"
+    ],
+    "ShortSword": [
+      "TID_LOW_HUMAN",
+      "TID_MUMMY"
+    ],
+    "MetalShield": [
+      "TID_LOW_HUMAN",
+      "TID_MUMMY",
+      "TID_ORC",
+      "TID_WORM_QUEEN"
+    ],
+    "LeatherArmor": [
+      "TID_LOW_HUMAN",
+      "TID_MEDIUM_TOUGH",
+      "TID_ORC"
+    ],
+    "ResistAcidPotion": [
+      "TID_LUPOGG_KING"
+    ],
+    "JalaNecklace": [
+      "TID_LUPOGG_KING"
+    ],
+    "DiscordScroll": [
+      "TID_LUPOGG_KING",
+      "TID_SKELETON2"
+    ],
+    "Solagh": [
+      "TID_MEDIUM_HUMAN",
+      "TID_ORC_WIZARD"
+    ],
+    "Hammer": [
+      "TID_MEDIUM_TOUGH",
+      "TID_WORM_QUEEN",
+      "TID_ZOMBIE"
+    ],
+    "Axe": [
+      "TID_MEDIUM_TOUGH",
+      "TID_WORM_QUEEN",
+      "TID_ZOMBIE"
+    ],
+    "ChainArmor": [
+      "TID_MEDIUM_TOUGH",
+      "TID_WORM_QUEEN",
+      "TID_ZOMBIE"
+    ],
+    "LightScroll": [
+      "TID_MEDIUM_TOUGH"
+    ],
+    "Torch": [
+      "TID_MUMMY",
+      "TID_ORC_WIZARD",
+      "TID_THRASHER"
+    ],
+    "CloakPotion": [
+      "TID_NARTHYL_WORM",
+      "TID_VERY_TOUGH"
+    ],
+    "BerserkerRing": [
+      "TID_NARTHYL_WORM",
+      "TID_SPIDER_QUEEN",
+      "TID_THRASHER",
+      "TID_WORM_QUEEN"
+    ],
+    "Flask": [
+      "TID_ORC_CHIEF",
+      "TID_ORC_WIZARD",
+      "TID_ZOMBIE"
+    ],
+    "HeatScroll": [
+      "TID_ORC_CHIEF"
+    ],
+    "ShadowAmulet": [
+      "TID_ORC",
+      "TID_ZOMBIE"
+    ],
+    "DarknessScroll": [
+      "TID_ORC"
+    ],
+    "SlitherWand": [
+      "TID_ORC_WIZARD"
+    ],
+    "StaffOfJolting": [
+      "TID_ORC_WIZARD"
+    ],
+    "DispellIllusionScroll": [
+      "TID_ORC_WIZARD"
+    ],
+    "IdentifyWand": [
+      "TID_SKELETON2"
+    ],
+    "SilverArrow": [
+      "TID_SKELETON4"
+    ],
+    "Circlet": [
+      "TID_SKELETON4"
+    ],
+    "DementWand": [
+      "TID_SKELETON4"
+    ],
+    "EnfeebleWand": [
+      "TID_SKELETON4"
+    ],
+    "ForgetWand": [
+      "TID_SKELETON4"
+    ],
+    "SpiderEgg": [
+      "TID_SPIDER_QUEEN"
+    ],
+    "MartyrScroll": [
+      "TID_TOUGH"
+    ],
+    "Key": [
+      "TID_VERY_TOUGH"
+    ],
+    "EarthquakeScroll": [
+      "TID_VERY_TOUGH"
+    ],
+    "Arsenic": [
+      "TID_ZOMBIE"
+    ]
+  },
+  "problems": [],
+  "counts": {
+    "tidConstants": 42,
+    "typesWithTables": 38,
+    "deadConstants": 3,
+    "distinctItems": 132,
+    "tableRows": 435,
+    "monstersMapped": 171
+  }
+}

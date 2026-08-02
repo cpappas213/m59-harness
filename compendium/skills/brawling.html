@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brawling — Meridian 59 Compendium</title>
+<meta name="description" content="Weaponcraft Lv. 2: Advanced tricks in unarmed combat, building on the punch skill.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html" class="on">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Skills</a> › Brawling</p>
+<div class="hero"><div class="heroText"><h1>Brawling</h1><p class="lede">Weaponcraft Lv. 2: Advanced tricks in unarmed combat, building on the punch skill.</p><div class="tags"><span class="tag ">proficiency</span><span class="tag ">fencing</span><span class="tag ">Level 2</span><span class="tag ">Automatic</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Discipline</div><div class="val sm">fencing</div></div><div class="fact"><div class="lbl">Level</div><div class="val">2</div></div><div class="fact"><div class="lbl">Vigour per use</div><div class="val">2</div></div><div class="fact"><div class="lbl">Improve chance</div><div class="val">25%</div></div><div class="fact"><div class="lbl">Skill number</div><div class="val">450</div></div></div><h2>What kind of skill this is</h2><p>A <strong>proficiency</strong> is a weapon class. It contributes to your
+chance to hit and adds a small flat bonus to damage — <code class="k">(proficiency + 1) × 5 / 100</code>
+per swing — and it is what the weapon checks before you can use it well at all.</p><h2>Learning and improving it</h2><p>Taught by <a href="../creatures/cornothsergeant.html">Rook</a>.</p><p>Ability runs 0–99 and rises by <em>use against something hard enough to matter</em>,
+with a 25% roll on each qualifying use. It also atrophies: stop using a skill and
+the number falls. See <a href="../guides/advancing.html">Advancing Your Character</a>.</p><h2>What it does</h2><ul><li><code class="k">GetRequisiteStat</code></li></ul><hr><h2>In the source</h2>
+<p class="cite">kod/object/passive/skill/profic/brawling.kod:11</p>
+<p><code class="k">Brawling</code> is <code class="k">Proficiency</code> — full chain <code class="k">Brawling</code> ← <code class="k">Proficiency</code> ← <code class="k">Skill</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>brawlingproficiency_name_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="27">27</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>brawlingproficiency_icon_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="28">28</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>brawlingproficiency_desc_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">vrSkill_intro</code></td><td class=""><code>Brawl_skill_intro</code></td><td class=""><em>Weaponcraft Lv. 2: Advanced tricks in unarmed combat, building on the punch skill.</em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SKS_FENCING</code></td><td class="">10</td><td class="num " data-sort="33">33</td></tr>
+<tr><td class=""><code class="k">viSkill_num</code></td><td class=""><code>SKID_BRAWLING</code></td><td class="">450</td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viSkill_level</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">viChance_to_increase</code></td><td class=""><code>25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="36">36</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">plPrerequisites</code></td><td class=""><code>$</code></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">piSchool</code></td><td class=""><code>0</code></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">piChanceToIncrease</code></td><td class=""><code>100</code></td><td class="num " data-sort="43">43</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>GetRequisiteStat(who = $)</h4>
+<pre><code>{
+     return send(who,@getmight);
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/profic/brawling.kod:47</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

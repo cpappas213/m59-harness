@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>truce — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › truce</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/itruce_g1.png" alt="truce" width="128" height="128"></div><div class="heroText"><h1>truce</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><a class="tag school-1" href="../guides/shalille.html">Shal’ille</a><span class="tag ">Level 4</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/shalille.html">Shal’ille</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">4</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">20</div></div><div class="fact"><div class="lbl">Karma required</div><div class="val">≥ +40</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">0 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">26</div></div></div><div class="flavor">The spirit of Shal'ille calls upon her ally Faren, forming a truce with creatures of nature for several minutes. Requires emerald and yrxl sap to cast.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">20</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/emerald.html">emerald</a>, <a href="../items/yrxlsap.html">yrxl sap</a></td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">at least +40</td><td class="">Derived, not stored: <code class="k">GetRequiredKarma</code> returns level × +10 for this school.</td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">10</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">instant</td><td class=""></td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">3</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/roomench/truce.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/marionelder.html">Ran er'Hoth</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">CanPayCosts</code></li><li><code class="k">CastSpell</code> — Initiation point for the spell.</li><li><code class="k">GetDuration</code></li><li><code class="k">StartEnchantmentNewOccupant</code> — Called on new occupants of the enchanted room.</li><li><code class="k">EndRoomEnchantment</code> — Sent to each user as they leave the room. Since we didn't enchant them, nothing to undo.</li><li><code class="k">EndSpell</code> — Called when spell expires.</li><li><code class="k">SpellBannedInArena</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/itruce_g1.png" alt="truce group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/itruce_g2.png" alt="truce group 2" loading="lazy"><figcaption>group 2</figcaption></figure><figure><img class="icon" src="../assets/img/itruce_g3.png" alt="truce group 3" loading="lazy"><figcaption>group 3</figcaption></figure><figure><img class="icon" src="../assets/img/itruce_g4.png" alt="truce group 4" loading="lazy"><figcaption>group 4</figcaption></figure><figure><img class="icon" src="../assets/img/itruce_g5.png" alt="truce group 5" loading="lazy"><figcaption>group 5</figcaption></figure><figure><img class="icon" src="../assets/img/itruce_g6.png" alt="truce group 6" loading="lazy"><figcaption>group 6</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/roomench/truce.kod:11</p>
+<p><code class="k">Truce</code> is <code class="k">RoomEnchantment</code> — full chain <code class="k">Truce</code> ← <code class="k">RoomEnchantment</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>truce_icon_rsc</code></td><td class=""><em>itruce.bgf</em></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>truce_desc_rsc</code></td><td class=""><em>The spirit of Shal'ille calls upon her ally Faren, forming a truce with creatures of natur</em></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>truce_name_rsc</code></td><td class=""><em>truce</em></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>truce_sound</code></td><td class=""><em>shalille.wav</em></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_TRUCE</code></td><td class="">26</td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_SHALILLE</code></td><td class="">1</td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viChance_To_Increase</code></td><td class=""><code>15</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">viPostCast_time</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">viAnimationSpeed</code></td><td class=""><code>200</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">viAnimation_start</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">viAnimation_end</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">viIcon_animation_start</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">viIcon_animation_end</code></td><td class=""><code>6</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="63">63</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      plReagents = $;
+      plReagents = Cons([&amp;Emerald,1],plReagents);
+      plReagents = Cons([&amp;Yrxlsap,1],plReagents);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/truce.kod:70</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/truce.kod:79</p>
+<h4>CanPayCosts(who = $, lTargets = $)</h4>
+<pre><code>{
+      local oRoom, i, oActive;
+
+      oRoom = Send(who,@GetOwner);
+
+      
+      if Send(oRoom,@CheckRoomFlag,#flag=ROOM_NO_MOB_COMBAT)
+         OR Send(oRoom,@CheckRoomFlag,#flag=ROOM_NO_COMBAT)
+      {
+         Send(who,@MsgSendUser,#message_rsc=truce_unnecessary);
+
+         return FALSE;
+      }
+
+      if NOT Send(who,@CheckPlayerFlag,#flag=PFLAG_PKILL_ENABLE)
+      {
+         for i in Send(oRoom,@GetHolderActive)
+         {
+            
+            
+            
+            oActive = Send(oRoom,@HolderExtractObject,#data=i);
+            if (IsClass(oActive,&amp;Player)
+                AND oActive &lt;&gt; who
+                AND NOT Send(oActive,@CanHelpPlayer))
+               OR isClass(oActive,&amp;LogoffGhost)
+            {
+               Send(who,@MsgSendUser,#message_rsc=truce_guardian);
+
+               return FALSE;
+            }
+         }
+      }
+
+      
+      
+      
+      if (NOT Send(oRoom,@AllowGuildAttack,#what=who))
+         AND Send(SYS,@IsPKAllowed)
+         AND NOT IsClass(who,&amp;DM)
+      {
+         for i in Send(oRoom,@GetHolderActive)
+         {
+            
+            
+            oActive = Send(oRoom,@HolderExtractObject,#data=i);
+            if IsClass(oActive,&amp;Monster)
+               AND NOT ((Send(oActive,@GetBehavior) &amp; AI_NPC)
+                        OR Send(oActive,@IsIllusion)
+                        OR Send(oActive,@IsSummoned)
+                        OR IsClass(oActive,&amp;Revenant))
+            {
+               propagate;
+            }
+         }
+
+         
+         Send(who,@MsgSendUser,#message_rsc=truce_no_towns);
+
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/truce.kod:84</p>
+<h4>CastSpell(who = $, iSpellPower = 0)</h4>
+<p>Initiation point for the spell.</p>
+<pre><code>{
+      local oRoom;
+
+      oRoom = Send(who,@GetOwner);
+
+      
+      if GetClass(who) = &amp;DM
+      {
+         Debug(Send(who,@GetTrueName),&quot;cast truce in&quot;,Send(oRoom,@GetName));
+      }
+
+      
+      Send(oRoom,@SomeoneSaid,#type=SAY_MESSAGE,#string=truce_on,#what=self);
+      Send(oRoom,@RoomStartEnchantment,#what=self,#state=$,
+           #time=Send(self,@GetDuration,#iSpellPower=iSpellPower));
+      Send(oRoom,@SetRoomFlag,#flag=ROOM_NO_MOB_COMBAT,#value=TRUE);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/truce.kod:150</p>
+<h4>GetDuration(iSpellPower = 0)</h4>
+<pre><code>{
+      local iDur;
+
+      
+      
+      iDur = (20 + iSpellPower) * 1000;
+      iDur = random(iDur/2, iDur);
+
+      return iDur;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/truce.kod:172</p>
+<h4>StartEnchantmentNewOccupant(who = $)</h4>
+<p>Called on new occupants of the enchanted room.</p>
+<pre><code>{
+      Send(who,@MsgSendUser,#message_rsc=truce_on);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/truce.kod:184</p>
+<h4>EndRoomEnchantment(who = $, state = $)</h4>
+<p>Sent to each user as they leave the room.  Since we didn't enchant them, nothing to undo.</p>
+<pre><code>{
+      Send(who,@MsgSendUser,#message_rsc=truce_off);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/truce.kod:192</p>
+<h4>EndSpell(where = $, state = $)</h4>
+<p>Called when spell expires.</p>
+<pre><code>{
+      local i;
+
+      Send(where,@SomeoneSaid,#type=SAY_MESSAGE,#string=truce_off,#what=self);
+      if Send(where,@CheckRoomFlag,#flag=ROOM_NO_MOB_COMBAT)
+      {
+         Send(where,@SetRoomFlagtoDefault,#flag=ROOM_NO_MOB_COMBAT);
+      }
+
+      for i in Send(where,@GetEnchantmentList)
+      {
+         if Send(Nth(i,2),@GetSpellNum) = SID_JIG
+         {
+            Send(where,@SetRoomFlag,#flag=ROOM_NO_MOB_COMBAT,#value=TRUE);
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/truce.kod:201</p>
+<h4>SpellBannedInArena()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/roomench/truce.kod:223</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

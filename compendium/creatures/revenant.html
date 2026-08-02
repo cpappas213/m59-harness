@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>revenant — Meridian 59 Compendium</title>
+<meta name="description" content="The reward for someone's misdeeds: a battle to the death with a lost soul. Although it is harmless to all but the murderer it haunts, anyone foolish enough to i">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › revenant</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/zombie_g1.png" alt="revenant" width="55" height="169"></div><div class="heroText"><h1>revenant</h1><p class="lede">The reward for someone's misdeeds: a battle to the death with a lost soul. Although it is harmless to all but the murderer it haunts, anyone foolish enough to interfere will suffer the same fate.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Neutral</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">fast</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 0
+                = 75
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>slash</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>No room in the world declares this creature. It is summoned by another creature, placed by an
+administrator, or left over from content that is no longer reachable.</p><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_MOVE_WALKTHROUGH_WALLS</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_SINGLEMINDED</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_THROUGH_WALLS</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/zombie_g1.png" alt="revenant group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/zombie_g2.png" alt="revenant group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/zombie_g3.png" alt="revenant group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:30</p>
+<p><code class="k">Revenant</code> is <code class="k">Monster</code> — full chain <code class="k">Revenant</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>revenant_name_rsc</code></td><td class=""><em>revenant</em></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>revenant_icon_rsc</code></td><td class=""><em>zombie.bgf</em></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>revenant_desc_rsc</code></td><td class=""><em>The reward for someone's misdeeds: a battle to the death with a lost soul.  Although it is</em></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_FAST</code></td><td class="">16</td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_SLASH</code></td><td class="">128</td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_AGGRESSIVE | AI_FIGHT_SINGLEMINDED | AI_MOVE_WALKTHROUGH_WALLS | AI_FIGHT_THROUGH_WALLS</code></td><td class="">17055872</td><td class="num " data-sort="55">55</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viLevel</code></td><td class=""><code>55</code></td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>5</code></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>20</code></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">poRoom</code></td><td class=""><code>$</code></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">poHauntee</code></td><td class=""><code>$</code></td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">ptPlace</code></td><td class=""><code>$</code></td><td class="num " data-sort="69">69</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(target = $, location = $, diff = 0, level = 0, karmic = 0)</h4>
+<pre><code>{
+      if target = $ 
+         OR location = $  
+         OR Send(location,@CheckRoomFlag,#flag=ROOM_NO_COMBAT) 
+         OR Send(location,@CheckRoomFlag,#flag=ROOM_SANCTUARY)
+         OR Send(location,@checkRoomFlag,#flag=ROOM_SAFE_DEATH)
+      {
+         return ;
+      }
+      
+      poRoom = location;
+      poHauntee = target;
+      poTarget = poHauntee;
+      
+      if diff &lt;&gt; $
+      {
+         viDifficulty = diff;
+      }
+      
+      if level &lt;&gt; $
+      {
+         viLevel = level;
+      }
+      
+      if karmic &lt;&gt; $
+      {
+         viKarma = karmic;
+      }
+
+      
+      ptPlace = CreateTimer(self,@Place,Random(3000,12000));
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:73</p>
+<h4>Constructed()</h4>
+<pre><code>{
+      plResistances = [ [ 40, -ATCK_SPELL_ALL ],
+                        [ 40, ATCK_WEAP_MAGIC ] ];
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:109</p>
+<h4>Place()</h4>
+<p>Sets revenant down near (but not too near) his target</p>
+<pre><code>{
+      local oRoom, bValid_location, iTries, iRow, iCol, iRow_sign, iCol_sign,
+            iTarg_row, iTarg_col ;
+
+      oRoom = Send(poHauntee,@GetOwner);
+      
+      if oRoom &lt;&gt; poRoom
+      {
+         
+         Send(self,@Delete);
+         
+         return;
+      }
+      
+      iTarg_row = Send(poHauntee,@GetRow);
+      iTarg_col = Send(poHauntee,@GetCol);
+      
+      iTries = 0;
+      bValid_location = FALSE;
+      
+      
+      while NOT bValid_location
+            AND iTries &lt; 7
+      {
+         iTries = iTries + 1;
+         if Random(1,2) = 1
+         {
+            iRow_sign= -1 ;
+         }
+         else
+         {
+            iRow_sign=  1 ;
+         }
+         
+         if Random(1,2) = 1
+         {
+            iCol_sign= -1 ;
+         }
+         else
+         {
+            iCol_sign=  1 ;
+         }
+         
+         iRow = iTarg_row + iRow_sign*Random(3,6);
+         iCol = iTarg_col + iCol_sign*Random(3,6);
+         
+         if iRow &gt;= 1
+            AND iRow &lt;= Send(poRoom,@GetRoomRows)
+            AND iCol &gt;= 1
+            AND iCol &lt;= Send(poRoom,@GetRoomCols)
+         {
+            bValid_location = TRUE;
+         }
+      }
+      
+      Send(poRoom,@NewHold,#what=self,#new_row=iRow,#new_col=iCol);
+      poTarget = poHauntee;
+      send(self,@EnterStateChase);
+      Post(poHauntee,@MsgSendUser,#message_rsc=Rev_coming_to_get_ya);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:116</p>
+<h4>GetVisionDistance()</h4>
+<pre><code>{
+      return 9999;       
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:181</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      piAnimation = ANIM_ATTACK;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+      
+      
+      
+      if Random(0,9) = 0
+      {
+         Send(what,@MsgSendUser,#message_rsc=Rev_draining_effect);
+         Send(what,@AddExertion,#amount=Send(what,@GetVigor)*10000/10);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:186</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE);
+      AddPacket(4,200,2,2,2,3);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:203</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      
+      AddPacket(1,ANIMATE_CYCLE,4,200,2,2,2,3);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:211</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if piAnimation = ANIM_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,200,2,2,2,3,2,1);
+         
+         return;
+      }
+
+      
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:219</p>
+<h4>GetObjectFlags()</h4>
+<pre><code>{
+      return BATTLER_YES | DRAWFX_INVISIBLE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:233</p>
+<h4>SomethingAttacked(what = $, victim = $, use_weapon = $)</h4>
+<pre><code>{
+      if victim = self
+         AND isClass(what,&amp;user)
+      {
+         Send(self,@RevenantWasAttacked,#what=what);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:244</p>
+<h4>RevenantWasAttacked(what = $)</h4>
+<pre><code>{
+      if what &lt;&gt; poHauntee and IsClass(what,&amp;User) AND
+         (not Send(what,@CheckPlayerFlag,#flag=PFLAG_HAUNTED))
+      {
+         Send(what,@MsgSendUser,#message_rsc=Rev_grouping_is_bad);
+         Send(what,@SetPlayerFlag,#flag=PFLAG_HAUNTED,#value=TRUE);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:255</p>
+<h4>SomethingKilled(what = $, victim = $, use_weapon = $)</h4>
+<pre><code>{
+      if poHauntee = victim
+      {
+         post(self,@Delete);  
+      }
+      
+      return ; 
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:268</p>
+<h4>SomethingLeft(what = $)</h4>
+<pre><code>{
+      if what = poHauntee 
+      { 
+         post(self,@Delete); 
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:284</p>
+<h4>Killed(what = $)</h4>
+<pre><code>{
+      If what &lt;&gt; poHauntee
+         AND IsClass(what,&amp;User)
+         AND (NOT Send(what,@checkPlayerFlag,#flag=PFLAG_HAUNTED))
+      {
+         Send(what,@MsgSendUser,#message_rsc=Rev_grouping_is_bad);
+         Send(what,@SetPlayerFlag,#flag=PFLAG_HAUNTED,#value=TRUE);
+      }
+
+      Send(poHauntee,@SetPlayerFlag,#flag=PFLAG_HAUNTED,#value=FALSE);
+      Send(poHauntee,@MsgSendUser,#message_rsc=Rev_vanquished);
+      Send(self,@Delete);
+      
+      return;  
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:299</p>
+<h4>GetHauntee()</h4>
+<pre><code>{
+      return poHauntee;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:320</p>
+<h4>CanMorphTo()</h4>
+<pre><code>{
+      return FALSE;
+   }  </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:325</p>
+<h4>CanPlayerAdvanceOnMe()</h4>
+<pre><code>{  
+      return FALSE;
+   }    </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/revenant.kod:330</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

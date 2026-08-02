@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Combat — Meridian 59 Compendium</title>
+<meta name="description" content="Every swing in the game runs through one function, and it is short. Your offence divides into the defender's defence to produce a percentage; a hundred-sided die decides whether you connect; if you do, the weapon rolls damage, the defender's armour subtracts from it, two caps trim the result, and the health comes off. Everything else — proficiencies, might, shields, enchantments, factions — is a term inside one of those five steps.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html" class="on">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Guides</a> › Combat</p>
+<h1>Combat</h1>
+
+<p class="lede">Every swing in the game runs through one function, and it is short. Your offence
+divides into the defender's defence to produce a percentage; a hundred-sided die decides whether
+you connect; if you do, the weapon rolls damage, the defender's armour subtracts from it, two
+caps trim the result, and the health comes off. Everything else — proficiencies, might, shields,
+enchantments, factions — is a term inside one of those five steps.</p>
+
+<h2>The whole of an attack</h2>
+
+<div class="formula">chance = bound( attacker.GetOffense × 55 / defender.GetDefense , 10, 95 )   % percent
+
+if random(1,100) &lt;= chance:
+      damage = defender.AssessDamage( attacker.GetDamage,
+                                      attacker.GetDamageType,
+                                      attacker.GetSpellType )
+else:
+      the defender's parry, block or dodge is credited and reported</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler.kod:319 <code class="k">TryAttack</code>; <code class="k">EQUAL_CHANCE_HIT = 55</code> at :19</p>
+
+<p>Two things are worth reading off that immediately. First, <strong>the floor is 10% and the
+ceiling is 95%</strong>: no amount of skill makes you untouchable, and nothing you fight is ever
+truly safe to stand next to. Second, evenly matched combatants hit each other
+<strong>55%</strong> of the time — that constant is what the whole scale is calibrated against.</p>
+
+<h2>Offence: your chance to land it</h2>
+
+<div class="formula">offence = stroke_ability × 3
+        + proficiency  × 2
+        + aim          × 4
+        + base_max_health × 3 / 2
+        then the weapon's own hit modifier is applied
+        then every attack modifier (spells, gauntlets, rings)
+        then the faction hitroll bonus
+        then × (100 + piFlags3) / 100
+        bounded to 1…1000
+
+if using a ranged weapon with no line of sight:  offence = offence / 2</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4227 <code class="k">GetOffense</code></p>
+
+<p>Unarmed, the stroke term is your <a href="../skills/punch.html">punch</a> ability and the
+proficiency term is <a href="../skills/brawling.html">brawling</a>.</p>
+
+<p>Note what carries the most weight: <strong>aim, at ×4</strong>, and then your maximum health
+at ×1.5, which is why a character who has been advancing hits harder to hit things even without
+touching a weapon skill. The stroke matters more than the proficiency, 3 to 2.</p>
+
+<h2>Defence: your chance to avoid it</h2>
+
+<div class="formula">defence = parry_ability × 2
+        + block_ability × 1
+        + dodge_ability × 3
+        + agility       × 4
+        + base_max_health × 3 / 2
+        then every worn defence modifier's ModifyDefensePower  (armour, ±)
+        then the faction defence bonus
+        then × (100 + piFlags3) / 100
+        bounded to 1…1000</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4294 <code class="k">GetDefense</code></p>
+
+<p>Parry is zero unless you have a weapon in hand. Block is zero unless you have a shield.
+Dodge always applies. So <strong>dodge is the most valuable of the three</strong> — it is
+weighted highest at ×3 and it costs no equipment — and <strong>agility is the most valuable
+attribute</strong> for staying alive, at ×4.</p>
+
+<div class="note">Some strokes cannot be parried, blocked or dodged. The stroke object is asked
+first (<code class="k">CanParry</code>, <code class="k">CanBlock</code>, <code class="k">CanDodge</code>),
+and a stroke that refuses zeroes that term entirely for that attack.</div>
+
+<h2>Damage: what a hit takes off</h2>
+
+<p>The weapon rolls first, the stroke scales it, and then the wielder's might and proficiency are
+added:</p>
+
+<div class="formula">base    = random(min, max) by weapon type       % slash 5–11, bludgeon 4–8, thrust 3–8
+        + quality                              % low −1, normal 0, high +1, nerudite +1
+        + weapon attribute modifiers           % enchantments
+        + piDamageBonus
+
+stroke:   d = base × viDamage_factor / 100     % 80 for the default Slash stroke
+
+factors:  damage = (proficiency + 1) × viMaxProficiencyDamage / 100
+                 + d × (100 + bound(might − 25, 0, 40)) / 100
+          bounded to at least 1</div>
+<p class="cite">kod/object/item/passitem/weapon.kod:241 <code class="k">GetBaseDamage</code>, :280 <code class="k">GetDamage</code> · kod/object/passive/skill/stroke.kod:201 <code class="k">FindDamage</code>, :332 <code class="k">DamageFactors</code></p>
+
+<div class="warn"><strong>Might below 26 buys nothing.</strong> The multiplier is
+<code class="k">bound(might − 25, 0, 40)</code>, so every point of might from 1 to 25 is dead
+weight, and every point above 65 is too. A character with might 25 hits exactly as hard as one
+with might 1.</div>
+
+<p>Proficiency's contribution is smaller than it looks: at the default
+<code class="k">viMaxProficiencyDamage = 5</code>, a perfect 99 proficiency adds
+<strong>5 damage</strong>. It earns its keep in the offence calculation, not here.</p>
+
+<h2>What the defender does with it</h2>
+
+<div class="formula">for each worn defence modifier:
+    damage = damage − bound(random(flat/3, flat), 0, damage − 1)
+    the item takes wear on a 50% roll
+
+resistance = largest matching resistance + worst matching weakness   % clipped to ±100
+damage     = damage × (100 − resistance) / 100        % resistance &gt; 0
+           = damage × (−100 + resistance) / −100      % resistance &lt; 0
+damage     = damage + attack-modifier bonuses          % added AFTER resistance
+
+if damage ≤ 0: damage = 1
+
+unless health is over twice maximum, or you are an outlaw or murderer:
+    damage = bound(damage, $, (base_max_health + 2) / 3)   % the one-third cap
+damage = bound(damage, $, 30)                              % MAX_DAMAGE_PER_HIT
+
+if attacker and defender are enemy faction soldiers:
+    damage = damage × 115 / 100                            % applied above both caps</div>
+<p class="cite">kod/object/item/passitem/defmod.kod:100 <code class="k">ModifyDefenseDamage</code> · kod/object/active/holder/nomoveon/battler.kod:189 <code class="k">ResistanceCheck</code>, :251 <code class="k">GetDamageFromResistance</code> · kod/object/active/holder/nomoveon/battler/player.kod:4556 <code class="k">AssessDamage</code></p>
+
+<p>Three consequences that change how you play:</p>
+
+<ul>
+<li><strong>Nothing can take more than 30 health from you in one blow</strong>, ever, and nothing
+can take more than a third of your maximum. Against a very heavy hitter, more maximum health is
+worth less than it looks; against a swarm, it is worth exactly what it looks.</li>
+<li><strong>Outlaws and murderers lose the one-third cap.</strong> Marking yourself makes every
+blow against you potentially three times worse.</li>
+<li><strong>Armour is subtracted before resistance and bonuses are added after</strong>, so an
+enchanted weapon's bonus damage is never scaled down by the target's armour.</li>
+</ul>
+
+<div class="warn"><strong>Armour does not stop spells.</strong> The flat reduction is zeroed when
+the attack carries a spell type and no weapon type, and cut to two thirds when it carries both.
+Only typed resistances reach magic. <span class="cite">kod/object/item/passitem/defmod.kod:110–122</span></div>
+
+<h2>Fighting monsters</h2>
+
+<p>A creature has no attack table. Its offence, defence, health and damage all come out of two
+class variables:</p>
+
+<div class="formula">offence = defence = 3 × level + 60 × difficulty        bounded to 1…1500
+health            = Fuzzy(level)                       for level &lt; 40
+                  = Fuzzy(level × 120 / 100)           for level ≥ 40
+damage per hit    = Fuzzy(level / random(10, 15))
+dodge             = difficulty × 10
+Fuzzy(n)          = n − n/4 + random(0, n/2)           i.e. 75%…125% of n</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433, :1455, :1488, :4079, :4263</p>
+
+<p>Difficulty is weighted <strong>twenty times</strong> more heavily than level in a creature's
+offence and defence. A high-level, zero-difficulty creature is a sack of health that swings hard
+and is easy to hit; a mid-level, high-difficulty creature is a wall. <a href="../creatures/index.html">The
+bestiary</a> gives both numbers, and the resulting hit percentages, for every creature.</p>
+
+<h2>A worked example</h2>
+
+<p>A mid-game character — 130 maximum health, dodge 50, parry 40, no shield, agility 40, stroke
+50, proficiency 50, aim 40 — with a <a href="../items/longsword.html">long sword</a> and might 40,
+against a <a href="../creatures/caveorc.html">cave orc</a> (level 80, difficulty 7):</p>
+
+<table class="data">
+<thead><tr><th></th><th>Value</th><th>Where it comes from</th></tr></thead>
+<tbody>
+<tr><td>Your offence</td><td>605</td><td>50×3 + 50×2 + 40×4 + 130×3/2</td></tr>
+<tr><td>Your defence</td><td>585</td><td>40×2 + 0 + 50×3 + 40×4 + 130×3/2</td></tr>
+<tr><td>Orc's offence and defence</td><td>660</td><td>3×80 + 60×7</td></tr>
+<tr><td><strong>Your chance to hit it</strong></td><td><strong>50%</strong></td><td>bound(605 × 55 / 660, 10, 95)</td></tr>
+<tr><td><strong>Its chance to hit you</strong></td><td><strong>62%</strong></td><td>bound(660 × 55 / 585, 10, 95)</td></tr>
+<tr><td>Your damage per landed hit</td><td>3–9</td><td>random(3,8) × 80/100, × (100+15)/100, + 2</td></tr>
+<tr><td>Its damage per landed hit</td><td>4–10</td><td>Fuzzy(80 / random(10,15))</td></tr>
+<tr><td>Its health</td><td>72–120</td><td>Fuzzy(80 × 120/100)</td></tr>
+</tbody>
+</table>
+
+<p>That is a fight you lose. You need roughly 32 landed hits at a 50% rate — 64 swings — while it
+needs 19 landed hits at 62% — 31 swings. The fix is not more health; it is
+<a href="armor.html">armour that resists what it swings</a>, a
+<a href="../weapons/index.html">slashing weapon instead of a thrusting one</a>, and dodge.</p>
+
+<h2>Timing and rate limits</h2>
+
+<p>You may attack or cast <strong>once per second</strong>, and the server discards anything past
+<strong>five requests per second</strong> without telling you. There is no error message for
+either; the request simply never happened.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5305 <code class="k">IsOkayAttackTime</code> · kod/object/active/holder/nomoveon/battler/player/user.kod:50, checked at :883</p>
+
+<h2>Related</h2>
+<p><a href="../weapons/index.html">Weapons</a> — every weapon's damage, side by side ·
+<a href="armor.html">Armour</a> — what each piece subtracts ·
+<a href="../skills/index.html">Skills</a> — the strokes, proficiencies and defences ·
+<a href="../creatures/index.html">Bestiary</a> — hit percentages for every creature ·
+<a href="advancing.html">Advancing Your Character</a> — what a kill is worth ·
+<a href="death.html">Death and the Underworld</a> — what happens when this goes wrong</p>
+
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

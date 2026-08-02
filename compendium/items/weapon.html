@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weapon — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Weapon</p>
+<div class="hero"><div class="heroText"><h1>Weapon</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">weapon</span><span class="tag ">hand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">10</div></div><div class="fact"><div class="lbl">Value</div><div class="val">10 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">250–300</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">hand</div></div></div><h2>As a weapon</h2><div class="formula">base       = random(3, 8)            % thrust weapon
+quality    +0                           % normal quality
+stroke     × 80/100                     % Slash stroke damage factor
+might      × (100 + bound(might−25, 0, 40))/100
+proficiency+ (proficiency + 1) × 5/100</div><p class="cite">kod/object/item/passitem/weapon.kod:241 <code class="k">GetBaseDamage</code> · kod/object/passive/skill/stroke.kod:201 <code class="k">FindDamage</code> · :332 <code class="k">DamageFactors</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Wielder</th><th class="num ">Damage per hit</th><th class=""></th></tr></thead>
+<tbody><tr><td class="">novice — 0 proficiency, might 25</td><td class="num ">2–6</td><td class="">before the target’s armour</td></tr>
+<tr><td class="">expert — 99 proficiency, might 65</td><td class="num ">7–13</td><td class="">before the target’s armour</td></tr></tbody></table></div><div class="facts"><div class="fact"><div class="lbl">Weapon type</div><div class="val sm">thrust</div></div><div class="fact"><div class="lbl">Quality</div><div class="val sm">normal</div></div><div class="fact"><div class="lbl">To-hit bonus</div><div class="val">+125</div></div><div class="fact"><div class="lbl">Reach</div><div class="val">3</div></div><div class="fact"><div class="lbl">Disarm</div><div class="val">10</div></div><div class="fact"><div class="lbl">Spell penalty</div><div class="val">-10%</div></div><div class="fact"><div class="lbl">Proficiency</div><div class="val sm">sword</div></div></div><p>Damage type matters because armour resists by type. See
+<a href="../guides/armor.html">Armour</a> for what each armour does to each type, and
+<a href="../weapons/index.html">Weapons</a> to compare this against everything else.</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/weapon.kod:11</p>
+<p><code class="k">Weapon</code> is <code class="k">PassiveItem</code> — full chain <code class="k">Weapon</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">Axe</code>, <code class="k">BlackDagger</code>, <code class="k">GoldSword</code>, <code class="k">Hammer</code>, <code class="k">HunterSword</code>, <code class="k">LongSword</code>, <code class="k">Mace</code>, <code class="k">MysticSword</code>, <code class="k">NeruditeSword</code>, <code class="k">RangedWeapon</code>, <code class="k">RiijaSword</code>, <code class="k">Scimitar</code>, <code class="k">ShortSword</code>, <code class="k">SpiritualHammer</code>, <code class="k">UniqueWeapon</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viUse_type</code></td><td class=""><code>ITEM_USE_HAND</code></td><td class="">8</td><td class="num " data-sort="104">104</td></tr>
+<tr><td class=""><code class="k">viItem_Type</code></td><td class=""><code>ITEMTYPE_WEAPON</code></td><td class="">1</td><td class="num " data-sort="105">105</td></tr>
+<tr><td class=""><code class="k">viUse_amount</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="106">106</td></tr>
+<tr><td class=""><code class="k">vrPoss_article_rsc</code></td><td class=""><code>object_article_cap_this_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="108">108</td></tr>
+<tr><td class=""><code class="k">vcAmmo</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="112">112</td></tr>
+<tr><td class=""><code class="k">vrWeapon_window_overlay</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="114">114</td></tr>
+<tr><td class=""><code class="k">vrWeapon_window_attack_start</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="115">115</td></tr>
+<tr><td class=""><code class="k">vrWeapon_window_attack_end</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="116">116</td></tr>
+<tr><td class=""><code class="k">vrWeapon_window_hold</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="117">117</td></tr>
+<tr><td class=""><code class="k">vrWeapon_overlay</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="119">119</td></tr>
+<tr><td class=""><code class="k">viBroken_group</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="122">122</td></tr>
+<tr><td class=""><code class="k">vrWeaponBroke</code></td><td class=""><code>weapon_broken</code></td><td class=""><em>%s%s shatters into pieces.</em></td><td class="num " data-sort="124">124</td></tr>
+<tr><td class=""><code class="k">viWeaponType</code></td><td class=""><code>WEAPON_TYPE_THRUST</code></td><td class="">1</td><td class="num " data-sort="126">126</td></tr>
+<tr><td class=""><code class="k">viWeaponQuality</code></td><td class=""><code>WEAPON_QUALITY_NORMAL</code></td><td class="">1</td><td class="num " data-sort="127">127</td></tr>
+<tr><td class=""><code class="k">viProficiency_needed</code></td><td class=""><code>SKID_PROFICIENCY_SWORD</code></td><td class="">451</td><td class="num " data-sort="129">129</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>250</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="131">131</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>300</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="132">132</td></tr>
+<tr><td class=""><code class="k">vbShow_condition</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="134">134</td></tr>
+<tr><td class=""><code class="k">vrCondition_exc</code></td><td class=""><code>weapon_condition_exc</code></td><td class=""><em> is in flawless condition.</em></td><td class="num " data-sort="135">135</td></tr>
+<tr><td class=""><code class="k">vrCondition_exc_mended</code></td><td class=""><code>weapon_condition_exc_mended</code></td><td class=""><em> is in excellent condition, but has been repaired before.</em></td><td class="num " data-sort="136">136</td></tr>
+<tr><td class=""><code class="k">vrCondition_good</code></td><td class=""><code>weapon_condition_good</code></td><td class=""><em> is slightly tarnished but in generally good condition.</em></td><td class="num " data-sort="137">137</td></tr>
+<tr><td class=""><code class="k">vrCondition_med</code></td><td class=""><code>weapon_condition_med</code></td><td class=""><em> is notched and stained with blood but is still an effective weapon.</em></td><td class="num " data-sort="138">138</td></tr>
+<tr><td class=""><code class="k">vrCondition_poor</code></td><td class=""><code>weapon_condition_poor</code></td><td class=""><em> is well worn and may not last much longer.</em></td><td class="num " data-sort="139">139</td></tr>
+<tr><td class=""><code class="k">vrCondition_broken</code></td><td class=""><code>weapon_condition_broken</code></td><td class=""><em> has been shattered by a powerful blow.</em></td><td class="num " data-sort="140">140</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAttack_type</code></td><td class=""><code>0</code></td><td class="num " data-sort="144">144</td></tr>
+<tr><td class=""><code class="k">piAttack_spell</code></td><td class=""><code>0</code></td><td class="num " data-sort="145">145</td></tr>
+<tr><td class=""><code class="k">piDamageBonus</code></td><td class=""><code>0</code></td><td class="num " data-sort="147">147</td></tr>
+<tr><td class=""><code class="k">piHitBonus</code></td><td class=""><code>0</code></td><td class="num " data-sort="148">148</td></tr>
+<tr><td class=""><code class="k">piUsed</code></td><td class=""><code>UNUSED</code></td><td class="num " data-sort="150">150</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ModifyHitRoll(hit_roll = 0, target = $)</h4>
+<p>When someone attacks with this weapon, they send us their attack value and we change it based on quality of weapon</p>
+<pre><code>{
+      local iBaseHit, oWeapAtt, i;
+
+      iBaseHit = hit_roll;
+
+      
+      if viWeaponType = WEAPON_TYPE_BLUDGEON
+      {
+         iBaseHit = iBaseHit + WEAPON_HITMOD_MID;
+      }
+
+      if viWeaponType = WEAPON_TYPE_THRUST
+      {
+         iBaseHit = iBaseHit + WEAPON_HITMOD_HIGH;
+      }
+
+      if viWeaponType = WEAPON_TYPE_SLASH
+      {
+         iBaseHit = iBaseHit + WEAPON_HITMOD_LOW;
+      }
+
+      
+      if viWeaponQuality = WEAPON_QUALITY_LOW
+      {
+         iBaseHit = iBaseHit + WEAPON_LOW_QUALITY_HITMOD;
+      }
+
+      if viWeaponQuality = WEAPON_QUALITY_HIGH
+      {
+         iBaseHit = iBaseHit + WEAPON_HIGH_QUALITY_HITMOD;
+      }
+
+      if viWeaponQuality = WEAPON_NERUDITE
+      {
+         iBaseHit = iBaseHit + WEAPON_NERUDITE_HITMOD;
+      }
+
+      for i in plItem_Attributes
+      {
+         oWeapAtt = send(SYS,@FindItemAttByNum, #num=send(self,@GetNumFromCompound,#compound=first(i)));
+         if isClass(oWeapAtt,&amp;WeaponAttribute)
+         {
+            iBaseHit = send(oWeapAtt,@ModifyHitRoll,#hitroll=hit_roll,#wielder=poOwner,
+                            #target=target,#lData=i);
+         }
+      }     
+
+      iBaseHit = iBaseHit + piHitBonus;
+
+      
+      
+
+      return iBaseHit;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:183</p>
+<h4>GetBaseDamage(who = $, target = $)</h4>
+<pre><code>{
+      local iDamage;
+      
+      
+      if viWeaponType = WEAPON_TYPE_BLUDGEON
+      {
+         iDamage = random(WEAPON_DAMAGE_MID_MIN, WEAPON_DAMAGE_MID_MAX);
+      }
+
+      if viWeaponType = WEAPON_TYPE_THRUST
+      {
+         iDamage = random(WEAPON_DAMAGE_LOW_MIN, WEAPON_DAMAGE_LOW_MAX);
+      }
+
+      if viWeaponType = WEAPON_TYPE_SLASH
+      {
+         iDamage = random(WEAPON_DAMAGE_HIGH_MIN, WEAPON_DAMAGE_HIGH_MAX);
+      }
+
+      
+      if viWeaponQuality = WEAPON_QUALITY_LOW
+      {
+         iDamage = iDamage + WEAPON_LOW_QUALITY_DAMAGE;
+      }
+
+      if viWeaponQuality = WEAPON_QUALITY_HIGH
+      {
+         iDamage = iDamage + WEAPON_HIGH_QUALITY_DAMAGE;
+      }
+
+      if viWeaponQuality = WEAPON_NERUDITE
+      {
+         iDamage = iDamage + WEAPON_NERUDITE_DAMAGE;
+      }
+
+      return iDamage;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:241</p>
+<h4>GetDamage(target = $)</h4>
+<pre><code>{
+      local iDamage, i, oWeapAtt;
+
+      
+      iDamage = send(self,@GetBaseDamage,#who=poOwner,#target=target);
+
+      
+      
+      for i in plItem_Attributes
+      {
+         oWeapAtt = send(SYS,@FindItemAttByNum,#num=send(self,@GetNumFromCompound,#compound=first(i)));
+         if isClass(oWeapAtt,&amp;WeaponAttribute)
+         {
+            iDamage = send(oWeapAtt,@ModifyDamage,#damage=iDamage,#wielder=poOwner,
+                           #target=target,#lData=i);
+         }
+      }
+
+      iDamage = iDamage + piDamageBonus;
+
+      
+      
+
+      return iDamage;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:280</p>
+<h4>GetRange()</h4>
+<pre><code>{
+      local iRange;
+      
+      
+      if viWeaponType = WEAPON_TYPE_BLUDGEON
+      {
+         iRange = WEAPON_RANGE_LOW;
+      }
+
+      if viWeaponType = WEAPON_TYPE_THRUST
+      {
+         iRange = WEAPON_RANGE_HIGH;
+      }
+
+      if viWeaponType = WEAPON_TYPE_SLASH
+      {
+         iRange = WEAPON_RANGE_MID;
+      }
+
+      
+      if viWeaponQuality = WEAPON_QUALITY_LOW
+      {
+         iRange = iRange + WEAPON_LOW_QUALITY_RANGE;
+      }
+
+      if viWeaponQuality = WEAPON_QUALITY_HIGH
+      {
+         iRange = iRange + WEAPON_HIGH_QUALITY_RANGE;
+      }
+
+      if viWeaponQuality = WEAPON_NERUDITE
+      {
+         iRange = iRange + WEAPON_NERUDITE_RANGE;
+      }
+
+      return iRange;
+   }   </code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:307</p>
+<h4>GetDisarmBonus()</h4>
+<p>Weapon's bonus to disarm attempts, roughly in percent</p>
+<pre><code>{
+      local iDisarm;
+      
+      
+      if viWeaponType = WEAPON_TYPE_BLUDGEON
+      {
+         iDisarm = WEAPON_DISARM_LOW;
+      }
+
+      if viWeaponType = WEAPON_TYPE_THRUST
+      {
+         iDisarm = WEAPON_DISARM_HIGH;
+      }
+
+      if viWeaponType = WEAPON_TYPE_SLASH
+      {
+         iDisarm = WEAPON_DISARM_MID;
+      }
+
+      
+      if viWeaponQuality = WEAPON_QUALITY_LOW
+      {
+         iDisarm = iDisarm + WEAPON_LOW_QUALITY_DISARM;
+      }
+
+      if viWeaponQuality = WEAPON_QUALITY_HIGH
+      {
+         iDisarm = iDisarm + WEAPON_HIGH_QUALITY_DISARM;
+      }
+
+      if viWeaponQuality = WEAPON_NERUDITE
+      {
+         iDisarm = iDisarm + WEAPON_NERUDITE_DISARM;
+      }
+
+      return iDisarm;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:346</p>
+<h4>GetBaseSpellModifier()</h4>
+<pre><code>{
+      local iModifier;
+
+      
+      if viWeaponType = WEAPON_TYPE_BLUDGEON
+      {
+         iModifier = WEAPON_SPELL_HIGH;
+      }
+
+      if viWeaponType = WEAPON_TYPE_THRUST
+      {
+         iModifier = WEAPON_SPELL_MID;
+      }
+
+      if viWeaponType = WEAPON_TYPE_SLASH
+      {
+         iModifier = WEAPON_SPELL_LOW;
+      }
+
+      
+      if viWeaponQuality = WEAPON_QUALITY_LOW
+      {
+         iModifier = iModifier + WEAPON_LOW_QUALITY_SPELL;
+      }
+
+      if viWeaponQuality = WEAPON_QUALITY_HIGH
+      {
+         iModifier = iModifier + WEAPON_HIGH_QUALITY_SPELL;
+      }
+
+      if viWeaponQuality = WEAPON_NERUDITE
+      {
+         iModifier = iModifier + WEAPON_NERUDITE_SPELL;
+      }
+
+      return iModifier;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:386</p>
+<h4>GetProf(who = $)</h4>
+<pre><code>{
+      send(who,@FlipSkillAtrophyFlag,#SKID=viProficiency_needed);
+      
+      return send(who,@GetSkillAbility,#skill_num=viProficiency_needed);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:427</p>
+<h4>GetProfNumber()</h4>
+<pre><code>{
+      return viProficiency_needed;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:434</p>
+<h4>GetStroke(who = $)</h4>
+<pre><code>{
+      send(who,@FlipSkillAtrophyFlag,#SKID=Send(self,@GetDefaultStrokeNumber));
+      
+      return send(who,@GetSkillAbility,#skill_num=Send(self,@GetDefaultStrokeNumber));
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:439</p>
+<h4>GetDefaultStrokeNumber()</h4>
+<pre><code>{
+      return SKID_SLASH;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:446</p>
+<h4>ImproveProficiency(who = $, target = $, bonus = 0)</h4>
+<pre><code>{      
+      send(send(SYS,@findSkillbynum,#num=viProficiency_needed),@ImproveAbility,
+           #who=who,#target=target,#bonus=bonus);
+             
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:451</p>
+<h4>GetParryAbility(who = $)</h4>
+<pre><code>{
+      return send(who,@GetSkillAbility,#skill_num=SKID_PARRY);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:461</p>
+<h4>GetAttackName()</h4>
+<pre><code>{
+      return vrName;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:467</p>
+<h4>ReqUseSomething(what = $)</h4>
+<pre><code>{
+      if IsClass(what,&amp;Weapon)
+      {
+         if Send(poOwner,@TryUnuseItem,#what=self)
+         {
+            propagate;
+         }
+         else
+         {
+            return FALSE;
+         }
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:474</p>
+<h4>WeaponHitTarget()</h4>
+<pre><code>{
+      
+      if random(1,100) &lt; WEAPON_TAKE_DAMAGE_PCT   
+      {
+         piHits = piHits - 1;
+      }
+
+      if piHits &lt;= 0
+      {
+         send(self,@WeaponBroke);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:491</p>
+<h4>ReqWeaponAttack(what = $)</h4>
+<pre><code>{
+      if piHits &lt;= 0
+      {
+         Send(poOwner,@MsgSendUser,#message_rsc=weapon_already_broken,
+              #parm1=Send(self,@GetCapDef),#parm2=vrName);
+         Send(poOwner,@TryUnuseItem,#what=self);
+         
+         return FALSE;
+      }
+
+      Send(self,@WeaponAttack,#what=what);
+      
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:507</p>
+<h4>ReqUseAmmo(ammotype = $)</h4>
+<p>At this point, a non-ranged weapon SHOULD never make it this far (see ReqWeaponAttack above).  This is just to catch anything that slips thru the cracks.  See ranged.kod for what this does.</p>
+<pre><code>{
+      debug(&quot;A non-ranged weapon called @ReqUseAmmo!&quot;);
+      
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:523</p>
+<h4>WeaponBroke()</h4>
+<pre><code>{
+      local i, oItemAtt;
+
+      
+      
+      for i in plItem_Attributes
+      {
+         oItemAtt = send(SYS,@FindItemAttByNum,
+                         #num=send(self,@GetNumFromCompound,#compound=first(i)));
+         send(oItemAtt,@RemoveFromItem,#oItem=self);
+      }
+
+      Send(poOwner,@SomethingChanged,#what=self);
+      Send(poOwner,@MsgSendUser,#message_rsc=vrWeaponBroke,
+           #parm1=Send(self,@GetCapDef),#parm2=vrName);
+      Send(poOwner,@TryUnuseItem,#what=self);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:533</p>
+<h4>WeaponAttack(what = $)</h4>
+<p>Called by ReqWeaponAttack when the weapon is actually used in an attack.</p>
+<pre><code>{
+      piUsed = ATTACKING;
+      
+      if vrWeapon_window_overlay &lt;&gt; $
+      {
+         Send(poOwner,@ChangeWindowOverlay,#what=self);
+      }
+      
+      if vrWeapon_overlay &lt;&gt; $
+      {
+         Send(poOwner,@DoAttackSwing);
+      }
+      
+      piUsed = USED;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:554</p>
+<h4>NewUsed()</h4>
+<pre><code>{
+      local oItemAtt;
+
+      
+      
+      if send(self,@HasAttribute,#ItemAtt=WA_GLOWING)
+      {
+         oItemAtt = send(SYS,@FindItemAttByNum,#num=WA_GLOWING);
+         send(oItemAtt,@ItemUsed,#oItem=self,#oPlayer=poOwner);
+      }
+
+      piUsed = USED;
+
+      
+      if vrWeapon_window_overlay &lt;&gt; $
+      {
+         Send(poOwner,@SetWindowOverlay,#what=self);
+      }
+
+      
+      if vrWeapon_overlay &lt;&gt; $
+      {
+         Send(poOwner,@SetOverlay,#what=self);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:574</p>
+<h4>NewUnused()</h4>
+<pre><code>{
+      local oItemAtt;
+
+      
+      
+      if send(self,@HasAttribute,#ItemAtt=WA_GLOWING)
+      {
+         oItemAtt = send(SYS,@FindItemAttByNum,#num=WA_GLOWING);
+         send(oItemAtt,@ItemUnused,#oItem=self,#oPlayer=poOwner);
+      }
+
+      piUsed = UNUSED;
+
+      if vrWeapon_window_overlay &lt;&gt; $
+      {
+         Send(poOwner,@RemoveWindowOverlay,#what=self);
+      }
+
+      if vrWeapon_overlay &lt;&gt; $
+      {
+         Send(poOwner,@RemoveOverlay,#what=self);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:603</p>
+<h4>GetAttackSpell()</h4>
+<pre><code>{
+      return piAttack_spell;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:634</p>
+<h4>GetAttackType()</h4>
+<pre><code>{
+      return piAttack_type;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:639</p>
+<h4>SetTypeFlag(flag = 0, value = FALSE)</h4>
+<pre><code>{
+      if value
+      {
+         piAttack_type = piAttack_type | flag ;
+      }
+      else
+      {
+         piAttack_type = piAttack_type &amp; ~flag ;
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:644</p>
+<h4>CheckTypeFlag(flag = 0)</h4>
+<pre><code>{
+      return (piAttack_type &amp; flag) ;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:658</p>
+<h4>SetSpellFlag(flag = 0, value = FALSE)</h4>
+<pre><code>{
+      if value
+      {
+         piAttack_spell = piAttack_spell | flag ;
+      }
+      else
+      {
+         piAttack_spell = piAttack_spell &amp; ~flag ;
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:663</p>
+<h4>CheckSpellFlag(flag = 0)</h4>
+<pre><code>{
+      return (piAttack_spell &amp; flag);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:677</p>
+<h4>GetWindowOverlay()</h4>
+<pre><code>{
+      return vrWeapon_window_overlay;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:687</p>
+<h4>GetWindowOverlayID()</h4>
+<pre><code>{
+      return PWO_RIGHT_HAND;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:692</p>
+<h4>GetWindowOverlayHotspot()</h4>
+<pre><code>{
+      if piUsed = UNUSED
+      {
+         
+         return 0;
+      }
+
+      return HS_SE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:697</p>
+<h4>SendWindowOverlayAnimation()</h4>
+<pre><code>{
+      local iFlags;
+
+      iFlags = piItem_flags &amp; ITEM_PALETTE_MASK;
+      if iFlags &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION, 1,iFlags);
+      }
+      
+      if piUsed = ATTACKING
+      { 
+         AddPacket(1,ANIMATE_ONCE, 4,150, 2,vrWeapon_window_attack_start,
+                   2,vrWeapon_window_attack_end, 2,vrWeapon_window_hold);
+      }
+      else
+      {
+         AddPacket(1,ANIMATE_NONE, 2,vrWeapon_window_hold);
+      }
+      
+      return;      
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:708</p>
+<h4>SendWindowOverlayOverlays()</h4>
+<pre><code>{
+      
+      AddPacket(1,0); 
+
+      return; 
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:731</p>
+<h4>GetOverlay(animation = $)</h4>
+<pre><code>{
+      return vrWeapon_overlay;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:743</p>
+<h4>GetOverlayHotspot(animation = $)</h4>
+<pre><code>{
+      return HS_RIGHT_WEAPON;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:748</p>
+<h4>SendOverlayAnimation(iAnimation = $)</h4>
+<pre><code>{
+      local iFlags;
+
+      iFlags = piItem_flags &amp; ITEM_PALETTE_MASK;
+      if iFlags &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION, 1,iFlags);
+      }
+      
+      if iAnimation = PANM_WEAPON_ATTACK 
+      {
+         AddPacket(1,ANIMATE_ONCE, 4,300, 2,1, 2,3, 2,4);
+      }
+      else
+      { 
+         AddPacket(1,ANIMATE_NONE, 2,4);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:753</p>
+<h4>SendOverlayInformation(ianimation = $)</h4>
+<pre><code>{
+      AddPacket(4,Send(self,@GetOverlay));
+      AddPacket(1,Send(self,@GetOverlayHotspot));
+      Send(self,@SendOverlayAnimation,#iAnimation=iAnimation);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:775</p>
+<h4>SendInventoryAnimation()</h4>
+<pre><code>{
+      local iFlags;
+
+      if piHits &gt; 0 OR viBroken_group = $
+      {
+         propagate;
+      }
+
+      iFlags = piItem_flags &amp; ITEM_PALETTE_MASK;
+      if iFlags &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION, 1,iFlags);
+      }
+
+      AddPacket(1,ANIMATE_NONE, 2,viBroken_group);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:784</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      if piHits &gt; 0 OR viBroken_group = $
+      {
+         propagate;
+      }
+
+      if (piItem_flags &amp; ITEM_PALETTE_MASK) &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,piItem_flags &amp; ITEM_PALETTE_MASK);
+      }
+
+      AddPacket(1,ANIMATE_NONE,2,viBroken_group);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:804</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      local iFlags;
+
+      if piHits &gt; 0 OR viBroken_group = $
+      {
+         propagate;
+      }
+
+      iFlags = piItem_flags &amp; ITEM_PALETTE_MASK;
+      if iFlags &lt;&gt; 0
+      {
+         AddPacket(1,ANIMATE_TRANSLATION, 1,iFlags);
+      }
+
+      AddPacket(1,ANIMATE_NONE, 2,viBroken_group);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:821</p>
+<h4>CanMend()</h4>
+<p>Weapons are mendable, usually.</p>
+<pre><code>{ 
+      local i, oItemAtt;
+      
+      for i in plItem_Attributes
+      {
+         oItemAtt = send(SYS,@FindItemAttByNum,
+                         #num=send(self,@GetNumFromCompound,#compound=first(i)));
+         if oItemAtt = $
+         {
+            DEBUG(&quot;Illegal ItemAtt in list!&quot;);
+
+            continue;
+         }
+    
+         if NOT send(oItemAtt,@ItemCanMend,#oItem=self)
+         {
+            return FALSE;
+         }
+      }
+
+      return TRUE; 
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:843</p>
+<h4>CanEnchant(oSpell = $)</h4>
+<p>Weapons CAN usually be dedicated to Qor, Kraanan or Shal'ille.  Exception:  weapons that are already enchanted may not be, but this is taken care of on a spell by spell basis, so that reagents are used correctly.</p>
+<pre><code>{
+      local i, oItemAtt, iSpell;
+
+      if piAttack_spell &lt;&gt; 0      
+         OR send(self,@CheckTypeFlag,#flag=ATCK_WEAP_MAGIC)
+      { 
+         iSpell = send(oSpell,@GetSpellNum);
+         if iSpell = SID_HOLY_WEAPON or iSpell = SID_UNHOLY_WEAPON 
+            OR iSpell = SID_ENCHANT_WEAPON
+         {
+            return FALSE;
+         }
+      }   
+
+      for i in plItem_Attributes
+      {
+         oItemAtt = send(SYS,@FindItemAttByNum,
+                         #num=send(self,@GetNumFromCompound,#compound=first(i)));
+         if oItemAtt = $
+         {
+            DEBUG(&quot;Illegal ItemAtt in list!&quot;);
+
+            continue;
+         }
+
+         if NOT send(oItemAtt,@ItemCanEnchant,#oItem=self)
+         {
+            return FALSE;
+         }
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:868</p>
+<h4>ReqRepair()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:907</p>
+<h4>IsGlowing()</h4>
+<pre><code>{
+      return Send(self,@HasAttribute,#ItemAtt=WA_GLOWING);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:912</p>
+<h4>GetLightColor()</h4>
+<pre><code>{
+      local oWeapAtt;
+
+      if Send(self,@HasAttribute,#ItemAtt=WA_GLOWING)
+      {
+         oWeapAtt = Send(SYS,@FindItemAttByNum,#num=WA_GLOWING);
+         return Send(oWeapAtt,@GetLightColor);
+      }
+
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:917</p>
+<h4>GetLightIntensity()</h4>
+<pre><code>{
+      local oWeapAtt;
+
+      if Send(self,@HasAttribute,#ItemAtt=WA_GLOWING)
+      {
+         oWeapAtt = Send(SYS,@FindItemAttByNum,#num=WA_GLOWING);
+         return Send(oWeapAtt,@GetLightIntensity);
+      }
+
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/weapon.kod:930</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

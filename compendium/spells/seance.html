@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>seance — Meridian 59 Compendium</title>
+<meta name="description" content="Shal'ille's magic allows communication with the spirit world to reveal the location of the last person to slay an innocent. Requires herbs to cast.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › seance</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/iseance_g1.png" alt="seance" width="128" height="128"></div><div class="heroText"><h1>seance</h1><div class="tags"><a class="tag school-1" href="../guides/shalille.html">Shal’ille</a><span class="tag ">Level 1</span><span class="tag ">Banned in safe zones</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/shalille.html">Shal’ille</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">1</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">10</div></div><div class="fact"><div class="lbl">Karma required</div><div class="val">≥ +10</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">0 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">154</div></div></div><div class="flavor">Shal'ille's magic allows communication with the spirit world to reveal the location of the last person to slay an innocent. Requires herbs to cast.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">10</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/herbs.html">herb</a> ×2</td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">at least +10</td><td class="">Derived, not stored: <code class="k">GetRequiredKarma</code> returns level × +10 for this school.</td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">20</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">instant</td><td class=""></td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/seance.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/shalillepriestess.html">Priestess Xiana</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">CanPayCosts</code></li><li><code class="k">CastSpell</code></li><li><code class="k">GetSeanceStrength</code></li><li><code class="k">GetDuration</code></li><li><code class="k">EndEnchantment</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/iseance_g1.png" alt="seance group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/iseance_g2.png" alt="seance group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/seance.kod:11</p>
+<p><code class="k">Seance</code> is <code class="k">Spell</code> — full chain <code class="k">Seance</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>Seance_name_rsc</code></td><td class=""><em>seance</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>Seance_icon_rsc</code></td><td class=""><em>iseance.bgf</em></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>Seance_desc_rsc</code></td><td class=""><em>Shal'ille's magic allows communication with the spirit world to reveal the location of the</em></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>Seance_sound</code></td><td class=""><em>sseance.wav</em></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vrSpell_intro</code></td><td class=""><code>Seance_spell_intro_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_SEANCE</code></td><td class="">154</td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_SHALILLE</code></td><td class="">1</td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viFlash</code></td><td class=""><code>FLASH_GOOD</code></td><td class="">1</td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">vbCastable_in_HappyLand</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="55">55</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      
+
+      plReagents = $;
+      plReagents = Cons([&amp;Herbs,2],plReagents);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/seance.kod:61</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/seance.kod:71</p>
+<h4>CanPayCosts(who = $, lTargets = $)</h4>
+<pre><code>{
+      local oKiller;
+   
+      oKiller = send(SYS,@GetLastMurderer);
+
+      if oKiller = $ OR (NOT send(oKiller,@IsLoggedOn))
+         OR (isClass(oKiller,&amp;DM) AND NOT send(oKiller,@IsHuntable))
+      { 
+         send(who,@MsgSendUser,#message_rsc=Seance_No_Murderer_rsc);
+
+         return FALSE;
+      }  
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/seance.kod:76</p>
+<h4>CastSpell(who = $, lTargets = $, iSpellPower = 0)</h4>
+<pre><code>{
+      local oKiller,iValue,oSpell,oRoom,oLocation,rLocationName;
+
+      oKiller = send(SYS,@GetLastMurderer);
+      iValue = send(self,@GetSeanceStrength,#iSpellpower=iSpellPower,#who=who);
+
+      oLocation = send(oKiller,@GetOwner);
+      if oLocation &lt;&gt; $
+      {
+         rLocationName = Send(oLocation,@GetName);
+      }
+
+      if Send(who,@IsEnchanted,#what=self)
+      {
+         rlocationName = Send(who,@GetEnchantedState,#what=self);
+      }
+      else
+      {
+         oSpell = send(SYS,@FindSpellByNum,#Num=SID_CLOAK);
+
+         
+         if (Random(1,100) &gt; iValue)
+            OR (send(oKiller,@IsEnchanted,#what=oSpell)
+                AND (Random(1,100) &lt; send(oKiller,@GetEnchantedState,#what=oSpell)))
+         {
+            
+            oRoom = send(oSpell,@GetWrongRoom);                            
+            rLocationName = Send(oRoom,@GetName);
+            Send(who,@StartEnchantment,#what=self,#state=rLocationName,
+                 #time=Send(self,@GetDuration,#spellpower=ispellpower,#who=who),
+                 #iSpellPower=iSpellPower,#lastcall=TRUE,#addicon=FALSE);
+
+            if (send(oKiller,@IsEnchanted,#what=oSpell))
+            {
+               Send(oKiller,@MsgSendUser,#message_rsc=Seance_Cloaked_Target_rsc);
+            }
+            
+         }
+         else
+         {
+            
+            Send(oKiller,@MsgSendUser,#message_rsc=Seance_I_See_You_rsc);
+         }
+      }
+
+      Send(who,@MsgSendUser,#message_rsc=Seance_casting_rsc,#parm1=Send(oKiller,@GetDef),
+           #parm2=Send(oKiller,@GetUserName));
+      Send(who,@MsgSendUser,#message_rsc=Seance_Target_Location_rsc,
+           #parm1=Send(oKiller,@GetDef),#parm2=Send(oKiller,@GetUserName),
+           #parm3=rLocationName);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/seance.kod:93</p>
+<h4>GetSeanceStrength(iSpellpower = 0, who = $)</h4>
+<pre><code>{
+      local iPower;
+
+      if IsClass(who,&amp;DM) AND Send(who,@PlayerIsImmortal)
+      {
+         
+         return 100;
+      }
+
+      
+      
+      iPower = iSpellpower/2 + send(who,@GetKarma)/3 + Bound(send(who,@getmaxhealth),1,100)/4; 
+      iPower = bound(iPower,15,99);
+
+      return iPower;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/seance.kod:148</p>
+<h4>GetDuration(iSpellPower = 0, who = $)</h4>
+<pre><code>{
+      local iDuration;      
+
+      
+      iDuration = 300 - (((7 * iSpellpower)/5) + send(who,@GetKarma));
+      iDuration = bound(iDuration,60,300);
+      iDuration = iDuration * 1000;     
+
+      return random(iDuration/2,iDuration);
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/seance.kod:166</p>
+<h4>EndEnchantment(who = $, report = TRUE, state = 0)</h4>
+<pre><code>{
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/seance.kod:178</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

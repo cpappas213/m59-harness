@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Bone Priestess — Meridian 59 Compendium</title>
+<meta name="description" content="This female Avar has been exiled from her society for her illegal magic practices. At least that's the common belief, although it is difficult to determine if a">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › The Bone Priestess</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/kcbonepr_g1.png" alt="The Bone Priestess" width="261" height="407"></div><div class="heroText"><h1>The Bone Priestess</h1><p class="lede">This female Avar has been exiled from her society for her illegal magic practices. At least that's the common belief, although it is difficult to determine if any reason can be applied to this strange creature.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Neutral</span><span class="tag ">Teacher</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 0
+                = 75
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>hit</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>1 place in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="Lair of the Bone Priestess"><a href="../zones/outdoorskd1.html">Lair of the Bone Priestess</a></td><td class="" data-sort="Ko’catan jungle">Ko’catan jungle</td><td class="" data-sort="placed">placed</td><td class="num " data-sort="-1">row 19, col 40</td><td class=""><code>monsroom/kcforest/kd1.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_NPC</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_NOMOVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_NOFIGHT</code></td><td class="">Doesn't fight</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_BARTENDER</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_NOMOVE</code></td><td class="">Doesn't move</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_APOTHECARY</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RANDOM</code></td><td class="">Performs random actions</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_URCHIN</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_LISTEN</code></td><td class="">Responds to speech</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_TAILOR</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RECEIVE</code></td><td class="">Will accept items/gifts</td></tr>
+<tr><td class=""><code class="k">MOB_SELLER</code></td><td class="">Has items for sale</td></tr>
+<tr><td class=""><code class="k">MOB_TEACHER</code></td><td class="">Has skills or spells for sale</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>What it offers</h2><h3>Spells taught</h3><p><a href="../spells/detectinvisible.html">detect invisible</a>, <a href="../spells/resistevil.html">holy resolve</a>, <a href="../spells/resistgood.html">unholy resolve</a>, <a href="../spells/shalillebane.html">Shal'illebane</a>, <a href="../spells/qorbane.html">Qorbane</a></p><p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbonepr.kod — <code class="k">plFor_Sale</code>: element 1 goods, element 2 skills, element 3 spells (kod/object/active/holder/nomoveon/battler/monster.kod:2773, :2797)</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbonepr.kod:11</p>
+<p><code class="k">KocatanBonePriestess</code> is <code class="k">KocatanTown</code> — full chain <code class="k">KocatanBonePriestess</code> ← <code class="k">KocatanTown</code> ← <code class="k">Towns</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>KocatanBonePriestess_name_rsc</code></td><td class=""><em>The Bone Priestess</em></td><td class="num " data-sort="87">87</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>KocatanBonePriestess_icon_rsc</code></td><td class=""><em>kcbonepr.bgf</em></td><td class="num " data-sort="88">88</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>KocatanBonePriestess_desc_rsc</code></td><td class=""><em>This female Avar has been exiled from her society for her illegal magic practices. At leas</em></td><td class="num " data-sort="89">89</td></tr>
+<tr><td class=""><code class="k">viMerchant_markup</code></td><td class=""><code>MERCHANT_EXPENSIVE</code></td><td class="">4</td><td class="num " data-sort="90">90</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_NOFIGHT | MOB_SELLER | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_TEACHER</code></td><td class="">1211</td><td class="num " data-sort="92">92</td></tr>
+<tr><td class=""><code class="k">viOccupation</code></td><td class=""><code>MOB_ROLE_PRIESTESS</code></td><td class="">13</td><td class="num " data-sort="93">93</td></tr>
+<tr><td class=""><code class="k">viGender</code></td><td class=""><code>GENDER_FEMALE</code></td><td class="">2</td><td class="num " data-sort="95">95</td></tr>
+<tr><td class=""><code class="k">vrTeach_message</code></td><td class=""><code>KocatanBonePriestess_iteach</code></td><td class=""><em>ik QUAWK ak </em></td><td class="num " data-sort="97">97</td></tr>
+<tr><td class=""><code class="k">vrTeach_message2</code></td><td class=""><code>KocatanBonePriestess_atthatlevel</code></td><td class=""><em> nyuk KAW-KAW uk uk!</em></td><td class="num " data-sort="98">98</td></tr>
+<tr><td class=""><code class="k">vrUnwanted_keep</code></td><td class=""><code>KocatanBonePriestess_unwanted_keep</code></td><td class=""><em>~k%s%s tells you, &quot;ik CHEEE-UP nak ik nyuk AK-AK!!~n~k&quot;</em></td><td class="num " data-sort="99">99</td></tr>
+<tr><td class=""><code class="k">vrUnwanted_pay</code></td><td class=""><code>KocatanBonePriestess_unwanted_pay</code></td><td class=""><em>~k%s%s tells you, &quot;chp ka-ak chp NAK-NAK ik AK!~n~k&quot;</em></td><td class="num " data-sort="100">100</td></tr>
+<tr><td class=""><code class="k">vrUnwanted_give</code></td><td class=""><code>KocatanBonePriestess_unwanted_give</code></td><td class=""><em>~k%s%s tells you, &quot;WAK-WAK! AAK WAK-NAK-NAK!! CHEEE-UP NYUK!!~n~k&quot;</em></td><td class="num " data-sort="101">101</td></tr>
+<tr><td class=""><code class="k">vrUnwanted_token</code></td><td class=""><code>KocatanBonePriestess_unwanted_token</code></td><td class=""><em>~k%s%s tells you, &quot;ik wak?  wak-wak chp aak ak nyuk!~n~k&quot;</em></td><td class="num " data-sort="102">102</td></tr>
+<tr><td class=""><code class="k">vrNothing_for_sale</code></td><td class=""><code>KocatanBonePriestess_nothing_for_sale</code></td><td class=""><em>TIC-TIC-TIC WAK NYUK-NYUK AAAK AAAK!!</em></td><td class="num " data-sort="103">103</td></tr>
+<tr><td class=""><code class="k">vrMrcnt_too_costly</code></td><td class=""><code>KocatanBonePriestess_mrcnt_too_costly</code></td><td class=""><em>AAAK TIC-TIC NYUK IK NYUK-TAK!!</em></td><td class="num " data-sort="104">104</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">plSquawks</code></td><td class=""><code>$</code></td><td class="num " data-sort="108">108</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor()</h4>
+<pre><code>{
+      plSquawks = [KocatanBonePriestess_squawk_1, KocatanBonePriestess_squawk_2, KocatanBonePriestess_squawk_3,
+                     KocatanBonePriestess_squawk_4,KocatanBonePriestess_squawk_5, KocatanBonePriestess_squawk_6,
+                     KocatanBonePriestess_squawk_7, KocatanBonePriestess_squawk_8, KocatanBonePriestess_squawk_9,
+                     KocatanBonePriestess_squawk_10, KocatanBonePriestess_squawk_11, KocatanBonePriestess_squawk_12,
+                     KocatanBonePriestess_squawk_13, KocatanBonePriestess_squawk_14, KocatanBonePriestess_squawk_15,
+                     KocatanBonePriestess_squawk_16, KocatanBonePriestess_squawk_17, KocatanBonePriestess_squawk_18,
+                     KocatanBonePriestess_squawk_19, KocatanBonePriestess_squawk_20, KocatanBonePriestess_squawk_21,
+                     KocatanBonePriestess_squawk_22, KocatanBonePriestess_squawk_23, KocatanBonePriestess_squawk_24,
+                     KocatanBonePriestess_squawk_25, KocatanBonePriestess_squawk_26, KocatanBonePriestess_squawk_27,
+                     KocatanBonePriestess_squawk_28, KocatanBonePriestess_squawk_29, KocatanBonePriestess_squawk_30
+                  ];
+      plSquawks = cons(KocatanBonePriestess_squawk_31, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_32, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_33, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_34, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_35, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_36, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_37, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_38, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_39, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_40, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_41, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_42, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_43, plSquawks);
+      plSquawks = cons(KocatanBonePriestess_squawk_44, plSquawks);
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbonepr.kod:112</p>
+<h4>SetForSale()</h4>
+<pre><code>{
+      plFor_sale = [ $,$,
+                     [SID_DETECT_INVISIBLE,SID_HOLY_RESOLVE,SID_UNHOLY_RESOLVE,
+                      SID_SHALILLEBANE, SID_QORBANE ]];
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbonepr.kod:142</p>
+<h4>AddLearnAdvice()</h4>
+<pre><code>{
+      
+      local lFinal, lDialogue, oAbility, sid, oName, lTriggers;
+
+      if not (viAttributes &amp; MOB_TEACHER) { return; }
+
+      if plFor_sale = $ or length(plFor_sale) &lt; 3
+      {  return;  }
+
+      
+      lDialogue = $;
+      lTriggers = $;
+   
+      for sid in nth(plFor_sale,3)
+      {
+	 
+	 oAbility = send(SYS,@FindSpellByNum,#num=sid);
+	 if oAbility &lt;&gt; $ and send(oAbility,@GiveAdvice)
+	 {  oName = send(oAbility,@GetName);  }
+
+	 lTriggers = cons(oName,lTriggers);
+      }	 	 
+      
+      lDialogue = cons([lTriggers,0,[LIBACT_SAY, bonepr_spellsquawk1]],lDialogue);
+      lDialogue = cons([lTriggers,0,[LIBACT_SAY, bonepr_spellsquawk2]],lDialogue);
+      lDialogue = cons([lTriggers,0,[LIBACT_SAY, bonepr_spellsquawk3]],lDialogue);
+      lDialogue = cons([lTriggers,0,[LIBACT_SAY, bonepr_spellsquawk4]],lDialogue);
+      
+      lFinal = [ GetClass(self), lDialogue ];
+
+      send(send(SYS,@GetLibrary),@AppendSpeechLibrary,#lDialogue=lFinal);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbonepr.kod:150</p>
+<h4>GetRandomSquawking(squawkLength = 1)</h4>
+<pre><code>{
+      local returnString;
+      clearTempString();
+      while squawkLength &gt; 0 {
+         squawkLength = (squawkLength - 1);
+         send(self,@AppendRandomSquawkToTempString);
+         if squawkLength &gt; 0 { AppendTempString(&quot; &quot;); }
+      }
+      AppendTempString(&quot;!&quot;);
+      returnString = createString();
+      setString(returnString,GetTempString());
+      return returnString;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbonepr.kod:185</p>
+<h4>AppendRandomSquawkToTempString()</h4>
+<pre><code>{
+      local i;
+      i = random(1,length(plSquawks));
+      AppendTempString(nth(plSquawks,i));
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbonepr.kod:200</p>
+<h4>SomeoneSaid(what = $, type = $, string = $)</h4>
+<pre><code>{
+      local i;
+      if (isClass(what,&amp;User)) and (type = SAY_NORMAL) {
+         for i in plSquawks {
+            if (stringContain(string, i)) {
+               send( self,@Say,#message_rsc=monster_percent_q,
+                     #parm1=send(self,@GetRandomSquawking,#squawkLength=random(2,5)) );
+               break;
+            }
+         }
+      }
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbonepr.kod:208</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

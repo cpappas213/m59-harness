@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tendrath — Meridian 59 Compendium</title>
+<meta name="description" content="This druidic mage's demeanor is so calm and peaceful that you can't help but wonder why his ghostly shade still walks this plane.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Tendrath</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/nnm01_g1.png" alt="Tendrath" width="139" height="383"></div><div class="heroText"><h1>Tendrath</h1><p class="lede">This druidic mage's demeanor is so calm and peaceful that you can't help but wonder why his ghostly shade still walks this plane.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Neutral</span><span class="tag ">Teacher</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 0
+                = 75
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>hit</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>1 place in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="The meeting place of the Gods"><a href="../zones/godroom.html">The meeting place of the Gods</a></td><td class="" data-sort="Outlying areas">Outlying areas</td><td class="" data-sort="placed">placed</td><td class="num " data-sort="-1">row 21, col 11</td><td class=""><code>godroom.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_NPC</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_NOMOVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_NOFIGHT</code></td><td class="">Doesn't fight</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_BARTENDER</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_NOMOVE</code></td><td class="">Doesn't move</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_APOTHECARY</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RANDOM</code></td><td class="">Performs random actions</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_URCHIN</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_LISTEN</code></td><td class="">Responds to speech</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_TAILOR</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RECEIVE</code></td><td class="">Will accept items/gifts</td></tr>
+<tr><td class=""><code class="k">MOB_SELLER</code></td><td class="">Has items for sale</td></tr>
+<tr><td class=""><code class="k">MOB_TEACHER</code></td><td class="">Has skills or spells for sale</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>What it offers</h2><h3>Spells taught</h3><p><a href="../spells/summonweb.html">spider web</a>, <a href="../spells/lightningwall.html">lightning wall</a>, <a href="../spells/deflect.html">deflect</a>, <a href="../spells/hunt.html">hunt</a></p><p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/huntghst.kod — <code class="k">plFor_Sale</code>: element 1 goods, element 2 skills, element 3 spells (kod/object/active/holder/nomoveon/battler/monster.kod:2773, :2797)</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/huntghst.kod:11</p>
+<p><code class="k">HunterGhost</code> is <code class="k">Wanderer</code> — full chain <code class="k">HunterGhost</code> ← <code class="k">Wanderer</code> ← <code class="k">Towns</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>HunterGhost_name_rsc</code></td><td class=""><em>Tendrath</em></td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>HunterGhost_icon_rsc</code></td><td class=""><em>nnm01.bgf</em></td><td class="num " data-sort="33">33</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>HunterGhost_desc_rsc</code></td><td class=""><em>This druidic mage's demeanor is so calm and peaceful that you can't help but wonder why hi</em></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_RECEIVE | MOB_TEACHER | MOB_SELLER</code></td><td class="">1211</td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">viOccupation</code></td><td class=""><code>MOB_ROLE_WIZARD</code></td><td class="">23</td><td class="num " data-sort="37">37</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viQuestID</code></td><td class=""><code>0</code></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">piDrawfx</code></td><td class=""><code>DRAWFX_TRANSLUCENT_50</code></td><td class="num " data-sort="42">42</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>CreateDestinationList()</h4>
+<pre><code>{
+      plDestinations = [ [RID_G8, 38, 38] , [RID_I9, 25, 56], [RID_CASTLE1B, 8, 3],
+                         [RID_K5, 45, 23] ];
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/huntghst.kod:46</p>
+<h4>SetForSale()</h4>
+<pre><code>{
+      plFor_Sale = [$,$,[SID_SPIDER_WEB, SID_LIGHTNING_WALL, SID_DEFLECT, SID_HUNT]];
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/huntghst.kod:53</p>
+<h4>CanDoTeach(who = $, sid = 0)</h4>
+<pre><code>{
+      if NOT send(self,@SpecialTeachChecks,#report=TRUE,#who=who,#num=sid)
+      {
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/huntghst.kod:60</p>
+<h4>CanAddSpell(who = $, num = 0, report = FALSE)</h4>
+<p>We require that a quest be done before one of the spells can be learned</p>
+<pre><code>{
+      if NOT send(self,@SpecialTeachChecks,#report=report,#who=who,#num=num)
+      {
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/huntghst.kod:70</p>
+<h4>SpecialTeachChecks(who = $, num = 0, report = FALSE)</h4>
+<p>We require that a quest be done before one of the spells can be learned</p>
+<pre><code>{
+      if ((num = SID_SPIDER_WEB) OR (num = SID_LIGHTNING_WALL))
+         AND NOT send(who,@CheckPlayerFlag,#flag=PFLAG_PKILL_ENABLE)
+      {
+         if report
+         {
+            send(who,@MsgSendUser,#message_rsc=huntghost_not_powerful);
+         }
+
+         return FALSE;
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/huntghst.kod:81</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

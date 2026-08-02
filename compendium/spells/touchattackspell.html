@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Touch Spell — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › Touch Spell</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/light_g1.png" alt="Touch Spell" width="128" height="128"></div><div class="heroText"><h1>Touch Spell</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><span class="tag ">Level 1</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><span class="muted">None</span></div></div><div class="fact"><div class="lbl">Level</div><div class="val">1</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">1</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">0 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">0</div></div></div><div class="flavor">This is a touch spell that does damage.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">1</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><span class="muted">none</span></td><td class="">This spell needs no material component.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">2</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">instant</td><td class=""></td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/persench/touchatk.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>No teacher in the current world data offers this spell. It may be granted by a quest, by an item, or reserved for monsters and administrators.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ImproveStroke</code></li><li><code class="k">CanPayCosts</code></li><li><code class="k">CastSpell</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">CheckWeaponAndDoAnimation</code> — Spell does not require a weapon, but a player may use this spell evenif they are armed.Also does the cast animation. In future, may provide different grfxfor different touch spells.</li><li><code class="k">ToHitImprovers</code> — A weapon stroke may have IMPROVERS, which may boost the performance of the stroke. Example, if a player has renweed, that may boost his thrust Default, return the hitroll raw.</li><li><code class="k">DamageFactors</code> — Attack spells typically are unaffected by strength, although they may be affected by other factors.</li><li><code class="k">GetHitsound</code></li><li><code class="k">GetProf</code></li><li><code class="k">GetStroke</code></li><li><code class="k">GetAttackType</code></li><li><code class="k">GetAttackSpell</code></li><li><code class="k">GetParryAbility</code></li><li><code class="k">CanBlock</code></li><li><code class="k">CanParry</code></li><li><code class="k">CanDodge</code></li><li><code class="k">GetAttackName</code></li><li><code class="k">GetRange</code> — This returns the range of the spell. Usually, this hovers around 2-3.</li><li><code class="k">CheckSpecial</code> — Checks to see if there are any special circumstances which preventsthe target player from performing this spell.</li><li><code class="k">FindDamage</code> — Damage for attack spells is determined largely by expertise in the spell.</li><li><code class="k">PlayerWasHitMsg</code> — The stroke may choose its own damage give or receive message. Otherwise player.kod will just choose a default - which is true for most weapon-based combat strokes (but not true for most punch strokes or touch spells.</li><li><code class="k">PlayerHitSomethingMsg</code> — The stroke may choose its own damage give or receive message. Otherwise player.kod will just choose a default - which is true for most weapon-based combat strokes (but not true for most punch strokes or touch spells.</li><li><code class="k">SendMissMessageToAttacker</code></li><li><code class="k">SendMissMessageToDefender</code></li><li><code class="k">PlayerKilledSomethingMsg</code> — The stroke may choose its own damage give or receive message. Otherwise player.kod will offer the default 'You killed the whatever' message.</li><li><code class="k">PlayerWasKilledMsg</code> — The stroke may choose its own damage give or receive message. Otherwise player.kod will just choose a default - as it does for most strokes.</li><li><code class="k">GetDuration</code></li><li><code class="k">InitializeEnchantmentState</code></li></ul><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:11</p>
+<p><code class="k">TouchAttackSpell</code> is <code class="k">PersonalEnchantment</code> — full chain <code class="k">TouchAttackSpell</code> ← <code class="k">PersonalEnchantment</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>. Subclasses: <code class="k">AcidTouch</code>, <code class="k">TouchOfFlame</code>, <code class="k">HolyTouch</code>, <code class="k">IcyFingers</code>, <code class="k">Zap</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>TouchAttackSpell_name_rsc</code></td><td class=""><em>Touch Spell</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>TouchAttackSpell_icon_rsc</code></td><td class=""><em>light.bgf</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>TouchAttackSpell_desc_rsc</code></td><td class=""><em>This is a touch spell that does damage.</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">vrMiss_sound</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrMissed_message_attacker</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">vrMissed_message_defender</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">vrAlreadyEnchanted</code></td><td class=""><code>PersonalEnchantment_already_enchanted_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">vrEnchantment_On</code></td><td class=""><code>PersonalEnchantment_On_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">vrEnchantment_Off</code></td><td class=""><code>PersonalEnchantment_Off_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">vrSuccess</code></td><td class=""><code>PersonalEnchantment_Success_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">vrSucceed</code></td><td class=""><code>TouchAttack_Succeed_rsc</code></td><td class=""><em>You have cast a touch attack on another player.  This is a bug.  Please report it.  Have a</em></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">vrPlayer_hit_something</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">vrPlayer_was_hit</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">vrPlayer_killed_something</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">vrPlayer_was_killed</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">viDefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">viStroke</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">viChance_To_Increase</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">viHit_Factor</code></td><td class=""><code>80</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">viMin_Damage</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">viMax_Damage</code></td><td class=""><code>6</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="76">76</td></tr>
+<tr><td class=""><code class="k">viRange</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">viAttackType</code></td><td class=""><code>ATCK_WEAP_UNARMED+ATCK_WEAP_PUNCH</code></td><td class="">24576</td><td class="num " data-sort="83">83</td></tr>
+<tr><td class=""><code class="k">viSpellType</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="85">85</td></tr>
+<tr><td class=""><code class="k">viPostCast_time</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="87">87</td></tr>
+<tr><td class=""><code class="k">vbCanCastOnOthers</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="90">90</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">plPrerequisites</code></td><td class=""><code>$</code></td><td class="num " data-sort="94">94</td></tr>
+<tr><td class=""><code class="k">plReagents</code></td><td class=""><code>$</code></td><td class="num " data-sort="95">95</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ImproveStroke(who = $, target = $)</h4>
+<pre><code>{
+      Send(self,@ImproveAbility,#who=who,#target=target);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:99</p>
+<h4>CanPayCosts(who = $, lTargets = $, iSpellPower = 0)</h4>
+<pre><code>{
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:106</p>
+<h4>CastSpell(who = $, iSpellPower = 0, lTargets = $)</h4>
+<pre><code>{
+      
+      
+      Send(who,@RemoveEnchantmentClass,#class=&amp;TouchAttackSpell);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:111</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:120</p>
+<h4>CheckWeaponAndDoAnimation(who = $, weapon_used = $, victim = $)</h4>
+<p>Spell does not require a weapon, but a player may use this spell evenif they are armed.Also does the cast animation.  In future, may provide different grfxfor different touch spells.</p>
+<pre><code>{
+      Send(who,@DoCast);
+      
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:125</p>
+<h4>ToHitImprovers(raw_hitroll = 0)</h4>
+<p>A weapon stroke may have IMPROVERS, which may boost the performance of the stroke.  Example, if a player has renweed, that may boost his thrust Default, return the hitroll raw.</p>
+<pre><code>{
+      return Raw_hitroll; 
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:136</p>
+<h4>DamageFactors(damage = 0, who = $)</h4>
+<p>Attack spells typically are unaffected by strength, although they may be affected by other factors.</p>
+<pre><code>{
+      return damage;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:144</p>
+<h4>GetHitsound()</h4>
+<pre><code>{
+      return touchattack_hit_sound;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:151</p>
+<h4>GetProf(who = $)</h4>
+<pre><code>{
+      local iProf, iMysticism;
+
+      iProf = Send(who,@GetSkillAbility,#skill_num=SKID_PUNCH);
+      Send(who,@FlipSkillAtrophyFlag,#SKID=SKID_PUNCH);
+      
+      iMysticism = (Send(who,@GetMysticism)*3)/2;
+      
+      if iProf &lt; iMysticism
+      {
+         iProf = iMysticism;
+      }
+
+      return iProf;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:165</p>
+<h4>GetStroke(who = $)</h4>
+<pre><code>{
+      
+      
+      Send(who,@FlipSpellAtrophyFlag,#SID=viSpell_num);
+
+      return Send(who,@GetSpellAbility,#spell_num=viSpell_num);
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:182</p>
+<h4>GetAttackType(weapon_used = $)</h4>
+<pre><code>{
+      return viAttackType;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:191</p>
+<h4>GetAttackSpell(weapon_used = $)</h4>
+<pre><code>{
+      return viSpellType;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:196</p>
+<h4>GetParryAbility()</h4>
+<pre><code>{
+      
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:201</p>
+<h4>CanBlock()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:210</p>
+<h4>CanParry()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:216</p>
+<h4>CanDodge()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:222</p>
+<h4>GetAttackName()</h4>
+<pre><code>{
+      return vrName;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:228</p>
+<h4>GetRange(weapon_used = $)</h4>
+<p>This returns the range of the spell.  Usually, this hovers around 2-3.</p>
+<pre><code>{
+      return viRange;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:233</p>
+<h4>CheckSpecial(who = $, victim = $)</h4>
+<p>Checks to see if there are any special circumstances which preventsthe target player from performing this spell.</p>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:239</p>
+<h4>FindDamage(weapon_used = $, who = $, victim = $)</h4>
+<p>Damage for attack spells is determined largely by expertise in the spell.</p>
+<pre><code>{
+      local damage, iPower;
+
+      
+      damage = random(viMin_Damage,viMax_damage);
+
+      iPower = Send(who,@GetEnchantedState,#what=self);
+      
+      
+      damage = damage/2 + ((damage/2)*iPower)/SPELLPOWER_MAXIMUM + 1;
+      
+      
+      damage = Send(self,@DamageFactors,#damage=damage,#who=who,
+                    #victim=victim);
+      
+      return bound(damage,1,$);
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:246</p>
+<h4>PlayerWasHitMsg(who = $, attacker = $, damage = $)</h4>
+<p>The stroke may choose its own damage give or receive message.  Otherwise player.kod will just choose a default - which is true for most weapon-based combat strokes (but not true for most punch strokes or touch spells.</p>
+<pre><code>{
+      if vrPlayer_was_hit = $
+      {
+         return FALSE;
+      }
+
+      Send(who,@MsgSendUser,#message_rsc=vrPlayer_was_hit,
+           #parm1=Send(attacker,@GetCapDef),#parm2=Send(attacker,@GetName));
+           
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:266</p>
+<h4>PlayerHitSomethingMsg(who = $, victim = $, damage = $, color_rsc = $)</h4>
+<p>The stroke may choose its own damage give or receive message.  Otherwise player.kod will just choose a default - which is true for most weapon-based combat strokes (but not true for most punch strokes or touch spells.</p>
+<pre><code>{
+      if vrPlayer_hit_something = $
+      {
+         return FALSE;
+      }
+       
+      Send(who,@MsgSendUser,#message_rsc=vrPlayer_hit_something,
+           #parm1=color_rsc,#parm2=Send(victim,@GetDef),
+           #parm3=Send(victim,@GetName));
+          
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:282</p>
+<h4>SendMissMessageToAttacker(who = $, victim = $, color_rsc = $)</h4>
+<pre><code>{
+      local iRandom, rSound;
+      
+      
+      if vrMiss_Sound = $
+      {
+         
+         iRandom = random(1,3);
+         if iRandom = 1
+         {
+            rSound = TouchAttack_missed1_sound;
+         }
+         else
+         {
+            if iRandom = 2
+            {
+               rSound = TouchAttack_missed2_sound;
+            }
+            else
+            {
+               rSound = TouchAttack_missed3_sound;
+            }
+         }
+      }
+      else
+      {
+         rSound = vrMiss_Sound;
+      }
+      
+      Send(Send(who,@GetOwner),@SomethingWaveRoom,#what=who,#wave_rsc=rSound);
+      
+      
+      if vrMissed_Message_Attacker &lt;&gt; $
+      {
+         Send(who,@MsgSendUser,#message_rsc=vrMissed_Message_Attacker,
+              #parm1=color_rsc,#parm2=vrName,#parm3=Send(victim,@GetDef),
+              #parm4=Send(victim,@GetName));
+              
+         return TRUE;
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:299</p>
+<h4>SendMissMessageToDefender(who = $, attacker = $)</h4>
+<pre><code>{
+      if vrMissed_message_Defender &lt;&gt; $
+      {
+         Send(who,@MsgSendUser,#message_rsc=vrMissed_Message_Defender,
+              #parm1=Send(attacker,@GetCapDef),#parm2=Send(attacker,@GetName),
+              #parm3=vrName);
+              
+         return TRUE;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:344</p>
+<h4>PlayerKilledSomethingMsg(who = $, victim = $, damage = $)</h4>
+<p>The stroke may choose its own damage give or receive message.  Otherwise player.kod will offer the default 'You killed the whatever' message.</p>
+<pre><code>{
+       if vrPlayer_killed_Something = $
+       {
+         return FALSE ;
+       }
+       
+       Send(who,@MsgSendUser,#message_rsc=vrPlayer_killed_something,
+            #parm1=Send(victim,@GetCapDef),#parm2=Send(victim,@GetName));
+                
+       return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:358</p>
+<h4>PlayerWasKilledMsg(who = $, attacker = $, damage = $)</h4>
+<p>The stroke may choose its own damage give or receive message.  Otherwise player.kod will just choose a default - as it does for most strokes.</p>
+<pre><code>{
+       if vrPlayer_was_hit = $
+       {
+         return FALSE ;
+       }
+       
+       Send(who,@MsgSendUser,#message_rsc=vrPlayer_was_killed,
+            #parm1=Send(attacker,@GetDef),#parm2=Send(attacker,@GetName));
+            
+       return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:373</p>
+<h4>GetDuration(iSpellpower = $)</h4>
+<pre><code>{
+      local iDuration;
+
+      iDuration = Random(iSpellpower/3,iSpellpower/2);
+      
+      iDuration =  bound(iDuration,10,75);
+      iDuration = iDuration * 6 * 1000;  
+
+      return iDuration;
+   }  </code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:390</p>
+<h4>InitializeEnchantmentState(iSpellpower = $)</h4>
+<pre><code>{
+      Return iSpellpower;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk.kod:402</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

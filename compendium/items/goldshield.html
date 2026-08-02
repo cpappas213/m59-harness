@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gold round shield — Meridian 59 Compendium</title>
+<meta name="description" content="Finely made, this hefty gold shield offers a fair measure of protection. Delicate engravings, the mark of Quintor, adorn its circumference.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › gold round shield</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/rshield_g1.png" alt="gold round shield" width="81" height="81"></div><div class="heroText"><h1>gold round shield</h1><p class="lede">Finely made, this hefty gold shield offers a fair measure of protection. Delicate engravings, the mark of Quintor, adorn its circumference.</p><div class="tags"><span class="tag ">shield</span><span class="tag ">hand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">225</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">150</div></div><div class="fact"><div class="lbl">Value</div><div class="val">500 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">250–300</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">hand</div></div></div><h2>As protection</h2><div class="facts"><div class="fact"><div class="lbl">Defence bonus</div><div class="val">10</div></div><div class="fact"><div class="lbl">Flat reduction</div><div class="val sm">random(0, 1)</div></div></div><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Attack type</th><th class="num ">Resistance</th><th class="num ">A 20-point hit becomes</th></tr></thead>
+<tbody><tr><td class=""><code class="k">ATCK_WEAP_SLASH</code></td><td class="num " data-sort="10">10%</td><td class="num ">17.6</td></tr>
+<tr><td class=""><code class="k">ATCK_WEAP_BLUDGEON</code></td><td class="num " data-sort="10">10%</td><td class="num ">17.6</td></tr>
+<tr><td class=""><code class="k">ATCK_WEAP_THRUST</code></td><td class="num " data-sort="10">10%</td><td class="num ">17.6</td></tr></tbody></table></div><p class="cite">kod/object/item/passitem/defmod/shield/goldshld.kod <code class="k">GetResistanceModifiers</code> · applied by kod/object/active/holder/nomoveon/battler.kod:189 <code class="k">ResistanceCheck</code> and :251 <code class="k">GetDamageFromResistance</code></p><p>The "20-point hit" column assumes this is the only thing you are wearing and
+uses the average of the flat reduction, which is rolled fresh every blow. Unarmoured, the same
+hit costs you the full 20.</p><h2>Where to buy it</h2><p><a href="../creatures/jasperblacksmith.html">Quintor</a>, <a href="../creatures/kocatanblacksmith.html">Ixla cha'Totlak</a></p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/rshield_g1.png" alt="gold round shield inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/rshield_g2.png" alt="gold round shield group 2" loading="lazy"><figcaption>group 2</figcaption></figure><figure><img class="icon" src="../assets/img/rshield_g3.png" alt="gold round shield on the ground" loading="lazy"><figcaption>on the ground</figcaption></figure><figure><img class="icon" src="../assets/img/rshield_g4.png" alt="gold round shield broken" loading="lazy"><figcaption>broken</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/defmod/shield/goldshld.kod:11</p>
+<p><code class="k">GoldShield</code> is <code class="k">Shield</code> — full chain <code class="k">GoldShield</code> ← <code class="k">Shield</code> ← <code class="k">DefenseModifier</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>goldshield_name_rsc</code></td><td class=""><em>gold round shield</em></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>goldshield_icon_rsc</code></td><td class=""><em>rshield.bgf</em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>goldshield_desc_rsc</code></td><td class=""><em>Finely made, this hefty gold shield offers a fair measure of protection.  Delicate engravi</em></td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>250</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>300</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>500</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>225</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>150</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">vrShield_window_overlay</code></td><td class=""><code>goldshield_window_overlay_rsc</code></td><td class=""><em>povshldD.bgf</em></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrShield_overlay</code></td><td class=""><code>goldshield_icon_rsc</code></td><td class=""><em>rshield.bgf</em></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viInventory_group</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viBroken_group</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viDefense_base</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viDamage_base</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>GetResistanceModifiers()</h4>
+<pre><code>{
+      return [ [ATCK_WEAP_SLASH,10],
+               [ATCK_WEAP_BLUDGEON,10],
+               [ATCK_WEAP_THRUST,10]
+             ];
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/goldshld.kod:56</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

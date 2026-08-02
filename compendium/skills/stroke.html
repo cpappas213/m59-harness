@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weapon stroke — Meridian 59 Compendium</title>
+<meta name="description" content="One of several agile skills.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html" class="on">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Skills</a> › Weapon stroke</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/light_g1.png" alt="Weapon stroke" width="128" height="128"></div><div class="heroText"><h1>Weapon stroke</h1><p class="lede">One of several agile skills.</p><div class="tags"><span class="tag ">stroke</span><span class="tag ">fencing</span><span class="tag ">Level 1</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Discipline</div><div class="val sm">fencing</div></div><div class="fact"><div class="lbl">Level</div><div class="val">1</div></div><div class="fact"><div class="lbl">Vigour per use</div><div class="val">2</div></div><div class="fact"><div class="lbl">Improve chance</div><div class="val">25%</div></div><div class="fact"><div class="lbl">Skill number</div><div class="val">420</div></div><div class="fact"><div class="lbl">Hit factor</div><div class="val">100</div></div><div class="fact"><div class="lbl">Damage factor</div><div class="val">100%</div></div></div><div class="flavor">This is a weapon stroke.</div><h2>What kind of skill this is</h2><p>A <strong>stroke</strong> is a way of swinging. You do not invoke it; the weapon
+picks one, and its ability decides both how often you connect and how hard. Improving a stroke
+improves every weapon that uses it.</p><h2>What it is worth in a fight</h2><div class="formula">damage = weapon_base × 100 / 100</div>
+<p class="cite">kod/object/passive/skill/stroke.kod:210 <code class="k">FindDamage</code></p>
+<p>Its hit factor is <code class="k">100</code>; the default for a stroke
+is 100, so this stroke is exactly as easy
+to land than an ordinary one.</p>
+<p class="cite">kod/object/passive/skill/stroke.kod:61</p>
+<p>Proficiency adds at most <code class="k">(99 + 1) × 5 / 100 = 5</code>
+damage at a perfect ability of 99.</p>
+<p class="cite">kod/object/passive/skill/stroke.kod:342</p><h2>Learning and improving it</h2><p>No teacher in the world data offers this skill. It is either granted at creation,
+awarded by a quest, or reserved for monsters.</p><p>Ability runs 0–99 and rises by <em>use against something hard enough to matter</em>,
+with a 25% roll on each qualifying use. It also atrophies: stop using a skill and
+the number falls. See <a href="../guides/advancing.html">Advancing Your Character</a>.</p><h2>What it does</h2><ul><li><code class="k">CanDodge</code></li><li><code class="k">CanBlock</code></li><li><code class="k">CanParry</code></li><li><code class="k">ImproveStroke</code></li><li><code class="k">SuccessChance</code> — Always returns TRUE for combat strokes. COmbat strokes are figureddifferently than other skills - are figured in player.kod.</li><li><code class="k">CanPayCosts</code> — If a skill requires a special cost or requirement of some sort, thatcost goes here. Example: picklocking may require thieves tools.</li><li><code class="k">GetAttackType</code></li><li><code class="k">GetAttackSpell</code></li><li><code class="k">GetExertion</code> — Sword strokes vary in their vigor cost.</li><li><code class="k">CheckSpecial</code> — Checks to see if there are any special circumstances which preventsthe target player from performing this skill.</li><li><code class="k">CheckWeaponAndDoAnimation</code> — Can the user's weapon be used with this weapon stroke? \nDefault is TRUE unless the player is unarmed.Animation was also put here, for backwards compatibility.</li><li><code class="k">ToHitImprovers</code> — A weapon stroke may have IMPROVERS, which may boost the performance of \nthe stroke. Example, if a player has renweed, that may boost his thrustDefault, return the hitroll raw.</li><li><code class="k">GetRange</code> — Each weapon stroke checks the weapon for it's natural range, and thenaffects it depending on the stroke. Default: viRangeFactor = 0, meaningthe weapon's raw range is used.</li><li><code class="k">FindDamage</code> — We put this here so that we can vary a stroke's damage per weapon.</li><li><code class="k">SendMissMessageToAttacker</code></li><li><code class="k">SendMissMessageToDefender</code></li><li><code class="k">PlayerHitSomethingMsg</code></li><li><code class="k">PlayerWasHitMsg</code></li><li><code class="k">PlayerKilledSomethingMsg</code> — The stroke may choose its own damage give or receive message. Otherwise player.kod will offer the default 'You killed the whatever' message.</li><li><code class="k">PlayerWasKilledMsg</code> — The stroke may choose its own damage give or receive message. Otherwise player.kod will just choose a default - as it does for most strokes.</li><li><code class="k">DamageFactors</code> — Different skills/strokes are affected by strength differently.</li><li><code class="k">GetHitSound</code></li></ul><hr><h2>In the source</h2>
+<p class="cite">kod/object/passive/skill/stroke.kod:11</p>
+<p><code class="k">Stroke</code> is <code class="k">Skill</code> — full chain <code class="k">Stroke</code> ← <code class="k">Skill</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>. Subclasses: <code class="k">Fire</code>, <code class="k">Slash</code>, <code class="k">Thrust</code>, <code class="k">Unarmed</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>stroke_name_rsc</code></td><td class=""><em>Weapon stroke</em></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>stroke_icon_rsc</code></td><td class=""><em>light.bgf</em></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>stroke_desc_rsc</code></td><td class=""><em>This is a weapon stroke.</em></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vrPlayer_Hit_something</code></td><td class=""><code>stroke_hit_attacker</code></td><td class=""><em>%sYour %s hits %s%s.</em></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">vrPlayer_was_hit</code></td><td class=""><code>stroke_hit_defender</code></td><td class=""><em>%s%s hits you.</em></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">vrPlayer_killed_something</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">vrPlayer_was_killed</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">vrMissed_Message_attacker</code></td><td class=""><code>stroke_miss_attacker</code></td><td class=""><em>%sYour %s misses %s%s.</em></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">vrMissed_Message_defender</code></td><td class=""><code>stroke_miss_defender</code></td><td class=""><em>%s%s misses you.</em></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">vrMiss_Sound</code></td><td class=""><code>stroke_miss_sound</code></td><td class=""><em>swordmis.wav</em></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viDefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SKS_FENCING</code></td><td class="">10</td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viSkill_num</code></td><td class=""><code>SKID_DEFAULT</code></td><td class="">420</td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">viSkill_Exertion</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">viHit_Factor</code></td><td class=""><code>100</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">viDamage_Factor</code></td><td class=""><code>100</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">viRange_Factor</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">vbAutomatic</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">viMaxProficiencyDamage</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="67">67</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">plPrerequisites</code></td><td class=""><code>$</code></td><td class="num " data-sort="71">71</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>CanDodge()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:78</p>
+<h4>CanBlock()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:84</p>
+<h4>CanParry()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:90</p>
+<h4>ImproveStroke(who = $, use_weapon = $, target = $)</h4>
+<pre><code>{
+     local prof, target_level;
+
+     target_level = send(target,@GetLevel);
+     prof=send(use_weapon,@GetProfNumber);
+
+     if random(1,100) &gt; 60 or not send(who,@HasSkill,#num=prof)
+     {
+        if send(who,@GetSkillAbility,#skill_num=viSkill_num) &lt; target_level
+          {
+             
+             send(self,@ImproveAbility,#who=who,#target=target,#bonus=Send(who,@GetWeaponSwingBonus));
+          }
+     }
+     else
+     {
+        if send(use_weapon,@getprof,#who=who) &lt; target_level
+          {
+             
+             send(use_weapon,@ImproveProficiency,#who=who,#target=target,#bonus=Send(who,@GetWeaponSwingBonus));
+          }
+     }
+     
+     return;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:97</p>
+<h4>SuccessChance()</h4>
+<p>Always returns TRUE for combat strokes.  COmbat strokes are figureddifferently than other skills - are figured in player.kod.</p>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:124</p>
+<h4>CanPayCosts(who = $, oTarget = $)</h4>
+<p>If a skill requires a special cost or requirement of some sort, thatcost goes here.  Example:  picklocking may require thieves tools.</p>
+<pre><code>{
+      if not send(who,@HasVigor,#amount=viSkillExertion) and vbCheck_Exertion = TRUE
+      {
+         send(who,@MsgSendUser, #message_rsc=skill_too_tired,#parm1=vrName);
+         
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:131</p>
+<h4>GetAttackType(weapon_used = $)</h4>
+<pre><code>{
+     return send(weapon_used,@getAttackType);
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:145</p>
+<h4>GetAttackSpell(weapon_used = $)</h4>
+<pre><code>{
+     return send(weapon_used,@getAttackSpell);
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:150</p>
+<h4>GetExertion()</h4>
+<p>Sword strokes vary in their vigor cost.</p>
+<pre><code>{
+      
+      return viSkill_Exertion;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:155</p>
+<h4>CheckSpecial(who = $, victim = $)</h4>
+<p>Checks to see if there are any special circumstances which preventsthe target player from performing this skill.</p>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:162</p>
+<h4>CheckWeaponAndDoAnimation(who = $, weapon_used = $, victim = $)</h4>
+<p>Can the user's weapon be used with this weapon stroke?  \nDefault is TRUE unless the player is unarmed.Animation was also put here, for backwards compatibility.</p>
+<pre><code>{
+      if weapon_used = $
+      {
+         send(who,@msgsenduser,#message_rsc=stroke_need_weapon_rsc);
+          
+         return FALSE;
+      }
+
+      
+      return send(weapon_used,@ReqWeaponAttack,#what=victim);
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:169</p>
+<h4>ToHitImprovers(raw_hitroll = 0)</h4>
+<p>A weapon stroke may have IMPROVERS, which may boost the performance of  \nthe stroke.  Example, if a player has renweed, that may boost his thrustDefault, return the hitroll raw.</p>
+<pre><code>{
+      return Raw_hitroll; 
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:185</p>
+<h4>GetRange(weapon_used = $)</h4>
+<p>Each weapon stroke checks the weapon for it's natural range, and thenaffects it depending on the stroke.  Default:  viRangeFactor = 0, meaningthe weapon's raw range is used.</p>
+<pre><code>{
+      return send(weapon_used,@getrange) + viRange_Factor;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:193</p>
+<h4>FindDamage(weapon_used = $, who = $, victim = $)</h4>
+<p>We put this here so that we can vary a stroke's damage per weapon.</p>
+<pre><code>{
+      local damage;
+      
+      
+      damage = send(weapon_used,@GetDamage,#who=who,#target=victim);
+      
+      
+      damage = (damage*viDamage_factor)/100;
+      
+      damage = send(self,@DamageFactors,#damage=damage,#who=who,#weapon_used=weapon_used);
+
+      return bound(damage,1,$);
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:201</p>
+<h4>SendMissMessageToAttacker(who = $, victim = $, weapon_used = $, color_rsc = $, bText = TRUE)</h4>
+<pre><code>{
+      local iRoll;
+
+      
+      if bText
+      {
+         send(who,@msgsenduser,#message_rsc=vrMissed_Message_Attacker,#parm1=color_rsc,
+              #parm2=vrName,#parm3=send(victim,@getdef),#parm4=send(victim,@getname));
+      }
+
+      
+      if IsClass(victim,&amp;Monster) or weapon_used = $
+      {
+         iRoll = Random(1,3);
+         
+         if iRoll = 1
+         {
+            Send(Send(who,@GetOwner),@SomethingWaveRoom,#what=who,#wave_rsc=stroke_swish1);
+         }
+         
+         if iRoll = 2
+         {
+            Send(Send(who,@GetOwner),@SomethingWaveRoom,#what=who,#wave_rsc=stroke_swish2);
+         }
+         
+         if iRoll = 3
+         {
+            Send(Send(who,@GetOwner),@SomethingWaveRoom,#what=who,#wave_rsc=stroke_swish3);
+         }
+      }
+      else
+      {
+         iRoll = Random(1,12);
+
+         if iRoll = 1
+         {
+            Send(Send(who,@GetOwner),@SomethingWaveRoom,#what=who,#wave_rsc=stroke_swish1);
+         }
+         
+         if iRoll = 2
+         {
+            Send(Send(who,@GetOwner),@SomethingWaveRoom,#what=who,#wave_rsc=stroke_swish2);
+         }
+         
+         if iRoll = 3
+         {
+            Send(Send(who,@GetOwner),@SomethingWaveRoom,#what=who,#wave_rsc=stroke_swish3);
+         }
+         
+         if iRoll &gt;= 4
+         {   
+            Send(Send(who,@GetOwner),@SomethingWaveRoom,#what=who,
+                 #wave_rsc=Send(victim,@GetSomethingMissedYouSound,#what=who,
+                 #weapon_used=weapon_used)); 
+         }
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:217</p>
+<h4>SendMissMessageToDefender(who = $, attacker = $)</h4>
+<pre><code>{
+      send(who,@MsgSendUser,#message_rsc=vrMissed_Message_Defender,
+           #parm1=send(attacker,@getcapdef),#parm2=send(attacker,@getname));
+           
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:278</p>
+<h4>PlayerHitSomethingMsg(who = $, victim = $, damage = $, color_rsc = $)</h4>
+<pre><code>{
+      send(who,@msgsenduser,#message_rsc=vrPlayer_hit_something,#parm1=color_rsc,#parm2=vrName,
+           #parm3=send(victim,@getdef),#parm4=send(victim,@getname));
+           
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:286</p>
+<h4>PlayerWasHitMsg(who = $, attacker = $, damage = $, color_rsc = $)</h4>
+<pre><code>{
+       send(who,@msgsenduser,#message_rsc=vrPlayer_was_hit,#parm1=color_rsc,
+            #parm2=send(attacker,@getcapdef),#parm3=send(attacker,@getname));
+            
+       return;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:294</p>
+<h4>PlayerKilledSomethingMsg(who = $, victim = $, damage = $)</h4>
+<p>The stroke may choose its own damage give or receive message.  Otherwise player.kod will offer the default 'You killed the whatever' message.</p>
+<pre><code>{
+      if vrPlayer_killed_Something = $
+      {
+         return FALSE;
+      }
+       
+      send(who,@msgsenduser,#message_rsc=vrPlayer_killed_something,
+            #parm1=send(victim,@getCapdef),#parm2=send(victim,@getname));
+            
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:302</p>
+<h4>PlayerWasKilledMsg(who = $, attacker = $, damage = $)</h4>
+<p>The stroke may choose its own damage give or receive message.  Otherwise player.kod will just choose a default - as it does for most strokes.</p>
+<pre><code>{
+      if vrPlayer_was_hit = $
+      {
+         return FALSE;
+      }
+      
+      send(who,@MsgSendUser,#message_rsc=vrPlayer_was_killed,
+           #parm1=send(attacker,@GetDef),#parm2=send(attacker,@GetName));
+           
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:317</p>
+<h4>DamageFactors(damage = 0, who = $, weapon_used = $)</h4>
+<p>Different skills/strokes are affected by strength differently.</p>
+<pre><code>{
+      local iDamage, might;
+
+      iDamage = 0;
+      
+      
+      if weapon_used &lt;&gt; $
+      {
+         iDamage = iDamage + (Send(weapon_used,@GetProf,#who=who)+1)*viMaxProficiencyDamage/100;
+      }
+      else
+      {
+         iDamage = iDamage + (send(who,@GetSkillAbility,#skill_num=SKID_BRAWLING))*viMaxProficiencyDamage/100;
+      }
+      
+      
+      might = send(who,@GetMight);
+      iDamage = iDamage + ((100+bound(might-25,0,40))*damage)/100;
+
+      return iDamage;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:332</p>
+<h4>GetHitSound()</h4>
+<pre><code>{
+      return stroke_hit_sound;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/stroke.kod:356</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

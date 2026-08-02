@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Avar Chieftain — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Avar Chieftain</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/avchief_g1.png" alt="Avar Chieftain" width="175" height="194"></div><div class="heroText"><h1>Avar Chieftain</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">Level 135</span><span class="tag ">Difficulty 9</span><span class="tag ">Good</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">135</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">9</div></div><div class="fact"><div class="lbl">Health</div><div class="val">122–203</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">7–16</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">80</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">fast</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">avar_chief</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>koavar</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 135 + 60 × 9
+                = 945
+
+health          = Fuzzy(level × 120/100) = 122–203
+damage per hit  = Fuzzy(level / random(10,15))  = 7–16
+dodge           = difficulty × 10 = 90</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">88%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">35%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">12</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">10.1</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>pierce</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 135/55 + random(0, 9/3), $, 6)
+       = 3–6 items
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/avarcht.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="Longbow"><a href="../items/longbow.html">longbow</a></td><td class="num " data-sort="30.693">30.7%</td><td class=""></td><td class=""><code>avarcht.kod:31</code></td></tr>
+<tr><td class="" data-sort="Arrow"><a href="../items/arrow.html">arrows</a></td><td class="num " data-sort="18.812">18.8%</td><td class=""></td><td class=""><code>avarcht.kod:32</code></td></tr>
+<tr><td class="" data-sort="NeruditeArrow"><a href="../items/neruditearrow.html">nerudite arrows</a></td><td class="num " data-sort="14.851">14.9%</td><td class=""></td><td class=""><code>avarcht.kod:33</code></td></tr>
+<tr><td class="" data-sort="BattleBow"><a href="../items/battlebow.html">battle bow</a></td><td class="num " data-sort="14.851">14.9%</td><td class=""></td><td class=""><code>avarcht.kod:34</code></td></tr>
+<tr><td class="" data-sort="Money"><a href="../items/money.html">shilling</a></td><td class="num " data-sort="9.901">9.9%</td><td class="">135–405 shillings</td><td class=""><code>avarcht.kod:35</code></td></tr>
+<tr><td class="" data-sort="Lute"><a href="../items/lute.html">lute</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>avarcht.kod:36</code></td></tr>
+<tr><td class="" data-sort="PurifyWand"><a href="../items/purifywand.html">Purify Wand</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>avarcht.kod:37</code></td></tr>
+<tr><td class="" data-sort="NeruditeArmor"><a href="../items/neruditearmor.html">nerudite armor</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>avarcht.kod:38</code></td></tr>
+<tr><td class="" data-sort="BrittleWand"><a href="../items/brittlewand.html">Brittle Wand</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>avarcht.kod:39</code></td></tr>
+<tr><td class="" data-sort="KillingFieldScroll"><a href="../items/killingfieldscroll.html">Killing Field Scroll</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>avarcht.kod:40</code></td></tr></tbody></table></div><div class="formula">shillings = 1 + (MoneyFactor × 2 × bound(random(level/2, 3×level/2), 1, ∞)) / 100
+          = 135–405 at level 135     % MoneyFactor = 100</div>
+<p class="cite">kod/object/passive/trestype.kod:302</p><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>4 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 8.
+<span class="cite">kod/object/passive/trestype/avarcht.kod:24</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>10 places in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="Avar Village"><a href="../zones/outdoorske4.html">Avar Village</a></td><td class="" data-sort="Ko’catan jungle">Ko’catan jungle</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="35">35%</td><td class=""><code>monsroom/kcforest/ke4.kod</code></td></tr>
+<tr><td class="" data-sort="Camp of the Warrior Avars"><a href="../zones/outdoorskb3.html">Camp of the Warrior Avars</a></td><td class="" data-sort="Ko’catan jungle">Ko’catan jungle</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="5">5%</td><td class=""><code>monsroom/kcforest/kb3.kod</code></td></tr>
+<tr><td class="" data-sort="Deep in the Jungle"><a href="../zones/outdoorskd3.html">Deep in the Jungle</a></td><td class="" data-sort="Ko’catan jungle">Ko’catan jungle</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="2">2%</td><td class=""><code>monsroom/kcforest/kd3.kod</code></td></tr>
+<tr><td class="" data-sort="Headquarters for the Avar Warriors"><a href="../zones/outdoorskb2.html">Headquarters for the Avar Warriors</a></td><td class="" data-sort="Ko’catan jungle">Ko’catan jungle</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="7">7%</td><td class=""><code>monsroom/kcforest/kb2.kod</code></td></tr>
+<tr><td class="" data-sort="Headquarters of the Noble Avars"><a href="../zones/outdoorske2.html">Headquarters of the Noble Avars</a></td><td class="" data-sort="Ko’catan jungle">Ko’catan jungle</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="15">15%</td><td class=""><code>monsroom/kcforest/ke2.kod</code></td></tr>
+<tr><td class="" data-sort="Lair of the Bone Priestess"><a href="../zones/outdoorskd1.html">Lair of the Bone Priestess</a></td><td class="" data-sort="Ko’catan jungle">Ko’catan jungle</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="10">10%</td><td class=""><code>monsroom/kcforest/kd1.kod</code></td></tr>
+<tr><td class="" data-sort="Ruins of the Riija Temple"><a href="../zones/outdoorskc3.html">Ruins of the Riija Temple</a></td><td class="" data-sort="Ko’catan jungle">Ko’catan jungle</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="15">15%</td><td class=""><code>monsroom/kcforest/kc3.kod</code></td></tr>
+<tr><td class="" data-sort="Territory of the Noble Avars"><a href="../zones/outdoorskd2.html">Territory of the Noble Avars</a></td><td class="" data-sort="Ko’catan jungle">Ko’catan jungle</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="5">5%</td><td class=""><code>monsroom/kcforest/kd2.kod</code></td></tr>
+<tr><td class="" data-sort="The Chasm"><a href="../zones/outdoorskc1.html">The Chasm</a></td><td class="" data-sort="Ko’catan jungle">Ko’catan jungle</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="10">10%</td><td class=""><code>monsroom/kcforest/kc1.kod</code></td></tr>
+<tr><td class="" data-sort="The Clearing of the Trading Post"><a href="../zones/outdoorskd4.html">The Clearing of the Trading Post</a></td><td class="" data-sort="Ko’catan jungle">Ko’catan jungle</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="10">10%</td><td class=""><code>monsroom/kcforest/kd4.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_MOVE_OPTIMAL_RANGE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_MONSTERS</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_WIZARD_KILLER</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>What killing it does to your karma</h2>
+<p>Its karma is <code class="k">80</code>, and a kill is treated as an act whose karma is the
+<em>negative</em> of the victim's — so killing this creature pushes you
+<strong>towards evil</strong>.</p>
+<div class="formula">base   = your_karma − (−victim_karma) = your_karma + 80
+change = −( base³ / 2500 + 5 × base ) / (11 − swing)      % hundredths of a karma point
+       bounded to ±150 for a monster kill — at most 1.5 karma per kill</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code> · :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+<div class="note">No karma moves at all in the newbie region, in an arena, or when the victim's
+karma is neutral. And once you are already further from neutral than your victim in the same
+direction, killing them does nothing to you.</div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/avchief_g1.png" alt="Avar Chieftain group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g2.png" alt="Avar Chieftain group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g3.png" alt="Avar Chieftain group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g4.png" alt="Avar Chieftain group 4" loading="lazy"><figcaption>group 4 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g5.png" alt="Avar Chieftain group 5" loading="lazy"><figcaption>group 5 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g6.png" alt="Avar Chieftain group 6" loading="lazy"><figcaption>group 6 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g7.png" alt="Avar Chieftain group 7" loading="lazy"><figcaption>group 7 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g8.png" alt="Avar Chieftain group 8" loading="lazy"><figcaption>group 8 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g9.png" alt="Avar Chieftain group 9" loading="lazy"><figcaption>group 9 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g10.png" alt="Avar Chieftain group 10" loading="lazy"><figcaption>group 10 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g11.png" alt="Avar Chieftain group 11" loading="lazy"><figcaption>group 11 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g12.png" alt="Avar Chieftain group 12" loading="lazy"><figcaption>group 12 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g13.png" alt="Avar Chieftain group 13" loading="lazy"><figcaption>group 13 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g14.png" alt="Avar Chieftain group 14" loading="lazy"><figcaption>group 14 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g15.png" alt="Avar Chieftain group 15" loading="lazy"><figcaption>group 15 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchief_g16.png" alt="Avar Chieftain group 16" loading="lazy"><figcaption>group 16 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/avchiefx_g1.png" alt="Avar Chieftain corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:11</p>
+<p><code class="k">AvarChieftain</code> is <code class="k">Monster</code> — full chain <code class="k">AvarChieftain</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrKocName</code></td><td class=""><code>avarchief_koc_name_rsc</code></td><td class=""><em>koavar</em></td><td class="num " data-sort="72">72</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>avarchief_icon_rsc</code></td><td class=""><em>avchief.bgf</em></td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>avarchief_dead_icon_rsc</code></td><td class=""><em>avchiefX.bgf</em></td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>avarchief_dead_name_rsc</code></td><td class=""><em>former avar chieftain</em></td><td class="num " data-sort="76">76</td></tr>
+<tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_AN</code></td><td class="">3</td><td class="num " data-sort="78">78</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_AVAR_CHIEF</code></td><td class="">39</td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_PIERCE</code></td><td class="">32</td><td class="num " data-sort="80">80</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_FAST</code></td><td class="">16</td><td class="num " data-sort="81">81</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_AGGRESSIVE | AI_MOVE_OPTIMAL_RANGE | AI_FIGHT_WIZARD_KILLER | AI_FIGHT_MONSTERS</code></td><td class="">2121736</td><td class="num " data-sort="82">82</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>135</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="83">83</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="84">84</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>80</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="85">85</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>avarchief_sound_hit</code></td><td class=""><em>ac_atkh.wav</em></td><td class="num " data-sort="88">88</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>avarchief_sound_miss</code></td><td class=""><em>ac_atkm.wav</em></td><td class="num " data-sort="89">89</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>avarchief_sound_aware</code></td><td class=""><em>ac_awr.wav</em></td><td class="num " data-sort="90">90</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>avarchief_sound_death</code></td><td class=""><em>ac_dth.wav</em></td><td class="num " data-sort="91">91</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>avarchief_name_rsc</code></td><td class="num " data-sort="95">95</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>avarchief_desc_rsc</code></td><td class="num " data-sort="96">96</td></tr>
+<tr><td class=""><code class="k">pbFire</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="98">98</td></tr>
+<tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="100">100</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(clan = $)</h4>
+<pre><code>{
+      if clan &lt;&gt; $
+      {
+         send(self,@SetClan,#clan=clan);
+      }
+      else
+      {
+         post(self,@ChooseClan); 
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:104</p>
+<h4>Constructed()</h4>
+<pre><code>{
+      plResistances = [ [ 40, -ATCK_SPELL_FIRE ],
+                        [ 20, -ATCK_SPELL_SHOCK],
+                        [-15, -ATCK_SPELL_ACID ],
+                        [-20, -ATCK_SPELL_COLD ],
+                        [ 10, ATCK_WEAP_SLASH ],
+                        [-15, ATCK_WEAP_NERUDITE ]
+                      ];
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:118</p>
+<h4>SetClan(clan = AVARCLAN_PROMAGIC)</h4>
+<pre><code>{
+      piColor_translation = clan;
+      
+      if clan = AVARCLAN_ANTIMAGIC
+      {
+         vrName = avarchief_nomagic_name;
+         vrDesc = avarchief_nomagic_desc;
+      }
+      else
+      {
+         if clan = AVARCLAN_BONE_FACTION
+         {
+            vrName = avarchief_bone_name;
+            vrDesc = avarchief_bone_desc;
+         }
+         else
+         {
+            vrName = avarchief_name_rsc;
+            vrDesc = avarchief_desc_rsc;
+         }
+      }
+
+      if poOwner &lt;&gt; $
+      {
+         send(poOwner,@SomethingChanged,#what=self);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:131</p>
+<h4>GetClan()</h4>
+<pre><code>{
+      return piColor_translation;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:162</p>
+<h4>ChooseClan()</h4>
+<pre><code>{
+      if poOwner = $ OR NOT IsClass(poOwner,&amp;KCForest)
+      {         
+         if random (1,5) &gt; 1
+         {
+            send(self,@SetClan,#clan=random(PT_PURPLETOBLUE,PT_PURPLETOYELLOW));
+         }
+
+         return;
+      }
+
+      
+      send(self,@SetClan,#clan=send(poOwner,@GetClan));
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:167</p>
+<h4>GetName()</h4>
+<pre><code>{
+      if poOwner = $
+      {
+         return avarchief_default_name;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:185</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      if pbFire
+      {
+         piAnimation = ANIM_FIRE;
+      }
+      else
+      {
+         piAnimation = ANIM_ATTACK;
+      }
+
+      pbFire = FALSE;
+      
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:195</p>
+<h4>CanParry()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:215</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      if (piColor_Translation &lt;&gt; 0)
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,piColor_Translation);
+      }
+
+      AddPacket(1,ANIMATE_CYCLE,4,200,2,FRAME_WALK_START,2,FRAME_WALK_END);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:220</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if (piColor_Translation &lt;&gt; 0)
+      {
+         AddPacket(1,ANIMATE_TRANSLATION,1,piColor_Translation);
+      }
+
+      if piAnimation = ANIM_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,200,2,FRAME_ATTACK_START,2,FRAME_ATTACK_END,2,FRAME_STAND);
+         return;
+      }
+
+      if piAnimation = ANIM_FIRE
+      {
+         AddPacket(1,ANIMATE_ONCE,4,200,2,FRAME_FIRE_START,2,FRAME_FIRE_END,2,FRAME_STAND);
+         return;
+      }
+
+      
+      AddPacket(1,ANIMATE_NONE,2,3);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:232</p>
+<h4>MonsterCastSpell()</h4>
+<pre><code>{
+      local iBase;
+
+      iBase = Send(self,@AdjustedChanceBase,#base=SPELL_CHANCE);
+
+      if Random(1,iBase) = 1
+         AND Send(self,@SquaredDistanceTo,#what=poTarget) &lt; SPELL_RANGE_SQUARED
+         AND Send(poOwner,@LineOfSight,#obj1=self,#obj2=poTarget)
+         AND send(poowner,@reqsomethingattack,#what=self,#victim=poTarget,#use_weapon=self)
+      {
+         send(self,@DoMissileAttack);
+         return TRUE;
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:257</p>
+<h4>DoMissileAttack()</h4>
+<pre><code>{
+      pbFire = TRUE;
+      send(poOwner,@SomethingShot,#who=self,#target=poTarget,#projectile=self);
+      Send(self,@TryAttack,#what=poTarget,#stroke_obj=self);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:275</p>
+<h4>GetProjectileSpeed()</h4>
+<pre><code>{
+      return 15;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:284</p>
+<h4>SendProjectileAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_NONE,2,1);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:289</p>
+<h4>GetProjectileIcon()</h4>
+<pre><code>{
+      return avarchief_arrow;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:296</p>
+<h4>GetProjectileLightFlags()</h4>
+<pre><code>{
+      
+      return LIGHT_FLAG_NONE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:301</p>
+<h4>GetOptimalRange()</h4>
+<pre><code>{
+      return random(8,15);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:307</p>
+<h4>IsAlly(target = $)</h4>
+<pre><code>{
+      if (IsClass(target,&amp;Avar)          
+          OR IsClass(target,&amp;AvarShaman)
+          OR IsClass(target,&amp;AvarChieftain))
+         AND send(target,@GetClan) = send(self,@GetClan)
+      {
+         return TRUE;
+      }
+
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:312</p>
+<h4>SpecialHatredBehavior(what = $)</h4>
+<pre><code>{
+      
+      
+      if IsClass(what,&amp;AvarShaman)
+         OR IsClass(what,&amp;AvarChieftain)
+         OR IsClass(what,&amp;Avar)
+      {
+         if poOwner &lt;&gt; $ AND send(poOwner,@GetRoomNum) = RID_KC3
+            AND send(what,@GetClan) &lt;&gt; send(self,@GetClan)
+         {
+            return 25;
+         }
+      }
+
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:326</p>
+<h4>GetTreasureType()</h4>
+<pre><code>{
+      if poOwner &lt;&gt; $ AND send(poOwner,@GetRoomNum) = RID_KC3
+      {
+         return TID_NONE;
+      }
+
+      return viTreasure_type;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:344</p>
+<h4>CreateDeadBody(killer = $)</h4>
+<pre><code>{
+      local oBody;
+
+      oBody = $;
+      if vrDead_icon &lt;&gt; $
+      {
+         oBody = Create(&amp;DeadBody,#icon=vrDead_icon,#name=vrDead_name,#mob=TRUE,
+                        #BodyTranslation=send(self,@GetClan),
+                        #playername=Send(killer,@GetTrueName),
+                        #monstername=vrName,#drawfx=viDead_drawfx);         
+      }
+
+      return oBody;  
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/avchief.kod:354</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

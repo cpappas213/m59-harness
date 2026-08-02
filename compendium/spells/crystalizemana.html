@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>crystalize mana — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › crystalize mana</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/icrysman_g1.png" alt="crystalize mana" width="128" height="128"></div><div class="heroText"><h1>crystalize mana</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><a class="tag school-6" href="../guides/jala.html">Jala</a><span class="tag ">Level 6</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/jala.html">Jala</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">6</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">20</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">0 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">181</div></div></div><div class="flavor">This song catches the mana expended in singing, crystalizing it into a physical form. The mana crystal stores the mana for later use, in essence allowing the singer to store extra mana. Only one crystal at a time can be created by a singer, but the longer this song is sung, the more mana that is stored in the crystal. Since the mana is attuned to the singer, the crystal cannot be shared with others. This song requires 1 sapphire and 1 uncut seraphym to sing.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">20</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/sapphire.html">sapphire</a>, <a href="../items/uncutseraphym.html">uncut seraphym</a></td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">30</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">instant</td><td class=""></td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/jala/crysmana.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/fivecouncilor.html">Esseldi</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">StartPeriodicEnchantment</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/icrysman_g1.png" alt="crystalize mana group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/icrysman_g2.png" alt="crystalize mana group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/jala/crysmana.kod:11</p>
+<p><code class="k">CrystalizeMana</code> is <code class="k">Jala</code> — full chain <code class="k">CrystalizeMana</code> ← <code class="k">Jala</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>CrystalizeMana_name_rsc</code></td><td class=""><em>crystalize mana</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>CrystalizeMana_icon_rsc</code></td><td class=""><em>icrysman.bgf</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>CrystalizeMana_desc_rsc</code></td><td class=""><em>This song catches the mana expended in singing, crystalizing it into a physical form.  The</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_CRYSTALIZE_MANA</code></td><td class="">181</td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_JALA</code></td><td class="">6</td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>6</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viManaDrain</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viDrainTime</code></td><td class=""><code>1000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>30</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viChance_To_Increase</code></td><td class=""><code>25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viHarmful</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="53">53</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">prMusic</code></td><td class=""><code>CrystalizeMana_song</code></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">pbUserEffects</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="58">58</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      plReagents = $;
+      plReagents = Cons([&amp;Sapphire,1],plReagents);
+      plReagents = Cons([&amp;UncutSeraphym,1],plReagents);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/jala/crysmana.kod:62</p>
+<h4>StartPeriodicEnchantment(where = $, state = $)</h4>
+<pre><code>{
+      local oCaster, iSpellpower, oCrystal, iAmount;
+
+      
+      oCaster = Nth(state,2);
+
+      
+      iSpellpower = Nth(state,3);
+
+      
+      oCrystal = Send(oCaster,@FindHolding,#class=&amp;ManaCrystal);
+
+      if oCrystal = $
+      {
+         oCrystal = Create(&amp;ManaCrystal,#oCaster=oCaster);
+         if Send(oCaster,@ReqNewHold,#what=oCrystal)
+         {
+            Send(oCaster,@NewHold,#what=oCrystal);
+         }
+         else
+         {
+            
+            Send(oCrystal,@Delete);
+            Send(oCaster,@MsgSendUser,#message_rsc=CrystalizeMana_no_room);
+
+            
+            Post(oCaster,@BreakTrance,#event=EVENT_STEER);
+
+            propagate;
+         }
+      }
+
+      
+      
+      iAmount = 1;
+
+      
+      if random(1,99) &lt;= iSpellpower
+      {
+         iAmount = iAmount + 1;
+      }
+
+      Send(oCrystal,@IncreaseMana,#amount=iAmount);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/jala/crysmana.kod:71</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

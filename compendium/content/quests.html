@@ -1,0 +1,179 @@
+<h1>Quests</h1>
+
+<p class="lede">Meridian 59 has a real quest engine, not a collection of hand-written errands.
+Seventy-five quests are declared as data — a list of nodes, a set of restrictions on who may be
+offered it, a schedule chance and a cap on how many can run at once — and the engine assigns them
+to eligible players on its own clock. You do not go looking for quests. They are offered to you,
+and whether you qualify is decided by your karma, your faction, your guild, your gear and your
+own history with that quest.</p>
+
+<h2>How a quest is put together</h2>
+
+<p>A quest template is seven values:</p>
+
+<div class="formula">[ number of players,          % 1…5
+  quest type,                 % competitive / cooperative / collective
+  player restrictions,        % a bitmask, see below
+  [ node indices ],           % the steps, in order
+  max simultaneously active,  % how many copies of this quest may run at once
+  [ restrictions2 ],          % parameterised restrictions
+  schedule chance ]           % percentage chance the scheduler picks it</div>
+<p class="cite">kod/util/questengine.kod:1628 onward — every quest in the game is one <code class="k">cons</code> onto <code class="k">plQuestTemplates</code></p>
+
+<p>And each <em>node</em> is one step, described by twelve fields: the NPCs who can serve as its
+giver, a type, cargo, monsters, prizes, penalties, three hint strings and a time limit.</p>
+<p class="cite">kod/util/questengine.kod — <code class="k">QNT_NPC_LIST</code> … <code class="k">QNT_TIME_LIMIT</code>, constants at the head of the class</p>
+
+<h3>What a node can ask of you</h3>
+
+<table class="data">
+<thead><tr><th>Node type</th><th>What you must do</th></tr></thead>
+<tbody>
+<tr><td><code class="k">QN_TYPE_MESSAGE</code></td><td>Carry a message the NPC gives you to someone else</td></tr>
+<tr><td><code class="k">QN_TYPE_ITEM</code></td><td>Deliver a specific item you were handed</td></tr>
+<tr><td><code class="k">QN_TYPE_ITEMCLASS</code></td><td>Deliver a newly created item of a given class</td></tr>
+<tr><td><code class="k">QN_TYPE_ITEMFINDCLASS</code></td><td>Deliver any item of a class — nothing is given to you, you must go and find one</td></tr>
+<tr><td><code class="k">QN_TYPE_SHOWUP</code></td><td>Simply present yourself to someone</td></tr>
+<tr><td><code class="k">QN_TYPE_MONSTER</code></td><td>Kill a creature of a named type</td></tr>
+<tr><td><code class="k">QN_TYPE_MONSTER_ITEMCLASS</code></td><td>Kill a named creature and deliver what it drops</td></tr>
+<tr><td><code class="k">QN_TYPE_MONSTER_BRING</code></td><td>Bring a <em>charmed</em> creature of a named type</td></tr>
+<tr><td><code class="k">QN_TYPE_CHESSMOVE</code></td><td>Carry a chess move</td></tr>
+<tr><td><code class="k">QN_TYPE_USERNAME</code> / <code class="k">QN_TYPE_LOGGEDONNAME</code></td><td>Name a player — declared but not implemented</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:2850–2860 — the comments in that table are the game's own</p>
+
+<h3>Three ways a multi-player quest can work</h3>
+<table class="data">
+<thead><tr><th>Type</th><th>Rule</th></tr></thead>
+<tbody>
+<tr><td><code class="k">Q_TYPE_COMPETITIVE</code></td><td>First to finish takes the prize; everyone else takes the penalty</td></tr>
+<tr><td><code class="k">Q_TYPE_COOPERATIVE</code></td><td>Each player completes their own instance of every node; all win or all lose</td></tr>
+<tr><td><code class="k">Q_TYPE_COLLECTIVE</code></td><td>The party works together on a single instance of each node; all win or all lose</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:2782–2789 · up to <code class="k">QUEST_MAX_NUM_PLAYERS = 5</code> per quest, <code class="k">QUEST_MAX_MAX_ACTIVE = 100</code> copies</p>
+
+<h2>Whether you are eligible</h2>
+
+<p>This is the part that decides your experience of quests, and none of it is visible in-game.
+Every template carries a bitmask; you are only offered the quest if you satisfy all of it.</p>
+
+<table class="data">
+<thead><tr><th>Group</th><th>Restrictions available</th></tr></thead>
+<tbody>
+<tr><td><strong>Karma</strong></td><td>same as the giver, different from the giver, good, neutral, or evil</td></tr>
+<tr><td><strong>Faction</strong></td><td>Duke, Princess, Rebel, neutral, same as the giver, or different from the giver</td></tr>
+<tr><td><strong>Standing</strong></td><td>newbie, not-newbie, murderer, not-murderer, outlaw, not-outlaw, lawful</td></tr>
+<tr><td><strong>History</strong></td><td>not succeeded (ever / recently), not failed (ever / recently), not tried (ever / recently)</td></tr>
+<tr><td><strong>Politics</strong></td><td>intriguing (eligible for factions), guildmaster of a guild with colours</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:2792–2830</p>
+
+<p>A second, parameterised set can require far more specific things:</p>
+
+<table class="data">
+<thead><tr><th>Restriction</th><th>Parameter</th></tr></thead>
+<tbody>
+<tr><td><code class="k">Q_R2_HAS_SKILL</code></td><td>a skill, and a minimum ability (default 1)</td></tr>
+<tr><td><code class="k">Q_R2_HAS_SPELL</code></td><td>a spell, and a minimum ability</td></tr>
+<tr><td><code class="k">Q_R2_HAS_SPELL_SCHOOL</code></td><td>a school, and how many of its spells you must know</td></tr>
+<tr><td><code class="k">Q_R2_HAS_ITEM</code> / <code class="k">Q_R2_USING_ITEM</code></td><td>an item class — carried, or actually equipped</td></tr>
+<tr><td><code class="k">Q_R2_DOES_NOT_HAVE_ITEM</code></td><td>an item class you must <em>not</em> be carrying</td></tr>
+<tr><td><code class="k">Q_R2_HAS_HEALTH_LEVEL</code></td><td>a minimum maximum-health</td></tr>
+<tr><td><code class="k">Q_R2_NUM_AMULETS</code></td><td>a minimum number of amulets</td></tr>
+<tr><td><code class="k">Q_R2_IS_GUILD_MEMBER_OF</code> / <code class="k">Q_R2_IS_PLAYER</code></td><td>a specific guild or a specific player</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:2832–2845</p>
+
+<div class="note">Your quest history is stored as a compound: the low 24 bits are the quest index,
+and two flag bits record success and failure. That is why "not succeeded before" and "not failed
+recently" are separate, cheap tests — and why a quest you have already done will simply stop
+being offered.
+<span class="cite">kod/include/blakston.khd:2847–2849</span></div>
+
+<h2>Three real templates, read out of the source</h2>
+
+<table class="data">
+<thead><tr><th>Quest</th><th>Who may be offered it</th><th>Nodes</th><th>Max active</th><th>Schedule chance</th></tr></thead>
+<tbody>
+<tr><td><code class="k">QST_ID_SCIMITAR_PROF</code></td><td>has not succeeded before, has not failed recently</td><td>4</td><td>30</td><td>100%</td></tr>
+<tr><td><code class="k">QST_ID_DUKE_SERVICE</code></td><td>aligned with the Duke, has not tried recently</td><td>3</td><td>1</td><td>0% — never scheduled, only offered directly</td></tr>
+<tr><td><code class="k">QST_ID_PRINCESS_JOIN</code></td><td>intriguing, currently unaligned, has not tried recently</td><td>2</td><td>30</td><td>—</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/util/questengine.kod:1628–1675</p>
+
+<p>Note <code class="k">QST_ID_DUKE_SERVICE</code>: max active <strong>1</strong> and schedule
+chance <strong>0</strong>. It is never handed out by the scheduler. It exists to be started by
+walking up to the Duke — which is what <code class="k">viQuestID</code> on an NPC means.</p>
+
+<h2>The ten NPCs who start a quest by standing there</h2>
+
+<p>An NPC with a non-zero <code class="k">viQuestID</code> is a permanent quest giver for that
+quest. There are exactly ten in the world:</p>
+
+<table class="data">
+<thead><tr><th>NPC</th><th>Quest</th><th>What it is for</th></tr></thead>
+<tbody>
+<tr><td><a href="../creatures/shalillepriestess.html">Priestess Xiana</a></td><td><code class="k">QST_ID_SHALILLE_DISCIPLE</code></td><td>Becoming a disciple of <a href="shalille.html">Shal'ille</a></td></tr>
+<tr><td><a href="../creatures/kraananpriestess.html">Priestess Qerti'nya</a></td><td><code class="k">QST_ID_KRAANAN_DISCIPLE</code></td><td>Becoming a disciple of <a href="kraanan.html">Kraanan</a></td></tr>
+<tr><td><a href="../creatures/farenpriestess.html">Priestess Tenuv'vyal</a></td><td><code class="k">QST_ID_FAREN_DISCIPLE</code></td><td>Becoming a disciple of <a href="faren.html">Faren</a></td></tr>
+<tr><td><a href="../creatures/qorpriestess.html">Priestess Zuxana</a></td><td><code class="k">QST_ID_QOR_DISCIPLE</code></td><td>Becoming a disciple of <a href="qor.html">Qor</a></td></tr>
+<tr><td>Quintor</td><td><code class="k">QST_ID_SCIMITAR_PROF</code></td><td>Scimitar proficiency</td></tr>
+<tr><td>Afiera D'xor</td><td><code class="k">QST_ID_DEMENTIA_SPELL</code></td><td>The <a href="../spells/dement.html">dement</a> spell</td></tr>
+<tr><td>Joguer</td><td><code class="k">QST_ID_FADE_SPELL</code></td><td>The fade spell</td></tr>
+<tr><td><a href="../creatures/dukeliege.html">Duke Akardius</a></td><td><code class="k">QST_ID_DUKE_SERVICE</code></td><td>Service to the Duke</td></tr>
+<tr><td>Princess Liege</td><td><code class="k">QST_ID_PRINCESS_SERVICE</code></td><td>Service to the Princess</td></tr>
+<tr><td>Rebel Liege</td><td><code class="k">QST_ID_REBEL_SERVICE</code></td><td>Service to the Rebels</td></tr>
+</tbody>
+</table>
+<p class="cite">derived from <code class="k">viQuestID</code> across every Monster subclass</p>
+
+<p>Everything else in the seventy-five is scheduled, or is a branch of another quest, or is
+started by an NPC that reaches you some other way. <strong>You must be within 5 units of an NPC
+to hand anything over or take anything from them</strong> — <code class="k">Q_NPC_CLOSE_ENOUGH</code>.</p>
+<p class="cite">kod/include/blakston.khd:2779</p>
+
+<h2>All seventy-five quests</h2>
+
+<p>Grouped by what they are for. The identifier is the constant; the content of each is the node
+list in <code class="k">questengine.kod</code>.</p>
+
+<table class="data">
+<thead><tr><th>Group</th><th>Quests</th></tr></thead>
+<tbody>
+<tr><td><strong>Religion</strong></td><td>Shal'ille / Kraanan / Faren / Qor disciple; Qor, Shal'ille, Faren, Kraanan and Riija offerings; bone priestess; priestess insignia; monk insignia; polish seraphym</td></tr>
+<tr><td><strong>Abilities</strong></td><td>Scimitar proficiency; dementia spell; fade spell; truth spell (and its end branch); sporeburst; lute; Jala necklace; minstrel insignia</td></tr>
+<tr><td><strong>Politics</strong></td><td>Duke / Princess / Rebel service; Duke / Princess / Rebel join; Duke / Princess / Rebel soldier; faction insignia; council letter; war letter</td></tr>
+<tr><td><strong>Assassination</strong></td><td>Murder Princess 1–3; murder Duke 1–3; murder Jonas 1–3</td></tr>
+<tr><td><strong>Guilds</strong></td><td>Guild shield and its introduction; establish the necromancer guild; necromancer warning 1–2</td></tr>
+<tr><td><strong>Trade and taxes</strong></td><td>Trading post good / evil; bow maker good / evil; bar restock; ore; apothecary; Koc'atan weapon trade; Koc'atan ale trade; vault tax; merchant tax; late tax</td></tr>
+<tr><td><strong>Identification</strong></td><td>Potion identification; wand identification</td></tr>
+<tr><td><strong>Character pieces</strong></td><td>Chicken soup; stunted dwarf; hypochondriac; mad scientist; mystery monster; Moxal's scam 1–2; love letter 1–2; aphrodisiac; chess and chess checkmate; party</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:2700–2775 — the complete <code class="k">QST_ID_</code> list</p>
+
+<h2>How to actually get quests</h2>
+
+<ul>
+<li><strong>Be eligible for more of them.</strong> The restriction masks key off karma, faction,
+murderer status and guild rank. A lawful, factioned, guilded character with a broad spell list
+qualifies for far more of the seventy-five than a neutral loner does.</li>
+<li><strong>Talk to the ten permanent givers.</strong> Their quests are never scheduled and will
+never come to you.</li>
+<li><strong>Failing has a memory.</strong> Several templates require "has not failed recently."
+Abandoning a quest closes doors for a while.</li>
+<li><strong>Several are one-shot forever</strong> — <code class="k">Q_PLAYER_NOTSUCCEEDED</code>
+without the "recently". The scimitar proficiency quest is one of these.</li>
+<li><strong>Stand close.</strong> Five units. A delivery that will not complete is usually a
+distance problem.</li>
+</ul>
+
+<p>Related: <a href="../npcs/index.html">NPCs</a> · <a href="factions.html">Factions</a> ·
+<a href="duke.html">The Duke and Politics</a> · <a href="guilds.html">Guilds</a> ·
+<a href="karma.html">Karma</a> · <a href="../skills/index.html">Skills</a> ·
+<a href="../spells/index.html">Spells</a></p>

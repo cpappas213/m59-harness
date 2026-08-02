@@ -1,0 +1,189 @@
+<h1>Guilds</h1>
+
+<p class="lede">A guild is a rented institution. It has five ranks, an elected master, a treasury
+that is charged every six minutes whether anyone is playing or not, and a hall that other guilds
+can take from you by force. Everything about it costs money continuously, and running out does
+not shrink the guild — it deletes it.</p>
+
+<h2>The shape of it</h2>
+
+<table class="data">
+<thead><tr><th></th><th>Value</th><th>Constant</th></tr></thead>
+<tbody>
+<tr><td>Minimum members to exist</td><td>3</td><td><code class="k">MINIMUM_MEMBERS</code></td></tr>
+<tr><td>Maximum members</td><td>400</td><td><code class="k">MAX_MEMBERS</code></td></tr>
+<tr><td>Maximum lieutenants</td><td>2</td><td><code class="k">MAX_LIEUTENANT</code></td></tr>
+<tr><td>Maximum name length</td><td>30 characters</td><td><code class="k">MAX_GUILD_NAME_LEN</code></td></tr>
+<tr><td>Maximum rank-title length</td><td>20 characters</td><td><code class="k">MAX_GUILD_RANK_LEN</code></td></tr>
+<tr><td>Cannot rejoin for</td><td>4 hours</td><td><code class="k">CANNOT_REJOIN_TIME</code></td></tr>
+<tr><td>Maturity, ordinary guild</td><td>30 periods</td><td><code class="k">MATURITY_NONSECRET</code></td></tr>
+<tr><td>Maturity, secret guild</td><td>60 periods</td><td><code class="k">MATURITY_SECRET</code></td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/guild.kod:20–50 · kod/include/blakston.khd:2961–2962</p>
+
+<p>A guild is <strong>immature</strong> until its counter runs out, and immaturity is checked
+before several privileges. Declaring yourself <em>secret</em> doubles the wait and doubles the
+base rent — secrecy is a purchased property, not a free one.</p>
+<p class="cite">kod/object/passive/guild.kod:592 <code class="k">IsMature</code></p>
+
+<h2>Ranks</h2>
+
+<table class="data">
+<thead><tr><th>Rank</th><th>Value</th><th>How you get it</th></tr></thead>
+<tbody>
+<tr><td><strong>Master</strong></td><td><code class="k">RANK_MASTER = 5</code></td><td>Elected — see voting below</td></tr>
+<tr><td><strong>Lieutenant</strong></td><td><code class="k">RANK_LIEUTENANT = 4</code></td><td>Appointed, and only two may exist at once</td></tr>
+<tr><td><strong>Lord</strong></td><td><code class="k">RANK_LORD = 3</code></td><td>Appointed</td></tr>
+<tr><td><strong>Sir</strong></td><td><code class="k">RANK_SIR = 2</code></td><td>Appointed</td></tr>
+<tr><td><strong>Apprentice</strong></td><td><code class="k">RANK_APPRENTICE = 1</code></td><td>What you are when you are inducted</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:2289–2293 · kod/object/passive/guild.kod:1583 <code class="k">NewLieutenantOkay</code></p>
+
+<p>Rank titles are renameable up to 20 characters, so the names your guild uses may differ from
+the five above — the numbers underneath do not.</p>
+
+<h2>Electing a master</h2>
+
+<div class="formula">every member's vote is recorded against a candidate
+
+if a guildmaster already holds more than half the members' votes:
+      no election happens
+
+otherwise the candidate with the most votes wins,
+      provided that count exceeds half the membership</div>
+<p class="cite">kod/object/passive/guild.kod:1884 <code class="k">CountVotes</code></p>
+
+<p>The sitting master needs a <em>majority</em>, not a plurality, to be safe — and a challenger
+also needs an outright majority to take the seat. A guild split three ways simply keeps whoever
+is in place, because nobody clears the bar.</p>
+
+<h2>Rent, and how guilds die</h2>
+
+<p>The maintenance timer charges the guild every period. The bill is assembled from scratch each
+time:</p>
+
+<div class="formula">rent = RENT_BASE                       % 5
+     + RENT_SECRET     if secret       % +10
+     + RENT_PER_MEMBER × members       % +1 each
+
+if the guild holds a hall:
+     + hall.GetRentValue() / 10
+     + RENT_PER_ALLY  × allies         % −2 each — allies REDUCE the bill
+     + RENT_PER_ENEMY × enemies        % +5 each — enemies raise it</div>
+<p class="cite">kod/object/passive/guild.kod:776 <code class="k">AccrueRent</code>, constants at :38–43</p>
+
+<div class="warn"><strong>Falling behind deletes the guild.</strong> When the overdue counter
+reaches its limit, every member is messaged and the guild object is deleted outright. There is no
+grace period beyond <code class="k">RENT_MAX_OVERDUE</code> — 480 six-minute periods, which is
+48 hours of arrears.
+<span class="cite">kod/object/passive/guild.kod:786–796, :46</span></div>
+
+<p>Read the modifiers again, because they are the whole political economy of guilds:</p>
+
+<ul>
+<li><strong>Every member costs 1 per period.</strong> A 400-member guild pays 400 per period on
+membership alone. Guilds are not free to grow.</li>
+<li><strong>Every ally saves you 2 per period.</strong> Alliances are worth more than the
+membership of two people. This is a direct financial subsidy for diplomacy.</li>
+<li><strong>Every enemy costs 5 per period.</strong> Wars are expensive to <em>hold</em>, not just
+to fight, and the cost accrues while you sleep.</li>
+<li><strong>Allies and enemies only count if you hold a hall.</strong> A landless guild pays no
+diplomatic premium at all — and gets no alliance discount either.</li>
+</ul>
+
+<h2>War</h2>
+
+<div class="formula">to declare an enemy, the guild's treasury must be able to absorb the penalty:
+      GetRentDue() ≤ −WAR_LOSS_PENALTY          % 50,000 in hand
+
+if you pull out of a mutually declared war:   you lose WAR_LOSS_PENALTY (50,000)
+the vanquished enemy's conqueror gains:       WAR_WINNER_PERCENT of it (60%, i.e. 30,000)</div>
+<p class="cite">kod/object/passive/guild.kod:2289–2298, constants at :27–29</p>
+
+<p>You cannot declare a war you could not afford to lose. That single check is what stops small
+guilds harassing large ones for free, and it makes 50,000 shillings the effective entry fee to
+guild politics.</p>
+
+<p>Ending a war is not instantaneous either — peace runs on a delay of
+<code class="k">PEACE_DELAY</code>, <strong>two hours</strong>, during which the declaration is
+still live.</p>
+<p class="cite">kod/object/passive/guild.kod:50</p>
+
+<div class="note">Mutual enmity has a combat consequence worth knowing: two players whose guilds
+are <em>mutually</em> at war may kill each other without either becoming a murderer. The check is
+explicit in the kill handler.
+<span class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4865–4875</span></div>
+
+<h2>The guild hall</h2>
+
+<p>A hall is the guild's property and its liability. It adds a tenth of its own rent value to the
+bill every period, it switches on the ally and enemy modifiers, and it can be taken:</p>
+
+<ul>
+<li><strong>Conquered</strong> — another guild takes it by force.</li>
+<li><strong>Betrayed</strong> — the same outcome by a different route, and the game sends a
+different message so members know which happened.</li>
+</ul>
+<p class="cite">kod/object/passive/guild.kod:1009 <code class="k">GuildHallConquered</code></p>
+
+<p>When it falls, every member's guild powers are reset and offline members are sent mail about
+it. A room may be flagged <code class="k">ROOM_GUILD_PK_ONLY</code>, restricting combat inside it
+to guild conflict.</p>
+<p class="cite">kod/include/blakston.khd:1040</p>
+
+<h2>Colours and shields</h2>
+
+<p>A guild carries a primary colour, a secondary colour and a shield shape, and members display
+them. This is what makes a guild visible in the world rather than merely recorded.</p>
+<p class="cite">kod/object/passive/guild.kod — <code class="k">HasGuildColors</code>, <code class="k">GetPrimaryGuildColor</code>, <code class="k">GetSecondaryGuildColor</code>, <code class="k">GetShieldShape</code>, <code class="k">SetGuildColors</code></p>
+
+<h2>Every guild command</h2>
+
+<p>Each of these is its own class under <code class="k">kod/object/passive/guildcmd/</code>, and
+which of them you may use is a function of your rank.</p>
+
+<table class="data">
+<thead><tr><th>Command</th><th>Class</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>invite</td><td><code class="k">GuildInvite</code></td><td>Add someone to the invitation list</td></tr>
+<tr><td>exile</td><td><code class="k">GuildExile</code></td><td>Remove a member</td></tr>
+<tr><td>renounce</td><td><code class="k">GuildRenounce</code></td><td>Leave the guild yourself</td></tr>
+<tr><td>abdicate</td><td><code class="k">GuildAbdicate</code></td><td>Give up the mastership</td></tr>
+<tr><td>vote</td><td><code class="k">GuildVote</code></td><td>Cast your vote for master</td></tr>
+<tr><td>set rank</td><td><code class="k">GuildSetRank</code></td><td>Promote or demote, within the lieutenant cap</td></tr>
+<tr><td>roster</td><td><code class="k">GuildRoster</code></td><td>List the membership and ranks</td></tr>
+<tr><td>password</td><td><code class="k">GuildSetPassword</code></td><td>Set the guild password</td></tr>
+<tr><td>ally</td><td><code class="k">GuildForgeAlliance</code></td><td>Declare an alliance — worth −2 rent per period</td></tr>
+<tr><td>end alliance</td><td><code class="k">GuildEndAlliance</code></td><td>Break one</td></tr>
+<tr><td>enemy</td><td><code class="k">GuildDeclareEnemy</code></td><td>Declare war — requires 50,000 in hand</td></tr>
+<tr><td>peace</td><td><code class="k">GuildPeace</code></td><td>Sue for peace — takes two hours</td></tr>
+<tr><td>abandon</td><td><code class="k">GuildAbandon</code></td><td>Give up the guild hall</td></tr>
+<tr><td>disband</td><td><code class="k">GuildDisband</code></td><td>Dissolve the guild</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/guildcmd/ — one file per command</p>
+
+<h2>Founding one</h2>
+
+<p>Guilds are chartered by an NPC with the occupation <code class="k">MOB_ROLE_GUILD_CREATOR</code>,
+who lives in Barloque. You need three members to hold a guild together at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/gcreator.kod:321 · kod/include/blakston.khd:1425</p>
+
+<h2>Practical advice</h2>
+
+<ul>
+<li><strong>Ally early.</strong> Each alliance pays for two members' worth of rent, permanently,
+and costs nothing but the diplomacy.</li>
+<li><strong>Do not hold a hall you cannot fund.</strong> The hall is what switches on the enemy
+premium; a landless guild at war pays nothing extra.</li>
+<li><strong>Watch the treasury before declaring anything.</strong> 50,000 is the price of
+admission, and pulling out costs all of it.</li>
+<li><strong>Secrecy costs triple base rent and doubles the maturity wait.</strong> It is a real
+expense, not a flag.</li>
+<li><strong>Prune the roster.</strong> Every inactive member is 1 per period forever.</li>
+</ul>
+
+<p>Related: <a href="factions.html">Factions</a> · <a href="duke.html">The Duke and Politics</a> ·
+<a href="death.html">Death, the Underworld and PvP</a> · <a href="economy.html">Money and Merchants</a></p>

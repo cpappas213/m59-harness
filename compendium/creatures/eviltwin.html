@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evil Twin — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Evil Twin</p>
+<div class="hero"><div class="heroText"><h1>Evil Twin</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">Level 1</span><span class="tag ">Difficulty 9</span><span class="tag ">Neutral</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">1</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">9</div></div><div class="fact"><div class="lbl">Health</div><div class="val">1–1</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–1</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 1 + 60 × 9
+                = 543
+
+health          = Fuzzy(level) = 1–1
+damage per hit  = Fuzzy(level / random(10,15))  = 1–1
+dodge           = difficulty × 10 = 90</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">51%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">61%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">130</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.5</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>slash</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>No room in the world declares this creature. It is summoned by another creature, placed by an
+administrator, or left over from content that is no longer reachable.</p><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_FIGHT_MONSTERS</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_NEWBIESAFE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_SINGLEMINDED</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/amoebax_g1.png" alt="Evil Twin corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:11</p>
+<p><code class="k">EvilTwin</code> is <code class="k">Monster</code> — full chain <code class="k">EvilTwin</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viDefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>EvilTwin_dead_icon_rsc</code></td><td class=""><em>amoebaX.bgf</em></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>EvilTwin_dead_name_rsc</code></td><td class=""><em>dead evil twin</em></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_NONE</code></td><td class="">1</td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_AVERAGE</code></td><td class="">12</td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_SLASH</code></td><td class="">128</td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>EvilTwin_sound_hit</code></td><td class=""><em>orc_atkh.wav</em></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>EvilTwin_sound_miss</code></td><td class=""><em>orc_atkm.wav</em></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>EvilTwin_sound_aware</code></td><td class=""><em>orc_awr.wav</em></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>EvilTwin_sound_death</code></td><td class=""><em>orc_dth.wav</em></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_SINGLEMINDED | AI_FIGHT_MONSTERS | AI_FIGHT_NEWBIESAFE | AI_FIGHT_AGGRESSIVE</code></td><td class="">417792</td><td class="num " data-sort="60">60</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>EvilTwin_name_rsc</code></td><td class="num " data-sort="64">64</td></tr>
+<tr><td class=""><code class="k">piDrawfx</code></td><td class=""><code>4</code></td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>EvilTwin_male_icon_rsc</code></td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>PANM_NONE</code></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">poCaster</code></td><td class=""><code>$</code></td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">poOriginal</code></td><td class=""><code>$</code></td><td class="num " data-sort="69">69</td></tr>
+<tr><td class=""><code class="k">piGender</code></td><td class=""><code>GENDER_MALE</code></td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">pbIllusion</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">piSpellpower</code></td><td class=""><code>1</code></td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">poArrow</code></td><td class=""><code>$</code></td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">vbSummoned</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="76">76</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(iSpellPower = 1, oMaster = $, oTarget = $)</h4>
+<pre><code>{
+      local i, each_obj, oRoom;
+      
+      oRoom = send(oTarget,@GetOwner);
+      
+      if oMaster &lt;&gt; $
+      {
+         poCaster = oMaster;
+      }
+
+      if oTarget &lt;&gt; $
+      {
+         poOriginal = oTarget;
+         poTarget = oTarget;
+         for i in send(oRoom,@GetHolderActive)
+         {
+            each_obj = Send(oRoom,@HolderExtractObject,#data=i);
+
+            if (IsClass(each_obj,&amp;Reflection) OR IsClass(each_obj,&amp;EvilTwin))
+               AND send(each_obj,@GetIllusionForm) = oTarget
+               AND random(1,2) = 1
+               AND each_obj &lt;&gt; self
+            {
+               poTarget = each_obj;
+            }
+         }
+      }
+      
+      piSpellpower = iSpellpower;
+      poArrow = Create(&amp;Arrow);
+      post(self,@TargetSwitch,#what=oTarget,#iHatred=1000);
+      post(self,@EnterStateChase);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:80</p>
+<h4>Delete(bMonsterReport = TRUE)</h4>
+<pre><code>{
+      send(SYS,@RemoveReflection,#oReflection=self);
+
+      
+      if poCaster &lt;&gt; $
+      {
+         if IsClass(poCaster,&amp;Monster)
+            AND bMonsterReport
+         {
+            send(poCaster,@SummonDeleted,#what=self);
+         }
+      }
+
+      if (poOwner &lt;&gt; $)
+         AND (IsClass(poOriginal,&amp;Monster)
+              OR send(poOriginal,@isLoggedOn))
+      {
+         Send(poOwner,@SomeoneSaid,#type=SAY_MESSAGE,#string=EvilTwin_delete,
+              #parm1=send(self,@GetDef,#cap=TRUE),#parm2=send(self,@Getname,#cap=FALSE));
+      }
+      
+      poOriginal = $;
+      poCaster = $;
+      poArrow = $;
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:117</p>
+<h4>KilledSomething(what = $, use_weapon = $)</h4>
+<pre><code>{
+      if IsClass(poCaster,&amp;Player)
+         AND (NOT send(poCaster,@CheckPlayerFlag,#flag=PFLAG_MURDERER))
+         AND IsClass(what,&amp;Player)
+      {
+         Send(poCaster,@MsgSendUser,#message_rsc=EvilTwin_trouble);
+      }
+      
+      post(self,@Delete);
+      
+      return send(poCaster,@KilledSomething,#what=what,#use_weapon=use_weapon);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:146</p>
+<h4>SomethingKilled(what = $, victim = $)</h4>
+<pre><code>{
+      
+      if victim = poOriginal
+      {
+         if poCaster &lt;&gt; $
+            AND IsClass(poCaster,&amp;Player)
+         {
+            send(poCaster,@RemoveEnchantmentClass,#class=&amp;SummonEvilTwin);
+         }
+         else
+         {
+            post(self,@Delete);
+         }
+      }
+      
+      return ; 
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:160</p>
+<h4>GetApparentName()</h4>
+<pre><code>{
+      return send(poOriginal,@GetApparentName);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:179</p>
+<h4>GetName(cap = FALSE)</h4>
+<pre><code>{
+      return send(poOriginal,@GetName,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:184</p>
+<h4>GetDef(cap = FALSE)</h4>
+<pre><code>{
+      return send(poOriginal,@GetDef,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:189</p>
+<h4>GetIndef(cap = FALSE)</h4>
+<pre><code>{
+      return send(poOriginal,@GetIndef,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:194</p>
+<h4>GetHisHer(cap = FALSE)</h4>
+<pre><code>{
+      return send(poOriginal,@GetHisHer,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:199</p>
+<h4>GetHeShe(cap = FALSE)</h4>
+<pre><code>{
+      return send(poOriginal,@GetHeShe,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:204</p>
+<h4>GetLordLady(cap = FALSE)</h4>
+<pre><code>{
+      return send(poOriginal,@GetLordLady,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:209</p>
+<h4>GetHisHers(cap = FALSE)</h4>
+<pre><code>{
+      return send(poOriginal,@GetHisHers,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:214</p>
+<h4>GetHimHer(cap = FALSE)</h4>
+<pre><code>{
+      return send(poOriginal,@GetHimHer,#cap=cap);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:219</p>
+<h4>ReqSomethingEntered(what = $)</h4>
+<pre><code>{
+      if NOT send(poOriginal,@IsLoggedOn)
+      {
+         Send(self,@Delete);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:224</p>
+<h4>SomethingLeft(what = $)</h4>
+<pre><code>{
+      if poOriginal = $
+	   {
+	      Send(self,@Delete);
+      }
+
+      if IsClass(poOriginal,&amp;Player)
+         AND NOT send(poOriginal,@IsLoggedOn)
+	   {
+	      Send(self,@Delete);
+      }
+
+      if what = poOriginal
+      {
+         
+         if IsClass(send(poOriginal,@GetOwner),&amp;UnderWorld)
+         {
+            post(self,@Delete);
+
+            propagate;
+         }
+         else
+         {
+            post(self,@GotoOriginal);
+         }
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:234</p>
+<h4>GotoOriginal()</h4>
+<pre><code>{
+      if poOriginal = $
+      {
+         post(self,@Delete);
+
+         return;
+      }
+   
+      send(send(poOriginal,@GetOwner),@NewHold,#what=self,
+           #new_row = send(poOriginal,@getRow),#new_col = send(poOriginal,@getcol),
+           #new_angle = send(poOriginal,@GetAngle));
+      post(self,@TargetSwitch,#what=poOriginal,#iHatred=1000);
+      post(self,@EnterStateChase);
+      
+      return;
+
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:265</p>
+<h4>GetOriginalInfo()</h4>
+<pre><code>{
+      vrIcon = send(poOriginal,@GetPlayerIcon);
+      vrName = send(poOriginal,@GetTrueName);
+      piGender = send(poOriginal,@GetGender);
+      piDrawfx = send(poOriginal,@GetPlayerDrawfx);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:284</p>
+<h4>GetObjectFlags()</h4>
+<pre><code>{
+      local iFlags;
+      
+      iFlags = send(poOriginal,@GetObjectFlags);
+      if (iFlags &amp; USER_YES) {  iFlags = (iFlags | FALSEPLAYER_YES);  }
+      
+      return iFlags;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:294</p>
+<h4>GetAttackRange()</h4>
+<pre><code>{
+      local iWeapon;
+      
+      iWeapon = send(poOriginal,@LookupPlayerWeapon);
+      if iWeapon &lt;&gt; $
+      {  
+         return send(iWeapon,@GetRange);  
+      }
+      
+      return 1;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:305</p>
+<h4>GetOffense(what = $, stroke_obj = $)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetOffense,#what=what,#stroke_obj=stroke_obj);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:319</p>
+<h4>GetDefense(what = $, stroke_obj = $)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetDefense,#what=what,#stroke_obj=stroke_obj);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:325</p>
+<h4>GetDamage(what = $, stroke_obj = $)</h4>
+<pre><code>{
+      local oStroke;
+
+      oStroke = stroke_obj;
+      if IsClass(poOriginal,&amp;Player)
+      {
+         oStroke = $;
+      }
+      
+      return Send(poOriginal,@GetDamage,#what=what,#stroke_obj=oStroke);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:330</p>
+<h4>SomethingChanged(what = $)</h4>
+<pre><code>{
+      if what = poOriginal
+      {
+         if Send(what,@GetAnimation) = PANM_WAVE
+         {
+            Send(self,@DoWave);
+         }
+         
+         if Send(what,@GetAnimation) = PANM_POINT
+         {
+            Send(self,@DoPoint);
+         }
+         
+         if Send(what,@GetAnimation) = PANM_DANCE
+         {
+            Send(self,@DoDance);
+         }
+         
+         piDrawfx = send(poOriginal,@GetPlayerDrawfx);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:343</p>
+<h4>DoWave()</h4>
+<p>Causes the EvilTwin to wave.</p>
+<pre><code>{
+      send(self,@GetOriginalInfo);
+      piAnimation = PANM_WAVE;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = PANM_NONE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:368</p>
+<h4>DoPoint()</h4>
+<pre><code>{
+      send(self,@GetOriginalInfo);
+      piAnimation = PANM_POINT;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = PANM_NONE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:379</p>
+<h4>DoDance()</h4>
+<pre><code>{
+      send(self,@GetOriginalInfo);
+      piAnimation = PANM_DANCE;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = PANM_NONE;
+      
+      return;
+    }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:389</p>
+<h4>SetOriginal(who = $)</h4>
+<pre><code>{
+      if who = $
+      {
+         post(self,@Delete);
+
+         return;
+      }
+      
+      poOriginal = who;
+      Send(self,@GetOriginalInfo);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:399</p>
+<h4>GetIcon()</h4>
+<pre><code>{
+      return send(poOriginal,@GetIcon);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:414</p>
+<h4>TryAttack(what = $, stroke_obj = $)</h4>
+<pre><code>{
+      local bWasBad;
+
+      if IsClass(poCaster,&amp;Player)
+         AND NOT Send(poOwner,@IsArena)
+      {
+         
+         bWasBad = (send(poCaster,@CheckPlayerFlag,#flag=PFLAG_OUTLAW)
+                    OR send(poCaster,@CheckPlayerFlag,#flag=PFLAG_MURDERER));
+   
+         if NOT send(poCaster,@AllowPlayerAttack,#victim=what)
+         {
+            return FALSE;
+         }
+
+         
+         if NOT bWasBad
+            AND (send(poCaster,@CheckPlayerFlag,#flag=PFLAG_OUTLAW)
+                 OR send(poCaster,@CheckPlayerFlag,#flag=PFLAG_MURDERER))
+         {
+            Send(poCaster,@MsgSendUser,#message_rsc=EvilTwin_trouble);
+         }
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:419</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      
+      send(self,@DoAttack);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:447</p>
+<h4>GetParryAbility(stroke_obj = $)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetParryAbility,#stroke_obj=stroke_obj);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:457</p>
+<h4>GetBlockAbility(stroke_obj = $)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetBlockAbility,#stroke_obj=stroke_obj);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:462</p>
+<h4>GetDodgeAbility(stroke_obj = $)</h4>
+<pre><code>{
+      return Send(poOriginal,@GetDodgeAbility,#stroke_obj=stroke_obj);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:467</p>
+<h4>DoAttack()</h4>
+<pre><code>{
+      local Weapon, ammotype, i;
+      
+      Weapon = send(poOriginal,@LookupPlayerWeapon);
+      ammotype = poArrow;
+      Send(self,@GetOriginalInfo);
+
+      if Weapon &lt;&gt; $   
+      {
+         if IsClass(Weapon,&amp;Bow)
+         {
+            piAnimation = PANM_BOW_FIRE;
+
+            for i in send(poOriginal,@GetPlayerUsing)
+            {
+               if send(i,@GetItemUseType) = ITEM_USE_QUIVER
+               {
+                  AmmoType = i;
+               }
+            }
+            
+            send(poOwner,@SomethingShot,#who=self,#target=poTarget,#projectile = AmmoType);
+         }
+         else
+         {
+            piAnimation = PANM_WEAPON_ATTACK;
+         }
+      }
+      else
+      {
+         piAnimation = PANM_FIST_ATTACK;
+      }
+      
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = PANM_NONE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:472</p>
+<h4>ShowDesc()</h4>
+<pre><code>{
+      send(poOriginal,@ShowDesc);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:512</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      
+
+      Send(poOriginal,@SendMoveAnimation);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:519</p>
+<h4>SendMoveOverlays()</h4>
+<pre><code>{
+      send(poOriginal,@SendMoveOverlays);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:528</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+       send(poOriginal,@SendAnimation,#iAnimation=piAnimation);
+       
+       return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:535</p>
+<h4>SendOverlays()</h4>
+<pre><code>{
+       Send(poOriginal,@SendOverlays,#iAnimation=piAnimation);
+       
+       return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:542</p>
+<h4>GetIllusionForm()</h4>
+<pre><code>{
+      return poOriginal;
+   }  </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:550</p>
+<h4>TryLook(what = $)</h4>
+<pre><code>{
+      if poOriginal = $
+      {
+         post(self,@Delete);
+
+         return;
+      }
+   
+      if IsClass(poOriginal,&amp;Player)
+         AND send(poOriginal,@CheckPlayerFlag,#flag=PFLAG_INVISIBLE)
+         AND what &lt;&gt; poOriginal
+      {
+         return;
+      }
+      
+      Send(what,@SendLookPlayer,#what=poOriginal);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/eviltwin.kod:555</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

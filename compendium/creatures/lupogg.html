@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lupogg — Meridian 59 Compendium</title>
+<meta name="description" content="This underwater denizen, although hideous and brutish, is rumored to be peaceful in nature, but there is no evidence of that now. The lupoggs seem upset that th">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › lupogg</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/lupogg_g1.png" alt="lupogg" width="98" height="126"></div><div class="heroText"><h1>lupogg</h1><p class="lede">This underwater denizen, although hideous and brutish, is rumored to be peaceful in nature, but there is no evidence of that now. The lupoggs seem upset that their territory has been trespassed upon, and seem eager to challenge any they can find.</p><div class="tags"><span class="tag ">Level 105</span><span class="tag ">Difficulty 9</span><span class="tag ">Good</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">105</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">9</div></div><div class="fact"><div class="lbl">Health</div><div class="val">95–158</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">6–13</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">75</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">very_tough</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>tez</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 105 + 60 × 9
+                = 855
+
+health          = Fuzzy(level × 120/100) = 95–158
+damage per hit  = Fuzzy(level / random(10,15))  = 6–13
+dodge           = difficulty × 10 = 90</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">80%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">38%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">14</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">7.6</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>bite</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 105/55 + random(0, 9/3), $, 6)
+       = 2–5 items
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/verytght.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="BlueMushroom"><a href="../items/bluemushroom.html">blue mushroom</a></td><td class="num " data-sort="25.743">25.7%</td><td class=""></td><td class=""><code>verytght.kod:32</code></td></tr>
+<tr><td class="" data-sort="InkyCap"><a href="../items/inkycap.html">Inky-cap mushroom</a></td><td class="num " data-sort="13.861">13.9%</td><td class=""></td><td class=""><code>verytght.kod:33</code></td></tr>
+<tr><td class="" data-sort="PurpleMushroom"><a href="../items/purplemushroom.html">purple mushroom</a></td><td class="num " data-sort="11.881">11.9%</td><td class=""></td><td class=""><code>verytght.kod:34</code></td></tr>
+<tr><td class="" data-sort="Sapphire"><a href="../items/sapphire.html">sapphire</a></td><td class="num " data-sort="11.881">11.9%</td><td class=""></td><td class=""><code>verytght.kod:35</code></td></tr>
+<tr><td class="" data-sort="Diamond"><a href="../items/diamond.html">diamond</a></td><td class="num " data-sort="8.911">8.9%</td><td class=""></td><td class=""><code>verytght.kod:36</code></td></tr>
+<tr><td class="" data-sort="Ruby"><a href="../items/ruby.html">ruby</a></td><td class="num " data-sort="6.931">6.9%</td><td class=""></td><td class=""><code>verytght.kod:37</code></td></tr>
+<tr><td class="" data-sort="BlueDragonScale"><a href="../items/bluedragonscale.html">blue dragon scale</a></td><td class="num " data-sort="6.931">6.9%</td><td class=""></td><td class=""><code>verytght.kod:38</code></td></tr>
+<tr><td class="" data-sort="DarkAngelFeather"><a href="../items/darkangelfeather.html">dark angel feather</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>verytght.kod:39</code></td></tr>
+<tr><td class="" data-sort="CloakPotion"><a href="../items/cloakpotion.html">Cloak Potion</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>verytght.kod:40</code></td></tr>
+<tr><td class="" data-sort="HoldWand"><a href="../items/holdwand.html">Hold Wand</a></td><td class="num " data-sort="1.98">2.0%</td><td class=""></td><td class=""><code>verytght.kod:41</code></td></tr>
+<tr><td class="" data-sort="MysticSword"><a href="../items/mysticsword.html">mystic sword</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>verytght.kod:42</code></td></tr>
+<tr><td class="" data-sort="PlateArmor"><a href="../items/platearmor.html">plate armor</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>verytght.kod:43</code></td></tr>
+<tr><td class="" data-sort="Key"><a href="../items/key.html">key</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>verytght.kod:44</code></td></tr>
+<tr><td class="" data-sort="EarthquakeScroll"><a href="../items/earthquakescroll.html">Earthquake Scroll</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>verytght.kod:45</code></td></tr></tbody></table></div><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>2 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 8.
+<span class="cite">kod/object/passive/trestype/verytght.kod:25</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>7 places in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="The Ancient Smuggler's Crossing"><a href="../zones/sewerkinglair.html">The Ancient Smuggler's Crossing</a></td><td class="" data-sort="Boss lairs">Boss lairs</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="100">100%</td><td class=""><code>monsroom/bossroom/sewking.kod</code></td></tr>
+<tr><td class="" data-sort="The Sewers of Barloque"><a href="../zones/barlsewer.html">The Sewers of Barloque (Barl Sewer)</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="6">6%</td><td class=""><code>monsroom/barlsew.kod</code></td></tr>
+<tr><td class="" data-sort="The Sewers of Barloque"><a href="../zones/barlsewer2.html">The Sewers of Barloque (Barl Sewer2)</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="45">45%</td><td class=""><code>monsroom/barlsew2.kod</code></td></tr>
+<tr><td class="" data-sort="The Sewers of Barloque"><a href="../zones/barlsewer3.html">The Sewers of Barloque (Barl Sewer3)</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="80">80%</td><td class=""><code>monsroom/barlsew3.kod</code></td></tr>
+<tr><td class="" data-sort="The Sewers of Jasper"><a href="../zones/jassewer1.html">The Sewers of Jasper (Jas Sewer1)</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="5">5%</td><td class=""><code>monsroom/jassew1.kod</code></td></tr>
+<tr><td class="" data-sort="The Sewers of Jasper"><a href="../zones/jassewer2.html">The Sewers of Jasper (Jas Sewer2)</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="60">60%</td><td class=""><code>monsroom/jassew2.kod</code></td></tr>
+<tr><td class="" data-sort="The Sewers of Jasper"><a href="../zones/jassewer3.html">The Sewers of Jasper (Jas Sewer3)</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator</td><td class="num " data-sort="85">85%</td><td class=""><code>monsroom/jassew3.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_WIZARD_KILLER</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>What killing it does to your karma</h2>
+<p>Its karma is <code class="k">75</code>, and a kill is treated as an act whose karma is the
+<em>negative</em> of the victim's — so killing this creature pushes you
+<strong>towards evil</strong>.</p>
+<div class="formula">base   = your_karma − (−victim_karma) = your_karma + 75
+change = −( base³ / 2500 + 5 × base ) / (11 − swing)      % hundredths of a karma point
+       bounded to ±150 for a monster kill — at most 1.5 karma per kill</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code> · :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+<div class="note">No karma moves at all in the newbie region, in an arena, or when the victim's
+karma is neutral. And once you are already further from neutral than your victim in the same
+direction, killing them does nothing to you.</div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/lupogg_g1.png" alt="lupogg group 1" loading="lazy"><figcaption>group 1 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupogg_g2.png" alt="lupogg group 2" loading="lazy"><figcaption>group 2 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupogg_g3.png" alt="lupogg group 3" loading="lazy"><figcaption>group 3 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupogg_g4.png" alt="lupogg group 4" loading="lazy"><figcaption>group 4 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupogg_g5.png" alt="lupogg group 5" loading="lazy"><figcaption>group 5 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupogg_g6.png" alt="lupogg group 6" loading="lazy"><figcaption>group 6 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupogg_g7.png" alt="lupogg group 7" loading="lazy"><figcaption>group 7 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupogg_g8.png" alt="lupogg group 8" loading="lazy"><figcaption>group 8 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lupoggx_g1.png" alt="lupogg corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupogg.kod:11</p>
+<p><code class="k">Lupogg</code> is <code class="k">Monster</code> — full chain <code class="k">Lupogg</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrKocName</code></td><td class=""><code>lupogg_koc_name_rsc</code></td><td class=""><em>tez</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>lupogg_name_rsc</code></td><td class=""><em>lupogg</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>lupogg_icon_rsc</code></td><td class=""><em>lupogg.bgf</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>lupogg_desc_rsc</code></td><td class=""><em>This underwater denizen, although hideous and brutish, is rumored to be  peaceful in natur</em></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>lupogg_dead_icon_rsc</code></td><td class=""><em>lupoggX.bgf</em></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>lupogg_dead_name_rsc</code></td><td class=""><em>dead lupogg</em></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_VERY_TOUGH</code></td><td class="">7</td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_BITE</code></td><td class="">1024</td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>105</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>75</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_AGGRESSIVE | AI_FIGHT_WIZARD_KILLER</code></td><td class="">2113536</td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>lupogg_sound_hit</code></td><td class=""><em>lup_atkh.wav</em></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>lupogg_sound_miss</code></td><td class=""><em>lup_atkm.wav</em></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>lupogg_sound_aware</code></td><td class=""><em>lup_awr.wav</em></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>lupogg_sound_death</code></td><td class=""><em>lup_dth.wav</em></td><td class="num " data-sort="57">57</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="61">61</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructed()</h4>
+<pre><code>{
+      plResistances = [ [ 70, ATCK_WEAP_ALL],
+                        [ 90, -ATCK_SPELL_COLD],
+                        [ 90, -ATCK_SPELL_SHOCK],
+                        [-20, -ATCK_SPELL_ACID ],
+                        [-10, -ATCK_SPELL_FIRE ],
+                        [-10, ATCK_WEAP_SLASH ],
+                        [-25, ATCK_WEAP_NERUDITE ] ];
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupogg.kod:65</p>
+<h4>CalculateDamage(what = $, hit_roll = $)</h4>
+<p>We hit &lt;what&gt; with a roll of &lt;hit_roll&gt;, and now need to calculatehow much damage we caused.</p>
+<pre><code>{
+      local damage;
+
+      damage = send(self,@Fuzzy,#num=viLevel/Random(8,11));
+
+      if piEnch_flags &amp; ENCH_PALSY
+      {
+         damage = damage * 3 / 4 ;
+      }
+
+      return damage;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupogg.kod:77</p>
+<h4>GetAttackRange()</h4>
+<pre><code>{
+      return 2;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupogg.kod:93</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      piAnimation = ANIM_ATTACK;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupogg.kod:98</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE,4,200,2,2,2,5);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupogg.kod:107</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE,4,200,2,2,2,5);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupogg.kod:114</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if piAnimation = ANIM_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,100,2,6,2,8,2,1);
+
+         return;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lupogg.kod:121</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

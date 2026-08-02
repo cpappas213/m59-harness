@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>foresight — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › foresight</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/iforesig_g1.png" alt="foresight" width="128" height="128"></div><div class="heroText"><h1>foresight</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><a class="tag school-5" href="../guides/riija.html">Riija</a><span class="tag ">Level 2</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/riija.html">Riija</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">2</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">5</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">1</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">0 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">112</div></div></div><div class="flavor">Reveals knowledge of the victim, informing you of their abilities. Requires uncut seraphym to cast.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">5</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/uncutseraphym.html">uncut seraphym</a> ×2</td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">4</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">instant</td><td class=""></td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/forsight.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/riijamonk.html">Monk of Riija</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">ResetReagents</code></li><li><code class="k">CanPayCosts</code></li><li><code class="k">CastSpell</code></li><li><code class="k">IsIllusion</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/iforesig_g1.png" alt="foresight group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/iforesig_g2.png" alt="foresight group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/forsight.kod:11</p>
+<p><code class="k">Foresight</code> is <code class="k">Spell</code> — full chain <code class="k">Foresight</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>Foresight_name_rsc</code></td><td class=""><em>foresight</em></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>Foresight_icon_rsc</code></td><td class=""><em>iforesig.bgf</em></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>Foresight_desc_rsc</code></td><td class=""><em>Reveals knowledge of the victim, informing you of their abilities.  Requires uncut seraphy</em></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_Foresight</code></td><td class="">112</td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_RIIJA</code></td><td class="">5</td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">viCast_time</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="64">64</td></tr>
+<tr><td class=""><code class="k">viChance_to_increase</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">viFlash</code></td><td class=""><code>FLASH_BAD</code></td><td class="">2</td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>Foresight_sound</code></td><td class=""><em>rforsig.wav</em></td><td class="num " data-sort="68">68</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viOutlaw</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="72">72</td></tr>
+<tr><td class=""><code class="k">viHarmful</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="73">73</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructed()</h4>
+<pre><code>{
+      
+      if NOT Send(SYS,@IsPKAllowed) 
+      {      
+         viOutlaw = FALSE;
+         viHarmful = FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/forsight.kod:77</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 1;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/forsight.kod:89</p>
+<h4>ResetReagents()</h4>
+<pre><code>{      
+      plReagents = $;
+      plReagents = Cons([&amp;UncutSeraphym,2],plReagents);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/forsight.kod:94</p>
+<h4>CanPayCosts(who = $, lTargets = $)</h4>
+<pre><code>{
+      local oTarget;
+
+      oTarget = First(lTargets);
+      if (NOT IsClass(oTarget,&amp;Player)) OR IsClass(oTarget,&amp;DM)
+      {
+         Send(who,@MsgSendUser,#message_rsc=Foresight_notplayer,
+              #parm1=Send(oTarget,@GetDef),#parm2=Send(oTarget,@GetName));
+
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/forsight.kod:102</p>
+<h4>CastSpell(who = $, lTargets = $, iSpellPower = 0)</h4>
+<pre><code>{
+      local iToList,iListed,i,oTarget,lAbilities,iCompound,iAbilityNum,
+            oAbility,iAbilityLength,IMaxHopSize,iFrog,iCounter,iTemp,iSkill;
+
+      oTarget = First(lTargets);
+      iToList = iSpellPower / 4;
+      iToList = Bound(iToList,1,10);
+      iListed = 0;
+      iFrog = 0;
+      lAbilities = $;
+
+      for i in Send(oTarget,@GetSpellList)
+      {
+	      iAbilityNum = Send(oTarget,@DecodeSpellNum,#compound=i);
+         oAbility = Send(SYS,@findspellbynum,#num=iAbilityNum);
+	      lAbilities = cons([oAbility,i],lAbilities);
+      }
+
+      for i in Send(oTarget,@GetSkillList)
+      {
+         iAbilityNum = Send(oTarget,@DecodeSkillNum,#compound=i);
+         oAbility = Send(SYS,@findskillbynum,#num=iAbilityNum);
+   	   lAbilities = cons([oAbility,i],lAbilities);
+      }
+
+      iCounter = 1;
+      iAbilityLength = Length(lAbilities) - 1;
+
+      while iCounter &lt; (iAbilityLength / 2)
+      {
+	      iTemp = Nth(lAbilities,iAbilityLength-iCounter);
+	      SetNth(lAbilities,iAbilityLength-iCounter,Nth(lAbilities,iCounter));
+	      SetNth(lAbilities,iCounter,iTemp);
+	      iCounter = iCounter + 2;
+      }
+
+      iAbilityLength = Length(lAbilities);
+      
+      if iAbilityLength &lt; iToList
+	   {
+	      iToList = iAbilityLength;
+	   }
+
+      if iToList = 0
+	   {
+	      AddPacket(1,BP_MESSAGE,4,Foresight_nothing);
+         AddPacket(4,Send(oTarget,@GetDef));
+         AddPacket(4,Send(oTarget,@GetName));
+	      Sendpacket(Send(who,@getsession));
+
+	      propagate;
+	   }
+
+      iMaxHopSize = iAbilityLength / iToList;
+      iMaxHopSize = Bound(iMaxHopsize,1,$);
+
+      while iListed &lt; iToList
+	   {
+         oAbility = $;
+	      iFrog = iFrog + Random(1,iMaxHopSize);
+         oAbility = Nth(Nth(lAbilities,iFrog),1);
+	      iCompound = Nth(Nth(lAbilities,iFrog),2);
+
+	      if iListed = 0
+	      {
+	         AddPacket(1,BP_MESSAGE,4,Foresight_info);
+            AddPacket(4,Send(oTarget,@GetDef));
+            AddPacket(4,Send(oTarget,@GetName));
+         }
+
+	      iListed = iListed + 1;
+
+	      if oAbility &lt;&gt; $
+	      {					  
+	         if iToList = 1
+	         {
+	            AddPacket(4,Foresight_one);
+            }
+	         else
+	         {
+               if iListed = iToList
+               {
+   		         AddPacket(4,Foresight_last_abil_name); 
+               }
+               else
+               {	
+   		         AddPacket(4,Foresight_abil_name);
+	            }
+	         }
+
+	         if IsClass(oAbility,&amp;Spell)
+	         {
+	            iSkill = Send(oTarget,@DecodeSkillAbility,#compound=iCompound);
+	         }
+	         else
+	         {
+	            iSkill = Send(oTarget,@DecodeSpellAbility,#compound=iCompound);
+	         }
+
+	         if iSkill &lt; MAX_PERCENT_KNOWS
+	         {
+	            AddPacket(4,Foresight_KnowsOf);
+	         }
+	         else
+	         {
+   	         if iSkill &lt; MAX_PERCENT_ADEQUATE
+   	         {
+   	            AddPacket(4,Foresight_AdequateAt);
+               }
+               else
+               {
+      	         if iSkill &lt; MAX_PERCENT_MEDIOCRE
+      	         {
+      	            AddPacket(4,Foresight_MediocreAt);
+      	         }
+      	         else
+      	         {
+         	         if iSkill &lt; MAX_PERCENT_GOOD
+         	         {
+         	            AddPacket(4,Foresight_GoodAt);
+         	         }
+         	         else
+         	         {
+            	         if iSkill &lt; MAX_PERCENT_PRACTITIONER
+            	         {
+            	            AddPacket(4,Foresight_PractitionerOf);
+            	         }
+            	         else
+            	         {
+               	         if iSkill &lt; MAX_PERCENT_GREAT
+               	         {
+               	            AddPacket(4,Foresight_GreatAt);
+               	         }
+               	         else
+               	         {
+               	            AddPacket(4,Foresight_MasterOf);
+               	         }
+            	         }
+         	         }
+      	         }
+   	         }
+	         }
+
+            AddPacket(4,Send(oAbility,@GetName));
+	      }
+	   }
+
+      SendPacket(Send(who,@GetSession));
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/forsight.kod:118</p>
+<h4>IsIllusion()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/forsight.kod:274</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

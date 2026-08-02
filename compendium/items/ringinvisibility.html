@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ring Invisibility — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Ring Invisibility</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/ring1_g1.png" alt="Ring Invisibility" width="128" height="58"></div><div class="heroText"><h1>Ring Invisibility</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">jewellery</span><span class="tag ">finger</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">5</div></div><div class="fact"><div class="lbl">Value</div><div class="val">470 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">4–7</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">finger</div></div></div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/ring1_g1.png" alt="Ring Invisibility inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/ring1_g2.png" alt="Ring Invisibility group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/ring/ringinv.kod:11</p>
+<p><code class="k">RingInvisibility</code> is <code class="k">Ring</code> — full chain <code class="k">RingInvisibility</code> ← <code class="k">Ring</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrRealName</code></td><td class=""><code>ringinvisibility_name_rsc</code></td><td class=""><em>ring of invisibility</em></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>ringinvisibility_icon_rsc</code></td><td class=""><em>ring1.bgf</em></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">vrRealDesc</code></td><td class=""><code>ringinvisibility_desc_rsc</code></td><td class=""><em>This ring bears strange markings and seems to shimmer, making it difficult to see clearly.</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>7</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>470</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">pbIn_use</code></td><td class=""><code>False</code></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">ptCharge</code></td><td class=""><code>$</code></td><td class="num " data-sort="51">51</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ReqUse(what = $)</h4>
+<pre><code>{
+      if Send(what,@CheckPlayerFlag,#flag=PFLAG_INVISIBLE)
+      {
+	      Send(poOwner,@MsgSendUser,#message_rsc=ringinvisibility_already_invisible_rsc);
+	      return False;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringinv.kod:55</p>
+<h4>NewUsed(what = $)</h4>
+<pre><code>{
+      local oRoom;
+
+      if ptCharge &lt;&gt; $
+      {
+	      debug(&quot;Ring of invisibility&quot;,self,&quot;got used when already has timer&quot;);
+	      DeleteTimer(ptCharge);
+      }
+      ptCharge = CreateTimer(self,@ChargeTimer,RINGINVISIBILITY_CHARGE_RATE);
+
+      
+      Send(poOwner,@MsgSendUser,#message_rsc=ringinvisibility_use);
+      oRoom = Send(poOwner, @GetOwner);
+      Send(oRoom, @SomethingWaveRoom, #what = poOwner, 
+           #wave_rsc = ringinvisibility_use_wav_rsc);
+      
+      pbIn_use = True;
+      Send(poOwner,@SetPlayerFlag,#flag=PFLAG_INVISIBLE,#value=True);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringinv.kod:66</p>
+<h4>NewUnused(what = $)</h4>
+<pre><code>{
+      if ptCharge = $
+      {
+	 
+      }
+      else
+      {
+	 DeleteTimer(ptCharge);
+	 ptCharge = $;
+      }
+
+      pbIn_use = False;
+
+      Send(poOwner,@SetPlayerFlag,#flag=PFLAG_INVISIBLE,#value=False);
+
+      piHits = piHits - 1;
+      if piHits = 0
+      {
+         Send(poOwner,@MsgSendUser,#message_rsc=ringinvisibility_dead_rsc);
+         Send(self,@Delete);
+	 return;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringinv.kod:89</p>
+<h4>SetItemPlayerFlag()</h4>
+<pre><code>{
+      Send(poOwner,@SetPlayerFlag,#flag=PFLAG_INVISIBLE,#value=TRUE);
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringinv.kod:116</p>
+<h4>ChargeTimer()</h4>
+<p>Called every minute to drain a hit, using up the ringinvisibility.</p>
+<pre><code>{
+      ptCharge = $;
+
+      piHits = piHits - 1;
+      if piHits = 0
+      {
+         Send(poOwner,@MsgSendUser,#message_rsc=ringinvisibility_dead_rsc);
+         Send(self,@Delete);
+         return;
+      }
+
+      ptCharge = CreateTimer(self,@ChargeTimer,RINGINVISIBILITY_CHARGE_RATE);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringinv.kod:122</p>
+<h4>UserLogoff()</h4>
+<pre><code>{
+      Send(poOwner,@TryUnuseItem,#what=self);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringinv.kod:139</p>
+<h4>SendInventoryAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_NONE,2,2);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringinv.kod:146</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_NONE,2,2);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringinv.kod:152</p>
+<h4>delete()</h4>
+<pre><code>{
+     if ptCharge &lt;&gt; $
+     {
+       DeleteTimer(ptCharge);
+       ptCharge = $;
+     }
+     propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringinv.kod:158</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

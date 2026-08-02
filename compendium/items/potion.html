@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Potion — Meridian 59 Compendium</title>
+<meta name="description" content="This is a glass vial of colored liquid.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Potion</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/scr07_g1.png" alt="Potion" width="118" height="40"></div><div class="heroText"><h1>Potion</h1><p class="lede">This is a glass vial of colored liquid.</p><div class="tags"><span class="tag ">potion</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">17</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">20</div></div><div class="fact"><div class="lbl">Value</div><div class="val">60 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div></div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/scr07_g1.png" alt="Potion inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/scr07_g2.png" alt="Potion group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/spelitem/potion.kod:11</p>
+<p><code class="k">Potion</code> is <code class="k">SpellItem</code> — full chain <code class="k">Potion</code> ← <code class="k">SpellItem</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">AnonymityPotion</code>, <code class="k">BaitPotion</code>, <code class="k">CloakPotion</code>, <code class="k">CureDiseasePotion</code>, <code class="k">CurePoisonPotion</code>, <code class="k">DeflectPotion</code>, <code class="k">DenialPotion</code>, <code class="k">DetectEvilPotion</code>, <code class="k">DetectGoodPotion</code>, <code class="k">DetectInvisibilityPotion</code>, <code class="k">EagleEyesPotion</code>, <code class="k">FeignDeathPotion</code>, <code class="k">FreeActionPotion</code>, <code class="k">HastePotion</code>, <code class="k">KaraholsCursePotion</code>, <code class="k">MagicShieldPotion</code>, <code class="k">NightVisionPotion</code>, <code class="k">NodeBurstPotion</code>, <code class="k">PurifyPotion</code>, <code class="k">ResistAcidPotion</code>, <code class="k">ResistColdPotion</code>, <code class="k">RescuePotion</code>, <code class="k">ResistFirePotion</code>, <code class="k">ResistMagicPotion</code>, <code class="k">ResistPoisonPotion</code>, <code class="k">ResistShockPotion</code>, <code class="k">RemoveCursePotion</code>, <code class="k">ShadowFormPotion</code>, <code class="k">StrengthPotion</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrLabelName</code></td><td class=""><code>Potion_label_name_rsc</code></td><td class=""><em>generic potion</em></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">vrBadDesc</code></td><td class=""><code>Potion_bad_desc_rsc</code></td><td class=""><em>This is a glass vial of slightly cloudy colored liquid.  A slight whiff of it is enough to</em></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>Potion_desc_rsc</code></td><td class=""><em>This is a glass vial of colored liquid.</em></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">vrBroken</code></td><td class=""><code>Potion_Broken</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">vrKarmaDesc</code></td><td class=""><code>Potion_has_karma_requirement</code></td><td class=""><em>Before drinking, make sure you have enough karma to cast the spell inside.</em></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>17</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>60</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">viFilling</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">viObject_flags</code></td><td class=""><code>GETTABLE_YES</code></td><td class="">16</td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">viItem_type</code></td><td class=""><code>ITEMTYPE_POTION | ITEMTYPE_SUNDRY</code></td><td class="">4352</td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">viUse_type</code></td><td class=""><code>ITEM_SINGLE_USE</code></td><td class="">2</td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">viPoisonPercent</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="64">64</td></tr>
+<tr><td class=""><code class="k">viGoBadDamage</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">vbNoBrokenView</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">viGround_Group</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="71">71</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>Potion_name_rsc</code></td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>Potion_icon_rsc</code></td><td class="num " data-sort="76">76</td></tr>
+<tr><td class=""><code class="k">vrBroken</code></td><td class=""><code>Potion_broken</code></td><td class="num " data-sort="77">77</td></tr>
+<tr><td class=""><code class="k">piMinSpellPower</code></td><td class=""><code>20</code></td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">piMaxSpellPower</code></td><td class=""><code>60</code></td><td class="num " data-sort="80">80</td></tr>
+<tr><td class=""><code class="k">pbCheckKarma</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="81">81</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(maker = $)</h4>
+<pre><code>{
+      if maker &lt;&gt; $
+      {
+         vrIcon = Made_Potion_icon_rsc;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem/potion.kod:85</p>
+<h4>ReqNewApply(what = $, apply_on = $)</h4>
+<pre><code>{
+      if NOT Send(apply_on,@ReqEatSomething,#filling=viFilling,#what=self)
+      {
+	      return FALSE;
+      }
+
+      if what &lt;&gt; apply_on
+      {
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem/potion.kod:95</p>
+<h4>OnSuccessfulApply(what = $, apply_on = $)</h4>
+<pre><code>{
+
+      if IsClass(apply_on, &amp;User) 
+      {
+         Send(apply_on, @WaveSendUser, #wave_rsc=Potion_gulp_sound);
+      }
+      Send(apply_on, @EatSomething, #nutrition=0, #filling=viFilling);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem/potion.kod:110</p>
+<h4>NewApplied(what = $, apply_on = $)</h4>
+<pre><code>{
+      local oSpell;
+
+      if pbBad
+      {
+         Send(apply_on,@MsgSendUser,#message_rsc=Potion_bad_drink);
+         
+         if send(apply_on,@AssessDamage,#report=FALSE,#what=what,
+                 #damage=(viGoBadDamage*Random(8,12)/10),
+                 #aspell=ATCK_SPELL_ACID) = $
+         {
+            Send(what,@KilledSomething,#what=apply_on);
+         }
+
+         
+         if Random(1,100) &lt;= viPoisonPercent
+         {
+            oSpell = Send(SYS,@FindSpellByNum,#num=SID_POISON);
+            Send(oSpell,@MakePoisoned,#who=apply_on,
+                 #lossrate=(POISON_LOSSRATE*Random(8,12)/10),
+                 #duration=(POISON_DURATION*Random(8,12)/10));
+         }
+
+         
+         
+         Send(self, @OnSuccessfulApply, #what=what, #apply_on=apply_on);
+
+         return;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem/potion.kod:122</p>
+<h4>IsBeverage()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem/potion.kod:156</p>
+<h4>DoFailure(what = $)</h4>
+<pre><code>{
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/spelitem/potion.kod:161</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

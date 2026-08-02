@@ -1,0 +1,511 @@
+== OrcPitBossBody L1 "body of the orc pit boss"  [1 refs]
+    orc pit boss                                 w=fixed Create    object/active/holder/nomoveon/battler/monster/orcboss.kod:195
+== EvilTwin L1 "evil twin"  [2 refs]
+    dark angel                                   w=fixed Create    object/active/holder/nomoveon/battler/monster/dangel.kod:248
+    evil twin                                    w=fixed Create    object/passive/spell/summtwin.kod:121
+== Brambles L25 "patch of bramble"  [6 refs]
+    The Badlands                                 w=fixed Create    object/active/holder/room/monsroom/objroom/k5.kod:145
+    bramble wall                                 w=fixed Create    object/passive/spell/walspell/brmblwll.kod:225
+== Council L25 "Councilor"  NO REFS
+== Factions L25 ""  NO REFS
+== Mummy L25 "mummy"  [6 refs]
+    Mausoleum                                    w=   50 plMonsters object/active/holder/room/monsroom/guest6.kod:174
+    Mausoleum                                    w=fixed Create    object/active/holder/room/monsroom/guest6.kod:604
+    animate                                      w=fixed Create    object/passive/spell/animate.kod:144
+== Priestess L25 "priestess"  NO REFS
+== SpiderBaby L25 "baby spider"  [12 refs]
+    Deep Woods of Ileria                         w=   60 plMonsters object/active/holder/room/monsroom/c4.kod:53
+    West Merchant Way                            w=   50 plMonsters object/active/holder/room/monsroom/d5.kod:59
+    East Merchant Way through Ilerian Woods      w=   65 plMonsters object/active/holder/room/monsroom/e4.kod:56
+    Lake of Jala's Song                          w=   50 plMonsters object/active/holder/room/monsroom/f8.kod:80
+    Main gate to Cor Noth                        w=   75 plMonsters object/active/holder/room/monsroom/g4.kod:60
+    The King's Way                               w=   50 plMonsters object/active/holder/room/monsroom/g5.kod:57
+    Main gate of Barloque-- Royal City of Meridi w=   60 plMonsters object/active/holder/room/monsroom/i3.kod:77
+    The Queen's Way                              w=   40 plMonsters object/active/holder/room/monsroom/j3.kod:61
+    The Spider Nest                              w=   80 plMonsters object/active/holder/room/monsroom/nest1.kod:61
+    West Merchant Way through Ilerian Woods      w=   30 plMonsters object/active/holder/room/monsroom/objroom/c5.kod:59
+    apparition                                   w=fixed Create    object/passive/spell/apparitn.kod:198
+== Temples L25 ""  NO REFS
+== GraphicTester L25 "test1.bgf"  [1 refs]
+    ?                                            w=fixed Create    object/active/holder/nomoveon/battler/player/user/dm.kod:1261
+== Thief L25 "Thief"  NO REFS
+== Towns L25 ""  NO REFS
+== FiveCouncilor L25 "Esseldi"  NO REFS
+== fourCouncilor L25 "Drechx"  NO REFS
+== OneCouncilor L25 "Alzahakar"  NO REFS
+== ThreeCouncilor L25 "Cylill"  NO REFS
+== TwoCouncilor L25 "Bei Naq"  NO REFS
+== DukeLiege L25 "Duke Akardius"  NO REFS
+== PrincessLiege L25 "Princess Kateriina"  NO REFS
+== RebelLiege L25 "Jonas D'Accor"  NO REFS
+== BlackMummy L25 "shadow mummy"  [1 refs]
+    Mausoleum                                    w=fixed Create    object/active/holder/room/monsroom/guest6.kod:613
+== MummyNoTreasure L25 "mummy"  [2 refs]
+    Mausoleum                                    w=   50 plMonsters object/active/holder/room/monsroom/guest6.kod:174
+    Mausoleum                                    w=fixed Create    object/active/holder/room/monsroom/guest6.kod:330
+== FarenPriestess L25 "Priestess Tenuv'vyal"  [1 refs]
+    The Badlands                                 w=fixed Create    object/active/holder/room/monsroom/badland1.kod:56
+== RiijaMonk L25 "Monk of Riija"  [1 refs]
+    The Temple of Riija                          w=fixed Create    object/active/holder/room/temprii.kod:508
+== KraananPriestess L25 "Priestess Qerti'nya"  [1 refs]
+    The Temple of Kraanan                        w=fixed Create    object/active/holder/room/tempkra.kod:151
+== QorPriestess L25 "Priestess Zuxana"  [1 refs]
+    The Temple of Qor                            w=fixed Create    object/active/holder/room/tempqor.kod:140
+== ShalillePriestess L25 "Priestess Xiana"  [1 refs]
+    The Temple of Shal'ille                      w=fixed Create    object/active/holder/room/temple.kod:116
+== BarloqueTown L25 ""  NO REFS
+== CorNothTown L25 ""  NO REFS
+== Decorator L25 "interior design consultant"  [1 refs]
+    A tastefully appointed room                  w=fixed Create    object/active/holder/room/rentroom.kod:1104
+== Goad L25 "The Goad"  [1 refs]
+    Goad's Grinder                               w=fixed Create    object/active/holder/room/necarena.kod:234
+== HazarTown L25 ""  NO REFS
+== JasperTown L25 ""  NO REFS
+== KocatanTown L25 ""  NO REFS
+== ladypheonix L25 "LadyPhoenix"  NO REFS
+== MarionTown L25 ""  NO REFS
+== TosTown L25 ""  NO REFS
+== Wanderer L25 ""  NO REFS
+== Assassin L25 "Roq"  [1 refs]
+    A shadowy corner                             w=fixed Create    object/active/holder/room/barlqrm/asshq.kod:110
+== BarloqueApothecary L25 "Joguer"  [1 refs]
+    Joguer's Herbs and Roots                     w=fixed Create    object/active/holder/room/barlqrm/barapoth.kod:63
+== BarloqueBanker L25 "Setag'lib"  NO REFS
+== BarloqueBartender L25 "Meidei"  [1 refs]
+    The Bhrama & Falcon                          w=fixed Create    object/active/holder/room/monsroom/objroom/barlbar1.kod:101
+== BarloqueClerk L25 "Caramo"  [1 refs]
+    Office of the Justicar                       w=fixed Create    object/active/holder/room/barlqrm/barcourt.kod:109
+== BarloqueInnkeeper L25 "Pritchett"  [1 refs]
+    Brownestone Inn                              w=fixed Create    object/active/holder/room/barlqrm/barinn.kod:84
+== BarloqueMerchant L25 "Herbutte"  [2 refs]
+    Adventurer's Hall of Barloque                w=fixed Create    object/active/holder/room/barlqrm/barhall.kod:71
+    The Sparkling Stone Shop                     w=fixed Create    object/active/holder/room/barlqrm/barmerch.kod:65
+== BarloqueBlacksmith L25 "Fehr'loi Qan"  [1 refs]
+    The Royal Blacksmith of Barloque             w=fixed Create    object/active/holder/room/barlqrm/barsmith.kod:62
+== Barloquetailor L25 "Madelia"  [1 refs]
+    room_name_Castle2E                           w=fixed Create    object/active/holder/room/castle2e.kod:64
+== BarloqueUrchin L25 "urchin"  NO REFS
+== barloqueVaultman L25 "Obert Cair'bre"  [1 refs]
+    Office of the Barloque Vaultman              w=fixed Create    object/active/holder/room/barlqrm/barvault.kod:68
+== GuildCreator L25 "Frular"  [1 refs]
+    The Guildmaster's Hall                       w=fixed Create    object/active/holder/room/barlqrm/gmhall.kod:74
+== PrincessGuard L25 "Keep Guard"  [29 refs]
+    Banquet Hall of the Bourgeois Castle         w=fixed Create    object/active/holder/room/castle2a.kod:98
+    Royal Library of the Bourgeois Castle        w=fixed Create    object/active/holder/room/castle2d.kod:187
+    Bourgeois Castle                             w=fixed Create    object/active/holder/room/monsroom/castle2b.kod:105
+    The Assembly Chamber                         w=fixed Create    object/active/holder/room/monsroom/castle2c.kod:61
+    The Queen's Way                              w=fixed Create    object/active/holder/room/monsroom/j3.kod:69
+== CornothGrocer L25 "Solomon"  [1 refs]
+    Solomon's Edibles                            w=fixed Create    object/active/holder/room/crnthrm/corgroc.kod:61
+== CorNothInnkeeper L25 "D'Franco"  [1 refs]
+    Cibilo Creek Inn                             w=fixed Create    object/active/holder/room/crnthrm/corinn.kod:65
+== CorNothSergeant L25 "Rook"  [1 refs]
+    The Weapon Master's Abode                    w=fixed Create    object/active/holder/room/crnthrm/corwepm.kod:69
+== CorNothTailor L25 "Hester Gilk"  [1 refs]
+    The Spindle and the Spinster                 w=fixed Create    object/active/holder/room/crnthrm/cortail.kod:64
+== CorNothUrchin L25 "urchin"  NO REFS
+== HazarApothecary L25 "Ravi"  NO REFS
+== HazarBartender L25 "Eric d'Jorn"  [1 refs]
+    Eric's Stout Spirits                         w=fixed Create    object/active/holder/room/guest7.kod:81
+== HazarElder L25 "Rodric d'Stane"  [1 refs]
+    The Home of Roderic D'Stane                  w=fixed Create    object/active/holder/room/guest5.kod:82
+== HazarInnKeeper L25 "Marcus"  [1 refs]
+    The Inn of Hazar                             w=fixed Create    object/active/holder/room/guest1.kod:98
+== HazarBlacksmith L25 "Tomas"  [1 refs]
+    The Blacksmith of Hazar                      w=fixed Create    object/active/holder/room/guest3.kod:86
+== JasperBanker L25 "Yevitan"  [1 refs]
+    The Royal Bank of Jasper                     w=fixed Create    object/active/holder/room/jasperrm/jasbank.kod:65
+== JasperBartender L25 "Pietro"  [1 refs]
+    room_name_jaspertavern                       w=fixed Create    object/active/holder/room/jasperrm/jastavrn.kod:51
+== JasperElder L25 "Afiera D'xor"  [1 refs]
+    room_name_jasperelder                        w=fixed Create    object/active/holder/room/jasperrm/jaselder.kod:48
+== JasperInnKeeper L25 "Widow Qesino"  [1 refs]
+    room_name_jasperInn                          w=fixed Create    object/active/holder/room/jasperrm/jasinn.kod:56
+== JasperMerchant L25 "Zhieu B'hob"  [1 refs]
+    room_name_jasperstore                        w=fixed Create    object/active/holder/room/jasperrm/jasstore.kod:48
+== JasperBlacksmith L25 "Quintor"  [1 refs]
+    room_name_jaspersmith                        w=fixed Create    object/active/holder/room/jasperrm/jassmith.kod:47
+== JasperUrchin L25 "urchin"  NO REFS
+== KocatanApothecary L25 "Zala ix'Mecya"  [1 refs]
+    Two Lizards Magic Shop                       w=fixed Create    object/active/holder/room/kocarm/kocapoth.kod:82
+== KocatanBanker L25 "Huital ko'Nosak"  [1 refs]
+    The Hungry Vaults                            w=fixed Create    object/active/holder/room/kocarm/kocbank.kod:89
+== KocatanBartender L25 "Oxal ix'Tokak"  [1 refs]
+    The Barking Monster                          w=fixed Create    object/active/holder/room/kocarm/koctav.kod:104
+== KocatanBonePriestess L25 "The Bone Priestess"  [1 refs]
+    Lair of the Bone Priestess                   w=fixed Create    object/active/holder/room/monsroom/kcforest/kd1.kod:93
+== KocatanBowMaker L25 "Hanla zax'Ta"  [1 refs]
+    The Bowmaker's Hut                           w=fixed Create    object/active/holder/room/bowhut.kod:86
+== KocatanCaptainEvil L25 "Xacal ko'Ixca"  [1 refs]
+    The East Tower                               w=fixed Create    object/active/holder/room/kocarm/koctower.kod:59
+== KocatanCaptainGood L25 "Cital ko'Manca"  [1 refs]
+    The East Tower                               w=fixed Create    object/active/holder/room/kocarm/koctower.kod:58
+== KocatanInnkeeper L25 "Moxal ix'Hanak"  [1 refs]
+    The Aerie Guest House                        w=fixed Create    object/active/holder/room/kocarm/kocinn.kod:126
+== KocatanLanguageMaster L25 "Quetzal"  [1 refs]
+    The Hall of Heroes East                      w=fixed Create    object/active/holder/room/kocarm/kochohb.kod:125
+== KocatanMadScientist L25 "Bahal zax'Ot"  [1 refs]
+    Hut of the Mad Scientist                     w=fixed Create    object/active/holder/room/monsroom/kcforest/kmadscih.kod:68
+== kocatanTradeMaster L25 "Wulfgang zax'Ak"  [1 refs]
+    The Remote Trading Post of Wulfgang zax'Ak   w=fixed Create    object/active/holder/room/tpost1.kod:85
+== Kocatansentry L25 "sentry"  [6 refs]
+    The Hungry Vaults                            w=fixed Create    object/active/holder/room/kocarm/kocbank.kod:92
+    The East Tower                               w=fixed Create    object/active/holder/room/kocarm/koctower.kod:192
+    Konima's Ascension                           w=fixed Create    object/active/holder/room/monsroom/orccave6.kod:124
+== KocatanShopkeeper L25 "Pacal ix'Anoak"  [1 refs]
+    The Neglected Arsenal                        w=fixed Create    object/active/holder/room/kocarm/kocstore.kod:93
+== KocatanBlacksmith L25 "Ixla cha'Totlak"  [1 refs]
+    The Chimney House                            w=fixed Create    object/active/holder/room/kocarm/kocblack.kod:85
+== KocatanTailor L25 "Tepal ix'Zonak"  [1 refs]
+    The Crooked Hem Garment Shop                 w=fixed Create    object/active/holder/room/kocarm/koctail.kod:95
+== KocatanVaultman L25 "Itzal cha'Nosak"  [1 refs]
+    The Hungry Vaults                            w=fixed Create    object/active/holder/room/kocarm/kocbank.kod:87
+== KocatanWeaponsMaster L25 "Kochtal ko'Tulca"  [1 refs]
+    The Hall of Heroes West                      w=fixed Create    object/active/holder/room/kocarm/kochoha.kod:63
+== MarionBartender L25 "Tova"  [1 refs]
+    The Limping Toad Inn and Tavern              w=fixed Create    object/active/holder/room/monsroom/objroom/marinn.kod:126
+== MarionElder L25 "Ran er'Hoth"  [1 refs]
+    Marion                                       w=fixed Create    object/active/holder/room/marnrm/marion.kod:174
+== MarionHealer L25 "Lady Aftyn"  [1 refs]
+    Lady Aftyn's Sanctuary                       w=fixed Create    object/active/holder/room/marnrm/marhlshp.kod:62
+== MarionInnkeeper L25 "Morrigan"  [1 refs]
+    The Limping Toad Inn and Tavern              w=fixed Create    object/active/holder/room/monsroom/objroom/marinn.kod:124
+== MarionBlacksmith L25 "Colhorr"  [1 refs]
+    Ye Olde Slasher Salesman                     w=fixed Create    object/active/holder/room/monsroom/objroom/marsmith.kod:61
+== MarionUrchin L25 "urchin"  NO REFS
+== BasicInnKeeper L25 "Rycksher"  [1 refs]
+    The Duke's Grand Ballroom                    w=fixed Create    object/active/holder/room/monsroom/objroom/duke5.kod:334
+== DukeGuard L25 "Keep Guard"  [15 refs]
+    The Courtyard of Blackstone Keep             w=fixed Create    object/active/holder/room/duke1.kod:98
+    Blackstone Keep                              w=fixed Create    object/active/holder/room/duke2.kod:235
+    Office of the Justicar                       w=fixed Create    object/active/holder/room/barlqrm/barcourt.kod:117
+    Old Jailhouse                                w=fixed Create    object/active/holder/room/barlqrm/barjail.kod:47
+    The Duke's Feast Hall                        w=fixed Create    object/active/holder/room/monsroom/objroom/duke4.kod:110
+    The Duke's Grand Ballroom                    w=fixed Create    object/active/holder/room/monsroom/objroom/duke5.kod:336
+== TosApothecary L25 "Frisconar"  [1 refs]
+    Frisconar's Mysticals                        w=fixed Create    object/active/holder/room/tosrm/tosapoth.kod:211
+== TosBanker L25 "Skivlat"  [1 refs]
+    First Royal Bank of Tos                      w=fixed Create    object/active/holder/room/tosrm/tosbank.kod:63
+== TosInnKeeper L25 "Paddock"  [1 refs]
+    Familiars                                    w=fixed Create    object/active/holder/room/monsroom/objroom/tosinn.kod:101
+== TosBlacksmith L25 "Fehr'loi Qan"  NO REFS
+== TosUrchin L25 "urchin"  NO REFS
+== TosWatcher L25 "Watcher"  [1 refs]
+    The Arena of Kraanan                         w=fixed Create    object/active/holder/room/tosrm/tosarena.kod:213
+== DarkWizard L25 "Maleval"  [1 refs]
+    The meeting place of the Gods                w=fixed Create    object/active/holder/room/godroom.kod:70
+== Heretic L25 "Miriana"  [1 refs]
+    The meeting place of the Gods                w=fixed Create    object/active/holder/room/godroom.kod:69
+== HunterGhost L25 "Tendrath"  [1 refs]
+    The meeting place of the Gods                w=fixed Create    object/active/holder/room/godroom.kod:71
+== Izzio L25 "Izzio_name_rsc"  [1 refs]
+    The meeting place of the Gods                w=fixed Create    object/active/holder/room/godroom.kod:72
+== JealousGeneral L25 "Jonas D'Accor"  NO REFS
+== Minstrel L25 "Parrin Aragone"  [1 refs]
+    The meeting place of the Gods                w=fixed Create    object/active/holder/room/godroom.kod:68
+== Centipede L30 "centipede"  [13 refs]
+    West Merchant Way                            w=   50 plMonsters object/active/holder/room/monsroom/d5.kod:59
+    East Merchant Way through Ilerian Woods      w=   35 plMonsters object/active/holder/room/monsroom/e4.kod:56
+    The Sweet Grass Prairies                     w=   25 plMonsters object/active/holder/room/monsroom/e7.kod:57
+    East Merchant Way                            w=   55 plMonsters object/active/holder/room/monsroom/f4.kod:58
+    Off the beaten path                          w=   30 plMonsters object/active/holder/room/monsroom/f6.kod:58
+    Lake of Jala's Song                          w=   50 plMonsters object/active/holder/room/monsroom/f8.kod:80
+    Main gate to Cor Noth                        w=   25 plMonsters object/active/holder/room/monsroom/g4.kod:60
+    The King's Way                               w=   10 plMonsters object/active/holder/room/monsroom/g6.kod:61
+    Main gate to the city of Tos                 w=   30 plMonsters object/active/holder/room/monsroom/h6.kod:66
+    Western border of the Twisted Wood           w=   40 plMonsters object/active/holder/room/monsroom/h7.kod:58
+    Main gate of Barloque-- Royal City of Meridi w=   40 plMonsters object/active/holder/room/monsroom/i3.kod:77
+    Deep Forest of Farol                         w=   30 plMonsters object/active/holder/room/monsroom/objroom/e6.kod:58
+    apparition                                   w=fixed Create    object/passive/spell/apparitn.kod:221
+== GiantRat L30 "giant rat"  [14 refs]
+    The Sewers of Barloque                       w=   94 plMonsters object/active/holder/room/monsroom/barlsew.kod:59
+    The Sewers of Barloque                       w=   55 plMonsters object/active/holder/room/monsroom/barlsew2.kod:60
+    The Sewers of Barloque                       w=   20 plMonsters object/active/holder/room/monsroom/barlsew3.kod:60
+    Off the beaten path                          w=   60 plMonsters object/active/holder/room/monsroom/f7.kod:59
+    The King's Way                               w=   50 plMonsters object/active/holder/room/monsroom/g5.kod:57
+    Outskirts of Barloque                        w=   70 plMonsters object/active/holder/room/monsroom/h3.kod:58
+    Main gate to the city of Tos                 w=   70 plMonsters object/active/holder/room/monsroom/h6.kod:66
+    The Queen's Way                              w=   60 plMonsters object/active/holder/room/monsroom/j3.kod:61
+    The Sewers of Jasper                         w=   95 plMonsters object/active/holder/room/monsroom/jassew1.kod:98
+    The Sewers of Jasper                         w=   39 plMonsters object/active/holder/room/monsroom/jassew2.kod:58
+    The Sewers of Jasper                         w=   15 plMonsters object/active/holder/room/monsroom/jassew3.kod:59
+    West Merchant Way through Ilerian Woods      w=   70 plMonsters object/active/holder/room/monsroom/objroom/c5.kod:59
+    apparition                                   w=fixed Create    object/passive/spell/apparitn.kod:201
+== Slime L35 "slime"  [4 refs]
+    The sandy shores of the Great Ocean          w=   50 plMonsters object/active/holder/room/monsroom/f2.kod:67
+    Outskirts of Barloque                        w=   30 plMonsters object/active/holder/room/monsroom/h3.kod:58
+    apparition                                   w=fixed Create    object/passive/spell/apparitn.kod:213
+== GroundWormLarva L35 "groundworm larva"  [5 refs]
+    Valley of Ileria                             w=   35 plMonsters object/active/holder/room/monsroom/d4.kod:56
+    Deep in the Forest of Farol                  w=   60 plMonsters object/active/holder/room/monsroom/d7.kod:55
+    The Sweet Grass Prairies                     w=   75 plMonsters object/active/holder/room/monsroom/e7.kod:57
+    Off the beaten path                          w=   70 plMonsters object/active/holder/room/monsroom/f6.kod:58
+    Off the beaten path                          w=   40 plMonsters object/active/holder/room/monsroom/f7.kod:59
+== Ant L40 "ant"  [7 refs]
+    The Badlands                                 w=   60 plMonsters object/active/holder/room/monsroom/badland1.kod:45
+    Source of the River Ille                     w=   30 plMonsters object/active/holder/room/monsroom/f3.kod:58
+    The Forests of Meridian                      w=   60 plMonsters object/active/holder/room/monsroom/forest2.kod:61
+    The Forests of Meridian                      w=   40 plMonsters object/active/holder/room/monsroom/forest3.kod:53
+    The Deep Dark Woods of Tos                   w=   30 plMonsters object/active/holder/room/monsroom/forest4.kod:47
+    The Deep Dark Woods of Marion                w=   60 plMonsters object/active/holder/room/monsroom/objroom/forest5.kod:48
+    The Flatlands                                w=   55 plMonsters object/active/holder/room/monsroom/objroom/h4.kod:61
+== SpectralMummy L40 "spectral mummy"  [2 refs]
+    The crypt in Marion                          w=  100 plMonsters object/active/holder/room/monsroom/marcryp1.kod:101
+    The crypt in Marion                          w=fixed Create    object/active/holder/room/monsroom/marcryp1.kod:571
+== Orc L45 "orc"  [6 refs]
+    An ancient place, its origin forgotten       w=   80 plMonsters object/active/holder/room/monsroom/g9.kod:167
+    Ugol's Warren Entrance                       w=   60 plMonsters object/active/holder/room/monsroom/orccave1.kod:55
+    An Enigmatic Chamber                         w=   70 plMonsters object/active/holder/room/monsroom/orccave2.kod:55
+    The Berdonne Canyons                         w=   50 plMonsters object/active/holder/room/monsroom/objroom/canyon1.kod:64
+    A Deep, Dark, Spooky, Icky Cave              w=   50 plMonsters object/active/holder/room/monsroom/objroom/cave2.kod:78
+    Under the shadow of the Sentinel             w=   40 plMonsters object/active/holder/room/monsroom/objroom/h9.kod:59
+== Reflection L45 "reflection"  [2 refs]
+    dark angel                                   w=fixed Create    object/active/holder/nomoveon/battler/monster/dangel.kod:244
+    reflection                                   w=fixed Create    object/passive/spell/summrefl.kod:112
+== DuskRat L50 "dusk rat"  [2 refs]
+    A foul place to wander                       w=   95 plMonsters object/active/holder/room/monsroom/kocsew1.kod:64
+    Up Chuk Creek without a paddle               w=  100 plMonsters object/active/holder/room/monsroom/kocsew2.kod:62
+== Ent L50 "living tree"  [6 refs]
+    Deep Woods of Ileria                         w=   40 plMonsters object/active/holder/room/monsroom/c4.kod:53
+    Forest of Farol                              w=   30 plMonsters object/active/holder/room/monsroom/c6.kod:58
+    Deep in the Forest of Farol                  w=   70 plMonsters object/active/holder/room/monsroom/d6.kod:58
+    Deep in the Forest of Farol                  w=   40 plMonsters object/active/holder/room/monsroom/d7.kod:55
+    Faronath, home of the TreeFolk               w=   95 plMonsters object/active/holder/room/monsroom/objroom/c7.kod:58
+    Deep Forest of Farol                         w=   15 plMonsters object/active/holder/room/monsroom/objroom/e6.kod:58
+== EvilEnt L50 "diseased tree"  NO REFS
+== FungusBeast L50 "fungus beast"  [4 refs]
+    Valley of Ileria                             w=   65 plMonsters object/active/holder/room/monsroom/d4.kod:56
+    The sandy shores of the Great Ocean          w=   50 plMonsters object/active/holder/room/monsroom/f2.kod:67
+    Source of the River Ille                     w=   70 plMonsters object/active/holder/room/monsroom/f3.kod:58
+    apparition                                   w=fixed Create    object/passive/spell/apparitn.kod:233
+== Spider L50 "spider"  [15 refs]
+    Forest of Farol                              w=   70 plMonsters object/active/holder/room/monsroom/c6.kod:58
+    East Merchant Way                            w=   45 plMonsters object/active/holder/room/monsroom/f4.kod:58
+    The Forests of Meridian                      w=   40 plMonsters object/active/holder/room/monsroom/forest2.kod:61
+    The Forests of Meridian                      w=   60 plMonsters object/active/holder/room/monsroom/forest3.kod:53
+    The Deep Dark Woods of Tos                   w=   70 plMonsters object/active/holder/room/monsroom/forest4.kod:47
+    Western border of the Twisted Wood           w=   60 plMonsters object/active/holder/room/monsroom/h7.kod:58
+    Outskirts of Tos                             w=   50 plMonsters object/active/holder/room/monsroom/i6.kod:57
+    The Twisted Wood                             w=   55 plMonsters object/active/holder/room/monsroom/i7.kod:58
+    The Spider Nest                              w=   20 plMonsters object/active/holder/room/monsroom/nest1.kod:61
+    Faronath, home of the TreeFolk               w=    5 plMonsters object/active/holder/room/monsroom/objroom/c7.kod:58
+    A Deep, Dark, Spooky, Icky Cave              w=   50 plMonsters object/active/holder/room/monsroom/objroom/cave2.kod:78
+    Deep Forest of Farol                         w=   55 plMonsters object/active/holder/room/monsroom/objroom/e6.kod:58
+    The Deep Dark Woods of Marion                w=   40 plMonsters object/active/holder/room/monsroom/objroom/forest5.kod:48
+    The Flatlands                                w=   45 plMonsters object/active/holder/room/monsroom/objroom/h4.kod:61
+    apparition                                   w=fixed Create    object/passive/spell/apparitn.kod:193
+== DukeTroop L50 "soldier of the Duke's army"  NO REFS
+== PrincessTroop L50 "soldier of the Princess' army"  NO REFS
+== RebelTroop L50 "rebel soldier"  [1 refs]
+    The Sewers of Jasper                         w=    1 plMonsters object/active/holder/room/monsroom/jassew2.kod:58
+== Revenant L55 "revenant"  [2 refs]
+    ?                                            w=fixed Create    object/active/holder/nomoveon/battler/player.kod:1450
+== Scorpion L55 "giant scorpion"  [2 refs]
+    Druid Hills                                  w=   40 plMonsters object/active/holder/room/monsroom/objroom/b6.kod:58
+    apparition                                   w=fixed Create    object/passive/spell/apparitn.kod:188
+== Zombie L55 "zombie"  [6 refs]
+    Upstairs in Castle Victoria                  w=   40 plMonsters object/active/holder/room/monsroom/castle1b.kod:49
+    The Throne Room of Victoria Castle           w=   20 plMonsters object/active/holder/room/monsroom/throne1.kod:59
+    The Crypt                                    w=   80 plMonsters object/active/holder/room/monsroom/toscrypt.kod:44
+    The Graveyard of Tos                         w=   85 plMonsters object/active/holder/room/monsroom/tosgrave.kod:51
+    Castle Victoria                              w=   20 plMonsters object/active/holder/room/monsroom/objroom/castle1.kod:49
+    animate                                      w=fixed Create    object/passive/spell/animate.kod:151
+== EvilFairy L60 "teotimixlal"  [1 refs]
+    ?                                            w=fixed Create    object/active/holder/room/monsroom/feyforst.kod:145
+== Fairy L60 "fey elhai"  [1 refs]
+    ?                                            w=fixed Create    object/active/holder/room/monsroom/feyforst.kod:140
+== flytrap L60 "Man-eating Plant"  NO REFS
+== SnowRat L60 "snow rat"  [1 refs]
+    The Dreaded Caves of Ice                     w=   55 plMonsters object/active/holder/room/monsroom/objroom/icecave1.kod:67
+== BatteredSkeleton L60 "battered skeleton"  [4 refs]
+    Upstairs in Castle Victoria                  w=   60 plMonsters object/active/holder/room/monsroom/castle1b.kod:49
+    An ancient place, its origin forgotten       w=fixed Create    object/active/holder/room/monsroom/g9.kod:547
+    Resting place of Marion's ancestors          w=   20 plMonsters object/active/holder/room/monsroom/marcryp2.kod:79
+    animate                                      w=fixed Create    object/passive/spell/animate.kod:158
+== NecromancerTroop L60 "necromancer"  NO REFS
+== RedAnt L65 "mutant ant"  [5 refs]
+    Seafarer's Peak                              w=   60 plMonsters object/active/holder/room/monsroom/a5.kod:62
+    The Hills                                    w=   30 plMonsters object/active/holder/room/monsroom/a6.kod:57
+    The Berdonne Canyons                         w=   50 plMonsters object/active/holder/room/monsroom/objroom/canyon1.kod:64
+    apparition                                   w=fixed Create    object/passive/spell/apparitn.kod:208
+== Frogman L70 "frogman"  [2 refs]
+    The Great Ocean                              w=   20 plMonsters object/active/holder/room/monsroom/e2.kod:58
+    The King's Way                               w=   90 plMonsters object/active/holder/room/monsroom/g6.kod:61
+== DeathSpider L75 "black spider"  [5 refs]
+    The Cragged Mountains                        w=   40 plMonsters object/active/holder/room/monsroom/g8.kod:54
+    An ancient place, its origin forgotten       w=   20 plMonsters object/active/holder/room/monsroom/g9.kod:167
+    The Cragged Mountains                        w=   40 plMonsters object/active/holder/room/monsroom/i8.kod:57
+    Winding Caverns                              w=   45 plMonsters object/active/holder/room/monsroom/necarea1.kod:58
+    Under the shadow of the Sentinel             w=   60 plMonsters object/active/holder/room/monsroom/objroom/h9.kod:59
+== LivingStatue L75 "statue"  [2 refs]
+    The crypt in Marion                          w=fixed Create    object/active/holder/room/monsroom/marcryp1.kod:562
+    Resting place of Marion's ancestors          w=fixed Create    object/active/holder/room/monsroom/marcryp2.kod:173
+== Skeleton L75 "skeleton"  [7 refs]
+    An ancient place, its origin forgotten       w=fixed Create    object/active/holder/room/monsroom/g9.kod:543
+    Resting place of Marion's ancestors          w=   80 plMonsters object/active/holder/room/monsroom/marcryp2.kod:79
+    Winding Caverns                              w=   55 plMonsters object/active/holder/room/monsroom/necarea1.kod:58
+    The Crypt                                    w=   20 plMonsters object/active/holder/room/monsroom/toscrypt.kod:44
+    The Graveyard of Tos                         w=   15 plMonsters object/active/holder/room/monsroom/tosgrave.kod:51
+    Castle Victoria                              w=   40 plMonsters object/active/holder/room/monsroom/objroom/castle1.kod:49
+    animate                                      w=fixed Create    object/passive/spell/animate.kod:165
+== CaveOrc L80 "cave orc"  [7 refs]
+    Ugol's Warren Entrance                       w=   40 plMonsters object/active/holder/room/monsroom/orccave1.kod:55
+    The Archaic Hollows                          w=   70 plMonsters object/active/holder/room/monsroom/orccave3.kod:54
+    Obfal's Sepulchre                            w=   75 plMonsters object/active/holder/room/monsroom/orccave5.kod:56
+    Konima's Ascension                           w=   70 plMonsters object/active/holder/room/monsroom/orccave6.kod:63
+    Grog's Antechamber                           w=   60 plMonsters object/active/holder/room/monsroom/orcpita.kod:60
+    Brog's Antechamber                           w=   70 plMonsters object/active/holder/room/monsroom/orcpitb.kod:75
+    Lair of the Orc Pit Boss                     w=  100 plMonsters object/active/holder/room/monsroom/bossroom/orcpit1.kod:95
+== OrcWizard L80 "orc wizard"  [5 refs]
+    An Enigmatic Chamber                         w=   30 plMonsters object/active/holder/room/monsroom/orccave2.kod:55
+    Aqueducts of Merb                            w=   60 plMonsters object/active/holder/room/monsroom/orccave4.kod:55
+    Obfal's Sepulchre                            w=   25 plMonsters object/active/holder/room/monsroom/orccave5.kod:56
+    Konima's Ascension                           w=   30 plMonsters object/active/holder/room/monsroom/orccave6.kod:63
+    Grog's Antechamber                           w=   40 plMonsters object/active/holder/room/monsroom/orcpita.kod:60
+== FactionTroop L80 "faction troop"  NO REFS
+== Iceperson L90 "ice creature"  NO REFS
+== Troll L90 "troll"  [11 refs]
+    Seafarer's Peak                              w=   40 plMonsters object/active/holder/room/monsroom/a5.kod:62
+    The Hills                                    w=   70 plMonsters object/active/holder/room/monsroom/a6.kod:57
+    The Cragged Mountains                        w=   60 plMonsters object/active/holder/room/monsroom/g8.kod:54
+    The border of the Badlands                   w=   30 plMonsters object/active/holder/room/monsroom/h5.kod:56
+    The Twisted Wood                             w=   45 plMonsters object/active/holder/room/monsroom/i7.kod:58
+    The Cragged Mountains                        w=   60 plMonsters object/active/holder/room/monsroom/i8.kod:57
+    Ukgoth, Holy Land of Trolls                  w=  100 plMonsters object/active/holder/room/monsroom/i9.kod:77
+    Druid Hills                                  w=   60 plMonsters object/active/holder/room/monsroom/objroom/b6.kod:58
+    The Dreaded Caves of Ice                     w=   45 plMonsters object/active/holder/room/monsroom/objroom/icecave1.kod:67
+    The Badlands                                 w=   30 plMonsters object/active/holder/room/monsroom/objroom/k5.kod:62
+    apparition                                   w=fixed Create    object/passive/spell/apparitn.kod:228
+== AvarShaman L100 "peet-seeeep avar shaman"  [9 refs]
+    Headquarters for the Avar Warriors           w=   18 plMonsters object/active/holder/room/monsroom/kcforest/kb2.kod:56
+    Camp of the Warrior Avars                    w=   18 plMonsters object/active/holder/room/monsroom/kcforest/kb3.kod:55
+    Turf of the Warrior Avars                    w=   10 plMonsters object/active/holder/room/monsroom/kcforest/kc2.kod:56
+    Ruins of the Riija Temple                    w=   25 plMonsters object/active/holder/room/monsroom/kcforest/kc3.kod:54
+    Territory of the Noble Avars                 w=   15 plMonsters object/active/holder/room/monsroom/kcforest/kd2.kod:54
+    Deep in the Jungle                           w=   18 plMonsters object/active/holder/room/monsroom/kcforest/kd3.kod:54
+    The Clearing of the Trading Post             w=   10 plMonsters object/active/holder/room/monsroom/kcforest/kd4.kod:59
+    Headquarters of the Noble Avars              w=   25 plMonsters object/active/holder/room/monsroom/kcforest/ke2.kod:54
+    Avar Village                                 w=   25 plMonsters object/active/holder/room/monsroom/kcforest/ke4.kod:118
+== GroundWorm L100 "groundworm"  [3 refs]
+    The Badlands                                 w=   40 plMonsters object/active/holder/room/monsroom/badland1.kod:45
+    The border of the Badlands                   w=   70 plMonsters object/active/holder/room/monsroom/h5.kod:56
+    Outskirts of Tos                             w=   50 plMonsters object/active/holder/room/monsroom/i6.kod:57
+== Guard L100 "guard cow"  NO REFS
+== TuskedSkeleton L100 "tusked skeleton"  [6 refs]
+    The Dungeon of Castle Brax                   w=   50 plMonsters object/active/holder/room/monsroom/lichmaze.kod:62
+    Ancient Building                             w=   50 plMonsters object/active/holder/room/monsroom/necare3b.kod:56
+    Decaying City of Brax                        w=   40 plMonsters object/active/holder/room/monsroom/necarea3.kod:68
+    Within the Walls of Castle Brax              w=   40 plMonsters object/active/holder/room/monsroom/necarea4.kod:56
+    The Throne Room of Victoria Castle           w=   80 plMonsters object/active/holder/room/monsroom/throne1.kod:59
+    animate                                      w=fixed Create    object/passive/spell/animate.kod:172
+== Lupogg L105 "lupogg"  [7 refs]
+    The Sewers of Barloque                       w=    6 plMonsters object/active/holder/room/monsroom/barlsew.kod:59
+    The Sewers of Barloque                       w=   45 plMonsters object/active/holder/room/monsroom/barlsew2.kod:60
+    The Sewers of Barloque                       w=   80 plMonsters object/active/holder/room/monsroom/barlsew3.kod:60
+    The Sewers of Jasper                         w=    5 plMonsters object/active/holder/room/monsroom/jassew1.kod:98
+    The Sewers of Jasper                         w=   60 plMonsters object/active/holder/room/monsroom/jassew2.kod:58
+    The Sewers of Jasper                         w=   85 plMonsters object/active/holder/room/monsroom/jassew3.kod:59
+    The Ancient Smuggler's Crossing              w=  100 plMonsters object/active/holder/room/monsroom/bossroom/sewking.kod:138
+== OrcPitBoss L115 "orc pit boss"  NO REFS
+== Avar L120 "peet-seeeep avar warrior"  [15 refs]
+    Into the Jungle                              w=   10 plMonsters object/active/holder/room/monsroom/kcforest/ka4.kod:56
+    Outside the Guard Tower                      w=   95 plMonsters object/active/holder/room/monsroom/kcforest/ka5.kod:56
+    The Cliffs                                   w=   10 plMonsters object/active/holder/room/monsroom/kcforest/kb1.kod:55
+    Headquarters for the Avar Warriors           w=   60 plMonsters object/active/holder/room/monsroom/kcforest/kb2.kod:56
+    Camp of the Warrior Avars                    w=   50 plMonsters object/active/holder/room/monsroom/kcforest/kb3.kod:55
+    The Chasm                                    w=   90 plMonsters object/active/holder/room/monsroom/kcforest/kc1.kod:56
+    Turf of the Warrior Avars                    w=   50 plMonsters object/active/holder/room/monsroom/kcforest/kc2.kod:56
+    Ruins of the Riija Temple                    w=   60 plMonsters object/active/holder/room/monsroom/kcforest/kc3.kod:54
+    Origin of the Kriipa                         w=   70 plMonsters object/active/holder/room/monsroom/kcforest/kc4.kod:54
+    Lair of the Bone Priestess                   w=   90 plMonsters object/active/holder/room/monsroom/kcforest/kd1.kod:56
+    Territory of the Noble Avars                 w=   80 plMonsters object/active/holder/room/monsroom/kcforest/kd2.kod:54
+    Deep in the Jungle                           w=   80 plMonsters object/active/holder/room/monsroom/kcforest/kd3.kod:54
+    The Clearing of the Trading Post             w=   80 plMonsters object/active/holder/room/monsroom/kcforest/kd4.kod:59
+    Headquarters of the Noble Avars              w=   60 plMonsters object/active/holder/room/monsroom/kcforest/ke2.kod:54
+    Avar Village                                 w=   40 plMonsters object/active/holder/room/monsroom/kcforest/ke4.kod:118
+== DragonFly L120 "dragonfly"  [8 refs]
+    Cliff Hive                                   w=   90 plMonsters object/active/holder/room/monsroom/kcforest/ka1.kod:57
+    The Jungle Cliffs                            w=  100 plMonsters object/active/holder/room/monsroom/kcforest/ka2.kod:56
+    A notch in the jungle                        w=  100 plMonsters object/active/holder/room/monsroom/kcforest/ka3.kod:56
+    Into the Jungle                              w=   90 plMonsters object/active/holder/room/monsroom/kcforest/ka4.kod:56
+    Outside the Guard Tower                      w=    5 plMonsters object/active/holder/room/monsroom/kcforest/ka5.kod:56
+    The Cliffs                                   w=   90 plMonsters object/active/holder/room/monsroom/kcforest/kb1.kod:55
+    Into the Jungle                              w=  100 plMonsters object/active/holder/room/monsroom/kcforest/kb5.kod:63
+    Origin of the Kriipa                         w=   30 plMonsters object/active/holder/room/monsroom/kcforest/kc4.kod:54
+== DragonFlyPet L120 "pet dragonfly"  NO REFS
+== NarthylWorm L120 "narthyl worm"  [4 refs]
+    Ancient Building                             w=   60 plMonsters object/active/holder/room/monsroom/necare3a.kod:56
+    Ancient Graveyard of Brax                    w=   40 plMonsters object/active/holder/room/monsroom/necarea2.kod:56
+    Decaying City of Brax                        w=   60 plMonsters object/active/holder/room/monsroom/necarea3.kod:68
+    Ruins of Castle Brax                         w=   40 plMonsters object/active/holder/room/monsroom/necarea5.kod:62
+== StoneTroll L120 "StoneTroll_realname_rsc"  [4 refs]
+    Ukgoth, Holy Land of Trolls                  w=fixed Create    object/active/holder/room/monsroom/i9.kod:195
+    Martyr's Battleground                        w=   85 plMonsters object/active/holder/room/monsroom/objroom/canyon2.kod:72
+== GroundWormQueen L130 "groundworm queen"  [3 refs]
+    Brog's Antechamber                           w=   30 plMonsters object/active/holder/room/monsroom/orcpitb.kod:75
+    Martyr's Battleground                        w=   15 plMonsters object/active/holder/room/monsroom/objroom/canyon2.kod:72
+    The Badlands                                 w=   70 plMonsters object/active/holder/room/monsroom/objroom/k5.kod:62
+== DaemonSkeleton L130 "daemon skeleton"  [7 refs]
+    The Dungeon of Castle Brax                   w=   50 plMonsters object/active/holder/room/monsroom/lichmaze.kod:62
+    Ancient Building                             w=   40 plMonsters object/active/holder/room/monsroom/necare3a.kod:56
+    Ancient Building                             w=   50 plMonsters object/active/holder/room/monsroom/necare3b.kod:56
+    Ancient Graveyard of Brax                    w=   60 plMonsters object/active/holder/room/monsroom/necarea2.kod:56
+    Within the Walls of Castle Brax              w=   60 plMonsters object/active/holder/room/monsroom/necarea4.kod:56
+    Ruins of Castle Brax                         w=   60 plMonsters object/active/holder/room/monsroom/necarea5.kod:62
+    animate                                      w=fixed Create    object/passive/spell/animate.kod:177
+== AvarChieftain L135 "avarchief_name_rsc"  [10 refs]
+    Headquarters for the Avar Warriors           w=    7 plMonsters object/active/holder/room/monsroom/kcforest/kb2.kod:56
+    Camp of the Warrior Avars                    w=    5 plMonsters object/active/holder/room/monsroom/kcforest/kb3.kod:55
+    The Chasm                                    w=   10 plMonsters object/active/holder/room/monsroom/kcforest/kc1.kod:56
+    Ruins of the Riija Temple                    w=   15 plMonsters object/active/holder/room/monsroom/kcforest/kc3.kod:54
+    Lair of the Bone Priestess                   w=   10 plMonsters object/active/holder/room/monsroom/kcforest/kd1.kod:56
+    Territory of the Noble Avars                 w=    5 plMonsters object/active/holder/room/monsroom/kcforest/kd2.kod:54
+    Deep in the Jungle                           w=    2 plMonsters object/active/holder/room/monsroom/kcforest/kd3.kod:54
+    The Clearing of the Trading Post             w=   10 plMonsters object/active/holder/room/monsroom/kcforest/kd4.kod:59
+    Headquarters of the Noble Avars              w=   15 plMonsters object/active/holder/room/monsroom/kcforest/ke2.kod:54
+    Avar Village                                 w=   35 plMonsters object/active/holder/room/monsroom/kcforest/ke4.kod:118
+== DragonFlyQueen L145 "dragonfly queen"  [2 refs]
+    Cliff Hive                                   w=   10 plMonsters object/active/holder/room/monsroom/kcforest/ka1.kod:57
+    Outside the Mad Scientist's Hut              w=  100 plMonsters object/active/holder/room/monsroom/kcforest/kc5.kod:58
+== MolluskMonster L150 "mollusk creature"  [2 refs]
+    Deep in the Forest of Farol                  w=   30 plMonsters object/active/holder/room/monsroom/d6.kod:58
+    The Great Ocean                              w=   80 plMonsters object/active/holder/room/monsroom/e2.kod:58
+== Thrasher L150 "thrasher"  [13 refs]
+    Affirmation of the Forsaken                  w=  100 plMonsters object/active/holder/room/monsroom/marcry3a.kod:230
+    Affirmation of the Forsaken                  w=fixed Create    object/active/holder/room/monsroom/marcry3a.kod:477
+== Xeochicatl L150 "Xeochicatl"  NO REFS
+== XeoAir L150 "ve'xeochicatl"  [2 refs]
+    sky heartstone                               w=fixed Create    object/item/passitem/hstone/hstonsky.kod:42
+    ?                                            w=fixed Create    util/nodeattk.kod:437
+== Kriipa L160 "kriipa"  [4 refs]
+    Headquarters for the Avar Warriors           w=   15 plMonsters object/active/holder/room/monsroom/kcforest/kb2.kod:56
+    Camp of the Warrior Avars                    w=   27 plMonsters object/active/holder/room/monsroom/kcforest/kb3.kod:55
+    Path to the Ruins                            w=  100 plMonsters object/active/holder/room/monsroom/kcforest/kb4.kod:54
+    Turf of the Warrior Avars                    w=   40 plMonsters object/active/holder/room/monsroom/kcforest/kc2.kod:56
+== SpiderQueen L165 "queen spider"  [1 refs]
+    The Spider Nest                              w=fixed Create    object/active/holder/room/monsroom/nest1.kod:105
+== Yeti L170 "yeti"  [1 refs]
+    The Dreaded Caves of Ice                     w=fixed Create    object/active/holder/room/monsroom/objroom/icecave1.kod:124
+== XeoFire L170 "ro'xeochicatl"  [2 refs]
+    red heartstone                               w=fixed Create    object/item/passitem/hstone/hstonred.kod:42
+    ?                                            w=fixed Create    util/nodeattk.kod:422
+== XeoWater L190 "ma'xeochicatl"  [2 refs]
+    blue heartstone                              w=fixed Create    object/item/passitem/hstone/hstonblu.kod:42
+    ?                                            w=fixed Create    util/nodeattk.kod:427
+== Cow L200 "cow"  [4 refs]
+    Raza                                         w=fixed Create    object/active/holder/room/guest2/newb2.kod:42
+    summon bovine                                w=fixed Create    object/passive/spell/multicst/summcow.kod:90
+== DarkAngel L200 "dark angel"  NO REFS
+== DeadLich L200 "ghostly remains of Queen Venya'cyr"  [1 refs]
+    Inner Sanctum of Queen Venya'cyr             w=fixed Create    object/active/holder/room/ghall/guildh15.kod:213
+== Ghost L200 "ghost"  [1 refs]
+    The Throne Room of Victoria Castle           w=fixed Create    object/active/holder/room/monsroom/throne1.kod:121
+== Lich L200 "Queen Venya'cyr"  [1 refs]
+    Inner Sanctum of Queen Venya'cyr             w=fixed Create    object/active/holder/room/ghall/guildh15.kod:218
+== LupoggKing L200 "lupogg king"  NO REFS
+== Shadowbeast L200 "shadowbeast"  [2 refs]
+    The Archaic Hollows                          w=   30 plMonsters object/active/holder/room/monsroom/orccave3.kod:54
+    Aqueducts of Merb                            w=   40 plMonsters object/active/holder/room/monsroom/orccave4.kod:55
+== XeoEarth L200 "te'xeochicatl"  [2 refs]
+    brown heartstone                             w=fixed Create    object/item/passitem/hstone/hstonbrn.kod:42
+    ?                                            w=fixed Create    util/nodeattk.kod:432

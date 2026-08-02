@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>assess — Meridian 59 Compendium</title>
+<meta name="description" content="One of several agile skills.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html" class="on">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Skills</a> › assess</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/light_g1.png" alt="assess" width="128" height="128"></div><div class="heroText"><h1>assess</h1><p class="lede">One of several agile skills.</p><div class="tags"><span class="tag ">skill</span><span class="tag ">brawling</span><span class="tag ">Level 50</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Discipline</div><div class="val sm">brawling</div></div><div class="fact"><div class="lbl">Level</div><div class="val">50</div></div><div class="fact"><div class="lbl">Vigour per use</div><div class="val">2</div></div><div class="fact"><div class="lbl">Improve chance</div><div class="val">25%</div></div><div class="fact"><div class="lbl">Skill number</div><div class="val">403</div></div></div><div class="flavor">This is a crude and often inaccurate technique used to gauge how good an opponent is in the art of hand-to-hand combat.</div><h2>What kind of skill this is</h2><p>A <strong>skill</strong> proper is something you invoke, or that fires automatically
+when its condition is met. It costs vigour, it can fail, and its ability is both the success
+chance and the size of the effect.</p><h2>Learning and improving it</h2><p>No teacher in the world data offers this skill. It is either granted at creation,
+awarded by a quest, or reserved for monsters.</p><p>Ability runs 0–99 and rises by <em>use against something hard enough to matter</em>,
+with a 25% roll on each qualifying use. It also atrophies: stop using a skill and
+the number falls. See <a href="../guides/advancing.html">Advancing Your Character</a>.</p><h2>What it does</h2><ul><li><code class="k">CanPayCosts</code></li><li><code class="k">DoSkill</code></li></ul><hr><h2>In the source</h2>
+<p class="cite">kod/object/passive/skill/assess.kod:11</p>
+<p><code class="k">Assess</code> is <code class="k">Skill</code> — full chain <code class="k">Assess</code> ← <code class="k">Skill</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>assess_name_rsc</code></td><td class=""><em>assess</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>assess_icon_rsc</code></td><td class=""><em>light.bgf</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>assess_desc_rsc</code></td><td class=""><em>This is a crude and often inaccurate technique used to gauge how good an opponent is in th</em></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viSkill_num</code></td><td class=""><code>SKID_assess</code></td><td class="">403</td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vischool</code></td><td class=""><code>SKS_BRAWLING</code></td><td class="">11</td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viSkill_level</code></td><td class=""><code>50</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piSkillExertion</code></td><td class=""><code>5</code></td><td class="num " data-sort="50">50</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>CanPayCosts(who = $, oTarget = $)</h4>
+<pre><code>{
+      
+      
+      if oTarget=who
+        {
+           send(who,@msgsenduser,#message_rsc=assess_self);
+           return FALSE;
+        }
+
+      if not IsClass(oTarget, &amp;battler)
+      {
+         Send(who, @MsgSendUser, #message_rsc=skill_bad_target, 
+           #parm1=vrName,#parm2=Send(otarget,@GetCapDef),#parm3=Send(otarget,@GetName));
+	 return False;
+      }
+
+      propagate;   
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/assess.kod:54</p>
+<h4>DoSkill(who = $, oTarget = $)</h4>
+<pre><code>{
+      local dodge, health, slash, strength,agility,totalpower, message;
+
+      
+
+      if isclass(oTarget,&amp;user)
+      {
+	 dodge=send(otarget,@getskillability,#skill_num=SKID_DODGE);
+	 health=send(otarget,@getmaxhealth);
+	 slash=send(otarget,@getskillability,#skill_num=SKID_SLASH);
+	 strength=send(otarget,@getmight);
+	 agility=(send(oTarget,@getagility));
+	 totalpower=(dodge+health+slash+strength+agility)/4;
+      }
+      else
+      {
+	 totalpower=send(oTarget,@getlevel);
+      }
+      message = $;
+
+      if totalpower &lt; 20
+        { message = assess_below_20; }
+      if totalpower &gt; 19 and totalpower &lt; 30
+        { message = assess_20_30 ;  }
+      if totalpower &gt; 29 and totalpower &lt; 40
+        { message = assess_30_40 ;  }
+      if totalpower &gt; 39 and totalpower &lt; 50
+        { message = assess_40_50 ;  }
+      if totalpower &gt; 49 and totalpower &lt; 60
+        { message = assess_50_60 ;  }
+      if totalpower &gt; 59 and totalpower &lt; 70
+        { message = assess_60_70 ;  }
+      if totalpower &gt; 69 and totalpower &lt; 80
+        { message = assess_70_80 ;  }
+      if totalpower &gt; 79 and totalpower &lt; 90
+        { message = assess_80_90 ;  }
+      if totalpower &gt; 89 and totalpower &lt; 100
+        { message = assess_90_100 ;  }
+      if totalpower &gt; 99 and totalpower &lt; 150
+        { message = assess_100_150 ;  }
+      if message = $
+        { message = assess_150_up ; }
+
+      Send(who, @MsgSendUser, #message_rsc=message,
+          #parm1=send(oTarget,@getdef),#parm2=send(oTarget,@getname));
+       
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/skill/assess.kod:74</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

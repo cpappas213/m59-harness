@@ -1,0 +1,547 @@
+<h1>Armor</h1>
+
+<p class="lede">Every wearable defensive item in Meridian 59 is a <code class="k">DefenseModifier</code>, and each one can do three completely separate things: change how often you get hit (<code class="k">viDefense_base</code>), subtract a random flat amount from every blow (<code class="k">viDamage_base</code>), and multiply the damage of specific attack types up or down (<code class="k">GetResistanceModifiers</code>). These three effects do not trade off against each other in any tidy way — the heaviest armor in the game gives you <em>negative</em> defense, and one robe actively makes you take more damage.</p>
+
+<h2>How a hit against you is resolved</h2>
+
+<p>Two separate calculations matter. First, whether the attack lands at all:</p>
+
+<div class="formula">iDefense = (parry*2) + (block) + (dodge*3) + (agility*4) + (base_max_health*3/2)
+for each worn defense modifier:
+    iDefense = ModifyDefensePower(iDefense)       % armor adds piDefense_bonus here
+iDefense = iDefense + faction_defense_bonus
+iDefense = iDefense + (iDefense * piFlags3 / 100)
+iDefense = bound(iDefense, 1, 1000)
+
+chance_to_hit = bound(attacker_offense * 55 / iDefense, 10, 95)      % percent</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4320-4333 and kod/object/active/holder/nomoveon/battler.kod:19,330-334</p>
+
+<p>Then, if it lands, how much it hurts:</p>
+
+<div class="formula">for each worn defense modifier i:
+    damage = i.ModifyDefenseDamage(damage, atype, aspell)   % flat reduction
+    i.DefendingHit()                                        % item takes wear
+iResistance = ResistanceCheck(atype, aspell)
+damage      = GetDamageFromResistance(damage, iResistance)  % percentage
+damage      = damage + attack-modifier bonus
+if damage &lt;= 0: damage = 1
+damage = bound(damage, $, (base_max_health + 2) / 3)        % 1/3 max HP, rounded up
+damage = bound(damage, $, 30)                               % MAX_DAMAGE_PER_HIT</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4568-4617 (caps at :109,:113)</p>
+
+<div class="note">Order matters: the flat reduction from armor is subtracted <strong>before</strong> the resistance percentage is applied, and every worn defense modifier gets its own independent subtraction. Attack-modifier bonuses (gauntlets, rings) are added <em>after</em> resistance, so armor never scales them down.</div>
+
+<h2>Effect 1 — defense power</h2>
+
+<p>On <code class="k">Use</code>, an item copies <code class="k">viDefense_base</code> into the instance property <code class="k">piDefense_bonus</code>, and the default handler simply adds it to your defense score.</p>
+
+<div class="formula">DefaultValues():   piDefense_bonus = viDefense_base
+                   piDamage_reduce = viDamage_base
+
+ModifyDefensePower(...): return defense_power + piDefense_bonus</div>
+<p class="cite">kod/object/item/passitem/defmod.kod:31-32, 41-47, 95-98</p>
+
+<p>The defense score is a raw number clamped to 1&ndash;1000. It is dominated by agility (&times;4), dodge (&times;3) and base max health (&times;1.5), so for the worked example below it comes to 665 — which puts a &plusmn;50 item swing at roughly 7&ndash;8% of the whole score. <strong>Shields are the exception</strong>: <code class="k">Shield.ModifyDefensePower</code> deliberately returns the defense power unchanged and spends the bonus on Block instead (see below).</p>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:67-70</p>
+
+<h2>Effect 2 — flat damage reduction</h2>
+
+<div class="formula">iDamageReduce = random(piDamage_reduce/3, piDamage_reduce)   % integer division
+iDamageReduce = bound(iDamageReduce, 0, damage-1)            % at least 1 damage always lands
+
+if aspell &lt;> 0:                        % the attack has a magical component
+    if atype &lt;> 0:  iDamageReduce = iDamageReduce * 2 / 3    % mixed weapon+spell
+    else:           iDamageReduce = 0                        % pure spell: no reduction
+
+return damage - iDamageReduce</div>
+<p class="cite">kod/object/item/passitem/defmod.kod:100-129</p>
+
+<div class="warn">Armor plating does nothing at all against pure spell damage. A fireball, a Qor blast, or any attack with <code class="k">atype = 0</code> and a spell type set bypasses <code class="k">piDamage_reduce</code> entirely — only typed resistance helps. Against a weapon that also carries a spell type (a fire-enchanted sword), you keep two thirds of the reduction.</div>
+
+<p>Note the <code class="k">/3</code>: the roll is <code class="k">random(r/3, r)</code> with truncating integer division, so a value of 1 or 2 rolls from 0, a value of 4 or 5 rolls from 1, and 6 rolls from 2.</p>
+
+<table class="data">
+<thead><tr><th><code class="k">viDamage_base</code></th><th>Roll</th><th>Average absorbed</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>random(0,1)</td><td>0.5</td></tr>
+<tr><td>2</td><td>random(0,2)</td><td>1.0</td></tr>
+<tr><td>4</td><td>random(1,4)</td><td>2.5</td></tr>
+<tr><td>5</td><td>random(1,5)</td><td>3.0</td></tr>
+<tr><td>6</td><td>random(2,6)</td><td>4.0</td></tr>
+</tbody>
+</table>
+
+<h2>Effect 3 — typed resistance</h2>
+
+<p>Each item returns a list of <code class="k">[type, percent]</code> pairs from <code class="k">GetResistanceModifiers</code>. When the item is used, every pair is pushed onto the wearer's <code class="k">plResistances</code> list; when it is removed, they are subtracted again.</p>
+<p class="cite">kod/object/item/passitem/defmod.kod:65-93</p>
+
+<p>Weapon types are stored positive, spell types negative (<code class="k">-ATCK_SPELL_FIRE</code>). At the moment of the hit:</p>
+
+<div class="formula">ResistanceCheck(atype, aspell):
+    iMaxRes = 0 ; iMinRes = 0
+    for each [value, type] in plResistances that MATCHES the attack:
+        iMaxRes = max(iMaxRes, value)
+        iMinRes = min(iMinRes, value)
+    iMaxRes = bound(iMaxRes, $, 100)      % MAX_RESISTANCE
+    iMinRes = bound(iMinRes, -100, $)     % MIN_RESISTANCE
+    return iMaxRes + iMinRes
+
+GetDamageFromResistance(damage, value):
+    if value > 0:  return damage * (100 - value) / 100
+    else:          return damage * (-100 + value) / -100</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler.kod:189-265; constants at kod/include/blakston.khd:1521-1523</p>
+
+<p>A match is <code class="k">(atype &amp; type) &lt;&gt; 0</code>, or the wildcard: <code class="k">ATCK_WEAP_ALL</code> matches any weapon attack and <code class="k">ATCK_SPELL_ALL</code> matches any spell attack.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler.kod:200-242</p>
+
+<div class="warn">Resistances of <em>different</em> types do not stack — only the single best positive and the single worst negative are used. Leather armor's +5 against <code class="k">ATCK_WEAP_ALL</code> and chain's +20 against <code class="k">ATCK_WEAP_SLASH</code> would give you 20, not 25. Resistances of the <em>same</em> type <strong>do</strong> stack, because <code class="k">AddResistance</code> adds into the existing list entry.</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler.kod:268-289</p>
+
+<p>Two consequences worth internalising:</p>
+<ul>
+<li>Chain armor (bludgeon +15) plus a simple helm (bludgeon +10) gives <strong>+25 vs bludgeon</strong> — same type, so they add.</li>
+<li>A helm (+15 vs all spells) worn with a knight's shield (&minus;20 vs all spells) gives <strong>&minus;5</strong> — same type, so they add, and you end up taking <em>more</em> spell damage than bare-headed.</li>
+</ul>
+<p class="cite">kod/object/item/passitem/defmod/armor/chain.kod:57-64; helmet/simphelm.kod:67-71; helmet/helm.kod:72-76; shield/knhtshld.kod:56-61</p>
+
+<h2>Headline table: what a 20-point hit costs you</h2>
+
+<p>Raw incoming damage 20, pure weapon attack, body armor only (no helm, no shield). Figures are the final damage after flat reduction and resistance, exactly as the integer arithmetic computes it. Range is shown with the mean in parentheses.</p>
+
+<table class="data">
+<thead><tr><th>Worn</th><th>Slashing</th><th>Thrusting</th><th>Piercing</th><th>Bludgeoning</th></tr></thead>
+<tbody>
+<tr><td><strong>Nothing</strong></td><td>20</td><td>20</td><td>20</td><td>20</td></tr>
+<tr><td>Robe / Light robe</td><td>20</td><td>20</td><td>20</td><td>20</td></tr>
+<tr><td>Disciple's robe</td><td>22</td><td>22</td><td>22</td><td>22</td></tr>
+<tr><td>Leather armor</td><td>19</td><td>19</td><td>19</td><td>19</td></tr>
+<tr><td>Chain armor</td><td>14&ndash;16 (15.0)</td><td>17&ndash;19 (18.0)</td><td>13&ndash;15 (14.0)</td><td>15&ndash;17 (16.0)</td></tr>
+<tr><td>Scale armor</td><td>16&ndash;19 (17.5)</td><td>16&ndash;19 (17.5)</td><td>16&ndash;19 (17.5)</td><td>14&ndash;17 (15.5)</td></tr>
+<tr><td>Nerudite armor</td><td>15&ndash;19 (17.0)</td><td>15&ndash;19 (17.0)</td><td>15&ndash;19 (17.0)</td><td>15&ndash;19 (17.0)</td></tr>
+<tr><td>Plate armor</td><td>14&ndash;18 (16.0)</td><td>14&ndash;18 (16.0)</td><td>14&ndash;18 (16.0)</td><td>14&ndash;18 (16.0)</td></tr>
+</tbody>
+</table>
+
+<p>Worked example, chain armor versus a 20-point slash. <code class="k">piDamage_reduce = 2</code>, so <code class="k">random(2/3, 2) = random(0,2)</code> and damage becomes 18, 19 or 20. Chain's slash resistance is +20, so <code class="k">damage * (100-20) / 100</code> gives 14, 15 or 16.</p>
+<p class="cite">kod/object/item/passitem/defmod/armor/chain.kod:43,57-64</p>
+
+<div class="warn">The disciple's robe carries <code class="k">[ATCK_WEAP_ALL, -10]</code>. A 20-point weapon hit becomes <code class="k">20 * (-100 + -10) / -100 = 22</code>. It is a spellcaster's garment that costs you 10% extra from every weapon in the game. Note that integer truncation hides this at small numbers &mdash; a 6-point hit still lands for 6.</div>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe/robedisc.kod:298-304</p>
+
+<p>The same comparison against a <strong>6-point</strong> hit shows why heavy armor exists at all:</p>
+
+<table class="data">
+<thead><tr><th>Worn</th><th>Slashing</th><th>Bludgeoning</th></tr></thead>
+<tbody>
+<tr><td><strong>Nothing</strong></td><td>6</td><td>6</td></tr>
+<tr><td>Leather armor</td><td>5</td><td>5</td></tr>
+<tr><td>Chain armor</td><td>3&ndash;4 (3.67)</td><td>3&ndash;5 (4.0)</td></tr>
+<tr><td>Scale armor</td><td>2&ndash;5 (3.5)</td><td>1&ndash;4 (2.5)</td></tr>
+<tr><td>Nerudite armor</td><td>1&ndash;5 (3.0)</td><td>1&ndash;5 (3.0)</td></tr>
+<tr><td>Plate armor</td><td>1&ndash;4 (2.2)</td><td>1&ndash;4 (2.2)</td></tr>
+</tbody>
+</table>
+
+<p>Flat reduction is a fixed subtraction, so it is worth far more against many small blows than against a few large ones. Percentage resistance behaves the opposite way.</p>
+
+<h3>A full kit</h3>
+
+<p>Chain armor + simple helm + metal shield (block check succeeded), 20-point slash. Three independent flat rolls of <code class="k">random(0,2)</code>, <code class="k">random(0,1)</code>, <code class="k">random(0,1)</code>, then slash resistance 20 (chain) + 10 (metal shield) = <strong>30</strong> because they are the same type.</p>
+
+<div class="formula">damage 20 -> 16..20 after three reductions -> * 70/100 -> 11..14, mean 12.08
+same kit vs bludgeon: resistance 15 (chain) + 10 (helm) = 25 -> 12..15, mean 13.08</div>
+
+<h2>Why the good armor has negative defense</h2>
+
+<p>Plate, nerudite, scale and chain all carry a <em>negative</em> <code class="k">viDefense_base</code>. That number is subtracted straight out of your defense score, which raises your attacker's chance to hit.</p>
+
+<table class="data">
+<thead><tr><th>Armor</th><th><code class="k">viDefense_base</code></th><th>Defense (example char)</th><th>Attacker's hit chance</th></tr></thead>
+<tbody>
+<tr><td>Leather armor</td><td>+50</td><td>715</td><td>53%</td></tr>
+<tr><td>Robe</td><td>+20</td><td>685</td><td>56%</td></tr>
+<tr><td>Nothing</td><td>0</td><td>665</td><td>57%</td></tr>
+<tr><td>Chain armor</td><td>&minus;50</td><td>615</td><td>62%</td></tr>
+<tr><td>Scale armor</td><td>&minus;100</td><td>565</td><td>68%</td></tr>
+<tr><td>Nerudite armor</td><td>&minus;150</td><td>515</td><td>74%</td></tr>
+<tr><td>Plate armor</td><td>&minus;200</td><td>465</td><td>82%</td></tr>
+</tbody>
+</table>
+
+<p>Example character: parry 50, dodge 60, block 0, agility 40, base max health 150 (the hard cap), attacker offense 700.</p>
+
+<div class="formula">iDefense = 50*2 + 0 + 60*3 + 40*4 + 150*3/2 = 100 + 180 + 160 + 225 = 665
+hit% = bound(700 * 55 / iDefense, 10, 95)</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4320, :5903-5905 (base health caps at 150); kod/object/active/holder/nomoveon/battler.kod:330-334</p>
+
+<p>Multiply through and the trade-off becomes clear — <strong>expected damage taken per enemy swing</strong>:</p>
+
+<table class="data">
+<thead><tr><th>Worn</th><th>vs 20-point slashes</th><th>vs 6-point slashes</th></tr></thead>
+<tbody>
+<tr><td>Nothing</td><td>0.57 &times; 20 = 11.4</td><td>0.57 &times; 6 = 3.42</td></tr>
+<tr><td>Leather armor</td><td>0.53 &times; 19 = 10.07</td><td>0.53 &times; 5 = 2.65</td></tr>
+<tr><td>Chain armor</td><td>0.62 &times; 15 = 9.30</td><td>0.62 &times; 3.67 = 2.28</td></tr>
+<tr><td>Scale armor</td><td>0.68 &times; 17.5 = 11.90</td><td>0.68 &times; 3.5 = 2.38</td></tr>
+<tr><td>Nerudite armor</td><td>0.74 &times; 17 = 12.58</td><td>0.74 &times; 3 = 2.22</td></tr>
+<tr><td>Plate armor</td><td>0.82 &times; 16 = 13.12</td><td>0.82 &times; 2.2 = 1.80</td></tr>
+</tbody>
+</table>
+
+<div class="note">Against a heavy hitter this example character is <em>worse off</em> in plate than naked; against a swarm of weak attackers plate is the best thing in the game. The crossover depends entirely on how large the individual hits are relative to <code class="k">viDamage_base</code>. Chain armor's mix of moderate defense loss, moderate flat reduction and large typed resistances makes it the least situational of the heavy set.</div>
+
+<h2>Body armor — complete data</h2>
+
+<p>All are <code class="k">ITEM_USE_BODY</code> (robes additionally take <code class="k">ITEM_USE_LEGS</code>), one at a time.</p>
+
+<table class="data">
+<thead><tr><th></th><th>Armor</th><th>Def</th><th>Flat</th><th>Spellpower</th><th>Resistances</th><th>Wt</th><th>Bulk</th><th>Value</th><th>Hits</th></tr></thead>
+<tbody>
+<tr>
+  <td><img class="icon" src="../assets/img/leathamr_g1.png" alt="leather armor"></td>
+  <td><a href="../items/leatherarmor.html">Leather armor</a></td>
+  <td>+50</td><td>0</td><td>0</td>
+  <td>all weapons +5</td>
+  <td>100</td><td>150</td><td>400</td><td>300&ndash;350</td>
+</tr>
+<tr>
+  <td><img class="icon" src="../assets/img/chainamr_g1.png" alt="chain armor"></td>
+  <td><a href="../items/chainarmor.html">Chain armor</a></td>
+  <td>&minus;50</td><td>2</td><td>&minus;15</td>
+  <td>pierce +25, slash +20, bludgeon +15, thrust +5</td>
+  <td>200</td><td>250</td><td>1000</td><td>550&ndash;650</td>
+</tr>
+<tr>
+  <td><img class="icon" src="../assets/img/scaleamr_g1.png" alt="scale armor"></td>
+  <td><a href="../items/scalearmor.html">Scale armor</a></td>
+  <td>&minus;100</td><td>4</td><td>&minus;20</td>
+  <td>bludgeon +10</td>
+  <td>330</td><td>350</td><td>1500</td><td>550&ndash;650</td>
+</tr>
+<tr>
+  <td><img class="icon" src="../assets/img/nerudamr_g1.png" alt="nerudite armor"></td>
+  <td><a href="../items/neruditearmor.html">Nerudite armor</a></td>
+  <td>&minus;150</td><td>5</td><td>&minus;20</td>
+  <td>fire +20, shock +20, cold +20, acid +20, <strong>quake &minus;20</strong></td>
+  <td>500</td><td>500</td><td>3000</td><td>850&ndash;900</td>
+</tr>
+<tr>
+  <td><img class="icon" src="../assets/img/plateamr_g1.png" alt="plate armor"></td>
+  <td><a href="../items/platearmor.html">Plate armor</a></td>
+  <td>&minus;200</td><td>6</td><td>&minus;30</td>
+  <td><strong>fire &minus;10, shock &minus;15</strong></td>
+  <td>600</td><td>600</td><td>2000</td><td>625&ndash;725</td>
+</tr>
+<tr>
+  <td><img class="icon" src="../assets/img/robe_g2.png" alt="robe"></td>
+  <td><a href="../items/robe.html">Robe</a></td>
+  <td>+20</td><td>0</td><td>+10</td>
+  <td>none</td>
+  <td>100</td><td>150</td><td>400</td><td>550&ndash;650</td>
+</tr>
+<tr>
+  <td><img class="icon" src="../assets/img/ltrobe_g2.png" alt="light robe"></td>
+  <td><a href="../items/lightrobe.html">Light robe</a></td>
+  <td>+20</td><td>0</td><td>+10</td>
+  <td>none</td>
+  <td>75</td><td>125</td><td>300</td><td>450&ndash;550</td>
+</tr>
+<tr>
+  <td><img class="icon" src="../assets/img/robe_g2.png" alt="disciple's robe"></td>
+  <td><a href="../items/disciplerobe.html">Disciple's robe</a></td>
+  <td>+20</td><td>0</td><td>+10</td>
+  <td><strong>all weapons &minus;10</strong>, <strong>fire &minus;20</strong>, shock +15</td>
+  <td>130</td><td>160</td><td>2000</td><td>550&ndash;650</td>
+</tr>
+</tbody>
+</table>
+
+<p class="cite">kod/object/item/passitem/defmod/armor/leather.kod:36-50,61-65 &middot; chain.kod:34-43,57-64 &middot; scale.kod:35-48,59-63 &middot; neruarmr.kod:37-50,61-69 &middot; plate.kod:35-48,59-64 &middot; robe.kod:55-69 &middot; robe/lghtrobe.kod:43-50 &middot; robe/robedisc.kod:55-58,298-303</p>
+
+<p>The <code class="k">Armor</code> base class itself sets <code class="k">viSpell_modifier = -25</code>; the five metal/leather armors each override it, and the robes override it upward to +10.</p>
+<p class="cite">kod/object/item/passitem/defmod/armor.kod:30</p>
+
+<h3>Layering</h3>
+
+<p>Robes occupy <code class="k">ITEM_USE_BODY | ITEM_USE_LEGS</code> but explicitly permit pants and shirts to coexist with them, so a caster can stack robe (+20) + pants (+5) + shirt (+5) = <strong>+30 defense and +10 spellpower</strong> with zero weight penalty and no armor. Armor and a robe cannot be worn together — both claim the body slot.</p>
+<p class="cite">kod/object/item/passitem/defmod/armor/robe.kod:69,127-153,201-211 &middot; defmod/pants.kod:147-158 &middot; defmod/shirt.kod:214-225</p>
+
+<h2>Shields</h2>
+
+<p>Shields work differently from every other defensive item, and the difference is easy to miss:</p>
+
+<ul>
+<li><code class="k">Shield.ModifyDefensePower</code> returns the defense power <strong>unchanged</strong>. A shield's <code class="k">viDefense_base</code> is never added to your defense score.</li>
+<li>Instead it is added to your Block ability, which feeds the <code class="k">iBlock</code> term of the defense formula (weighted &times;1, the weakest of the three defense skills):
+<div class="formula">GetBlockAbility(who) = bound(GetSkillAbility(SKID_BLOCK) + piDefense_bonus, 1, 120)</div></li>
+<li>The flat damage reduction only applies if you have the Block skill <em>and</em> pass a Block skill check, with <code class="k">piDefense_bonus</code> as the modifier:
+<div class="formula">num = ((100 - agility) * block_ability / 100) + agility + piDefense_bonus
+success if random(1,100) &lt;= num</div></li>
+</ul>
+<p class="cite">kod/object/item/passitem/defmod/shield.kod:61-89 &middot; kod/object/passive/skill.kod:223-241,288-292 &middot; kod/object/passive/skill/block.kod (requisite stat defaults to agility)</p>
+
+<p>Worked example: agility 40, block ability 60, orc shield (+20). <code class="k">num = (60*60/100) + 40 + 20 = 36 + 40 + 20 = 96</code> — the shield's reduction fires 96% of the time. With a metal shield (+5) it is 81%.</p>
+
+<div class="note">Any <code class="k">Shield</code>-class item in hand switches your Block skill on: <code class="k">Player.GetBlockAbility</code> returns 0 outright if <code class="k">LookupPlayerShield</code> finds nothing. A torch counts as a Shield, so holding a torch actually contributes your block ability to your defense score (with a +0 bonus).</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4368-4381, :5399-5406 &middot; kod/object/item/passitem/defmod/shield/torch.kod:11,57</p>
+
+<table class="data">
+<thead><tr><th></th><th>Shield</th><th>Block bonus</th><th>Flat</th><th>Resistances</th><th>Wt</th><th>Bulk</th><th>Value</th><th>Hits</th></tr></thead>
+<tbody>
+<tr><td><img class="icon" src="../assets/img/metlshld_g1.png" alt="metal shield"></td>
+  <td><a href="../items/metalshield.html">Metal shield</a></td><td>+5</td><td>1</td><td>slash +10</td><td>100</td><td>125</td><td>160</td><td>250&ndash;300</td></tr>
+<tr><td><img class="icon" src="../assets/img/rshield_g1.png" alt="gold shield"></td>
+  <td><a href="../items/goldshield.html">Gold shield</a></td><td>+10</td><td>1</td><td>slash +10, bludgeon +10, thrust +10</td><td>225</td><td>150</td><td>500</td><td>250&ndash;300</td></tr>
+<tr><td><img class="icon" src="../assets/img/mtlshld_g1.png" alt="knight's shield"></td>
+  <td><a href="../items/knightshield.html">Knight's shield</a></td><td>+15</td><td>2</td><td>pierce +10, <strong>all spells &minus;20</strong></td><td>175</td><td>200</td><td>800</td><td>250&ndash;300</td></tr>
+<tr><td><img class="icon" src="../assets/img/osh_g1.png" alt="orc shield"></td>
+  <td><a href="../items/orcshield.html">Orc shield</a></td><td>+20</td><td>2</td><td>pierce +15, <strong>holy &minus;20</strong></td><td>250</td><td>200</td><td>1000</td><td>250&ndash;300</td></tr>
+<tr><td></td>
+  <td><a href="../items/guildshield.html">Guild shield</a></td><td>+20</td><td>2</td><td>pierce +10</td><td>200</td><td>150</td><td>400</td><td>350&ndash;400</td></tr>
+<tr><td><img class="icon" src="../assets/img/gshe_g1.png" alt="soldier's shield"></td>
+  <td><a href="../items/soldiershield.html">Soldier's shield</a> (and Duke's, Princess's, Rebel)</td><td>+20</td><td>2</td><td>none</td><td>0</td><td>0</td><td>&mdash;</td><td>never wears</td></tr>
+<tr><td><img class="icon" src="../assets/img/torch_g7.png" alt="torch"></td>
+  <td><a href="../items/torch.html">Torch</a></td><td>+0</td><td>0</td><td>none</td><td>10</td><td>10</td><td>30</td><td>50</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/item/passitem/defmod/shield/metlshld.kod:34-48,54-58 &middot; goldshld.kod:34-50,56-62 &middot; knhtshld.kod:35-50,56-61 &middot; orcshld.kod:38-54,87-92 &middot; guilshld.kod:107-116,559-562 &middot; soldshld.kod:70-74,563-579,594-623 &middot; torch.kod:60-66</p>
+
+<h3>Faction shields are special</h3>
+
+<p>The <code class="k">SoldierShield</code> family bypasses the Block requirement entirely — it copies the base <code class="k">DefenseModifier</code> reduction code so the flat 2 damage applies whether or not you can block, and it overrides <code class="k">DefendingHit</code> to take no wear at all. It also carries the faction-enemy damage rule: a player attacked by a faction enemy who is wearing one takes an extra 15%, applied <em>after</em> the damage caps.</p>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld.kod:563-579,592-620 &middot; kod/object/active/holder/nomoveon/battler/player.kod:4620-4631</p>
+
+<p>The rebel shield scales its reduction with faction rank (rank is bounded 1&ndash;10):</p>
+<div class="formula">piDamage_reduce = viDamage_base + ((piFactionRank / 3) - 1) = 2 + (rank/3) - 1
+
+rank 1-2  -> 1     rank 3-5 -> 2     rank 6-8 -> 3     rank 9-10 -> 4</div>
+<p class="cite">kod/object/item/passitem/defmod/shield/soldshld/reblshld.kod:153-159 &middot; soldshld.kod:101,192-193</p>
+<div class="note">The source comment on that line says "This ranges from 2-4", but the arithmetic yields 1 at ranks 1&ndash;2. The code is what runs.</div>
+
+<h2>Helmets and masks</h2>
+
+<p>All head-slot items, <code class="k">ITEM_USE_HEAD</code>, one at a time. Helmets add their bonus to defense power normally (they are not shields).</p>
+
+<table class="data">
+<thead><tr><th></th><th>Item</th><th>Def</th><th>Flat</th><th>Spellpower</th><th>Resistances</th><th>Wt</th><th>Bulk</th><th>Value</th><th>Hits</th></tr></thead>
+<tbody>
+<tr><td><img class="icon" src="../assets/img/ornhelma_g2.png" alt="helm"></td>
+  <td><a href="../items/helm.html">Helm</a></td><td>+25</td><td>1</td><td>&minus;5</td><td>all spells +15</td><td>30</td><td>50</td><td>1000</td><td>400&ndash;500</td></tr>
+<tr><td><img class="icon" src="../assets/img/helm_g2.png" alt="simple helm"></td>
+  <td><a href="../items/simplehelm.html">Simple helm</a></td><td>+20</td><td>1</td><td>&minus;5</td><td>bludgeon +10</td><td>50</td><td>25</td><td>100</td><td>200&ndash;225</td></tr>
+<tr><td><img class="icon" src="../assets/img/ivycircl_g2.png" alt="ivy circlet"></td>
+  <td><a href="../items/ivycirclet.html">Ivy circlet</a></td><td>+10</td><td>0</td><td>0</td><td>shock +20, unholy +20, <strong>fire &minus;10</strong></td><td>10</td><td>20</td><td>450</td><td>255&ndash;300</td></tr>
+<tr><td><img class="icon" src="../assets/img/invcirc_g1.png" alt="circlet"></td>
+  <td><a href="../items/circlet.html">Circlet</a></td><td>+5</td><td>0</td><td>0</td><td>none</td><td>20</td><td>15</td><td>350</td><td>355&ndash;400</td></tr>
+<tr><td><img class="icon" src="../assets/img/mmskl_g3.png" alt="face mask"></td>
+  <td>Face masks (12 kinds)</td><td>0</td><td>0</td><td>0</td><td>none</td><td>10</td><td>10</td><td>10</td><td>1 (never wears)</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/item/passitem/defmod/helmet/helm.kod:34-50,72-76 &middot; simphelm.kod:30-46,67-71 &middot; ivycircl.kod:35-48,63-69 &middot; circlet.kod:34-47 &middot; helmet/mask.kod:29-49</p>
+
+<div class="warn">Masks are purely cosmetic — 0 defense, 0 reduction, no resistances — but they inherit <code class="k">ITEM_USE_HEAD</code> from <code class="k">Helmet</code> and therefore occupy the same slot as a helm. Wearing a mask costs you the entire helmet slot (up to +25 defense and +15 vs all spells). The complete set: face, ant, cow, daemon, fey, Kriipa, mummy, rat, shrunken-head, skull, troll and Xeo masks.</div>
+<p class="cite">kod/object/item/passitem/defmod/helmet.kod:28 &middot; helmet/mask.kod:45-49</p>
+
+<h2>Shirts, pants and skirts</h2>
+
+<p>Free defense. They occupy their own slots (<code class="k">ITEM_USE_SHIRT</code> = 0x800 and <code class="k">ITEM_USE_LEGS</code> = 0x400), never take wear, and cannot be mended or repaired because they never need it.</p>
+
+<table class="data">
+<thead><tr><th>Item</th><th>Slot</th><th>Def</th><th>Weight</th><th>Bulk</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>Shirt</td><td>shirt</td><td>+5</td><td>10</td><td>10</td><td>50</td></tr>
+<tr><td>Tank top</td><td>shirt</td><td>+5 (0 if the exotic top)</td><td>10</td><td>10</td><td>40</td></tr>
+<tr><td>Royal shirt</td><td>shirt</td><td>+10</td><td>10</td><td>10</td><td>200</td></tr>
+<tr><td>Pants (A, B, C, D)</td><td>legs</td><td>+5</td><td>10</td><td>10</td><td>50</td></tr>
+<tr><td>Skirt, short skirt</td><td>legs</td><td>+5</td><td>10</td><td>10</td><td>50</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/item/passitem/defmod/shirt.kod:43,48-53,73,169-180 &middot; shirt/tanktop.kod:38-41,54-62 &middot; shirt/royalsht.kod:27,32,36 &middot; defmod/pants.kod:27,34-46,131-141</p>
+
+<div class="note">There is no reason not to wear a shirt and pants. +10 defense power for 20 weight, no spellpower cost, no durability, and they layer under robes.</div>
+
+<h2>Totems</h2>
+
+<p>The six totems (<code class="k">Totem</code> and <code class="k">TotemOne</code>&ndash;<code class="k">TotemFive</code>) descend from <code class="k">DefenseModifier</code> but define no <code class="k">viDefense_base</code> or <code class="k">viDamage_base</code>, so they inherit 0 for both and have no defensive effect whatsoever. They are quest items that occupy a hand slot (weight 100, bulk 100) and drop when unused.</p>
+<p class="cite">kod/object/item/passitem/totem.kod:11,38-49,58-70</p>
+
+<h2>The spellpower penalty</h2>
+
+<p>Every item you are using contributes its <code class="k">viSpell_modifier</code> to the spellpower of anything you cast. This is a <strong>spellpower</strong> modifier, not a mana-cost modifier — the mana cost of a spell does not change.</p>
+
+<div class="formula">for i in GetPlayerUsing:
+    iItemModifier = iItemModifier + i.GetSpellModifier(spell)
+
+...
+if school = Kraanan and iItemModifier &lt; 0:  iItemModifier = iItemModifier / 2
+...
+iSpellPower = iPrimaryBonus + iSecondaryBonus + iPowerBonus + (spell_ability/2)
+iSpellPower = bound(iSpellPower, 0, $)
+iSpellPower = iSpellPower + iShrines + iItemModifier
+...
+iSpellPower = bound(iSpellPower, 1, 99)</div>
+<p class="cite">kod/object/passive/spell.kod:2096-2103, 2172-2184, 2220-2226, 2244 &middot; kod/object/item.kod:1548-1570 &middot; SPELLPOWER bounds at kod/include/blakston.khd:2089-2090</p>
+
+<table class="data">
+<thead><tr><th><code class="k">viSpell_modifier</code></th><th>Items</th></tr></thead>
+<tbody>
+<tr><td>+10</td><td>Robe, light robe, disciple's robe</td></tr>
+<tr><td>0</td><td>Leather armor, all shields, circlet, ivy circlet, masks, shirts, pants, totems</td></tr>
+<tr><td>&minus;5</td><td>Helm, simple helm</td></tr>
+<tr><td>&minus;15</td><td>Chain armor</td></tr>
+<tr><td>&minus;20</td><td>Scale armor, nerudite armor</td></tr>
+<tr><td>&minus;25</td><td>The <code class="k">Armor</code> base class default (inherited by any armor that does not override it)</td></tr>
+<tr><td>&minus;30</td><td>Plate armor</td></tr>
+</tbody>
+</table>
+
+<p>Spellpower runs 1&ndash;99, so plate armor's &minus;30 is a very large hit — up to a third of the whole scale. Kraanan halves negative item modifiers (a plate-armored warrior-priest loses only 15). A guild shield with a god's insignia gives +10 to that god's school specifically, or <code class="k">random(3,7)</code> for a faction insignia.</p>
+<p class="cite">kod/object/passive/spell.kod:2178-2184 &middot; kod/object/item/passitem/defmod/shield/guilshld.kod:564-595</p>
+
+<h2>Condition, wear and breaking</h2>
+
+<p>Every item rolls its starting hit points once, at creation:</p>
+<div class="formula">piHits_init = random(viHits_init_min, viHits_init_max)
+piHits      = piHits_init</div>
+<p class="cite">kod/object/item.kod:118-119</p>
+
+<p>Each time you take a hit, <em>every</em> worn defense modifier is sent <code class="k">DefendingHit</code> — whether or not it actually did anything. The default chain is two nested rolls:</p>
+
+<div class="formula">DefenseModifier.DefendingHit():   if random(1,100) &lt; 50  -> propagate     % 49%
+Item.DefendingHit():              if random(1,100) &lt; 75  -> piHits - 1    % 74%
+                                  if piHits &lt;= 0 -> ItemBrokenInBattle()
+
+net chance to lose 1 hit point per incoming blow = 0.49 * 0.74 = 36.26%</div>
+<p class="cite">kod/object/item/passitem/defmod.kod:18,133-142 &middot; kod/object/item.kod:18,836-871 &middot; kod/object/active/holder/nomoveon/battler/player.kod:4574</p>
+
+<p>So a fresh chain hauberk (550&ndash;650 hits) survives roughly 1500&ndash;1800 incoming blows before it falls apart.</p>
+
+<table class="data">
+<thead><tr><th>Item class</th><th>Takes wear?</th></tr></thead>
+<tbody>
+<tr><td>Armor, robes, shields, helmets, torches</td><td>Yes — 36.26% per blow taken</td></tr>
+<tr><td>Nerudite armor</td><td>Yes — <strong>74% per blow</strong>, no 50% gate, and it shatters violently</td></tr>
+<tr><td>Shirts, pants, skirts</td><td>No (<code class="k">DefendingHit</code> returns immediately)</td></tr>
+<tr><td>Masks</td><td>No</td></tr>
+<tr><td>Soldier / Duke / Princess / Rebel shields</td><td>No</td></tr>
+<tr><td>Wedding ring, amulet of shadows</td><td>No</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/item/passitem/defmod/armor/neruarmr.kod:76-89 &middot; defmod/shirt.kod:177-180 &middot; defmod/pants.kod:137-140 &middot; defmod/helmet/mask.kod:45-49 &middot; defmod/shield/soldshld.kod:563-579 &middot; ring/ringwedd.kod:133-138 &middot; necklace/shadowam.kod:112-116</p>
+
+<div class="warn">Nerudite armor does not simply break. At 0 hits it calls <code class="k">ShatterToShards</code>: it is unequipped, and you immediately take <code class="k">random(15,30)</code> damage of type <code class="k">ATCK_WEAP_NERUDITE</code>. That damage can kill you.</div>
+<p class="cite">kod/object/item/passitem/defmod/armor/neruarmr.kod:76-116</p>
+
+<h3>The condition text you see when you look at armor</h3>
+
+<div class="formula">iHit_Percent = 100 * piHits / piHits_init
+
+> 90  : "without blemish or flaw"   (or "...but has been repaired before"
+                                      if piHits_init &lt; viHits_init_min)
+> 65  : "has a dent or two"
+> 30  : "nicked and scarred from battle"
+>  0  : "rent and torn ... may not last much longer"
+  0   : "useless ... torn into several pieces"</div>
+<p class="cite">kod/object/item.kod:143-202 &middot; strings at kod/object/item/passitem/defmod/armor.kod:19-24, shield.kod:23-28</p>
+
+<p>At 0 hits <code class="k">GetItemUseType</code> returns <code class="k">ITEM_BROKEN</code>, so the item cannot be worn again, and the client is shown <code class="k">viBroken_group</code> instead of the normal icon.</p>
+<p class="cite">kod/object/item.kod:388-396 &middot; kod/object/item/passitem/defmod/armor.kod:35,71-86</p>
+
+<p>Resale value collapses with both current and maximum hits:</p>
+<div class="formula">iPercent = (100 * piHits_init * piHits) / (viHits_init_max * viHits_init_max)
+value    = bound(viValue_average * iPercent / 100, 10, viValue_average)</div>
+<p class="cite">kod/object/item.kod:408-447</p>
+
+<h2>Mend</h2>
+
+<p>The Kraanan spell <em>mend</em> (level 4, 9 mana, one sapphire and one orc tooth) is the only repair.</p>
+
+<div class="formula">iMultiplier = bound(75 + iSpellPower/5, 75, 95)     % 100 for immortals
+iAmount     = GetMaxHits() * iMultiplier / 100
+SetMaxHits(iAmount);  SetHits(iAmount)</div>
+<p class="cite">kod/object/passive/spell/mend.kod:40-42,53-57,112-139</p>
+
+<div class="warn">Mend does not restore an item — it <strong>permanently lowers the ceiling</strong>. Every cast multiplies the item's maximum hits by 75&ndash;95%, and the loss compounds with each cast. A plate hauberk mended five times at spellpower 99 (95% each) is down to 77% of its original maximum. Once <code class="k">piHits_init</code> drops below <code class="k">viHits_init_min</code> the description permanently reads "has been repaired before", and resale value drops quadratically.</div>
+
+<p>Mend refuses two cases: an item already at full hits ("already in perfect condition") and an item at exactly 0 hits ("beyond salvage"). <strong>A broken item can never be repaired</strong> — unequip and mend before the last hit point goes.</p>
+<p class="cite">kod/object/passive/spell/mend.kod:67-104</p>
+
+<p>Shirts and pants return <code class="k">FALSE</code> from both <code class="k">CanMend</code> and <code class="k">ReqRepair</code>; armor and shields return <code class="k">TRUE</code> from <code class="k">ReqRepair</code> and inherit the item-attribute-aware <code class="k">CanMend</code>.</p>
+<p class="cite">kod/object/item/passitem/defmod.kod:144-167 &middot; defmod/armor.kod:66-69 &middot; defmod/shield.kod:154-157 &middot; defmod/shirt.kod:167-175 &middot; defmod/pants.kod:127-135</p>
+
+<h2>Heat</h2>
+
+<p>The Faren room enchantment <em>heat</em> (level 3, 8 mana) damages anyone wearing metal, but only where PvP applies: the wearer must have pkill enabled, or be in a kill-zone or a valid-target safe-death room.</p>
+
+<table class="data">
+<thead><tr><th>Armor</th><th>Damage per heat tick</th></tr></thead>
+<tbody>
+<tr><td>Plate armor</td><td>4</td></tr>
+<tr><td>Scale armor</td><td>3</td></tr>
+<tr><td>Chain armor</td><td>2</td></tr>
+<tr><td>Nerudite armor</td><td>2</td></tr>
+<tr><td>Leather armor</td><td>1</td></tr>
+<tr><td>Robes and everything else</td><td>0 (no damage at all)</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell/roomench/heat.kod:50-58,180-232 &middot; plate.kod:66-69 &middot; scale.kod:65-68 &middot; chain.kod:66-69 &middot; neruarmr.kod:71-74 &middot; leather.kod:67-70 &middot; default kod/object/item.kod:1572-1577</p>
+
+<p>The damage is dealt with <code class="k">aspell = ATCK_SPELL_FIRE</code> and <code class="k">atype = 0</code>, so it is pure spell damage: your armor's flat reduction does nothing against it. Nerudite armor's fire +20 does help; plate armor's fire &minus;10 makes it worse.</p>
+
+<h2>Other worn items that change defense</h2>
+
+<p>These are not <code class="k">DefenseModifier</code> descendants, but they register themselves with <code class="k">AddDefenseModifier</code> or <code class="k">AddResistance</code> and therefore sit in the same pipeline.</p>
+
+<table class="data">
+<thead><tr><th>Item</th><th>Slot</th><th>Effect</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td><a href="../items/gauntlet.html">Gauntlets</a></td><td>gauntlet</td><td><strong>+15 defense power</strong>, +20 attack, +1 damage on melee; no flat defensive reduction (<code class="k">ModifyDefenseDamage</code> returns damage unchanged). 300&ndash;450 hits, value 400, wt/bulk 50/50.</td><td>kod/object/item/passitem/attmod/gauntlet.kod:56-79,135,295-303</td></tr>
+<tr><td><a href="../items/shadowamulet.html">Amulet of shadows</a></td><td>neck</td><td><strong>&minus;150 defense power</strong> and &minus;50 light. No damage reduction, takes no wear.</td><td>kod/object/item/passitem/necklace/shadowam.kod:71-72,81-116</td></tr>
+<tr><td>Wedding ring</td><td>finger</td><td>Registers as a defense modifier but both handlers are overridden to return their argument unchanged — net effect zero.</td><td>kod/object/item/passitem/ring/ringwedd.kod:108,133-172</td></tr>
+<tr><td>Resistance rings (fire, cold, shock, acid)</td><td>finger</td><td><strong>+50</strong> resistance to their element while worn; burn one hit per minute of wear (15&ndash;30 hits total), value 280.</td><td>kod/object/item/passitem/ring/resring.kod:36-49,132-153 &middot; resring/firering.kod:43-44 (and coldring, shokring, acidring)</td></tr>
+</tbody>
+</table>
+
+<div class="note">A resistance ring's +50 is larger than anything armor offers, and because it is a different list entry it does not add to armor's resistance of the same element — <code class="k">ResistanceCheck</code> takes only the best positive. Nerudite armor's fire +20 plus a fire ring's +50 gives 50, not 70. But a <em>fire ring</em> plus <em>plate armor's fire &minus;10</em> gives 50 + (&minus;10) = 40, because the worst negative is always added back in.</div>
+
+<h2>Complete list of DefenseModifier classes</h2>
+
+<p>All 54 classes descending from <code class="k">DefenseModifier</code>, including abstract bases.</p>
+
+<table class="data">
+<thead><tr><th>Group</th><th>Classes</th></tr></thead>
+<tbody>
+<tr><td>Base</td><td><code class="k">DefenseModifier</code></td></tr>
+<tr><td>Armor (9)</td><td><code class="k">Armor</code>, <code class="k">LeatherArmor</code>, <code class="k">ChainArmor</code>, <code class="k">ScaleArmor</code>, <code class="k">PlateArmor</code>, <code class="k">NeruditeArmor</code>, <code class="k">Robe</code>, <code class="k">LightRobe</code>, <code class="k">DiscipleRobe</code></td></tr>
+<tr><td>Shields (11)</td><td><code class="k">Shield</code>, <code class="k">Torch</code>, <code class="k">MetalShield</code>, <code class="k">GoldShield</code>, <code class="k">Knightshield</code>, <code class="k">OrcShield</code>, <code class="k">GuildShield</code>, <code class="k">SoldierShield</code>, <code class="k">DukeShield</code>, <code class="k">PrincessShield</code>, <code class="k">RebelShield</code></td></tr>
+<tr><td>Helmets (17)</td><td><code class="k">Helmet</code>, <code class="k">Helm</code>, <code class="k">SimpleHelm</code>, <code class="k">Circlet</code>, <code class="k">IvyCirclet</code>, <code class="k">FaceMask</code>, <code class="k">AntMask</code>, <code class="k">CowMask</code>, <code class="k">DaemonMask</code>, <code class="k">FeyMask</code>, <code class="k">KriipaMask</code>, <code class="k">MummyMask</code>, <code class="k">RatMask</code>, <code class="k">ShrunkenHeadMask</code>, <code class="k">SkullMask</code>, <code class="k">TrollMask</code>, <code class="k">XeoMask</code></td></tr>
+<tr><td>Shirts (3)</td><td><code class="k">Shirt</code>, <code class="k">Tanktop</code>, <code class="k">RoyalShirt</code></td></tr>
+<tr><td>Legs (7)</td><td><code class="k">Pants</code>, <code class="k">PantsA</code>, <code class="k">PantsB</code>, <code class="k">PantsC</code>, <code class="k">PantsD</code>, <code class="k">Skirt</code>, <code class="k">ShortSkirt</code></td></tr>
+<tr><td>Totems (6, no defensive effect)</td><td><code class="k">Totem</code>, <code class="k">TotemOne</code>, <code class="k">TotemTwo</code>, <code class="k">TotemThree</code>, <code class="k">TotemFour</code>, <code class="k">TotemFive</code></td></tr>
+</tbody>
+</table>
+
+<hr>
+
+<h2>Quick reference</h2>
+
+<table class="data">
+<thead><tr><th>Constant</th><th>Value</th><th>Where</th></tr></thead>
+<tbody>
+<tr><td><code class="k">MAX_RESISTANCE</code></td><td>100</td><td>blakston.khd:1521</td></tr>
+<tr><td><code class="k">NO_RESISTANCE</code></td><td>0</td><td>blakston.khd:1522</td></tr>
+<tr><td><code class="k">MIN_RESISTANCE</code></td><td>&minus;100</td><td>blakston.khd:1523</td></tr>
+<tr><td><code class="k">EQUAL_CHANCE_HIT</code></td><td>55</td><td>battler.kod:19</td></tr>
+<tr><td>Hit chance clamp</td><td>10&ndash;95%</td><td>battler.kod:334</td></tr>
+<tr><td>Defense score clamp</td><td>1&ndash;1000</td><td>player.kod:4333</td></tr>
+<tr><td><code class="k">MAX_DAMAGE_PER_HIT</code></td><td>30</td><td>player.kod:113</td></tr>
+<tr><td><code class="k">MAX_HEALTH_DAMAGE_FRACTION</code></td><td>3</td><td>player.kod:109</td></tr>
+<tr><td><code class="k">DAMAGE_CHANCE</code> (defmod wear gate)</td><td>50</td><td>defmod.kod:18</td></tr>
+<tr><td><code class="k">ARMOR_TAKE_DAMAGE_PCT</code></td><td>75</td><td>item.kod:18</td></tr>
+<tr><td>Base max health cap</td><td>150</td><td>player.kod:5903-5905</td></tr>
+<tr><td>Stat cap (<code class="k">MAXIMUM_STAT</code>)</td><td>70</td><td>player.kod:116</td></tr>
+<tr><td>Skill ability range</td><td>1&ndash;99</td><td>player.kod:7333</td></tr>
+<tr><td>Spellpower range</td><td>1&ndash;99</td><td>blakston.khd:2089-2090</td></tr>
+</tbody>
+</table>

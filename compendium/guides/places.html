@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Places and Travel — Meridian 59 Compendium</title>
+<meta name="description" content="The world is 268 rooms that create creatures, grouped into six settlements and the wilderness between them. What a room lets you do is decided by a bitmask of sixteen flags — one of which turns off death, one of which turns off magic, and one of which makes anyone in it killable. Reading those flags before you walk in is the difference between a safe town and a kill zone that looks like one.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html" class="on">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Guides</a> › Places and Travel</p>
+<h1>Places and Travel</h1>
+
+<p class="lede">The world is 268 rooms that create creatures, grouped into six settlements and the
+wilderness between them. What a room lets you do is decided by a bitmask of sixteen flags — one
+of which turns off death, one of which turns off magic, and one of which makes anyone in it
+killable. Reading those flags before you walk in is the difference between a safe town and a
+kill zone that looks like one.</p>
+
+<h2>The sixteen room flags</h2>
+
+<p>Every one of these is checked somewhere in the server. The descriptions are the game's own
+comments.</p>
+
+<table class="data">
+<thead><tr><th>Flag</th><th>Value</th><th>What it does to you</th></tr></thead>
+<tbody>
+<tr><td><code class="k">ROOM_SAFE_DEATH</code></td><td>0x0001</td><td>Death has no consequences here — and, crucially, <strong>no advancement either</strong></td></tr>
+<tr><td><code class="k">ROOM_NO_COMBAT</code></td><td>0x0002</td><td>No fighting at all</td></tr>
+<tr><td><code class="k">ROOM_NO_PK</code></td><td>0x0004</td><td>Players may not attack each other</td></tr>
+<tr><td><code class="k">ROOM_GUILD_PK_ONLY</code></td><td>0x0008</td><td>Only guild members may attack each other</td></tr>
+<tr><td><code class="k">ROOM_NO_MAGIC</code></td><td>0x0010</td><td>No magic may be cast here at all</td></tr>
+<tr><td><code class="k">ROOM_HOMETOWN</code></td><td>0x0020</td><td>An inn you may declare as your home</td></tr>
+<tr><td><code class="k">ROOM_LAMPS</code></td><td>0x0040</td><td>Light and background changes reach passive objects</td></tr>
+<tr><td><code class="k">ROOM_SANCTUARY</code></td><td>0x0080</td><td>Vigour heals <strong>twice</strong> as fast</td></tr>
+<tr><td><code class="k">ROOM_ANTI_MAGIC</code></td><td>0x0100</td><td>Spell power is reduced by the room's aura</td></tr>
+<tr><td><code class="k">ROOM_KILL_ZONE</code></td><td>0x0200</td><td><strong>Anyone may be killed here</strong></td></tr>
+<tr><td><code class="k">ROOM_GUEST_AREA</code></td><td>0x0400</td><td>One of the guest rooms</td></tr>
+<tr><td><code class="k">ROOM_HARD_LEARN</code></td><td>0x0800</td><td>Advancing in spells is ten times harder — deprecated</td></tr>
+<tr><td><code class="k">ROOM_SAFELOGOFF</code></td><td>0x1000</td><td>Logging off here incurs no penalty</td></tr>
+<tr><td><code class="k">ROOM_TRIPLE_HEAL</code></td><td>0x2000</td><td>Vigour heals <strong>three times</strong> as fast</td></tr>
+<tr><td><code class="k">ROOM_JIG</code></td><td>0x4000</td><td>The Jala <em>jig</em> spell: kills monster generation and disallows item use</td></tr>
+<tr><td><code class="k">ROOM_NO_MOB_COMBAT</code></td><td>0x8000</td><td>Monsters cannot fight; players still can</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:1032–1066</p>
+
+<div class="warn"><strong><code class="k">ROOM_SAFE_DEATH</code> also switches off progression.</strong>
+<code class="k">AdvancementCheck</code> returns immediately in such a room, and so does
+<code class="k">ImproveAbility</code>. An arena without real death is a place where nothing you do
+counts — neither the dying nor the winning.
+<span class="cite">kod/object/active/holder/nomoveon/battler/player.kod:7748–7753 · kod/object/passive/spell.kod:1641–1646</span></div>
+
+<div class="note">Two flags do the same job at different strengths: <code class="k">ROOM_SANCTUARY</code>
+doubles vigour recovery and <code class="k">ROOM_TRIPLE_HEAL</code> triples it. If you are resting
+between fights, resting in the right room is worth a third of the time.</div>
+
+<h2>Where the world is</h2>
+
+<p>Rooms are organised in the source by settlement. These are the 268 that put creatures into
+play — the ones you will actually fight in.</p>
+
+<table class="data">
+<thead><tr><th>Region</th><th>Rooms</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td><strong>Barloque</strong> <code class="k">barlqrm</code></td><td>13</td><td>The capital. Adventurer's Hall, Brownestone Inn, the Justicar's office, the old jailhouse, Joguer's herb shop. The guild creator lives here.</td></tr>
+<tr><td><strong>Tos</strong> <code class="k">tosrm</code></td><td>15</td><td>East Ende, the Streets of Tos, the Arena of Kraanan, the First Royal Bank, the Hall of the Forgotten Heroes, Frisconar's Mysticals.</td></tr>
+<tr><td><strong>Cor Noth</strong> <code class="k">crnthrm</code></td><td>8</td><td>Solomon's Edibles, the Cibilo Creek Inn, the Hall of Genealogy, the Weapon Master's Abode.</td></tr>
+<tr><td><strong>Jasper</strong> <code class="k">jasperrm</code></td><td>23</td><td>The Royal Bank of Jasper, East Jasper and a large lettered block of streets.</td></tr>
+<tr><td><strong>Ko'catan</strong> <code class="k">kocarm</code></td><td>13</td><td>The island settlement. Two Lizards Magic Shop, the Hungry Vaults, the Hall of Heroes, the East and West Towers.</td></tr>
+<tr><td><strong>Marion</strong> <code class="k">marnrm</code></td><td>3</td><td>Small. The Adventurer's Hall and Lady Aftyn's Sanctuary.</td></tr>
+<tr><td><strong>The wilderness</strong> <code class="k">monsroom</code></td><td>79</td><td>The Badlands, the Sewers of Barloque, Castle Victoria, the Bourgeois Castle, the Assembly Chamber and everything else that is not a town.</td></tr>
+<tr><td><strong>The Ko'catan jungle</strong> <code class="k">monsroom/kcforest</code></td><td>23</td><td>Cliff Hive, the Jungle Cliffs, the Avar villages, the Mad Scientist's hut, the Guard Tower.</td></tr>
+<tr><td><strong>The Fey Forest</strong> <code class="k">monsroom/feyforst</code></td><td>8</td><td>Quilicia Wood, Elhadrim and Lower Elhadrim, Dirhadrim, the Fey's Crossing, the Vale of Sorrows.</td></tr>
+<tr><td><strong>Object rooms</strong> <code class="k">monsroom/objroom</code></td><td>21</td><td>Set pieces: the Duke's Feast Hall and Grand Ballroom, Martyr's Battleground, the Berdonne Canyons.</td></tr>
+<tr><td><strong>Boss lairs</strong> <code class="k">monsroom/bossroom</code></td><td>2</td><td>Lair of the Orc Pit Boss; the Ancient Smuggler's Crossing.</td></tr>
+<tr><td><strong>Guild halls</strong> <code class="k">ghall</code></td><td>15</td><td>Fifteen distinct halls, from Mercenary Alley to the Inner Sanctum of Queen Venya'cyr.</td></tr>
+<tr><td><strong>Raza</strong> <code class="k">guest1…8</code></td><td>8</td><td>The guest area: inn, blacksmith, magic shop, pub, and the Grand Museum.</td></tr>
+<tr><td><strong>Rented rooms</strong> <code class="k">rentroom</code></td><td>3</td><td>Private rooms you can hold.</td></tr>
+</tbody>
+</table>
+<p class="cite">compiled from every room class that creates a creature — see <code class="k">data/spawns.json</code>, built by <code class="k">tools/extract-spawns.mjs</code></p>
+
+<p>Every creature page in <a href="../creatures/index.html">the bestiary</a> lists the exact rooms
+that spawn it, how it is spawned, and the file and line that says so — and the bestiary index has
+a <em>Where found</em> column you can sort and filter on.</p>
+
+<h2>The Underworld</h2>
+
+<p><code class="k">RID_UNDERWORLD</code> is region 1. It is where you wake after dying, and it has
+no ordinary exits — see <a href="death.html">Death, the Underworld and PvP</a> for how to leave
+and what it costs.</p>
+<p class="cite">kod/include/blakston.khd:375</p>
+
+<h2>The newbie region</h2>
+
+<p><code class="k">RID_NEWB_BASE</code> is exempted from karma changes entirely — killing anything
+there moves your alignment not at all. The stated reason is protective: without it, a new
+character could accidentally push their karma past the gate on a spell they already own and
+render it uncastable.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6536–6542</p>
+
+<h2>Arenas</h2>
+
+<p>An arena is checked separately from the room flags, and two things follow from it:
+<strong>no karma changes</strong>, and <strong>no advancement unless real death is switched
+on</strong>. An arena is for practice and for spectacle, not for progress.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6544–6548, :7750</p>
+
+<h2>Where the room changes your magic</h2>
+
+<p>Three of the six schools read the room itself when computing spell power, so <em>where you
+stand</em> is worth up to 30 points on a 99-point scale:</p>
+
+<table class="data">
+<thead><tr><th>School</th><th>What it reads</th></tr></thead>
+<tbody>
+<tr><td><a href="shalille.html">Shal'ille</a></td><td>The room's natural setting — <code class="k">GetShalilleBonus</code></td></tr>
+<tr><td><a href="faren.html">Faren</a></td><td>The room's water and fire — <code class="k">GetFarenBonus</code></td></tr>
+<tr><td><a href="kraanan.html">Kraanan</a></td><td>The number of active beings in the room</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:2107–2184</p>
+
+<p>And <code class="k">ROOM_ANTI_MAGIC</code> subtracts the antimagic aura's value from spell power
+directly, partly offset by any mana convergence in effect.</p>
+<p class="cite">kod/object/passive/spell.kod:2204–2214</p>
+
+<h2>Getting around</h2>
+
+<ul>
+<li><strong><a href="../spells/blink.html">Blink</a></strong> — Riija level 1, 15 mana, teleports
+you to the local place of power. A ten-second trance, so it is a travel spell, not an escape.</li>
+<li><strong><a href="../spells/elusion.html">Elusion</a></strong> — Riija level 6, instant. This
+is the escape.</li>
+<li><strong><a href="../spells/portaloflife.html">Portal of Life</a></strong> — Shal'ille.</li>
+<li><strong>Inns</strong> — a room with <code class="k">ROOM_HOMETOWN</code> can be declared your
+home, which is where several effects return you to.</li>
+<li><strong>Safe logoff</strong> — <code class="k">ROOM_SAFELOGOFF</code> rooms cost you nothing
+for leaving. Elsewhere, logging off has a penalty.</li>
+</ul>
+
+<h2>Where a new character should go</h2>
+
+<ol>
+<li><strong>The newbie region first.</strong> Karma cannot be damaged there, and while your
+maximum health is under 30 every kill carries a bonus advancement point.</li>
+<li><strong>Then a town's outskirts</strong> — Barloque's sewers, the streets of Tos. Low-level
+creatures, a bank and an Adventurer's Hall within reach.</li>
+<li><strong>Then the wilderness by difficulty, not level.</strong> Sort
+<a href="../creatures/index.html">the bestiary</a> by how likely a creature is to hit you and
+work down. Fighting things above your level is the only thing that raises maximum health.</li>
+<li><strong>The jungle and the Fey Forest late.</strong> The Avar camps and Elhadrim hold the
+high-difficulty creatures — and the best treasure tables, because drop count keys off
+difficulty.</li>
+</ol>
+
+<p>Related: <a href="../creatures/index.html">Bestiary</a>, with per-creature spawn rooms ·
+<a href="death.html">Death and the Underworld</a> · <a href="advancing.html">Advancing Your
+Character</a> · <a href="economy.html">Money and Merchants</a> ·
+<a href="../npcs/index.html">NPCs</a> · <a href="guilds.html">Guilds</a></p>
+
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

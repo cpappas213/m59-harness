@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>herald shield — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › herald shield</p>
+<div class="hero"><div class="heroText"><h1>herald shield</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">shield</span><span class="tag ">hand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">200</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">150</div></div><div class="fact"><div class="lbl">Value</div><div class="val">400 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">350–400</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">hand</div></div></div><h2>As protection</h2><div class="facts"><div class="fact"><div class="lbl">Defence bonus</div><div class="val">20</div></div><div class="fact"><div class="lbl">Flat reduction</div><div class="val sm">random(0, 2)</div></div></div><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Attack type</th><th class="num ">Resistance</th><th class="num ">A 20-point hit becomes</th></tr></thead>
+<tbody><tr><td class=""><code class="k">ATCK_WEAP_PIERCE</code></td><td class="num " data-sort="10">10%</td><td class="num ">17.1</td></tr></tbody></table></div><p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod <code class="k">GetResistanceModifiers</code> · applied by kod/object/active/holder/nomoveon/battler.kod:189 <code class="k">ResistanceCheck</code> and :251 <code class="k">GetDamageFromResistance</code></p><p>The "20-point hit" column assumes this is the only thing you are wearing and
+uses the average of the flat reduction, which is rolled fresh every blow. Unarmoured, the same
+hit costs you the full 20.</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:11</p>
+<p><code class="k">GuildShield</code> is <code class="k">Shield</code> — full chain <code class="k">GuildShield</code> ← <code class="k">Shield</code> ← <code class="k">DefenseModifier</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>guildshield_name_rsc</code></td><td class=""><em>herald shield</em></td><td class="num " data-sort="105">105</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>350</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="107">107</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>400</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="108">108</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>400</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="111">111</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>200</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="112">112</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>150</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="113">113</td></tr>
+<tr><td class=""><code class="k">viDefense_base</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="115">115</td></tr>
+<tr><td class=""><code class="k">viDamage_base</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="116">116</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>guildshield_desc_rsc</code></td><td class="num " data-sort="120">120</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>guildshield_base_sash</code></td><td class="num " data-sort="121">121</td></tr>
+<tr><td class=""><code class="k">vrShield_overlay</code></td><td class=""><code>guildshield_base_sash</code></td><td class="num " data-sort="122">122</td></tr>
+<tr><td class=""><code class="k">prShield_emblem_held</code></td><td class=""><code>$</code></td><td class="num " data-sort="123">123</td></tr>
+<tr><td class=""><code class="k">prShield_emblem_drop</code></td><td class=""><code>$</code></td><td class="num " data-sort="124">124</td></tr>
+<tr><td class=""><code class="k">vrShield_window_overlay</code></td><td class=""><code>guildshield_window_overlay_rsc</code></td><td class="num " data-sort="125">125</td></tr>
+<tr><td class=""><code class="k">piInsigniaType</code></td><td class=""><code>INSIG_NONE</code></td><td class="num " data-sort="126">126</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>3</code></td><td class="num " data-sort="128">128</td></tr>
+<tr><td class=""><code class="k">viInventory_group</code></td><td class=""><code>1</code></td><td class="num " data-sort="129">129</td></tr>
+<tr><td class=""><code class="k">viBroken_group</code></td><td class=""><code>4</code></td><td class="num " data-sort="130">130</td></tr>
+<tr><td class=""><code class="k">piShield_shape</code></td><td class=""><code>SHIELDSHAPE_DEFAULT</code></td><td class="num " data-sort="132">132</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(color1 = XLAT_TO_GRAY, color2 = XLAT_TO_GRAY, shape = SHIELDSHAPE_DEFAULT, guildMember = $)</h4>
+<pre><code>{
+      local oGuild;
+      
+      if guildMember &lt;&gt; $
+      {
+         oGuild = send(guildMember,@GetGuild);
+         color1 = send(oGuild,@GetPrimaryGuildColor);
+         color2 = send(oGuild,@GetSecondaryGuildColor);
+         shape  = send(oGuild,@GetShieldShape);
+      }
+      
+      send(self,@ChangeGuildShieldColor,#color1=color1,#color2=color2,#shape=shape,#override=TRUE);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:136</p>
+<h4>IsShieldColored()</h4>
+<pre><code>{
+      local XLAT;
+      XLAT = send(self,@GetPaletteTranslation);
+
+      if (send(SYS,@DecodePrimaryColor,#xlat=XLAT) = XLAT_TO_GRAY)
+         AND (send(SYS,@DecodeSecondaryColor,#xlat=XLAT) = XLAT_TO_GRAY)
+      {
+         return FALSE;
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:153</p>
+<h4>AppendColor(color = 0)</h4>
+<pre><code>{
+      if color = XLAT_TO_RED { AppendTempString(guildshield_red); return; }
+      if color = XLAT_TO_SKIN1 { AppendTempString(guildshield_skin1); return; }
+      if color = XLAT_TO_SKIN2 { AppendTempString(guildshield_skin2); return; }
+      if color = XLAT_TO_SKIN4 { AppendTempString(guildshield_skin4); return; }
+      if color = XLAT_TO_ORANGE { AppendTempString(guildshield_orange); return; }
+      if color = XLAT_TO_GREEN { AppendTempString(guildshield_green); return; }
+      if color = XLAT_TO_BLUE { AppendTempString(guildshield_blue); return; }
+      if color = XLAT_TO_PURPLE { AppendTempString(guildshield_purple); return; }
+      if color = XLAT_TO_YELLOW { AppendTempString(guildshield_yellow); return; }
+      if color = XLAT_TO_GRAY { AppendTempString(guildshield_gray); return; }
+      if color = XLAT_TO_SKY { AppendTempString(guildshield_sky); return; }
+
+      AppendTempString(guildshield_unknown);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:167</p>
+<h4>DoBaseDesc()</h4>
+<pre><code>{
+      local a, b, x;
+
+      
+      AppendTempString(vrDesc);
+
+      
+      
+      
+
+      AppendTempString(&quot;  &quot;);
+      AppendTempString(guildshield_heraldry_prefix);
+
+      
+      x = send(self,@GetPaletteTranslation);
+      a = send(SYS,@DecodePrimaryColor,#xlat=x);
+      send(self,@AppendColor,#color=a);
+
+      
+      if piShield_shape = SHIELDSHAPE_SLASH { AppendTempString(guildshield_slash); }
+      if piShield_shape = SHIELDSHAPE_HALF { AppendTempString(guildshield_half); }
+      if piShield_shape = SHIELDSHAPE_HORIZ { AppendTempString(guildshield_horiz); }
+      if piShield_shape = SHIELDSHAPE_CHECKER { AppendTempString(guildshield_checker); }
+
+      
+      b = send(SYS,@DecodeSecondaryColor,#xlat=x);
+      send(self,@AppendColor,#color=b);
+
+      
+      x = send(SYS,@FindGuildByShield,#color1=a,#color2=b,#shape=piShield_shape);
+      if (x &lt;&gt; $) and isClass(x,&amp;Guild)
+      {
+         if not send(x, @IsSecret)
+         {
+            AppendTempString(guildshield_heraldry_known);
+            AppendTempString(send(x, @GetName));
+         }
+      }
+      AppendTempString(guildshield_heraldry_postfix);
+
+      
+      if piInsigniaType &lt;&gt; INSIG_NONE
+      {
+         AppendTempString(&quot;  &quot;);
+      }
+      if piInsigniaType = INSIG_RIIJA { AppendTempString(guildshield_insig_riija); }
+      if piInsigniaType = INSIG_QOR { AppendTempString(guildshield_insig_qor); }
+      if piInsigniaType = INSIG_KRAANAN { AppendTempString(guildshield_insig_kraanan); }
+      if piInsigniaType = INSIG_FAREN { AppendTempString(guildshield_insig_faren); }
+      if piInsigniaType = INSIG_JALA { AppendTempString(guildshield_insig_jala); }
+      if piInsigniaType = INSIG_PRINCESS { AppendTempString(guildshield_insig_princess); }
+      if piInsigniaType = INSIG_DUKE { AppendTempString(guildshield_insig_duke); }
+      if piInsigniaType = INSIG_SHALILLE { AppendTempString(guildshield_insig_shalille); }
+      if piInsigniaType = INSIG_REBEL { AppendTempString(guildshield_insig_rebel); }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:186</p>
+<h4>Randomize()</h4>
+<p>Admin supported.</p>
+<pre><code>{
+      local color1, color2, shape, insignia;
+
+      color1 = random(XLAT_TO_RED, XLAT_TO_SKY);
+      color2 = random(XLAT_TO_RED, XLAT_TO_SKY);
+      shape = random(SHIELDSHAPE_SLASH, SHIELDSHAPE_CHECKER);
+      insignia = random(INSIG_RIIJA, INSIG_NONE);
+
+      send(self,@ChangeGuildShieldColor,#color1=color1,#color2=color2,#shape=shape,#override=TRUE);
+      send(self,@ChangeGuildInsignia,#insignia=insignia);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:245</p>
+<h4>ChangeGuildInsignia(insignia = 0)</h4>
+<pre><code>{
+      prShield_emblem_held = $;
+      prShield_emblem_drop = $;
+
+      if insignia = INSIG_RIIJA
+      {
+         prShield_emblem_held = guildshield_riija_over;
+         prShield_emblem_drop = guildshield_riija;
+      }
+      
+      if insignia = INSIG_QOR
+      {
+         prShield_emblem_held = guildshield_qor_over;
+         prShield_emblem_drop = guildshield_qor;
+      }
+      
+      if insignia = INSIG_KRAANAN
+      {
+         prShield_emblem_held = guildshield_kraanan_over;
+         prShield_emblem_drop = guildshield_kraanan;
+      }
+      
+      if insignia = INSIG_FAREN
+      {
+         prShield_emblem_held = guildshield_faren_over;
+         prShield_emblem_drop = guildshield_faren;
+      }
+      
+      if insignia = INSIG_JALA
+      {
+         prShield_emblem_held = guildshield_jala_over;
+         prShield_emblem_drop = guildshield_jala;
+      }
+      
+      if insignia = INSIG_PRINCESS
+      {
+         prShield_emblem_held = guildshield_princess_over;
+         prShield_emblem_drop = guildshield_princess;
+      }
+      
+      if insignia = INSIG_DUKE
+      {
+         prShield_emblem_held = guildshield_duke_over;
+         prShield_emblem_drop = guildshield_duke;
+      }
+      
+      if insignia = INSIG_SHALILLE
+      {
+         prShield_emblem_held = guildshield_shalille_over;
+         prShield_emblem_drop = guildshield_shalille;
+      }
+      
+      if insignia = INSIG_REBEL
+      {
+         prShield_emblem_held = guildshield_rebel_over;
+         prShield_emblem_drop = guildshield_rebel;
+      }
+ 
+      piInsigniaType = insignia;
+
+      if poOwner &lt;&gt; $
+      {
+         post(poOwner,@SomethingChanged,#what=self);
+      }
+
+      return;   
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:261</p>
+<h4>ChangeGuildShieldColor(color1 = XLAT_TO_GRAY, color2 = XLAT_TO_GRAY, shape = SHIELDSHAPE_DEFAULT, override = FALSE)</h4>
+<pre><code>{
+      local XLAT;
+      
+      
+
+      if NOT override AND send(self,@IsShieldColored)
+      {
+         return FALSE;
+      }
+
+      if (color1 &gt; XLAT_HIGH_VALUE) or (color2 &gt; XLAT_HIGH_VALUE)
+      {
+         if color1 = XLAT_TO_DGREEN
+         {
+            color1 = XLAT_TO_GREEN;
+         }
+         
+         if color2 = XLAT_TO_DGREEN
+         {
+            color2 = XLAT_TO_GREEN;
+         }
+         
+         if color1 = XLAT_TO_BLACK
+         {
+            color1 = XLAT_TO_GRAY;
+         }
+         
+         if color2 = XLAT_TO_BLACK
+         {
+            color2 = XLAT_TO_GRAY;
+         }
+      }
+      
+      if (color1 &lt; XLAT_LOW_VALUE) OR (color1 &gt; XLAT_HIGH_VALUE)
+         OR (color2 &lt; XLAT_LOW_VALUE) OR (color2 &gt; XLAT_HIGH_VALUE)
+      {
+         return FALSE;
+      }
+
+      XLAT = send(SYS,@EncodeTwoColorXLAT,#color1=color1,#color2=color2);
+      send(self,@SetPaletteTranslation,#translation=XLAT);
+      piShield_shape = shape;
+
+      if piShield_shape = SHIELDSHAPE_SLASH
+      {  
+         vrIcon = guildshield_base_sash; 
+         vrShield_overlay = guildshield_base_sash; 
+         vrShield_window_overlay = guildshield_pov_sash;
+      }
+      
+      if piShield_shape = SHIELDSHAPE_HALF
+      {  
+         vrIcon = guildshield_base_halvesv; 
+         vrShield_overlay = guildshield_base_halvesv; 
+         vrShield_window_overlay = guildshield_pov_halvesv;
+      }
+      
+      if piShield_shape = SHIELDSHAPE_HORIZ
+      {  
+         vrIcon = guildshield_base_stripeh; 
+         vrShield_overlay = guildshield_base_stripeh;       
+         vrShield_window_overlay = guildshield_pov_stripeh;
+      }
+      
+      if piShield_shape = SHIELDSHAPE_CHECKER
+      {  
+         vrIcon = guildshield_base_checker; 
+         vrShield_overlay = guildshield_base_checker;        
+         vrShield_window_overlay = guildshield_pov_checker;
+      }
+
+      
+      if poOwner &lt;&gt; $
+      {
+         send(poOwner,@SomethingChanged,#what=self);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:330</p>
+<h4>GetNumberOverlays()</h4>
+<pre><code>{
+      if prShield_emblem_held &lt;&gt; $
+      {
+         return 2;
+      }
+      
+      return 1;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:411</p>
+<h4>GetOverlay()</h4>
+<pre><code>{
+      return vrShield_overlay;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:421</p>
+<h4>GetOverlayHotspot()</h4>
+<pre><code>{
+      return HS_LEFT_WEAPON;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:426</p>
+<h4>SendOverlayInformation(iAnimation = $)</h4>
+<pre><code>{
+      AddPacket(4,vrShield_Overlay);
+      AddPacket(1,HS_LEFT_WEAPON);
+      Send(self,@SendHeldAnimation,#iAnimation=iAnimation);       
+
+      if prShield_emblem_held &lt;&gt; $
+      {
+         AddPacket(4,prShield_emblem_held);
+         AddPacket(1,HS_LEFT_WEAPON);
+         AddPacket(1,ANIMATE_NONE,2,1);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:431</p>
+<h4>SendHeldAnimation()</h4>
+<pre><code>{
+      local XLAT;
+
+      XLAT = send(self,@GetPaletteTranslation);
+      AddPacket(1,ANIMATE_TRANSLATION,1,XLAT);
+      AddPacket(1,ANIMATE_NONE,2,2);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:447</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      local XLAT;
+
+      XLAT = send(self,@GetPaletteTranslation);
+      AddPacket(1,ANIMATE_TRANSLATION,1,XLAT);
+
+      if piHits &gt; 0
+      {
+         AddPacket(1,ANIMATE_NONE,2,viGround_group);
+      }
+      else
+      {
+         AddPacket(1,ANIMATE_NONE,2,viBroken_group);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:458</p>
+<h4>SendWindowOverlayAnimation()</h4>
+<pre><code>{
+      local XLAT;
+
+      XLAT = send(self,@GetPaletteTranslation);
+      AddPacket(1,ANIMATE_TRANSLATION,1,XLAT);
+
+      if piUsed = DEFENDING
+      { 
+         AddPacket(1,ANIMATE_ONCE,4,1000,2,2,2,2,2,1);
+         
+         return;
+      }
+      
+      AddPacket(1,ANIMATE_NONE,2,1);
+      
+      return;      
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:477</p>
+<h4>SendOverlays()</h4>
+<pre><code>{
+      if prShield_emblem_held &lt;&gt; $
+      {      
+         AddPacket(1,1);   
+         AddPacket(4,prShield_emblem_drop,1,1,1,ANIMATE_NONE,2,2);
+      }
+      else
+      {
+         AddPacket(1,0);   
+      }
+      
+      return;   
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:496</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      local XLAT;
+
+      XLAT = send(self,@GetPaletteTranslation);
+      AddPacket(1,ANIMATE_TRANSLATION,1,XLAT);
+     
+      if piHits &gt; 0
+      {
+         AddPacket(1,ANIMATE_NONE,2,viInventory_group);
+      }
+      else
+      {
+         AddPacket(1,ANIMATE_NONE,2,viBroken_group);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:511</p>
+<h4>SendLookOverlays()</h4>
+<pre><code>{
+      if prShield_emblem_held &lt;&gt; $
+      {      
+         AddPacket(1,1);   
+         AddPacket(4,prShield_emblem_drop,1,1,1,ANIMATE_NONE,2,1);
+      }
+      else
+      {
+         AddPacket(1,0);   
+      }
+      
+      return;   
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:530</p>
+<h4>SendInventoryAnimation()</h4>
+<pre><code>{
+      Send(self,@SendLookAnimation);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:545</p>
+<h4>SendInventoryOverlays()</h4>
+<pre><code>{
+      Send(self,@SendLookOverlays);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:552</p>
+<h4>GetResistanceModifiers()</h4>
+<pre><code>{
+      return [ [ATCK_WEAP_PIERCE,10] ];
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:559</p>
+<h4>GetBaseSpellModifier(oSpell = $)</h4>
+<pre><code>{
+      local iSchool;
+
+      if oSpell = $ OR piInsigniaType = INSIG_NONE
+      {
+         return 0;
+      }
+
+      iSchool = send(oSpell,@GetSchool);
+      
+      
+      if (piInsigniaType = INSIG_FAREN AND iSchool = SS_FAREN)
+         OR (piInsigniaType = INSIG_KRAANAN AND iSchool = SS_KRAANAN)
+         OR (piInsigniaType = INSIG_QOR AND iSchool = SS_QOR)
+         OR (piInsigniaType = INSIG_SHALILLE AND iSchool = SS_SHALILLE)
+         OR (piInsigniaType = INSIG_RIIJA AND iSchool = SS_RIIJA)
+         OR (piInsigniaType = INSIG_JALA AND iSchool = SS_JALA)
+      {
+         return 10;
+      }
+
+      
+      if piInsigniaType = INSIG_DUKE
+         OR piInsigniaType = INSIG_PRINCESS
+         OR piInsigniaType = INSIG_REBEL
+      {
+         return random(3,7);
+      }
+
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/defmod/shield/guilshld.kod:564</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

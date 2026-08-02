@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>blink — Meridian 59 Compendium</title>
+<meta name="description" content="Riija Level 1: The Trickster's most basic spell teleports you to the local place of power.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › blink</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/iblink_g1.png" alt="blink" width="128" height="128"></div><div class="heroText"><h1>blink</h1><p class="lede">Riija Level 1: The Trickster's most basic spell teleports you to the local place of power.</p><div class="tags"><a class="tag school-5" href="../guides/riija.html">Riija</a><span class="tag ">Level 1</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/riija.html">Riija</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">1</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">15</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">10000 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">32</div></div></div><div class="flavor">Teleports you to a central location in the room. Requires nothing but a will to move.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">15</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><span class="muted">none</span></td><td class="">This spell needs no material component.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">20</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">10000 ms trance</td><td class="">You are locked in a casting trance for this long; taking damage can break it.</td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/blink.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>No teacher in the current world data offers this spell. It may be granted by a quest, by an item, or reserved for monsters and administrators.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">CastSpell</code></li><li><code class="k">SuccessChance</code> — Since Blink is a bug fix, always have it succeed.</li><li><code class="k">CanForget</code> — Blink will not be killed by a forget potion.</li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/iblink_g1.png" alt="blink group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/iblink_g2.png" alt="blink group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/blink.kod:11</p>
+<p><code class="k">Blink</code> is <code class="k">Spell</code> — full chain <code class="k">Blink</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>blink_name_rsc</code></td><td class=""><em>blink</em></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>blink_icon_rsc</code></td><td class=""><em>iblink.bgf</em></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>blink_desc_rsc</code></td><td class=""><em>Teleports you to a central location in the room.  Requires nothing but a will to move.</em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">viCast_time</code></td><td class=""><code>10000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="33">33</td></tr>
+<tr><td class=""><code class="k">vrSpell_intro</code></td><td class=""><code>blink_spell_intro</code></td><td class=""><em>Riija Level 1: The Trickster's most basic spell teleports you to the local place of power.</em></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_BLINK</code></td><td class="">32</td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_RIIJA</code></td><td class="">5</td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>15</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viChance_To_Increase</code></td><td class=""><code>15</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      plReagents = $;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/blink.kod:48</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/blink.kod:55</p>
+<h4>CastSpell(who = $, lTargets = $)</h4>
+<pre><code>{
+      local owner, oRoom;
+
+      owner = Send(who,@GetOwner);
+
+      if send(owner,@GetRoomNum) = RID_KOC_HALL_OF_HEROES
+      {
+         oRoom = send(SYS,@FindRoomByNum,#num=RID_TOS_FORGET);
+         if oRoom &lt;&gt; $
+         {
+            post(oRoom,@Teleport,#what=who);
+            send(who, @MsgSendUser, #message_rsc=blink_cast_special);
+
+            propagate;
+         }
+      }
+
+      if send(owner,@GetRoomNum) = RID_BAZMANS_ROOM
+      {
+         oRoom = send(SYS,@FindRoomByNum,#num=RID_FORGOTTEN_TOO);
+         if oRoom &lt;&gt; $
+         {
+            post(oRoom,@teleport,#what=who);
+            send(who, @MsgSendUser, #message_rsc=blink_cast_special);
+
+            propagate;
+         }
+      }
+
+      send(owner,@Teleport,#what=who);  
+      send(who, @MsgSendUser, #message_rsc=blink_cast_rsc);
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/blink.kod:60</p>
+<h4>SuccessChance(who = $)</h4>
+<p>Since Blink is a bug fix, always have it succeed.</p>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/blink.kod:95</p>
+<h4>CanForget()</h4>
+<p>Blink will not be killed by a forget potion.</p>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/blink.kod:101</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

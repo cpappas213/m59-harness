@@ -1,0 +1,8 @@
+# Normalise to LF in the repository. This is developed on Windows but the server,
+# and most people who would run an agent against it, are not.
+* text=auto eol=lf
+
+*.png binary
+*.bgf binary
+*.roo binary
+*.tsv text eol=lf

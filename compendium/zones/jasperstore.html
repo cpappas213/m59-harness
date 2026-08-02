@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jasper Store — Meridian 59 Compendium</title>
+<meta name="description" content="Jasper. 0 creature types, 2 exits.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html" class="on">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Zones</a> › Jasper Store</p>
+<h1>Jasper Store</h1><p class="lede">Jasper Store is in <strong>Jasper</strong>, city and shop terrain. Nothing spawns here and it connects to 1 other place.</p><h2>The place itself</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class=""></th><th class=""></th></tr></thead>
+<tbody><tr><td class=""><strong>Region</strong></td><td class="">Jasper</td></tr>
+<tr><td class=""><strong>Room id</strong></td><td class=""><code class="k">RID_JAS_STORE</code> (373)</td></tr>
+<tr><td class=""><strong>Map file</strong></td><td class="">—</td></tr>
+<tr><td class=""><strong>Terrain</strong></td><td class="">city, shop</td></tr>
+<tr><td class=""><strong>You arrive at</strong></td><td class="">row 19, column 5</td></tr>
+<tr><td class=""><strong>Music</strong></td><td class=""><code>bank.mid</code></td></tr></tbody></table></div><p class="cite">kod/object/active/holder/room/jasperrm/jasstore.kod:11</p><h3>Rules in force here</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">ROOM_NO_COMBAT</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">ROOM_OVERRIDE_DEPTH2</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd:1032 — see <a href="../guides/places.html">Places and Travel</a></p><h2>Who is here</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class=""></th><th class="">Name</th><th class="">Standing at</th></tr></thead>
+<tbody><tr><td class=""><img class="icon rowicon" src="../assets/img/jsmerch_g1.png" alt="" loading="lazy"></td><td class=""><a href="../creatures/jaspermerchant.html">Zhieu B'hob</a></td><td class="">row 18, col 8</td></tr></tbody></table></div><p class="muted">16 pieces of scenery — trees, braziers, furniture — are also placed here.</p><h2>Ways out</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Leave by</th><th class="">Arrive at</th><th class="">Region</th></tr></thead>
+<tbody><tr><td class="">the square at row 19, col 1</td><td class=""><a href="jasper.html">East Jasper</a></td><td class="">Jasper</td></tr>
+<tr><td class="">the square at row 19, col 2</td><td class=""><a href="jasper.html">East Jasper</a></td><td class="">Jasper</td></tr></tbody></table></div><p class="cite">kod/object/active/holder/room/jasperrm/jasstore.kod — <code class="k">plEdge_Exits</code> and <code class="k">plExits</code></p><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/room/jasperrm/jasstore.kod:11</p>
+<p><code class="k">JasperStore</code> is <code class="k">JasperRoom</code> — full chain <code class="k">JasperStore</code> ← <code class="k">JasperRoom</code> ← <code class="k">Room</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>room_name_jasperstore</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="26">26</td></tr>
+<tr><td class=""><code class="k">viTeleport_row</code></td><td class=""><code>19</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="28">28</td></tr>
+<tr><td class=""><code class="k">viTeleport_col</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">viPermanent_flags</code></td><td class=""><code>ROOM_NO_COMBAT</code></td><td class="">2</td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">viTerrain_type</code></td><td class=""><code>TERRAIN_CITY | TERRAIN_SHOP</code></td><td class="">6</td><td class="num " data-sort="32">32</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">prRoom</code></td><td class=""><code>room_jasperstore</code></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">piRoom_num</code></td><td class=""><code>RID_JAS_STORE</code></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">prMusic</code></td><td class=""><code>jasstore_music</code></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">piBaseLight</code></td><td class=""><code>LIGHT_NICE</code></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">piOutside_factor</code></td><td class=""><code>3</code></td><td class="num " data-sort="41">41</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>CreateStandardObjects()</h4>
+<pre><code>{
+
+      Send(self,@NewHold,#what=Create(&amp;JasperMerchant),
+           #new_row=18,#new_col=8,#new_angle=ANGLE_WEST);
+
+
+
+      Send(self,@NewHold,#what=Create(&amp;Brazier),
+           #new_row=3,#new_col=3);
+      Send(self,@NewHold,#what=Create(&amp;Brazier),
+           #new_row=3,#new_col=9);
+      Send(self,@NewHold,#what=Create(&amp;Brazier),
+           #new_row=9,#new_col=3);
+      Send(self,@NewHold,#what=Create(&amp;Brazier),
+           #new_row=9,#new_col=9);
+      Send(self,@NewHold,#what=Create(&amp;Brazier),
+           #new_row=3,#new_col=12);
+      Send(self,@NewHold,#what=Create(&amp;Brazier),
+           #new_row=3,#new_col=16);
+      Send(self,@NewHold,#what=Create(&amp;Brazier),
+           #new_row=11,#new_col=12);
+      Send(self,@NewHold,#what=Create(&amp;Brazier),
+           #new_row=11,#new_col=16);
+      Send(self,@NewHold,#what=Create(&amp;Brazier),
+           #new_row=12,#new_col=3);
+      Send(self,@NewHold,#what=Create(&amp;Brazier),
+           #new_row=12,#new_col=9);
+      Send(self,@NewHold,#what=Create(&amp;Brazier),
+           #new_row=23,#new_col=3);
+      Send(self,@NewHold,#what=Create(&amp;Brazier),
+           #new_row=23,#new_col=9);
+
+      Send(self,@NewHold,#what=Create(&amp;Table),
+           #new_row=5,#new_col=4);
+      Send(self,@NewHold,#what=Create(&amp;Table),
+           #new_row=5,#new_col=7);
+      Send(self,@NewHold,#what=Create(&amp;Table),
+           #new_row=5,#new_col=15);
+      Send(self,@NewHold,#what=Create(&amp;Table),
+           #new_row=9,#new_col=15);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/jasperrm/jasstore.kod:45</p>
+<h4>CreateStandardExits()</h4>
+<pre><code>{
+      plExits = $;
+
+  
+      plExits = Cons([ 19, 1, RID_JASPER, 49, 38, ROTATE_NONE ],plExits);
+      plExits = Cons([ 19, 2, RID_JASPER, 49, 38, ROTATE_NONE ],plExits);
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/jasperrm/jasstore.kod:90</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,94 @@
+<h1>Faren — the School of Nature</h1>
+
+<p class="lede">Faren is the elementalist: water and fire, and the room you are standing in decides how
+much of either you have. It is neutral, so it costs nothing in alignment, and its secondary power
+comes from vigour — the one resource in the game that refills by resting rather than by spending
+money.</p>
+
+<h2>Where Faren stands</h2>
+<table class="data">
+<tbody>
+<tr><td>Polarity</td><td>Neutral — no karma requirement at any level</td></tr>
+<tr><td>Requisite attribute</td><td><strong>Mysticism</strong></td></tr>
+<tr><td>Learning division</td><td>Magic</td></tr>
+<tr><td>Spells</td><td>28, across levels 1–6</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:376 <code class="k">GetDivision</code>, :392 <code class="k">GetDivisionReq</code>, :482 <code class="k">GetRequiredKarma</code></p>
+
+<h2>Where its power comes from</h2>
+<p>Spell power is half your ability in the spell plus the bonuses below, on a scale of 1 to 99.
+It decides your success chance, your mana cost, your casting speed and the strength of the
+effect — see <a href="spells.html">Spells and Spellcasting</a>.</p>
+<table class="data">
+<thead><tr><th>Bonus</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td><strong>Primary, 0–30</strong></td><td>The room's water and fire, via <code class="k">GetFarenBonus</code></td></tr>
+<tr><td><strong>Secondary, 0–10</strong></td><td><code class="k">vigour / 20</code></td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:2161–2167</p>
+
+<h2>What the school is for</h2>
+<p><strong>Elemental damage.</strong> Faren's attack spells carry
+<code class="k">ATCK_SPELL_FIRE</code>, <code class="k">ATCK_SPELL_COLD</code> and
+<code class="k">ATCK_SPELL_SHOCK</code>. That matters twice over: armour's flat damage reduction
+does not apply to pure spell damage at all, and the typed resistances that <em>do</em> apply are
+carried by a handful of rings — see <a href="../armor/index.html">Armour</a> for exactly which.</p>
+<p><strong>Terrain.</strong> Alone among the schools, Faren's primary bonus rewards you for
+reading the room before you pick a fight. The same spell is meaningfully stronger beside water or
+fire than in a bare corridor.</p>
+<div class="note">Vigour is the cheapest secondary bonus in the game to keep topped up — it comes
+back with rest, and faction membership reduces every exertion cost by up to 30%, which keeps it
+higher for free. See <a href="factions.html">Factions</a>.</div>
+
+<h2>Every Faren spell</h2>
+<table class="data">
+<thead><tr><th>Lvl</th><th>Spell</th><th>Mana</th><th>Cast time</th><th>Reagents</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><a href="../spells/summonfog.html">fog</a></td><td>6</td><td>2,000 ms</td><td>elderberry</td></tr>
+<tr><td>1</td><td><a href="../spells/light.html">light</a></td><td>5</td><td>instant</td><td>elderberry</td></tr>
+<tr><td>1</td><td><a href="../spells/mystictouch.html">mystic touch</a></td><td>3</td><td>instant</td><td>mushroom</td></tr>
+<tr><td>1</td><td><a href="../spells/sweep.html">sweep</a></td><td>8</td><td>10,000 ms</td><td>mushroom ×2</td></tr>
+<tr><td>1</td><td><a href="../spells/zap.html">zap</a></td><td>6</td><td>instant</td><td>blue mushroom</td></tr>
+<tr><td>2</td><td><a href="../spells/bramblewall.html">bramble wall</a></td><td>10</td><td>4,000 ms</td><td>elderberry ×3, yrxl sap</td></tr>
+<tr><td>2</td><td><a href="../spells/icyfingers.html">icy fingers</a></td><td>6</td><td>instant</td><td>red mushroom</td></tr>
+<tr><td>2</td><td><a href="../spells/resistcold.html">resist cold</a></td><td>9</td><td>instant</td><td>mushroom ×3, red mushroom</td></tr>
+<tr><td>2</td><td><a href="../spells/touchofflame.html">touch of flame</a></td><td>9</td><td>instant</td><td>red mushroom</td></tr>
+<tr><td>2</td><td><a href="../spells/resistfire.html">withstand fire</a></td><td>4</td><td>instant</td><td>mushroom ×3, red mushroom</td></tr>
+<tr><td>3</td><td><a href="../spells/heat.html">heat</a></td><td>8</td><td>instant</td><td>red mushroom, firesand</td></tr>
+<tr><td>3</td><td><a href="../spells/manafocus.html">mana focus</a></td><td>1</td><td>7,000 ms</td><td>mushroom</td></tr>
+<tr><td>3</td><td><a href="../spells/resistshock.html">resist shock</a></td><td>6</td><td>instant</td><td>mushroom ×3, blue mushroom</td></tr>
+<tr><td>3</td><td><a href="../spells/shockingfury.html">shocking fury</a></td><td>8</td><td>instant</td><td>blue mushroom ×2, elderberry</td></tr>
+<tr><td>3</td><td><a href="../spells/summonweb.html">spider web</a></td><td>15</td><td>3,000 ms</td><td>web moss</td></tr>
+<tr><td>3</td><td><a href="../spells/winds.html">winds</a></td><td>10</td><td>instant</td><td>elderberry ×3, purple mushroom</td></tr>
+<tr><td>4</td><td><a href="../spells/blastoffire.html">blast of fire</a></td><td>8</td><td>instant</td><td>red mushroom ×2, elderberry</td></tr>
+<tr><td>4</td><td><a href="../spells/brittle.html">brittle</a></td><td>8</td><td>instant</td><td>mushroom ×3, purple mushroom ×2</td></tr>
+<tr><td>4</td><td><a href="../spells/explosivefrost.html">explosive frost</a></td><td>8</td><td>instant</td><td>red mushroom ×2, elderberry</td></tr>
+<tr><td>4</td><td><a href="../spells/fireball.html">fireball</a></td><td>7</td><td>instant</td><td>red mushroom ×2, orc tooth</td></tr>
+<tr><td>4</td><td><a href="../spells/firewall.html">firewall</a></td><td>15</td><td>1,000 ms</td><td>red mushroom ×3, firesand ×2</td></tr>
+<tr><td>5</td><td><a href="../spells/earthquake.html">earthquake</a></td><td>12</td><td>5,000 ms</td><td>red mushroom ×2, purple mushroom ×2</td></tr>
+<tr><td>5</td><td><a href="../spells/lightning.html">lightning bolt</a></td><td>10</td><td>instant</td><td>blue mushroom ×2, orc tooth</td></tr>
+<tr><td>5</td><td><a href="../spells/ringofflames.html">ring of flames</a></td><td>15</td><td>1,000 ms</td><td>red mushroom ×3, firesand ×3</td></tr>
+<tr><td>5</td><td><a href="../spells/sandstorm.html">sandstorm</a></td><td>14</td><td>instant</td><td>orc tooth ×2</td></tr>
+<tr><td>5</td><td><a href="../spells/shatter.html">shatter</a></td><td>12</td><td>6,000 ms</td><td>red mushroom ×3, purple mushroom ×3</td></tr>
+<tr><td>6</td><td><a href="../spells/lightningwall.html">lightning wall</a></td><td>20</td><td>1,000 ms</td><td>blue mushroom ×3, yrxl sap</td></tr>
+<tr><td>6</td><td><a href="../spells/sporeburst.html">spore burst</a></td><td>20</td><td>5,000 ms</td><td>purple mushroom ×2, shaman blood</td></tr>
+</tbody>
+</table>
+<p class="cite">Compiled from every <code class="k">Spell</code> subclass declaring this school. Per-spell citations are on each spell's own page.</p>
+
+<h2>Playing it</h2>
+<ul>
+<li>Look at where you are standing. Up to 30 points of spell power are in the terrain.</li>
+<li>Rest before you engage. Vigour is the secondary bonus and it is free.</li>
+<li>Faren's elemental types are resisted by specific rings rather than by armour, so a target
+       who has prepared for fire is not necessarily prepared for cold.</li>
+<li>Mysticism is the entry cost and buys nothing else — budget for it at creation.</li>
+</ul>
+
+<h2>Related</h2>
+<p><a href="schools.html">The Six Schools</a> · <a href="spells.html">How casting works</a> ·
+<a href="../spells/index.html">Every spell</a> · <a href="../reagents/index.html">Reagents</a> ·
+<a href="karma.html">Karma</a> · <a href="attributes.html">Attributes</a> ·
+<a href="advancing.html">Advancing Your Character</a></p>

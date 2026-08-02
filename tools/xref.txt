@@ -1,0 +1,493 @@
+== Brambles (L25) patch of bramble
+    The Badlands                           w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/k5.kod:145
+== Mummy (L25) mummy
+    Mausoleum                              w=   50 gen=       ms pct=    init=- cap=20 pts=9 [plMonsters] monsroom/guest6.kod:174
+    Mausoleum                              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/guest6.kod:604
+    Mausoleum                              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/guest6.kod:606
+    Mausoleum                              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/guest6.kod:608
+    Mausoleum                              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/guest6.kod:610
+== SpiderBaby (L25) baby spider
+    Deep Woods of Ileria                   w=   60 gen=  80000ms pct= 80 init=- cap= pts=15 [plMonsters] monsroom/c4.kod:53
+    West Merchant Way                      w=   50 gen=  90000ms pct= 70 init=5-9 cap=12 pts=15 [plMonsters] monsroom/d5.kod:59
+    East Merchant Way through Ilerian Woods w=   65 gen= 100000ms pct= 70 init=5-7 cap= pts=10 [plMonsters] monsroom/e4.kod:56
+    Lake of Jala's Song                    w=   50 gen=  60000ms pct= 60 init=1-3 cap=5 pts=10 [plMonsters] monsroom/f8.kod:80
+    Main gate to Cor Noth                  w=   75 gen= 150000ms pct= 40 init=1-4 cap=7 pts=10 [plMonsters] monsroom/g4.kod:60
+    The King's Way                         w=   50 gen=  50000ms pct= 40 init=1-3 cap=7 pts=10 [plMonsters] monsroom/g5.kod:57
+    Main gate of Barloque-- Royal City of Meridian w=   60 gen=  45000ms pct= 40 init=0-2 cap=7 pts=9 [plMonsters] monsroom/i3.kod:77
+    The Queen's Way                        w=   40 gen= 180000ms pct= 60 init=1-3 cap=5 pts=4 [plMonsters] monsroom/j3.kod:61
+    The Spider Nest                        w=   80 gen=  20000ms pct= 60 init=- cap=10 pts=26 [plMonsters] monsroom/nest1.kod:61
+    West Merchant Way through Ilerian Woods w=   30 gen=  70000ms pct= 70 init=1-4 cap=6 pts=10 [plMonsters] monsroom/objroom/c5.kod:59
+== BlackMummy (L25) shadow mummy
+    Mausoleum                              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/guest6.kod:613
+== MummyNoTreasure (L25) mummy
+    Mausoleum                              w=   50 gen=       ms pct=    init=- cap=20 pts=9 [plMonsters] monsroom/guest6.kod:174
+    Mausoleum                              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/guest6.kod:330
+== FarenPriestess (L25) Priestess Tenuv'vyal
+    The Badlands                           w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/badland1.kod:56
+== RiijaMonk (L25) Monk of Riija
+    The Temple of Riija                    w=fixed gen=       ms pct=    init=- cap= pts= [Create()] temprii.kod:508
+== KraananPriestess (L25) Priestess Qerti'nya
+    The Temple of Kraanan                  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] tempkra.kod:151
+== QorPriestess (L25) Priestess Zuxana
+    The Temple of Qor                      w=fixed gen=       ms pct=    init=- cap= pts= [Create()] tempqor.kod:140
+== ShalillePriestess (L25) Priestess Xiana
+    The Temple of Shal'ille                w=fixed gen=       ms pct=    init=- cap= pts= [Create()] temple.kod:116
+== Decorator (L25) interior design consultant
+    A tastefully appointed room            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] rentroom.kod:1104
+== Goad (L25) The Goad
+    Goad's Grinder                         w=fixed gen=       ms pct=    init=- cap= pts= [Create()] necarena.kod:234
+== Assassin (L25) Roq
+    A shadowy corner                       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] barlqrm/asshq.kod:110
+== BarloqueApothecary (L25) Joguer
+    Joguer's Herbs and Roots               w=fixed gen=       ms pct=    init=- cap= pts= [Create()] barlqrm/barapoth.kod:63
+== BarloqueBartender (L25) Meidei
+    The Bhrama & Falcon                    w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/barlbar1.kod:101
+== BarloqueClerk (L25) Caramo
+    Office of the Justicar                 w=fixed gen=       ms pct=    init=- cap= pts= [Create()] barlqrm/barcourt.kod:109
+== BarloqueInnkeeper (L25) Pritchett
+    Brownestone Inn                        w=fixed gen=       ms pct=    init=- cap= pts= [Create()] barlqrm/barinn.kod:84
+== BarloqueMerchant (L25) Herbutte
+    Adventurer's Hall of Barloque          w=fixed gen=       ms pct=    init=- cap= pts= [Create()] barlqrm/barhall.kod:71
+    The Sparkling Stone Shop               w=fixed gen=       ms pct=    init=- cap= pts= [Create()] barlqrm/barmerch.kod:65
+== BarloqueBlacksmith (L25) Fehr'loi Qan
+    The Royal Blacksmith of Barloque       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] barlqrm/barsmith.kod:62
+== GuildCreator (L25) Frular
+    The Guildmaster's Hall                 w=fixed gen=       ms pct=    init=- cap= pts= [Create()] barlqrm/gmhall.kod:74
+== PrincessGuard (L25) Keep Guard
+    Banquet Hall of the Bourgeois Castle   w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2a.kod:98
+    Banquet Hall of the Bourgeois Castle   w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2a.kod:99
+    Banquet Hall of the Bourgeois Castle   w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2a.kod:100
+    Royal Library of the Bourgeois Castle  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2d.kod:187
+    Royal Library of the Bourgeois Castle  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2d.kod:189
+    Royal Library of the Bourgeois Castle  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2d.kod:192
+    Royal Library of the Bourgeois Castle  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2d.kod:194
+    Royal Library of the Bourgeois Castle  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2d.kod:197
+    Royal Library of the Bourgeois Castle  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2d.kod:199
+    Royal Library of the Bourgeois Castle  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2d.kod:203
+    Royal Library of the Bourgeois Castle  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2d.kod:205
+    Royal Library of the Bourgeois Castle  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2d.kod:207
+    Royal Library of the Bourgeois Castle  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] castle2d.kod:209
+    Bourgeois Castle                       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2b.kod:105
+    Bourgeois Castle                       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2b.kod:106
+    Bourgeois Castle                       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2b.kod:108
+    Bourgeois Castle                       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2b.kod:110
+    Bourgeois Castle                       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2b.kod:112
+    Bourgeois Castle                       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2b.kod:114
+    Bourgeois Castle                       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2b.kod:116
+    Bourgeois Castle                       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2b.kod:118
+    Bourgeois Castle                       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2b.kod:119
+    Bourgeois Castle                       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2b.kod:120
+    Bourgeois Castle                       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2b.kod:122
+    The Assembly Chamber                   w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2c.kod:61
+    The Assembly Chamber                   w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2c.kod:63
+    The Assembly Chamber                   w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2c.kod:65
+    The Assembly Chamber                   w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/castle2c.kod:67
+    The Queen's Way                        w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/j3.kod:69
+== CornothGrocer (L25) Solomon
+    Solomon's Edibles                      w=fixed gen=       ms pct=    init=- cap= pts= [Create()] crnthrm/corgroc.kod:61
+== CorNothSergeant (L25) Rook
+    The Weapon Master's Abode              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] crnthrm/corwepm.kod:69
+== CorNothTailor (L25) Hester Gilk
+    The Spindle and the Spinster           w=fixed gen=       ms pct=    init=- cap= pts= [Create()] crnthrm/cortail.kod:64
+== HazarElder (L25) Rodric d'Stane
+    The Home of Roderic D'Stane            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] guest5.kod:82
+== HazarBlacksmith (L25) Tomas
+    The Blacksmith of Hazar                w=fixed gen=       ms pct=    init=- cap= pts= [Create()] guest3.kod:86
+== JasperBanker (L25) Yevitan
+    The Royal Bank of Jasper               w=fixed gen=       ms pct=    init=- cap= pts= [Create()] jasperrm/jasbank.kod:65
+== JasperBartender (L25) Pietro
+    room_name_jaspertavern                 w=fixed gen=       ms pct=    init=- cap= pts= [Create()] jasperrm/jastavrn.kod:51
+== JasperElder (L25) Afiera D'xor
+    room_name_jasperelder                  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] jasperrm/jaselder.kod:48
+== JasperMerchant (L25) Zhieu B'hob
+    room_name_jasperstore                  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] jasperrm/jasstore.kod:48
+== KocatanApothecary (L25) Zala ix'Mecya
+    Two Lizards Magic Shop                 w=fixed gen=       ms pct=    init=- cap= pts= [Create()] kocarm/kocapoth.kod:82
+== KocatanBanker (L25) Huital ko'Nosak
+    The Hungry Vaults                      w=fixed gen=       ms pct=    init=- cap= pts= [Create()] kocarm/kocbank.kod:89
+== KocatanBartender (L25) Oxal ix'Tokak
+    The Barking Monster                    w=fixed gen=       ms pct=    init=- cap= pts= [Create()] kocarm/koctav.kod:104
+== KocatanBonePriestess (L25) The Bone Priestess
+    Lair of the Bone Priestess             w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/kcforest/kd1.kod:93
+== KocatanCaptainEvil (L25) Xacal ko'Ixca
+    The East Tower                         w=fixed gen=       ms pct=    init=- cap= pts= [Create()] kocarm/koctower.kod:59
+== KocatanCaptainGood (L25) Cital ko'Manca
+    The East Tower                         w=fixed gen=       ms pct=    init=- cap= pts= [Create()] kocarm/koctower.kod:58
+== KocatanInnkeeper (L25) Moxal ix'Hanak
+    The Aerie Guest House                  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] kocarm/kocinn.kod:126
+== KocatanLanguageMaster (L25) Quetzal
+    The Hall of Heroes East                w=fixed gen=       ms pct=    init=- cap= pts= [Create()] kocarm/kochohb.kod:125
+== KocatanMadScientist (L25) Bahal zax'Ot
+    Hut of the Mad Scientist               w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/kcforest/kmadscih.kod:68
+== KocatanBlacksmith (L25) Ixla cha'Totlak
+    The Chimney House                      w=fixed gen=       ms pct=    init=- cap= pts= [Create()] kocarm/kocblack.kod:85
+== KocatanTailor (L25) Tepal ix'Zonak
+    The Crooked Hem Garment Shop           w=fixed gen=       ms pct=    init=- cap= pts= [Create()] kocarm/koctail.kod:95
+== KocatanVaultman (L25) Itzal cha'Nosak
+    The Hungry Vaults                      w=fixed gen=       ms pct=    init=- cap= pts= [Create()] kocarm/kocbank.kod:87
+== KocatanWeaponsMaster (L25) Kochtal ko'Tulca
+    The Hall of Heroes West                w=fixed gen=       ms pct=    init=- cap= pts= [Create()] kocarm/kochoha.kod:63
+== MarionBartender (L25) Tova
+    The Limping Toad Inn and Tavern        w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/marinn.kod:126
+== MarionElder (L25) Ran er'Hoth
+    Marion                                 w=fixed gen=       ms pct=    init=- cap= pts= [Create()] marnrm/marion.kod:174
+== MarionHealer (L25) Lady Aftyn
+    Lady Aftyn's Sanctuary                 w=fixed gen=       ms pct=    init=- cap= pts= [Create()] marnrm/marhlshp.kod:62
+== MarionBlacksmith (L25) Colhorr
+    Ye Olde Slasher Salesman               w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/marsmith.kod:61
+== DukeGuard (L25) Keep Guard
+    Blackstone Keep                        w=fixed gen=       ms pct=    init=- cap= pts= [Create()] duke2.kod:235
+    Office of the Justicar                 w=fixed gen=       ms pct=    init=- cap= pts= [Create()] barlqrm/barcourt.kod:117
+    Old Jailhouse                          w=fixed gen=       ms pct=    init=- cap= pts= [Create()] barlqrm/barjail.kod:47
+    Old Jailhouse                          w=fixed gen=       ms pct=    init=- cap= pts= [Create()] barlqrm/barjail.kod:50
+    Old Jailhouse                          w=fixed gen=       ms pct=    init=- cap= pts= [Create()] barlqrm/barjail.kod:53
+    The Duke's Feast Hall                  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/duke4.kod:110
+    The Duke's Feast Hall                  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/duke4.kod:112
+    The Duke's Feast Hall                  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/duke4.kod:114
+    The Duke's Feast Hall                  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/duke4.kod:116
+    The Duke's Grand Ballroom              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/duke5.kod:336
+    The Duke's Grand Ballroom              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/duke5.kod:338
+    The Duke's Grand Ballroom              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/duke5.kod:340
+    The Duke's Grand Ballroom              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/duke5.kod:342
+== TosApothecary (L25) Frisconar
+    Frisconar's Mysticals                  w=fixed gen=       ms pct=    init=- cap= pts= [Create()] tosrm/tosapoth.kod:211
+== TosBanker (L25) Skivlat
+    First Royal Bank of Tos                w=fixed gen=       ms pct=    init=- cap= pts= [Create()] tosrm/tosbank.kod:63
+== TosInnKeeper (L25) Paddock
+    Familiars                              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/objroom/tosinn.kod:101
+== TosWatcher (L25) Watcher
+    The Arena of Kraanan                   w=fixed gen=       ms pct=    init=- cap= pts= [Create()] tosrm/tosarena.kod:213
+== DarkWizard (L25) Maleval
+    The meeting place of the Gods          w=fixed gen=       ms pct=    init=- cap= pts= [Create()] godroom.kod:70
+== Heretic (L25) Miriana
+    The meeting place of the Gods          w=fixed gen=       ms pct=    init=- cap= pts= [Create()] godroom.kod:69
+== HunterGhost (L25) Tendrath
+    The meeting place of the Gods          w=fixed gen=       ms pct=    init=- cap= pts= [Create()] godroom.kod:71
+== Izzio (L25) Izzio_name_rsc
+    The meeting place of the Gods          w=fixed gen=       ms pct=    init=- cap= pts= [Create()] godroom.kod:72
+== Minstrel (L25) Parrin Aragone
+    The meeting place of the Gods          w=fixed gen=       ms pct=    init=- cap= pts= [Create()] godroom.kod:68
+== Centipede (L30) centipede
+    West Merchant Way                      w=   50 gen=  90000ms pct= 70 init=5-9 cap=12 pts=15 [plMonsters] monsroom/d5.kod:59
+    East Merchant Way through Ilerian Woods w=   35 gen= 100000ms pct= 70 init=5-7 cap= pts=10 [plMonsters] monsroom/e4.kod:56
+    The Sweet Grass Prairies               w=   25 gen= 100000ms pct= 80 init=3-6 cap=8 pts=15 [plMonsters] monsroom/e7.kod:57
+    East Merchant Way                      w=   55 gen= 120000ms pct= 60 init=1-3 cap=6 pts=10 [plMonsters] monsroom/f4.kod:58
+    Off the beaten path                    w=   30 gen=  70000ms pct= 60 init=3-6 cap=10 pts=21 [plMonsters] monsroom/f6.kod:58
+    Lake of Jala's Song                    w=   50 gen=  60000ms pct= 60 init=1-3 cap=5 pts=10 [plMonsters] monsroom/f8.kod:80
+    Main gate to Cor Noth                  w=   25 gen= 150000ms pct= 40 init=1-4 cap=7 pts=10 [plMonsters] monsroom/g4.kod:60
+    The King's Way                         w=   10 gen= 100000ms pct= 80 init=4-8 cap=9 pts=8 [plMonsters] monsroom/g6.kod:61
+    Main gate to the city of Tos           w=   30 gen=  25000ms pct= 80 init=5-7 cap=7 pts=13 [plMonsters] monsroom/h6.kod:66
+    Western border of the Twisted Wood     w=   40 gen=  60000ms pct= 80 init=6-9 cap=12 pts=17 [plMonsters] monsroom/h7.kod:58
+    Main gate of Barloque-- Royal City of Meridian w=   40 gen=  45000ms pct= 40 init=0-2 cap=7 pts=9 [plMonsters] monsroom/i3.kod:77
+    Deep Forest of Farol                   w=   30 gen=  45000ms pct= 80 init=5-10 cap=16 pts=20 [plMonsters] monsroom/objroom/e6.kod:58
+== GiantRat (L30) giant rat
+    The Sewers of Barloque                 w=   94 gen=  60000ms pct= 80 init=4-6 cap=25 pts=15 [plMonsters] monsroom/barlsew.kod:59
+    The Sewers of Barloque                 w=   55 gen=  70000ms pct= 80 init=4-6 cap=25 pts=18 [plMonsters] monsroom/barlsew2.kod:60
+    The Sewers of Barloque                 w=   20 gen=  50000ms pct= 80 init=7-9 cap=25 pts=16 [plMonsters] monsroom/barlsew3.kod:60
+    Off the beaten path                    w=   60 gen=  70000ms pct= 60 init=2-5 cap=9 pts=15 [plMonsters] monsroom/f7.kod:59
+    The King's Way                         w=   50 gen=  50000ms pct= 40 init=1-3 cap=7 pts=10 [plMonsters] monsroom/g5.kod:57
+    Outskirts of Barloque                  w=   70 gen= 100000ms pct= 60 init=2-4 cap=6 pts=10 [plMonsters] monsroom/h3.kod:58
+    Main gate to the city of Tos           w=   70 gen=  25000ms pct= 80 init=5-7 cap=7 pts=13 [plMonsters] monsroom/h6.kod:66
+    The Queen's Way                        w=   60 gen= 180000ms pct= 60 init=1-3 cap=5 pts=4 [plMonsters] monsroom/j3.kod:61
+    The Sewers of Jasper                   w=   95 gen=  80000ms pct= 80 init=6-7 cap=25 pts=18 [plMonsters] monsroom/jassew1.kod:98
+    The Sewers of Jasper                   w=   39 gen=  55000ms pct= 80 init=5-7 cap=25 pts=16 [plMonsters] monsroom/jassew2.kod:58
+    The Sewers of Jasper                   w=   15 gen=  35000ms pct= 80 init=5-7 cap=25 pts=22 [plMonsters] monsroom/jassew3.kod:59
+    West Merchant Way through Ilerian Woods w=   70 gen=  70000ms pct= 70 init=1-4 cap=6 pts=10 [plMonsters] monsroom/objroom/c5.kod:59
+== Slime (L35) slime
+    The sandy shores of the Great Ocean    w=   50 gen=  55000ms pct= 80 init=4-6 cap=6 pts=10 [plMonsters] monsroom/f2.kod:67
+    Outskirts of Barloque                  w=   30 gen= 100000ms pct= 60 init=2-4 cap=6 pts=10 [plMonsters] monsroom/h3.kod:58
+== Ant (L40) ant
+    The Badlands                           w=   60 gen=       ms pct=    init=- cap= pts=9 [plMonsters] monsroom/badland1.kod:45
+    Source of the River Ille               w=   30 gen= 120000ms pct= 60 init=2-5 cap=7 pts=10 [plMonsters] monsroom/f3.kod:58
+    The Forests of Meridian                w=   60 gen= 120000ms pct= 60 init=- cap= pts=9 [plMonsters] monsroom/forest2.kod:61
+    The Forests of Meridian                w=   40 gen=  60000ms pct= 50 init=- cap= pts=11 [plMonsters] monsroom/forest3.kod:53
+    The Deep Dark Woods of Tos             w=   30 gen=       ms pct=    init=- cap= pts=9 [plMonsters] monsroom/forest4.kod:47
+    The Deep Dark Woods of Marion          w=   60 gen=       ms pct=    init=- cap= pts=10 [plMonsters] monsroom/objroom/forest5.kod:48
+    The Flatlands                          w=   55 gen= 120000ms pct= 70 init=2-5 cap=8 pts=10 [plMonsters] monsroom/objroom/h4.kod:61
+== SpectralMummy (L40) spectral mummy
+    The crypt in Marion                    w=  100 gen=       ms pct=    init=- cap= pts=9 [plMonsters] monsroom/marcryp1.kod:101
+    The crypt in Marion                    w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcryp1.kod:571
+== Orc (L45) orc
+    An ancient place, its origin forgotten w=   80 gen= 100000ms pct= 80 init=2-9 cap=6 pts=19 [plMonsters] monsroom/g9.kod:167
+    Ugol's Warren Entrance                 w=   60 gen=  25000ms pct= 80 init=7-9 cap=25 pts=16 [plMonsters] monsroom/orccave1.kod:55
+    An Enigmatic Chamber                   w=   70 gen=  25000ms pct= 80 init=7-9 cap=25 pts=14 [plMonsters] monsroom/orccave2.kod:55
+    The Berdonne Canyons                   w=   50 gen=  40000ms pct= 70 init=- cap= pts=13 [plMonsters] monsroom/objroom/canyon1.kod:64
+    A Deep, Dark, Spooky, Icky Cave        w=   50 gen=  45000ms pct= 80 init=- cap= pts=13 [plMonsters] monsroom/objroom/cave2.kod:78
+    Under the shadow of the Sentinel       w=   40 gen=  80000ms pct= 80 init=8-12 cap=15 pts=15 [plMonsters] monsroom/objroom/h9.kod:59
+== DuskRat (L50) dusk rat
+    A foul place to wander                 w=   95 gen=  80000ms pct= 20 init=0-1 cap=5 pts=2 [plMonsters] monsroom/kocsew1.kod:64
+    Up Chuk Creek without a paddle         w=  100 gen=  40000ms pct= 90 init=4-6 cap=15 pts=6 [plMonsters] monsroom/kocsew2.kod:62
+== Ent (L50) living tree
+    Deep Woods of Ileria                   w=   40 gen=  80000ms pct= 80 init=- cap= pts=15 [plMonsters] monsroom/c4.kod:53
+    Forest of Farol                        w=   30 gen= 110000ms pct= 70 init=3-8 cap=12 pts=16 [plMonsters] monsroom/c6.kod:58
+    Deep in the Forest of Farol            w=   70 gen= 100000ms pct= 80 init=4-8 cap=13 pts=15 [plMonsters] monsroom/d6.kod:58
+    Deep in the Forest of Farol            w=   40 gen= 100000ms pct= 80 init=- cap=15 pts=20 [plMonsters] monsroom/d7.kod:55
+    Faronath, home of the TreeFolk         w=   95 gen=  45000ms pct= 80 init=6-12 cap=8 pts=18 [plMonsters] monsroom/objroom/c7.kod:58
+    Deep Forest of Farol                   w=   15 gen=  45000ms pct= 80 init=5-10 cap=16 pts=20 [plMonsters] monsroom/objroom/e6.kod:58
+== FungusBeast (L50) fungus beast
+    Valley of Ileria                       w=   65 gen=  70000ms pct= 80 init=5-10 cap= pts=20 [plMonsters] monsroom/d4.kod:56
+    The sandy shores of the Great Ocean    w=   50 gen=  55000ms pct= 80 init=4-6 cap=6 pts=10 [plMonsters] monsroom/f2.kod:67
+    Source of the River Ille               w=   70 gen= 120000ms pct= 60 init=2-5 cap=7 pts=10 [plMonsters] monsroom/f3.kod:58
+== Spider (L50) spider
+    Forest of Farol                        w=   70 gen= 110000ms pct= 70 init=3-8 cap=12 pts=16 [plMonsters] monsroom/c6.kod:58
+    East Merchant Way                      w=   45 gen= 120000ms pct= 60 init=1-3 cap=6 pts=10 [plMonsters] monsroom/f4.kod:58
+    The Forests of Meridian                w=   40 gen= 120000ms pct= 60 init=- cap= pts=9 [plMonsters] monsroom/forest2.kod:61
+    The Forests of Meridian                w=   60 gen=  60000ms pct= 50 init=- cap= pts=11 [plMonsters] monsroom/forest3.kod:53
+    The Deep Dark Woods of Tos             w=   70 gen=       ms pct=    init=- cap= pts=9 [plMonsters] monsroom/forest4.kod:47
+    Western border of the Twisted Wood     w=   60 gen=  60000ms pct= 80 init=6-9 cap=12 pts=17 [plMonsters] monsroom/h7.kod:58
+    Outskirts of Tos                       w=   50 gen=  80000ms pct= 75 init=1-4 cap=6 pts=15 [plMonsters] monsroom/i6.kod:57
+    The Twisted Wood                       w=   55 gen=  45000ms pct= 80 init=8-12 cap=15 pts=15 [plMonsters] monsroom/i7.kod:58
+    The Spider Nest                        w=   20 gen=  20000ms pct= 60 init=- cap=10 pts=26 [plMonsters] monsroom/nest1.kod:61
+    Faronath, home of the TreeFolk         w=    5 gen=  45000ms pct= 80 init=6-12 cap=8 pts=18 [plMonsters] monsroom/objroom/c7.kod:58
+    A Deep, Dark, Spooky, Icky Cave        w=   50 gen=  45000ms pct= 80 init=- cap= pts=13 [plMonsters] monsroom/objroom/cave2.kod:78
+    Deep Forest of Farol                   w=   55 gen=  45000ms pct= 80 init=5-10 cap=16 pts=20 [plMonsters] monsroom/objroom/e6.kod:58
+    The Deep Dark Woods of Marion          w=   40 gen=       ms pct=    init=- cap= pts=10 [plMonsters] monsroom/objroom/forest5.kod:48
+    The Flatlands                          w=   45 gen= 120000ms pct= 70 init=2-5 cap=8 pts=10 [plMonsters] monsroom/objroom/h4.kod:61
+== RebelTroop (L50) rebel soldier
+    The Sewers of Jasper                   w=    1 gen=  55000ms pct= 80 init=5-7 cap=25 pts=16 [plMonsters] monsroom/jassew2.kod:58
+== Scorpion (L55) giant scorpion
+    Druid Hills                            w=   40 gen=  45000ms pct= 80 init=4-8 cap=13 pts=13 [plMonsters] monsroom/objroom/b6.kod:58
+== Zombie (L55) zombie
+    Upstairs in Castle Victoria            w=   40 gen=       ms pct=    init=- cap= pts=12 [plMonsters] monsroom/castle1b.kod:49
+    The Throne Room of Victoria Castle     w=   20 gen=       ms pct=    init=- cap= pts=6 [plMonsters] monsroom/throne1.kod:59
+    The Crypt                              w=   80 gen=       ms pct=    init=- cap= pts=6 [plMonsters] monsroom/toscrypt.kod:44
+    The Graveyard of Tos                   w=   85 gen=       ms pct=    init=- cap= pts=8 [plMonsters] monsroom/tosgrave.kod:51
+    Castle Victoria                        w=   20 gen=       ms pct=    init=- cap= pts=12 [plMonsters] monsroom/objroom/castle1.kod:49
+== EvilFairy (L60) teotimixlal
+    FeyForest                              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/feyforst.kod:145
+== Fairy (L60) fey elhai
+    FeyForest                              w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/feyforst.kod:140
+== SnowRat (L60) snow rat
+    The Dreaded Caves of Ice               w=   55 gen=  25000ms pct=100 init=6-8 cap=13 pts=16 [plMonsters] monsroom/objroom/icecave1.kod:67
+== BatteredSkeleton (L60) battered skeleton
+    Upstairs in Castle Victoria            w=   60 gen=       ms pct=    init=- cap= pts=12 [plMonsters] monsroom/castle1b.kod:49
+    An ancient place, its origin forgotten w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/g9.kod:547
+    Resting place of Marion's ancestors    w=   20 gen=       ms pct=    init=1-3 cap=25 pts=35 [plMonsters] monsroom/marcryp2.kod:79
+== RedAnt (L65) mutant ant
+    Seafarer's Peak                        w=   60 gen=  40000ms pct= 80 init=5-7 cap=15 pts=15 [plMonsters] monsroom/a5.kod:62
+    The Hills                              w=   30 gen=  40000ms pct= 80 init=4-6 cap=12 pts=14 [plMonsters] monsroom/a6.kod:57
+    The Berdonne Canyons                   w=   50 gen=  40000ms pct= 70 init=- cap= pts=13 [plMonsters] monsroom/objroom/canyon1.kod:64
+== Frogman (L70) frogman
+    The Great Ocean                        w=   20 gen=  45000ms pct= 70 init=2-5 cap= pts=10 [plMonsters] monsroom/e2.kod:58
+    The King's Way                         w=   90 gen= 100000ms pct= 80 init=4-8 cap=9 pts=8 [plMonsters] monsroom/g6.kod:61
+== DeathSpider (L75) black spider
+    The Cragged Mountains                  w=   40 gen= 100000ms pct= 80 init=6-10 cap=13 pts=20 [plMonsters] monsroom/g8.kod:54
+    An ancient place, its origin forgotten w=   20 gen= 100000ms pct= 80 init=2-9 cap=6 pts=19 [plMonsters] monsroom/g9.kod:167
+    The Cragged Mountains                  w=   40 gen=  80000ms pct= 80 init=8-11 cap=14 pts=14 [plMonsters] monsroom/i8.kod:57
+    Winding Caverns                        w=   45 gen=  40000ms pct= 80 init=7-9 cap=25 pts= [plMonsters] monsroom/necarea1.kod:58
+    Under the shadow of the Sentinel       w=   60 gen=  80000ms pct= 80 init=8-12 cap=15 pts=15 [plMonsters] monsroom/objroom/h9.kod:59
+== LivingStatue (L75) statue
+    The crypt in Marion                    w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcryp1.kod:562
+    Resting place of Marion's ancestors    w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcryp2.kod:173
+== Skeleton (L75) skeleton
+    An ancient place, its origin forgotten w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/g9.kod:543
+    Resting place of Marion's ancestors    w=   80 gen=       ms pct=    init=1-3 cap=25 pts=35 [plMonsters] monsroom/marcryp2.kod:79
+    Winding Caverns                        w=   55 gen=  40000ms pct= 80 init=7-9 cap=25 pts= [plMonsters] monsroom/necarea1.kod:58
+    The Crypt                              w=   20 gen=       ms pct=    init=- cap= pts=6 [plMonsters] monsroom/toscrypt.kod:44
+    The Graveyard of Tos                   w=   15 gen=       ms pct=    init=- cap= pts=8 [plMonsters] monsroom/tosgrave.kod:51
+    Castle Victoria                        w=   40 gen=       ms pct=    init=- cap= pts=12 [plMonsters] monsroom/objroom/castle1.kod:49
+== CaveOrc (L80) cave orc
+    Ugol's Warren Entrance                 w=   40 gen=  25000ms pct= 80 init=7-9 cap=25 pts=16 [plMonsters] monsroom/orccave1.kod:55
+    The Archaic Hollows                    w=   70 gen=  25000ms pct= 80 init=7-9 cap=25 pts=25 [plMonsters] monsroom/orccave3.kod:54
+    Obfal's Sepulchre                      w=   75 gen=  15000ms pct= 80 init=7-9 cap=25 pts=33 [plMonsters] monsroom/orccave5.kod:56
+    Konima's Ascension                     w=   70 gen=  25000ms pct= 80 init=7-9 cap=25 pts=23 [plMonsters] monsroom/orccave6.kod:63
+    Grog's Antechamber                     w=   60 gen=  25000ms pct= 80 init=7-9 cap=25 pts=16 [plMonsters] monsroom/orcpita.kod:60
+    Brog's Antechamber                     w=   70 gen=  25000ms pct= 80 init=7-9 cap=25 pts=16 [plMonsters] monsroom/orcpitb.kod:75
+    Lair of the Orc Pit Boss               w=  100 gen=  50000ms pct= 80 init=7-10 cap=15 pts=10 [plMonsters] monsroom/bossroom/orcpit1.kod:95
+== OrcWizard (L80) orc wizard
+    An Enigmatic Chamber                   w=   30 gen=  25000ms pct= 80 init=7-9 cap=25 pts=14 [plMonsters] monsroom/orccave2.kod:55
+    Aqueducts of Merb                      w=   60 gen=  25000ms pct= 80 init=7-9 cap=25 pts=29 [plMonsters] monsroom/orccave4.kod:55
+    Obfal's Sepulchre                      w=   25 gen=  15000ms pct= 80 init=7-9 cap=25 pts=33 [plMonsters] monsroom/orccave5.kod:56
+    Konima's Ascension                     w=   30 gen=  25000ms pct= 80 init=7-9 cap=25 pts=23 [plMonsters] monsroom/orccave6.kod:63
+    Grog's Antechamber                     w=   40 gen=  25000ms pct= 80 init=7-9 cap=25 pts=16 [plMonsters] monsroom/orcpita.kod:60
+== Troll (L90) troll
+    Seafarer's Peak                        w=   40 gen=  40000ms pct= 80 init=5-7 cap=15 pts=15 [plMonsters] monsroom/a5.kod:62
+    The Hills                              w=   70 gen=  40000ms pct= 80 init=4-6 cap=12 pts=14 [plMonsters] monsroom/a6.kod:57
+    The Cragged Mountains                  w=   60 gen= 100000ms pct= 80 init=6-10 cap=13 pts=20 [plMonsters] monsroom/g8.kod:54
+    The border of the Badlands             w=   30 gen= 160000ms pct= 80 init=1-5 cap= pts=8 [plMonsters] monsroom/h5.kod:56
+    The Twisted Wood                       w=   45 gen=  45000ms pct= 80 init=8-12 cap=15 pts=15 [plMonsters] monsroom/i7.kod:58
+    The Cragged Mountains                  w=   60 gen=  80000ms pct= 80 init=8-11 cap=14 pts=14 [plMonsters] monsroom/i8.kod:57
+    Ukgoth, Holy Land of Trolls            w=  100 gen=  70000ms pct= 85 init=9-12 cap=15 pts=15 [plMonsters] monsroom/i9.kod:77
+    Druid Hills                            w=   60 gen=  45000ms pct= 80 init=4-8 cap=13 pts=13 [plMonsters] monsroom/objroom/b6.kod:58
+    The Dreaded Caves of Ice               w=   45 gen=  25000ms pct=100 init=6-8 cap=13 pts=16 [plMonsters] monsroom/objroom/icecave1.kod:67
+    The Badlands                           w=   30 gen=  60000ms pct= 80 init=5-7 cap=34 pts=16 [plMonsters] monsroom/objroom/k5.kod:62
+== AvarShaman (L100) peet-seeeep avar shaman
+    Headquarters for the Avar Warriors     w=   18 gen=  90000ms pct= 70 init=5-9 cap=12 pts=6 [plMonsters] monsroom/kcforest/kb2.kod:56
+    Camp of the Warrior Avars              w=   18 gen=  90000ms pct= 70 init=5-9 cap=12 pts=7 [plMonsters] monsroom/kcforest/kb3.kod:55
+    Turf of the Warrior Avars              w=   10 gen=  90000ms pct= 70 init=5-9 cap=12 pts=8 [plMonsters] monsroom/kcforest/kc2.kod:56
+    Ruins of the Riija Temple              w=   25 gen=  30000ms pct= 70 init=8-12 cap=20 pts=9 [plMonsters] monsroom/kcforest/kc3.kod:54
+    Territory of the Noble Avars           w=   15 gen=  90000ms pct= 70 init=5-9 cap=12 pts=6 [plMonsters] monsroom/kcforest/kd2.kod:54
+    Deep in the Jungle                     w=   18 gen=  90000ms pct= 70 init=5-9 cap=12 pts=6 [plMonsters] monsroom/kcforest/kd3.kod:54
+    The Clearing of the Trading Post       w=   10 gen= 120000ms pct= 50 init=2-4 cap=3 pts=5 [plMonsters] monsroom/kcforest/kd4.kod:59
+    Headquarters of the Noble Avars        w=   25 gen=  90000ms pct= 70 init=5-9 cap=12 pts=8 [plMonsters] monsroom/kcforest/ke2.kod:54
+== TuskedSkeleton (L100) tusked skeleton
+    The Dungeon of Castle Brax             w=   50 gen=       ms pct=    init=- cap= pts= [plMonsters] monsroom/lichmaze.kod:62
+    Ancient Building                       w=   50 gen=  40000ms pct= 80 init=7-9 cap=25 pts=3 [plMonsters] monsroom/necare3b.kod:56
+    Decaying City of Brax                  w=   40 gen=  40000ms pct= 80 init=7-9 cap=25 pts=7 [plMonsters] monsroom/necarea3.kod:68
+    Within the Walls of Castle Brax        w=   40 gen=  40000ms pct= 80 init=7-9 cap=25 pts=6 [plMonsters] monsroom/necarea4.kod:56
+    The Throne Room of Victoria Castle     w=   80 gen=       ms pct=    init=- cap= pts=6 [plMonsters] monsroom/throne1.kod:59
+== Lupogg (L105) lupogg
+    The Sewers of Barloque                 w=    6 gen=  60000ms pct= 80 init=4-6 cap=25 pts=15 [plMonsters] monsroom/barlsew.kod:59
+    The Sewers of Barloque                 w=   45 gen=  70000ms pct= 80 init=4-6 cap=25 pts=18 [plMonsters] monsroom/barlsew2.kod:60
+    The Sewers of Barloque                 w=   80 gen=  50000ms pct= 80 init=7-9 cap=25 pts=16 [plMonsters] monsroom/barlsew3.kod:60
+    The Sewers of Jasper                   w=    5 gen=  80000ms pct= 80 init=6-7 cap=25 pts=18 [plMonsters] monsroom/jassew1.kod:98
+    The Sewers of Jasper                   w=   60 gen=  55000ms pct= 80 init=5-7 cap=25 pts=16 [plMonsters] monsroom/jassew2.kod:58
+    The Sewers of Jasper                   w=   85 gen=  35000ms pct= 80 init=5-7 cap=25 pts=22 [plMonsters] monsroom/jassew3.kod:59
+    The Ancient Smuggler's Crossing        w=  100 gen=  25000ms pct= 80 init=7-9 cap=15 pts=3 [plMonsters] monsroom/bossroom/sewking.kod:138
+== Avar (L120) peet-seeeep avar warrior
+    Into the Jungle                        w=   10 gen=  90000ms pct= 70 init=5-9 cap=12 pts=6 [plMonsters] monsroom/kcforest/ka4.kod:56
+    Outside the Guard Tower                w=   95 gen=  90000ms pct= 70 init=5-9 cap=12 pts=3 [plMonsters] monsroom/kcforest/ka5.kod:56
+    The Cliffs                             w=   10 gen=  90000ms pct= 70 init=5-9 cap=12 pts=3 [plMonsters] monsroom/kcforest/kb1.kod:55
+    Headquarters for the Avar Warriors     w=   60 gen=  90000ms pct= 70 init=5-9 cap=12 pts=6 [plMonsters] monsroom/kcforest/kb2.kod:56
+    Camp of the Warrior Avars              w=   50 gen=  90000ms pct= 70 init=5-9 cap=12 pts=7 [plMonsters] monsroom/kcforest/kb3.kod:55
+    The Chasm                              w=   90 gen=  90000ms pct= 70 init=5-9 cap=12 pts=4 [plMonsters] monsroom/kcforest/kc1.kod:56
+    Turf of the Warrior Avars              w=   50 gen=  90000ms pct= 70 init=5-9 cap=12 pts=8 [plMonsters] monsroom/kcforest/kc2.kod:56
+    Ruins of the Riija Temple              w=   60 gen=  30000ms pct= 70 init=8-12 cap=20 pts=9 [plMonsters] monsroom/kcforest/kc3.kod:54
+    Origin of the Kriipa                   w=   70 gen=  25000ms pct= 80 init=7-13 cap=13 pts=6 [plMonsters] monsroom/kcforest/kc4.kod:54
+    Lair of the Bone Priestess             w=   90 gen=  90000ms pct= 70 init=5-9 cap=12 pts=5 [plMonsters] monsroom/kcforest/kd1.kod:56
+    Territory of the Noble Avars           w=   80 gen=  90000ms pct= 70 init=5-9 cap=12 pts=6 [plMonsters] monsroom/kcforest/kd2.kod:54
+    Deep in the Jungle                     w=   80 gen=  90000ms pct= 70 init=5-9 cap=12 pts=6 [plMonsters] monsroom/kcforest/kd3.kod:54
+    The Clearing of the Trading Post       w=   80 gen= 120000ms pct= 50 init=2-4 cap=3 pts=5 [plMonsters] monsroom/kcforest/kd4.kod:59
+    Headquarters of the Noble Avars        w=   60 gen=  90000ms pct= 70 init=5-9 cap=12 pts=8 [plMonsters] monsroom/kcforest/ke2.kod:54
+    Avar Village                           w=   40 gen=  60000ms pct= 80 init=7-10 cap=12 pts=11 [plMonsters] monsroom/kcforest/ke4.kod:118
+== DragonFly (L120) dragonfly
+    Origin of the Kriipa                   w=   30 gen=  25000ms pct= 80 init=7-13 cap=13 pts=6 [plMonsters] monsroom/kcforest/kc4.kod:54
+== NarthylWorm (L120) narthyl worm
+    Ancient Building                       w=   60 gen=  40000ms pct= 80 init=7-9 cap=25 pts=2 [plMonsters] monsroom/necare3a.kod:56
+    Ancient Graveyard of Brax              w=   40 gen=  40000ms pct= 80 init=7-9 cap=25 pts=4 [plMonsters] monsroom/necarea2.kod:56
+    Decaying City of Brax                  w=   60 gen=  40000ms pct= 80 init=7-9 cap=25 pts=7 [plMonsters] monsroom/necarea3.kod:68
+    Ruins of Castle Brax                   w=   40 gen=  40000ms pct= 80 init=7-9 cap=25 pts=4 [plMonsters] monsroom/necarea5.kod:62
+== StoneTroll (L120) StoneTroll_realname_rsc
+    Ukgoth, Holy Land of Trolls            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/i9.kod:195
+    Ukgoth, Holy Land of Trolls            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/i9.kod:197
+    Ukgoth, Holy Land of Trolls            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/i9.kod:199
+    Martyr's Battleground                  w=   85 gen=  10000ms pct= 85 init=9-12 cap=20 pts=15 [plMonsters] monsroom/objroom/canyon2.kod:72
+== DaemonSkeleton (L130) daemon skeleton
+    The Dungeon of Castle Brax             w=   50 gen=       ms pct=    init=- cap= pts= [plMonsters] monsroom/lichmaze.kod:62
+    Ancient Building                       w=   40 gen=  40000ms pct= 80 init=7-9 cap=25 pts=2 [plMonsters] monsroom/necare3a.kod:56
+    Ancient Building                       w=   50 gen=  40000ms pct= 80 init=7-9 cap=25 pts=3 [plMonsters] monsroom/necare3b.kod:56
+    Ancient Graveyard of Brax              w=   60 gen=  40000ms pct= 80 init=7-9 cap=25 pts=4 [plMonsters] monsroom/necarea2.kod:56
+    Within the Walls of Castle Brax        w=   60 gen=  40000ms pct= 80 init=7-9 cap=25 pts=6 [plMonsters] monsroom/necarea4.kod:56
+    Ruins of Castle Brax                   w=   60 gen=  40000ms pct= 80 init=7-9 cap=25 pts=4 [plMonsters] monsroom/necarea5.kod:62
+== AvarChieftain (L135) avarchief_name_rsc
+    Headquarters for the Avar Warriors     w=    7 gen=  90000ms pct= 70 init=5-9 cap=12 pts=6 [plMonsters] monsroom/kcforest/kb2.kod:56
+    Camp of the Warrior Avars              w=    5 gen=  90000ms pct= 70 init=5-9 cap=12 pts=7 [plMonsters] monsroom/kcforest/kb3.kod:55
+    The Chasm                              w=   10 gen=  90000ms pct= 70 init=5-9 cap=12 pts=4 [plMonsters] monsroom/kcforest/kc1.kod:56
+    Ruins of the Riija Temple              w=   15 gen=  30000ms pct= 70 init=8-12 cap=20 pts=9 [plMonsters] monsroom/kcforest/kc3.kod:54
+    Lair of the Bone Priestess             w=   10 gen=  90000ms pct= 70 init=5-9 cap=12 pts=5 [plMonsters] monsroom/kcforest/kd1.kod:56
+    Territory of the Noble Avars           w=    5 gen=  90000ms pct= 70 init=5-9 cap=12 pts=6 [plMonsters] monsroom/kcforest/kd2.kod:54
+    Deep in the Jungle                     w=    2 gen=  90000ms pct= 70 init=5-9 cap=12 pts=6 [plMonsters] monsroom/kcforest/kd3.kod:54
+    The Clearing of the Trading Post       w=   10 gen= 120000ms pct= 50 init=2-4 cap=3 pts=5 [plMonsters] monsroom/kcforest/kd4.kod:59
+    Headquarters of the Noble Avars        w=   15 gen=  90000ms pct= 70 init=5-9 cap=12 pts=8 [plMonsters] monsroom/kcforest/ke2.kod:54
+    Avar Village                           w=   35 gen=  60000ms pct= 80 init=7-10 cap=12 pts=11 [plMonsters] monsroom/kcforest/ke4.kod:118
+== MolluskMonster (L150) mollusk creature
+    Deep in the Forest of Farol            w=   30 gen= 100000ms pct= 80 init=4-8 cap=13 pts=15 [plMonsters] monsroom/d6.kod:58
+    The Great Ocean                        w=   80 gen=  45000ms pct= 70 init=2-5 cap= pts=10 [plMonsters] monsroom/e2.kod:58
+== Thrasher (L150) thrasher
+    Affirmation of the Forsaken            w=  100 gen=       ms pct=    init=- cap=15 pts=7 [plMonsters] monsroom/marcry3a.kod:230
+    Affirmation of the Forsaken            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcry3a.kod:477
+    Affirmation of the Forsaken            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcry3a.kod:506
+    Affirmation of the Forsaken            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcry3a.kod:509
+    Affirmation of the Forsaken            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcry3a.kod:532
+    Affirmation of the Forsaken            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcry3a.kod:535
+    Affirmation of the Forsaken            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcry3a.kod:538
+    Affirmation of the Forsaken            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcry3a.kod:824
+    Affirmation of the Forsaken            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcry3a.kod:832
+    Affirmation of the Forsaken            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcry3a.kod:835
+    Affirmation of the Forsaken            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcry3a.kod:844
+    Affirmation of the Forsaken            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcry3a.kod:847
+    Affirmation of the Forsaken            w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/marcry3a.kod:850
+== Kriipa (L160) kriipa
+    Headquarters for the Avar Warriors     w=   15 gen=  90000ms pct= 70 init=5-9 cap=12 pts=6 [plMonsters] monsroom/kcforest/kb2.kod:56
+    Camp of the Warrior Avars              w=   27 gen=  90000ms pct= 70 init=5-9 cap=12 pts=7 [plMonsters] monsroom/kcforest/kb3.kod:55
+    Path to the Ruins                      w=  100 gen=  90000ms pct= 70 init=5-9 cap=12 pts=8 [plMonsters] monsroom/kcforest/kb4.kod:54
+    Turf of the Warrior Avars              w=   40 gen=  90000ms pct= 70 init=5-9 cap=12 pts=8 [plMonsters] monsroom/kcforest/kc2.kod:56
+== SpiderQueen (L165) queen spider
+    The Spider Nest                        w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/nest1.kod:105
+== Cow (L200) cow
+    Raza                                   w=fixed gen=       ms pct=    init=- cap= pts= [Create()] guest2/newb2.kod:42
+    Raza                                   w=fixed gen=       ms pct=    init=- cap= pts= [Create()] guest2/newb2.kod:43
+    Raza                                   w=fixed gen=       ms pct=    init=- cap= pts= [Create()] guest2/newb2.kod:44
+== DeadLich (L200) ghostly remains of Queen Venya'cyr
+    Inner Sanctum of Queen Venya'cyr       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] ghall/guildh15.kod:213
+== Ghost (L200) ghost
+    The Throne Room of Victoria Castle     w=fixed gen=       ms pct=    init=- cap= pts= [Create()] monsroom/throne1.kod:121
+== Lich (L200) Queen Venya'cyr
+    Inner Sanctum of Queen Venya'cyr       w=fixed gen=       ms pct=    init=- cap= pts= [Create()] ghall/guildh15.kod:218
+== Shadowbeast (L200) shadowbeast
+    The Archaic Hollows                    w=   30 gen=  25000ms pct= 80 init=7-9 cap=25 pts=25 [plMonsters] monsroom/orccave3.kod:54
+    Aqueducts of Merb                      w=   40 gen=  25000ms pct= 80 init=7-9 cap=25 pts=29 [plMonsters] monsroom/orccave4.kod:55
+
+### monsters with NO room reference:
+   OrcPitBossBody           L   1 body of the orc pit boss
+   EvilTwin                 L   1 evil twin
+   Council                  L  25 Councilor
+   Factions                 L  25 
+   Priestess                L  25 priestess
+   Temples                  L  25 
+   GraphicTester            L  25 test1.bgf
+   Thief                    L  25 Thief
+   Towns                    L  25 
+   FiveCouncilor            L  25 Esseldi
+   fourCouncilor            L  25 Drechx
+   OneCouncilor             L  25 Alzahakar
+   ThreeCouncilor           L  25 Cylill
+   TwoCouncilor             L  25 Bei Naq
+   DukeLiege                L  25 Duke Akardius
+   PrincessLiege            L  25 Princess Kateriina
+   RebelLiege               L  25 Jonas D'Accor
+   BarloqueTown             L  25 
+   CorNothTown              L  25 
+   HazarTown                L  25 
+   JasperTown               L  25 
+   KocatanTown              L  25 
+   ladypheonix              L  25 LadyPhoenix
+   MarionTown               L  25 
+   TosTown                  L  25 
+   Wanderer                 L  25 
+   BarloqueBanker           L  25 Setag'lib
+   Barloquetailor           L  25 Madelia
+   BarloqueUrchin           L  25 urchin
+   barloqueVaultman         L  25 Obert Cair'bre
+   CorNothInnkeeper         L  25 D'Franco
+   CorNothUrchin            L  25 urchin
+   HazarApothecary          L  25 Ravi
+   HazarBartender           L  25 Eric d'Jorn
+   HazarInnKeeper           L  25 Marcus
+   JasperInnKeeper          L  25 Widow Qesino
+   JasperBlacksmith         L  25 Quintor
+   JasperUrchin             L  25 urchin
+   KocatanBowMaker          L  25 Hanla zax'Ta
+   kocatanTradeMaster       L  25 Wulfgang zax'Ak
+   Kocatansentry            L  25 sentry
+   KocatanShopkeeper        L  25 Pacal ix'Anoak
+   MarionInnkeeper          L  25 Morrigan
+   MarionUrchin             L  25 urchin
+   BasicInnKeeper           L  25 Rycksher
+   TosBlacksmith            L  25 Fehr'loi Qan
+   TosUrchin                L  25 urchin
+   JealousGeneral           L  25 Jonas D'Accor
+   GroundWormLarva          L  35 groundworm larva
+   Reflection               L  45 reflection
+   EvilEnt                  L  50 diseased tree
+   DukeTroop                L  50 soldier of the Duke's army
+   PrincessTroop            L  50 soldier of the Princess' army
+   Revenant                 L  55 revenant
+   flytrap                  L  60 Man-eating Plant
+   NecromancerTroop         L  60 necromancer
+   FactionTroop             L  80 faction troop
+   Iceperson                L  90 ice creature
+   GroundWorm               L 100 groundworm
+   Guard                    L 100 guard cow
+   OrcPitBoss               L 115 orc pit boss
+   DragonFlyPet             L 120 pet dragonfly
+   GroundWormQueen          L 130 groundworm queen
+   DragonFlyQueen           L 145 dragonfly queen
+   Xeochicatl               L 150 Xeochicatl
+   XeoAir                   L 150 ve'xeochicatl
+   Yeti                     L 170 yeti
+   XeoFire                  L 170 ro'xeochicatl
+   XeoWater                 L 190 ma'xeochicatl
+   DarkAngel                L 200 dark angel
+   LupoggKing               L 200 lupogg king
+   XeoEarth                 L 200 te'xeochicatl

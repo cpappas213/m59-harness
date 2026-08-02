@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rebel Liege — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Rebel Liege</p>
+<div class="hero"><div class="heroText"><h1>Rebel Liege</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Neutral</span><span class="tag ">Teacher</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">slow</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">normal</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 0
+                = 75
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>hit</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>No room in the world declares this creature. It is summoned by another creature, placed by an
+administrator, or left over from content that is no longer reachable.</p><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_NPC</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_NOMOVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_NOFIGHT</code></td><td class="">Doesn't fight</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_BARTENDER</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_NOMOVE</code></td><td class="">Doesn't move</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_APOTHECARY</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RANDOM</code></td><td class="">Performs random actions</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_URCHIN</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_LISTEN</code></td><td class="">Responds to speech</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_TAILOR</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RECEIVE</code></td><td class="">Will accept items/gifts</td></tr>
+<tr><td class=""><code class="k">MOB_TEACHER</code></td><td class="">Has skills or spells for sale</td></tr>
+<tr><td class=""><code class="k">MOB_PERM_QUESTER</code></td><td class="">is a perm questor</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>What it offers</h2><h3>Spells taught</h3><p><a href="../spells/identify.html">identify</a>, <a href="../spells/reveal.html">reveal</a>, <a href="../spells/shroud.html">shroud</a>, <a href="../spells/dispelillusion.html">dispel illusion</a>, <a href="../spells/haste.html">haste</a>, <a href="../spells/resistpoison.html">resist poison</a>, <a href="../spells/glowweapon.html">glow</a>, <a href="../spells/freeaction.html">free action</a>, <a href="../spells/shatterlock.html">shatterlock</a></p><h3>Skills taught</h3><p><a href="../skills/block.html">block</a></p><p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/rebel.kod — <code class="k">plFor_Sale</code>: element 1 goods, element 2 skills, element 3 spells (kod/object/active/holder/nomoveon/battler/monster.kod:2773, :2797)</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/rebel.kod:11</p>
+<p><code class="k">RebelLiege</code> is <code class="k">Factions</code> — full chain <code class="k">RebelLiege</code> ← <code class="k">Factions</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viQuestID</code></td><td class=""><code>QST_ID_REBEL_SERVICE</code></td><td class="">69</td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viGender</code></td><td class=""><code>GENDER_MALE</code></td><td class="">1</td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viFaction</code></td><td class=""><code>FACTION_REBEL</code></td><td class="">3</td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_NOFIGHT | MOB_LISTEN | MOB_RANDOM | MOB_RECEIVE | MOB_NOMOVE | MOB_PERM_QUESTER | MOB_TEACHER</code></td><td class="">132155</td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viOccupation</code></td><td class=""><code>MOB_ROLE_ROYALTY</code></td><td class="">14</td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viHomeroom</code></td><td class=""><code>RID_JAS_BAR</code></td><td class="">371</td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viMyRow</code></td><td class=""><code>7</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viMyCol</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viMyAngle</code></td><td class=""><code>ANGLE_NORTH</code></td><td class="">3072</td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viMyFR</code></td><td class=""><code>32</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">viMyFC</code></td><td class=""><code>32</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>RebelLiege_name_rsc</code></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>RebelLiege_icon_rsc</code></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>RebelLiege_desc_rsc</code></td><td class="num " data-sort="59">59</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>AffectMood(why = $, what = $)</h4>
+<pre><code>{
+      if( why = MOODMOD_FACTION_CHANGE )
+      {
+         if( what = FACTION_DUKE )
+         {
+            send( self, @SetMood, #new_mood = piMood - 25 );
+         }
+         if( what = FACTION_PRINCESS )
+         {
+            send( self, @SetMood, #new_mood = piMood - 25 );
+         }
+         if( what = FACTION_REBEL )
+         {
+            send( self, @SetMood, #new_mood = piMood + 25 );
+         }
+      }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/rebel.kod:63</p>
+<h4>Constructor()</h4>
+<pre><code>{
+      plWantedItems=[&amp;Token];
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/rebel.kod:83</p>
+<h4>CheckWhyWanted(obj = $, who = $)</h4>
+<pre><code>{
+      local temp_rsc;
+
+      if isClass(obj,&amp;Token) and Send(SYS,@GetTokenGame) &lt;&gt; $ and 
+         Send(Send(SYS,@GetTokenGame),@IsTokenReal,#obj=obj)
+      {
+
+
+
+
+
+
+         if Send(who,@GetFaction)=FACTION_REBEL
+           {temp_rsc=RebelLiege_rebel_delivered_rsc;}
+         if Send(who,@GetFaction)=FACTION_NEUTRAL
+           {temp_rsc=RebelLiege_neutral_delivered_rsc;}
+         if (Send(who,@GetFaction)=FACTION_DUKE) or (Send(who,@GetFaction)=FACTION_PRINCESS)
+           {temp_rsc=RebelLiege_other_delivered_rsc;}
+         if (Send(Send(SYS,@GetParliament),@GetPower,
+               #faction=FACTION_REBEL)&gt;FACTION_STRONGLY_IN) AND
+           (Send(who,@GetFaction)&lt;&gt;FACTION_REBEL)
+           { temp_rsc=RebelLiege_toopowered_rsc;} 
+
+         Send(poOwner,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,
+                 #string=RebelLiege_token_delivered_rsc,#parm1=temp_rsc);
+         return TRUE;
+      }
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/rebel.kod:89</p>
+<h4>SetForSale()</h4>
+<pre><code>{
+      plFor_Sale = [$,
+          [ SKID_BLOCK ],
+          [ SID_IDENTIFY, SID_REVEAL, SID_SHROUD,
+          SID_DISPEL_ILLUSION, SID_HASTE, SID_RESIST_POISON,
+          SID_GLOW, SID_FREE_ACTION,
+          SID_SHATTERLOCK]];
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/rebel.kod:120</p>
+<h4>CanDoTeach(who = $, sid = 0)</h4>
+<pre><code>{
+      if not send(self,@SpecialTeachChecks,#report = TRUE,#who=who,#num=sid) { return FALSE; }
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/rebel.kod:131</p>
+<h4>CanAddSpell(who = $, num = 0, report = FALSE)</h4>
+<pre><code>{
+      if not send(self,@SpecialTeachChecks,#who=who,#num=num,#report=report) { return FALSE; }
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/rebel.kod:137</p>
+<h4>SpecialTeachChecks(who = $, num = 0, report = FALSE)</h4>
+<pre><code>{
+      if who = $ or num = 0
+      { DEBUG(&quot;Called SpecialTeachChecks with bad parameters!&quot;); return FALSE; }
+   
+      if send(who,@HasSpell,#num=num) 
+      {
+         if report
+         { 
+            post(self,@saytoone,#target=who,#message_rsc=RebelLiege_already_have_spell,
+            #parm1=send(send(SYS,@FindSpellByNum,#num=num),@GetName)); 
+         }
+         return FALSE;
+      }
+
+      if send(who,@CheckPlayerFlag,#flag=PFLAG_MURDERER) 
+      { 
+         if report
+         { 
+            Post(poOwner,@SomeoneSaid,#what=self,#type=SAY_RESOURCE, #string=RebelLiege_no_murderer);
+         }
+         return FALSE;
+      }
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/factions/rebel.kod:143</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

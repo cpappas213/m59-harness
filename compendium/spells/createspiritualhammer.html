@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spiritual hammer — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › spiritual hammer</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/ispirith_g1.png" alt="spiritual hammer" width="128" height="128"></div><div class="heroText"><h1>spiritual hammer</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><a class="tag school-1" href="../guides/shalille.html">Shal’ille</a><span class="tag ">Level 3</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/shalille.html">Shal’ille</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">3</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">15</div></div><div class="fact"><div class="lbl">Karma required</div><div class="val">≥ +30</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">5000 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">100</div></div></div><div class="flavor">Materializes a spiritual hammer. Requires emeralds and orc teeth to cast.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">15</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/emerald.html">emerald</a> ×2, <a href="../items/orctooth.html">orc tooth</a></td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">at least +30</td><td class="">Derived, not stored: <code class="k">GetRequiredKarma</code> returns level × +10 for this school.</td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">5</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">5000 ms trance</td><td class="">You are locked in a casting trance for this long; taking damage can break it.</td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/creasphm.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/shalillepriestess.html">Priestess Xiana</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">GetNumSpellTargets</code></li><li><code class="k">GetLongevity</code></li><li><code class="k">CastSpell</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/ispirith_g1.png" alt="spiritual hammer group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/ispirith_g2.png" alt="spiritual hammer group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/creasphm.kod:11</p>
+<p><code class="k">CreateSpiritualHammer</code> is <code class="k">Spell</code> — full chain <code class="k">CreateSpiritualHammer</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>createspiritualhammer_name_rsc</code></td><td class=""><em>spiritual hammer</em></td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>createspiritualhammer_icon_rsc</code></td><td class=""><em>ispirith.bgf</em></td><td class="num " data-sort="33">33</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>createspiritualhammer_desc_rsc</code></td><td class=""><em>Materializes a spiritual hammer.  Requires emeralds and orc teeth to cast.</em></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_SPIRITUAL_HAMMER</code></td><td class="">100</td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_SHALILLE</code></td><td class="">1</td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>15</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viCast_time</code></td><td class=""><code>5000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>createspiritualhammer_sound</code></td><td class=""><em>sspham.wav</em></td><td class="num " data-sort="43">43</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      
+
+      plReagents = $;
+      plReagents = Cons([&amp;Emerald,2],plReagents);
+      plReagents = Cons([&amp;OrcTooth,1],plReagents);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/creasphm.kod:50</p>
+<h4>GetNumSpellTargets()</h4>
+<pre><code>{
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/creasphm.kod:61</p>
+<h4>GetLongevity(iSpellPower = 0)</h4>
+<pre><code>{
+      local iLongevity;
+
+      iLongevity = 10 + ((50 * iSpellpower) / 100);  
+      iLongevity = iLongevity * 60 * 1000;  
+
+      return iLongevity;   
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/creasphm.kod:66</p>
+<h4>CastSpell(who = $, lTargets = $, iSpellPower = $)</h4>
+<pre><code>{
+      local oSpiritualHammer, iLongevity, iToHitBonus;
+
+      iLongevity = send(self,@GetLongevity,#iSpellPower=iSpellPower);
+      iToHitBonus = (iSpellPower * 3) / 2;
+      oSpiritualHammer = Create(&amp;SpiritualHammer,#iLongevity=iLongevity,#iToHitBonus=iToHitBonus);
+
+      if Send(who,@ReqNewHold,#what=oSpiritualHammer)
+      {
+         Send(who,@NewHold,#what=oSpiritualHammer);
+         Send(who,@MsgSendUser,#message_rsc=createspiritualhammer_cast_rsc);
+      }
+      else
+      {
+         Send(oSpiritualHammer,@Delete);
+         Send(who,@MsgSendUser,#message_rsc=createspiritualhammer_inv_full_rsc);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/creasphm.kod:77</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

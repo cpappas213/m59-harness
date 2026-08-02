@@ -1,0 +1,921 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Queen Venya'cyr — Meridian 59 Compendium</title>
+<meta name="description" content="A noble woman of stunning beauty, Queen Venya'cyr carries herself with a refined demeanor hardly still seen in this day and age. You can't help but marvel at ho">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Queen Venya'cyr</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/licha_g1.png" alt="Queen Venya'cyr" width="101" height="192"></div><div class="heroText"><h1>Queen Venya'cyr</h1><p class="lede">A noble woman of stunning beauty, Queen Venya'cyr carries herself with a refined demeanor hardly still seen in this day and age. You can't help but marvel at how she has managed to keep her beautiful face so young and vibrant through all of these centuries.</p><div class="tags"><span class="tag ">Level 200</span><span class="tag ">Difficulty 9</span><span class="tag ">Evil</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">200</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">9</div></div><div class="fact"><div class="lbl">Health</div><div class="val">180–300</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">10–25</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">-100</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">fast</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">lich</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 200 + 60 × 9
+                = 1140
+
+health          = Fuzzy(level × 120/100) = 180–300
+damage per hit  = Fuzzy(level / random(10,15))  = 10–25
+dodge           = difficulty × 10 = 90</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">95%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">29%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">8</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">16.6</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>hit</strong> damage, carrying <strong>unholy</strong> magic. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 200/55 + random(0, 9/3), $, 6)
+       = 4–6 items
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/licht.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="IvyCirclet"><a href="../items/ivycirclet.html">ivy circlet</a></td><td class="num " data-sort="20.792">20.8%</td><td class=""></td><td class=""><code>licht.kod:31</code></td></tr>
+<tr><td class="" data-sort="Scimitar"><a href="../items/scimitar.html">scimitar</a></td><td class="num " data-sort="14.851">14.9%</td><td class=""></td><td class=""><code>licht.kod:32</code></td></tr>
+<tr><td class="" data-sort="PlateArmor"><a href="../items/platearmor.html">plate armor</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>licht.kod:33</code></td></tr>
+<tr><td class="" data-sort="LongSword"><a href="../items/longsword.html">long sword</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>licht.kod:34</code></td></tr>
+<tr><td class="" data-sort="OrcShield"><a href="../items/orcshield.html">orc shield</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>licht.kod:35</code></td></tr>
+<tr><td class="" data-sort="Knightshield"><a href="../items/knightshield.html">knight's shield</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>licht.kod:36</code></td></tr>
+<tr><td class="" data-sort="MysticSword"><a href="../items/mysticsword.html">mystic sword</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>licht.kod:37</code></td></tr>
+<tr><td class="" data-sort="RingInvisibility"><a href="../items/ringinvisibility.html">Ring Invisibility</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>licht.kod:38</code></td></tr>
+<tr><td class="" data-sort="FireRing"><a href="../items/firering.html">Fire Ring</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>licht.kod:39</code></td></tr>
+<tr><td class="" data-sort="SeduceWand"><a href="../items/seducewand.html">Seduce Wand</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>licht.kod:40</code></td></tr>
+<tr><td class="" data-sort="BlindWand"><a href="../items/blindwand.html">Blind Wand</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>licht.kod:41</code></td></tr></tbody></table></div><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>10 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 10.
+<span class="cite">kod/object/passive/trestype/licht.kod:23</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>1 place in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="Inner Sanctum of Queen Venya'cyr"><a href="../zones/guildhall15.html">Inner Sanctum of Queen Venya'cyr</a></td><td class="" data-sort="Guild halls">Guild halls</td><td class="" data-sort="placed">placed</td><td class="num " data-sort="-1">row 13, col 49</td><td class=""><code>ghall/guildh15.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_MOVE_FLEE_FRIGHTENERS</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_WIZARD_KILLER</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_HYPERAGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_SWITCHALOT</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_THROUGH_WALLS</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_LISTEN</code></td><td class="">Responds to speech</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_TAILOR</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RECEIVE</code></td><td class="">Will accept items/gifts</td></tr>
+<tr><td class=""><code class="k">MOB_TEACHER</code></td><td class="">Has skills or spells for sale</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>What killing it does to your karma</h2>
+<p>Its karma is <code class="k">-100</code>, and a kill is treated as an act whose karma is the
+<em>negative</em> of the victim's — so killing this creature pushes you
+<strong>towards good</strong>.</p>
+<div class="formula">base   = your_karma − (−victim_karma) = your_karma − 100
+change = −( base³ / 2500 + 5 × base ) / (11 − swing)      % hundredths of a karma point
+       bounded to ±150 for a monster kill — at most 1.5 karma per kill</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code> · :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+<div class="note">No karma moves at all in the newbie region, in an arena, or when the victim's
+karma is neutral. And once you are already further from neutral than your victim in the same
+direction, killing them does nothing to you.</div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/licha_g1.png" alt="Queen Venya'cyr group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/licha_g2.png" alt="Queen Venya'cyr group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/licha_g3.png" alt="Queen Venya'cyr group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/licha_g4.png" alt="Queen Venya'cyr group 4" loading="lazy"><figcaption>group 4 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/licha_g5.png" alt="Queen Venya'cyr group 5" loading="lazy"><figcaption>group 5 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/licha_g6.png" alt="Queen Venya'cyr group 6" loading="lazy"><figcaption>group 6 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/licha_g7.png" alt="Queen Venya'cyr group 7" loading="lazy"><figcaption>group 7 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/licha_g8.png" alt="Queen Venya'cyr group 8" loading="lazy"><figcaption>group 8 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/licha_g9.png" alt="Queen Venya'cyr group 9" loading="lazy"><figcaption>group 9 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/lichbx_g1.png" alt="Queen Venya'cyr corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:11</p>
+<p><code class="k">Lich</code> is <code class="k">Monster</code> — full chain <code class="k">Lich</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>lich_pretty_name_rsc</code></td><td class=""><em>Queen Venya'cyr</em></td><td class="num " data-sort="91">91</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>lich_pretty_icon_rsc</code></td><td class=""><em>licha.bgf</em></td><td class="num " data-sort="92">92</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>lich_pretty_desc_rsc</code></td><td class=""><em>A noble woman of stunning beauty, Queen Venya'cyr carries herself with a refined demeanor </em></td><td class="num " data-sort="93">93</td></tr>
+<tr><td class=""><code class="k">vrName2</code></td><td class=""><code>lich_name_rsc</code></td><td class=""><em>Queen Venya'cyr</em></td><td class="num " data-sort="94">94</td></tr>
+<tr><td class=""><code class="k">vrIcon2</code></td><td class=""><code>lich_icon_rsc</code></td><td class=""><em>lichb.bgf</em></td><td class="num " data-sort="95">95</td></tr>
+<tr><td class=""><code class="k">vrDesc2</code></td><td class=""><code>lich_desc_rsc</code></td><td class=""><em>Through some dark pact made ages ago, Queen Venya'cyr's ghastly corpse has been kept alive</em></td><td class="num " data-sort="96">96</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>lich_dead_icon_rsc</code></td><td class=""><em>lichbx.bgf</em></td><td class="num " data-sort="97">97</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>lich_dead_name_rsc</code></td><td class=""><em>The ghost of Queen Venya'cyr</em></td><td class="num " data-sort="98">98</td></tr>
+<tr><td class=""><code class="k">viDefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="99">99</td></tr>
+<tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="100">100</td></tr>
+<tr><td class=""><code class="k">viGender</code></td><td class=""><code>GENDER_FEMALE</code></td><td class="">2</td><td class="num " data-sort="101">101</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_LICH</code></td><td class="">42</td><td class="num " data-sort="103">103</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_FAST</code></td><td class="">16</td><td class="num " data-sort="104">104</td></tr>
+<tr><td class=""><code class="k">viAttack_spell</code></td><td class=""><code>ATCK_SPELL_UNHOLY</code></td><td class="">32</td><td class="num " data-sort="105">105</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>200</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="106">106</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="107">107</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>-100</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="108">108</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_AGGRESSIVE |  AI_FIGHT_WIZARD_KILLER | AI_FIGHT_HYPERAGGRESSIVE | AI_MOVE_FLEE_FRIGHTENERS | AI_FIGHT_THROUGH_WALLS | AI_FIGHT_SWITCHALOT</code></td><td class="">31473696</td><td class="num " data-sort="109">109</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_LISTEN | MOB_RECEIVE | MOB_TEACHER</code></td><td class="">1072</td><td class="num " data-sort="110">110</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>lich_sound_miss</code></td><td class=""><em>lich_atk.wav</em></td><td class="num " data-sort="112">112</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>lich_sound_aware</code></td><td class=""><em>lich_awr.wav</em></td><td class="num " data-sort="113">113</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>lich_sound_death</code></td><td class=""><em>lich_dth.wav</em></td><td class="num " data-sort="114">114</td></tr>
+<tr><td class=""><code class="k">vrTributeTrigger</code></td><td class=""><code>lich_tribute_trigger</code></td><td class=""><em>tribute</em></td><td class="num " data-sort="116">116</td></tr>
+<tr><td class=""><code class="k">vrHungerTrigger</code></td><td class=""><code>lich_hunger_trigger</code></td><td class=""><em>hunger</em></td><td class="num " data-sort="117">117</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="121">121</td></tr>
+<tr><td class=""><code class="k">plAttackers</code></td><td class=""><code>$</code></td><td class="num " data-sort="122">122</td></tr>
+<tr><td class=""><code class="k">poNecromancerGuild</code></td><td class=""><code>$</code></td><td class="num " data-sort="124">124</td></tr>
+<tr><td class=""><code class="k">psTempRosterString</code></td><td class=""><code>$</code></td><td class="num " data-sort="125">125</td></tr>
+<tr><td class=""><code class="k">pbIllusioned</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="127">127</td></tr>
+<tr><td class=""><code class="k">ptGoIllusioned</code></td><td class=""><code>$</code></td><td class="num " data-sort="128">128</td></tr>
+<tr><td class=""><code class="k">piBlindAttackChance</code></td><td class=""><code>15</code></td><td class="num " data-sort="130">130</td></tr>
+<tr><td class=""><code class="k">piBlindCounterChance</code></td><td class=""><code>7</code></td><td class="num " data-sort="131">131</td></tr>
+<tr><td class=""><code class="k">piBlindDurationMin</code></td><td class=""><code>20</code></td><td class="num " data-sort="132">132</td></tr>
+<tr><td class=""><code class="k">piBlindDurationMax</code></td><td class=""><code>30</code></td><td class="num " data-sort="133">133</td></tr>
+<tr><td class=""><code class="k">ptDeathSequence</code></td><td class=""><code>$</code></td><td class="num " data-sort="135">135</td></tr>
+<tr><td class=""><code class="k">piDeathSequenceTimestep</code></td><td class=""><code>200</code></td><td class="num " data-sort="136">136</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructed(oNecromancerGuild = $)</h4>
+<pre><code>{
+      
+      
+
+      pimax_Hit_Points = pimax_hit_Points * 2;
+      piHit_Points = pimax_hit_points;
+
+      plResistances = [ [ 60, -ATCK_SPELL_ALL],
+                        [ 60,  ATCK_WEAP_ALL],
+                        [-20,  ATCK_WEAP_NERUDITE ],
+                        [-20,  ATCK_WEAP_BLUDGEON ],
+                        [-60,  ATCK_WEAP_SILVER ],
+                        [ 90, -ATCK_SPELL_COLD],
+                        [ 90, -ATCK_SPELL_UNHOLY ],
+                        [ 30, -ATCK_SPELL_ACID ],
+                        [-20, -ATCK_SPELL_SHOCK],
+                        [-20, -ATCK_SPELL_FIRE ],
+                        [-40, -ATCK_SPELL_HOLY ],
+                        [-90, -ATCK_SPELL_HUNTERSWORD ]
+                      ];
+                        
+      if oNecromancerGuild &lt;&gt; $
+      {
+         poNecromancerGuild = oNecromancerGuild;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:140</p>
+<h4>SetForSale()</h4>
+<pre><code>{
+      plFor_sale = $; 
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:170</p>
+<h4>CanDoTeach(who = $, sid = 0)</h4>
+<pre><code>{
+      if NOT send(self,@CanAddSpell,#report=TRUE,#who=who,#num=sid)
+      {
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:177</p>
+<h4>CanAddSpell(who = $, num = 0, report = FALSE)</h4>
+<p>We require that a quest be done before one of the spells can be learned</p>
+<pre><code>{
+      if num = SID_SHADOW_RIFT
+         AND NOT send(who,@IsUsingA,#class=&amp;NecromancerAmulet)
+      {
+         if report
+         {
+            send(who,@msgsenduser,#message_rsc=lich_not_order);
+         }
+
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:187</p>
+<h4>GetIcon()</h4>
+<pre><code>{
+      if pbIllusioned
+      {
+         return vrIcon;
+      }
+
+      return vrIcon2;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:204</p>
+<h4>GetName()</h4>
+<pre><code>{
+      if pbIllusioned
+      {
+         return vrName;
+      }
+
+      return vrName2;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:214</p>
+<h4>GetApparentName()</h4>
+<pre><code>{
+      if pbIllusioned
+      {
+         return vrName;
+      }
+
+      return vrName2;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:224</p>
+<h4>ShowDesc()</h4>
+<pre><code>{
+      if pbIllusioned
+      {
+         AddPacket(4,vrDesc);
+
+         return;
+      }
+
+      AddPacket(4,vrDesc2);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:234</p>
+<h4>DispelIllusionEnchantments()</h4>
+<pre><code>{
+      if NOT pbIllusioned
+      {
+         return;
+      }
+
+      Post(poOwner,@SomeoneSaid,#what=self,#string=lich_dispel,#type=SAY_MESSAGE);
+
+      pbIllusioned = FALSE;
+      send(poOwner,@Somethingchanged,#what=self);
+      if ptGoIllusioned &lt;&gt; $
+      {
+         deleteTimer(ptGoIllusioned);
+         ptGoIllusioned = $;
+      }
+
+      ptGoIllusioned = CreateTimer(self,@ReplaceIllusions,LICH_ILLUSION_TIME);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:248</p>
+<h4>ReplaceIllusions()</h4>
+<pre><code>{
+      ptGoIllusioned = $;
+
+      if pbIllusioned
+      {
+         return;
+      }
+
+      Post(poOwner,@SomeoneSaid,#what=self,#string=lich_respel,#type=SAY_MESSAGE);
+
+      pbIllusioned = TRUE;
+      send(poOwner,@Somethingchanged,#what=self);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:270</p>
+<h4>Delete()</h4>
+<pre><code>{
+      plAttackers = $;
+
+      if poNecromancerGuild &lt;&gt; $
+      {
+         send(self,@ClearNecromancerGuild);
+      }
+
+      if ptGoIllusioned &lt;&gt; $
+      {
+         deleteTimer(ptGoIllusioned);
+         ptGoIllusioned = $;
+      }
+
+      if ptDeathSequence &lt;&gt; $
+      {
+         deleteTimer(ptDeathSequence);
+         ptDeathSequence = $;
+         send(self,@DeathSequence2);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:287</p>
+<h4>AssessDamage(what = $, damage = $, atype = 0, aspell = 0, bonus = 0)</h4>
+<p>This is called when something causes damage to us</p>
+<pre><code>{
+      local i;
+
+      for i in plAttackers
+      {
+         if i = what
+         {
+            propagate;
+         }
+      }
+
+      plAttackers = cons(what,plAttackers);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:312</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      piAnimation = ANIM_ATTACK;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:330</p>
+<h4>DoCast()</h4>
+<pre><code>{
+      piAnimation = ANIM_ATTACK;
+      Send(poOwner,@SomethingChanged,#what=self);
+      send(poOwner,@SomethingShot,#who=self,#target=poTarget,#projectile=self);
+      piAnimation = ANIM_NONE;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:339</p>
+<h4>GetProjectileIcon()</h4>
+<pre><code>{
+      return lich_darkbolt;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:350</p>
+<h4>GetProjectileSpeed()</h4>
+<pre><code>{
+      return 8;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:355</p>
+<h4>SendProjectileAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_TRANSLATION,1,PT_GRAY_TO_BLACK);
+      AddPacket(1, ANIMATE_CYCLE, 4, 40, 2, 1, 2, 5);   
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:360</p>
+<h4>GetProjectileLightFlags()</h4>
+<pre><code>{
+      
+      
+      return LIGHT_FLAG_NONE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:368</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE,4,80,2,2,2,5);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:375</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE,4,200,2,2,2,3);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:382</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if piAnimation = ANIM_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,150,2,6,2,9,2,1);
+
+         return;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:390</p>
+<h4>ReqSpellCast(who = $, oSpell = $, lItems = $)</h4>
+<pre><code>{
+      if oSpell = send(SYS,@FindSpellByNum,#num=SID_TRUCE)
+      {  
+         Send(who,@MsgSendUser,#message_rsc=lich_no_truce);            
+
+         return FALSE; 
+      }
+
+      if ((Random(1,piBlindCounterChance) = 1) OR (send(oSpell,@GetSchool)=SS_QOR))
+         AND send(self,@CanSee,#what=who)
+      {
+         send(self,@MonsterCastAttackSpell,#what=who);
+
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:402</p>
+<h4>ReqSomethingAttack(what = $, victim = $, use_weapon = $)</h4>
+<pre><code>{
+      if use_weapon &lt;&gt; $
+      {
+         if IsClass(use_weapon,&amp;RangedWeapon)
+            AND victim = self
+            AND send(self,@CanSee,#what=what)
+            AND random(1,piBlindCounterChance) = 1 
+         {
+            send(self,@MonsterCastAttackSpell,#What=what);
+
+            return FALSE;
+         }
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:422</p>
+<h4>MonsterCastAttackSpell(what = $)</h4>
+<pre><code>{
+      local oSpell, iRandom, oTarget;
+
+      if what = $
+      {
+         oTarget = poTarget;
+      }
+      else
+      {
+         oTarget = what;
+      }
+
+      if not send(self,@CanSee,#what=poTarget)
+      {
+         return;
+      }
+
+      oSpell = Send(SYS,@FindSpellByNum,#num=SID_BLIND);
+      iRandom = Random(piBlindDurationMin,piBlindDurationMax);
+
+      if NOT send(poowner,@ReqSomethingAttack,#what=self,#victim=poTarget,#use_weapon=self)
+      {
+         return;
+      }
+
+      Send(poOwner,@SomethingWaveRoom,#what=self,#wave_rsc=lich_cast_sound);
+      Send(poOwner,@SomeoneSaid,#type=SAY_MESSAGE,#string=lich_cast_spell,#what=self);
+      Send(self,@DoCast);
+      Send(oSpell,@DoBlind,#what=self,#oTarget=oTarget,#iDurationSecs=iRandom);
+
+      return; 
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:441</p>
+<h4>AttackTimer(timer = $)</h4>
+<p>We were bashing on something before, and now its time to hit it again.</p>
+<pre><code>{
+      local oSpell, iRandom;
+      
+      iRandom = Random(1,piBlindAttackChance);
+      oSpell = Send(SYS,@FindSpellByNum,#num=SID_BLIND);
+      Send(self,@ClearBehavior,#timer=timer);
+
+      
+      if poOwner = $
+      {
+         debug(&quot;Unreachable. Null Owner&quot;); 
+         Send(self,@EnterStateLimbo);
+
+         return;
+      }
+
+      if poTarget=$
+      {
+         debug(&quot;Unreachable. Null poTarget&quot;,&quot;monster&quot;,self); 
+         Send(self,@EnterStateWait);
+
+         return;
+      }
+
+      Send(self,@FindNewTarget);
+      if NOT Send(self,@CanReach,#what=poTarget) 
+         AND send(poTarget,@IsEnchanted,#what=oSpell)
+      {
+         Send(self,@EnterStateChase,#Target=poTarget);
+
+         return;
+      }
+      else
+      {
+         if NOT Send(self,@CanReach,#what=poTarget) 
+         {
+            Send(self,@MonsterCastAttackSpell);
+            Send(poBrain,@PostAttackTimer,#mob=self,#state=piState);
+
+            return;
+         }
+      }
+ 
+      if NOT Send(poTarget,@IsEnchanted,#what=oSpell)
+         AND iRandom = 1
+      { 
+         Send(self,@MonsterCastAttackSpell); 
+      }
+      else 
+      {
+         Send(self,@TryAttack,#what=poTarget); 
+      }
+
+      Send(poBrain,@PostAttackTimer,#mob=self,#state=piState);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:475</p>
+<h4>FindNewTarget()</h4>
+<pre><code>{
+      local oBlind, lActive, iRandom, iDistance, iBestDistance, i, each_obj;
+
+      
+      
+      
+      
+   
+      oBlind = send(SYS,@FindSpellByNum,#num=SID_BLIND);
+      lActive = send(poOwner,@getholderactive);
+      iRandom = Random(1,30);
+      iBestDistance = 10000;
+
+      if send(poTarget,@isenchanted,#what=oBlind)
+      {
+         for i in lActive
+         {
+            each_obj = send(poOwner,@HolderExtractObject,#data=i);
+            iDistance = Send(self,@SquaredDistanceTo,#what=each_obj);
+
+            if isClass(each_obj,&amp;User)
+               AND Send(self,@CanSee,#what=each_obj)
+               AND NOT send(each_obj,@isenchanted,#what=oBlind)
+               AND (iRandom &lt; 10 OR iDistance &lt; iBestDistance)
+               AND NOT send(self,@isAlly,#target=each_obj)
+            {
+               Debug(&quot;TargetChange:&quot;,each_obj);
+               iBestDistance = iDistance;
+               poTarget = each_obj;
+
+               if iRandom &lt; 5
+               {
+                  return;
+               }
+            }
+         }
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:535</p>
+<h4>Killed(what = $, resetScenario = FALSE, guildDisbandDeath = FALSE)</h4>
+<pre><code>{
+      local NumAttackers, i, lichActivated;
+
+      NumAttackers = length(plAttackers);
+ 
+      for i in plAttackers
+      {
+         if i = what
+         {
+            Send(i,@MsgSendUser,#message_rsc=lich_death_blow );      
+         }
+
+         if NumAttackers = 2 and i &lt;&gt; what
+         {
+            Send(i,@MsgSendUser,#message_rsc=lich_double_killer );
+         }
+
+         if NumAttackers &gt; 2 and i &lt;&gt; what
+         {
+            Send(i,@MsgSendUser,#message_rsc=lich_helper_killer );
+         }
+      }
+
+      lichActivated = FALSE;
+      if (plAttackers &lt;&gt; $)
+         AND (poNecromancerGuild &lt;&gt; $)
+         AND (send(poNecromancerGuild,@GetMemberList) &lt;&gt; $)
+      {
+         lichActivated = TRUE;
+      }
+
+      
+      if not guildDisbandDeath
+      {
+         send(self,@ClearNecromancerGuild);
+      }
+
+      send(send(SYS,@FindRoomByNum,#num=RID_LICH_MAZE),@RandomizeLeverEffects);
+      send(send(SYS,@FindRoomByNum,#num=RID_G9),@RandomizeLeverEffects);
+
+      if what &lt;&gt; $ AND IsClass(what,&amp;Battler) AND NOT guildDisbandDeath
+      {
+         post(self,@BroadcastLichDeathMessage,#what=what,#Attackers=plAttackers,#lichActivated=lichActivated,#resetScenario=resetScenario);
+      }
+
+      if resetScenario and (ptDeathSequence = $) and not guildDisbandDeath
+      {
+         ptDeathSequence = createTimer(self,@DeathSequence2,piDeathSequenceTimestep);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:577</p>
+<h4>BroadcastLichDeathMessage(what = $, Attackers = $, resetScenario = TRUE, lichActivated = TRUE)</h4>
+<pre><code>{
+      local i, sKilledMessage, sRoster;
+
+      if lichActivated
+      {
+         
+         sRoster = send(self,@GetNecromancerRoster);
+         ClearTempString();
+         AppendTempString(lich_killed_world_saved_0);
+         AppendTempString(send(what,@GetTrueName));
+         AppendTempString(lich_killed_world_saved_1);
+         for i in Attackers {
+            if (length(Attackers) &gt; 1) and (i = nth(Attackers,length(Attackers))) {
+               AppendTempString(lich_and);
+            }
+            AppendTempString(send(i,@GetTrueName));
+            if (length(Attackers) &gt; 2)
+            {
+               AppendTempString(lich_comma);
+            }
+            else
+            {
+               AppendTempString(&quot; &quot;);
+            }
+         }
+
+         AppendTempString(lich_killed_world_saved_2);
+         AppendTempString(sRoster);
+         AppendTempString(lich_killed_world_saved_3);
+         sKilledMessage = createString();
+         setString(sKilledMessage,GetTempString());
+         send(SYS,@AdminSystemMessage,#string=sKilledMessage);
+      }
+      else
+      {
+         
+         ClearTempString();
+         AppendTempString(lich_killed_world_saved_0);
+         AppendTempString(send(what,@GetTrueName));
+         AppendTempString(lich_killed_world_saved_nolich);
+         sKilledMessage = createString();
+         setString(sKilledMessage,GetTempString());
+         send(SYS,@AdminSystemMessage,#string=sKilledMessage);
+      }
+      return;   
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:631</p>
+<h4>DeathSequence2()</h4>
+<pre><code>{
+      ptDeathSequence = $;
+      ptDeathSequence = createTimer(self,@DeathSequence3,piDeathSequenceTimestep);
+      
+      send(&amp;NecromancerAmulet,@LichKilled);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:679</p>
+<h4>DeathSequence3()</h4>
+<pre><code>{
+      ptDeathSequence = $;
+      send(&amp;HunterSword,@LichKilled,#oLich=self);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:689</p>
+<h4>CanMorphTo()</h4>
+<pre><code>{
+      return FALSE;
+   }      </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:697</p>
+<h4>SpellResist(oSpell = $, who = $, iSpellpower = $)</h4>
+<pre><code>{
+      local iResistChance;
+
+      if IsClass(who,&amp;DM)
+      {
+         return FALSE;
+      }
+ 
+      if (Send(oSpell,@IsHarmful))
+      {
+         
+         if (Send(oSpell,@GetSchool) = SS_QOR)
+         {
+            return TRUE;
+         }
+      
+         iResistChance = MAGIC_RESIST;
+         if IsClass(oSpell,&amp;Dazzle)
+         {
+            
+            iResistChance = (iResistChance * 150)/100;
+         }
+
+         if (iSpellPower &lt; 30) or (random(0,100) &lt; iResistChance)
+         {
+            return TRUE;
+         }
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:702</p>
+<h4>EstablishNecromancerGuild(master = $)</h4>
+<pre><code>{
+      if master = $ { return; }
+      if send(master,@GetGuild) &lt;&gt; $ { DEBUG(&quot;Tried to establish necroguild with master already guilded.&quot;); return; }
+      if poNecromancerGuild &lt;&gt; $ { return; }
+      poNecromancerGuild = create(&amp;NecromancerGuild,#master=master);
+      send(send(SYS,@FindRoomByNum,#num=RID_GUILDH15),
+               @ClaimGuildHall,#oGuild=poNecromancerGuild,#rep=master,#password=Lich_starting_password);
+      send(send(SYS,@FindRoomByNum,#num=RID_LICH_MAZE),@RandomizeLeverEffects);
+      send(send(SYS,@FindRoomByNum,#num=RID_G9),@RandomizeLeverEffects);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:740</p>
+<h4>ClearNecromancerGuild()</h4>
+<pre><code>{
+      if poNecromancerGuild &lt;&gt; $
+      {
+         send(poNecromancerGuild,@Delete);
+         poNecromancerGuild = $;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:753</p>
+<h4>SomeoneSaid(what = $, type = $, string = $)</h4>
+<pre><code>{
+      local oAmulet, iAmountDrained, iHunger, rHungerSpiel;
+      if isClass(what,&amp;User) and (send(what,@GetGuild) &lt;&gt; $) and (send(what,@GetGuild) = poNecromancerGuild) {
+         if stringcontain(string,vrTributeTrigger) {
+            
+            oAmulet = $;
+            for oAmulet in send(what,@GetPlayerUsing) {
+               if isClass(oAmulet,&amp;NecromancerAmulet) {
+                  break;
+               }
+            }
+            if (oAmulet = $) or (not isClass(oAmulet, &amp;NecromancerAmulet)) { propagate; }
+            iAmountDrained = send(oAmulet,@LichTributeDrain);
+            
+            if iAmountDrained = 0 { propagate; }
+            send(poNecromancerGuild,@PayRent,#amount=iAmountDrained*10000);
+         }
+         if stringcontain(string,vrHungerTrigger) {
+            iHunger = send(poNecromancerGuild,@GetRentDue);
+            rHungerSpiel = lich_hunger_0;
+            if iHunger &gt; 4 {
+               rHungerSpiel = lich_hunger_5;
+            }
+            if iHunger = 4 {
+               rHungerSpiel = lich_hunger_4;
+            }
+            if iHunger = 3 {
+               rHungerSpiel = lich_hunger_3;
+            }
+            if iHunger = 2 {
+               rHungerSpiel = lich_hunger_2;
+            }
+            if iHunger = 1 {
+               rHungerSpiel = lich_hunger_1;
+            }
+            Send(what,@SomeoneSaid,#what=self,#type=SAY_RESOURCE,#string=rHungerSpiel);
+         }
+      }
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:764</p>
+<h4>GetNecromancerRoster()</h4>
+<pre><code>{
+      local sRoster;
+      clearTempString();
+      send(&amp;NecromancerAmulet,@NecromancerRosterRequest,#olich=self);
+      if StringContain(GetTempString(),lich_comma)
+      {
+         appendTempString(lich_and);
+      }
+      appendTempString(psTempRosterString);
+      psTempRosterString = $;
+      sRoster = createString();
+      setString(sRoster,GetTempString());
+      return sRoster;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:806</p>
+<h4>NecromancerRosterReply(necroName = $)</h4>
+<pre><code>{
+      if psTempRosterString &lt;&gt; $ {
+         appendTempString(psTempRosterString);
+         appendTempString(lich_comma);
+      }
+      psTempRosterString = necroName;
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:822</p>
+<h4>IsAlly(target = $, regroup = FALSE)</h4>
+<pre><code>{
+      if isClass(target,&amp;User)
+      { 
+         if send(target,@IsUsingA,#class=&amp;NecromancerAmulet) { return TRUE; }
+      }
+      if isClass(target,&amp;DM)
+      {
+         return TRUE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:832</p>
+<h4>SpecialHatredBehavior(what = $)</h4>
+<pre><code>{
+      local i;
+      
+      
+      
+      if isClass(what,&amp;User) {
+         if (send(what,@FindHoldingActive,#class=&amp;HunterSword)&lt;&gt;$) {
+            if (poOwner &lt;&gt; $)
+            {  return 85;  }
+         }
+         if send(what,@GetKarma) &gt; 30 {
+            return send(what,@GetKarma);
+         }
+         if send(what,@IsUsingA,#class=&amp;NecromancerAmulet) {
+            for i in plAttackers {
+               if i = what { return 100; }
+            }
+         }
+      }
+      return 0;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:846</p>
+<h4>CreateDeadBody(killer = $)</h4>
+<pre><code>{
+      local oBody, iQNTindex, oQE;
+      oBody = create(&amp;DeadLich, #Attackers=plAttackers);
+      oQE = send(SYS,@GetQuestEngine);
+      send( oQE, @SetQuestScheduleChance, #index = QST_ID_ESTABLISH_NECROGUILD, #new_pct = 100 );
+      iQNTindex = first(nth(send( oQE, @GetQuestTemplate, #index = QST_ID_ESTABLISH_NECROGUILD ),QT_QUEST_NODES));
+      send( oQE, @SetQuestNodeNPCList, #index = iQNTindex, #new_NPC_list = [oBody] );
+            
+      return oBody;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:869</p>
+<h4>IsUndead()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:881</p>
+<h4>DMCanArmageddon()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:886</p>
+<h4>NewOwner(what = $)</h4>
+<pre><code>{
+      
+      if (what &lt;&gt; $) and not isClass(what,&amp;GuildHall15)
+      {
+         DEBUG(&quot;Bad Lich!  Go to your room!&quot;);
+         post(self,@GoBackToGuildhall);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:891</p>
+<h4>LastUserLeft(what = $)</h4>
+<pre><code>{
+      send(self,@GoBackToGuildhall);
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:903</p>
+<h4>GoBackToGuildhall()</h4>
+<pre><code>{
+      local oGuildh15;
+      oGuildh15 = send(SYS,@FindRoomByNum,#num=RID_GUILDH15);
+      send(oGuildh15,@NewHold,#what=self,
+            #new_row=13,#new_col=49,#fine_row=16,#fine_col=00,#new_angle=ANGLE_WEST);
+      if (send(oGuildh15,@CountHoldingHowMany,#class=&amp;Lich) &gt; 1)
+      {
+         DEBUG(&quot;More than one lich in the guild hall!!&quot;);
+      }
+      if (send(oGuildh15,@CountHoldingHowMany,#class=&amp;DeadLich) &gt; 0) and (send(oGuildh15,@CountHoldingHowMany,#class=&amp;Lich) &gt; 0)
+      {
+         DEBUG(&quot;Both a lich and a dead lich in the guild hall!!&quot;);
+      }
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/lich.kod:909</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

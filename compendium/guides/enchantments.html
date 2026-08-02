@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enchantments and Status Effects — Meridian 59 Compendium</title>
+<meta name="description" content="Everything that is temporarily true about a character — blessed, hasted, poisoned, invisible, demented — is an enchantment: a spell object attached to you with a duration and a state, which the combat code consults on every swing. There are 35 personal enchantments, 14 that sit on a room, 4 sicknesses and 16 attributes that live on a weapon. Almost every duration scales with the caster's spell power, and this page gives all of them.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html" class="on">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Guides</a> › Enchantments and Status Effects</p>
+<h1>Enchantments and Status Effects</h1>
+
+<p class="lede">Everything that is temporarily true about a character — blessed, hasted, poisoned,
+invisible, demented — is an <em>enchantment</em>: a spell object attached to you with a duration
+and a state, which the combat code consults on every swing. There are 35 personal enchantments,
+14 that sit on a room, 4 sicknesses and 16 attributes that live on a weapon. Almost every
+duration scales with the caster's spell power, and this page gives all of them.</p>
+
+<h2>How an enchantment works</h2>
+
+<div class="formula">CastSpell:
+    if already enchanted and the server permits recasting:  remove the old one first
+    StartEnchantment( what  = the spell object,
+                      state = InitializeEnchantmentState(spell power, caster, target),
+                      time  = GetDuration(spell power),
+                      lastcall, addicon )
+
+while it is on you:
+    the spell object is in plAttack_modifiers or plDefense_modifiers, and combat
+    calls ModifyHitRoll / ModifyDamage / ModifyDefensePower / ModifyDefenseDamage on it
+
+EndEnchantment:  a message, and the modifier is removed</div>
+<p class="cite">kod/object/passive/spell/persench.kod:151 <code class="k">CastSpell</code>, :199 <code class="k">EndEnchantment</code>, :209 <code class="k">InitializeEnchantmentState</code></p>
+
+<p>The <strong>state</strong> is the important part. Most enchantments store the spell power they
+were cast at, so the <em>strength</em> of the effect is fixed at cast time and does not change if
+the caster later gets stronger or dies. An enchantment is a snapshot.</p>
+
+<p>The framework is the same one armour uses. A worn defence modifier and a defensive spell both
+end up in <code class="k">plDefense_modifiers</code> and are both asked to modify incoming damage
+in the same loop — which is why <a href="armor.html">the armour page's</a> order of operations
+applies to spells too.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4556 <code class="k">AssessDamage</code>, :4265 (attack modifiers)</p>
+
+<div class="note"><strong>Recasting replaces, it does not stack.</strong> If the server allows
+self-recasting, the existing enchantment is removed before the new one is applied — so recasting
+at higher spell power is an upgrade, and recasting at lower power is a downgrade. There is no way
+to have two of the same enchantment.</div>
+
+<h2>Every personal enchantment, and how long it lasts</h2>
+
+<p>Durations below are in the units the source uses — most are seconds, four are already
+milliseconds and are marked. <code class="k">P</code> is your spell power, 1 to 99.</p>
+
+<table class="data">
+<thead><tr><th>Enchantment</th><th>Duration formula</th><th>At P=20</th><th>At P=99</th></tr></thead>
+<tbody>
+<tr><td><a href="../spells/cloak.html">cloak</a></td><td>(300 + 33 × P) ms</td><td>0.96 s</td><td>3.6 s</td></tr>
+<tr><td><a href="../spells/deflect.html">deflect</a></td><td>(20 + P) ms</td><td>0.04 s</td><td>0.12 s</td></tr>
+<tr><td><a href="../spells/detectinvisible.html">detect invisible</a></td><td>2400 × (100 + P) ms</td><td>288 s</td><td>478 s</td></tr>
+<tr><td><a href="../spells/karaholscurse.html">Kara'hol's curse</a></td><td>(40 + P/2) × 1000 ms</td><td>50 s</td><td>89 s</td></tr>
+<tr><td><a href="../spells/eagleeyes.html">eagle eyes</a></td><td>120 + 2 × P</td><td>160</td><td>318</td></tr>
+<tr><td><a href="../spells/freeaction.html">free action</a></td><td>180 + 3 × P</td><td>240</td><td>477</td></tr>
+<tr><td><a href="../spells/haste.html">haste</a></td><td>5 + (15 × P) / 100</td><td>8</td><td>19</td></tr>
+<tr><td><a href="../spells/invisibility.html">invisibility</a></td><td>20 + 2 × P</td><td>60</td><td>218</td></tr>
+<tr><td><a href="../spells/nightvision.html">night vision</a></td><td>1500 + 25 × P</td><td>2000</td><td>3975</td></tr>
+<tr><td><a href="../spells/resistacid.html">resist acid</a></td><td>300 + 6 × P</td><td>420</td><td>894</td></tr>
+<tr><td><a href="../spells/resistcold.html">resist cold</a></td><td>300 + 6 × P</td><td>420</td><td>894</td></tr>
+<tr><td><a href="../spells/resistevil.html">holy resolve</a></td><td>300 + 6 × P</td><td>420</td><td>894</td></tr>
+<tr><td><a href="../spells/resistgood.html">unholy resolve</a></td><td>300 + 6 × P</td><td>420</td><td>894</td></tr>
+<tr><td><a href="../spells/resistfire.html">withstand fire</a></td><td>180 + 6 × P</td><td>300</td><td>774</td></tr>
+<tr><td><a href="../spells/resistshock.html">resist shock</a></td><td>180 + 3 × P</td><td>240</td><td>477</td></tr>
+<tr><td><a href="../spells/resistmagic.html">resist magic</a></td><td>40 + 2 × P</td><td>80</td><td>238</td></tr>
+<tr><td><a href="../spells/superstrength.html">super strength</a></td><td>300 + 6 × P</td><td>420</td><td>894</td></tr>
+<tr><td><a href="../spells/resistpoison.html">resist poison</a></td><td>300 + 600 — <strong>does not scale</strong></td><td>900</td><td>900</td></tr>
+<tr><td><a href="../spells/magicshield.html">magic shield</a></td><td>1 + (P + 5) / 10</td><td>3</td><td>11</td></tr>
+<tr><td><a href="../spells/armorofgort.html">armour of Gort</a></td><td>P / 8 + 1</td><td>3</td><td>13</td></tr>
+<tr><td><a href="../spells/paralyze.html">gaze of the basilisk</a></td><td>bound(P / 3, 1, 33)</td><td>6</td><td>33</td></tr>
+<tr><td><a href="../spells/denial.html">denial</a></td><td>random(10000, 20000) + P × 1000 ms</td><td>30–40 s</td><td>109–119 s</td></tr>
+<tr><td><a href="../spells/bless.html">bless</a></td><td>random(D/2, D) where D = (40 + 6 × P) × 1000 ms</td><td>80–160 s</td><td>317–634 s</td></tr>
+<tr><td><a href="../spells/umbrella.html">umbrella</a></td><td>the same as bless</td><td>80–160 s</td><td>317–634 s</td></tr>
+<tr><td><a href="../spells/detectevil.html">detect evil</a></td><td>random(D/2, D), D = 2400 × (100 + P) ms</td><td>144–288 s</td><td>239–478 s</td></tr>
+<tr><td><a href="../spells/detectgood.html">detect good</a></td><td>the same as detect evil</td><td>144–288 s</td><td>239–478 s</td></tr>
+<tr><td>touch attacks</td><td>random(P/3, P/2) — a number of <em>hits</em>, not a time</td><td>6–10 hits</td><td>33–49 hits</td></tr>
+</tbody>
+</table>
+<p class="cite">each enchantment's own <code class="k">GetDuration</code>, e.g. kod/object/passive/spell/persench/bless.kod:86</p>
+
+<p>Three patterns are worth pulling out of that table:</p>
+
+<ul>
+<li><strong>Some durations barely scale and some scale enormously.</strong> Invisibility goes from
+60 to 218 — more than triple. Resist poison does not scale at all: 900 whatever you do.</li>
+<li><strong>Four enchantments are randomised on top</strong> — bless, umbrella, detect evil and
+detect good all roll <code class="k">random(D/2, D)</code>, so half the time you get half the
+duration you were expecting.</li>
+<li><strong>Touch attacks are counted in hits, not seconds.</strong>
+<code class="k">random(P/3, P/2)</code> charges, so a weak caster gets six swings of acid touch and
+a strong one gets forty. See <a href="../spells/touchattackspell.html">Touch Spell</a>.</li>
+</ul>
+
+<h2>The 35 personal enchantments, by what they do</h2>
+
+<table class="data">
+<thead><tr><th>Group</th><th>Enchantments</th></tr></thead>
+<tbody>
+<tr><td><strong>Defence</strong></td><td>bless, deflect, magic shield, armour of Gort, holy resolve, unholy resolve</td></tr>
+<tr><td><strong>Resistance</strong></td><td>resist acid, resist cold, resist shock, resist magic, resist poison, withstand fire, umbrella</td></tr>
+<tr><td><strong>Offence</strong></td><td>super strength, haste, gaze of the basilisk</td></tr>
+<tr><td><strong>Touch attacks</strong></td><td>acid touch, touch of flame, holy touch, icy fingers, zap — these become your weapon when your hands are empty</td></tr>
+<tr><td><strong>Concealment</strong></td><td>invisibility, cloak, shadow form</td></tr>
+<tr><td><strong>Perception</strong></td><td>detect evil, detect good, detect invisible, night vision, eagle eyes, eavesdrop</td></tr>
+<tr><td><strong>Freedom</strong></td><td>free action, denial</td></tr>
+<tr><td><strong>Curses</strong></td><td>Kara'hol's curse</td></tr>
+</tbody>
+</table>
+<p class="cite">every subclass of <code class="k">PersonalEnchantment</code> in kod/object/passive/spell/persench/</p>
+
+<div class="note"><strong>Touch attacks are a weapon.</strong> If you have no melee weapon
+wielded, <code class="k">GetWeapon</code> looks for an active touch-attack enchantment and returns
+the spell object as your weapon. The whole ordinary damage pipeline then runs on it. This is how
+an unarmed caster fights.
+<span class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4711–4726</span></div>
+
+<h2>Room enchantments</h2>
+
+<p>Fourteen enchantments sit on a room rather than on a person, and they change the rules for
+everybody inside.</p>
+
+<table class="data">
+<thead><tr><th>Enchantment</th><th>Effect worth knowing</th></tr></thead>
+<tbody>
+<tr><td><strong>anti-magic aura</strong></td><td>Subtracts its value from every caster's spell power</td></tr>
+<tr><td><strong>darkness</strong></td><td>Raises <a href="qor.html">Qor</a>'s primary spell-power bonus</td></tr>
+<tr><td><strong>forces of light</strong></td><td>Raises <a href="shalille.html">Shal'ille</a>'s</td></tr>
+<tr><td><strong>Qorbane</strong> / <strong>Shal'illebane</strong></td><td>The counters to those two</td></tr>
+<tr><td><strong>mana convergence</strong></td><td>Offsets an anti-magic room</td></tr>
+<tr><td><strong>truce</strong></td><td>Suspends combat</td></tr>
+<tr><td><strong>killing fields</strong>, <strong>martyr's battleground</strong></td><td>The opposite</td></tr>
+<tr><td><strong>death link</strong></td><td>Ties deaths together</td></tr>
+<tr><td><strong>heat</strong>, <strong>sandstorm</strong>, <strong>winds</strong></td><td>Environmental damage or hindrance</td></tr>
+<tr><td><strong>light</strong>, <strong>silence</strong></td><td>Visibility and sound</td></tr>
+</tbody>
+</table>
+<p class="cite">every subclass of <code class="k">RoomEnchantment</code> · the spell-power interaction at kod/object/passive/spell.kod:2116–2144, :2204</p>
+
+<h2>Sicknesses</h2>
+
+<p>Four things are diseases rather than spells, and they are removed by different means:</p>
+
+<table class="data">
+<thead><tr><th>Sickness</th><th>What it does</th><th>Cured by</th></tr></thead>
+<tbody>
+<tr><td><strong>poison</strong></td><td>Damage over time</td><td><a href="../spells/curepoison.html">cure poison</a>, or a potion</td></tr>
+<tr><td><strong>disease</strong></td><td>Ongoing debilitation</td><td><a href="../spells/curedisease.html">cure disease</a>, or a potion</td></tr>
+<tr><td><strong>dementia</strong></td><td>Subtracts <code class="k">random(n, 2n)</code> from your spell power directly, inside <code class="k">GetSpellPower</code> itself</td><td>time, or purification</td></tr>
+<tr><td><strong>palsy</strong></td><td>Cuts a monster's attack and damage to <strong>three quarters</strong></td><td>time</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/sickness/ · dementia at kod/object/passive/spell.kod:2229–2236 · palsy at kod/object/active/holder/nomoveon/battler/monster.kod:1445, :1508</p>
+
+<div class="warn">Dementia is the most dangerous status effect a caster can take, because it is
+applied to spell power — which sets success chance, mana cost, casting speed <em>and</em> effect
+strength all at once. One dementia degrades four things simultaneously.</div>
+
+<h2>Item attributes: enchantments that live on gear</h2>
+
+<p>Thirty-one item attributes exist, sixteen of them specific to weapons. They are not spells —
+they are properties rolled onto an item, most often by the treasure system, and they show up in
+the item's name: <em>"enchanted %s"</em>, <em>"%s of the master"</em>, <em>"%s of the
+defender"</em>, <em>"%s of the just"</em>, <em>"glowing %s"</em>, <em>"cursed %s"</em>,
+<em>"transcendant %s"</em>, <em>"well-crafted %s"</em>, and twenty-three variants that simply
+read <em>"special %s"</em>.</p>
+<p class="cite">every subclass of <code class="k">ItemAttribute</code> in kod/object/passive/itematt/</p>
+
+<div class="formula">weapon attributes may only ADD or SUBTRACT damage — never multiply
+    for each attribute on the weapon:  damage = attribute.ModifyDamage(damage, wielder, target)
+    then                               damage = damage + piDamageBonus</div>
+<p class="cite">kod/object/item/passitem/weapon.kod:280 <code class="k">GetDamage</code> — the "no multipliers" rule is stated in the source comment</p>
+
+<p>Where they come from: each treasure type carries a <em>difficulty seed</em> and a chance out of
+400. Before the drop table is consulted at all, a player-landed kill rolls against that chance for
+an item-attributed item instead of an ordinary one.</p>
+<p class="cite">kod/object/passive/trestype.kod:270</p>
+
+<p>Attributes also change what an item is worth: <code class="k">GetValue</code> runs every
+attribute's <code class="k">AdjustPrice</code> over the condition-adjusted value. A cursed item is
+worth less; an enchanted one more.</p>
+<p class="cite">kod/object/item.kod:437–443</p>
+
+<h2>Practical advice</h2>
+
+<ul>
+<li><strong>Cast your buffs at your best.</strong> Duration and strength are both snapshotted at
+cast time from your spell power — which means casting Qor buffs at midnight, Kraanan buffs in a
+crowd and Riija buffs with a full pack all produce materially longer, stronger effects. See
+<a href="spells.html">Spells and Spellcasting</a>.</li>
+<li><strong>Recast to upgrade, never to stack.</strong> The old enchantment is removed first.</li>
+<li><strong>Resistances are the answer to spell damage</strong>, because armour is not — the flat
+reduction is zeroed against pure magic. Match the resistance to what you are about to fight; the
+bestiary lists each creature's attack type.</li>
+<li><strong>Watch for dementia before a fight you need magic to win.</strong> It attacks the one
+number everything else derives from.</li>
+<li><strong>Touch attacks are charges, not time.</strong> They will not expire while you wait, and
+a high-power cast gives you forty swings.</li>
+</ul>
+
+<p>Related: <a href="spells.html">Spells and Spellcasting</a> ·
+<a href="../spells/index.html">Every spell</a> · <a href="armor.html">Armour</a> ·
+<a href="combat.html">Combat</a> · <a href="../items/index.html">Items</a> ·
+<a href="places.html">Places and Travel</a></p>
+
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

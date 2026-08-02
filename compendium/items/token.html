@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token — Meridian 59 Compendium</title>
+<meta name="description" content="A Token of the Meridian Council">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Token</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/rat_g1.png" alt="Token" width="85" height="73"></div><div class="heroText"><h1>Token</h1><p class="lede">A Token of the Meridian Council</p><div class="tags"><span class="tag ">token</span><span class="tag ">hand</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">500</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">50</div></div><div class="fact"><div class="lbl">Value</div><div class="val">2500 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">hand</div></div></div><h2>Where to buy it</h2><p><a href="../creatures/kocatanshopkeeper.html">Pacal ix'Anoak</a>, <a href="../creatures/izzio.html">Izzio</a></p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/rat_g1.png" alt="Token inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/rat_g2.png" alt="Token group 2" loading="lazy"><figcaption>group 2</figcaption></figure><figure><img class="icon" src="../assets/img/rat_g3.png" alt="Token group 3" loading="lazy"><figcaption>group 3</figcaption></figure><figure><img class="icon" src="../assets/img/rat_g4.png" alt="Token group 4" loading="lazy"><figcaption>group 4</figcaption></figure><figure><img class="icon" src="../assets/img/rat_g5.png" alt="Token group 5" loading="lazy"><figcaption>group 5</figcaption></figure><figure><img class="icon" src="../assets/img/rat_g6.png" alt="Token group 6" loading="lazy"><figcaption>group 6</figcaption></figure><figure><img class="icon" src="../assets/img/rat_g7.png" alt="Token group 7" loading="lazy"><figcaption>group 7</figcaption></figure><figure><img class="icon" src="../assets/img/rat_g8.png" alt="Token group 8" loading="lazy"><figcaption>group 8</figcaption></figure><figure><img class="icon" src="../assets/img/rat_g9.png" alt="Token group 9" loading="lazy"><figcaption>group 9</figcaption></figure><figure><img class="icon" src="../assets/img/rat_g10.png" alt="Token group 10" loading="lazy"><figcaption>group 10</figcaption></figure><figure><img class="icon" src="../assets/img/rat_g11.png" alt="Token group 11" loading="lazy"><figcaption>group 11</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/token.kod:11</p>
+<p><code class="k">Token</code> is <code class="k">PassiveItem</code> — full chain <code class="k">Token</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">OneToken</code>, <code class="k">TwoToken</code>, <code class="k">ThreeToken</code>, <code class="k">FourToken</code>, <code class="k">FiveToken</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>token_name_rsc</code></td><td class=""><em>Token</em></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>token_icon_rsc</code></td><td class=""><em>rat.bgf</em></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>token_desc_rsc</code></td><td class=""><em>A Token of the Meridian Council</em></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>50</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>500</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>2500</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">viUse_type</code></td><td class=""><code>ITEM_USE_HAND</code></td><td class="">8</td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">viUse_Amount</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">viVigorDrop</code></td><td class=""><code>120000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">viInitialTimeval</code></td><td class=""><code>10000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="64">64</td></tr>
+<tr><td class=""><code class="k">viItem_type</code></td><td class=""><code>ITEMTYPE_TOKEN</code></td><td class="">512</td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">vrTokenOverlay</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="68">68</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">pbIn_use</code></td><td class=""><code>False</code></td><td class="num " data-sort="72">72</td></tr>
+<tr><td class=""><code class="k">pbRejectedOffer</code></td><td class=""><code>False</code></td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">piVigorRestThresholdChange</code></td><td class=""><code>200</code></td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">ptTortureTimer</code></td><td class=""><code>$</code></td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">ptLazyTimer</code></td><td class=""><code>$</code></td><td class="num " data-sort="76">76</td></tr>
+<tr><td class=""><code class="k">ptGenerationTimer</code></td><td class=""><code>$</code></td><td class="num " data-sort="77">77</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor()</h4>
+<pre><code>{
+      poOwner = $;
+      ptGenerationTimer=CreateTimer(self,@TokenGenerationTimer,viInitialTimeval);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:81</p>
+<h4>Delete()</h4>
+<pre><code>{
+      if pbIn_use
+      {
+         Send(self,@NewUnused);
+      }
+      
+      if ptTortureTimer &lt;&gt; $
+      {
+         DeleteTimer(ptTortureTimer);
+         ptTortureTimer = $;
+      }
+      
+      if ptLazyTimer &lt;&gt; $
+      {
+         DeleteTimer(ptLazyTimer);
+         ptLazyTimer=$;
+      }
+      
+      if ptGenerationTimer &lt;&gt; $
+      {
+         DeleteTimer(ptGenerationTimer);
+         ptGenerationTimer=$;
+      }
+      
+      if Send(SYS,@GetTokenGame) &lt;&gt; $
+      {
+         Send(Send(SYS,@GetTokenGame),@TokenDeleted,#what=self);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:89</p>
+<h4>GetInitialTimeval()</h4>
+<pre><code>{
+      return viInitialTimeval;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:122</p>
+<h4>NilOwner()</h4>
+<pre><code>{
+      poOwner = $;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:127</p>
+<h4>NewOwner(what = $)</h4>
+<pre><code>{
+      if ptLazyTimer &lt;&gt; $
+      {
+         DeleteTimer(ptLazyTimer);
+         ptLazyTimer = $;
+      }
+
+      if ptTortureTimer &lt;&gt; $
+      {
+         DeleteTimer(ptTortureTimer);
+         ptTortureTimer = $;
+      }
+
+      if what = $
+      {
+         propagate;
+      }
+
+      if IsClass(what,&amp;User)
+         and NOT send(what,@PlayerIsImmortal)
+      {
+         post(self,@TryingToUse,#what=what);
+      }
+      
+      if IsClass(what,&amp;Room)
+      {
+         ptLazyTimer = CreateTimer(self,@LazyTokenTimer,LAZY_RESET_TIME);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:134</p>
+<h4>LazyTokenTimer()</h4>
+<pre><code>{
+      ptLazyTimer = $;
+      
+      if IsClass(poOwner,&amp;Room)
+      {
+         Send(self,@TeleportToken,#myroom=poOwner);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:167</p>
+<h4>TryingToUse(what = $)</h4>
+<pre><code>{
+      local i,Temp;
+      
+      Temp = FALSE;
+      
+      Send(what,@TryUseItem,#what=self);
+      
+      if Send(what,@PlayerIsIntriguing)
+      {
+         for i in Send(what,@GetPlayerUsing)
+         {
+            if i = self
+            {
+               return;
+            }
+         }
+         
+         Send(what,@MsgSendUser,#message_rsc=token_cantuse_rsc);
+         
+         Post(Send(what,@GetOwner),@NewHold,#what=self,
+              #new_row=Send(poOwner,@GetRow),#new_col=Send(poOwner,@GetCol));
+      }
+      else
+      {
+         for i in Send(what,@GetPlayerUsing)
+         {
+            if i=self
+            {
+               Send(what,@MsgSendUser,#message_rsc=token_noteligible_rsc);
+               Send(self,@NewUnused);
+               Temp = TRUE;
+               
+               break;
+            }
+         }
+        
+         if not Temp 
+         {
+            Send(what,@MsgSendUser,#message_rsc=token_cantuse_rsc);
+            Post(Send(what,@GetOwner),@NewHold,#what=self,
+                 #new_row=Send(poOwner,@GetRow),#new_col=Send(poOwner,@GetCol));
+         }
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:179</p>
+<h4>NewUsed(what = $)</h4>
+<p>When the token is carried, the wearer's rest threshold goes down</p>
+<pre><code>{
+      local iVigorRestThreshold;
+      
+      pbIn_use = TRUE;
+      
+      if Send(poOwner,@PlayerIsImmortal)
+      {
+         piVigorRestThresholdChange = 0;
+
+         propagate;
+      }
+
+      iVigorRestThreshold = send(poOwner, @GetVigorRestThreshold);
+
+      
+      
+      
+
+      piVigorRestThresholdChange = iVigorRestThreshold - 10;
+
+      Send(poOwner,@MsgSendUser,#message_rsc=token_used_desc_rsc);
+      
+      Send(poOwner,@SetVigorRestThreshold,#amount=iVigorRestThreshold-piVigorRestThresholdChange);
+      send(poOwner,@AddExertion,#amount=viVigorDrop/2+Random(0,viVigorDrop/2));
+           
+      ptTortureTimer = CreateTimer(self,@TortureHolder,TOKEN_FATIGUE_TIME);
+
+      
+      Send(poOwner,@BreakTrance);
+      Send(poOwner,@CancelRescue);
+      
+      if vrTokenOverlay &lt;&gt; $
+      {
+         post(poOwner,@SetOverlay,#what=self);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:227</p>
+<h4>TortureHolder()</h4>
+<pre><code>{
+      if NOT pbIn_use
+      {
+         return;
+      }
+      
+      if ptTortureTimer&lt;&gt;$
+      {
+         ptTortureTimer=$;
+      }
+      
+      if Send(poOwner,@PlayerIsImmortal)
+      {
+         return;
+      }
+      
+      send(poOwner,@MsgSendUser,#message_rsc=token_use_rsc);
+      send(poOwner,@AddExertion,#amount = viVigorDrop/2+Random(0,viVigorDrop/2));
+      
+      ptTortureTimer = CreateTimer(self,@TortureHolder,TOKEN_FATIGUE_TIME);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:268</p>
+<h4>OfferRejected()</h4>
+<pre><code>{
+      pbRejectedOffer = TRUE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:293</p>
+<h4>NewUnused(what = $, where = $, death = FALSE)</h4>
+<p>Called when the token is dropped or unused (same thing). The specialwhere flag is needed to handle guild hall enterings.</p>
+<pre><code>{
+      local iVigorRestThreshold,oldOwner,oldrow,oldcol,oldroom;
+      
+      if (not pbIn_use)
+      {
+         propagate;
+      }
+      
+      pbIn_use = FALSE;
+      
+      iVigorRestThreshold = send(poOwner, @GetVigorRestThreshold);
+      if ptTortureTimer&lt;&gt;$
+      {
+         DeleteTimer(ptTortureTimer);
+         ptTortureTimer=$;
+      }
+      
+      if NOT Send(poOwner,@PlayerIsImmortal)
+      {
+         send(poOwner,@MsgSendUser,#message_rsc=token_unuse_rsc);
+      }
+      
+      send(poOwner,@SetVigorRestThreshold,#amount=iVigorRestThreshold+piVigorRestThresholdChange);
+      piVigorRestThresholdChange = 200;
+
+      if where&lt;&gt;$
+      {
+         Post(where,@NewHold,#what=self,#new_row=Send(poOwner,@GetRow),#new_col=Send(poOwner,@GetCol));
+      }
+      else
+      {
+         oldOwner = poOwner;
+         oldRoom = send(poOwner,@getowner);
+         oldCol = send(poOwner,@getcol);
+         oldRow = send(poOwner,@getrow);
+         Post(self,@CheckForDrop,#owned=oldOwner,#oldroom=oldroom,#oldrow=oldrow,#oldcol=oldcol);
+      }
+      
+      if vrTokenOverlay &lt;&gt; $
+      {
+         Send(poOwner,@RemoveOverlay,#what=self);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:300</p>
+<h4>CheckForDrop(owned = $, oldroom = $, oldrow = 20, oldcol = 20)</h4>
+<pre><code>{
+      Post(self,@CheckForDropTwo,#owned=owned,#oldroom=oldroom, #oldrow=oldrow, #oldcol=oldcol);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:354</p>
+<h4>CheckForDropTwo(owned = $, oldroom = $, oldrow = 20, oldcol = 20)</h4>
+<pre><code>{
+      if poOwner = owned AND NOT pbRejectedOffer
+      {
+         if send(poOwner,@GetOwner) = $ AND oldroom &lt;&gt; $
+         {
+            Send(oldroom,@NewHold,#what=self,#new_row=oldrow,#new_col=oldcol);
+         }
+         else
+         {
+            Send(Send(poOwner,@GetOwner),@NewHold,#what=self,
+                 #new_row=Send(poOwner,@GetRow),#new_col=Send(poOwner,@GetCol));
+         }
+      }
+      
+      pbRejectedOffer = FALSE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:361</p>
+<h4>UserLogoff()</h4>
+<pre><code>{
+      send(poOwner,@MsgSendUser,#message_rsc=Token_drops,
+           #parm1=send(self,@GetCapDef),#parm2=vrName);
+      Send(poOwner,@TryUnuseItem,#what=self);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:381</p>
+<h4>DestroyDisposable()</h4>
+<pre><code>{
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:390</p>
+<h4>TeleportToken(myroom = $)</h4>
+<pre><code>{
+      if myroom = $ OR NOT IsClass(poOwner,&amp;Room)
+      {
+         return;
+      }
+      
+      Send(myroom,@teleport,#what=self);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:395</p>
+<h4>TokenGenerationTimer()</h4>
+<pre><code>{
+      ptGenerationTimer = $;
+
+      if Send(SYS,@GetTokenGame) = $
+      {
+         return;
+      }
+
+      if NOT Send(Send(SYS,@GetTokenGame),@ScandalCheck)
+      {
+         Send(Send(SYS,@GetTokenGame),@OpenToken,#mytoken=self);
+      }
+      else
+      {
+         ptGenerationTimer = CreateTimer(self,@TokenGenerationTimer,
+                                         Send(Send(SYS,@GetTokenGame),@GetTimeval,#mytoken=self)/2);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:407</p>
+<h4>TokenDelivered(who = $, mob = $)</h4>
+<pre><code>{
+      local i;
+
+      for i in Send(SYS,@GetUsersLoggedOn)
+      {
+         if NOT send(i,@PlayerIsIntriguing)
+         {
+            continue;
+         }
+         
+         if i &lt;&gt; who
+         {
+            Send(i,@MsgSendUser,#message_rsc=token_was_delivered_rsc,
+                 #parm1=Send(who,@GetIndef),#parm2=Send(who,@GetName),
+                 #parm3=Send(self,@GetIndef),#parm4=Send(self,@GetName));
+         }
+         else
+         {
+            if Send(who,@GetFaction) &lt;&gt; FACTION_NEUTRAL
+               AND (isClass(mob,&amp;Council)
+                    OR Send(who,@GetFaction) = Send(mob,@GetFaction))
+            {
+               Send(who,@UpdateFactionService,#full=TRUE);
+            }
+
+            Send(who,@TokenDeliveryReward,#mob=mob);
+
+            if isClass(mob,&amp;Factions)
+               AND Send(Send(SYS,@GetParliament),@GetPower,
+                        #faction=Send(mob,@GetFaction)) = FACTION_STRONGLY_IN
+            {
+               Send(who,@MsgSendUser,#message_Rsc=tok_faction_too_strong);
+            }
+            else  
+            {
+               if (isClass(mob,&amp;Factions)
+                   AND (Send(who,@GetFaction) &lt;&gt; Send(mob,@GetFaction)))
+                  OR (isClass(mob,&amp;ShalillePriestess)
+                      AND (Send(who,@GetFaction) &lt;&gt; FACTION_NEUTRAL))
+               { 
+                  Send(who,@ResignFaction);
+                  Send(who,@JoinFaction,#new_faction=Send(mob,@GetFaction));
+               }
+
+               if Send(who,@GetFaction)=FACTION_NEUTRAL AND isClass(mob,&amp;Factions)
+               {
+                  Send(who,@JoinFaction,#new_faction=Send(mob,@GetFaction));
+               }
+            }
+         }
+      }
+
+      Send(Send(SYS,@GetTokenGame),@DeliveryEffects,
+           #mob=mob,#who=who,#mytoken=self);
+      ptGenerationTimer = CreateTimer(self,@TokenGenerationTimer,
+                                      Send(Send(SYS,@GetTokenGame),@GetTimeval,#mytoken=self));
+     
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:429</p>
+<h4>TokenRealized(who = $, mob = $)</h4>
+<pre><code>{
+      local i;
+      
+      For i in Send(SYS,@GetUsersLoggedOn)
+      {
+         if (not send(i,@playerisintriguing)) {continue;}
+         if i = who
+         {
+            Send(i,@MsgSendUser,#message_rsc=token_realized_rsc,
+                 #parm1=Send(self,@GetIndef),#parm2=Send(self,@GetName));
+         }
+         else
+         {
+            Send(i,@MsgSendUser,#message_rsc=token_was_realized_rsc,
+                 #parm1=Send(who,@GetIndef),
+                 #parm2=Send(who,@GetName),
+                 #parm3=Send(self,@GetIndef),#parm4=Send(self,@GetName),
+                 #parm5=Send(mob,@GetIndef),#parm6=Send(mob,@GetName));
+         }
+      }
+      if Send(SYS,@GetTokenGame) &lt;&gt; $
+      {
+         Send(Send(SYS,@GetTokenGame),@CloseToken,#mytoken=self);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:490</p>
+<h4>GetOverlay()</h4>
+<pre><code>{
+      return vrTokenOverlay;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:521</p>
+<h4>GetOverlayHotspot()</h4>
+<pre><code>{
+      return HS_TOKEN;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:526</p>
+<h4>SendOverlayAnimation()</h4>
+<pre><code>{
+      
+      if vrTokenOverlay &lt;&gt; $
+      {
+         AddPacket(1,ANIMATE_NONE,2,1);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:531</p>
+<h4>CanShatter()</h4>
+<p>Tokens may NOT be shattered.</p>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:544</p>
+<h4>ReqDMDelete()</h4>
+<p>Tokens are not deleted with the DM CLear Ability command.</p>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:550</p>
+<h4>CanBeStoredInVault()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:556</p>
+<h4>RandomTeleport()</h4>
+<pre><code>{
+      local oGame, iRoom, oRoom;
+
+      oGame = send(SYS,@GetTokenGame);
+      iRoom = send(oGame,@ChooseTokenRoom);
+      if iRoom &lt;&gt; $
+      {
+         oRoom = send(SYS,@FindRoomByNum,#num=iRoom);
+         send(oRoom,@Teleport,#what=self);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/token.kod:561</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

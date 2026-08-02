@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reagent Ring — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › Reagent Ring</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/ring01_g1.png" alt="Reagent Ring" width="106" height="95"></div><div class="heroText"><h1>Reagent Ring</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">jewellery</span><span class="tag ">finger</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">5</div></div><div class="fact"><div class="lbl">Value</div><div class="val">100 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">5</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">finger</div></div></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/ring/ringreag.kod:11</p>
+<p><code class="k">ReagentRing</code> is <code class="k">Ring</code> — full chain <code class="k">ReagentRing</code> ← <code class="k">Ring</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrRealName</code></td><td class=""><code>ReagentRing_name_rsc</code></td><td class=""><em>ring of Far'nohl</em></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>ReagentRing_icon_rsc</code></td><td class=""><em>ring01.bgf</em></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">vrRealDesc</code></td><td class=""><code>ReagentRing_desc_rsc</code></td><td class=""><em>A replica of the powerful ring once worn by the powerful King Far'nohl, this ring will let</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">viHits_init_min</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viHits_init_max</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>5</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>100</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>ReagentRing_name_rsc</code></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>ReagentRing_desc_rsc</code></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">piItem_flags</code></td><td class=""><code>PT_GRAY_TO_BLACK</code></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">piCharges</code></td><td class=""><code>5</code></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">pbIn_use</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="56">56</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor()</h4>
+<pre><code>{
+      Send(self,@SetColor,#iColor=piCharges);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringreag.kod:60</p>
+<h4>AppendDesc()</h4>
+<pre><code>{
+      AppendTempString(&quot;\n\n&quot;);   
+      AppendTempString(ReagentRing_chargeslefta_rsc);      
+      Send(SYS,@AppendCardinalToTempString,#number=piCharges);
+      AppendTempString(ReagentRing_chargesleftb_rsc);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringreag.kod:67</p>
+<h4>NewUsed(what = $)</h4>
+<pre><code>{
+      pbIn_use = TRUE;
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringreag.kod:77</p>
+<h4>NewUnused(what = $)</h4>
+<pre><code>{
+      pbIn_use = FALSE;
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringreag.kod:84</p>
+<h4>InUse()</h4>
+<pre><code>{
+      return pbIn_use;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringreag.kod:91</p>
+<h4>UseCharges(iCharges = 1)</h4>
+<pre><code>{
+      
+      if NOT pbIn_use
+      {
+         return FALSE;
+      }
+
+      if (piCharges - iCharges) &lt; 0
+      {
+         return FALSE;
+      }
+      
+      piCharges = piCharges - iCharges;
+
+      Send(self,@SetColor,#iColor=piCharges);
+
+      if piCharges &lt;= 0
+      {
+         Post(self,@Delete);
+      }
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringreag.kod:96</p>
+<h4>SetColor(iColor = 0)</h4>
+<pre><code>{
+      if iColor &gt; 3
+      {
+         piItem_flags = PT_GRAY_TO_DBLUE;
+      }
+      else
+      {
+         if iColor &gt; 1 AND iColor &lt; 4
+         {
+            piItem_flags = PT_GRAY_TO_BBLUE;
+         }
+         else
+         {
+            if iColor = 1
+            {
+               piItem_flags = PT_GRAY_TO_SKY;
+            }
+            else
+            {
+               piItem_flags = PT_GRAY_TO_BLACK;
+            }
+         }
+      }
+
+      if poOwner &lt;&gt; $
+      {
+         Send(poOwner,@SomethingChanged,#what=self);
+      }
+
+      return;         
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringreag.kod:121</p>
+<h4>Delete()</h4>
+<pre><code>{
+      
+      Send(poOwner,@MsgSendUser,#message_rsc=ReagentRing_disappear_rsc);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringreag.kod:154</p>
+<h4>DropOnDeath()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringreag.kod:164</p>
+<h4>CanSwap()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringreag.kod:169</p>
+<h4>CanShatter()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/ring/ringreag.kod:174</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

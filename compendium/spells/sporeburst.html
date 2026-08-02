@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spore burst — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › spore burst</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/isporecl_g1.png" alt="spore burst" width="128" height="128"></div><div class="heroText"><h1>spore burst</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><a class="tag school-4" href="../guides/faren.html">Faren</a><span class="tag ">Level 6</span><span class="tag ">Harmful</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/faren.html">Faren</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">6</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">20</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">5000 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">87</div></div></div><div class="flavor">Summons forth noxious clouds that paralyze any within it's bounds. Requires potent reagents specific to both Qor and Faren.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">20</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/purplemushroom.html">purple mushroom</a> ×2, <a href="../items/shamanblood.html">shaman blood</a></td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">30</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">5000 ms trance</td><td class="">You are locked in a casting trance for this long; taking damage can break it.</td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/walspell/sporbrst.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/darkwizard.html">Maleval</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">CastSpell</code></li><li><code class="k">PlaceWallElements</code></li><li><code class="k">GetDuration</code></li><li><code class="k">ModifyMonsterBehavior</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/isporecl_g1.png" alt="spore burst group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/isporecl_g2.png" alt="spore burst group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/walspell/sporbrst.kod:11</p>
+<p><code class="k">SporeBurst</code> is <code class="k">WallSpell</code> — full chain <code class="k">SporeBurst</code> ← <code class="k">WallSpell</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>SporeBurst_name_rsc</code></td><td class=""><em>spore burst</em></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>SporeBurst_icon_rsc</code></td><td class=""><em>isporecl.bgf</em></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>SporeBurst_desc_rsc</code></td><td class=""><em>Summons forth noxious clouds that paralyze any within it's bounds.  Requires potent reagen</em></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_SPORE_BURST</code></td><td class="">87</td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_FAREN</code></td><td class="">4</td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>6</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>30</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viCast_time</code></td><td class=""><code>5000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viChance_To_Increase</code></td><td class=""><code>15</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>SporeBurst_sound</code></td><td class=""><em>farenspore822m.wav</em></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viHarmful</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viWallCanKill</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">viNumElements</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">vrSummonLimitMsg</code></td><td class=""><code>SporeBurst_failed_rsc</code></td><td class=""><em>There is too much summoning magic focused here to cause a spore burst.</em></td><td class="num " data-sort="60">60</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      plReagents = $;
+      plReagents = Cons([&amp;PurpleMushroom,2],plReagents);
+      plReagents = Cons([&amp;ShamanBlood,1],plReagents);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell/sporbrst.kod:67</p>
+<h4>CastSpell(who = $, lTargets = $, iSpellPower = 0)</h4>
+<pre><code>{
+      Send(who,@MsgSendUser,#message_rsc=SporeBurst_cast_rsc);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell/sporbrst.kod:76</p>
+<h4>PlaceWallElements(who = $, iSpellPower = 0)</h4>
+<pre><code>{
+      local oRoom, oActiveFog, oPassiveFog, iRadius,
+            iDuration, iCasterRow, iCasterCol, iCasterFineRow, iCasterFineCol;
+
+      oRoom = Send(who,@GetOwner);
+      iRadius = Bound(iSpellpower/30,1,3);
+      iDuration = Send(self,@GetDuration,#iSpellpower=iSpellpower);
+
+      iCasterRow = Send(who,@GetRow);
+      iCasterCol = Send(who,@GetCol);
+      iCasterFineRow = Send(who,@GetFineRow);
+      iCasterFineCol = Send(who,@GetFineCol);
+
+      
+      oActiveFog = Create(&amp;ActiveSporeCloud,#Caster=who,#duration=iDuration,
+                          #range=iRadius);
+      Send(oRoom,@NewHold,#what=oActiveFog,#new_row=iCasterRow,#new_col=iCasterCol);
+
+      
+      
+      
+      
+
+      if iRadius &gt;= 1
+      {
+         
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow+1,#new_col=iCasterCol);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow-1,#new_col=iCasterCol);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow,#new_col=iCasterCol+1);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow,#new_col=iCasterCol-1);
+      }
+
+      if iRadius &gt;= 2
+      {
+         
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow+2,#new_col=iCasterCol);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow+1,#new_col=iCasterCol+1);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow+1,#new_col=iCasterCol-1);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow,#new_col=iCasterCol+2);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow,#new_col=iCasterCol-2);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow-1,#new_col=iCasterCol+1);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow-1,#new_col=iCasterCol-1);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow-2,#new_col=iCasterCol);
+      }
+
+      if iRadius &gt;= 3
+      {
+         
+         
+         
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow+3,#new_col=iCasterCol+1,
+              #fine_row=0,#fine_col=0);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow+3,#new_col=iCasterCol-1,
+              #fine_row=0,#fine_col=FINENESS);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow+2,#new_col=iCasterCol+2);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow+2,#new_col=iCasterCol-2);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow+1,#new_col=iCasterCol+3,
+              #fine_row=0,#fine_col=0);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow+1,#new_col=iCasterCol-3,
+              #fine_row=0,#fine_col=FINENESS);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow-1,#new_col=iCasterCol+3,
+              #fine_row=FINENESS,#fine_col=0);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow-1,#new_col=iCasterCol-3,
+              #fine_row=FINENESS,#fine_col=FINENESS);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow-2,#new_col=iCasterCol+2);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow-2,#new_col=iCasterCol-2);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow-3,#new_col=iCasterCol+1,
+              #fine_row=FINENESS,#fine_col=0);
+
+         oPassiveFog = Create(&amp;SporeCloud,#oRoom=oRoom,#Active_Elem=oActiveFog,
+                              #Caster=who,#duration=iDuration);
+         Send(oRoom,@NewHold,#what=oPassiveFog,
+              #new_row=iCasterRow-3,#new_col=iCasterCol-1,
+              #fine_row=FINENESS,#fine_col=FINENESS);
+      }         
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell/sporbrst.kod:83</p>
+<h4>GetDuration(iSpellPower = $, caster = 0)</h4>
+<pre><code>{
+      local iDuration;
+
+      
+      iDuration = iSpellPower * 2; 
+      iDuration = bound(iDuration,30,200);
+      
+      iDuration = iDuration * 1000;
+
+      return iDuration;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell/sporbrst.kod:253</p>
+<h4>ModifyMonsterBehavior(mob = $)</h4>
+<pre><code>{
+      Send(mob,@SetBehaviorFlag,#flag=AI_NOMOVE,#value=TRUE);
+      Send(mob,@SetBehaviorFlag,#flag=AI_NOFIGHT,#value=TRUE);
+
+      return;      
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell/sporbrst.kod:266</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

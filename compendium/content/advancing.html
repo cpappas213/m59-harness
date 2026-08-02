@@ -1,0 +1,253 @@
+<h1>Advancing Your Character</h1>
+
+<p class="lede">There are three separate progressions in Meridian 59 and they do not share a
+budget. Your maximum health grows by killing things harder than you are. Your skills and spells
+grow by using them, on a clock that caps how fast that can happen. Your attributes never grow at
+all — they are fixed the moment the character is made, and one of them silently sets the ceiling
+on the first progression. That last fact is the single most consequential thing on this page.</p>
+
+<h2>The one-paragraph version</h2>
+
+<table class="data">
+<thead><tr><th>Progression</th><th>What grows it</th><th>What caps it</th><th>How you see it</th></tr></thead>
+<tbody>
+<tr><td><strong>Maximum health</strong> — this game's "level"</td>
+    <td>Killing creatures <em>above your own level</em> that damaged you</td>
+    <td><code class="k">101 + stamina</code>, permanently</td>
+    <td>A message, a full heal, and your health bar</td></tr>
+<tr><td><strong>Skill and spell ability</strong></td>
+    <td><em>Using</em> them, against targets hard enough to count</td>
+    <td>99 per ability, and 10 improvements per 15–22 minutes across everything</td>
+    <td>Your ability list, and nothing else</td></tr>
+<tr><td><strong>Attributes</strong></td>
+    <td>Nothing</td>
+    <td>Fixed at character creation</td>
+    <td>Your status</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:7736 <code class="k">AdvancementCheck</code>, :7652 <code class="k">ADVANCEMENT_LIMIT</code>, :66 <code class="k">ADVANCE_TIMER_MIN/MAX</code></p>
+
+<div class="warn"><strong>Stamina is the decision you cannot take back.</strong> Your maximum
+health can never exceed <code class="k">101 + stamina</code>, and stamina also divides into the
+rate at which health is gained — so a low-stamina character both climbs more slowly and stops
+sooner. There is no in-game way to raise it. See <a href="attributes.html">Attributes</a> before
+you make a character, not after.</div>
+
+<h2>Maximum health: what a kill is worth</h2>
+
+<p>A kill earns you nothing at all unless <strong>you damaged the creature</strong> and
+<strong>it was your current target</strong>. Switching targets mid-fight throws away the credit
+for the old one, because each new attack resets the flags.</p>
+
+<p>Given that, the kill is scored:</p>
+
+<table class="data">
+<thead><tr><th>Situation</th><th>Points</th><th>Rolls for a health gain?</th></tr></thead>
+<tbody>
+<tr><td>Creature's level above your max health, you took damage <em>and</em> landed the killing blow</td><td>3</td><td>yes</td></tr>
+<tr><td>Creature above your level, but only one of those two</td><td>2</td><td>yes</td></tr>
+<tr><td>Creature within 5 levels below you, you took damage and killed it</td><td>1</td><td>no</td></tr>
+<tr><td>Anything easier</td><td>0</td><td>no — and your character occasionally spits</td></tr>
+<tr><td>Bonus while your max health is under 30</td><td>+1</td><td>—</td></tr>
+<tr><td>Penalty: you are shape-changed to more than double health and the target is weaker than that</td><td>halved</td><td>no</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:7764–7816 · <code class="k">PKILL_ENABLE_HP = 30</code> at kod/include/blakston.khd:2094</p>
+
+<p>Points accumulate in a hidden counter. When a kill qualifies for a roll, the server rolls
+against that counter:</p>
+
+<div class="formula">index     = base_max_health × (100 − stamina) / 100
+highmark  = (index + 1) × index
+
+roll      = random(1, highmark)
+threshold = accumulated_points + bound((creature_level − base_max_health) / 5, 0, 10)
+
+if roll &lt; threshold  AND  base_max_health &lt; (101 + stamina):
+      base_max_health += 1
+      accumulated_points = −(base_max_health / 2)
+      if base_max_health &gt; 30:  accumulated_points −= (50 − stamina) / 2
+      you are healed to full and fed</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:7823–7854, <code class="k">GetHighMark</code> at :7896</p>
+
+<p>Three things fall out of that, and they matter more than the formula does.</p>
+
+<ul>
+<li><strong>Fighting things far above you is worth more than fighting more things.</strong> The
+threshold gets a bonus of up to +10 for the gap between the creature's level and your health,
+and that bonus is added on <em>every</em> roll.</li>
+<li><strong>Gaining a point costs you points.</strong> The counter is reset to a negative number
+after each gain — deeper the higher your health and the lower your stamina — so each health
+point is more expensive than the last.</li>
+<li><strong>Stamina compounds twice.</strong> It raises the ceiling and it shrinks the highmark
+you are rolling under.</li>
+</ul>
+
+<h3>How many kills is that, actually</h3>
+
+<p>Accumulating 3 points per qualifying kill against a highmark <code class="k">H</code>, the
+expected number of kills to gain one health point is roughly <code class="k">√(2H/3)</code>.
+At 50 maximum health:</p>
+
+<table class="data">
+<thead><tr><th>Stamina</th><th>index</th><th>highmark</th><th>≈ kills per health point</th><th>Health ceiling</th></tr></thead>
+<tbody>
+<tr><td>10</td><td>45</td><td>2070</td><td>~37</td><td>111</td></tr>
+<tr><td>25</td><td>37</td><td>1406</td><td>~31</td><td>126</td></tr>
+<tr><td>50</td><td>25</td><td>650</td><td>~21</td><td>151</td></tr>
+<tr><td>70</td><td>15</td><td>240</td><td>~13</td><td>171</td></tr>
+</tbody>
+</table>
+<p>The high-stamina character reaches a ceiling 60 points higher and gets there roughly three
+times faster. Nothing else in character creation is worth this much.</p>
+
+<div class="note">A character created through the administrative socket has <em>zero</em> in every
+attribute — displayed as 1, because the accessors clamp the raw value upward — and can therefore
+never exceed <strong>102</strong> maximum health. If your character's ceiling looks wrong, this
+is why, and the only fix is a new character.</div>
+
+<h3>Where a kill earns nothing at all</h3>
+<p>No advancement happens in a room flagged <code class="k">ROOM_SAFE_DEATH</code>, nor in an
+arena unless that arena has real death switched on, nor on any creature that refuses to be
+advanced upon — revenants and illusions, the two things a player can conjure at will.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:7748–7753</p>
+
+<h2>Skills and spells: ability from use</h2>
+
+<p>Every skill and spell carries an ability from 0 to 99. It is both how well the thing works and
+how likely it is to work at all, and it moves only when you use it. Each use runs two gates.</p>
+
+<div class="formula">initial gate:    chance = viChance_to_Increase + (viChance_to_Increase × intellect) / 100
+                              + faction learning bonus
+                 random(1,100) must come in at or under it
+
+second gate:     chance = the spell or skill's own secondary chance, adjusted by the room,
+                          then bound(chance, 1 + requisite_stat/10, 99)
+                 random(0,100) must come in under it
+
+both passed  ->  ability += 1</div>
+<p class="cite">kod/object/passive/spell.kod:1604 <code class="k">ImproveAbility</code>, :1693 <code class="k">GetInitialChance</code>, :1711 <code class="k">GetSecondaryChance</code></p>
+
+<p>Intellect adds up to 50% to the first gate. The relevant attribute for the spell's school
+sets a <em>floor</em> under the second, so a caster with the right attribute never has a hopeless
+chance even at high ability.</p>
+
+<h3>The cap that stops you grinding</h3>
+
+<p>You may gain at most <strong>10 improvements</strong> across all your skills and spells
+combined before a timer resets the counter. The timer is set to a random
+<code class="k">random(900000, 1320000)</code> milliseconds — <strong>15 to 22 minutes</strong>.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:66–68, :7629 <code class="k">AddAdvancementPoints</code>, :7647 <code class="k">CheckAdvancementPoints</code></p>
+
+<p>Once you have hit the cap, further practice does nothing at all until the window rolls over.
+There is no message when you hit it, only an occasional hint. The practical consequence:
+<strong>spread your practice</strong>. Ten improvements is ten, whether they land on one spell or
+on eight, and a session that alternates between fighting, casting and travelling extracts more
+than one that grinds a single ability.</p>
+
+<h3>Atrophy: the number goes down</h3>
+
+<p>When the advancement timer fires, anything you did <em>not</em> use in that window is a
+candidate to lose ability. The chance and the amount both depend on how much you learned and on
+your intellect:</p>
+
+<div class="formula">highmark = advancement_points + ((50 − bound(intellect, 1, 50)) × advancement_points) / 20
+
+for each unused spell or skill:
+    if random(1, 200) &lt; highmark  and  its ability &gt; 2:
+        lose 1 point if you used something else in the same school this window
+        lose 2 points otherwise</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:7196 <code class="k">ActivateSpellAtrophy</code>, :7568 <code class="k">ActivateSkillAtrophy</code>, :7680 <code class="k">AdvancementTimer</code></p>
+
+<p>Read that carefully, because it is counter-intuitive: <strong>the more you learned this
+window, the more everything else decays.</strong> A hard grinding session actively costs you the
+abilities you neglected during it. Low intellect makes it worse — up to two and a half times
+worse at intellect 1. And staying inside one school halves the loss, which is a real argument
+for specialising.</p>
+
+<div class="note">Abilities at 2 or below never atrophy, so nothing is ever lost completely. And
+atrophy only runs when the server has it enabled.</div>
+
+<h2>Attributes: chosen once, forever</h2>
+
+<p>Nothing in the game raises a base attribute. Every accessor reads the stored value plus a
+temporary modifier from spells or items and clamps the result; there is no write path outside
+character creation and administrative commands.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6389–6398 and the surrounding accessors</p>
+
+<table class="data">
+<thead><tr><th>Attribute</th><th>What it actually buys</th></tr></thead>
+<tbody>
+<tr><td><strong>Stamina</strong></td><td>Maximum health ceiling (<code class="k">101 + stamina</code>) and the rate you climb toward it. The most valuable attribute in the game.</td></tr>
+<tr><td><strong>Might</strong></td><td>Weapon damage: <code class="k">damage × (100 + bound(might − 25, 0, 40)) / 100</code>. Worthless below 25, capped at 65.</td></tr>
+<tr><td><strong>Agility</strong></td><td>Defence, weighted ×4 — the single largest term in avoiding hits.</td></tr>
+<tr><td><strong>Aim</strong></td><td>Offence, weighted ×4 — the single largest term in landing them.</td></tr>
+<tr><td><strong>Intellect</strong></td><td>Up to +50% on the first learning gate, and it damps atrophy.</td></tr>
+<tr><td><strong>Mysticism</strong></td><td>The requisite stat for several schools; sets the floor under the second learning gate and feeds spell effect.</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/skill/stroke.kod:351 (might) · kod/object/active/holder/nomoveon/battler/player.kod:4227, :4294 (aim, agility) · kod/object/passive/spell.kod:1693 (intellect)</p>
+
+<p><strong>Might below 25 does literally nothing</strong> — the bonus is
+<code class="k">bound(might − 25, 0, 40)</code>, so points 1 through 25 buy zero damage, and
+points above 65 buy zero more. If you are building a fighter, either clear 25 or do not spend
+there at all. See <a href="attributes.html">Attributes</a> for the full treatment.</p>
+
+<h2>A plan that works</h2>
+
+<h3>Before you play: build the character</h3>
+<ul>
+<li>Decide the ceiling first. Stamina is health, permanently. Anything you leave out of stamina
+you are choosing never to have.</li>
+<li>Fighters: stamina, then agility and aim, then might — but only if you can reach 26 or more,
+because below that it is wasted.</li>
+<li>Casters: stamina, then intellect and mysticism. Intellect pays twice, once on learning speed
+and once on not losing what you learned.</li>
+<li>Pick your school before you pick your karma. <a href="karma.html">Qor and Shal'ille pull in
+opposite directions</a> and you cannot have both.</li>
+</ul>
+
+<h3>The first hours</h3>
+<ul>
+<li>Your max health starts low, which means almost everything qualifies as "above your level" and
+almost every kill counts. This is the fastest the health progression will ever be — and you get
+<code class="k">+1</code> on every kill until you pass 30. Use it.</li>
+<li>Buy the cheap level-1 abilities early; they improve from use, so the sooner you own them the
+sooner the ability starts moving. See <a href="../npcs/index.html">who teaches what</a>.</li>
+<li>Get <em>some</em> armour, but read <a href="armor.html">Armour</a> first: the heavy pieces
+carry a negative defence bonus, and early on being hit less is worth more than being hit softly.</li>
+</ul>
+
+<h3>Every session after that</h3>
+<ul>
+<li><strong>Fight things that frighten you.</strong> A creature below your level is worth one
+point and no roll. A creature above it is worth three points, a roll, and up to +10 on that roll.
+Sort <a href="../creatures/index.html">the bestiary</a> by how likely it is to hit you and work
+down the list.</li>
+<li><strong>Land the killing blow and take a hit doing it.</strong> Both are required for the
+full three points, and the second one is easy to forget if you are a caster.</li>
+<li><strong>Do not switch targets.</strong> The kill only counts for the creature you were
+last attacking.</li>
+<li><strong>Rotate your practice.</strong> Ten improvements per 15–22 minutes is the ceiling
+regardless. Spend it across several abilities rather than exhausting it on one.</li>
+<li><strong>Touch everything you care about once per window</strong>, or it decays — and it
+decays harder precisely on the sessions where you learned the most.</li>
+<li><strong>Record your abilities at the start of a session and compare at the end.</strong> It
+is the only progress signal the game gives for skills and spells, and the deltas are too small
+to remember.</li>
+</ul>
+
+<h3>What "wrong" looks like</h3>
+<table class="data">
+<thead><tr><th>Symptom</th><th>What it means</th></tr></thead>
+<tbody>
+<tr><td>Max health flat over 200 kills</td><td>You are fighting things below your level, or you are not the one landing the killing blow, or you have reached <code class="k">101 + stamina</code></td></tr>
+<tr><td>Abilities flat over 30 uses</td><td>You are hitting the 10-per-window cap, or the target is too easy to count</td></tr>
+<tr><td>Abilities falling between sessions</td><td>Atrophy. You are learning hard on a narrow set and neglecting the rest</td></tr>
+<tr><td>Shillings falling across a session</td><td>You are dying, and <a href="death.html">death drops what you carry</a></td></tr>
+</tbody>
+</table>
+
+<p>Related: <a href="attributes.html">Attributes</a> · <a href="combat.html">Combat</a> ·
+<a href="karma.html">Karma</a> · <a href="../skills/index.html">Skills</a> ·
+<a href="../creatures/index.html">Bestiary</a> · <a href="death.html">Death and the Underworld</a></p>

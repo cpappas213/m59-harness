@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Morrigan — Meridian 59 Compendium</title>
+<meta name="description" content="A silly little man, Morrigan maintains a modest business alternately buying and selling reagents and other various notions. Although his heart doesn't seem to b">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Morrigan</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/mrinnk_g1.png" alt="Morrigan" width="134" height="340"></div><div class="heroText"><h1>Morrigan</h1><p class="lede">A silly little man, Morrigan maintains a modest business alternately buying and selling reagents and other various notions. Although his heart doesn't seem to be in commerce, there can be little doubt Morrigan loves his job.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Neutral</span><span class="tag ">Merchant</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 0
+                = 75
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>hit</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>No room in the world declares this creature. It is summoned by another creature, placed by an
+administrator, or left over from content that is no longer reachable.</p><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_NPC</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_NOMOVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_NOFIGHT</code></td><td class="">Doesn't fight</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_BARTENDER</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_NOMOVE</code></td><td class="">Doesn't move</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_APOTHECARY</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_LISTEN</code></td><td class="">Responds to speech</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_TAILOR</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_BUYER</code></td><td class="">Will buy items</td></tr>
+<tr><td class=""><code class="k">MOB_SELLER</code></td><td class="">Has items for sale</td></tr>
+<tr><td class=""><code class="k">MOB_FULL_TALK</code></td><td class="">Isn't affected by the say ranges</td></tr>
+<tr><td class=""><code class="k">MOB_LISTEN_MOB</code></td><td class="">Responds to other NPCs' speech</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>What it offers</h2><h3>Goods sold</h3><p><a href="../items/pantsc.html">pants</a>, <a href="../items/herbs.html">herb</a>, <a href="../items/elderberry.html">elderberry</a>, <a href="../items/torch.html">torch</a></p><p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrinnk.kod — <code class="k">plFor_Sale</code>: element 1 goods, element 2 skills, element 3 spells (kod/object/active/holder/nomoveon/battler/monster.kod:2773, :2797)</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrinnk.kod:11</p>
+<p><code class="k">MarionInnkeeper</code> is <code class="k">MarionTown</code> — full chain <code class="k">MarionInnkeeper</code> ← <code class="k">MarionTown</code> ← <code class="k">Towns</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>MarionInnkeep_name_rsc</code></td><td class=""><em>Morrigan</em></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>MarionInnkeep_icon_rsc</code></td><td class=""><em>mrinnk.bgf</em></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>MarionInnkeep_desc_rsc</code></td><td class=""><em>A silly little man, Morrigan maintains a modest business alternately buying and selling re</em></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">viMerchant_Markup</code></td><td class=""><code>MERCHANT_RIPOFF</code></td><td class="">5</td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_NOFIGHT | MOB_NOMOVE | MOB_LISTEN | MOB_BUYER | MOB_SELLER | MOB_LISTEN_MOB | MOB_FULL_TALK</code></td><td class="">2130131</td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viOccupation</code></td><td class=""><code>MOB_ROLE_INNKEEPER</code></td><td class="">3</td><td class="num " data-sort="58">58</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piInitialRoomCost</code></td><td class=""><code>5000</code></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">piPerDayCost</code></td><td class=""><code>75</code></td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">piKeyCopyCosts</code></td><td class=""><code>500</code></td><td class="num " data-sort="64">64</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>SomeoneSaid(what = $, string = $)</h4>
+<pre><code>{
+      
+      if IsClass(what, &amp;MarionBartender)
+      {
+         
+         if Random(1,3) = 1
+         {
+            
+            send(self,@RandomTimer,#test=TRUE);
+            return;
+         }
+      }
+      
+      Send(Send(SYS, @GetRentableRoomMaintenance), @ParseInnkeeperCommands,
+         #who=self, #what=what, #innRid=RID_MAR_INN, #speech=string,
+         #initCost=piInitialRoomCost, #perDayCost=piPerDayCost, #keyCopyCost=piKeyCopyCosts,
+         #rscRoomRented=MarionInnkeeper_room_rented, #rscRoomCost=MarionInnkeeper_cost,
+         #rscChangeLock=MarionInnkeeper_change_lock);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrinnk.kod:69</p>
+<h4>ReqOffer(what = $, item_list = $)</h4>
+<pre><code>{
+      
+      if send(what,@GetOwner) &lt;&gt; poOwner
+      {
+         debug(&quot;ALERT! &quot;,send(what,@GetTrueName),what,&quot; offered items to NPC &quot;,send(self,@GetTrueName),&quot; from distant RID &quot;,send(send(what,@GetOwner),@GetRoomNum));
+         
+         return FALSE;
+      }     
+
+      if Send(Send(SYS, @GetRentableRoomMaintenance), @ReqOfferedRoomItems, #who=self, #what=what,
+         #itemList=item_list, #innRid=RID_MAR_INN, #perDayCost=piPerDayCost,
+         #rscDaysLeft=MarionInnkeeper_days_left, #rscTooLong=MarionInnkeeper_too_long,
+         #rscDestroyKeyCopy=MarionInnkeeper_destroy_key_copy)
+      {
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrinnk.kod:92</p>
+<h4>ObjectDesired(what = $, who = $)</h4>
+<pre><code>{
+      if Send(self,@IsObjectSundry,#what=what)
+         OR Send(self,@IsObjectReagent,#what=what)
+         OR Send(self,@IsObjectWearable,#what=what)
+      {
+         return TRUE;
+      }
+      
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrinnk.kod:113</p>
+<h4>SetForSale()</h4>
+<pre><code>{
+      plFor_sale=[[           
+		   Create(&amp;PantsC,#translation=PT_GRAY_TO_LRED),
+		   Create(&amp;PantsC,#translation=PT_GRAY_TO_KORANGE),
+		   Create(&amp;Herbs,#number=5),
+         Create(&amp;Elderberry,#number=4),
+		   Create(&amp;Torch)
+		  ],
+		  $,$];
+		  
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrinnk.kod:125</p>
+<h4>WelcomeUser(who = $)</h4>
+<pre><code>{
+      Post(poOwner,@SomeoneSaid,#what=self,#string=MrIk_entry_welcome,
+          #type=SAY_RESOURCE,
+          #parm1=Send(who,@GetDef),#parm2=Send(who,@GetName));
+	 
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrinnk.kod:139</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

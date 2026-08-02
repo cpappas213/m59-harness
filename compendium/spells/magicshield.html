@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>magic shield — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › magic shield</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/armorico_g1.png" alt="magic shield" width="128" height="128"></div><div class="heroText"><h1>magic shield</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><a class="tag school-3" href="../guides/kraanan.html">Kraanan</a><span class="tag ">Level 3</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/kraanan.html">Kraanan</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">3</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">9</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">1</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">0 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">12</div></div></div><div class="flavor">Summons a shield of powerful magical energy that will deflect some of the blows aimed at you for several minutes. Requires mushrooms and red mushrooms to cast.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">9</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/mushroom.html">mushroom</a> ×2, <a href="../items/redmushroom.html">red mushroom</a></td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">2</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">instant</td><td class=""></td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/persench/mshield.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/barloqueblacksmith.html">Fehr'loi Qan</a>, <a href="../creatures/tosblacksmith.html">Fehr'loi Qan</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">GetDuration</code></li><li><code class="k">InitializeEnchantmentState</code></li><li><code class="k">EndEnchantment</code></li><li><code class="k">GetPotionClass</code></li><li><code class="k">ModifyDefensePower</code></li><li><code class="k">ModifyDefenseDamage</code></li><li><code class="k">DefendingHit</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/armorico_g1.png" alt="magic shield group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/armorico_g2.png" alt="magic shield group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/persench/mshield.kod:11</p>
+<p><code class="k">MagicShield</code> is <code class="k">PersonalEnchantment</code> — full chain <code class="k">MagicShield</code> ← <code class="k">PersonalEnchantment</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viPersonal_ench</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>magicshield_name_rsc</code></td><td class=""><em>magic shield</em></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>magicshield_icon_rsc</code></td><td class=""><em>armorico.bgf</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>magicshield_desc_rsc</code></td><td class=""><em>Summons a shield of powerful magical energy that will deflect some of the blows aimed at y</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrAlreadyEnchanted</code></td><td class=""><code>magicshield_already_enchanted_rsc</code></td><td class=""><em>You already have magic shield.</em></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrEnchantment_On</code></td><td class=""><code>magicshield_On_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrEnchantment_Off</code></td><td class=""><code>magicshield_Off_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">vrSuccess</code></td><td class=""><code>magicshield_Success_rsc</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_MAGIC_SHIELD</code></td><td class="">12</td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_KRAANAN</code></td><td class="">3</td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viChance_To_Increase</code></td><td class=""><code>35</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">viFlash</code></td><td class=""><code>FLASH_GOOD_SELF</code></td><td class="">3</td><td class="num " data-sort="52">52</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      plReagents = $;
+      plReagents = Cons([&amp;Mushroom,2],plReagents);
+      plReagents = Cons([&amp;RedMushroom,1],plReagents);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/mshield.kod:58</p>
+<h4>GetDuration(iSpellPower = $)</h4>
+<pre><code>{
+      local iDuration;
+
+      iDuration = 1 + ((iSpellPower + 5)/10); 
+
+      
+      iDuration = iDuration * 60 * 1000;
+
+      return iDuration;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/mshield.kod:67</p>
+<h4>InitializeEnchantmentState(target = $, iSpellpower = 0)</h4>
+<pre><code>{
+      
+      if target &lt;&gt; $
+      {
+         Send(target,@AddDefenseModifier,#what=self);
+      }
+
+      return iSpellpower;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/mshield.kod:79</p>
+<h4>EndEnchantment(who = $, report = TRUE, state = 0)</h4>
+<pre><code>{
+      send(who,@RemoveDefenseModifier,#what=self);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/mshield.kod:90</p>
+<h4>GetPotionClass()</h4>
+<pre><code>{
+      RETURN &amp;MagicShieldPotion;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/mshield.kod:97</p>
+<h4>ModifyDefensePower(who = $, what = $, defense_power = 0)</h4>
+<pre><code>{
+      local iSpellpower;
+
+      iSpellpower = send(who,@GetEnchantedState,#what=self);
+      
+      return (defense_power + 50 + (2 * iSpellpower));
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/mshield.kod:104</p>
+<h4>ModifyDefenseDamage(who = $, what = $, damage = $)</h4>
+<pre><code>{
+      return damage;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/mshield.kod:113</p>
+<h4>DefendingHit(who = $, what = $)</h4>
+<pre><code>{
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/mshield.kod:118</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

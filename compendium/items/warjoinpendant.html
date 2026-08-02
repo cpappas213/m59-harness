@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>war pendant — Meridian 59 Compendium</title>
+<meta name="description" content="You are looking at an object">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › war pendant</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/factpend_g1.png" alt="war pendant" width="95" height="93"></div><div class="heroText"><h1>war pendant</h1><p class="lede">You are looking at an object</p><div class="tags"><span class="tag ">jewellery</span><span class="tag ">neck</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">0</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">0</div></div><div class="fact"><div class="lbl">Value</div><div class="val">10 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div><div class="fact"><div class="lbl">Worn on</div><div class="val sm">neck</div></div></div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/factpend_g1.png" alt="war pendant inventory" loading="lazy"><figcaption>inventory</figcaption></figure><figure><img class="icon" src="../assets/img/factpend_g2.png" alt="war pendant group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/warjoin.kod:11</p>
+<p><code class="k">WarJoinPendant</code> is <code class="k">PassiveItem</code> — full chain <code class="k">WarJoinPendant</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>WarJoinPendant_name_rsc</code></td><td class=""><em>war pendant</em></td><td class="num " data-sort="28">28</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>WarJoinPendant_icon_rsc</code></td><td class=""><em>factpend.bgf</em></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">viUse_type</code></td><td class=""><code>ITEM_USE_NECK</code></td><td class="">64</td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">viItem_type</code></td><td class=""><code>ITEMTYPE_NECKLACE</code></td><td class="">2048</td><td class="num " data-sort="32">32</td></tr>
+<tr><td class=""><code class="k">viUse_Amount</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="34">34</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="37">37</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piSide</code></td><td class=""><code>$</code></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>WarJoinPendant_desc_before_rsc</code></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">pbUsed</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="45">45</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(side = $)</h4>
+<pre><code>{
+      if side &lt;&gt; $
+      {
+         piSide = side;
+
+         piItem_flags = send(SYS,@EncodeTwoColorXLAT,#color1=send(send(SYS,@GetWarEvent),@GetSideColor,#side=piSide),#color2=XLAT_TO_SKIN1);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warjoin.kod:49</p>
+<h4>ReqUse()</h4>
+<pre><code>{
+      return send(send(SYS,@GetWarEvent),@AddPlayerToSide,#who=poOwner,#side=piSide);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warjoin.kod:61</p>
+<h4>ReqUnuse()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warjoin.kod:66</p>
+<h4>NewUsed()</h4>
+<pre><code>{
+      local iSequence, oRobe, oJoinItem;
+      
+      pbUsed = TRUE;
+      vrDesc = WarJoinPendant_desc_after_rsc;
+
+      
+      oRobe = send(poOwner,@FindUsing,#class=&amp;Robe);
+
+      
+      if oRobe &lt;&gt; $
+      {
+         
+         send(oRobe,@ResetColors);
+         send(oRobe,@DoPlayerArt);
+      }
+         
+      
+      iSequence = 1;
+      oJoinItem = Send(poOwner,@FindHolding,#class=&amp;WarJoinPendant);
+
+      while oJoinItem &lt;&gt; $
+      {
+         
+         if oJoinItem &lt;&gt; self
+         {
+            post(oJoinItem,@Delete);
+         }
+
+         
+         iSequence = iSequence + 1;
+         oJoinItem = send(poOwner,@FindHolding,#class=&amp;WarJoinPendant,#sequence=iSequence);
+      }
+            
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warjoin.kod:71</p>
+<h4>AppendDesc()</h4>
+<pre><code>{
+      AppendTempString(send(send(SYS,@GetWarEvent),@GetSideName,#side=piSide));
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warjoin.kod:109</p>
+<h4>CanShatter()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warjoin.kod:116</p>
+<h4>CanSwap()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warjoin.kod:121</p>
+<h4>CanBeStoredInVault()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warjoin.kod:126</p>
+<h4>DropOnDeath()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warjoin.kod:131</p>
+<h4>ReqDMDelete()</h4>
+<p>Only delete if not used.</p>
+<pre><code>{
+      return (NOT pbUsed);
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warjoin.kod:136</p>
+<h4>ReqNewOwner(what = $)</h4>
+<pre><code>{
+      if what &lt;&gt; $
+      {
+         
+         if poOwner &lt;&gt; $
+            AND isClass(poOwner,&amp;User)
+         {
+            return FALSE;
+         }
+      }
+      else
+      {
+         
+         return FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/warjoin.kod:142</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

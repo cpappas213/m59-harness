@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>holy touch — Meridian 59 Compendium</title>
+<meta name="description" content="Shal'ille Lv. 2: Delivers the judgment of Shal'ille in your touch.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › holy touch</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/iholyt_g1.png" alt="holy touch" width="128" height="128"></div><div class="heroText"><h1>holy touch</h1><p class="lede">Shal'ille Lv. 2: Delivers the judgment of Shal'ille in your touch.</p><div class="tags"><a class="tag school-1" href="../guides/shalille.html">Shal’ille</a><span class="tag ">Level 2</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/shalille.html">Shal’ille</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">2</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">12</div></div><div class="fact"><div class="lbl">Karma required</div><div class="val">≥ +20</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">0 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">21</div></div></div><div class="flavor">Pure energy from Shal'ille sears your target. More effective on evil and undead targets. Requires emeralds.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">12</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/emerald.html">emerald</a> ×2</td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">at least +20</td><td class="">Derived, not stored: <code class="k">GetRequiredKarma</code> returns level × +10 for this school.</td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">3</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">instant</td><td class=""></td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/persench/touchatk/holytch.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/shalillepriestess.html">Priestess Xiana</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">DamageFactors</code> — Damage for attack spells is determined largely by expertise in the spell.</li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/iholyt_g1.png" alt="holy touch group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/iholyt_g2.png" alt="holy touch group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/persench/touchatk/holytch.kod:11</p>
+<p><code class="k">HolyTouch</code> is <code class="k">TouchAttackSpell</code> — full chain <code class="k">HolyTouch</code> ← <code class="k">TouchAttackSpell</code> ← <code class="k">PersonalEnchantment</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>HolyTouch_name_rsc</code></td><td class=""><em>holy touch</em></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>HolyTouch_icon_rsc</code></td><td class=""><em>iholyt.bgf</em></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>HolyTouch_desc_rsc</code></td><td class=""><em>Pure energy from Shal'ille sears your target.  More effective on evil and undead targets. </em></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">vrAlreadyEnchanted</code></td><td class=""><code>HolyTouch_already_enchanted_rsc</code></td><td class=""><em>Your hands are already bathed in Shal'ille's love.</em></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">vrEnchantment_On</code></td><td class=""><code>HolyTouch_On_rsc</code></td><td class=""><em>Your hands are bathed in Shal'ille's love.</em></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">vrEnchantment_Off</code></td><td class=""><code>HolyTouch_Off_rsc</code></td><td class=""><em>Your hands are no longer bathed in Shal'ille's love.</em></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">vrSpell_intro</code></td><td class=""><code>holytouch_spell_intro</code></td><td class=""><em>Shal'ille Lv. 2: Delivers the judgment of Shal'ille in your touch.</em></td><td class="num " data-sort="55">55</td></tr>
+<tr><td class=""><code class="k">vrPlayer_was_hit</code></td><td class=""><code>HolyTouch_player_was_hit</code></td><td class=""><em>%s%s scalds you with the pure force of Shal'ille!</em></td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">vrPlayer_hit_something</code></td><td class=""><code>holytouch_player_hit_something</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">vrPlayer_killed_something</code></td><td class=""><code>HolyTouch_player_killed_something</code></td><td class=""><em>%s%s finally succumbs, finding peace through Shal'ille's purifying energy.</em></td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">vrPlayer_was_killed</code></td><td class=""><code>HolyTouch_player_was_killed</code></td><td class=""><em>The touch of %s%s separates body from soul and sends you to the underworld.</em></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">viDefinite</code></td><td class=""><code>ARTICLE_NONE</code></td><td class="">0</td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_SHALILLE</code></td><td class="">1</td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_HOLY_TOUCH</code></td><td class="">21</td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>12</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="69">69</td></tr>
+<tr><td class=""><code class="k">viHit_Factor</code></td><td class=""><code>15</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">viMin_Damage</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">viMax_Damage</code></td><td class=""><code>6</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">viRange</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="76">76</td></tr>
+<tr><td class=""><code class="k">viSpellType</code></td><td class=""><code>ATCK_SPELL_HOLY+ATCK_SPELL_ALL</code></td><td class="">17</td><td class="num " data-sort="78">78</td></tr>
+<tr><td class=""><code class="k">viStroke</code></td><td class=""><code>STROKE_HOLY_TOUCH</code></td><td class="">21</td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>1</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="81">81</td></tr>
+<tr><td class=""><code class="k">vbAutomatic</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="83">83</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>holytouch_sound</code></td><td class=""><em>sholytch.wav</em></td><td class="num " data-sort="85">85</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">plPrerequisites</code></td><td class=""><code>$</code></td><td class="num " data-sort="89">89</td></tr>
+<tr><td class=""><code class="k">plReagents</code></td><td class=""><code>$</code></td><td class="num " data-sort="90">90</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      plReagents = $;
+      plReagents = Cons([&amp;Emerald,2],plReagents);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk/holytch.kod:94</p>
+<h4>DamageFactors(damage = 0, who = $, victim = $)</h4>
+<p>Damage for attack spells is determined largely by expertise in the spell.</p>
+<pre><code>{
+      local iDamage, iKarma;
+
+      iDamage = damage;
+
+      
+      
+      if victim &lt;&gt; $
+      {
+         if Send(victim,@IsUndead)
+         {
+            
+            iDamage = 2*iDamage;
+         }
+         else
+         {
+            
+            
+            iKarma = Send(victim,@GetKarma,#detect=TRUE);
+            iDamage = iDamage + ((-iKarma)*iDamage/200);
+         }
+      }
+
+      return iDamage;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/persench/touchatk/holytch.kod:102</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

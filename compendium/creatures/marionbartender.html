@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tova — Meridian 59 Compendium</title>
+<meta name="description" content="There is no overlooking Tova, a bellowing and uproarious man who takes life exactly as it comes through the front door of the Limping Toad. He is the proprietor">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Tova</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/mrbart_g1.png" alt="Tova" width="233" height="378"></div><div class="heroText"><h1>Tova</h1><p class="lede">There is no overlooking Tova, a bellowing and uproarious man who takes life exactly as it comes through the front door of the Limping Toad. He is the proprietor here, serving drinks and entertaining from his self-styled rostrum noted for its powerful stout.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Neutral</span><span class="tag ">Merchant</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 0
+                = 75
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>hit</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>1 place in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="The Limping Toad Inn and Tavern"><a href="../zones/marioninn.html">The Limping Toad Inn and Tavern</a></td><td class="" data-sort="Set pieces">Set pieces</td><td class="" data-sort="placed">placed</td><td class="num " data-sort="-1">row 14, col 9</td><td class=""><code>monsroom/objroom/marinn.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_NPC</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_NOMOVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_NOFIGHT</code></td><td class="">Doesn't fight</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_BARTENDER</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_NOMOVE</code></td><td class="">Doesn't move</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_APOTHECARY</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RANDOM</code></td><td class="">Performs random actions</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_URCHIN</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_LISTEN</code></td><td class="">Responds to speech</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_TAILOR</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RECEIVE</code></td><td class="">Will accept items/gifts</td></tr>
+<tr><td class=""><code class="k">MOB_SELLER</code></td><td class="">Has items for sale</td></tr>
+<tr><td class=""><code class="k">MOB_FULL_TALK</code></td><td class="">Isn't affected by the say ranges</td></tr>
+<tr><td class=""><code class="k">MOB_COND_SELLER</code></td><td class="">Has things that must be asked for</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>What it offers</h2><h3>Goods sold</h3><p><a href="../items/mug.html">mug of stout</a>, <a href="../items/bread.html">loaf of bread</a>, <a href="../items/meatpie.html">meat pie</a></p><p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrbart.kod — <code class="k">plFor_Sale</code>: element 1 goods, element 2 skills, element 3 spells (kod/object/active/holder/nomoveon/battler/monster.kod:2773, :2797)</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrbart.kod:11</p>
+<p><code class="k">MarionBartender</code> is <code class="k">MarionTown</code> — full chain <code class="k">MarionBartender</code> ← <code class="k">MarionTown</code> ← <code class="k">Towns</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>MarionBartender_name_rsc</code></td><td class=""><em>Tova</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>MarionBartender_icon_rsc</code></td><td class=""><em>mrbart.bgf</em></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>MarionBartender_desc_rsc</code></td><td class=""><em>There is no overlooking Tova, a bellowing and uproarious man who takes life exactly as it </em></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viMerchant_markup</code></td><td class=""><code>MERCHANT_RIPOFF</code></td><td class="">5</td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_NOFIGHT | MOB_RECEIVE | MOB_RANDOM | MOB_LISTEN | MOB_NOMOVE | MOB_SELLER | MOB_COND_SELLER | MOB_FULL_TALK</code></td><td class="">98491</td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viOccupation</code></td><td class=""><code>MOB_ROLE_BARTENDER</code></td><td class="">1</td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">vrUnwanted_keep</code></td><td class=""><code>tova_unwanted_keep</code></td><td class=""><em>~k%s%s tells you, &quot;Well, how nice of you.  A gift.~n~k&quot;</em></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">vrUnwanted_pay</code></td><td class=""><code>tova_unwanted_pay</code></td><td class=""><em>~k%s%s tells you, &quot;What an interesting item!~n~k&quot;</em></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">vrUnwanted_give</code></td><td class=""><code>tova_unwanted_give</code></td><td class=""><em>~k%s%s tells you, &quot;Ha, ha, you've got to be kidding me, stranger! This is a tavern, not a </em></td><td class="num " data-sort="48">48</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>WelcomeUser(who = $)</h4>
+<pre><code>{
+      local iFlags;
+      
+      iFlags = send(who,@GetObjectFlags);
+      
+      if iFlags &amp; PLAYER_PK
+      {
+         send(self,@SetMood,#new_mood=piMood - 3);
+         
+         return;
+      }
+      
+      if send( who, @GetHomeRoom ) = RID_MAR_INN
+      {
+         send(self,@SetMood,#new_mood=piMood + 1);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrbart.kod:55</p>
+<h4>GotUnwantedItem(obj = $, who = $)</h4>
+<pre><code>{
+      local i, TargetObj;
+
+      
+      if NOT isClass(obj,&amp;Food) OR NOT send(obj,@IsAlcohol)
+      {
+         propagate;
+      }
+      
+      
+      
+      
+      
+      
+
+      TargetObj = $;
+      for i in send(who,@GetHolderPassive)
+      {
+         if getClass(i) = getClass(obj)
+         {
+            TargetObj = i;
+            
+            break;
+         }
+      }
+      
+      if TargetObj = $
+      {
+         debug(&quot;Player offered an item he didn't have!&quot;);
+         
+         propagate;
+      }
+
+      if send(TargetObj,@GetNumber) &lt; send(obj,@GetNumber)
+      {
+         debug(&quot;Player offered more of an item than he possessed!&quot;);
+         
+         propagate;
+      }
+
+      send(TargetObj,@SubtractNumber,#number=send(obj,@GetNumber));
+      send(obj,@Delete);
+      i = random(1,4);
+
+      if i=1
+      {
+         send(self,@Say,#message_rsc=tova_cheers1,#parm1=send(who,@GetLordLady));
+      }
+      
+      if i= 2
+      {
+         send(self,@Say,#message_rsc=tova_cheers2,#parm1=send(who,@GetLordLady));
+      }
+      
+      if i= 3
+      {
+         send(self,@Say,#message_rsc=tova_cheers3,#parm1=send(who,@GetTrueName));
+      }
+      
+      if i= 4
+      {
+         send(self,@Say,#message_rsc=tova_cheers4);
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrbart.kod:76</p>
+<h4>AffectMood(what = $, why = $)</h4>
+<pre><code>{
+      if why = MOODMOD_ACCEPT_ITEM
+         AND isClass(what,&amp;Food) 
+         AND send(what,@IsAlcohol)
+      {          
+         send(self,@SetMood,#new_mood=piMood + 1);
+      }
+      
+      if why = MOODMOD_SELL_ITEM
+      {          
+         send(self,@SetMood,#new_mood=piMood + 1);
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrbart.kod:144</p>
+<h4>SetMood(new_mood = $)</h4>
+<pre><code>{
+      send(poOwner,@SetInnkeeperMood,#iMood=new_mood);
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrbart.kod:161</p>
+<h4>SetForSale()</h4>
+<pre><code>{
+      plFor_sale=[ [ Create(&amp;Mug,#number=4),
+                     Create(&amp;Bread),
+                     Create(&amp;Meatpie) ],
+                   $,$,$];
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrbart.kod:168</p>
+<h4>InitCondSale()</h4>
+<pre><code>{
+      local oObj;
+      
+      oObj=Create(&amp;EntrootBerry,#number=4);
+      Send(Send(SYS,@GetLibrary),@AddToMobLib,#mob=self,
+           #triggers=[Send(oObj,@GetName)],
+           #action=[LIBACT_CONDITIONAL,oObj,200,Tova_entrootberry_sale]);
+           
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrbart.kod:178</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

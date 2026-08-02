@@ -1,0 +1,169 @@
+<h1>Factions</h1>
+
+<p class="lede">Three factions compete for control of the realm: the Duke, the Princess and the
+Rebels. Joining one is not a cosmetic choice — it changes your chance to hit, your defence, your
+damage, your spell power, your regeneration and your vigour costs, and the size of every one of
+those bonuses depends on how well your side is currently doing. A faction that is winning makes
+its members measurably stronger. A faction that is losing makes them measurably weaker.</p>
+
+<h2>The three factions, and the fourth option</h2>
+
+<table class="data">
+<thead><tr><th>Faction</th><th>Constant</th></tr></thead>
+<tbody>
+<tr><td><strong>Neutral</strong> — unaligned</td><td><code class="k">FACTION_NEUTRAL = 0</code></td></tr>
+<tr><td><strong>The Duke</strong></td><td><code class="k">FACTION_DUKE = 1</code></td></tr>
+<tr><td><strong>The Princess</strong></td><td><code class="k">FACTION_PRINCESS = 2</code></td></tr>
+<tr><td><strong>The Rebels</strong></td><td><code class="k">FACTION_REBEL = 3</code></td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:2347–2351</p>
+
+<p>Neutral is a real position, not an absence of one. Unaligned players receive
+<strong>a quarter</strong> of the calculated benefit and, unlike faction members, can never
+receive a negative one.</p>
+<p class="cite">kod/util/parlia.kod:1067–1073</p>
+
+<h2>Who is eligible</h2>
+
+<p>The system distinguishes players who are <em>intriguing</em> — genuinely participating in the
+political layer — from everyone else. To be intriguing you must have player-killing enabled
+<em>and</em> be either sufficiently advanced in health or sufficiently adept.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:11316 <code class="k">PlayerIsIntriguing</code></p>
+
+<p>Everyone below that line gets a fixed, modest bonus and is otherwise untouched by faction
+politics:</p>
+
+<table class="data">
+<thead><tr><th>Bonus</th><th>Non-intriguing player gets</th><th>Faction member's maximum</th><th>Applied to</th></tr></thead>
+<tbody>
+<tr><td>Hit roll</td><td>+50</td><td>+125</td><td>Offence, before the bound to 1000</td></tr>
+<tr><td>Defence</td><td>+50</td><td>+200</td><td>Defence, before the bound to 1000</td></tr>
+<tr><td>Spell power</td><td>+3</td><td>+10</td><td>Spell power, on a 1–99 scale</td></tr>
+<tr><td>Learning chance</td><td>+3</td><td>+10</td><td>The first learning gate</td></tr>
+<tr><td>Regeneration</td><td>—</td><td>base 700</td><td>Health and mana regeneration rate</td></tr>
+<tr><td>Vigour</td><td>+5%</td><td>+30%</td><td>Percentage reduction in all exertion costs</td></tr>
+<tr><td>Damage</td><td>—</td><td>+1 (Rebels)</td><td>Flat damage per hit</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/util/parlia.kod:1081, :1181, :1228, :1293, :1322, :1372, :1420 — the stated rationale in each function's own comments</p>
+
+<div class="note">A +200 defence bonus is large. Against an offence of 605, raising defence from
+585 to 785 drops the attacker's chance to hit from 56% to 42%. Faction standing is one of the
+biggest single levers on survivability in the game.</div>
+
+<h2>How the size of the bonus is decided</h2>
+
+<p>Every bonus runs through one function, which scales a base number by two things: how much
+<strong>power</strong> your faction holds relative to balance, and how many
+<strong>members</strong> it has relative to balance.</p>
+
+<div class="formula">balance   = total_power_points × balance_factor / 100
+
+power contribution:
+    if power ≤ balance:   p = (110 × power / balance) − 10      % line from (0,−10) to (b,100)
+    else:                 p = 100 + 50 × (power − balance) / balance
+    p = bound(p, −10, 150)
+
+membership contribution:
+    mbalance = intriguer_count × balance_factor / 100
+    if members ≤ mbalance or mbalance &lt; 3:  m = 100
+    else:                                   m = −50 × members / mbalance + 150
+    m = bound(m, 25, 100)
+
+bonus = base × p × m / 10000        if p &gt; 0
+      = base × p / 100              if p ≤ 0   (membership cannot dull a penalty)
+
+unaligned: bonus = bonus / 4, and never below 0</div>
+<p class="cite">kod/util/parlia.kod:998 <code class="k">CalcFactionBonus</code></p>
+
+<p>Three consequences, and they are the entire design of the political layer:</p>
+
+<ul>
+<li><strong>Power above balance keeps paying, up to 150%.</strong> A dominant faction is not
+merely winning; its members are individually 50% stronger than a balanced one's.</li>
+<li><strong>Power below balance goes negative.</strong> At zero power the contribution is −10%,
+so members of a collapsing faction are actively <em>weaker</em> than unaligned players, who
+cannot go negative at all.</li>
+<li><strong>Crowds dilute.</strong> Membership above balance cuts the bonus, down to a floor of
+25%. Joining the winning side is self-limiting: the more people who do it, the less each of them
+gets. But the dilution only applies while power is positive — piling into a losing faction does
+not soften its penalty at all.</li>
+</ul>
+
+<h3>Power bands</h3>
+
+<table class="data">
+<thead><tr><th>Power relative to balance</th><th>Standing</th></tr></thead>
+<tbody>
+<tr><td>≥ 2 × balance</td><td><code class="k">FACTION_STRONGLY_IN</code></td></tr>
+<tr><td>≥ 1.5 × balance</td><td><code class="k">FACTION_IN_POWER</code></td></tr>
+<tr><td>≥ balance</td><td><code class="k">FACTION_NORMAL</code></td></tr>
+<tr><td>≥ balance / 2</td><td><code class="k">FACTION_OUT_POWER</code></td></tr>
+<tr><td>below that</td><td><code class="k">FACTION_STRONGLY_OUT</code></td></tr>
+</tbody>
+</table>
+<p class="cite">kod/util/parlia.kod:481 <code class="k">FigurePowerFromCount</code>, bands at kod/include/blakston.khd:2341</p>
+
+<p>Power stops accruing at twice balance, so there is a ceiling on how dominant a faction can
+make its members — but no floor on how weak a losing one can make them beyond the −10%.</p>
+
+<h2>Faction combat</h2>
+
+<p>When two enemy faction soldiers fight, damage between them is increased by
+<strong>15%</strong> — and that increase is applied <em>after</em> both damage caps, so it is the
+only thing in the game that can take more than 30 health in a single blow.</p>
+
+<div class="formula">if the defender is a Player and the attacker's SoldierShield says this is an enemy attack:
+      damage = damage × 115 / 100        % after the one-third cap and MAX_DAMAGE_PER_HIT</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4620–4632</p>
+
+<p>The soldier shield is the marker: it is what identifies you as a combatant of your faction and
+what the damage check consults. Killing an enemy soldier while carrying it also exempts you from
+the <a href="death.html">murderer flag</a> that killing an innocent would otherwise set.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:4870–4875</p>
+
+<h2>Timers</h2>
+
+<table class="data">
+<thead><tr><th>Constant</th><th>Value</th><th>What it governs</th></tr></thead>
+<tbody>
+<tr><td><code class="k">FACTION_MIN_REVISIT_TIME</code></td><td>14,400 s — 4 hours</td><td>How long before you may return</td></tr>
+<tr><td><code class="k">FACTION_RESIGN_TIME</code></td><td>86,400 s — 24 hours</td><td>How long resigning takes</td></tr>
+<tr><td><code class="k">FACTION_WARN_TIME</code></td><td>72,000 s — 20 hours</td><td>When you are warned before it completes</td></tr>
+<tr><td><code class="k">FACTION_UPDATE_TIME</code></td><td>1,200,000 ms — 20 minutes</td><td>How often standings and bonuses are recomputed</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/include/blakston.khd:2323–2329</p>
+
+<p>Leaving takes a full day. Coming back takes four hours after that. The system is deliberately
+built so that you cannot follow the power curve from hour to hour — by the time you have switched
+to the winning side, the standings have been recomputed sixty times.</p>
+
+<h2>Other things factions touch</h2>
+
+<ul>
+<li><strong>Lawful merchants and murderers.</strong> Faction pressure can force a merchant
+flagged <code class="k">MOB_LAWFUL</code> to trade with a murderer who would otherwise be
+refused. <span class="cite">kod/util/parlia.kod:1468 <code class="k">GetFactionSellToMurderer</code></span></li>
+<li><strong>The Princess's shield reduces spell mana costs</strong> by a percentage.
+<span class="cite">kod/object/passive/spell.kod:1578</span></li>
+<li><strong>Rebels get a flat +1 damage</strong>, stated in the source as a small bonus for that
+faction specifically. <span class="cite">kod/util/parlia.kod:1293</span></li>
+<li><strong>Faction liege NPCs</strong> stand for each side and are recreated by Parliament when
+the political state changes. <span class="cite">kod/util/parlia.kod:379, :588</span></li>
+</ul>
+
+<h2>Should you join?</h2>
+
+<p>The honest calculation: a faction at or above balance gives you roughly four times what
+neutrality does, on six separate statistics. A faction below balance gives you <em>less</em> than
+neutrality, and neutrality cannot go negative. Joining is a bet on your side's standing over the
+next twenty-four hours, because that is how long it takes to get back out.</p>
+
+<p>If you are not intriguing — no player-killing, or not yet advanced enough — the question does
+not arise: you already collect the fixed unaligned bonus and cannot be hurt by any of this.</p>
+
+<p>Related: <a href="duke.html">The Duke and Politics</a> · <a href="combat.html">Combat</a> ·
+<a href="death.html">Death, the Underworld and PvP</a> · <a href="karma.html">Karma</a> ·
+<a href="guilds.html">Guilds</a> · <a href="../npcs/index.html">NPCs</a></p>

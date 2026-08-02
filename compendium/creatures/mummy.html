@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mummy — Meridian 59 Compendium</title>
+<meta name="description" content="This evil being has been brought to life by dark magics of unknown origin. Its flesh is putrid and soft, and its eyes ask for rest from its cursed unlife.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › mummy</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/mummy_g1.png" alt="mummy" width="200" height="150"></div><div class="heroText"><h1>mummy</h1><p class="lede">This evil being has been brought to life by dark magics of unknown origin. Its flesh is putrid and soft, and its eyes ask for rest from its cursed unlife.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Difficulty 2</span><span class="tag ">Evil</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">2</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">-20</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">very_slow</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">newbie_area</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>napleoc</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 2
+                = 195
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 20</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">18%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.4</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>hit</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 25/55 + random(0, 2/3), $, 6)
+       = 1 item
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/newbietrs.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="RedMushroom"><a href="../items/redmushroom.html">red mushroom</a></td><td class="num " data-sort="30.693">30.7%</td><td class=""></td><td class=""><code>newbietrs.kod:31</code></td></tr>
+<tr><td class="" data-sort="EntrootBerry"><a href="../items/entrootberry.html">entroot berry</a></td><td class="num " data-sort="19.802">19.8%</td><td class=""></td><td class=""><code>newbietrs.kod:32</code></td></tr>
+<tr><td class="" data-sort="Ruby"><a href="../items/ruby.html">ruby</a></td><td class="num " data-sort="14.851">14.9%</td><td class=""></td><td class=""><code>newbietrs.kod:33</code></td></tr>
+<tr><td class="" data-sort="Snack"><a href="../items/snack.html">edible mushroom</a></td><td class="num " data-sort="14.851">14.9%</td><td class=""></td><td class=""><code>newbietrs.kod:34</code></td></tr>
+<tr><td class="" data-sort="OrcTooth"><a href="../items/orctooth.html">orc tooth</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>newbietrs.kod:35</code></td></tr>
+<tr><td class="" data-sort="Mace"><a href="../items/mace.html">mace</a></td><td class="num " data-sort="6.931">6.9%</td><td class=""></td><td class=""><code>newbietrs.kod:36</code></td></tr>
+<tr><td class="" data-sort="Herbs"><a href="../items/herbs.html">herb</a></td><td class="num " data-sort="2.97">3.0%</td><td class=""></td><td class=""><code>newbietrs.kod:37</code></td></tr></tbody></table></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>1 place in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="Mausoleum"><a href="../zones/guest6.html">Mausoleum (Wilderness)</a></td><td class="" data-sort="Wilderness">Wilderness</td><td class="" data-sort="generator">generator, placed</td><td class="num " data-sort="50">50%</td><td class=""><code>monsroom/guest6.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_MOVE_FLEE_FRIGHTENERS</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>What killing it does to your karma</h2>
+<p>Its karma is <code class="k">-20</code>, and a kill is treated as an act whose karma is the
+<em>negative</em> of the victim's — so killing this creature pushes you
+<strong>towards good</strong>.</p>
+<div class="formula">base   = your_karma − (−victim_karma) = your_karma − 20
+change = −( base³ / 2500 + 5 × base ) / (11 − swing)      % hundredths of a karma point
+       bounded to ±150 for a monster kill — at most 1.5 karma per kill</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code> · :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+<div class="note">No karma moves at all in the newbie region, in an arena, or when the victim's
+karma is neutral. And once you are already further from neutral than your victim in the same
+direction, killing them does nothing to you.</div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/mummy_g1.png" alt="mummy group 1" loading="lazy"><figcaption>group 1 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mummy_g2.png" alt="mummy group 2" loading="lazy"><figcaption>group 2 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mummy_g3.png" alt="mummy group 3" loading="lazy"><figcaption>group 3 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mummy_g4.png" alt="mummy group 4" loading="lazy"><figcaption>group 4 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mummy_g5.png" alt="mummy group 5" loading="lazy"><figcaption>group 5 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mummy_g6.png" alt="mummy group 6" loading="lazy"><figcaption>group 6 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mummy_g7.png" alt="mummy group 7" loading="lazy"><figcaption>group 7 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mummy_g8.png" alt="mummy group 8" loading="lazy"><figcaption>group 8 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mummy_g9.png" alt="mummy group 9" loading="lazy"><figcaption>group 9 · 6 angles</figcaption></figure><figure><img class="icon" src="../assets/img/mummyx_g1.png" alt="mummy corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mummy.kod:11</p>
+<p><code class="k">Mummy</code> is <code class="k">Monster</code> — full chain <code class="k">Mummy</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>. Subclasses: <code class="k">BlackMummy</code>, <code class="k">MummyNoTreasure</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrKocName</code></td><td class=""><code>mummy_koc_name_rsc</code></td><td class=""><em>napleoc</em></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>mummy_name_rsc</code></td><td class=""><em>mummy</em></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>mummy_icon_rsc</code></td><td class=""><em>mummy.bgf</em></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>mummy_desc_rsc</code></td><td class=""><em>This evil being has been brought to life by dark magics of unknown origin. Its flesh is pu</em></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>mummy_dead_icon_rsc</code></td><td class=""><em>mummyX.bgf</em></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>mummy_dead_name_rsc</code></td><td class=""><em>dead mummy</em></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_NEWBIE_AREA</code></td><td class="">30</td><td class="num " data-sort="44">44</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_VERY_SLOW</code></td><td class="">4</td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="47">47</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>-20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="49">49</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_AGGRESSIVE | AI_MOVE_FLEE_FRIGHTENERS</code></td><td class="">16416</td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>mummy_sound_hit</code></td><td class=""><em>mum_atkh.wav</em></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>mummy_sound_miss</code></td><td class=""><em>mum_atkm.wav</em></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>mummy_sound_aware</code></td><td class=""><em>mum_awr2.wav</em></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>mummy_sound_death</code></td><td class=""><em>mum_die.wav</em></td><td class="num " data-sort="55">55</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="59">59</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>CalculateDamage()</h4>
+<pre><code>{
+	   return random(1,2);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mummy.kod:63</p>
+<h4>Constructed()</h4>
+<pre><code>{
+      plResistances = [ [ 20, -ATCK_SPELL_UNHOLY],
+                        [ -20, -ATCK_SPELL_HOLY],
+                        [-20, ATCK_WEAP_ALL ] ];
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mummy.kod:68</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      piAnimation = ANIM_ATTACK;
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mummy.kod:76</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE,4,200,2,2,2,5);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mummy.kod:85</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_CYCLE,4,200,2,2,2,5);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mummy.kod:92</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      if piAnimation = ANIM_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,200,2,6,2,9,2,1);
+         
+         return;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mummy.kod:100</p>
+<h4>IsUndead()</h4>
+<pre><code>{
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/mummy.kod:112</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

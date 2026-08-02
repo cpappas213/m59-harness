@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ice creature — Meridian 59 Compendium</title>
+<meta name="description" content="This is a creature made completely from frozen water! Frost clings to every inch of the crystalline figure, its jagged limbs glimmering in the pale light. The a">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › ice creature</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/iceper_torso_g1.png" alt="ice creature" width="160" height="188"></div><div class="heroText"><h1>ice creature</h1><p class="lede">This is a creature made completely from frozen water! Frost clings to every inch of the crystalline figure, its jagged limbs glimmering in the pale light. The air around it crackles with an icy stillness, not born of malice but of a resolve to protect something greater.</p><div class="tags"><span class="tag ">Level 90</span><span class="tag ">Difficulty 8</span><span class="tag ">Good</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">90</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">8</div></div><div class="fact"><div class="lbl">Health</div><div class="val">81–135</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">5–11</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">75</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">slow</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">ice_person</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>atzmoch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 90 + 60 × 8
+                = 750
+
+health          = Fuzzy(level × 120/100) = 81–135
+damage per hit  = Fuzzy(level / random(10,15))  = 5–11
+dodge           = difficulty × 10 = 80</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">70%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">44%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">17</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">5.6</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>pierce</strong> damage, carrying <strong>cold</strong> magic. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 90/55 + random(0, 8/3), $, 6)
+       = 2–4 items
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/icepert.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="Waterskin"><a href="../items/waterskin.html">water skin</a></td><td class="num " data-sort="30.693">30.7%</td><td class=""></td><td class=""><code>icepert.kod:31</code></td></tr>
+<tr><td class="" data-sort="Sapphire"><a href="../items/sapphire.html">sapphire</a></td><td class="num " data-sort="24.752">24.8%</td><td class=""></td><td class=""><code>icepert.kod:32</code></td></tr>
+<tr><td class="" data-sort="Diamond"><a href="../items/diamond.html">diamond</a></td><td class="num " data-sort="24.752">24.8%</td><td class=""></td><td class=""><code>icepert.kod:33</code></td></tr>
+<tr><td class="" data-sort="InkyCap"><a href="../items/inkycap.html">Inky-cap mushroom</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>icepert.kod:34</code></td></tr>
+<tr><td class="" data-sort="PurpleMushroom"><a href="../items/purplemushroom.html">purple mushroom</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>icepert.kod:35</code></td></tr>
+<tr><td class="" data-sort="FireRing"><a href="../items/firering.html">Fire Ring</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>icepert.kod:36</code></td></tr></tbody></table></div><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>4 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 6.
+<span class="cite">kod/object/passive/trestype/icepert.kod:23</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>No room in the world declares this creature. It is summoned by another creature, placed by an
+administrator, or left over from content that is no longer reachable.</p><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_MOVE_FLEE_FRIGHTENERS</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_MOVE_REGROUP</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_KARMA_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_WIZARD_KILLER</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>What killing it does to your karma</h2>
+<p>Its karma is <code class="k">75</code>, and a kill is treated as an act whose karma is the
+<em>negative</em> of the victim's — so killing this creature pushes you
+<strong>towards evil</strong>.</p>
+<div class="formula">base   = your_karma − (−victim_karma) = your_karma + 75
+change = −( base³ / 2500 + 5 × base ) / (11 − swing)      % hundredths of a karma point
+       bounded to ±150 for a monster kill — at most 1.5 karma per kill</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code> · :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+<div class="note">No karma moves at all in the newbie region, in an arena, or when the victim's
+karma is neutral. And once you are already further from neutral than your victim in the same
+direction, killing them does nothing to you.</div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/iceper_torso_g1.png" alt="ice creature group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/iceper_torso_g2.png" alt="ice creature group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/iceper_torso_g3.png" alt="ice creature group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/iceperx_g1.png" alt="ice creature corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:37</p>
+<p><code class="k">Iceperson</code> is <code class="k">Monster</code> — full chain <code class="k">Iceperson</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrKocName</code></td><td class=""><code>iceperson_koc_name_rsc</code></td><td class=""><em>atzmoch</em></td><td class="num " data-sort="105">105</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>iceperson_name_rsc</code></td><td class=""><em>ice creature</em></td><td class="num " data-sort="106">106</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>iceperson_icon_rsc</code></td><td class=""><em>iceper_torso.bgf</em></td><td class="num " data-sort="107">107</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>iceperson_desc_rsc</code></td><td class=""><em>This is a creature made completely from frozen water! Frost clings to every inch of the cr</em></td><td class="num " data-sort="108">108</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>iceperson_dead_icon_rsc</code></td><td class=""><em>iceperX.bgf</em></td><td class="num " data-sort="109">109</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>iceperson_dead_name_rsc</code></td><td class=""><em>melting ice</em></td><td class="num " data-sort="110">110</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_ICE_PERSON</code></td><td class="">55</td><td class="num " data-sort="112">112</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_SLOW</code></td><td class="">8</td><td class="num " data-sort="114">114</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_PIERCE</code></td><td class="">32</td><td class="num " data-sort="115">115</td></tr>
+<tr><td class=""><code class="k">viAttack_spell</code></td><td class=""><code>ATCK_SPELL_COLD</code></td><td class="">8</td><td class="num " data-sort="116">116</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_KARMA_AGGRESSIVE | AI_FIGHT_WIZARD_KILLER |  AI_MOVE_FLEE_FRIGHTENERS |  AI_MOVE_REGROUP</code></td><td class="">2130016</td><td class="num " data-sort="117">117</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="118">118</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>90</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="119">119</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>8</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="120">120</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>75</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="121">121</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>iceperson_sound_hit</code></td><td class=""><em>ice_atkh.wav</em></td><td class="num " data-sort="123">123</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>iceperson_sound_miss</code></td><td class=""><em>ice_atkm.wav</em></td><td class="num " data-sort="124">124</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>iceperson_sound_aware</code></td><td class=""><em>ice_awr.wav</em></td><td class="num " data-sort="125">125</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>iceperson_sound_death</code></td><td class=""><em>ice_dth.wav</em></td><td class="num " data-sort="126">126</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piDrawFX</code></td><td class=""><code>DRAWFX_TRANSLUCENT_50</code></td><td class="num " data-sort="130">130</td></tr>
+<tr><td class=""><code class="k">pbThrow</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="132">132</td></tr>
+<tr><td class=""><code class="k">prWeaponOverlay</code></td><td class=""><code>$</code></td><td class="num " data-sort="134">134</td></tr>
+<tr><td class=""><code class="k">ptSpearTimer</code></td><td class=""><code>$</code></td><td class="num " data-sort="136">136</td></tr>
+<tr><td class=""><code class="k">ptSpearThrowAnimationDelayTimer</code></td><td class=""><code>$</code></td><td class="num " data-sort="137">137</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor()</h4>
+<pre><code>{
+      
+      Send(self,@SetWeapon);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:141</p>
+<h4>Constructed()</h4>
+<pre><code>{
+      plResistances = [ [ 99, -ATCK_SPELL_COLD ],
+                        [ 40, ATCK_WEAP_PIERCE ],
+                        [ 30, ATCK_WEAP_THRUST],
+                        [ 20, ATCK_SPELL_SHOCK ],
+                        [ 20, ATCK_SPELL_ALL ],
+                        [ 20, ATCK_WEAP_SLASH],
+                        [-10, ATCK_WEAP_BLUDGEON ],
+                        [-10, ATCK_SPELL_ACID ],
+                        [-20, ATCK_SPELL_QUAKE ],
+                        [-30, -ATCK_SPELL_FIRE ] ];
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:149</p>
+<h4>SetWeapon()</h4>
+<p>Creates some randomness in whether the instance is strictly melee (sword)  or has a ranged attack (occasional ice spear).</p>
+<pre><code>{
+      local iRandom;
+
+      iRandom = random(0,1);
+
+      if iRandom = 1
+      {
+         prWeaponOverlay = iceperson_sword;
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:165</p>
+<h4>EnterStateChase()</h4>
+<p>Unarmed variant will generate a spear weapon when entering chase state.</p>
+<pre><code>{
+      if prWeaponOverlay = $ AND ptSpearTimer = $
+      {
+         Send(self,@GenerateIceSpear);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:181</p>
+<h4>GenerateIceSpear()</h4>
+<pre><code>{
+      ptSpearTimer = $;
+      
+      prWeaponOverlay = iceperson_spear;
+      
+      Send(poOwner,@SomethingChanged,#what=self);
+      Send(poOwner,@SomethingWaveRoom,#what=self,#wave_rsc=iceperson_sound_aware);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:192</p>
+<h4>IceSpearTimer()</h4>
+<pre><code>{
+      ptSpearThrowAnimationDelayTimer = $;
+
+      
+      prWeaponOverlay = $;
+      Send(poOwner,@SomethingChanged,#what=self);
+
+      
+      ptSpearTimer = CreateTimer(self,@GenerateIceSpear,SPEAR_WAIT_TIME);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:204</p>
+<h4>MonsterCanCastSpell()</h4>
+<pre><code>{
+      
+      if prWeaponOverlay = iceperson_spear
+      {
+         return TRUE;
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:218</p>
+<h4>MonsterCastSpell()</h4>
+<pre><code>{
+      local iBase;
+
+      iBase = Send(self,@AdjustedChanceBase,#base=THROW_CHANCE);
+
+      if Random(1,iBase) = 1
+         AND Send(self,@SquaredDistanceTo,#what=poTarget) &lt; THROW_RANGE_SQUARED
+         AND Send(poOwner,@LineOfSight,#obj1=self,#obj2=poTarget)
+         AND Send(poOwner,@ReqSomethingAttack,#what=self,#victim=poTarget,#use_weapon=self)
+      {
+         Send(self,@DoMissileAttack);
+         
+         return TRUE;
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:229</p>
+<h4>DoMissileAttack()</h4>
+<pre><code>{
+      pbThrow = TRUE;
+
+      Send(poOwner,@SomethingShot,#who=self,#target=poTarget,#projectile=self);
+      Send(self,@TryAttack,#what=poTarget,#stroke_obj=self);
+      
+      
+      
+      ptSpearThrowAnimationDelayTimer = CreateTimer(self,@IceSpearTimer,SPEAR_THROW_ANIMATION_DELAY);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:248</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      if pbThrow = TRUE
+      {
+         piAnimation = ANIM_THROW;
+         pbThrow = FALSE;
+      }
+      else
+      {
+         piAnimation = ANIM_ATTACK;
+      }
+
+      Send(poOwner,@SomethingChanged,#what=self);
+      piAnimation = ANIM_NONE;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:262</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      local iGroup;
+
+      iGroup = GROUP_DEFAULT;
+
+      
+      
+      if piHit_points &lt; (2 * viLevel / 3)
+      {
+	      iGroup = GROUP_WOUNDED;
+      }
+      if piHit_points &lt; (viLevel / 3)
+      {
+	      iGroup = GROUP_VERY_WOUNDED;
+      }
+
+      AddPacket(1,ANIMATE_NONE,2,iGroup);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:282</p>
+<h4>SendMoveOverlays()</h4>
+<pre><code>{
+      if prWeaponOverlay &lt;&gt; $
+      {
+         AddPacket(1,3);
+      }
+      else
+      {
+         AddPacket(1,2);
+      }
+
+      AddPacket(4,iceperson_feet,1,HS_LEGS);
+      AddPacket(1,ANIMATE_CYCLE,4,ANIMATION_WALK_SPEED,2,FRAME_FEET_WALK_START,2,FRAME_FEET_WALK_END);
+
+      AddPacket(4,iceperson_rightarm,1,HS_RIGHT_HAND);
+      AddPacket(1,ANIMATE_NONE,2,FRAME_ARM_STANDING);
+
+      if prWeaponOverlay &lt;&gt; $
+      {
+         AddPacket(4,prWeaponOverlay,1,HS_RIGHT_WEAPON);
+         AddPacket(1,ANIMATE_NONE,2,1);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:304</p>
+<h4>SendOverlays()</h4>
+<pre><code>{
+      if prWeaponOverlay &lt;&gt; $ AND piAnimation &lt;&gt; ANIM_THROW
+      {
+         AddPacket(1,3);
+      }
+      else
+      {
+         AddPacket(1,2);
+      }
+
+      AddPacket(4,iceperson_feet,1,HS_LEGS);
+         
+      if piAnimation = ANIM_ATTACK OR piAnimation = ANIM_THROW
+      {
+         AddPacket(1,ANIMATE_NONE,2,FRAME_FEET_ATTACKING);
+      }
+      else
+      {
+         AddPacket(1,ANIMATE_NONE,2,FRAME_FEET_STANDING);
+      }
+
+      AddPacket(4,iceperson_rightarm,1,HS_RIGHT_HAND);
+
+      if piAnimation = ANIM_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE,4,ANIMATION_ATTACK_SPEED,2,FRAME_ARM_ATTACK_START,2,FRAME_ARM_ATTACK_END,2,FRAME_ARM_STANDING);
+      }
+      else
+      {
+         if piAnimation = ANIM_THROW
+         {
+            AddPacket(1,ANIMATE_ONCE,4,ANIMATION_THROW_SPEED,2,FRAME_ARM_THROW_START,2,FRAME_ARM_THROW_END,2,FRAME_ARM_STANDING);
+         }
+         else
+         {
+            AddPacket(1,ANIMATE_NONE,2,FRAME_ARM_STANDING);
+         }
+      }
+      
+      if prWeaponOverlay &lt;&gt; $ AND piAnimation &lt;&gt; ANIM_THROW
+      {
+         AddPacket(4,prWeaponOverlay,1,HS_RIGHT_WEAPON);
+
+         if piAnimation = ANIM_ATTACK
+         {
+            if prWeaponOverlay = iceperson_sword
+            {
+               AddPacket(1,ANIMATE_ONCE,4,ANIMATION_ATTACK_SPEED,2,FRAME_ARM_ATTACK_START,2,FRAME_ARM_ATTACK_END,2,FRAME_ARM_STANDING);
+            }
+            else
+            {
+               AddPacket(1,ANIMATE_NONE,2,1);
+            }
+         }   
+         else
+         {
+            if piAnimation = ANIM_THROW
+            {
+               AddPacket(1,ANIMATE_ONCE,4,ANIMATION_THROW_SPEED,2,FRAME_WEAPON_THROW_HELD,2,FRAME_WEAPON_THROW_READY,2,FRAME_WEAPON_THROW_HELD);
+            }
+            else
+            {
+               AddPacket(1,ANIMATE_NONE,2,1);
+            }
+         }
+      }
+ 
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:330</p>
+<h4>GetProjectileSpeed()</h4>
+<pre><code>{
+      return 8;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:401</p>
+<h4>SendProjectileAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_NONE,2,1);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:406</p>
+<h4>GetProjectileLightFlags()</h4>
+<pre><code>{
+      return LIGHT_FLAG_NONE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:413</p>
+<h4>GetProjectileIcon()</h4>
+<pre><code>{
+      return iceperson_spear_projectile;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:418</p>
+<h4>SendLightingInformation()</h4>
+<pre><code>{
+      AddPacket(2,(LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC));
+      AddPacket(1,5); 
+      AddPacket(2,LIGHT_WHITE);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:423</p>
+<h4>GetParryAbility(stroke_obj = $)</h4>
+<pre><code>{
+      if (stroke_obj &lt;&gt; $) AND NOT Send(stroke_obj,@CanParry)
+      {
+         return 0;
+      }
+      return (viDifficulty*10)/2;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:432</p>
+<h4>GetOptimalRange()</h4>
+<pre><code>{
+      return random(8,15);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:441</p>
+<h4>CanMorphTo()</h4>
+<pre><code>{
+      return FALSE;
+   }      </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:446</p>
+<h4>Delete()</h4>
+<pre><code>{
+      if ptSpearTimer &lt;&gt; $
+      {
+         DeleteTimer(ptSpearTimer);
+         ptSpearTimer = $;
+      }
+
+      if ptSpearThrowAnimationDelayTimer &lt;&gt; $
+      {
+         DeleteTimer(ptSpearThrowAnimationDelayTimer);
+         ptSpearThrowAnimationDelayTimer = $;
+      }
+      
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/iceper.kod:451</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

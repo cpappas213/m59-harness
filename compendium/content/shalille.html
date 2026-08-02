@@ -1,0 +1,105 @@
+<h1>Shal’ille — the School of Compassion</h1>
+
+<p class="lede">Shal'ille is the healer, and the price of the school is your alignment: every spell in
+it demands karma of at least ten times its level, so the deepest Shal'ille magic requires living
+at +60 on a scale that runs to +100. In exchange it is the only school that can put health back
+into another person, and its power grows both with the wildness of the place you stand in and
+with how good you already are.</p>
+
+<h2>Where Shal’ille stands</h2>
+<table class="data">
+<tbody>
+<tr><td>Polarity</td><td>Good — <code class="k">karma ≥ level × +10</code></td></tr>
+<tr><td>Requisite attribute</td><td><strong>Mysticism</strong></td></tr>
+<tr><td>Learning division</td><td>Magic</td></tr>
+<tr><td>Spells</td><td>29, across levels 1–6</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:376 <code class="k">GetDivision</code>, :392 <code class="k">GetDivisionReq</code>, :482 <code class="k">GetRequiredKarma</code></p>
+
+<h2>Where its power comes from</h2>
+<p>Spell power is half your ability in the spell plus the bonuses below, on a scale of 1 to 99.
+It decides your success chance, your mana cost, your casting speed and the strength of the
+effect — see <a href="spells.html">Spells and Spellcasting</a>.</p>
+<table class="data">
+<thead><tr><th>Bonus</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td><strong>Primary, 0–30</strong></td><td>The room's natural setting, plus a bonus inside a
+       <a href="../spells/forcesoflight.html">Forces of Light</a> enchantment</td></tr>
+<tr><td><strong>Secondary, 0–10</strong></td><td><code class="k">abs(karma) / 10</code> — the same karma that gates the
+       school also powers it</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell.kod:2107–2124</p>
+
+<h2>What the school is for</h2>
+<p><strong>Healing, and only this school does it.</strong>
+<a href="../spells/heal.html">Minor heal</a> costs 3 mana and one herb, works on yourself or
+another player, and is described in the game's own words as being "particularly potent on those
+protected by guardian angels" — and it awards karma for healing another good soul, which feeds
+straight back into your spell power.</p>
+<p><strong>The undead.</strong> <a href="../spells/holysymbol.html">Holy symbol</a>,
+<a href="../spells/holyweapon.html">holy weapon</a> and
+<a href="../spells/detectevil.html">detect evil</a> are a package aimed at one category of enemy.
+Holy weapon carries <code class="k">ATCK_SPELL_HOLY</code>, which most armour has no resistance
+against at all — see <a href="armor.html">Armour</a>.</p>
+<p><strong>Cleanup.</strong> Cure poison, cure disease, remove curse and purify undo the status
+effects that would otherwise end a long expedition early.</p>
+<div class="warn">The karma gate is checked <em>at cast time</em>. Drift below +60 and your
+level-6 spells stop working, with no warning and no refund. Because killing evil creatures is
+what pushes you positive, a Shal'ille caster who spends a session fighting neutral monsters
+slowly loses access to their own school. See <a href="karma.html">Karma</a>.</div>
+
+<h2>Every Shal’ille spell</h2>
+<table class="data">
+<thead><tr><th>Lvl</th><th>Spell</th><th>Mana</th><th>Cast time</th><th>Reagents</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><a href="../spells/breathoflife.html">breath of life</a></td><td>3</td><td>instant</td><td>herb</td></tr>
+<tr><td>1</td><td><a href="../spells/detectevil.html">detect evil</a></td><td>10</td><td>3,000 ms</td><td>fairy wing</td></tr>
+<tr><td>1</td><td><a href="../spells/holysymbol.html">holy symbol</a></td><td>8</td><td>2,000 ms</td><td>elderberry ×3</td></tr>
+<tr><td>1</td><td><a href="../spells/heal.html">minor heal</a></td><td>3</td><td>600 ms</td><td>herb</td></tr>
+<tr><td>1</td><td><a href="../spells/seance.html">seance</a></td><td>10</td><td>instant</td><td>herb ×2</td></tr>
+<tr><td>2</td><td><a href="../spells/curepoison.html">cure poison</a></td><td>10</td><td>instant</td><td>herb ×2, elderberry</td></tr>
+<tr><td>2</td><td><a href="../spells/holytouch.html">holy touch</a></td><td>12</td><td>instant</td><td>emerald ×2</td></tr>
+<tr><td>2</td><td><a href="../spells/holyweapon.html">holy weapon</a></td><td>17</td><td>30,000 ms</td><td>fairy wing ×3, orc tooth</td></tr>
+<tr><td>2</td><td><a href="../spells/removecurse.html">remove curse</a></td><td>9</td><td>instant</td><td>emerald</td></tr>
+<tr><td>2</td><td><a href="../spells/resistacid.html">resist acid</a></td><td>9</td><td>instant</td><td>herb ×2, entroot berry</td></tr>
+<tr><td>3</td><td><a href="../spells/curedisease.html">cure disease</a></td><td>9</td><td>instant</td><td>herb ×3, elderberry ×2</td></tr>
+<tr><td>3</td><td><a href="../spells/resistevil.html">holy resolve</a></td><td>3</td><td>instant</td><td>vial of solagh, fairy wing</td></tr>
+<tr><td>3</td><td><a href="../spells/hospice.html">hospice</a></td><td>10</td><td>600 ms</td><td>herb ×3</td></tr>
+<tr><td>3</td><td><a href="../spells/identify.html">identify</a></td><td>10</td><td>15,000 ms</td><td>orc tooth</td></tr>
+<tr><td>3</td><td><a href="../spells/rescue.html">rescue</a></td><td>16</td><td>instant</td><td>emerald</td></tr>
+<tr><td>3</td><td><a href="../spells/createspiritualhammer.html">spiritual hammer</a></td><td>15</td><td>5,000 ms</td><td>emerald ×2, orc tooth</td></tr>
+<tr><td>4</td><td><a href="../spells/dazzle.html">dazzle</a></td><td>12</td><td>instant</td><td>emerald, purple mushroom</td></tr>
+<tr><td>4</td><td><a href="../spells/forcesoflight.html">forces of light</a></td><td>12</td><td>instant</td><td>elderberry ×2, emerald</td></tr>
+<tr><td>4</td><td><a href="../spells/markofdishonor.html">mark of dishonor</a></td><td>12</td><td>instant</td><td>emerald</td></tr>
+<tr><td>4</td><td><a href="../spells/purify.html">purify</a></td><td>10</td><td>instant</td><td>emerald ×2, elderberry ×2</td></tr>
+<tr><td>4</td><td><a href="../spells/qorbane.html">Qorbane</a></td><td>15</td><td>5,000 ms</td><td>yrxl sap, fairy wing</td></tr>
+<tr><td>4</td><td><a href="../spells/truce.html">truce</a></td><td>20</td><td>instant</td><td>emerald, yrxl sap</td></tr>
+<tr><td>5</td><td><a href="../spells/finalrites.html">final rites</a></td><td>20</td><td>10,000 ms</td><td>emerald ×2, elderberry ×5</td></tr>
+<tr><td>5</td><td><a href="../spells/majorheal.html">major heal</a></td><td>20</td><td>instant</td><td>herb ×5</td></tr>
+<tr><td>5</td><td><a href="../spells/purge.html">purge</a></td><td>15</td><td>instant</td><td>emerald ×5, purple mushroom ×2</td></tr>
+<tr><td>5</td><td><a href="../spells/reveal.html">reveal</a></td><td>30</td><td>30,000 ms</td><td>orc tooth ×3</td></tr>
+<tr><td>5</td><td><a href="../spells/umbrella.html">umbrella</a></td><td>15</td><td>instant</td><td>emerald ×2, polished seraphym</td></tr>
+<tr><td>6</td><td><a href="../spells/bond.html">bond</a></td><td>50</td><td>instant</td><td>polished seraphym ×50, diamond ×50, heartstone</td></tr>
+<tr><td>6</td><td><a href="../spells/portaloflife.html">portal of life</a></td><td>30</td><td>10,000 ms</td><td>emerald ×2, polished seraphym</td></tr>
+</tbody>
+</table>
+<p class="cite">Compiled from every <code class="k">Spell</code> subclass declaring this school. Per-spell citations are on each spell's own page.</p>
+
+<h2>Playing it</h2>
+<ul>
+<li>Karma is your ammunition. It gates the spells <em>and</em> feeds the secondary power bonus,
+       so a devout caster is strictly stronger than a marginal one.</li>
+<li>Cast outdoors where you can. The primary bonus is the room's natural setting, worth up to
+       30 of the 99-point spell-power scale.</li>
+<li>Mysticism buys nothing else in the game. If you are building a Shal'ille caster, that is
+       the cost of entry — budget for it at creation, because it never changes.</li>
+<li>Herbs and elderberries carry the low levels; see <a href="../reagents/index.html">Reagents</a>.</li>
+</ul>
+
+<h2>Related</h2>
+<p><a href="schools.html">The Six Schools</a> · <a href="spells.html">How casting works</a> ·
+<a href="../spells/index.html">Every spell</a> · <a href="../reagents/index.html">Reagents</a> ·
+<a href="karma.html">Karma</a> · <a href="attributes.html">Attributes</a> ·
+<a href="advancing.html">Advancing Your Character</a></p>

@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dark angel — Meridian 59 Compendium</title>
+<meta name="description" content="Travelling under cover of darkness, the Dark Angels seek the souls of people to consume. They are pure evil, lashing out at any that wander near them. Surely th">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › dark angel</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/angel_g1.png" alt="dark angel" width="199" height="132"></div><div class="heroText"><h1>dark angel</h1><p class="lede">Travelling under cover of darkness, the Dark Angels seek the souls of people to consume. They are pure evil, lashing out at any that wander near them. Surely these beasts are the handservants of Qor!</p><div class="tags"><span class="tag ">Level 200</span><span class="tag ">Difficulty 9</span><span class="tag ">Evil</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">200</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">9</div></div><div class="fact"><div class="lbl">Health</div><div class="val">180–300</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">10–25</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">-100</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">very_fast</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">dark_angel</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 200 + 60 × 9
+                = 1140
+
+health          = Fuzzy(level × 120/100) = 180–300
+damage per hit  = Fuzzy(level / random(10,15))  = 10–25
+dodge           = difficulty × 10 = 90</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">95%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">29%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">8</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">16.6</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>magic</strong> damage, carrying <strong>fire</strong> magic. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 200/55 + random(0, 9/3), $, 6)
+       = 4–6 items
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/dangelt.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="DarkAngelFeather"><a href="../items/darkangelfeather.html">dark angel feather</a></td><td class="num " data-sort="45.545">45.5%</td><td class=""></td><td class=""><code>dangelt.kod:33</code></td></tr>
+<tr><td class="" data-sort="BlueDragonScale"><a href="../items/bluedragonscale.html">blue dragon scale</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>dangelt.kod:34</code></td></tr>
+<tr><td class="" data-sort="EntrootBerry"><a href="../items/entrootberry.html">entroot berry</a></td><td class="num " data-sort="19.802">19.8%</td><td class=""></td><td class=""><code>dangelt.kod:35</code></td></tr>
+<tr><td class="" data-sort="FairyWing"><a href="../items/fairywing.html">fairy wing</a></td><td class="num " data-sort="14.851">14.9%</td><td class=""></td><td class=""><code>dangelt.kod:36</code></td></tr>
+<tr><td class="" data-sort="ShamanBlood"><a href="../items/shamanblood.html">shaman blood</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>dangelt.kod:37</code></td></tr>
+<tr><td class="" data-sort="InkyCap"><a href="../items/inkycap.html">Inky-cap mushroom</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>dangelt.kod:38</code></td></tr></tbody></table></div><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>2 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 5.
+<span class="cite">kod/object/passive/trestype/dangelt.kod:27</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
+<p>No room in the world declares this creature. It is summoned by another creature, placed by an
+administrator, or left over from content that is no longer reachable.</p><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_MOVE_OPTIMAL_RANGE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_MOVE_REGROUP</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_AGGRESSIVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_NEWBIESAFE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_FIGHT_SWITCHALOT</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>What killing it does to your karma</h2>
+<p>Its karma is <code class="k">-100</code>, and a kill is treated as an act whose karma is the
+<em>negative</em> of the victim's — so killing this creature pushes you
+<strong>towards good</strong>.</p>
+<div class="formula">base   = your_karma − (−victim_karma) = your_karma − 100
+change = −( base³ / 2500 + 5 × base ) / (11 − swing)      % hundredths of a karma point
+       bounded to ±150 for a monster kill — at most 1.5 karma per kill</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code> · :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+<div class="note">No karma moves at all in the newbie region, in an arena, or when the victim's
+karma is neutral. And once you are already further from neutral than your victim in the same
+direction, killing them does nothing to you.</div><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/angel_g1.png" alt="dark angel group 1" loading="lazy"><figcaption>group 1 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/angel_g2.png" alt="dark angel group 2" loading="lazy"><figcaption>group 2 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/angel_g3.png" alt="dark angel group 3" loading="lazy"><figcaption>group 3 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/angel_g4.png" alt="dark angel group 4" loading="lazy"><figcaption>group 4 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/angel_g5.png" alt="dark angel group 5" loading="lazy"><figcaption>group 5 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/angel_g6.png" alt="dark angel group 6" loading="lazy"><figcaption>group 6 · 8 angles</figcaption></figure><figure><img class="icon" src="../assets/img/angelx_g1.png" alt="dark angel corpse" loading="lazy"><figcaption>corpse</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:11</p>
+<p><code class="k">DarkAngel</code> is <code class="k">Monster</code> — full chain <code class="k">DarkAngel</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">viIndefinite</code></td><td class=""><code>ARTICLE_A</code></td><td class="">2</td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">vrName</code></td><td class=""><code>DarkAngel_name_rsc</code></td><td class=""><em>dark angel</em></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>DarkAngel_icon_rsc</code></td><td class=""><em>angel.bgf</em></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>DarkAngel_desc_rsc</code></td><td class=""><em>Travelling under cover of darkness, the Dark Angels seek the souls of people to consume.  </em></td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>DarkAngel_dead_icon_rsc</code></td><td class=""><em>angelX.bgf</em></td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>DarkAngel_dead_name_rsc</code></td><td class=""><em>dead dark angel</em></td><td class="num " data-sort="64">64</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_DARK_ANGEL</code></td><td class="">51</td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">viSpeed</code></td><td class=""><code>SPEED_VERY_FAST</code></td><td class="">20</td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_MAGIC</code></td><td class="">4</td><td class="num " data-sort="69">69</td></tr>
+<tr><td class=""><code class="k">viAttack_spell</code></td><td class=""><code>ATCK_SPELL_FIRE</code></td><td class="">2</td><td class="num " data-sort="70">70</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>200</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="71">71</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="72">72</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>-100</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="73">73</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_FIGHT_NEWBIESAFE | AI_FIGHT_AGGRESSIVE  | AI_FIGHT_SWITCHALOT | AI_MOVE_REGROUP | AI_MOVE_OPTIMAL_RANGE</code></td><td class="">8536136</td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>DarkAngel_sound_attack</code></td><td class=""><em>dangatk.wav</em></td><td class="num " data-sort="78">78</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>DarkAngel_sound_aware</code></td><td class=""><em>dangawr.wav</em></td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>DarkAngel_sound_death</code></td><td class=""><em>dangdth.wav</em></td><td class="num " data-sort="80">80</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_NONE</code></td><td class="num " data-sort="84">84</td></tr>
+<tr><td class=""><code class="k">piDrawfx</code></td><td class=""><code>BOUNCE_YES</code></td><td class="num " data-sort="85">85</td></tr>
+<tr><td class=""><code class="k">plSummoned</code></td><td class=""><code>$</code></td><td class="num " data-sort="86">86</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructed()</h4>
+<pre><code>{
+      plResistances = [ [ 50, -ATCK_SPELL_COLD ],
+                        [ 50, -ATCK_SPELL_FIRE ],
+                        [ 50, -ATCK_SPELL_SHOCK ],
+                        [ 75, ATCK_WEAP_NERUDITE ],
+                        [ -5, ATCK_WEAP_MAGIC ]
+                      ];
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:90</p>
+<h4>GetAttackRange()</h4>
+<pre><code>{
+      return 7;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:102</p>
+<h4>MonsterAttack(what = $)</h4>
+<pre><code>{
+      local oSpell;
+
+      oSpell = Send(SYS,@FindSpellByNum,#num=SID_DARKNESS);
+      if NOT Send(poOwner,@IsEnchanted,#what=oSpell)
+         AND Send(oSpell,@CanPayMonsterCosts,#who=self,#lTargets=$,
+                  #iSpellPower=SPELLPOWER_MAXIMUM)
+         AND Send(poOwner,@ReqSpellCast,#who=self,#oSpell=oSpell,#litems=$)
+      {
+         Send(oSpell,@CastSpell,#who=self,#lTargets=$,
+              #iSpellPower=SPELLPOWER_MAXIMUM);
+      }
+      
+      Send(self,@MonsterCastSpell);
+      Send(self,@DoFireball);
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:107</p>
+<h4>MonsterCastSpell()</h4>
+<pre><code>{
+      local iDistance, oSpell, iRandom, lTargets;
+
+      iDistance = Send(self,@SquaredDistanceTo,#what=poTarget);
+
+      iRandom = Send(self,@AdjustedChanceBase,#base=SPELL_CHANCE);
+      if Random(1,iRandom) = 1
+         AND iDistance &gt; Send(self,@GetAttackRange)
+         AND iDistance &lt;= SPELL_RANGE_SQUARED
+         AND Send(poOwner,@LineOfSight,#obj1=self,#obj2=poTarget)
+         AND Send(poOwner,@ReqSomethingAttack,#what=self,#victim=poTarget,
+                  #use_weapon=self)
+      {
+         iRandom = random(1,100);
+         if iRandom &lt; 20
+         {
+            oSpell = SID_BLIND;
+            lTargets = [poTarget];
+         }
+         else
+         {
+            if iRandom &lt; 30
+            {
+               
+               return Send(self,@SummonAngelReflection,#target=poTarget);
+            }
+            else
+            {
+               if iRandom &lt; 40
+               {
+                  oSpell = SID_HOLD;
+                  lTargets = [poTarget];
+               }
+               else
+               {
+                  if iRandom &lt; 60
+                  {
+                     
+                     return Send(self,@SummonAngelReflection,#target=self);
+                  }
+                  else
+                  {
+                     if iRandom &lt; 70
+                     {
+                        oSpell = SID_DISCORDANCE;
+                        lTargets = $;
+                     }
+                     else
+                     {
+                        if iRandom &lt; 80
+                        {
+                           oSpell = SID_ENFEEBLE;
+                           lTargets = [poTarget];
+                        }
+                        else
+                        {
+                           oSpell = SID_FORGET;
+                           lTargets = [poTarget];
+                        }
+                     }
+                  }
+               }
+            }
+         }
+
+         oSpell = Send(SYS,@FindSpellByNum,#num=oSpell);
+         lTargets = Send(oSpell,@GetTargets,#who=self,#lTargets=lTargets);
+
+         if Send(oSpell,@CanPayMonsterCosts,#who=self,#ltargets=lTargets,
+                 #iSpellPower=SPELLPOWER_MAXIMUM)
+            AND Send(poOwner,@ReqSpellCast,#who=self,#oSpell=oSpell,
+                     #litems=lTargets)
+         {
+            Send(oSpell,@CastSpell,#who=self,#ltargets=lTargets,
+                 #iSpellPower=SPELLPOWER_MAXIMUM);
+         }
+
+         return TRUE;
+      }
+      
+      return FALSE;
+    }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:127</p>
+<h4>DoFireball()</h4>
+<pre><code>{
+      piAnimation = ANIM_ATTACK;
+      Send(poOwner,@SomethingChanged,#what=self);
+      Send(poOwner,@SomethingShot,#who=self,#target=poTarget,#projectile=self,
+           #flags=PROJ_FLAG_LIGHT_SOURCE);
+      piAnimation = ANIM_NONE;
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:211</p>
+<h4>SummonAngelReflection(target = $)</h4>
+<pre><code>{
+      local oTwin, oRoom, iRow, iCol;
+
+      oRoom = Send(target,@GetOwner);
+
+      
+      if Send(oRoom,@CountHoldingHowMany,#class=&amp;monster) &gt; 25
+         OR Send(oRoom,@CountHoldingHowMany,#class=&amp;EvilTwin) &gt; 10
+         OR Send(oRoom,@CountHoldingHowMany,#class=&amp;Reflection) &gt; 10
+         OR Send(oRoom,@CountHoldingSummoned)
+            &gt; Send(Send(SYS, @GetSettings), @GetPlayerSummonedObjectLimit)
+      {
+         return FALSE;
+      }
+
+      if target = self
+      {
+         oTwin = Create(&amp;Reflection,#iSpellpower=100,#oMaster=self);  
+      }
+      else
+      {
+         oTwin = Create(&amp;EvilTwin,#iSpellpower=100,#oMaster=self,
+                        #oTarget=target);
+      }
+
+      iRow = Send(target,@GetRow);
+      iCol = Send(target,@GetCol);
+
+      Send(oTwin,@SetOriginal,#who=target);
+      
+      if NOT Send(oRoom,@ReqNewHold,#what=oTwin,#new_row=iRow,#new_col=iCol)
+      {
+         Send(oTwin,@Delete);
+
+         return FALSE;
+      }
+
+      Send(oRoom,@NewHold,#what=oTwin,#new_row=iRow,#new_col=iCol);
+      Send(SYS,@AddReflection,#who=target,#oReflection=oTwin);
+      plSummoned = cons(oTwin,plSummoned);
+   
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:226</p>
+<h4>SummonDeleted(what = $)</h4>
+<pre><code>{
+      plSummoned = DelListElem(plSummoned,what);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:271</p>
+<h4>GetProjectileIcon()</h4>
+<pre><code>{
+      return DarkAngel_fireball;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:278</p>
+<h4>GetProjectileSpeed()</h4>
+<pre><code>{
+      return 25;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:283</p>
+<h4>SendProjectileAnimation()</h4>
+<pre><code>{
+      
+      AddPacket(1,ANIMATE_CYCLE, 4,40, 2,1, 2,2);   
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:288</p>
+<h4>GetProjectileLightFlags()</h4>
+<pre><code>{
+      
+      return LIGHT_FLAG_ON | LIGHT_FLAG_DYNAMIC;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:296</p>
+<h4>GetProjectileLightIntensity()</h4>
+<pre><code>{
+      
+      return 125;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:302</p>
+<h4>GetProjectileLightColor()</h4>
+<pre><code>{
+      
+      return LIGHT_BORANGE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:308</p>
+<h4>SendLookAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_NONE,2,FRAME_STAND);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:314</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      AddPacket(1,ANIMATE_NONE, 2,FRAME_STAND);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:321</p>
+<h4>SendMoveOverlays()</h4>
+<pre><code>{
+      Send(self,@SendOverlays);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:328</p>
+<h4>SendOverlays()</h4>
+<pre><code>{
+      AddPacket(1,1);
+      AddPacket(4,DarkAngel_wings_rsc, 1,HS_WINGS);
+      AddPacket(1,ANIMATE_CYCLE, 4,WING_ANIM_SPEED, 2,FRAME_WING_START,
+                2,FRAME_WING_END);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:335</p>
+<h4>SendAnimation(iAnimation = $)</h4>
+<pre><code>{
+      local iAnim;
+
+      if iAnimation = $
+      {
+         iAnim = piAnimation;
+      }
+      else
+      {
+         iAnim = iAnimation;
+      }
+      
+      if iAnim = ANIM_NONE
+      {
+         AddPacket(1,ANIMATE_NONE,2,FRAME_STAND);
+
+         return;
+      }
+      
+      if iAnim = ANIM_ATTACK
+      {
+         AddPacket(1,ANIMATE_ONCE, 4,ANIM_SPEED, 2,FRAME_ATTACK_START,
+                   2,FRAME_ATTACK_END, 2,FRAME_STAND);
+
+         return;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:345</p>
+<h4>Delete()</h4>
+<pre><code>{
+      local oEachObj;
+
+      for oEachObj in plSummoned
+      {
+         Send(oEachObj,@Delete,#bMonsterReport=FALSE);
+      }
+
+      plSummoned = $;
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:376</p>
+<h4>GetObjectFlags()</h4>
+<pre><code>{
+      return MOVEON_NO | BOUNCE_YES | BATTLER_YES;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:390</p>
+<h4>CanMorphTo()</h4>
+<pre><code>{
+      
+      return FALSE;
+   }      </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:395</p>
+<h4>CanBeSilenced()</h4>
+<p>Dark Angels cannot be silenced by the room enchantment.</p>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:401</p>
+<h4>SpellResist(oSpell = $, who = $, iSpellpower = $)</h4>
+<pre><code>{
+      local iResistChance;
+
+      if IsClass(who,&amp;DM)
+      {
+         return FALSE;
+      }
+ 
+      if Send(oSpell,@IsHarmful)
+      {
+         iResistChance = MAGIC_RESIST;
+         if IsClass(oSpell,&amp;Dazzle)
+            OR IsClass(oSpell,&amp;Blind)
+            OR IsClass(oSpell,&amp;Hold)
+         {
+            
+            iResistChance = (iResistChance * 160)/100;
+         }
+         
+         if iSpellPower &lt; 40
+            OR Random(0,100) &lt; iResistChance
+         {
+            return TRUE;
+         }
+      }
+
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/dangel.kod:407</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

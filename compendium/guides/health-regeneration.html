@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Health Regeneration — Meridian 59 Compendium</title>
+<meta name="description" content="Health comes back on a self-rescheduling timer, one point at a time, and only if you have done something since you walked into the room. The interval is set by three numbers — Vigor (squared), Stamina (linear), and your maximum health (clamped between 40 and 100) — and it can never go below one second unless a bard is singing Restorate. There is no healing potion, food does nothing for your health, and every external heal in the game goes through one of exactly two doors.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html" class="on">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Guides</a> › Health Regeneration</p>
+<h1>Health Regeneration</h1>
+
+<p class="lede">Health comes back on a self-rescheduling timer, one point at a time, and only if you
+have done something since you walked into the room. The interval is set by three numbers — Vigor
+(squared), Stamina (linear), and your maximum health (clamped between 40 and 100) — and it can never
+go below one second unless a bard is singing Restorate. There is no healing potion, food does nothing
+for your health, and every external heal in the game goes through one of exactly two doors.</p>
+
+<div class="note">
+<p><strong>The one thing that surprises people:</strong> health regeneration is gated on
+<code class="k">PFLAG_MOVED_SINCE_ENTRY</code>. Walk into a hostile room and stand perfectly still and
+you regenerate <em>nothing</em> — the timer fires, sees the flag clear, redraws your health bar and
+does not give you a point (<code>kod/object/active/holder/nomoveon/battler/player.kod:2640–2662</code>).
+Mana has no such gate. This is the mechanic behind "why is my health stuck".</p>
+</div>
+
+<h2>The timer</h2>
+
+<p>Health ticks on the same kind of self-rescheduling timer as mana. Every tick you gain exactly one
+point if you are below maximum, or lose exactly one point if you are above it.</p>
+
+<div class="formula">HealthTimer():
+   if piFlags &amp; PFLAG_MOVED_SINCE_ENTRY:
+      if piHealth &lt; piMax_health:  GainHealth(1)
+      else:                        LoseHealth(1, decay=TRUE)
+   else:
+      NewHealth()                  % redraw only — no point is gained
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:2640–2662</p>
+
+<p>The timer exists only while <code class="k">piHealth &lt;&gt; piMax_health</code> and you are alive;
+at exactly full it is deleted, and it is never created at 0 health
+(<code>player.kod:5837–5852</code>). Every gain and every loss routes through
+<code class="k">NewHealth</code>, which is what re-arms it.</p>
+
+<h3>The movement gate, precisely</h3>
+
+<p><code class="k">PFLAG_MOVED_SINCE_ENTRY</code> (0x400000,
+<code>kod/include/blakston.khd:2125</code>) is misleadingly named: it means "has acted since entering",
+not "has moved". It is <em>cleared</em> in only two places and <em>set</em> in only one.</p>
+
+<table class="data">
+<thead><tr><th>Event</th><th>Effect on the flag</th><th>Source line</th></tr></thead>
+<tbody>
+<tr><td>Entering a room that is not <code class="k">ROOM_NO_COMBAT</code>, <code class="k">ROOM_SANCTUARY</code> or <code class="k">ROOM_SAFE_DEATH</code>, and it is not Chaos Night</td><td>cleared — regeneration stops</td><td>kod/object/active/holder/nomoveon/battler/player.kod:1439–1445</td></tr>
+<tr><td>Entering an inn, a guild hall, or any safe room; or any room during Chaos Night</td><td>left alone — regeneration continues uninterrupted</td><td>kod/object/active/holder/nomoveon/battler/player.kod:1439–1442</td></tr>
+<tr><td>Logging in</td><td>cleared</td><td>kod/object/active/holder/nomoveon/battler/player.kod:1871</td></tr>
+<tr><td>Any user action: moving, turning, attacking, casting, using an item, talking</td><td>set, via <code class="k">NotifyMonstersOfPresence</code></td><td>kod/object/active/holder/nomoveon/battler/player/user.kod:3114–3132</td></tr>
+</tbody>
+</table>
+
+<p>The same flag is what holds monsters off you when you first enter a room, which is why it is set
+by <em>any</em> action rather than by movement alone — turning on the spot is enough. The practical
+consequence is that the gate almost never bites in play except in one situation: you log in wounded,
+or you flee into a corner and freeze. Turn once and the tap opens.</p>
+
+<h2>The regeneration formula</h2>
+
+<div class="formula">CalculateHealthTime()  -&gt; milliseconds until the next health point
+
+t = ((200 - Vigor) * (200 - Vigor)) / 6 + 1000
+t = ((125 - Stamina) * t) / 100
+t = (t * 100) / bound(piMax_health, 40, 100)
+t = t - FactionRegenBonus(you, hpregen=TRUE)
+
+if a Restorate song is playing in this room:
+    t = bound(t, 1000, 60000)
+    t = t * (400 - (40 + jalaSpellPower)) / 400
+    return bound(t, 670, 60000)                  % note the lower floor
+
+return bound(t, 1000, 60000)
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5611–5643; Restorate's adjustment at kod/object/passive/spell/jala/restorat.kod:64–72</p>
+
+<p>Compare this with <a href="channeling.html">the mana formula</a>. Both divide by Vigor and by a
+capacity, but the shapes are completely different: mana divides by Vigor linearly and by your
+<em>entire</em> maximum, while health divides by Vigor <em>squared</em> and by a maximum that stops
+counting at 100.</p>
+
+<h3>Vigor: a quadratic, not a divisor</h3>
+
+<p>The leading term is <code>(200 − Vigor)²/6</code>. Because it is a square of the <em>shortfall</em>
+from the cap, the first points of Vigor you recover are worth very little and the last ones are worth
+a great deal. Going from 100 to 200 Vigor is not "twice as fast" as it is for mana; it removes the
+term entirely.</p>
+
+<table class="data">
+<thead><tr><th>Vigor</th><th>Base term (ms)</th><th>ms / hp at Stamina 25, 100 max health</th><th>hp / minute</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>7600</td><td>7400</td><td>8.1</td></tr>
+<tr><td>10</td><td>7016</td><td>6816</td><td>8.8</td></tr>
+<tr><td>25</td><td>6104</td><td>5904</td><td>10.2</td></tr>
+<tr><td>50</td><td>4750</td><td>4550</td><td>13.2</td></tr>
+<tr><td>75</td><td>3604</td><td>3404</td><td>17.6</td></tr>
+<tr><td>80 (default rest cap)</td><td>3400</td><td>3200</td><td>18.8</td></tr>
+<tr><td>100</td><td>2666</td><td>2466</td><td>24.3</td></tr>
+<tr><td>125</td><td>1937</td><td>1737</td><td>34.5</td></tr>
+<tr><td>150</td><td>1416</td><td>1216</td><td>49.3</td></tr>
+<tr><td>175</td><td>1104</td><td>1000 (floor)</td><td>60.0</td></tr>
+<tr><td>200 (cap)</td><td>1000</td><td>1000 (floor)</td><td>60.0</td></tr>
+</tbody>
+</table>
+
+<p>Since resting stops at your rest threshold — 80 by default — the top half of that table is only
+reachable by eating. See <a href="vigor.html">Vigor</a> for how to get there.</p>
+
+<h3>Stamina: a straight multiplier on everything</h3>
+
+<div class="formula">factor = (125 - Stamina) / 100        % Stamina is bound(piStamina + piStaminaMod, 1, 70)</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5619; GetStamina at :6389–6391</p>
+
+<table class="data">
+<thead><tr><th>Stamina</th><th>Factor</th><th>Relative speed</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>124 / 100</td><td>0.81×</td></tr>
+<tr><td>25</td><td>100 / 100</td><td>1.00× (the tuning point)</td></tr>
+<tr><td>50 (creation max)</td><td>75 / 100</td><td>1.33×</td></tr>
+<tr><td>70 (buffed cap)</td><td>55 / 100</td><td>1.82×</td></tr>
+</tbody>
+</table>
+
+<p>Stamina also sets your maximum-health ceiling, the rate at which you gain health points, and how
+fast you rest — see <a href="attributes.html">Attributes</a> and <a href="advancing.html">Advancing</a>.
+It is the only attribute in this formula; Might, Agility, Aim, Intellect and Mysticism appear nowhere
+in it.</p>
+
+<h3>Maximum health: the divisor that stops at 100</h3>
+
+<div class="formula">t = (t * 100) / bound(piMax_health, 40, 100)</div>
+
+<p>Below 40 and above 100 the divisor is clamped, and those two clamps do opposite things to you.</p>
+
+<table class="data">
+<thead><tr><th>Max health</th><th>Divisor used</th><th>ms / hp (Stamina 25, Vigor 100)</th><th>Time to refill from 1</th></tr></thead>
+<tbody>
+<tr><td>20 (a new character)</td><td>40</td><td>6465</td><td>2 m 03 s</td></tr>
+<tr><td>30</td><td>40</td><td>6465</td><td>3 m 07 s</td></tr>
+<tr><td>40</td><td>40</td><td>6465</td><td>4 m 12 s</td></tr>
+<tr><td>60</td><td>60</td><td>4243</td><td>4 m 10 s</td></tr>
+<tr><td>80</td><td>80</td><td>3132</td><td>4 m 07 s</td></tr>
+<tr><td>100</td><td>100</td><td>2466</td><td>4 m 04 s</td></tr>
+<tr><td>120</td><td>100 (clamped)</td><td>2466</td><td>4 m 53 s</td></tr>
+<tr><td>150 (the hard ceiling)</td><td>100 (clamped)</td><td>2466</td><td>6 m 07 s</td></tr>
+</tbody>
+</table>
+
+<div class="warn">
+<p><strong>Between 40 and 100 maximum health, your time to heal from near-death to full is
+almost exactly constant.</strong> The divisor cancels the extra points exactly. Above 100 it stops cancelling, so
+every point of maximum health you gain past 100 makes a full heal strictly slower — a 150-hp
+character takes half again as long to top up as a 100-hp one, at identical Vigor and Stamina. Under
+40 it also stops cancelling, in your favour: a 20-hp newbie refills in two minutes.</p>
+<p>This is the exact opposite of mana, where the divisor is your <em>whole</em> maximum and melding
+more nodes therefore multiplies your mana per minute.</p>
+</div>
+
+<h3>The faction bonus</h3>
+
+<p>A flat number of milliseconds is subtracted before the final bound. Which factions get it is
+inverted between health and mana.</p>
+
+<table class="data">
+<thead><tr><th>Your standing</th><th>Health-regen bonus (ms subtracted)</th></tr></thead>
+<tbody>
+<tr><td>Duke faction</td><td>0</td></tr>
+<tr><td>Princess faction</td><td>0 (the Princess bonus applies to mana instead)</td></tr>
+<tr><td>Not "intriguing"</td><td>200</td></tr>
+<tr><td>Rebel, intriguing</td><td><code>CalcFactionBonus(base=700)</code> — from −70 ms when the faction is weak to <strong>1050 ms</strong> when it is dominant</td></tr>
+<tr><td>Neutral, intriguing</td><td>the same calculation, then quartered and floored at zero: 0 to <strong>262 ms</strong></td></tr>
+</tbody>
+</table>
+<p class="cite">kod/util/parlia.kod:1322–1370; scaling function at kod/util/parlia.kod:998–1074</p>
+
+<p>You are "intriguing" only if you are PK-enabled <em>and</em> either have at least
+<code class="k">INTRIGUE_ENABLE_HP</code> = 40 base maximum health or hold a fifth-level spell at 40 %
+or better (<code>kod/include/blakston.khd:2319–2320</code>;
+<code>kod/object/active/holder/nomoveon/battler/player.kod:11359–11362</code>, <code>:11564–11582</code>).
+Everyone else takes the flat 200 ms. At a 2500 ms tick that flat bonus is already worth 8 %; a Rebel
+in a dominant Parliament is subtracting 1050 ms, which at high Vigor is most of the interval and
+drops that build onto the 1000 ms floor far earlier than the table below suggests.</p>
+
+<h3>The floor, and the only thing that gets under it</h3>
+
+<p>The result is bounded to 1000–60000 ms. The ceiling is unreachable — the worst case in the game
+(Vigor 1, Stamina 1, 40 max health, no faction bonus) is 23 560 ms. The floor is very reachable.</p>
+
+<table class="data">
+<thead><tr><th>Stamina</th><th>Max health 40</th><th>60</th><th>80</th><th>100</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>never</td><td>never</td><td>never</td><td>never</td></tr>
+<tr><td>25</td><td>never</td><td>never</td><td>never</td><td>Vigor 166</td></tr>
+<tr><td>50</td><td>never</td><td>never</td><td>Vigor 159</td><td>Vigor 140</td></tr>
+<tr><td>70</td><td>never</td><td>Vigor 157</td><td>Vigor 134</td><td>Vigor 116</td></tr>
+</tbody>
+</table>
+<p>Lowest Vigor at which the 1000 ms floor is reached, assuming the 200 ms faction bonus. "Never"
+means that build cannot reach it even at Vigor 200.</p>
+
+<img class="icon" src="../assets/img/irestor_g1.png" alt="restorate icon">
+
+<p><strong><a href="../spells/restorate.html">Restorate</a> is the only mechanic in the game that
+regenerates health faster than one point per second.</strong> Its adjustment runs <em>after</em> the
+normal bound and returns directly, with its own floor of 670 ms
+(<code>kod/object/passive/spell/jala/restorat.kod:69–71</code>).</p>
+
+<div class="formula">t = t * (400 - (40 + spellPower)) / 400        % SPELL_POWER_SLOPE = 400, SPELL_POWER_INTERCEPT = 40
+</div>
+<p class="cite">kod/object/passive/spell/jala/restorat.kod:17–18, :64–72</p>
+
+<table class="data">
+<thead><tr><th>Restorate spell power</th><th>Multiplier</th><th>From a 1799 ms tick</th><th>From the 1000 ms floor</th></tr></thead>
+<tbody>
+<tr><td>none</td><td>1.00</td><td>1799 ms — 33.4 hp/min</td><td>1000 ms — 60.0 hp/min</td></tr>
+<tr><td>1</td><td>359/400</td><td>1614 ms — 37.2 hp/min</td><td>897 ms — 66.9 hp/min</td></tr>
+<tr><td>50</td><td>310/400</td><td>1394 ms — 43.0 hp/min</td><td>775 ms — 77.4 hp/min</td></tr>
+<tr><td>99</td><td>261/400</td><td>1173 ms — 51.2 hp/min</td><td>670 ms (floor) — 89.6 hp/min</td></tr>
+</tbody>
+</table>
+
+<p>Restorate is Jala level 3: 5 mana to start and 3 mana every 5 s thereafter, 10 vigor to cast, one
+diamond and five herbs (<code>kod/object/passive/spell/jala/restorat.kod:38–48</code>,
+<code>:55–62</code>). Like every
+Jala song it is room-wide and only one Jala song can be active in a room at a time
+(<code>kod/object/active/holder/room.kod:3473</code>), so a bard chooses between Restorate,
+Rejuvenate and the rest.</p>
+
+<h2>Worked numbers</h2>
+
+<table class="data">
+<thead><tr><th>Situation</th><th>Stamina</th><th>Max HP</th><th>Vigor</th><th>ms / point</th><th>hp / min</th><th>1 → full</th></tr></thead>
+<tbody>
+<tr><td>Brand-new character</td><td>25</td><td>20</td><td>100</td><td>6465</td><td>9.3</td><td>2 m 03 s</td></tr>
+<tr><td>Same character, worn down</td><td>25</td><td>20</td><td>40</td><td>12965</td><td>4.6</td><td>4 m 06 s</td></tr>
+<tr><td>Mid-game fighter</td><td>25</td><td>60</td><td>100</td><td>4243</td><td>14.1</td><td>4 m 10 s</td></tr>
+<tr><td>Mid-game fighter, well fed</td><td>25</td><td>60</td><td>200</td><td>1466</td><td>40.9</td><td>1 m 26 s</td></tr>
+<tr><td>Veteran, 100 max health</td><td>25</td><td>100</td><td>100</td><td>2466</td><td>24.3</td><td>4 m 04 s</td></tr>
+<tr><td>Veteran, Stamina 50</td><td>50</td><td>100</td><td>100</td><td>1799</td><td>33.4</td><td>2 m 58 s</td></tr>
+<tr><td>Veteran, Stamina 50, well fed</td><td>50</td><td>100</td><td>200</td><td>1000 (floor)</td><td>60.0</td><td>1 m 39 s</td></tr>
+<tr><td>Maxed Stamina, well fed</td><td>70</td><td>100</td><td>200</td><td>1000 (floor)</td><td>60.0</td><td>1 m 39 s</td></tr>
+<tr><td>150 max health, well fed</td><td>50</td><td>150</td><td>200</td><td>1000 (floor)</td><td>60.0</td><td>2 m 29 s</td></tr>
+<tr><td>Nearly exhausted</td><td>25</td><td>100</td><td>10</td><td>6816</td><td>8.8</td><td>11 m 15 s</td></tr>
+<tr><td>Newbie at a crawl</td><td>1</td><td>20</td><td>1</td><td>23360</td><td>2.6</td><td>7 m 24 s</td></tr>
+</tbody>
+</table>
+<p>All rows assume the flat 200 ms faction bonus. Worked example for row 6:
+<code>(200−100)² / 6 = 1666</code>; <code>1666 + 1000 = 2666</code>;
+<code>(125−50) · 2666 / 100 = 1999</code>; <code>1999 · 100 / 100 = 1999</code>;
+<code>1999 − 200 = 1799 ms</code>.</p>
+
+<h2>Above maximum: the two doors, and the bleed</h2>
+
+<p>Every heal in the game enters through one of exactly two messages, and which one it is decides
+whether it can push you over your maximum.</p>
+
+<table class="data">
+<thead><tr><th>Message</th><th>Ceiling</th><th>Returns</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td><code class="k">GainHealth</code></td><td><strong>2 × piMax_health</strong>, with a message when you hit it</td><td>nothing</td><td>kod/object/active/holder/nomoveon/battler/player.kod:5777–5793</td></tr>
+<tr><td><code class="k">GainHealthNormal</code></td><td><code class="k">piMax_health</code>; refuses outright if you are already above it</td><td>the amount actually gained</td><td>kod/object/active/holder/nomoveon/battler/player.kod:5795–5821</td></tr>
+</tbody>
+</table>
+
+<p>While you are above your maximum, the same timer runs in reverse: one point every
+<code class="k">CalculateHealthTime</code> milliseconds, flagged <code>decay=TRUE</code> so it does
+not break a trance.</p>
+
+<div class="warn">
+<p><strong>Over-health bleeds off at your regeneration rate, not at a fixed rate.</strong> Mana uses
+<code class="k">BOOST_DECAY_TIME</code> = 30 s flat for its overcharge
+(<code>player.kod:63</code>, <code>:5652</code>); health has no equivalent. So the very build that
+regenerates fastest also loses its vampiric surplus fastest — a Stamina-50 character at Vigor 200
+sheds an over-max point every second; a Stamina-25 character at Vigor 25 keeps it for nearly six. If you have just
+over-healed yourself off a kill, that surplus is worth the most to a low-Vigor character.</p>
+</div>
+
+<p>One enchantment overrides all of this. While <a href="../spells/markofdishonor.html">Mark of
+Dishonor</a> is on you, <code class="k">NewHealth</code> clamps your health to
+<code class="k">piBase_max_health</code> on every single update, so you cannot hold any surplus at all
+(<code>kod/object/active/holder/nomoveon/battler/player.kod:5830–5835</code>).</p>
+
+<h2>Healing that is not regeneration</h2>
+
+<p>This is the complete set of things in the game that add health to a player. Note what is not in
+it: <strong>there is no healing potion</strong> — the potion directory contains cures, resistances
+and utilities but no restorative — and <strong>food does nothing for health</strong>.
+<code class="k">EatSomething</code> touches exertion and your stomach and nothing else
+(<code>kod/object/active/holder/nomoveon/battler/player.kod:5734–5758</code>).</p>
+
+<h3>Shal'ille's three heals</h3>
+
+<img class="icon" src="../assets/img/iheal_g1.png" alt="heal icon">
+<img class="icon" src="../assets/img/ihospice_g1.png" alt="hospice icon">
+<img class="icon" src="../assets/img/imajheal_g1.png" alt="major heal icon">
+
+<div class="formula">Heal        = bound(random(1,5) + (SP+1)/20 + targetKarma/20, 1, 10)
+              + random(2,5)  if the target is not PK-enabled
+Hospice     = bound(random(-3,3) + SP/5 + targetKarma/10, 0, 25)
+Major heal  = bound(random(7,13) + SP/5 + targetKarma/5, 0, 50)
+</div>
+<p class="cite">kod/object/passive/spell/heal.kod:105–111; kod/object/passive/spell/hospice.kod:108–109; kod/object/passive/spell/majheal.kod:100–101</p>
+
+<table class="data">
+<thead><tr><th>Spell</th><th>Level</th><th>Mana</th><th>Typical heal</th><th>Best case</th></tr></thead>
+<tbody>
+<tr><td><a href="../spells/heal.html">Heal</a></td><td>Shal'ille 1</td><td>3</td><td>3–10, plus 2–5 more on a non-PK target</td><td>15</td></tr>
+<tr><td><a href="../spells/hospice.html">Hospice</a></td><td>Shal'ille 3</td><td>10</td><td>SP/5 ± 3, plus karma/10</td><td>25</td></tr>
+<tr><td><a href="../spells/majorheal.html">Major heal</a></td><td>Shal'ille 5</td><td>20</td><td>7–13 + SP/5 + karma/5</td><td>50</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/passive/spell/heal.kod:41–46; kod/object/passive/spell/hospice.kod:38–43; kod/object/passive/spell/majheal.kod:38–41</p>
+
+<div class="note">
+<p><strong>All three scale with the <em>target's</em> karma, not the caster's.</strong> Major heal
+divides karma by 5, so a saint at +250 karma receives 50 extra points of healing and is pinned at the
+cap; an evil target subtracts, and the <code>bound(…, 0, 50)</code> means a sufficiently evil target
+can be healed for nothing at all. Healing someone of higher karma than you also nudges your own
+karma upward (<code>heal.kod:117–127</code>, <code>majheal.kod:104–112</code>). Shal'ille rewards
+healing the righteous and quietly refuses to heal the wicked. See <a href="karma.html">Karma</a>.</p>
+</div>
+
+<h3>Everything else</h3>
+
+<table class="data">
+<thead><tr><th>Source</th><th>Amount</th><th>Door</th><th>Catch</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td><a href="../items/flask.html">Flask</a></td><td><code>random(5,10)</code></td><td>capped</td><td>the only healing consumable in the game; single use; sold by apothecaries</td><td>kod/object/item/passitem/healer.kod:51; kod/object/item/passitem/healer/flask.kod:43–44</td></tr>
+<tr><td>Wand of healing</td><td><code>random(2,10)</code> on any target</td><td>capped</td><td>limited charges</td><td>kod/object/item/passitem/specwand/healwand.kod:47–48, :98–101</td></tr>
+<tr><td>Vampire wand</td><td>damage − 1, where damage is <code>random(2,6)</code></td><td>capped</td><td>hit chance <code>bound(Mysticism + Aim, 10, 90)</code>; pushes you 80 points toward evil karma every use</td><td>kod/object/item/passitem/specwand/vampwand.kod:67–68, :135–145</td></tr>
+<tr><td><a href="../spells/vampiricdrain.html">Vampiric drain</a></td><td>half the damage dealt; on a kill, <code>piDamageMax/2</code> = 9</td><td><strong>uncapped</strong></td><td>outlaw spell, evil karma</td><td>kod/object/passive/spell/atakspel/vampdrn.kod:18, :57, :86–98</td></tr>
+<tr><td>Vampiric weapon attribute</td><td><code>bound(damage, 0, 8)</code></td><td><strong>uncapped</strong></td><td>fires on 10 % of hits</td><td>kod/object/passive/itematt/weapatt/wavamper.kod:50, :61–65</td></tr>
+<tr><td><a href="../spells/breathoflife.html">Breath of life</a></td><td>the caster gives up <code>health × bound(targetKarma, 10, 80) %</code>; the target receives <code>(75 + SP/2) %</code> of that</td><td><strong>uncapped</strong></td><td>caster is never taken below 10 health; target is capped at 1.5× their max, and at 130 absolute</td><td>kod/object/passive/spell/brthlife.kod:17, :132–151</td></tr>
+<tr><td><a href="../spells/denial.html">Denial</a></td><td>heals you to <em>full</em> immediately</td><td>capped</td><td>a loan — when the enchantment ends (20–120 s) you lose it all back, less <code>(SP+1)/5</code> percent you keep; it cannot kill you</td><td>kod/object/passive/spell/persench/denial.kod:97–131</td></tr>
+<tr><td><a href="../spells/illusionarywounds.html">Illusionary wounds</a></td><td>the reverse loan: health is removed, then returned in full when the enchantment ends</td><td>capped</td><td>nothing is returned if you are already at 0</td><td>kod/object/passive/spell/atakspel/illwound.kod:223–235</td></tr>
+<tr><td><a href="../spells/deathlink.html">Deathlink</a> kill benefit</td><td><code>random(1,5)</code> health and mana, ×4 if the victim was a player</td><td>capped</td><td>room enchantment; requires the kill</td><td>kod/object/passive/spell/roomench/dethlink.kod:110–130</td></tr>
+<tr><td>Nodeburst</td><td><code>iGain/2</code>, where <code>iGain = n² · (1 + SP/100)</code></td><td><strong>uncapped</strong></td><td>destroys one mana node link; once per Meridian day. See <a href="channeling.html">Channeling</a></td><td>kod/object/passive/spell/nodebrst.kod:100–125</td></tr>
+<tr><td>Tournament of Skills arena</td><td>topped to full on entry; original value restored on exit</td><td>capped</td><td>arena only</td><td>kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/tswatch.kod:1927–1955</td></tr>
+<tr><td>Duel arena (Goad)</td><td>topped to full on entry; original value restored on exit</td><td>capped</td><td>arena only</td><td>kod/object/active/holder/nomoveon/battler/monster/towns/Goad.kod:985–1010</td></tr>
+<tr><td>Leaving the Underworld with no corpse to return to</td><td>+100</td><td>capped</td><td>you are sent to your home town instead of your body</td><td>kod/object/active/holder/room/monsroom/uworld.kod:360–375</td></tr>
+<tr><td>Quest node prize</td><td>a scripted amount; a separate prize type raises maximum health</td><td><strong>uncapped</strong></td><td>per quest</td><td>kod/object/passive/questnode.kod:1229–1239</td></tr>
+<tr><td>Immortal mode</td><td>base max health forced to 150 and refilled</td><td><strong>uncapped</strong></td><td>staff only</td><td>kod/object/active/holder/nomoveon/battler/player/user/dm.kod:1146–1154</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<p>Only five things in the whole tree use the uncapped door, and four of them are vampiric or
+sacrificial. That is the design: <strong>surplus health is something you take from a living thing,
+not something you drink.</strong></p>
+</div>
+
+<h2>Losing health</h2>
+
+<p><code class="k">LoseHealth</code> breaks a trance unless it is flagged as decay
+(<code>player.kod:5761–5775</code>) — which is why standing in a poison cloud does not, on its own,
+break <a href="../spells/manafocus.html">Mana Focus</a>: poison writes to <code class="k">piHealth</code>
+directly and never calls <code class="k">LoseHealth</code> at all.</p>
+
+<h3>Poison</h3>
+
+<div class="formula">PoisonTimer()  — every 10 000 ms while piPoisonStrength &gt; 0:
+   piHealth = piHealth - piPoisonStrength / 1000
+   if piHealth &lt; 1:  piHealth = 1
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:9832–9867</p>
+
+<table class="data">
+<thead><tr><th>Fact</th><th>Value</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td>Tick period</td><td>10 s, fixed, unaffected by Stamina or Vigor</td><td>player.kod:9846</td></tr>
+<tr><td>Strength units</td><td>10<sup>−4</sup> health per second — so strength 1000 is 1 hp per 10 s</td><td>kod/object/passive/sickness/poison.kod:50–51</td></tr>
+<tr><td>Contracting poison also costs</td><td>20 vigor, unless the caller passes <code>bVigorLoss=FALSE</code></td><td>player.kod:9816–9820</td></tr>
+<tr><td>Resist poison</td><td>a spell-power-percent chance to shrug the dose off entirely</td><td>kod/object/passive/sickness/poison.kod:59–68</td></tr>
+<tr><td><a href="../spells/curepoison.html">Cure poison</a></td><td>removes it outright on a spell-power-percent roll, or on any of three "close enough" tests; otherwise reduces the loss rate by <code>SP</code> percent</td><td>kod/object/passive/spell/cpoison.kod:110–137</td></tr>
+<tr><td>Arena exception</td><td>poison does nothing to a non-combatant in a safe-attack room</td><td>player.kod:9854</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<p><strong>Poison cannot kill you.</strong> The tick floors your health at 1 rather than dealing the
+last point. It is a nuisance and a regeneration tax, not a threat — but it does mean you are held at
+1 health while something else finishes the job.</p>
+</div>
+
+<h3>Other drains</h3>
+
+<table class="data">
+<thead><tr><th>Source</th><th>Effect</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td><a href="../items/huntersword.html">Hunter sword</a> at full hunger</td><td><code>random(1,5)</code> per tick and 4 vigor, and it will kill you</td><td>kod/object/item/passitem/weapon/huntsw.kod:466–475</td></tr>
+<tr><td><a href="../items/necromanceramulet.html">Necromancer amulet</a> at full hunger</td><td><code>random(5,10)</code> per tick and 2 vigor</td><td>kod/object/item/actitem/necroam.kod:516–522</td></tr>
+<tr><td><a href="../items/circlet.html">Circlet</a></td><td>trades <code>bound(maxHealth/7, 5, 20)</code> maximum health for twice that in maximum mana</td><td>kod/object/item/passitem/defmod/helmet/circlet.kod:54–63</td></tr>
+<tr><td><a href="../spells/morph.html">Morph</a></td><td>maximum health is pulled toward the illusion creature's level by <code>SP</code> percent of the gap; restored when it ends</td><td>kod/object/passive/spell/morph.kod:157–166, :346</td></tr>
+<tr><td>Death</td><td>health set to 1 (or half on Chaos Night), and a <code>piDeathCost</code>-percent chance to lose a permanent point of base maximum health</td><td>kod/object/active/holder/nomoveon/battler/player.kod:8147–8160, :8244–8252</td></tr>
+</tbody>
+</table>
+<p>Death is covered in full on the <a href="death.html">Death</a> page.</p>
+
+<h2>Where maximum health comes from</h2>
+
+<p>Unlike mana, there is no <code class="k">ComputeMaxHealth</code>: maximum health is not recomputed
+from sources, it is <em>mutated</em> by whatever touches it, through two different messages.</p>
+
+<table class="data">
+<thead><tr><th>Message</th><th>What it changes</th><th>Bounds</th><th>Line</th></tr></thead>
+<tbody>
+<tr><td><code class="k">GainBaseMaxHealth</code></td><td><code class="k">piBase_max_health</code> — your permanent progression, this game's "level"</td><td><code>bound(x, 20, 100 + Stamina)</code>, then hard-capped at 150</td><td>player.kod:5897–5921</td></tr>
+<tr><td><code class="k">GainMaxHealth</code></td><td><code class="k">piMax_health</code> — the working value, including temporary effects</td><td><code>bound(x, 20, $)</code>; current health is deliberately left alone</td><td>player.kod:5923–5963</td></tr>
+</tbody>
+</table>
+
+<p>Only four things move the working value away from the base: the
+<a href="../items/circlet.html">circlet</a>, the <a href="../spells/hpboon.html">health boon</a>
+enchantment, <a href="../spells/morph.html">Morph</a>, and a quest-node prize. Anything else is a bug,
+and the server treats it as one — the periodic recalibration pass logs a complaint and forces
+<code>piMax_health = piBase_max_health</code>
+(<code>kod/object/active/holder/nomoveon/battler/player.kod:10406–10411</code>). Logging in with a
+circlet on triggers a related safety: <code class="k">InitialSetBaseMaxHealth</code> unequips
+anything that answers <code class="k">AdjustsMaxHealth</code> before it snapshots the base
+(<code>kod/object/active/holder/nomoveon/battler/player/user.kod:7425–7440</code>).</p>
+
+<p>How the base value grows is the subject of <a href="advancing.html">Advancing</a>. The short
+version: you gain a point by killing things at or above your own maximum health, on a roll against
+an accumulator, and the ceiling is <code>min(100 + Stamina, 150)</code>.</p>
+
+<h2>Reading the health bar</h2>
+
+<p>The server sends health as a numeric stat with a fixed display range of 0–100 and a separate
+"current max" limit line at your real maximum — identical in shape to the mana bar.</p>
+
+<div class="formula">AddPacket(1,1, 4,user_stat_health, 1,STAT_VALUE, 1,STAT_INTEGER,
+          4,piHealth, 4,0, 4,100, 4,piMax_health);
+</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player/user.kod:6643–6648; the client maps these to GRPH_RANGESET / GRPH_POSSET / GRPH_LIMITSET at module/merintr/statnum.c:196–198</p>
+
+<p>So the bar is drawn against a hard 0–100 scale with a marker at your maximum. Below 100 max health
+the marker sits short of the end and the bar reads as a fraction of 100, not of your maximum; above
+100 — and certainly at the 2× over-heal ceiling — the bar pegs and stops telling you anything. The
+redraw fires from <code class="k">NewHealth</code>, which every gain and loss calls.</p>
+
+<h2>Quick reference: how to heal faster</h2>
+
+<ol>
+<li><strong>Act once when you enter a room.</strong> A single turn sets
+<code class="k">PFLAG_MOVED_SINCE_ENTRY</code> and starts the tap. Inns and guild halls never clear
+it, so you always regenerate there.</li>
+<li><strong>Eat.</strong> Vigor enters squared and resting stops at 80. Going from 80 to 200 Vigor is
+worth roughly 3× your health regeneration — a bigger single lever than any other on this page. See
+<a href="vigor.html">Vigor</a>.</li>
+<li><strong>Stamina at creation.</strong> It is the only attribute in the formula, it is worth up to
+1.8×, and it also sets your health ceiling and your resting speed.</li>
+<li><strong>Know where the floor is.</strong> Past roughly Vigor 140–166, a Stamina-50 veteran is
+pinned at 1000 ms per point and further Vigor does nothing for health at all — though it keeps
+helping mana, which has no such floor.</li>
+<li><strong>Do not chase maximum health past 100 for survivability alone.</strong> Every point beyond
+100 lengthens a full heal without shortening a tick. It is still worth taking for the offense and
+defense it buys (see <a href="attributes.html">Attributes</a>) — just not for the regeneration.</li>
+<li><strong>A bard changes the rules.</strong> Restorate is the only thing that breaks the one-second
+floor, down to 670 ms — 90 health per minute.</li>
+</ol>
+
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

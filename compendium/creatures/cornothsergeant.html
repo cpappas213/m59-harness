@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rook — Meridian 59 Compendium</title>
+<meta name="description" content="A nobleman and former military officer, Rook carries himself with a stiff dignity. He is a weaponsmaster, and makes a living passing his skills on to students o">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › Rook</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/cnsarge_g1.png" alt="Rook" width="162" height="339"></div><div class="heroText"><h1>Rook</h1><p class="lede">A nobleman and former military officer, Rook carries himself with a stiff dignity. He is a weaponsmaster, and makes a living passing his skills on to students of the warriors' path. His feats with the sword are famous and unparalleled.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Neutral</span><span class="tag ">Teacher</span><span class="tag ">Merchant</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">average</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 0
+                = 75
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>hit</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>1 place in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="The Weapon Master's Abode"><a href="../zones/corweaponsmaster.html">The Weapon Master's Abode</a></td><td class="" data-sort="Cor Noth">Cor Noth</td><td class="" data-sort="placed">placed</td><td class="num " data-sort="-1">row 4, col 3</td><td class=""><code>crnthrm/corwepm.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_NPC</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_NOMOVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_NOFIGHT</code></td><td class="">Doesn't fight</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_BARTENDER</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_NOMOVE</code></td><td class="">Doesn't move</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_APOTHECARY</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RANDOM</code></td><td class="">Performs random actions</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_URCHIN</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_LISTEN</code></td><td class="">Responds to speech</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_TAILOR</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RECEIVE</code></td><td class="">Will accept items/gifts</td></tr>
+<tr><td class=""><code class="k">MOB_SELLER</code></td><td class="">Has items for sale</td></tr>
+<tr><td class=""><code class="k">MOB_TEACHER</code></td><td class="">Has skills or spells for sale</td></tr>
+<tr><td class=""><code class="k">MOB_COND_SELLER</code></td><td class="">Has things that must be asked for</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>What it offers</h2><h3>Skills taught</h3><p><a href="../skills/dodge.html">dodge</a>, <a href="../skills/punch.html">punch</a>, <a href="../skills/slash.html">slash</a>, <a href="../skills/axeproficiency.html">axe wielding</a>, <a href="../skills/hammerproficiency.html">hammer wielding</a>, <a href="../skills/brawling.html">Brawling</a>, <a href="../skills/shortswordproficiency.html">short sword fighting</a>, <a href="../skills/maceproficiency.html">mace fighting</a>, <a href="../skills/swordproficiency.html">fencing</a>, <a href="../skills/parry.html">parry</a></p><h3>Goods sold</h3><p><a href="../items/longsword.html">long sword</a>, <a href="../items/shortsword.html">short sword</a>, <a href="../items/mace.html">mace</a>, <a href="../items/leatherarmor.html">leather armor</a></p><p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/crnthtwn/cnsarge.kod — <code class="k">plFor_Sale</code>: element 1 goods, element 2 skills, element 3 spells (kod/object/active/holder/nomoveon/battler/monster.kod:2773, :2797)</p><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/crnthtwn/cnsarge.kod:11</p>
+<p><code class="k">CorNothSergeant</code> is <code class="k">CorNothTown</code> — full chain <code class="k">CorNothSergeant</code> ← <code class="k">CorNothTown</code> ← <code class="k">Towns</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>cornothsergeant_name_rsc</code></td><td class=""><em>Rook</em></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>cornothsergeant_icon_rsc</code></td><td class=""><em>cnsarge.bgf</em></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>cornothsergeant_desc_rsc</code></td><td class=""><em>A nobleman and former military officer, Rook carries himself with a stiff dignity.  He is </em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">viMerchant_markup</code></td><td class=""><code>MERCHANT_RIPOFF</code></td><td class="">5</td><td class="num " data-sort="33">33</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_NOFIGHT | MOB_RANDOM | MOB_LISTEN | MOB_TEACHER | MOB_RECEIVE | MOB_NOMOVE | MOB_SELLER | MOB_COND_SELLER</code></td><td class="">66747</td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">viOccupation</code></td><td class=""><code>MOB_ROLE_SERGEANT</code></td><td class="">18</td><td class="num " data-sort="36">36</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>WelcomeUser(who = $)</h4>
+<pre><code>{
+      if send(who,@GetFaction) = FACTION_DUKE
+      {
+         send(self,@SetMood,#new_mood=piMood - 3 );
+      }
+      
+      if send(who,@GetFaction) = FACTION_PRINCESS
+      {
+         send(self,@SetMood,#new_mood=piMood + 3 );
+      }
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/crnthtwn/cnsarge.kod:42</p>
+<h4>SetForSale()</h4>
+<pre><code>{
+      plFor_sale = [
+       [ Create(&amp;LongSword),
+         Create(&amp;ShortSword),	
+         Create(&amp;Mace),
+         Create(&amp;LeatherArmor)],
+       [ SKID_DODGE, SKID_PUNCH, SKID_SLASH, SKID_PROFICIENCY_AXE,
+         SKID_PROFICIENCY_HAMMER, SKID_BRAWLING, SKID_PROFICIENCY_SHORTSWORD,
+         SKID_PROFICIENCY_MACE, SKID_PROFICIENCY_SWORD, SKID_PARRY ],
+         $,$];
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/crnthtwn/cnsarge.kod:57</p>
+<h4>InitCondSale()</h4>
+<pre><code>{
+      local oObj;
+      oObj=Create(&amp;ForgetPotionKraanan);
+      Send(Send(SYS,@GetLibrary),@AddToMobLib,#mob=self,
+           #triggers=[Send(oObj,@GetName)],
+           #action=[LIBACT_CONDITIONAL,oObj,2500,CnSer_forget_potion_sale]);
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/towns/crnthtwn/cnsarge.kod:71</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

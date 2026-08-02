@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>patch of bramble — Meridian 59 Compendium</title>
+<meta name="description" content="The patch of bramble looms dangerously, hoping to tear into your skin if you walk by.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html" class="on">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › patch of bramble</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/wothorns_g1.png" alt="patch of bramble" width="290" height="76"></div><div class="heroText"><h1>patch of bramble</h1><p class="lede">The patch of bramble looms dangerously, hoping to tear into your skin if you walk by.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Difficulty 4</span><span class="tag ">Neutral</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">4</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">0</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>moch</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 25 + 60 × 4
+                = 315
+
+health          = Fuzzy(level) = 19–31
+damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+dodge           = difficulty × 10 = 40</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">29%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.6</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+offence 605. Those are the same on every page in this bestiary, so the percentages
+are directly comparable between creatures. Armour is not included — see
+<a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>slash</strong> damage. Armour resists by type, so what you wear against this creature matters more than
+how much you wear.</p><h2>Where to find it</h2>
+<p>1 place in the world put this creature into play.
+<em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
+everything else there.</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Zone</th><th class="sortable" data-col="1">Region</th><th class="sortable" data-col="2">How</th><th class="num sortable" data-col="3">Share</th><th class="sortable" data-col="4">Declared in</th></tr></thead>
+<tbody><tr><td class="" data-sort="The Badlands"><a href="../zones/outdoorsk5.html">The Badlands (Set pieces)</a></td><td class="" data-sort="Set pieces">Set pieces</td><td class="" data-sort="placed">placed</td><td class="num " data-sort="-1"><span class="muted">—</span></td><td class=""><code>monsroom/objroom/k5.kod</code></td></tr></tbody></table></div><h2>Behaviour</h2><h3>How it behaves</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">AI_NOMOVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">AI_NOFIGHT</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">MOB_NOFIGHT</code></td><td class="">Doesn't fight</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_BARTENDER</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_NOMOVE</code></td><td class="">Doesn't move</td></tr>
+<tr><td class=""><code class="k">MOB_ROLE_APOTHECARY</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_NOQUEST</code></td><td class="">Prohibited from participating in quests</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/wothorns_g1.png" alt="patch of bramble group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/wothorns_g2.png" alt="patch of bramble group 2" loading="lazy"><figcaption>group 2</figcaption></figure><figure><img class="icon" src="../assets/img/wothorns_g3.png" alt="patch of bramble group 3" loading="lazy"><figcaption>group 3</figcaption></figure><figure><img class="icon" src="../assets/img/wothorns_g4.png" alt="patch of bramble group 4" loading="lazy"><figcaption>group 4</figcaption></figure><figure><img class="icon" src="../assets/img/wothorns_g5.png" alt="patch of bramble group 5" loading="lazy"><figcaption>group 5</figcaption></figure></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:11</p>
+<p><code class="k">Brambles</code> is <code class="k">Monster</code> — full chain <code class="k">Brambles</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>brambles_name_rsc</code></td><td class=""><em>patch of bramble</em></td><td class="num " data-sort="50">50</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>brambles_icon_rsc</code></td><td class=""><em>wothorns.bgf</em></td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>brambles_desc_rsc</code></td><td class=""><em>The patch of bramble looms dangerously, hoping to tear into your skin if you walk by.</em></td><td class="num " data-sort="52">52</td></tr>
+<tr><td class=""><code class="k">vrDead_icon</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">vrDead_name</code></td><td class=""><code>brambles_dead_name_rsc</code></td><td class=""><em>the ruins of some bramble</em></td><td class="num " data-sort="54">54</td></tr>
+<tr><td class=""><code class="k">viTreasure_type</code></td><td class=""><code>TID_NONE</code></td><td class="">1</td><td class="num " data-sort="56">56</td></tr>
+<tr><td class=""><code class="k">viAttack_type</code></td><td class=""><code>ATCK_WEAP_SLASH</code></td><td class="">128</td><td class="num " data-sort="57">57</td></tr>
+<tr><td class=""><code class="k">viAttributes</code></td><td class=""><code>MOB_NOMOVE | MOB_NOFIGHT | MOVEON_NOTIFY | MOB_NOQUEST</code></td><td class="">1048579</td><td class="num " data-sort="58">58</td></tr>
+<tr><td class=""><code class="k">viLevel</code></td><td class=""><code>25</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="59">59</td></tr>
+<tr><td class=""><code class="k">viDifficulty</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="60">60</td></tr>
+<tr><td class=""><code class="k">viKarma</code></td><td class=""><code>0</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="61">61</td></tr>
+<tr><td class=""><code class="k">viDefault_behavior</code></td><td class=""><code>AI_NOFIGHT | AI_NOMOVE</code></td><td class="">4098</td><td class="num " data-sort="62">62</td></tr>
+<tr><td class=""><code class="k">viObject_flags</code></td><td class=""><code>BATTLER_YES</code></td><td class="">8</td><td class="num " data-sort="63">63</td></tr>
+<tr><td class=""><code class="k">vrSound_hit</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="65">65</td></tr>
+<tr><td class=""><code class="k">vrSound_miss</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="66">66</td></tr>
+<tr><td class=""><code class="k">vrSound_aware</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="67">67</td></tr>
+<tr><td class=""><code class="k">vrSound_death</code></td><td class=""><code>$</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="68">68</td></tr>
+<tr><td class=""><code class="k">vrMonster_healing</code></td><td class=""><code>brambles_monster_healing</code></td><td class=""><em>The patch of brambles rustles as it grows back a little.</em></td><td class="num " data-sort="70">70</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">piMaxDamage</code></td><td class=""><code>0</code></td><td class="num " data-sort="74">74</td></tr>
+<tr><td class=""><code class="k">poCaster</code></td><td class=""><code>$</code></td><td class="num " data-sort="75">75</td></tr>
+<tr><td class=""><code class="k">ptExpire</code></td><td class=""><code>$</code></td><td class="num " data-sort="76">76</td></tr>
+<tr><td class=""><code class="k">piBrambleHits</code></td><td class=""><code>15</code></td><td class="num " data-sort="77">77</td></tr>
+<tr><td class=""><code class="k">piAnimation</code></td><td class=""><code>ANIM_BRAMBLE_GROW</code></td><td class="num " data-sort="79">79</td></tr>
+<tr><td class=""><code class="k">ptNoGrow</code></td><td class=""><code>$</code></td><td class="num " data-sort="80">80</td></tr>
+<tr><td class=""><code class="k">vbSummoned</code></td><td class=""><code>TRUE</code></td><td class="num " data-sort="82">82</td></tr>
+<tr><td class=""><code class="k">ptPeriodic</code></td><td class=""><code>$</code></td><td class="num " data-sort="85">85</td></tr>
+<tr><td class=""><code class="k">plAffected</code></td><td class=""><code>$</code></td><td class="num " data-sort="88">88</td></tr>
+<tr><td class=""><code class="k">piRange</code></td><td class=""><code>0</code></td><td class="num " data-sort="91">91</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor(MaxDamage = 0, Caster = $, Duration = $, HitPoints = 15)</h4>
+<pre><code>{
+      local iDuration;
+
+      if Duration &lt;&gt; $
+      {
+         iDuration = Random(Duration-20,Duration+20);
+         iDuration = iDuration * 1000;
+         iDuration = bound(iDuration,30000,200000);
+         ptExpire = CreateTimer(self,@Expire,iDuration);
+      }
+
+      ptPeriodic = CreateTimer(self,@PeriodicEffect,Send(self,@GetPeriodicDuration));
+
+      piBrambleHits = HitPoints;
+      piMaxDamage = MaxDamage;
+      if Caster &lt;&gt; $
+      {
+         poCaster = Caster;
+         vbSummoned = isClass(Caster,&amp;Player);
+      }
+      else
+      {
+         poCaster = self;
+      }
+
+      ptNoGrow = CreateTimer(self,@NoGrow,2000);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:95</p>
+<h4>Constructed()</h4>
+<pre><code>{
+      piHit_points = piBrambleHits;
+      piMax_hit_points = piBrambleHits;
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:126</p>
+<h4>GetPeriodicDuration()</h4>
+<pre><code>{
+      
+      return (EFFECT_INTERVAL * random(90,110))/100;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:134</p>
+<h4>PeriodicEffect()</h4>
+<pre><code>{
+      ptPeriodic = CreateTimer(self,@PeriodicEffect,Send(self,@GetPeriodicDuration));
+      plAffected = $;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:140</p>
+<h4>SomethingMoved(what = $, new_row = $, new_col = $)</h4>
+<pre><code>{
+      local iRow,iCol;
+    
+      
+      if new_row = $
+      {
+         iRow = Send(what,@GetRow);
+      }
+      else
+      {
+         iRow = new_row;
+      }
+
+      if new_col = $
+      {
+         iCol = Send(what,@GetCol);
+      }
+      else
+      {
+         iCol = new_col;
+      }
+
+      if IsClass(what,&amp;Battler)
+         AND what &lt;&gt; self
+         AND Send(self,@InRange,#what=what,#iRow=iRow,#iCol=iCol,#bMovement=TRUE)
+      {
+         Send(self,@CheckForEffect,#what=what,#new_row=new_row,#new_col=new_col);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:148</p>
+<h4>CheckForEffect(what = $, new_row = $, new_col = $)</h4>
+<p>Check for range to see if we apply the effect.</p>
+<pre><code>{
+      
+      if plAffected &lt;&gt; $
+         AND FindListElem(plAffected,what) &lt;&gt; 0
+      {
+         return FALSE;
+      }
+
+      
+      
+      if IsClass(poCaster,&amp;Player)
+         AND IsClass(what,&amp;Player)
+         AND NOT Send(poCaster,@AllowPlayerAttack,#victim=what,#report=FALSE)
+      {
+         
+         plAffected = cons(what,plAffected);
+         Send(what,@MsgSendUser,#message_rsc=Brambles_damage0);
+
+         return FALSE;
+      }
+
+      Send(self,@ScratchPerson,#what=what);
+
+      return TRUE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:181</p>
+<h4>ScratchPerson(what = $)</h4>
+<pre><code>{
+      local iDamage;
+
+      
+      plAffected = cons(what,plAffected);
+
+      iDamage = 0;
+      
+      if (what &lt;&gt; poCaster) OR (piMaxDamage = 0)
+      {
+         if isClass(poCaster,&amp;Player)
+         {
+            iDamage = Send(what,@AssessDamage,#what=poCaster,
+                           #damage=Random(0,piMaxDamage),
+                           #atype=ATCK_WEAP_SLASH,#report=FALSE,
+                           #report_resistance=FALSE);
+         }
+         else
+         {
+            
+            
+            iDamage = Send(what,@AssessDamage,#what=self,#damage=piMaxDamage,
+                           #atype=ATCK_WEAP_SLASH,#report=FALSE,
+                           #report_resistance=FALSE);
+         }
+      }
+
+      if iDamage = $
+      {
+         Send(poCaster,@KilledSomething,#what=what);
+
+         return;
+      }
+
+      if (isClass(poCaster,&amp;Player)) AND (piMaxDamage &gt; 0)
+      {
+         Send(poCaster,@SetPlayerFlag,#flag=PFLAG_DID_DAMAGE,#value=TRUE);
+      }
+
+      if isClass(what,&amp;Player)
+      {
+         if iDamage &gt; 0
+         {
+            Send(what,@WaveSendUser,#wave_rsc=Brambles_scratch_snd);
+         }
+
+         if iDamage = 0
+         {
+            Send(what,@MsgSendUser,#message_rsc=Brambles_damage0);
+
+            return;
+         }
+
+         if iDamage &lt; 3
+         {
+            Send(what,@MsgSendUser,#message_rsc=Brambles_damage2);
+
+            return;
+         }
+
+         if iDamage = 3
+         {
+            Send(what,@MsgSendUser,#message_rsc=Brambles_damage3);
+
+            return;
+         }
+
+         if iDamage = 4
+         {
+            Send(what,@MsgSendUser,#message_rsc=Brambles_damage4);
+
+            return;
+         }
+
+         Send(what,@MsgSendUser,#message_rsc=Brambles_damage5);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:209</p>
+<h4>NoGrow()</h4>
+<pre><code>{
+      ptNoGrow = $;
+      piAnimation = ANIM_NONE;
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:290</p>
+<h4>InRange(what = $, iRow = $, iCol = $, bMovement = FALSE)</h4>
+<p>Checks if we can see the target and if so if they are in range.</p>
+<pre><code>{
+      local iRow_diff, iCol_diff, iDistanceSquared, iLongRange;
+
+      iRow_diff = Send(self,@GetRow) - iRow;
+      iCol_diff = Send(self,@GetCol) - iCol;
+
+      iDistanceSquared = iRow_diff * iRow_diff + iCol_diff * iCol_diff;
+
+      
+      
+      
+      
+      if bMovement
+      {
+         
+         iLongRange = bound(piRange,1,$);
+      }
+      else
+      {
+         iLongRange = piRange;
+      }
+
+      if iDistanceSquared &lt;= (iLongRange * iLongRange)
+      {
+         if IsClass(what,&amp;User)
+         {
+            
+            
+            
+            
+            Send(what,@AdjustMoveCounter,#bReset=TRUE);
+         }
+
+         if (iLongRange = piRange
+             OR iDistanceSquared &lt;= (piRange * piRange))
+            AND Send(poOwner,@LineOfSight,#obj1=self,#obj2=what)
+         {
+            return TRUE;
+         }
+      }
+      
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:298</p>
+<h4>Expire()</h4>
+<pre><code>{
+      ptExpire = $;
+      Send(self,@Delete);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:344</p>
+<h4>HitPointThreshold()</h4>
+<p>Shows physical damage instead of a message.</p>
+<pre><code>{
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:352</p>
+<h4>SendMoveAnimation()</h4>
+<pre><code>{
+      Send(self,@SendAnimation);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:358</p>
+<h4>SendAnimation()</h4>
+<pre><code>{
+      local iMaxHPDiv;
+
+      iMaxHPDiv = piMax_Hit_Points / 5;
+
+      if piAnimation = ANIM_BRAMBLE_GROW
+      {
+         AddPacket(1,ANIMATE_ONCE, 4,250, 2,1, 2,5, 2,5);
+
+         return;
+      }
+
+      if piHit_Points &lt; iMaxHPDiv
+      {
+         AddPacket(1,ANIMATE_NONE, 2,1);
+
+         return;
+      }
+
+      if piHit_Points &lt; iMaxHPDiv * 2
+      {
+         AddPacket(1,ANIMATE_NONE, 2,2);
+
+         return;
+      }
+
+      if piHit_Points &lt; iMaxHPDiv * 3
+      {
+         AddPacket(1,ANIMATE_NONE, 2,3);
+
+         return;
+      }
+
+      if piHit_Points &lt; iMaxHPDiv * 4
+      {
+         AddPacket(1,ANIMATE_NONE, 2,4);
+
+         return;
+      }
+
+      AddPacket(1,ANIMATE_NONE, 2,5);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:365</p>
+<h4>Delete()</h4>
+<pre><code>{
+      if (poCaster = self)
+      {
+         Send(poOwner,@BrambleKilled,#row=Send(self,@GetRow),#col=Send(self,@GetCol));
+      }
+
+      poCaster = $;
+      plAffected = $;
+
+      if ptPeriodic &lt;&gt; $
+      {
+         DeleteTimer(ptPeriodic);
+         ptPeriodic = $;
+      }
+
+      poCaster = $;
+
+      if ptExpire &lt;&gt; $
+      {
+         DeleteTimer(ptExpire);
+         ptExpire = $;
+      }
+
+      if ptNoGrow &lt;&gt; $
+      {
+         DeleteTimer(ptNoGrow);
+         ptNoGrow = $;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:411</p>
+<h4>ReqNewOwner(what = $)</h4>
+<pre><code>{
+      return IsClass(what,&amp;Room);
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:444</p>
+<h4>NewOwner(what = $)</h4>
+<pre><code>{
+      if (IsClass(what,&amp;GuildHall)
+          AND Send(what,@InFoyer,#who=poCaster))
+         OR (Send(what,@IsArena)
+             AND NOT Send(what,@InPlay,#what=self,#bNonPlayerOkay=TRUE))
+      {
+         if IsClass(poCaster,&amp;Player)
+         {
+            Send(poCaster,@MsgSendUser,#message_rsc=bramble_dissipates);
+         }
+
+         Post(self,@Delete);
+      }
+
+      plAffected = $;
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:449</p>
+<h4>CanMorphTo()</h4>
+<pre><code>{
+      return FALSE;
+   }      </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:469</p>
+<h4>AssessDamage()</h4>
+<pre><code>{
+      Send(poOwner,@SomethingChanged,#what=self);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:474</p>
+<h4>DestroyDisposable()</h4>
+<pre><code>{
+      
+      if poCaster = self
+      {
+         return;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:481</p>
+<h4>CanPlayerAdvanceOnMe()</h4>
+<pre><code>{  
+      return FALSE;
+   }    </code></pre>
+<p class="cite">kod/object/active/holder/nomoveon/battler/monster/BRAMBLE.kod:492</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Karma — Meridian 59 Compendium</title>
+<meta name="description" content="Karma is one number between −100 and +100, and it is the only character statistic that moves as a consequence of what you do rather than how much you practise. It gates two of the six schools of magic against each other — a deep Qor caster and a deep Shal'ille caster cannot be the same character — and it moves mostly by killing. What you fight is what you become.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html" class="on">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Guides</a> › Karma</p>
+<h1>Karma</h1>
+
+<p class="lede">Karma is one number between −100 and +100, and it is the only character statistic
+that moves as a consequence of what you do rather than how much you practise. It gates two of the
+six schools of magic against each other — a deep Qor caster and a deep Shal'ille caster cannot be
+the same character — and it moves mostly by killing. What you fight is what you become.</p>
+
+<h2>Where the number lives</h2>
+
+<p>Karma is stored as <code class="k">piKarma</code> in <em>hundredths</em> of a karma point and
+clamped to ±10000, so the scale you actually see runs −100 to +100. Everything a player reads is
+<code class="k">piKarma / 100</code>.</p>
+
+<div class="formula">GetKarma()  =  piKarma / 100                  % what every rule below compares against
+NewKarma()  clamps piKarma to −10000 … +10000
+
+AddKarma(n)   piKarma += n          % n is in hundredths
+GainKarma(n)  piKarma += 100 × n    % n is in whole karma points
+LoseKarma(n)  piKarma −= 100 × n</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:822, :6432 <code class="k">GetKarma</code>, :6440 <code class="k">AddKarma</code>, :6465 <code class="k">NewKarma</code></p>
+
+<p>The hundredths matter: a single monster kill is capped at 150 hundredths, that is
+<strong>1.5 karma points</strong>. Moving from neutral to the −60 a level-6 Qor spell demands is
+a minimum of forty kills, and in practice many more, because the change per kill shrinks as you
+approach the karma of what you are killing.</p>
+
+<h2>What a kill does</h2>
+
+<p>A kill is treated as an <em>act</em> whose karma is the negative of the victim's. Killing
+something with +100 karma is a −100 act; killing something with −100 karma is a +100 act.</p>
+
+<div class="formula">act        = −(victim_karma)
+base       = your_karma − act
+change     = −( base³ / 2500 + 5 × base ) / (11 − swing)     % hundredths of a point
+swing      = bound(swing, 1, 10)                             % 10 swings hardest
+monsters:  change = bound(change, −150, +150)</div>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6491 <code class="k">CalculateKarmaChangeFromAct</code>, :6524 <code class="k">CalculateKarmaChangeFromKill</code></p>
+
+<p>The cubic term is what makes this interesting. The further your karma is from the act, the
+faster you move — but the change is capped, so the practical effect is a
+<strong>soft ceiling that pulls you toward the karma of whatever you habitually kill</strong> and
+then stops. Killing evil creatures makes you good, quickly at first and then slowly, and it
+cannot make you better than the mirror of what you are killing.</p>
+
+<h3>When nothing happens at all</h3>
+
+<table class="data">
+<thead><tr><th>Condition</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>The victim's karma is neutral (0)</td><td>no change</td></tr>
+<tr><td>You are in the newbie region (<code class="k">RID_NEWB_BASE</code>)</td><td>no change</td></tr>
+<tr><td>You are in an arena</td><td>no change</td></tr>
+<tr><td>Killing a player during a Chaos Night</td><td>no change</td></tr>
+<tr><td>You are already further from neutral than the act, on the same side</td><td>no change</td></tr>
+</tbody>
+</table>
+<p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6528–6554, :6501–6512</p>
+
+<p>That last row is the one people misread. If you are at +40 karma and you do a +20 act, you get
+nothing — the rule only fires when <em>a good character does something bad, or a bad character
+does something good</em>. Karma is easy to lose and hard to deepen.</p>
+
+<div class="note">The newbie-region exemption exists for a specific reason, stated in the source:
+without it, a new character killing a negative-karma monster could accidentally push their karma
+past the gate on a spell they already own and render it uncastable.</div>
+
+<h2>The gate on magic</h2>
+
+<p>Karma is not stored on a spell. It is <em>derived</em> from the spell's school and level:</p>
+
+<div class="formula">Qor        requires  karma ≤ level × −10      % you must be that evil
+Shal'ille  requires  karma ≥ level × +10      % you must be that good
+Kraanan, Faren, Riija, Jala:  no requirement</div>
+<p class="cite">kod/object/passive/spell.kod:482 <code class="k">GetRequiredKarma</code>, enforced at :456 <code class="k">KarmaCheck</code></p>
+
+<table class="data">
+<thead><tr><th>Spell level</th><th>Shal'ille needs</th><th>Qor needs</th><th>Can one character hold both?</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>≥ +10</td><td>≤ −10</td><td>no</td></tr>
+<tr><td>2</td><td>≥ +20</td><td>≤ −20</td><td>no</td></tr>
+<tr><td>3</td><td>≥ +30</td><td>≤ −30</td><td>no</td></tr>
+<tr><td>4</td><td>≥ +40</td><td>≤ −40</td><td>no</td></tr>
+<tr><td>5</td><td>≥ +50</td><td>≤ −50</td><td>no</td></tr>
+<tr><td>6</td><td>≥ +60</td><td>≤ −60</td><td>no</td></tr>
+</tbody>
+</table>
+
+<div class="warn">The gate is checked <strong>at cast time</strong>, not at learning time. You can
+learn a Qor spell, drift positive, and discover the spell you paid for no longer works. Nothing
+is refunded and nothing is forgotten — it simply refuses.</div>
+
+<p>The strategic consequence is the whole shape of a caster's career:
+<strong>the two polar schools are mutually exclusive at every level</strong>, and the four
+neutral schools are available to anyone. A character who wants deep Qor must live at −60 or
+below, which means habitually killing good creatures, which means the town guards and most
+merchants will treat them accordingly.</p>
+
+<h2>What to kill, and which way it moves you</h2>
+
+<p>A creature's <code class="k">viKarma</code> is its alignment. Killing it moves you the
+<em>opposite</em> way. Here is the distribution across the bestiary:</p>
+
+<table class="data">
+<thead><tr><th>Creature karma</th><th>How many creatures</th><th>Killing them moves you</th></tr></thead>
+<tbody>
+<tr><td>+75 to +100</td><td>8</td><td>strongly toward evil</td></tr>
+<tr><td>+10 to +40</td><td>14</td><td>toward evil</td></tr>
+<tr><td>0 (neutral)</td><td>the large majority</td><td>nowhere at all</td></tr>
+<tr><td>−10 to −45</td><td>16</td><td>toward good</td></tr>
+<tr><td>−50 to −100</td><td>16</td><td>strongly toward good</td></tr>
+</tbody>
+</table>
+<p class="cite">Counted from <code class="k">viKarma</code> across every Monster subclass in kod; the per-creature value is on each <a href="../creatures/index.html">bestiary page</a>.</p>
+
+<p>Most of the world is neutral, which means <strong>most fighting does not move your karma at
+all</strong>. Deliberately shifting alignment means seeking out the minority of creatures that
+carry a value — sort the bestiary by its karma column.</p>
+
+<h2>Other things that move it</h2>
+
+<ul>
+<li><strong>Killing a player</strong> — the same formula with a different swing factor, and no
+±150 cap. Player kills move karma far harder than monster kills, and killing an innocent also
+sets the <a href="death.html">murderer flag</a>.</li>
+<li><strong>Casting</strong> — several Shal'ille spells award karma for helping.
+<a href="../spells/heal.html">Minor heal</a> says so in its own description: healing another good
+soul is rewarded.</li>
+<li><strong>The karma potion</strong> — <a href="../items/karmapotion.html">an item that moves
+the number directly</a>.</li>
+<li><strong>Faction and political acts</strong> — see <a href="factions.html">Factions</a>.</li>
+</ul>
+
+<h2>What else notices your karma</h2>
+
+<ul>
+<li><strong>Creatures with <code class="k">MOB_KARMA_AG</code> will not attack players of like
+karma.</strong> An evil character can walk past evil monsters that would savage a good one. This
+is a real defensive property, not flavour. <span class="cite">kod/include/blakston.khd:1403</span></li>
+<li><strong>Merchants flagged <code class="k">MOB_LAWFUL</code> refuse to do business publicly
+with murderers.</strong> <span class="cite">kod/include/blakston.khd:1407</span></li>
+<li><strong>Spell success against a target scales with the karma gap</strong> between you:
+<code class="k">chance += abs(target_karma − your_karma) / 20</code>.
+<span class="cite">kod/object/active/holder/nomoveon/battler/player.kod:5104</span></li>
+</ul>
+
+<h2>If you are building a character</h2>
+
+<p>Decide the polarity before you spend a single shilling on a spell.</p>
+<ul>
+<li><strong>Neutral</strong> is the default and costs nothing. Kraanan, Faren, Riija and Jala are
+all fully available, and you can fight anything without consequence.</li>
+<li><strong>Shal'ille</strong> requires living at +60 or above for its deepest spells, sustained
+by killing evil creatures — which is most of what a conventional adventurer fights anyway. It is
+the cheap polarity to hold.</li>
+<li><strong>Qor</strong> requires −60 or below, sustained by killing good creatures and players.
+It is the expensive polarity: it costs you the goodwill of lawful merchants and makes you a
+target, and the creatures you must hunt are rarer.</li>
+</ul>
+
+<p>Related: <a href="spells.html">Spells and Spellcasting</a> ·
+<a href="schools.html">The Six Schools</a> · <a href="factions.html">Factions</a> ·
+<a href="death.html">Death, the Underworld and PvP</a> ·
+<a href="../creatures/index.html">Bestiary</a> (sortable by karma) ·
+<a href="advancing.html">Advancing Your Character</a></p>
+
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

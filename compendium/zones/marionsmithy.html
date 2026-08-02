@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ye Olde Slasher Salesman — Meridian 59 Compendium</title>
+<meta name="description" content="Set pieces. 0 creature types, 2 exits.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html" class="on">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Zones</a> › Ye Olde Slasher Salesman</p>
+<h1>Ye Olde Slasher Salesman</h1><p class="lede">Ye Olde Slasher Salesman is in <strong>Set pieces</strong>, city and shop terrain. Nothing spawns here and it connects to 1 other place.</p><h2>The place itself</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class=""></th><th class=""></th></tr></thead>
+<tbody><tr><td class=""><strong>Region</strong></td><td class="">Set pieces</td></tr>
+<tr><td class=""><strong>Room id</strong></td><td class=""><code class="k">RID_MAR_SMITHY</code> (201)</td></tr>
+<tr><td class=""><strong>Map file</strong></td><td class="">—</td></tr>
+<tr><td class=""><strong>Terrain</strong></td><td class="">city, shop</td></tr>
+<tr><td class=""><strong>You arrive at</strong></td><td class="">row 10, column 4</td></tr>
+<tr><td class=""><strong>Music</strong></td><td class=""><code>smithy.mid</code></td></tr></tbody></table></div><p class="cite">kod/object/active/holder/room/monsroom/objroom/marsmith.kod:11</p><h3>Rules in force here</h3><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
+<tbody><tr><td class=""><code class="k">ROOM_NO_COMBAT</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">ROOM_OVERRIDE_DEPTH2</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd:1032 — see <a href="../guides/places.html">Places and Travel</a></p><h2>Who is here</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class=""></th><th class="">Name</th><th class="">Standing at</th></tr></thead>
+<tbody><tr><td class=""><img class="icon rowicon" src="../assets/img/mrsmith_g1.png" alt="" loading="lazy"></td><td class=""><a href="../creatures/marionblacksmith.html">Colhorr</a></td><td class="">row 7, col 4</td></tr></tbody></table></div><h2>Notable things</h2><ul><li>Firepit at row 2, col 6 — fine_col 0</li></ul><h2>Ways out</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Leave by</th><th class="">Arrive at</th><th class="">Region</th></tr></thead>
+<tbody><tr><td class="">the square at row 11, col 4</td><td class=""><a href="marion.html">Marion</a></td><td class="">Marion</td></tr>
+<tr><td class="">the square at row 12, col 4</td><td class=""><a href="marion.html">Marion</a></td><td class="">Marion</td></tr></tbody></table></div><p class="cite">kod/object/active/holder/room/monsroom/objroom/marsmith.kod — <code class="k">plEdge_Exits</code> and <code class="k">plExits</code></p><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/active/holder/room/monsroom/objroom/marsmith.kod:11</p>
+<p><code class="k">MarionSmithy</code> is <code class="k">ObjectRoom</code> — full chain <code class="k">MarionSmithy</code> ← <code class="k">ObjectRoom</code> ← <code class="k">MonsterRoom</code> ← <code class="k">Room</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>room_name_marsmith</code></td><td class=""><em>Ye Olde Slasher Salesman</em></td><td class="num " data-sort="26">26</td></tr>
+<tr><td class=""><code class="k">viTeleport_row</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="28">28</td></tr>
+<tr><td class=""><code class="k">viTeleport_col</code></td><td class=""><code>4</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">viPermanent_flags</code></td><td class=""><code>ROOM_NO_COMBAT</code></td><td class="">2</td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">viTerrain_type</code></td><td class=""><code>TERRAIN_CITY | TERRAIN_SHOP</code></td><td class="">6</td><td class="num " data-sort="33">33</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">prRoom</code></td><td class=""><code>room_marsmith</code></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">piRoom_num</code></td><td class=""><code>RID_MAR_SMITHY</code></td><td class="num " data-sort="38">38</td></tr>
+<tr><td class=""><code class="k">piBaseLight</code></td><td class=""><code>LIGHT_NICE</code></td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">piOutside_factor</code></td><td class=""><code>OUTDOORS_SOME</code></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">prMusic</code></td><td class=""><code>marsmith_music</code></td><td class="num " data-sort="43">43</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>CreateStandardExits()</h4>
+<pre><code>{
+      plExits = $;
+
+      
+      plExits = Cons([ 11, 4, RID_MARION, 32, 43, ROTATE_NONE ],plExits);
+      plExits = Cons([ 12, 4, RID_MARION, 32, 43, ROTATE_NONE ],plExits);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/monsroom/objroom/marsmith.kod:47</p>
+<h4>CreateStandardObjects()</h4>
+<pre><code>{
+
+      Send(self,@NewHold,#what=Create(&amp;MarionBlacksmith),
+            #new_row=7,#new_col=4,#new_angle=ANGLE_SOUTH);
+      Send(self,@NewHold,#what=Create(&amp;Firepit),#new_row=2,#new_col=6,#fine_col=0);
+ 
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/active/holder/room/monsroom/objroom/marsmith.kod:58</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

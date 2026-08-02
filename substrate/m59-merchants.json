@@ -1,0 +1,2961 @@
+{
+ "builtAt": "2026-07-30T05:44:52.709Z",
+ "merchants": [
+  {
+   "seen": true,
+   "id": 3135,
+   "cls": "BasicInnKeeper",
+   "room": 954,
+   "markup": null,
+   "sells": [
+    {
+     "id": 3136,
+     "cls": "wineGoblet",
+     "quantity": 1
+    },
+    {
+     "id": 3137,
+     "cls": "Mug",
+     "quantity": 1
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 3289,
+   "cls": "Minstrel",
+   "room": 952,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 88,
+     "spell": "truth"
+    },
+    {
+     "num": 179,
+     "spell": "mirth"
+    },
+    {
+     "num": 180,
+     "spell": "melancholy"
+    },
+    {
+     "num": 120,
+     "spell": "spellbane"
+    },
+    {
+     "num": 122,
+     "spell": "warp time"
+    },
+    {
+     "num": 137,
+     "spell": "jig"
+    },
+    {
+     "num": 131,
+     "spell": "mana convergence"
+    },
+    {
+     "num": 177,
+     "spell": "rejuvenate"
+    },
+    {
+     "num": 174,
+     "spell": "disharmony"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 3553,
+   "cls": "DukeLiege",
+   "room": 952,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 170,
+     "spell": "civility"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 3291,
+   "cls": "DarkWizard",
+   "room": 950,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 87,
+     "spell": "spore burst"
+    },
+    {
+     "num": 85,
+     "spell": "curse weapon"
+    },
+    {
+     "num": 111,
+     "spell": "death link"
+    },
+    {
+     "num": 127,
+     "spell": "gaze of the basilisk"
+    },
+    {
+     "num": 114,
+     "spell": "animate"
+    },
+    {
+     "num": 164,
+     "spell": "shocking fury"
+    },
+    {
+     "num": 165,
+     "spell": "blast of fire"
+    },
+    {
+     "num": 166,
+     "spell": "explosive frost"
+    },
+    {
+     "num": 167,
+     "spell": "splash of acid"
+    },
+    {
+     "num": 22,
+     "spell": "vampiric drain"
+    },
+    {
+     "num": 147,
+     "spell": "shadow rift"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 3020,
+   "cls": "Barloquetailor",
+   "room": 856,
+   "markup": null,
+   "sells": [
+    {
+     "id": 3021,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 3022,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 3023,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 3024,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 3025,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 3026,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 3027,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 3028,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 3029,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 3030,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 3031,
+     "cls": "PantsA",
+     "quantity": null
+    },
+    {
+     "id": 3032,
+     "cls": "PantsA",
+     "quantity": null
+    },
+    {
+     "id": 3033,
+     "cls": "PantsA",
+     "quantity": null
+    },
+    {
+     "id": 3034,
+     "cls": "PantsA",
+     "quantity": null
+    },
+    {
+     "id": 3035,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 3036,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 3037,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 3038,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 3039,
+     "cls": "Robe",
+     "quantity": null
+    },
+    {
+     "id": 3040,
+     "cls": "Robe",
+     "quantity": null
+    },
+    {
+     "id": 3041,
+     "cls": "Robe",
+     "quantity": null
+    },
+    {
+     "id": 3042,
+     "cls": "Robe",
+     "quantity": null
+    },
+    {
+     "id": 3043,
+     "cls": "Robe",
+     "quantity": null
+    },
+    {
+     "id": 3044,
+     "cls": "Robe",
+     "quantity": null
+    },
+    {
+     "id": 3045,
+     "cls": "Robe",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 3552,
+   "cls": "PrincessLiege",
+   "room": 852,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 171,
+     "spell": "conciliation"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 2705,
+   "cls": "RiijaMonk",
+   "room": 2151,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 86,
+     "spell": "anonymity"
+    },
+    {
+     "num": 101,
+     "spell": "apparition"
+    },
+    {
+     "num": 84,
+     "spell": "artifice"
+    },
+    {
+     "num": 102,
+     "spell": "forget"
+    },
+    {
+     "num": 104,
+     "spell": "morph"
+    },
+    {
+     "num": 99,
+     "spell": "reflection"
+    },
+    {
+     "num": 77,
+     "spell": "illusionary form"
+    },
+    {
+     "num": 112,
+     "spell": "foresight"
+    },
+    {
+     "num": 107,
+     "spell": "vertigo"
+    },
+    {
+     "num": 105,
+     "spell": "denial"
+    },
+    {
+     "num": 106,
+     "spell": "illusionary wounds"
+    },
+    {
+     "num": 113,
+     "spell": "flash"
+    },
+    {
+     "num": 76,
+     "spell": "shadow form"
+    },
+    {
+     "num": 129,
+     "spell": "illusionary firewall"
+    },
+    {
+     "num": 115,
+     "spell": "bait"
+    },
+    {
+     "num": 142,
+     "spell": "feign death"
+    },
+    {
+     "num": 169,
+     "spell": "elusion"
+    },
+    {
+     "num": 143,
+     "spell": "evil twin"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 2680,
+   "cls": "QorPriestess",
+   "room": 802,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 38,
+     "spell": "darkness"
+    },
+    {
+     "num": 124,
+     "spell": "detect good"
+    },
+    {
+     "num": 45,
+     "spell": "acid touch"
+    },
+    {
+     "num": 66,
+     "spell": "karahols curse"
+    },
+    {
+     "num": 59,
+     "spell": "unholy weapon"
+    },
+    {
+     "num": 53,
+     "spell": "enfeeble"
+    },
+    {
+     "num": 47,
+     "spell": "hold"
+    },
+    {
+     "num": 73,
+     "spell": "nodeburst"
+    },
+    {
+     "num": 55,
+     "spell": "swap"
+    },
+    {
+     "num": 49,
+     "spell": "defile"
+    },
+    {
+     "num": 51,
+     "spell": "invisibility"
+    },
+    {
+     "num": 152,
+     "spell": "cloak"
+    },
+    {
+     "num": 144,
+     "spell": "poison fog"
+    },
+    {
+     "num": 173,
+     "spell": "profane resonance"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 2635,
+   "cls": "KraananPriestess",
+   "room": 801,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 11,
+     "spell": "bless"
+    },
+    {
+     "num": 61,
+     "spell": "enchant weapon"
+    },
+    {
+     "num": 17,
+     "spell": "super strength"
+    },
+    {
+     "num": 4,
+     "spell": "night vision"
+    },
+    {
+     "num": 56,
+     "spell": "create weapon"
+    },
+    {
+     "num": 63,
+     "spell": "create food"
+    },
+    {
+     "num": 43,
+     "spell": "discordance"
+    },
+    {
+     "num": 68,
+     "spell": "mana bomb"
+    },
+    {
+     "num": 52,
+     "spell": "antimagic aura"
+    },
+    {
+     "num": 39,
+     "spell": "killing fields"
+    },
+    {
+     "num": 54,
+     "spell": "resist magic"
+    },
+    {
+     "num": 74,
+     "spell": "armor of gort"
+    },
+    {
+     "num": 162,
+     "spell": "eagle eyes"
+    },
+    {
+     "num": 158,
+     "spell": "relay"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 2614,
+   "cls": "DeadLich",
+   "room": 715,
+   "markup": null,
+   "sells": [],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 2153,
+   "cls": "HazarBartender",
+   "room": 1017,
+   "markup": null,
+   "sells": [
+    {
+     "id": 2154,
+     "cls": "Skirt",
+     "quantity": null
+    },
+    {
+     "id": 2155,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 2156,
+     "cls": "PantsA",
+     "quantity": null
+    },
+    {
+     "id": 2157,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 2158,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 2159,
+     "cls": "Bread",
+     "quantity": 4
+    },
+    {
+     "id": 2160,
+     "cls": "Apple",
+     "quantity": 2
+    },
+    {
+     "id": 2161,
+     "cls": "Meatpie",
+     "quantity": 4
+    },
+    {
+     "id": 2162,
+     "cls": "Mug",
+     "quantity": 1
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 2101,
+   "cls": "HazarApothecary",
+   "room": 1014,
+   "markup": null,
+   "sells": [
+    {
+     "id": 2102,
+     "cls": "Mushroom",
+     "quantity": 4
+    },
+    {
+     "id": 2103,
+     "cls": "RedMushroom",
+     "quantity": 2
+    },
+    {
+     "id": 2104,
+     "cls": "BlueMushroom",
+     "quantity": 2
+    },
+    {
+     "id": 2105,
+     "cls": "Herbs",
+     "quantity": 4
+    },
+    {
+     "id": 2106,
+     "cls": "ElderBerry",
+     "quantity": 4
+    },
+    {
+     "id": 2107,
+     "cls": "Emerald",
+     "quantity": 3
+    },
+    {
+     "id": 2108,
+     "cls": "Flask",
+     "quantity": null
+    },
+    {
+     "id": 2109,
+     "cls": "Torch",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzapoth.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if Send(Self,@IsObjectReagent,#what=what) or send(self,@IsObjectGem,#what=what)\r\n         { return True;}\r\n      return False;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 2090,
+   "cls": "HazarBlacksmith",
+   "room": 1013,
+   "markup": null,
+   "sells": [
+    {
+     "id": 2091,
+     "cls": "ChainArmor",
+     "quantity": null
+    },
+    {
+     "id": 2092,
+     "cls": "LeatherArmor",
+     "quantity": null
+    },
+    {
+     "id": 2093,
+     "cls": "MetalShield",
+     "quantity": null
+    },
+    {
+     "id": 2094,
+     "cls": "ShortSword",
+     "quantity": null
+    },
+    {
+     "id": 2095,
+     "cls": "Mace",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzsmith.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n           if send(what,@CanBeGivenToNPC) AND\r\n           (send(self,@IsObjectWearable,#what=what)\r\n           or send(self,@IsObjectWeapon,#what=what))\r\n\t   { return TRUE; }\r\n\t   \r\n\t   return FALSE;\t\t   \r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 1927,
+   "cls": "HazarBartender",
+   "room": 1007,
+   "markup": null,
+   "sells": [
+    {
+     "id": 1928,
+     "cls": "Skirt",
+     "quantity": null
+    },
+    {
+     "id": 1929,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 1930,
+     "cls": "PantsA",
+     "quantity": null
+    },
+    {
+     "id": 1931,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 1932,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 1933,
+     "cls": "Bread",
+     "quantity": 4
+    },
+    {
+     "id": 1934,
+     "cls": "Apple",
+     "quantity": 2
+    },
+    {
+     "id": 1935,
+     "cls": "Meatpie",
+     "quantity": 4
+    },
+    {
+     "id": 1936,
+     "cls": "Mug",
+     "quantity": 1
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 1874,
+   "cls": "HazarApothecary",
+   "room": 1004,
+   "markup": null,
+   "sells": [
+    {
+     "id": 1875,
+     "cls": "Mushroom",
+     "quantity": 4
+    },
+    {
+     "id": 1876,
+     "cls": "RedMushroom",
+     "quantity": 2
+    },
+    {
+     "id": 1877,
+     "cls": "BlueMushroom",
+     "quantity": 2
+    },
+    {
+     "id": 1878,
+     "cls": "Herbs",
+     "quantity": 4
+    },
+    {
+     "id": 1879,
+     "cls": "ElderBerry",
+     "quantity": 4
+    },
+    {
+     "id": 1880,
+     "cls": "Emerald",
+     "quantity": 3
+    },
+    {
+     "id": 1881,
+     "cls": "Flask",
+     "quantity": null
+    },
+    {
+     "id": 1882,
+     "cls": "Torch",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzapoth.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if Send(Self,@IsObjectReagent,#what=what) or send(self,@IsObjectGem,#what=what)\r\n         { return True;}\r\n      return False;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 1863,
+   "cls": "HazarBlacksmith",
+   "room": 1003,
+   "markup": null,
+   "sells": [
+    {
+     "id": 1864,
+     "cls": "ChainArmor",
+     "quantity": null
+    },
+    {
+     "id": 1865,
+     "cls": "LeatherArmor",
+     "quantity": null
+    },
+    {
+     "id": 1866,
+     "cls": "MetalShield",
+     "quantity": null
+    },
+    {
+     "id": 1867,
+     "cls": "ShortSword",
+     "quantity": null
+    },
+    {
+     "id": 1868,
+     "cls": "Mace",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzsmith.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n           if send(what,@CanBeGivenToNPC) AND\r\n           (send(self,@IsObjectWearable,#what=what)\r\n           or send(self,@IsObjectWeapon,#what=what))\r\n\t   { return TRUE; }\r\n\t   \r\n\t   return FALSE;\t\t   \r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 3549,
+   "cls": "fourCouncilor",
+   "room": 2,
+   "markup": null,
+   "sells": [],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 1719,
+   "cls": "ShalillePriestess",
+   "room": 48,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 2,
+     "spell": "minor heal"
+    },
+    {
+     "num": 60,
+     "spell": "holy weapon"
+    },
+    {
+     "num": 125,
+     "spell": "detect evil"
+    },
+    {
+     "num": 21,
+     "spell": "holy touch"
+    },
+    {
+     "num": 31,
+     "spell": "remove curse"
+    },
+    {
+     "num": 37,
+     "spell": "cure poison"
+    },
+    {
+     "num": 40,
+     "spell": "cure disease"
+    },
+    {
+     "num": 7,
+     "spell": "rescue"
+    },
+    {
+     "num": 44,
+     "spell": "mark of dishonor"
+    },
+    {
+     "num": 72,
+     "spell": "purify"
+    },
+    {
+     "num": 27,
+     "spell": "forces of light"
+    },
+    {
+     "num": 42,
+     "spell": "major heal"
+    },
+    {
+     "num": 50,
+     "spell": "umbrella"
+    },
+    {
+     "num": 100,
+     "spell": "spiritual hammer"
+    },
+    {
+     "num": 110,
+     "spell": "portal of life"
+    },
+    {
+     "num": 132,
+     "spell": "holy symbol"
+    },
+    {
+     "num": 133,
+     "spell": "final rites"
+    },
+    {
+     "num": 148,
+     "spell": "breath of life"
+    },
+    {
+     "num": 154,
+     "spell": "seance"
+    },
+    {
+     "num": 149,
+     "spell": "resist acid"
+    },
+    {
+     "num": 161,
+     "spell": "dazzle"
+    },
+    {
+     "num": 172,
+     "spell": "sacred resonance"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 1711,
+   "cls": "FarenPriestess",
+   "room": 45,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 30,
+     "spell": "light"
+    },
+    {
+     "num": 23,
+     "spell": "zap"
+    },
+    {
+     "num": 25,
+     "spell": "winds"
+    },
+    {
+     "num": 29,
+     "spell": "resist fire"
+    },
+    {
+     "num": 36,
+     "spell": "resist cold"
+    },
+    {
+     "num": 28,
+     "spell": "resist shock"
+    },
+    {
+     "num": 20,
+     "spell": "touch of flame"
+    },
+    {
+     "num": 24,
+     "spell": "icy fingers"
+    },
+    {
+     "num": 67,
+     "spell": "mana focus"
+    },
+    {
+     "num": 58,
+     "spell": "brittle"
+    },
+    {
+     "num": 5,
+     "spell": "fireball"
+    },
+    {
+     "num": 14,
+     "spell": "earthquake"
+    },
+    {
+     "num": 57,
+     "spell": "shatter"
+    },
+    {
+     "num": 75,
+     "spell": "sandstorm"
+    },
+    {
+     "num": 150,
+     "spell": "fog"
+    },
+    {
+     "num": 157,
+     "spell": "mystic touch"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 3546,
+   "cls": "OneCouncilor",
+   "room": 37,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 76,
+     "spell": "shadow form"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 3290,
+   "cls": "Heretic",
+   "room": 597,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 128,
+     "spell": "firewall"
+    },
+    {
+     "num": 126,
+     "spell": "martyrs battleground"
+    },
+    {
+     "num": 141,
+     "spell": "bramble wall"
+    },
+    {
+     "num": 145,
+     "spell": "bond"
+    },
+    {
+     "num": 163,
+     "spell": "silence"
+    },
+    {
+     "num": 160,
+     "spell": "ring of flames"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 3293,
+   "cls": "Izzio",
+   "room": 593,
+   "markup": null,
+   "sells": [
+    {
+     "id": 6831,
+     "cls": "SimpleHelm",
+     "quantity": null
+    },
+    {
+     "id": 3299,
+     "cls": "Hammer",
+     "quantity": null
+    },
+    {
+     "id": 3298,
+     "cls": "HoldWand",
+     "quantity": null
+    },
+    {
+     "id": 3297,
+     "cls": "LongSword",
+     "quantity": null
+    },
+    {
+     "id": 3296,
+     "cls": "LeatherArmor",
+     "quantity": null
+    },
+    {
+     "id": 3295,
+     "cls": "MetalShield",
+     "quantity": null
+    },
+    {
+     "id": 3294,
+     "cls": "DragonflyEye",
+     "quantity": 6
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/izzio.kod",
+    "kod": "   ObjectDesired(what=$,who=$,report=TRUE)\r\n   \"This is set in individual buyers.  It allows them to pick and choose\"\r\n   \"what they want to buy.\"\r\n   {\r\n      local i;\r\n\r\n      % Don't take money for resale.  That's just silly.\r\n      if IsClass(what,&Money)\r\n      {\r\n         return FALSE;\r\n      }\r\n\r\n      if length(first(plFor_Sale)) > MAX_FORSALE\r\n      {\r\n         Post(poOwner,@SomeoneSaid,#what=self,#string=Izzio_Full_rsc,#type=SAY_RESOURCE);\r\n\r\n         return FALSE;\r\n      }\r\n\r\n      for i in first(plFor_Sale)\r\n      {\r\n         if GetClass(i) = GetClass(what)\r\n         {\r\n            if isclass(what,&numberitem)\r\n            {\r\n                return TRUE;\r\n            }\r\n            else\r\n            {\r\n               if report\r\n               {\r\n                  Post(poOwner,@SomeoneSaid,#what=self,#string=Izzio_AlreadyHaveOne_rsc,#type=SAY_RESOURCE);\r\n               }\r\n            }\r\n            \r\n            return FALSE;\r\n         }\r\n      }\r\n\r\n      if send(what,@HasAttribute,#ItemAtt=IA_BONDED) OR send(what,@IsItemType,#type=ITEMTYPE_SPECIAL)\r\n      {\r\n         return FALSE;\r\n      }\r\n\r\n      if isClass(what,&Token) OR isClass(what,&Totem)\r\n      {\r\n         return FALSE;\r\n      }\r\n      \r\n      return TRUE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 3292,
+   "cls": "HunterGhost",
+   "room": 578,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 136,
+     "spell": "spider web"
+    },
+    {
+     "num": 140,
+     "spell": "lightning wall"
+    },
+    {
+     "num": 138,
+     "spell": "deflect"
+    },
+    {
+     "num": 134,
+     "spell": "hunt"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 3547,
+   "cls": "TwoCouncilor",
+   "room": 576,
+   "markup": null,
+   "sells": [],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 3548,
+   "cls": "ThreeCouncilor",
+   "room": 563,
+   "markup": null,
+   "sells": [],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 3550,
+   "cls": "FiveCouncilor",
+   "room": 526,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 168,
+     "spell": "purge"
+    },
+    {
+     "num": 181,
+     "spell": "crystalize mana"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 1220,
+   "cls": "KocatanBonePriestess",
+   "room": 2141,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 123,
+     "spell": "detect invisible"
+    },
+    {
+     "num": 62,
+     "spell": "holy resolve"
+    },
+    {
+     "num": 35,
+     "spell": "unholy resolve"
+    },
+    {
+     "num": 118,
+     "spell": "shalillebane"
+    },
+    {
+     "num": 119,
+     "spell": "qorbane"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 6767,
+   "cls": "DragonFlyQueen",
+   "room": 2135,
+   "markup": null,
+   "sells": [],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 6766,
+   "cls": "DragonFlyQueen",
+   "room": 2135,
+   "markup": null,
+   "sells": [],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 1056,
+   "cls": "kocatanTradeMaster",
+   "room": 2101,
+   "markup": null,
+   "sells": [
+    {
+     "id": 1057,
+     "cls": "KocatanMug",
+     "quantity": 4
+    },
+    {
+     "id": 1058,
+     "cls": "wineGoblet",
+     "quantity": 4
+    },
+    {
+     "id": 1059,
+     "cls": "Bread",
+     "quantity": 4
+    },
+    {
+     "id": 1060,
+     "cls": "Apple",
+     "quantity": 2
+    },
+    {
+     "id": 1061,
+     "cls": "Mace",
+     "quantity": null
+    },
+    {
+     "id": 1062,
+     "cls": "LeatherArmor",
+     "quantity": null
+    },
+    {
+     "id": 1063,
+     "cls": "SilverArrow",
+     "quantity": 10
+    },
+    {
+     "id": 1064,
+     "cls": "NeruditeArrow",
+     "quantity": 5
+    },
+    {
+     "id": 1065,
+     "cls": "Torch",
+     "quantity": null
+    },
+    {
+     "id": 1066,
+     "cls": "MetalShield",
+     "quantity": null
+    }
+   ],
+   "teaches": [
+    {
+     "num": 146,
+     "spell": "blood inheritance"
+    }
+   ],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcmerch.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      return TRUE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 1030,
+   "cls": "KocatanBowMaker",
+   "room": 2100,
+   "markup": null,
+   "sells": [
+    {
+     "id": 1031,
+     "cls": "Longbow",
+     "quantity": null
+    },
+    {
+     "id": 1032,
+     "cls": "Arrow",
+     "quantity": 20
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 1002,
+   "cls": "KocatanCaptainGood",
+   "room": 2013,
+   "markup": null,
+   "sells": [],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 995,
+   "cls": "KocatanLanguageMaster",
+   "room": 2015,
+   "markup": null,
+   "sells": [
+    {
+     "id": 996,
+     "cls": "Yrxlsap",
+     "quantity": 1
+    },
+    {
+     "id": 997,
+     "cls": "ShamanBlood",
+     "quantity": 1
+    },
+    {
+     "id": 998,
+     "cls": "KriipaClaw",
+     "quantity": 4
+    },
+    {
+     "id": 999,
+     "cls": "PolishedSeraphym",
+     "quantity": 2
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 990,
+   "cls": "KocatanWeaponsMaster",
+   "room": 2014,
+   "markup": null,
+   "sells": [
+    {
+     "id": 991,
+     "cls": "PracticeBow",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 978,
+   "cls": "KocatanBlacksmith",
+   "room": 2003,
+   "markup": null,
+   "sells": [
+    {
+     "id": 979,
+     "cls": "ChainArmor",
+     "quantity": null
+    },
+    {
+     "id": 980,
+     "cls": "Axe",
+     "quantity": null
+    },
+    {
+     "id": 981,
+     "cls": "Hammer",
+     "quantity": null
+    },
+    {
+     "id": 982,
+     "cls": "GoldShield",
+     "quantity": null
+    },
+    {
+     "id": 983,
+     "cls": "NeruditeSword",
+     "quantity": null
+    },
+    {
+     "id": 984,
+     "cls": "NeruditeArmor",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcsmith.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if Send(what,@CanBeGivenToNPC) and \r\n         (Send(Self,@IsObjectWearable,#what=what) OR\r\n          Send(Self,@IsObjectWeapon,#what=what))\r\n      {  \r\n         return True;  \r\n      }\r\n      return False;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 935,
+   "cls": "KocatanTailor",
+   "room": 2006,
+   "markup": null,
+   "sells": [
+    {
+     "id": 936,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 937,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 938,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 939,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 940,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 941,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 942,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 943,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 944,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 945,
+     "cls": "ShortSkirt",
+     "quantity": null
+    },
+    {
+     "id": 946,
+     "cls": "ShortSkirt",
+     "quantity": null
+    },
+    {
+     "id": 947,
+     "cls": "ShortSkirt",
+     "quantity": null
+    },
+    {
+     "id": 948,
+     "cls": "ShortSkirt",
+     "quantity": null
+    },
+    {
+     "id": 949,
+     "cls": "ShortSkirt",
+     "quantity": null
+    },
+    {
+     "id": 950,
+     "cls": "ShortSkirt",
+     "quantity": null
+    },
+    {
+     "id": 951,
+     "cls": "ShortSkirt",
+     "quantity": null
+    },
+    {
+     "id": 952,
+     "cls": "LightRobe",
+     "quantity": null
+    },
+    {
+     "id": 953,
+     "cls": "LightRobe",
+     "quantity": null
+    },
+    {
+     "id": 954,
+     "cls": "LightRobe",
+     "quantity": null
+    },
+    {
+     "id": 955,
+     "cls": "LightRobe",
+     "quantity": null
+    },
+    {
+     "id": 956,
+     "cls": "LightRobe",
+     "quantity": null
+    },
+    {
+     "id": 957,
+     "cls": "LightRobe",
+     "quantity": null
+    },
+    {
+     "id": 958,
+     "cls": "LightRobe",
+     "quantity": null
+    },
+    {
+     "id": 959,
+     "cls": "Tanktop",
+     "quantity": null
+    },
+    {
+     "id": 960,
+     "cls": "Tanktop",
+     "quantity": null
+    },
+    {
+     "id": 961,
+     "cls": "Tanktop",
+     "quantity": null
+    },
+    {
+     "id": 962,
+     "cls": "Tanktop",
+     "quantity": null
+    },
+    {
+     "id": 963,
+     "cls": "Tanktop",
+     "quantity": null
+    },
+    {
+     "id": 964,
+     "cls": "Tanktop",
+     "quantity": null
+    },
+    {
+     "id": 965,
+     "cls": "Tanktop",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kctailor.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if IsClass(what,&NumberItem) and\r\n         Send(what,@GetNumber) > 100\r\n      {\r\n         return FALSE;\r\n      }\r\n\r\n      if Send(self,@IsObjectGem,#what=what) or\r\n         Send(self,@IsObjectSundry,#what=what)\r\n      {\r\n\t      return TRUE;\r\n      }\r\n\r\n      return FALSE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 913,
+   "cls": "KocatanShopkeeper",
+   "room": 2004,
+   "markup": null,
+   "sells": [
+    {
+     "id": 914,
+     "cls": "Junk",
+     "quantity": null
+    },
+    {
+     "id": 915,
+     "cls": "Junk",
+     "quantity": null
+    },
+    {
+     "id": 916,
+     "cls": "Junk",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcshopk.kod",
+    "kod": "   ObjectDesired(what=$,who=$,report=TRUE)\r\n   \"This is set in individual buyers.  It allows them to pick and choose\"\r\n   \"what they want to buy.\"\r\n   {\r\n      local i;\r\n\r\n      % Don't take money for resale.  That's just silly.\r\n      if IsClass(what,&Money)\r\n      {\r\n         return FALSE;\r\n      }\r\n\r\n      if length(first(plFor_Sale)) > MAX_FORSALE\r\n      {\r\n         Send(self,@SayToOne,#target=who,#message_rsc=JunkMan_Full_rsc);\r\n\t\t return FALSE;\r\n      }\r\n\r\n      for i in first(plFor_Sale)\r\n      {\r\n         if GetClass(i) = GetClass(what)\r\n         {\r\n            if IsClass(i,&NumberItem)\r\n            {\r\n\t\t\t   % Only accept stackable items if we don't have too many of them.\r\n               if (send(what,@GetNumber) + send(i,@GetNumber)) < NUMBER_ITEM_MAX\r\n\t\t\t   {\r\n\t\t\t      return TRUE;\r\n\t\t\t   }\r\n\t\t\t   Send(self,@SayToOne,#target=who,#message_rsc=JunkMan_too_many_rsc);\r\n            }\r\n\t\t\telse\r\n\t\t\t{\r\n\t\t\t   Send(self,@SayToOne,#target=who,#message_rsc=JunkMan_AlreadyHaveOne_rsc);\r\n\t\t\t}\r\n\r\n            return FALSE;\r\n         }\r\n      }\r\n\r\n      if send(what,@HasAttribute,#ItemAtt=IA_BONDED) OR send(what,@IsItemType,#type=ITEMTYPE_SPECIAL)\r\n      {\r\n         return FALSE;\r\n      }\r\n\r\n      if IsClass(what,&Token) OR IsClass(what,&Totem)\r\n      {\r\n         return FALSE;\r\n      }\r\n      \r\n      return TRUE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 872,
+   "cls": "KocatanBanker",
+   "room": 2005,
+   "markup": null,
+   "sells": [],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 858,
+   "cls": "KocatanInnkeeper",
+   "room": 2001,
+   "markup": null,
+   "sells": [
+    {
+     "id": 859,
+     "cls": "Meatpie",
+     "quantity": 4
+    },
+    {
+     "id": 860,
+     "cls": "Bread",
+     "quantity": 4
+    },
+    {
+     "id": 861,
+     "cls": "Cheese",
+     "quantity": 6
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 850,
+   "cls": "KocatanBartender",
+   "room": 2008,
+   "markup": null,
+   "sells": [
+    {
+     "id": 851,
+     "cls": "KocatanMug",
+     "quantity": 4
+    },
+    {
+     "id": 852,
+     "cls": "Bread",
+     "quantity": 4
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbart.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if isClass(what,&ShortSword)\r\n      {\r\n         return TRUE;\r\n      }\r\n      \r\n      return FALSE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 805,
+   "cls": "KocatanApothecary",
+   "room": 2002,
+   "markup": null,
+   "sells": [
+    {
+     "id": 806,
+     "cls": "RainbowFern",
+     "quantity": 4
+    },
+    {
+     "id": 807,
+     "cls": "UncutSeraphym",
+     "quantity": 1
+    },
+    {
+     "id": 808,
+     "cls": "FireSand",
+     "quantity": 4
+    },
+    {
+     "id": 809,
+     "cls": "DragonflyEye",
+     "quantity": 2
+    },
+    {
+     "id": 810,
+     "cls": "Solagh",
+     "quantity": 4
+    },
+    {
+     "id": 811,
+     "cls": "WebMoss",
+     "quantity": 4
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcapoth.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if send(self,@IsObjectReagent,#what=what)\r\n         AND NOT send(self,@IsObjectGem,#what=what)\r\n      {\r\n         return TRUE;\r\n      }\r\n      \r\n      return FALSE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 772,
+   "cls": "BarloqueBlacksmith",
+   "room": 113,
+   "markup": null,
+   "sells": [
+    {
+     "id": 773,
+     "cls": "ChainArmor",
+     "quantity": null
+    },
+    {
+     "id": 774,
+     "cls": "Axe",
+     "quantity": null
+    },
+    {
+     "id": 775,
+     "cls": "Hammer",
+     "quantity": null
+    },
+    {
+     "id": 776,
+     "cls": "MetalShield",
+     "quantity": null
+    }
+   ],
+   "teaches": [
+    {
+     "num": 12,
+     "spell": "magic shield"
+    }
+   ],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqSmith.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if Send(what,@CanBeGiventoNPC) and \r\n         (Send(Self,@IsObjectWearable,#what=what) OR\r\n         Send(Self,@IsObjectMisc,#what=what) OR\r\n         Send(Self,@IsObjectWeapon,#what=what)) {return True;}\r\n      return False;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 757,
+   "cls": "BarloqueClerk",
+   "room": 970,
+   "markup": null,
+   "sells": [
+    {
+     "id": 758,
+     "cls": "BallotItem",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 743,
+   "cls": "BarloqueMerchant",
+   "room": 109,
+   "markup": null,
+   "sells": [
+    {
+     "id": 744,
+     "cls": "Diamond",
+     "quantity": 1
+    },
+    {
+     "id": 745,
+     "cls": "Torch",
+     "quantity": null
+    },
+    {
+     "id": 746,
+     "cls": "Sapphire",
+     "quantity": 1
+    },
+    {
+     "id": 747,
+     "cls": "Emerald",
+     "quantity": 1
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqmerch.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if isClass(what,&NumberItem) and\r\n         send(what,@GetNumber) > 25\r\n      {\r\n         return FALSE;\r\n      }\r\n\r\n      if send(self,@IsObjectGem,#what=what) or\r\n         send(self,@IsObjectSundry,#what=what)\r\n      {\r\n\t return TRUE;\r\n      }\r\n\r\n      return FALSE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 736,
+   "cls": "BarloqueInnkeeper",
+   "room": 106,
+   "markup": null,
+   "sells": [
+    {
+     "id": 737,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 738,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 739,
+     "cls": "TurkeyLeg",
+     "quantity": 2
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 711,
+   "cls": "BarloqueApothecary",
+   "room": 104,
+   "markup": null,
+   "sells": [
+    {
+     "id": 712,
+     "cls": "Herbs",
+     "quantity": 5
+    },
+    {
+     "id": 713,
+     "cls": "Mushroom",
+     "quantity": 5
+    },
+    {
+     "id": 714,
+     "cls": "ElderBerry",
+     "quantity": 5
+    },
+    {
+     "id": 715,
+     "cls": "RedMushroom",
+     "quantity": 4
+    },
+    {
+     "id": 716,
+     "cls": "BlueMushroom",
+     "quantity": 4
+    },
+    {
+     "id": 717,
+     "cls": "Flask",
+     "quantity": null
+    }
+   ],
+   "teaches": [
+    {
+     "num": 33,
+     "spell": "heat"
+    },
+    {
+     "num": 65,
+     "spell": "fade"
+    }
+   ],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqapoth.kod",
+    "kod": "   ObjectDesired(what=$, who=$)\r\n   {\r\n      if Send(self, @IsObjectReagent, #what=what)\r\n         AND NOT Send(self, @IsObjectGem, #what=what)\r\n      {\r\n         return TRUE;\r\n      }\r\n\r\n      return FALSE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 674,
+   "cls": "BarloqueBartender",
+   "room": 103,
+   "markup": null,
+   "sells": [
+    {
+     "id": 675,
+     "cls": "wineGoblet",
+     "quantity": 1
+    },
+    {
+     "id": 676,
+     "cls": "Mug",
+     "quantity": 4
+    },
+    {
+     "id": 677,
+     "cls": "Apple",
+     "quantity": 4
+    },
+    {
+     "id": 678,
+     "cls": "Waterskin",
+     "quantity": 4
+    },
+    {
+     "id": 679,
+     "cls": "Chess",
+     "quantity": null
+    },
+    {
+     "id": 680,
+     "cls": "Bread",
+     "quantity": 4
+    },
+    {
+     "id": 681,
+     "cls": "Meatpie",
+     "quantity": 4
+    },
+    {
+     "id": 682,
+     "cls": "Cheese",
+     "quantity": 2
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 594,
+   "cls": "JasperBanker",
+   "room": 376,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 46,
+     "spell": "blind"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 3551,
+   "cls": "RebelLiege",
+   "room": 371,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 80,
+     "spell": "identify"
+    },
+    {
+     "num": 81,
+     "spell": "reveal"
+    },
+    {
+     "num": 82,
+     "spell": "shroud"
+    },
+    {
+     "num": 89,
+     "spell": "dispel illusion"
+    },
+    {
+     "num": 116,
+     "spell": "haste"
+    },
+    {
+     "num": 130,
+     "spell": "resist poison"
+    },
+    {
+     "num": 153,
+     "spell": "glow"
+    },
+    {
+     "num": 151,
+     "spell": "free action"
+    },
+    {
+     "num": 139,
+     "spell": "shatterlock"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 549,
+   "cls": "JasperBartender",
+   "room": 371,
+   "markup": null,
+   "sells": [
+    {
+     "id": 550,
+     "cls": "Bread",
+     "quantity": 4
+    },
+    {
+     "id": 551,
+     "cls": "StoutGoblet",
+     "quantity": 1
+    },
+    {
+     "id": 552,
+     "cls": "Chess",
+     "quantity": null
+    },
+    {
+     "id": 553,
+     "cls": "Meatpie",
+     "quantity": 4
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 540,
+   "cls": "JasperElder",
+   "room": 375,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 1,
+     "spell": "lightning bolt"
+    },
+    {
+     "num": 64,
+     "spell": "dement"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 500,
+   "cls": "JasperMerchant",
+   "room": 373,
+   "markup": null,
+   "sells": [
+    {
+     "id": 501,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 502,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 503,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 504,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 505,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 506,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 507,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 508,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 509,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 510,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 511,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 512,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 513,
+     "cls": "Torch",
+     "quantity": null
+    },
+    {
+     "id": 514,
+     "cls": "Waterskin",
+     "quantity": 4
+    },
+    {
+     "id": 515,
+     "cls": "Sapphire",
+     "quantity": 1
+    },
+    {
+     "id": 516,
+     "cls": "Emerald",
+     "quantity": 2
+    },
+    {
+     "id": 517,
+     "cls": "PurpleMushroom",
+     "quantity": 2
+    },
+    {
+     "id": 518,
+     "cls": "BlueMushroom",
+     "quantity": 4
+    },
+    {
+     "id": 519,
+     "cls": "ElderBerry",
+     "quantity": 4
+    },
+    {
+     "id": 520,
+     "cls": "Mushroom",
+     "quantity": 4
+    },
+    {
+     "id": 521,
+     "cls": "Herbs",
+     "quantity": 4
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/jasprtwn/jsmerch.kod",
+    "kod": "   ObjectDesired(what = $, who = $)\r\n   {\r\n      if Send(what,@CanBeGiventoNPC)\r\n         AND send(self,@IsObjectReagent,#what=what)\r\n      {\r\n         return TRUE;\r\n      }\r\n      \r\n      return FALSE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 490,
+   "cls": "JasperBlacksmith",
+   "room": 374,
+   "markup": null,
+   "sells": [
+    {
+     "id": 491,
+     "cls": "Mace",
+     "quantity": null
+    },
+    {
+     "id": 492,
+     "cls": "ShortSword",
+     "quantity": null
+    },
+    {
+     "id": 493,
+     "cls": "GoldShield",
+     "quantity": null
+    },
+    {
+     "id": 494,
+     "cls": "ScaleArmor",
+     "quantity": null
+    },
+    {
+     "id": 495,
+     "cls": "Hammer",
+     "quantity": null
+    },
+    {
+     "id": 496,
+     "cls": "LeatherArmor",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/jasprtwn/jssmith.kod",
+    "kod": "   ObjectDesired(what = $, who = $)\r\n   {\r\n      if Send(what,@CanBeGiventoNPC)\r\n         AND (Send(Self,@IsObjectWeapon,#what=what)\r\n              OR Send(Self,@IsObjectWearable,#what=what))\r\n      {\r\n         if IsClass(what,&NeruditeSword)\r\n            OR IsClass(what,&NeruditeArmor)\r\n            OR IsClass(what,&NeruditeBow)\r\n         {\r\n            send(poOwner,@SomeoneSaid,#what=self,#string=JsBla_island_items,#type=SAY_RESOURCE);\r\n            return FALSE;\r\n         }\r\n\r\n         return TRUE;\r\n      }\r\n      \r\n      return FALSE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 486,
+   "cls": "JasperInnKeeper",
+   "room": 370,
+   "markup": null,
+   "sells": [
+    {
+     "id": 487,
+     "cls": "Stew",
+     "quantity": 4
+    }
+   ],
+   "teaches": [
+    {
+     "num": 156,
+     "spell": "sweep"
+    },
+    {
+     "num": 176,
+     "spell": "restorate"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 433,
+   "cls": "CorNothTailor",
+   "room": 155,
+   "markup": null,
+   "sells": [
+    {
+     "id": 434,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 435,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 436,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 437,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 438,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 439,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 440,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 441,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 442,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 443,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 444,
+     "cls": "PantsA",
+     "quantity": null
+    },
+    {
+     "id": 445,
+     "cls": "PantsA",
+     "quantity": null
+    },
+    {
+     "id": 446,
+     "cls": "PantsA",
+     "quantity": null
+    },
+    {
+     "id": 447,
+     "cls": "PantsA",
+     "quantity": null
+    },
+    {
+     "id": 448,
+     "cls": "PantsA",
+     "quantity": null
+    },
+    {
+     "id": 449,
+     "cls": "PantsA",
+     "quantity": null
+    },
+    {
+     "id": 450,
+     "cls": "Skirt",
+     "quantity": null
+    },
+    {
+     "id": 451,
+     "cls": "Skirt",
+     "quantity": null
+    },
+    {
+     "id": 452,
+     "cls": "Skirt",
+     "quantity": null
+    },
+    {
+     "id": 453,
+     "cls": "Skirt",
+     "quantity": null
+    },
+    {
+     "id": 454,
+     "cls": "Skirt",
+     "quantity": null
+    },
+    {
+     "id": 455,
+     "cls": "Skirt",
+     "quantity": null
+    },
+    {
+     "id": 456,
+     "cls": "Skirt",
+     "quantity": null
+    },
+    {
+     "id": 457,
+     "cls": "Skirt",
+     "quantity": null
+    },
+    {
+     "id": 458,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 459,
+     "cls": "Shirt",
+     "quantity": null
+    },
+    {
+     "id": 460,
+     "cls": "Shirt",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 421,
+   "cls": "CorNothSergeant",
+   "room": 154,
+   "markup": null,
+   "sells": [
+    {
+     "id": 422,
+     "cls": "LongSword",
+     "quantity": null
+    },
+    {
+     "id": 423,
+     "cls": "ShortSword",
+     "quantity": null
+    },
+    {
+     "id": 424,
+     "cls": "Mace",
+     "quantity": null
+    },
+    {
+     "id": 425,
+     "cls": "LeatherArmor",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 414,
+   "cls": "CorNothInnkeeper",
+   "room": 153,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 175,
+     "spell": "invigorate"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 397,
+   "cls": "CornothGrocer",
+   "room": 151,
+   "markup": null,
+   "sells": [
+    {
+     "id": 398,
+     "cls": "Torch",
+     "quantity": null
+    },
+    {
+     "id": 399,
+     "cls": "FairyWing",
+     "quantity": 4
+    },
+    {
+     "id": 400,
+     "cls": "ElderBerry",
+     "quantity": 4
+    },
+    {
+     "id": 401,
+     "cls": "BlueMushroom",
+     "quantity": 4
+    },
+    {
+     "id": 402,
+     "cls": "RedMushroom",
+     "quantity": 4
+    },
+    {
+     "id": 403,
+     "cls": "Waterskin",
+     "quantity": 4
+    },
+    {
+     "id": 404,
+     "cls": "Bread",
+     "quantity": 4
+    },
+    {
+     "id": 405,
+     "cls": "Apple",
+     "quantity": 4
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/crnthtwn/cngrocer.kod",
+    "kod": "   ObjectDesired(what = $, who = $)\r\n   {\r\n      if Send(what, @CanBeGiventoNPC) AND\r\n         (Send(self, @IsObjectReagent, #what=what)\r\n         OR Send(self, @IsObjectSundry, #what=what)\r\n         OR IsClass(what, &NeruditeOreChunk)\r\n         OR IsClass(what, &OrcPitBossHead))\r\n      {\r\n         return TRUE;\r\n      }\r\n\r\n      return FALSE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 370,
+   "cls": "MarionHealer",
+   "room": 205,
+   "markup": null,
+   "sells": [
+    {
+     "id": 371,
+     "cls": "PurifyPotion",
+     "quantity": null
+    },
+    {
+     "id": 372,
+     "cls": "RemoveCursePotion",
+     "quantity": null
+    },
+    {
+     "id": 373,
+     "cls": "CurePoisonPotion",
+     "quantity": null
+    },
+    {
+     "id": 374,
+     "cls": "CureDiseasePotion",
+     "quantity": null
+    },
+    {
+     "id": 375,
+     "cls": "Flask",
+     "quantity": null
+    }
+   ],
+   "teaches": [
+    {
+     "num": 159,
+     "spell": "distill"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 347,
+   "cls": "MarionBlacksmith",
+   "room": 201,
+   "markup": null,
+   "sells": [
+    {
+     "id": 348,
+     "cls": "Mace",
+     "quantity": null
+    },
+    {
+     "id": 349,
+     "cls": "ShortSword",
+     "quantity": null
+    },
+    {
+     "id": 350,
+     "cls": "MetalShield",
+     "quantity": null
+    },
+    {
+     "id": 351,
+     "cls": "LeatherArmor",
+     "quantity": null
+    },
+    {
+     "id": 352,
+     "cls": "Axe",
+     "quantity": null
+    }
+   ],
+   "teaches": [
+    {
+     "num": 13,
+     "spell": "mend"
+    }
+   ],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/MrSmith.kod",
+    "kod": "   ObjectDesired(what = $, who = $)\r\n   {\r\n      % Allow him to buy the weapons and shields from the nearby crypt.\r\n      if Send(what,@CanBeGiventoNPC)\r\n         AND (Send(Self,@IsObjectWeapon,#what=what)\r\n              OR IsClass(what,&Shield))\r\n      {\r\n         return TRUE;\r\n      }\r\n      \r\n      return FALSE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 341,
+   "cls": "MarionBartender",
+   "room": 202,
+   "markup": null,
+   "sells": [
+    {
+     "id": 342,
+     "cls": "Mug",
+     "quantity": 4
+    },
+    {
+     "id": 343,
+     "cls": "Bread",
+     "quantity": 2
+    },
+    {
+     "id": 344,
+     "cls": "Meatpie",
+     "quantity": 2
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 335,
+   "cls": "MarionInnkeeper",
+   "room": 202,
+   "markup": null,
+   "sells": [
+    {
+     "id": 336,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 337,
+     "cls": "PantsC",
+     "quantity": null
+    },
+    {
+     "id": 338,
+     "cls": "Herbs",
+     "quantity": 5
+    },
+    {
+     "id": 339,
+     "cls": "ElderBerry",
+     "quantity": 4
+    },
+    {
+     "id": 340,
+     "cls": "Torch",
+     "quantity": null
+    }
+   ],
+   "teaches": [],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrinnk.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if Send(self,@IsObjectSundry,#what=what)\r\n         OR Send(self,@IsObjectReagent,#what=what)\r\n         OR Send(self,@IsObjectWearable,#what=what)\r\n      {\r\n         return TRUE;\r\n      }\r\n      \r\n      return FALSE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 311,
+   "cls": "MarionElder",
+   "room": 200,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 26,
+     "spell": "truce"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 280,
+   "cls": "TosBanker",
+   "room": 54,
+   "markup": null,
+   "sells": [
+    {
+     "id": 281,
+     "cls": "Emerald",
+     "quantity": 15
+    },
+    {
+     "id": 282,
+     "cls": "Sapphire",
+     "quantity": 10
+    },
+    {
+     "id": 283,
+     "cls": "Diamond",
+     "quantity": 8
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 170,
+   "cls": "TosApothecary",
+   "room": 53,
+   "markup": null,
+   "sells": [
+    {
+     "id": 171,
+     "cls": "Torch",
+     "quantity": null
+    },
+    {
+     "id": 172,
+     "cls": "Herbs",
+     "quantity": 5
+    },
+    {
+     "id": 173,
+     "cls": "Mushroom",
+     "quantity": 5
+    },
+    {
+     "id": 174,
+     "cls": "ElderBerry",
+     "quantity": 4
+    },
+    {
+     "id": 175,
+     "cls": "BlueMushroom",
+     "quantity": 4
+    },
+    {
+     "id": 176,
+     "cls": "RedMushroom",
+     "quantity": 4
+    },
+    {
+     "id": 177,
+     "cls": "Flask",
+     "quantity": null
+    }
+   ],
+   "teaches": [
+    {
+     "num": 41,
+     "spell": "hospice"
+    }
+   ],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/TsApoth.kod",
+    "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if send(self,@IsObjectReagent,#what=what)\r\n         AND NOT send(self,@IsObjectGem,#what=what)\r\n      {\r\n         return TRUE;\r\n      }\r\n\r\n      return FALSE;\r\n   }"
+   },
+   "buys_anything": false
+  },
+  {
+   "seen": true,
+   "id": 96,
+   "cls": "TosInnKeeper",
+   "room": 52,
+   "markup": null,
+   "sells": [
+    {
+     "id": 97,
+     "cls": "Mug",
+     "quantity": 1
+    },
+    {
+     "id": 98,
+     "cls": "Cheese",
+     "quantity": 3
+    }
+   ],
+   "teaches": [],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": true,
+   "id": 26,
+   "cls": "Assassin",
+   "room": 110,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 155,
+     "spell": "eavesdrop"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true
+  },
+  {
+   "seen": false,
+   "id": null,
+   "cls": "Lich",
+   "room": null,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 147,
+     "spell": "shadow rift",
+     "constant": "SID_SHADOW_RIFT"
+    },
+    {
+     "num": 26,
+     "spell": "truce",
+     "constant": "SID_TRUCE"
+    },
+    {
+     "num": 46,
+     "spell": "blind",
+     "constant": "SID_BLIND"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/lich.kod",
+   "note": "defined in the source but no instance was standing in the world when this was built"
+  },
+  {
+   "seen": false,
+   "id": null,
+   "cls": "TosBlacksmith",
+   "room": null,
+   "markup": null,
+   "sells": [
+    {
+     "id": null,
+     "cls": "ChainArmor",
+     "quantity": null
+    },
+    {
+     "id": null,
+     "cls": "Axe",
+     "quantity": null
+    },
+    {
+     "id": null,
+     "cls": "Hammer",
+     "quantity": null
+    },
+    {
+     "id": null,
+     "cls": "MetalShield",
+     "quantity": null
+    },
+    {
+     "id": null,
+     "cls": "Mace",
+     "quantity": null
+    }
+   ],
+   "teaches": [
+    {
+     "num": 12,
+     "spell": "magic shield",
+     "constant": "SID_MAGIC_SHIELD"
+    }
+   ],
+   "buying_rule": {
+    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/TsSmith.kod",
+    "kod": "   ObjectDesired(what=$)\r\n   {\r\n      if Send(what,@CanBeGiventoNPC) AND\r\n         (Send(Self,@IsObjectWearable,#what=what) OR\r\n         Send(Self,@IsObjectMisc,#what=what) OR\r\n         Send(Self,@IsObjectWeapon,#what=what)) {return True;}\r\n      return False;\r\n   }"
+   },
+   "buys_anything": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/TsSmith.kod",
+   "note": "defined in the source but no instance was standing in the world when this was built"
+  },
+  {
+   "seen": false,
+   "id": null,
+   "cls": "JealousGeneral",
+   "room": null,
+   "markup": null,
+   "sells": [],
+   "teaches": [
+    {
+     "num": 404,
+     "skill": "block",
+     "constant": "SKID_BLOCK"
+    },
+    {
+     "num": 80,
+     "spell": "identify",
+     "constant": "SID_IDENTIFY"
+    },
+    {
+     "num": 81,
+     "spell": "reveal",
+     "constant": "SID_REVEAL"
+    },
+    {
+     "num": 82,
+     "spell": "shroud",
+     "constant": "SID_SHROUD"
+    },
+    {
+     "num": 89,
+     "spell": "dispel illusion",
+     "constant": "SID_DISPEL_ILLUSION"
+    },
+    {
+     "num": 116,
+     "spell": "haste",
+     "constant": "SID_HASTE"
+    },
+    {
+     "num": 130,
+     "spell": "resist poison",
+     "constant": "SID_RESIST_POISON"
+    },
+    {
+     "num": 153,
+     "spell": "glow",
+     "constant": "SID_GLOW"
+    },
+    {
+     "num": 151,
+     "spell": "free action",
+     "constant": "SID_FREE_ACTION"
+    },
+    {
+     "num": 139,
+     "spell": "shatterlock",
+     "constant": "SID_SHATTERLOCK"
+    }
+   ],
+   "buying_rule": null,
+   "buys_anything": true,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/jGeneral.kod",
+   "note": "defined in the source but no instance was standing in the world when this was built"
+  }
+ ]
+}

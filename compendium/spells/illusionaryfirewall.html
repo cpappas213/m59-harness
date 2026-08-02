@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>illusionary firewall — Meridian 59 Compendium</title>
+<meta name="description" content="One of the many mystical spells.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html" class="on">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Spells</a> › illusionary firewall</p>
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/iwallill_g1.png" alt="illusionary firewall" width="128" height="128"></div><div class="heroText"><h1>illusionary firewall</h1><p class="lede">One of the many mystical spells.</p><div class="tags"><a class="tag school-5" href="../guides/riija.html">Riija</a><span class="tag ">Level 3</span><span class="tag ">Harmful</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">School</div><div class="val sm"><a href="../guides/riija.html">Riija</a></div></div><div class="fact"><div class="lbl">Level</div><div class="val">3</div></div><div class="fact"><div class="lbl">Mana</div><div class="val">15</div></div><div class="fact"><div class="lbl">Targets</div><div class="val">0</div></div><div class="fact"><div class="lbl">Cast time</div><div class="val">1000 ms</div></div><div class="fact"><div class="lbl">Spell number</div><div class="val">129</div></div></div><div class="flavor">Creates an illusionary wall of fire. This wall will cause illusionary wounds, which are never lethal, to victims walking through it. Requires rainbow ferns and firesand to cast.</div><h2>What it costs to cast</h2><div class="tablewrap"><table class="data">
+<thead><tr><th class="">Cost</th><th class="">Value</th><th class="">Notes</th></tr></thead>
+<tbody><tr><td class=""><strong>Mana</strong></td><td class="">15</td><td class="">Deducted by <code class="k">PayCosts</code>; the cast is refused if you are short.</td></tr>
+<tr><td class=""><strong>Reagents</strong></td><td class=""><a href="../items/rainbowfern.html">rainbow fern</a> ×3, <a href="../items/firesand.html">firesand</a> ×2</td><td class="">Consumed on a successful cast.</td></tr>
+<tr><td class=""><strong>Karma</strong></td><td class="">no requirement</td><td class=""></td></tr>
+<tr><td class=""><strong>Exertion</strong></td><td class="">10</td><td class="">Vigor drained per cast.</td></tr>
+<tr><td class=""><strong>Cast time</strong></td><td class="">1000 ms trance</td><td class="">You are locked in a casting trance for this long; taking damage can break it.</td></tr>
+<tr><td class=""><strong>Recovery</strong></td><td class="">1</td><td class="">Post-cast delay before the next action.</td></tr></tbody></table></div><p class="cite">kod/object/passive/spell/walspell/ifirewal.kod · costs enforced in kod/object/passive/spell.kod:705 <code class="k">CanPayCosts</code>, charged at :1256 <code class="k">PayCosts</code></p><h2>Learning it</h2><p>Taught by <a href="../creatures/riijamonk.html">Monk of Riija</a>.</p><h2>What it does</h2><p>The behaviour this class defines for itself, in the order the server runs it. The full text of each handler is reproduced below under <a href="#src">In the source</a>.</p><ul><li><code class="k">ResetReagents</code></li><li><code class="k">CastSpell</code></li><li><code class="k">PlaceWallElements</code></li></ul><h2>Sprites</h2><div class="gallery"><figure><img class="icon" src="../assets/img/iwallill_g1.png" alt="illusionary firewall group 1" loading="lazy"><figcaption>group 1</figcaption></figure><figure><img class="icon" src="../assets/img/iwallill_g2.png" alt="illusionary firewall group 2" loading="lazy"><figcaption>group 2</figcaption></figure></div><hr><a id="src"></a><h2>In the source</h2>
+<p class="cite">kod/object/passive/spell/walspell/ifirewal.kod:11</p>
+<p><code class="k">IllusionaryFireWall</code> is <code class="k">WallSpell</code> — full chain <code class="k">IllusionaryFireWall</code> ← <code class="k">WallSpell</code> ← <code class="k">Spell</code> ← <code class="k">PassiveObject</code> ← <code class="k">Object</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>IllusionaryFireWall_name_rsc</code></td><td class=""><em>illusionary firewall</em></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>IllusionaryFireWall_icon_rsc</code></td><td class=""><em>iwallill.bgf</em></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>IllusionaryFireWall_desc_rsc</code></td><td class=""><em>Creates an illusionary wall of fire.  This wall will cause illusionary wounds, which are n</em></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viSpell_num</code></td><td class=""><code>SID_ILLUSIONARY_FIREWALL</code></td><td class="">129</td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viSchool</code></td><td class=""><code>SS_RIIJA</code></td><td class="">5</td><td class="num " data-sort="40">40</td></tr>
+<tr><td class=""><code class="k">viSpell_level</code></td><td class=""><code>3</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="41">41</td></tr>
+<tr><td class=""><code class="k">viMana</code></td><td class=""><code>15</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="42">42</td></tr>
+<tr><td class=""><code class="k">viSpellExertion</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="43">43</td></tr>
+<tr><td class=""><code class="k">viCast_time</code></td><td class=""><code>1000</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">vrSucceed_wav</code></td><td class=""><code>IllusionaryFireWall_sound</code></td><td class=""><em>rwallill.wav</em></td><td class="num " data-sort="46">46</td></tr>
+<tr><td class=""><code class="k">viHarmful</code></td><td class=""><code>TRUE</code></td><td class="">1</td><td class="num " data-sort="48">48</td></tr>
+<tr><td class=""><code class="k">viWallCanKill</code></td><td class=""><code>FALSE</code></td><td class="">0</td><td class="num " data-sort="51">51</td></tr>
+<tr><td class=""><code class="k">viNumElements</code></td><td class=""><code>9</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="53">53</td></tr>
+<tr><td class=""><code class="k">vrSummonLimitMsg</code></td><td class=""><code>IllusionaryFireWall_failed_rsc</code></td><td class=""><em>There is too much summoning magic focused here to create a wall of fire.</em></td><td class="num " data-sort="55">55</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>ResetReagents()</h4>
+<pre><code>{
+      plReagents = $;
+      plReagents = Cons([&amp;RainbowFern,3],plReagents);
+      plReagents = Cons([&amp;Firesand,2], plReagents);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell/ifirewal.kod:62</p>
+<h4>CastSpell(who = $, lTargets = $, iSpellPower = 1)</h4>
+<pre><code>{
+      Send(who,@MsgSendUser,#message_rsc=IllusionaryFireWall_cast_rsc);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell/ifirewal.kod:71</p>
+<h4>PlaceWallElements(who = $, iSpellPower = 0)</h4>
+<pre><code>{
+      local oRoom, iRow, iCol, iFine_Row, iFine_Col, iXStep, iYStep, iAngle,
+            iDuration, iHalfrow, iHalfCol, iHalfFine_Row, iHalfFine_Col,
+            oElement;
+
+      iAngle = Send(who,@GetAngle);
+      iDuration = (iSpellPower * 2) + 30;
+      iDuration = Bound(iDuration,30,180);
+
+      
+      if iAngle &gt;= ANGLE_ENE OR iAngle &lt; ANGLE_ESE
+      {
+         iRow = Send(who,@GetRow) - 2;
+         iCol = Send(who,@GetCol) + 1;
+         iXStep = 0;
+         iyStep = 1;
+      }
+
+      
+      if iAngle &gt;= ANGLE_ESE AND iAngle &lt; ANGLE_SSE
+      {
+         iRow = Send(who,@GetRow) - 1;
+         iCol = Send(who,@GetCol) + 3;
+         iXStep = -1;
+         iyStep = 1;
+      }
+
+      
+      if iAngle &gt;= ANGLE_SSE AND iAngle &lt; ANGLE_SSW
+      {
+         iRow = Send(who,@GetRow) + 1;
+         iCol = Send(who,@GetCol) - 2;
+         iXStep = 1;
+         iyStep = 0;
+      }
+
+      
+      if iAngle &gt;= ANGLE_SSW AND iAngle &lt; ANGLE_WSW
+      {
+         iRow = Send(who,@GetRow) + 3;
+         iCol = Send(who,@GetCol) + 1;
+         iXStep = -1;
+         iyStep = -1;
+      }
+
+      
+      if iAngle &gt;= ANGLE_WSW AND iAngle &lt; ANGLE_WNW
+      {
+         iRow = Send(who,@GetRow) - 2;
+         iCol = Send(who,@GetCol) - 1;
+         iXStep = 0;
+         iYStep = 1;
+      }
+
+      
+      if iAngle &gt;= ANGLE_WNW AND iAngle &lt; ANGLE_NNW
+      {
+         iRow = Send(who,@GetRow) + 1;
+         iCol = Send(who,@GetCol) - 3;
+         iXStep = 1;
+         iyStep = -1;
+      }
+
+      
+      if iAngle &gt;= ANGLE_NNW AND iAngle &lt; ANGLE_NNE
+      {
+         iRow = Send(who,@GetRow) - 1;
+         iCol = Send(who,@GetCol) - 2;
+         iXStep = 1;
+         iyStep = 0;
+      }
+
+      
+      if iAngle &gt;= ANGLE_NNE and iAngle &lt; ANGLE_ENE
+      {
+         iRow = Send(who,@GetRow) - 3;
+         iCol = Send(who,@GetCol) - 1;
+         iXStep = 1;
+         iyStep = 1;
+      }
+
+      oRoom = Send(who,@GetOwner);
+
+      iFine_Row = Send(who,@GetFineRow);
+      iFine_Col = Send(who,@GetFineCol);
+
+      iHalfRow = 0;
+      iHalfCol = 0;
+      iHalfFine_Row = iFine_Row;
+      iHalfFine_Col = iFine_Col;
+
+      if iYStep &lt; 0 
+      {
+         if iHalfFine_Row &gt; (FINENESS_HALF - 1)
+         {
+            iHalfFine_Row = iHalfFine_Row - FINENESS_HALF;
+         }
+         else
+         {
+            iHalfRow = -1;
+            iHalfFine_Row = FINENESS_HALF + iHalfFine_Row;
+         }
+      }
+
+      if iYStep &gt; 0 
+      {
+         if iHalfFine_Row &lt; (FINENESS_HALF + 1)
+         {
+            iHalfFine_Row = iHalfFine_Row + FINENESS_HALF;
+         }
+         else
+         {
+            iHalfRow = 1;
+            iHalfFine_Row = iHalfFine_Row - FINENESS_HALF;
+         }
+      }
+      if iXStep &lt; 0 
+      {
+         if iHalfFine_Col &gt; (FINENESS_HALF - 1)
+         {
+            iHalfFine_Col = iHalfFine_Col - FINENESS_HALF;
+         }
+         else
+         {
+            iHalfCol = -1;
+            iHalfFine_Col = FINENESS_HALF + iHalfFine_Col;
+         }
+      }
+
+      if iXStep &gt; 0 
+      {
+         if iHalfFine_Col &lt; (FINENESS_HALF + 1)
+         {
+            iHalfFine_Col = iHalfFine_Col + FINENESS_HALF;
+         }
+         else
+         {
+            iHalfCol = 1;
+            iHalfFine_Col = iHalfFine_Col - FINENESS_HALF;
+         }
+      }
+
+      oElement = Create(&amp;WallOfFire,#MaxDamage=iSpellPower,#Caster=who,
+                        #Duration=iDuration,#Illusionary=TRUE);
+      Send(oRoom,@NewHold,#what=oElement,
+           #new_row=iRow,#new_col=iCol,
+           #fine_row=iFine_Row,#fine_col=iFine_Col);
+
+      oElement = Create(&amp;PassiveWallOfFire,#MaxDamage=iSpellPower,#Caster=who,
+                        #Duration=iDuration,#Illusionary=TRUE);
+      Send(oRoom,@NewHold,#what=oElement,
+           #new_row=iRow+iHalfRow,#new_col=iCol+iHalfCol,
+           #fine_row=iHalfFine_Row,#fine_col=iHalfFine_Col);
+
+      oElement = Create(&amp;WallOfFire,#MaxDamage=iSpellPower,#Caster=who,
+                        #Duration=iDuration,#Illusionary=TRUE);
+      Send(oRoom,@NewHold,#what=oElement,
+           #new_row=iRow+iYStep,#new_col=iCol+iXStep,
+           #fine_row=iFine_Row,#fine_col=iFine_Col);
+
+      oElement = Create(&amp;PassiveWallOfFire,#MaxDamage=iSpellPower,#Caster=who,
+                        #Duration=iDuration,#Illusionary=TRUE);
+      Send(oRoom,@NewHold,#what=oElement,
+           #new_row=iRow+iYStep+iHalfRow,#new_col=iCol+iXStep+iHalfCol,
+           #fine_row=iHalfFine_Row,#fine_col=iHalfFine_Col);
+
+      oElement = Create(&amp;WallOfFire,#MaxDamage=iSpellPower,#Caster=who,
+                        #Duration=iDuration,#Illusionary=TRUE);
+      Send(oRoom,@NewHold,#what=oElement,
+           #new_row=iRow+2*iYStep,#new_col=iCol+2*iXStep,
+           #fine_row=iFine_Row,#fine_col=iFine_Col);
+
+      oElement = Create(&amp;PassiveWallOfFire,#MaxDamage=iSpellPower,#Caster=who,
+                        #Duration=iDuration,#Illusionary=TRUE);
+      Send(oRoom,@NewHold,#what=oElement,
+           #new_row=iRow+(2*iYStep)+iHalfRow,#new_col=iCol+(2*iXStep)+iHalfCol,
+           #fine_row=iHalfFine_Row,#fine_col=iHalfFine_Col);
+
+      oElement = Create(&amp;WallOfFire,#MaxDamage=iSpellPower,#Caster=who,
+                        #Duration=iDuration,#Illusionary=TRUE);
+      Send(oRoom,@NewHold,#what=oElement,
+           #new_row=iRow+3*iYStep,#new_col=iCol+3*iXStep,
+           #fine_row=iFine_Row,#fine_col=iFine_Col);
+
+      oElement = Create(&amp;PassiveWallOfFire,#MaxDamage=iSpellPower,#Caster=who,
+                        #Duration=iDuration,#Illusionary=TRUE);
+      Send(oRoom,@NewHold,#what=oElement,
+           #new_row=iRow+(3*iYStep)+iHalfRow,#new_col=iCol+(3*iXStep)+iHalfCol,
+           #fine_row=iHalfFine_Row,#fine_col=iHalfFine_Col);
+
+      oElement = Create(&amp;WallOfFire,#MaxDamage=iSpellPower,#Caster=who,
+                        #Duration=iDuration,#Illusionary=TRUE);
+      Send(oRoom,@NewHold,#what=oElement,
+           #new_row=iRow+4*iYStep,#new_col=iCol+4*iXStep,
+           #fine_row=iFine_Row,#fine_col=iFine_Col);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/passive/spell/walspell/ifirewal.kod:78</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

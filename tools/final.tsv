@@ -1,0 +1,178 @@
+=== ROOMS WHOSE plMonsters WEIGHTS DO NOT SUM TO 100 (roll can fall through = no spawn) ===
+    95%  A foul place to wander  (kocsew1.kod:64)
+    60%  Castle Victoria  (castle1.kod:49)
+
+=== FULL MONSTER TABLE ===
+class	display name	lvl	maxHP	diff	karma	offense=defense	dmg/hit	atk interval ms	atk type	spell	aggro	treasure	rooms
+EvilTwin	evil twin	1	1	9	0	543	1-1	1520-2020	ATCK_WEAP_SLASH	0	aggr|newbiesafe	TID_NONE	dark angel(fixed); evil twin(fixed)
+OrcPitBossBody	body of the orc pit boss	1	1	1	0	63	1-1	4040-4540	ATCK_WEAP_WHIP	0	NOFIGHT	TID_NONE	orc pit boss(fixed)
+Assassin	Roq	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	A shadowy corner(fixed)
+BarloqueApothecary	Joguer	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Joguer's Herbs and Roots(fixed)
+BarloqueBanker	Setag'lib	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+BarloqueBartender	Meidei	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Bhrama & Falcon(fixed)
+BarloqueBlacksmith	Fehr'loi Qan	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Royal Blacksmith of Barloque(fixed)
+BarloqueClerk	Caramo	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Office of the Justicar(fixed)
+BarloqueInnkeeper	Pritchett	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Brownestone Inn(fixed)
+BarloqueMerchant	Herbutte	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Adventurer's Hall of Barloque(fixed); The Sparkling Stone Shop(fixed)
+BarloqueTown		25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+BarloqueUrchin	urchin	25	25	0	10	75	1-3	3550-4050	ATCK_WEAP_HIT	0	NPC-unattackable	TID_WIMPY	NO SPAWN IN KOD
+Barloquetailor	Madelia	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	room_name_Castle2E(fixed)
+BasicInnKeeper	Rycksher	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Duke's Grand Ballroom(fixed)
+BlackMummy	shadow mummy	25	25	4	-20	315	1-3	3130-3630	ATCK_WEAP_HIT	0	aggr	TID_NEWBIE_AREA	Mausoleum(fixed)
+Brambles	patch of bramble	25	25	4	0	315	1-3	3410-3910	ATCK_WEAP_SLASH	0	NOFIGHT	TID_NONE	The Badlands(fixed); bramble wall(fixed)
+CorNothInnkeeper	D'Franco	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Cibilo Creek Inn(fixed)
+CorNothSergeant	Rook	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Weapon Master's Abode(fixed)
+CorNothTailor	Hester Gilk	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Spindle and the Spinster(fixed)
+CorNothTown		25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+CorNothUrchin	urchin	25	25	0	10	75	1-3	3550-4050	ATCK_WEAP_HIT	0	NPC-unattackable	TID_WIMPY	NO SPAWN IN KOD
+CornothGrocer	Solomon	25	25	0	0	75	1-3	4250-4750	ATCK_WEAP_HIT	0	NOFIGHT	TID_NONE	Solomon's Edibles(fixed)
+Council	Councilor	25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+DarkWizard	Maleval	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The meeting place of the Gods(fixed)
+Decorator	interior design consultant	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	A tastefully appointed room(fixed)
+DukeGuard	Keep Guard	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Courtyard of Blackstone Keep(fixed); Blackstone Keep(fixed); Office of the Justicar(fixed); Old Jailhouse(fixed); The Duke's Feast Hall(fixed); The Duke's Grand Ballroom(fixed)
+DukeLiege	Duke Akardius	25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+Factions		25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+FarenPriestess	Priestess Tenuv'vyal	25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Badlands(fixed)
+FiveCouncilor	Esseldi	25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+Goad	The Goad	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Goad's Grinder(fixed)
+GraphicTester	test1.bgf	25	25	5	0	375	1-3	2640-3140	ATCK_WEAP_HIT	0	passive	TID_NONE	?(fixed)
+GuildCreator	Frular	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Guildmaster's Hall(fixed)
+HazarApothecary	Ravi	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+HazarBartender	Eric d'Jorn	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Eric's Stout Spirits(fixed)
+HazarBlacksmith	Tomas	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Blacksmith of Hazar(fixed)
+HazarElder	Rodric d'Stane	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Home of Roderic D'Stane(fixed)
+HazarInnKeeper	Marcus	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Inn of Hazar(fixed)
+HazarTown		25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+Heretic	Miriana	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The meeting place of the Gods(fixed)
+HunterGhost	Tendrath	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The meeting place of the Gods(fixed)
+Izzio	Izzio_name_rsc	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The meeting place of the Gods(fixed)
+JasperBanker	Yevitan	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Royal Bank of Jasper(fixed)
+JasperBartender	Pietro	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	room_name_jaspertavern(fixed)
+JasperBlacksmith	Quintor	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	room_name_jaspersmith(fixed)
+JasperElder	Afiera D'xor	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	room_name_jasperelder(fixed)
+JasperInnKeeper	Widow Qesino	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	room_name_jasperInn(fixed)
+JasperMerchant	Zhieu B'hob	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	room_name_jasperstore(fixed)
+JasperTown		25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+JasperUrchin	urchin	25	25	0	10	75	1-3	3550-4050	ATCK_WEAP_HIT	0	NPC-unattackable	TID_WIMPY	NO SPAWN IN KOD
+JealousGeneral	Jonas D'Accor	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+KocatanApothecary	Zala ix'Mecya	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Two Lizards Magic Shop(fixed)
+KocatanBanker	Huital ko'Nosak	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Hungry Vaults(fixed)
+KocatanBartender	Oxal ix'Tokak	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Barking Monster(fixed)
+KocatanBlacksmith	Ixla cha'Totlak	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Chimney House(fixed)
+KocatanBonePriestess	The Bone Priestess	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Lair of the Bone Priestess(fixed)
+KocatanBowMaker	Hanla zax'Ta	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Bowmaker's Hut(fixed)
+KocatanCaptainEvil	Xacal ko'Ixca	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The East Tower(fixed)
+KocatanCaptainGood	Cital ko'Manca	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The East Tower(fixed)
+KocatanInnkeeper	Moxal ix'Hanak	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Aerie Guest House(fixed)
+KocatanLanguageMaster	Quetzal	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Hall of Heroes East(fixed)
+KocatanMadScientist	Bahal zax'Ot	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Hut of the Mad Scientist(fixed)
+KocatanShopkeeper	Pacal ix'Anoak	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Neglected Arsenal(fixed)
+KocatanTailor	Tepal ix'Zonak	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Crooked Hem Garment Shop(fixed)
+KocatanTown		25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+KocatanVaultman	Itzal cha'Nosak	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Hungry Vaults(fixed)
+KocatanWeaponsMaster	Kochtal ko'Tulca	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Hall of Heroes West(fixed)
+Kocatansentry	sentry	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Hungry Vaults(fixed); The East Tower(fixed); Konima's Ascension(fixed)
+KraananPriestess	Priestess Qerti'nya	25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Temple of Kraanan(fixed)
+MarionBartender	Tova	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Limping Toad Inn and Tavern(fixed)
+MarionBlacksmith	Colhorr	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Ye Olde Slasher Salesman(fixed)
+MarionElder	Ran er'Hoth	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Marion(fixed)
+MarionHealer	Lady Aftyn	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Lady Aftyn's Sanctuary(fixed)
+MarionInnkeeper	Morrigan	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Limping Toad Inn and Tavern(fixed)
+MarionTown		25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+MarionUrchin	urchin	25	25	0	10	75	1-3	3550-4050	ATCK_WEAP_HIT	0	NPC-unattackable	TID_WIMPY	NO SPAWN IN KOD
+Minstrel	Parrin Aragone	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The meeting place of the Gods(fixed)
+Mummy	mummy	25	25	2	-20	195	1-3	3550-4050	ATCK_WEAP_HIT	0	aggr	TID_NEWBIE_AREA	Mausoleum(50); Mausoleum(fixed); animate(fixed)
+MummyNoTreasure	mummy	25	25	2	-20	195	1-3	3550-4050	ATCK_WEAP_HIT	0	aggr	TID_NONE	Mausoleum(50); Mausoleum(fixed)
+OneCouncilor	Alzahakar	25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+Priestess	priestess	25	25	0	0	75	1-3	4250-4750	ATCK_WEAP_HIT	0	passive	TID_NONE	NO SPAWN IN KOD
+PrincessGuard	Keep Guard	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Banquet Hall of the Bourgeois Castle(fixed); Royal Library of the Bourgeois Castle(fixed); Bourgeois Castle(fixed); The Assembly Chamber(fixed); The Queen's Way(fixed)
+PrincessLiege	Princess Kateriina	25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+QorPriestess	Priestess Zuxana	25	25	0	-90	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Temple of Qor(fixed)
+RebelLiege	Jonas D'Accor	25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+RiijaMonk	Monk of Riija	25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Temple of Riija(fixed)
+ShalillePriestess	Priestess Xiana	25	25	0	90	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Temple of Shal'ille(fixed)
+SpiderBaby	baby spider	25	25	4	-10	315	1-3	2850-3350	ATCK_WEAP_BITE	0	aggr	TID_WIMPY	Deep Woods of Ileria(60); West Merchant Way(50); East Merchant Way through Ilerian Woods(65); Lake of Jala's Song(50); Main gate to Cor Noth(75); The King's Way(50); Main gate of Barloque-- Royal City of Meridian(60); The Queen's Way(40)
+Temples		25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+Thief	Thief	25	25	0	0	75	1-3	4250-4750	ATCK_WEAP_HIT	0	NOFIGHT	TID_NONE	NO SPAWN IN KOD
+ThreeCouncilor	Cylill	25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+TosApothecary	Frisconar	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Frisconar's Mysticals(fixed)
+TosBanker	Skivlat	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	First Royal Bank of Tos(fixed)
+TosBlacksmith	Fehr'loi Qan	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+TosInnKeeper	Paddock	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Familiars(fixed)
+TosTown		25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+TosUrchin	urchin	25	25	0	10	75	1-3	3550-4050	ATCK_WEAP_HIT	0	NPC-unattackable	TID_WIMPY	NO SPAWN IN KOD
+TosWatcher	Watcher	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Arena of Kraanan(fixed)
+Towns		25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+TwoCouncilor	Bei Naq	25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+Wanderer		25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+barloqueVaultman	Obert Cair'bre	25	25	0	0	75	1-3	4250-4750	ATCK_WEAP_HIT	0	NOFIGHT	TID_NONE	Office of the Barloque Vaultman(fixed)
+fourCouncilor	Drechx	25	25	0	0	75	1-3	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	NO SPAWN IN KOD
+kocatanTradeMaster	Wulfgang zax'Ak	25	25	0	0	75	1-3	3410-3910	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	The Remote Trading Post of Wulfgang zax'Ak(fixed)
+ladypheonix	LadyPhoenix	25	25	0	0	75	1-3	4250-4750	ATCK_WEAP_HIT	0	passive	TID_NONE	NO SPAWN IN KOD
+Centipede	centipede	30	30	5	15	390	2-4	2080-2580	ATCK_WEAP_BITE	0	passive	TID_WIMPY_MEDIUM	West Merchant Way(50); East Merchant Way through Ilerian Woods(35); The Sweet Grass Prairies(25); East Merchant Way(55); Off the beaten path(30); Lake of Jala's Song(50); Main gate to Cor Noth(25); The King's Way(10)
+GiantRat	giant rat	30	30	1	-20	150	2-4	2920-3420	ATCK_WEAP_CLAW	0	aggr	TID_RAT	The Sewers of Barloque(94); The Sewers of Barloque(55); The Sewers of Barloque(20); Off the beaten path(60); The King's Way(50); Outskirts of Barloque(70); Main gate to the city of Tos(70); The Queen's Way(60)
+GroundWormLarva	groundworm larva	35	35	3	-10	285	2-4	3060-3560	ATCK_WEAP_HIT	ATCK_SPELL_ACID	karma-aggr	TID_WORM_LARVA	Valley of Ileria(35); Deep in the Forest of Farol(60); The Sweet Grass Prairies(75); Off the beaten path(70); Off the beaten path(40)
+Slime	slime	35	35	4	0	345	2-4	2850-3350	ATCK_WEAP_HIT	ATCK_SPELL_ACID	aggr	TID_WIMPY_MEDIUM	The sandy shores of the Great Ocean(50); Outskirts of Barloque(30); apparition(fixed)
+Ant	ant	40	48	4	-10	360	2-5	2850-3350	ATCK_WEAP_BITE	0	aggr	TID_WIMPY_MEDIUM	The Badlands(60); Source of the River Ille(30); The Forests of Meridian(60); The Forests of Meridian(40); The Deep Dark Woods of Tos(30); The Deep Dark Woods of Marion(60); The Flatlands(55)
+SpectralMummy	spectral mummy	40	48	5	-35	420	2-5	2640-3140	ATCK_WEAP_HIT	0	aggr	TID_MUMMY	The crypt in Marion(100); The crypt in Marion(fixed)
+Orc	orc	45	54	6	-40	495	3-5	2150-2650	ATCK_WEAP_SLASH	0	aggr	TID_ORC	An ancient place, its origin forgotten(80); Ugol's Warren Entrance(60); An Enigmatic Chamber(70); The Berdonne Canyons(50); A Deep, Dark, Spooky, Icky Cave(50); Under the shadow of the Sentinel(40)
+Reflection	reflection	45	54	4	0	375	3-5	2570-3070	ATCK_WEAP_SLASH	0	aggr|newbiesafe	TID_NONE	dark angel(fixed); reflection(fixed)
+DukeTroop	soldier of the Duke's army	50	60	2	0	270	3-6	2990-3490	ATCK_WEAP_SLASH	0	newbiesafe	TID_NONE	NO SPAWN IN KOD
+DuskRat	dusk rat	50	60	6	-40	510	3-6	1590-2090	ATCK_WEAP_CLAW	0	aggr	TID_RAT	A foul place to wander(95); Up Chuk Creek without a paddle(100)
+Ent	living tree	50	60	4	40	390	3-6	3410-3910	ATCK_WEAP_WHIP	0	karma-aggr	TID_ENT	Deep Woods of Ileria(40); Forest of Farol(30); Deep in the Forest of Farol(70); Deep in the Forest of Farol(40); Faronath, home of the TreeFolk(95); Deep Forest of Farol(15)
+EvilEnt	diseased tree	50	60	4	-40	390	3-6	3410-3910	ATCK_WEAP_WHIP	0	karma-aggr	TID_ENT	NO SPAWN IN KOD
+FungusBeast	fungus beast	50	60	1	10	210	3-6	3760-4260	ATCK_WEAP_HIT	0	aggr	TID_MEDIUM	Valley of Ileria(65); The sandy shores of the Great Ocean(50); Source of the River Ille(70); apparition(fixed)
+PrincessTroop	soldier of the Princess' army	50	60	2	0	270	3-6	2990-3490	ATCK_WEAP_SLASH	0	newbiesafe	TID_NONE	NO SPAWN IN KOD
+RebelTroop	rebel soldier	50	60	2	0	270	3-6	2990-3490	ATCK_WEAP_SLASH	0	newbiesafe	TID_NONE	The Sewers of Jasper(1)
+Spider	spider	50	60	4	-30	390	3-6	2570-3070	ATCK_WEAP_BITE	0	aggr	TID_MEDIUM_TOUGH	Forest of Farol(70); East Merchant Way(45); The Forests of Meridian(40); The Forests of Meridian(60); The Deep Dark Woods of Tos(70); Western border of the Twisted Wood(60); Outskirts of Tos(50); The Twisted Wood(55)
+Revenant	revenant	55	66	5	20	465	3-6	2080-2580	ATCK_WEAP_SLASH	0	aggr	TID_NONE	?(fixed)
+Scorpion	giant scorpion	55	66	8	20	645	3-6	1450-1950	ATCK_WEAP_STING	0	passive	TID_MEDIUM_TOUGH	Druid Hills(40); apparition(fixed)
+Zombie	zombie	55	66	4	-45	405	3-6	3130-3630	ATCK_WEAP_SLASH	0	karma-aggr	TID_ZOMBIE	Upstairs in Castle Victoria(40); The Throne Room of Victoria Castle(20); The Crypt(80); The Graveyard of Tos(85); Castle Victoria(20); animate(fixed)
+BatteredSkeleton	battered skeleton	60	72	4	-70	420	3-8	2570-3070	ATCK_WEAP_THRUST	0	aggr	TID_SKELETON2	Upstairs in Castle Victoria(60); An ancient place, its origin forgotten(fixed); Resting place of Marion's ancestors(20); animate(fixed)
+EvilFairy	teotimixlal	60	72	5	-50	480	3-8	1800-2300	0	ATCK_SPELL_SHOCK	karma-aggr	TID_FAIRY	?(fixed)
+Fairy	fey elhai	60	72	5	50	480	3-8	1800-2300	0	ATCK_SPELL_SHOCK	karma-aggr	TID_FAIRY	?(fixed)
+NecromancerTroop	necromancer	60	72	4	-40	420	3-8	2570-3070	ATCK_WEAP_SLASH	0	newbiesafe	TID_NONE	NO SPAWN IN KOD
+SnowRat	snow rat	60	72	4	-50	420	3-8	2290-2790	ATCK_WEAP_CLAW	0	aggr	TID_RAT	The Dreaded Caves of Ice(55)
+flytrap	Man-eating Plant	60	72	5	-25	480	3-8	2920-3420	0	0	passive	TID_LOW_HUMAN	NO SPAWN IN KOD
+RedAnt	mutant ant	65	78	8	-40	675	3-8	1730-2230	ATCK_WEAP_BITE	0	aggr	TID_TOUGH	Seafarer's Peak(60); The Hills(30); The Berdonne Canyons(50); apparition(fixed)
+Frogman	frogman	70	84	5	80	510	3-9	2360-2860	ATCK_WEAP_PIERCE	0	karma-aggr	TID_FROGMAN	The Great Ocean(20); The King's Way(90)
+DeathSpider	black spider	75	90	5	-30	525	4-9	2360-2860	ATCK_WEAP_BITE	0	aggr	TID_BLACK_SPIDER	The Cragged Mountains(40); An ancient place, its origin forgotten(20); Winding Caverns(45); Under the shadow of the Sentinel(60)
+LivingStatue	statue	75	90	5	-40	525	4-9	3200-3700	ATCK_WEAP_SLASH	0	passive	TID_MEDIUM_TOUGH	The crypt in Marion(fixed); Resting place of Marion's ancestors(fixed)
+Skeleton	skeleton	75	90	5	-50	525	4-9	2360-2860	ATCK_WEAP_THRUST	0	aggr	TID_TOUGH	An ancient place, its origin forgotten(fixed); Resting place of Marion's ancestors(80); Winding Caverns(55); The Crypt(20); The Graveyard of Tos(15); Castle Victoria(40); animate(fixed)
+CaveOrc	cave orc	80	96	7	-55	660	4-10	1660-2160	ATCK_WEAP_SLASH	0	HYPER|aggr	TID_CAVE_ORC	Ugol's Warren Entrance(40); The Archaic Hollows(70); Obfal's Sepulchre(75); Konima's Ascension(70); Grog's Antechamber(60); Brog's Antechamber(70); Lair of the Orc Pit Boss(100)
+FactionTroop	faction troop	80	96	4	0	480	4-10	2570-3070	ATCK_WEAP_SLASH	0	newbiesafe	TID_NONE	NO SPAWN IN KOD
+OrcWizard	orc wizard	80	96	7	-60	660	4-10	1940-2440	ATCK_WEAP_BLUDGEON	0	HYPER|aggr	TID_ORC_WIZARD	An Enigmatic Chamber(30); Aqueducts of Merb(60); Obfal's Sepulchre(25); Konima's Ascension(30); Grog's Antechamber(40)
+Iceperson	ice creature	90	108	8	75	750	5-11	2010-2510	ATCK_WEAP_PIERCE	ATCK_SPELL_COLD	karma-aggr	TID_ICE_PERSON	NO SPAWN IN KOD
+Troll	troll	90	108	8	-75	750	5-11	1730-2230	ATCK_WEAP_HIT	0	aggr	TID_HIGH_HUMAN	Seafarer's Peak(40); The Hills(70); The Cragged Mountains(60); The border of the Badlands(30); The Twisted Wood(45); Ukgoth, Holy Land of Trolls(100); Druid Hills(60); The Dreaded Caves of Ice(45)
+AvarShaman	peet-seeeep avar shaman	100	120	8	80	780	5-13	2010-2510	ATCK_WEAP_PIERCE	ATCK_SPELL_QUAKE	aggr	TID_AVAR_SHAMAN	Headquarters for the Avar Warriors(18); Camp of the Warrior Avars(18); Turf of the Warrior Avars(10); Ruins of the Riija Temple(25); Territory of the Noble Avars(15); Deep in the Jungle(18); The Clearing of the Trading Post(10); Headquarters of the Noble Avars(25)
+GroundWorm	groundworm	100	120	5	30	600	5-13	2080-2580	ATCK_WEAP_HIT	ATCK_SPELL_ACID	aggr	TID_TOUGH	The Badlands(40); The border of the Badlands(70); Outskirts of Tos(50)
+Guard	guard cow	100	120	5	100	600	5-13	2080-2580	ATCK_WEAP_BITE	0	murderers-only	TID_NONE	NO SPAWN IN KOD
+TuskedSkeleton	tusked skeleton	100	120	6	-70	660	5-13	1870-2370	ATCK_WEAP_SLASH	0	aggr	TID_SKELETON3	The Dungeon of Castle Brax(50); Ancient Building(50); Decaying City of Brax(40); Within the Walls of Castle Brax(40); The Throne Room of Victoria Castle(80); animate(fixed)
+Lupogg	lupogg	105	126	9	75	855	6-13	2220-2720	ATCK_WEAP_BITE	0	aggr	TID_VERY_TOUGH	The Sewers of Barloque(6); The Sewers of Barloque(45); The Sewers of Barloque(80); The Sewers of Jasper(5); The Sewers of Jasper(60); The Sewers of Jasper(85); The Ancient Smuggler's Crossing(100)
+OrcPitBoss	orc pit boss	115	138	7	-90	765	6-14	1660-2160	ATCK_WEAP_SLASH	0	HYPER|aggr	TID_ORC_CHIEF	NO SPAWN IN KOD
+Avar	peet-seeeep avar warrior	120	144	7	40	780	6-15	1940-2440	ATCK_WEAP_BLUDGEON	0	aggr	TID_AVAR	Into the Jungle(10); Outside the Guard Tower(95); The Cliffs(10); Headquarters for the Avar Warriors(60); Camp of the Warrior Avars(50); The Chasm(90); Turf of the Warrior Avars(50); Ruins of the Riija Temple(60)
+DragonFly	dragonfly	120	144	6	40	720	6-15	2150-2650	ATCK_WEAP_PIERCE	0	aggr	TID_DRAGONFLY	Cliff Hive(90); The Jungle Cliffs(100); A notch in the jungle(100); Into the Jungle(90); Outside the Guard Tower(5); The Cliffs(90); Into the Jungle(100); Origin of the Kriipa(30)
+DragonFlyPet	pet dragonfly	120	144	6	40	720	6-15	2150-2650	ATCK_WEAP_PIERCE	0	aggr|newbiesafe	TID_NONE	NO SPAWN IN KOD
+NarthylWorm	narthyl worm	120	144	7	0	780	6-15	2220-2720	ATCK_WEAP_PIERCE	0	HYPER|aggr	TID_NARTHYL_WORM	Ancient Building(60); Ancient Graveyard of Brax(40); Decaying City of Brax(60); Ruins of Castle Brax(40)
+StoneTroll	StoneTroll_realname_rsc	120	144	8	-100	840	6-15	1450-1950	ATCK_WEAP_HIT	0	aggr	TID_MEDIUM_HUMAN	Ukgoth, Holy Land of Trolls(fixed); Martyr's Battleground(85)
+DaemonSkeleton	daemon skeleton	130	156	8	-90	870	6-16	1450-1950	ATCK_WEAP_THRUST	0	HYPER|aggr	TID_SKELETON4	The Dungeon of Castle Brax(50); Ancient Building(40); Ancient Building(50); Ancient Graveyard of Brax(60); Within the Walls of Castle Brax(60); Ruins of Castle Brax(60); animate(fixed)
+GroundWormQueen	groundworm queen	130	156	7	-30	810	6-16	2220-2720	ATCK_WEAP_HIT	ATCK_SPELL_ACID	HYPER	TID_WORM_QUEEN	Brog's Antechamber(30); Martyr's Battleground(15); The Badlands(70)
+AvarChieftain	avarchief_name_rsc	135	162	9	80	945	7-16	1240-1740	ATCK_WEAP_PIERCE	0	aggr	TID_AVAR_CHIEF	Headquarters for the Avar Warriors(7); Camp of the Warrior Avars(5); The Chasm(10); Ruins of the Riija Temple(15); Lair of the Bone Priestess(10); Territory of the Noble Avars(5); Deep in the Jungle(2); The Clearing of the Trading Post(10)
+DragonFlyQueen	dragonfly queen	145	174	6	40	795	7-18	1870-2370	ATCK_WEAP_PIERCE	0	aggr	TID_DRAGONFLY	Cliff Hive(10); Outside the Mad Scientist's Hut(100)
+MolluskMonster	mollusk creature	150	180	7	90	870	8-19	1940-2440	ATCK_WEAP_BLUDGEON	0	passive	TID_TOUGH	Deep in the Forest of Farol(30); The Great Ocean(80)
+Thrasher	thrasher	150	180	7	-75	870	8-19	1660-2160	ATCK_WEAP_BLUDGEON	0	HYPER|aggr	TID_THRASHER	Affirmation of the Forsaken(100); Affirmation of the Forsaken(fixed)
+XeoAir	ve'xeochicatl	150	180	7	0	870	8-19	1380-1880	ATCK_WEAP_MAGIC	0	aggr	TID_NONE	sky heartstone(fixed); ?(fixed)
+Xeochicatl	Xeochicatl	150	180	8	0	930	8-19	1730-2230	ATCK_WEAP_MAGIC	0	aggr	TID_NONE	NO SPAWN IN KOD
+Kriipa	kriipa	160	192	6	-50	840	8-20	1870-2370	ATCK_WEAP_SLASH	0	HYPER|aggr	TID_DRAGONFLY	Headquarters for the Avar Warriors(15); Camp of the Warrior Avars(27); Path to the Ruins(100); Turf of the Warrior Avars(40)
+SpiderQueen	queen spider	165	198	9	-90	1035	9-20	2360-2860	ATCK_WEAP_BITE	0	aggr	TID_SPIDER_QUEEN	The Spider Nest(fixed)
+XeoFire	ro'xeochicatl	170	204	7	0	930	9-21	1660-2160	ATCK_WEAP_MAGIC	0	aggr	TID_NONE	red heartstone(fixed); ?(fixed)
+Yeti	yeti	170	204	9	0	1050	9-21	1800-2300	ATCK_WEAP_CLAW	0	aggr	TID_VERY_TOUGH	The Dreaded Caves of Ice(fixed)
+XeoWater	ma'xeochicatl	190	228	8	0	1050	9-24	1450-1950	ATCK_WEAP_MAGIC	0	aggr	TID_NONE	blue heartstone(fixed); ?(fixed)
+Cow	cow	200	240	0	0	600	10-25	3690-4190	ATCK_WEAP_HIT	0	NOFIGHT	TID_NONE	Raza(fixed); summon bovine(fixed)
+DarkAngel	dark angel	200	240	9	-100	1140	10-25	960-1460	ATCK_WEAP_MAGIC	ATCK_SPELL_FIRE	aggr|newbiesafe	TID_DARK_ANGEL	NO SPAWN IN KOD
+DeadLich	ghostly remains of Queen Venya'cyr	200	240	9	-100	1140	10-25	2360-2860	ATCK_WEAP_HIT	0	NOFIGHT|NPC-unattackable	TID_NONE	Inner Sanctum of Queen Venya'cyr(fixed)
+Ghost	ghost	200	240	5	-100	900	10-25	2080-2580	ATCK_WEAP_HIT	0	aggr	TID_GHOST	The Throne Room of Victoria Castle(fixed)
+Lich	Queen Venya'cyr	200	240	9	-100	1140	10-25	1240-1740	ATCK_WEAP_HIT	ATCK_SPELL_UNHOLY	HYPER|aggr	TID_LICH	Inner Sanctum of Queen Venya'cyr(fixed)
+LupoggKing	lupogg king	200	240	9	0	1140	10-25	1800-2300	ATCK_WEAP_CLAW	0	HYPER|aggr	TID_LUPOGG_KING	NO SPAWN IN KOD
+Shadowbeast	shadowbeast	200	240	7	-100	1020	10-25	1940-2440	ATCK_WEAP_SLASH	0	aggr	TID_VERY_TOUGH	The Archaic Hollows(30); Aqueducts of Merb(40)
+XeoEarth	te'xeochicatl	200	240	9	0	1140	10-25	1520-2020	ATCK_WEAP_MAGIC	0	aggr	TID_NONE	brown heartstone(fixed); ?(fixed)

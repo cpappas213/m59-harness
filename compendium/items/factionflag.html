@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>flag — Meridian 59 Compendium</title>
+<meta name="description" content="This is the flag of neutrality.">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../skills/index.html">Skills</a><a href="../items/index.html" class="on">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Items</a> › flag</p>
+<div class="hero"><div class="heroText"><h1>flag</h1><p class="lede">This is the flag of neutrality.</p><div class="tags"><span class="tag ">faction</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Weight</div><div class="val">10</div></div><div class="fact"><div class="lbl">Bulk</div><div class="val">10</div></div><div class="fact"><div class="lbl">Value</div><div class="val">20 sh</div></div><div class="fact"><div class="lbl">Durability</div><div class="val">1</div></div></div><hr><h2>In the source</h2>
+<p class="cite">kod/object/item/passitem/factflag.kod:11</p>
+<p><code class="k">FactionFlag</code> is <code class="k">PassiveItem</code> — full chain <code class="k">FactionFlag</code> ← <code class="k">PassiveItem</code> ← <code class="k">Item</code> ← <code class="k">Object</code>. Subclasses: <code class="k">DukeFlag</code>, <code class="k">PrincessFlag</code>, <code class="k">RebelFlag</code>.</p>
+<h3>Class variables declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Variable</th><th class="">Value</th><th class="">Resolves to</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">vrName</code></td><td class=""><code>FactionFlag_name_rsc</code></td><td class=""><em>flag</em></td><td class="num " data-sort="29">29</td></tr>
+<tr><td class=""><code class="k">vrDesc</code></td><td class=""><code>FactionFlag_desc_rsc</code></td><td class=""><em>This is the flag of neutrality.</em></td><td class="num " data-sort="30">30</td></tr>
+<tr><td class=""><code class="k">vrIcon</code></td><td class=""><code>FactionFlag_icon_rsc</code></td><td class=""><em>dukeflag.bgf</em></td><td class="num " data-sort="31">31</td></tr>
+<tr><td class=""><code class="k">viItem_type</code></td><td class=""><code>ITEMTYPE_SPECIAL</code></td><td class="">16384</td><td class="num " data-sort="33">33</td></tr>
+<tr><td class=""><code class="k">viValue_average</code></td><td class=""><code>20</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="35">35</td></tr>
+<tr><td class=""><code class="k">viWeight</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="36">36</td></tr>
+<tr><td class=""><code class="k">viBulk</code></td><td class=""><code>10</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="37">37</td></tr>
+<tr><td class=""><code class="k">viGround_group</code></td><td class=""><code>2</code></td><td class=""><span class="muted">—</span></td><td class="num " data-sort="39">39</td></tr>
+<tr><td class=""><code class="k">viFaction</code></td><td class=""><code>FACTION_NEUTRAL</code></td><td class="">0</td><td class="num " data-sort="41">41</td></tr></tbody></table></div>
+<h3>Properties declared here</h3>
+<div class="tablewrap"><table class="data">
+<thead><tr><th class="">Property</th><th class="">Initial value</th><th class="num ">Line</th></tr></thead>
+<tbody><tr><td class=""><code class="k">ptTeleportIdle</code></td><td class=""><code>$</code></td><td class="num " data-sort="45">45</td></tr>
+<tr><td class=""><code class="k">pbCounted</code></td><td class=""><code>FALSE</code></td><td class="num " data-sort="46">46</td></tr></tbody></table></div>
+<h3>Behaviour overridden here</h3>
+<h4>Constructor()</h4>
+<pre><code>{
+      send(send(SYS,@GetTerritoryGame),@IncrementFlagItemCount,#flag=self);
+      pbCounted = TRUE;
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:50</p>
+<h4>ReqNewOwner(what = $)</h4>
+<pre><code>{
+      local oSoldierShield;
+
+      if IsClass(what,&amp;StorageBox)
+      {
+         return FALSE;
+      }
+
+      if IsClass(what,&amp;Player)
+      {
+         oSoldierShield = send(what,@FindUsing,#class=&amp;SoldierShield);
+
+         if oSoldierShield = $
+            OR send(oSoldierShield,@GetFaction) &lt;&gt; viFaction
+         {
+            return FALSE;
+         }
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:58</p>
+<h4>NewOwner(what = $)</h4>
+<pre><code>{
+      local oRoom, oFlagpole;
+
+      if ptTeleportIdle &lt;&gt; $
+      {
+         DeleteTimer(ptTeleportIdle);
+         ptTeleportIdle = $;
+      }
+      
+      if what = $
+      {
+         propagate;
+      }
+      
+      if not isClass(what,&amp;User)
+      {
+         ptTeleportIdle = CreateTimer(self,@TeleportIdle,IDLE_TIME);
+      }
+
+      oRoom = send(SYS,@UtilGetRoomRecurse,#what=what);
+      oFlagpole = send(oRoom,@FindHoldingActive,#class=&amp;Flagpole);
+      if oFlagpole &lt;&gt; $
+      {
+         post(oFlagpole,@CheckClaimerFlag);
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:81</p>
+<h4>TeleportIdle()</h4>
+<pre><code>{
+      ptTeleportIdle = $;
+      send(self,@TeleportHome);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:111</p>
+<h4>TeleportHome()</h4>
+<pre><code>{
+      
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:119</p>
+<h4>CanShatter()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:125</p>
+<h4>ReqDMDelete()</h4>
+<p>Flags are not deleted with the DM Clear Ability command.</p>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:130</p>
+<h4>DestroyDisposable()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:136</p>
+<h4>DropSelf(what = $)</h4>
+<pre><code>{
+      local oRoom, iRow, iCol;
+   
+      oRoom = send(what,@GetOwner);
+      iRow = send(what,@GetRow);
+      iCol = send(what,@GetCol);
+
+      send(oRoom,@Newhold,#what=self,#new_col=iCol,#New_row=iRow);
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:141</p>
+<h4>UserLogoff()</h4>
+<pre><code>{
+      if isclass(poOwner,&amp;Admin)
+      {
+         propagate;
+      }
+      
+      send(poOwner,@MsgSendUser,#message_rsc=FactionFlag_drops,
+           #parm1=send(self,@GetCapDef),#parm2=vrName);
+
+      Send(self,@DropSelf,#what=poOwner);
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:154</p>
+<h4>Delete()</h4>
+<pre><code>{
+      if ptTeleportIdle &lt;&gt; $
+      {
+         DeleteTimer(ptTeleportIdle);
+         ptTeleportIdle = $;
+      }
+
+      if pbCounted
+      {
+         send(send(SYS,@GetTerritoryGame),@DecrementFlagItemCount,#flag=self);
+         pbCounted = FALSE;
+      }
+
+      propagate;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:169</p>
+<h4>RecountFlagItemsReply()</h4>
+<pre><code>{
+      if pbCounted
+      {
+         send(send(SYS,@GetTerritoryGame),@IncrementFlagItemCount,#flag=self);
+      }
+
+      return;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:186</p>
+<h4>CanBeStoredInVault()</h4>
+<pre><code>{
+      return FALSE;
+   }</code></pre>
+<p class="cite">kod/object/item/passitem/factflag.kod:196</p>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>
