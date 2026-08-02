@@ -78,8 +78,8 @@ function admin(cmds, settle = 1500, timeoutMs = 180000) {
 // ------------------------------------------------------------------ locating things
 
 // Ask the container where its savegame directory is bound, so this keeps working
-// when someone changes the compose file rather than silently checkpointing an
-// empty directory that looks fine.
+// when someone changes the mount rather than silently checkpointing an empty
+// directory that looks fine.
 function savegameFromContainer() {
   try {
     const r = spawnSync('docker', ['inspect', 'm59', '--format',
@@ -193,7 +193,7 @@ async function restore(savegame, id) {
   if (await reachable()) {
     console.error(c.bad('the server is still running.'));
     console.error('  stop it first, or it will overwrite the restore at its next save:');
-    console.error('    docker compose -f docker/docker-compose.yml stop');
+    console.error('    docker stop m59');
     return 1;
   }
 
@@ -286,12 +286,10 @@ async function stopBroker(port) {
 }
 
 function stopServer() {
-  const compose = join(REPO, 'docker', 'docker-compose.yml');
-  if (existsSync(compose)) {
-    const r = spawnSync('docker', ['compose', '-f', compose, 'stop'],
-                        { stdio: 'inherit', timeout: 120000 });
-    if (!r.error && r.status === 0) return 'stopped the server container';
-  }
+  // The server is a plain `docker run` container named m59 (see setup.mjs), so
+  // stopping it is `docker stop m59` — no compose binary in the picture. blakserv
+  // has no SIGTERM handler, so the checkpoint above is what actually saved the
+  // world; this just ends the process.
   const r = spawnSync('docker', ['stop', 'm59'], { encoding: 'utf8', timeout: 120000 });
   if (!r.error && r.status === 0) return 'stopped the server container';
   return 'no container to stop (a native server must be stopped by hand)';

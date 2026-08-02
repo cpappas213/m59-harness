@@ -1,6 +1,15 @@
 # Meridian 59 server, portable. Same on Windows and Linux.
 #
-#   node tools/setup.mjs server          builds the image and brings this up
+# OPTIONAL — nothing in this repository requires it. `node tools/setup.mjs
+# server` builds the image and starts the container with a plain `docker run`
+# (see serverRunArgs() in tools/setup.mjs), because a stock Docker install has no
+# compose binary and requiring one would strand a working build at the last step.
+#
+# This file is kept as a convenience for anyone who has compose and prefers it,
+# and as a readable statement of the runtime contract. It MUST stay in sync with
+# serverRunArgs() — same name, ports, mounts, restart policy. If you have compose:
+#
+#   node tools/setup.mjs server          builds the image (uses docker run to start)
 #
 # or by hand, from the repository root:
 #

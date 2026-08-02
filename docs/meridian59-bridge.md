@@ -425,12 +425,15 @@ local single-player instance; revisit before anyone else logs in.
 
 ## Docker
 
-`docker/Dockerfile` + `docker/docker-compose.yml` in the M59 tree. Full Linux
-build from source — blakcomp → kod → blakserv, no Windows artifacts — so it runs
-anywhere docker does, Steam Deck included (SteamOS is x86_64).
+`docker/Dockerfile`, built against the M59 tree. Full Linux build from source —
+blakcomp → kod → blakserv, no Windows artifacts — so it runs anywhere docker
+does, Steam Deck included (SteamOS is x86_64). `tools/setup.mjs server` builds
+the image and starts it with a plain `docker run` — no compose binary required.
+`docker/docker-compose.yml` is an optional convenience that mounts the same
+volumes and publishes the same ports.
 
 ```
-docker compose -f docker/docker-compose.yml up --build
+node tools/setup.mjs server        # build + docker run, no compose needed
 ```
 
 - `5959` published openly, `9998` on loopback only

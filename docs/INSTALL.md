@@ -79,12 +79,19 @@ M59_ROOT=/path/to/Meridian59-deck node tools/setup.mjs server
 node tools/setup.mjs server
 ```
 
-or by hand:
+or by hand — no compose binary required:
 
 ```bash
 docker build -f docker/Dockerfile -t m59-blakserv:local /path/to/Meridian59
-docker compose -f docker/docker-compose.yml up -d
+docker run -d --name m59 --restart unless-stopped \
+  -p 5959:5959 -p 127.0.0.1:9998:9998 \
+  -v "$PWD/docker/data/channel:/m59/channel" \
+  -v "$PWD/docker/data/savegame:/m59/savegame" \
+  -i -t m59-blakserv:local
 ```
+
+(`docker compose -f docker/docker-compose.yml up -d` also works if you have
+compose, but nothing here needs it — `setup.mjs` uses the `docker run` above.)
 
 This is the recommended path on Windows *and* Linux, because it is the same path
 on both and needs no toolchain. It compiles `blakcomp`, then the Blakod to
@@ -223,7 +230,7 @@ Verified: create an account, `save game`, destroy the container entirely, bring
 it back on the same volumes — the server logs `LoadAll loaded game saved at ...`
 and the account is there.
 
-`docker-compose.yml` mounts two directories, and both matter:
+The server mounts two directories, and both matter:
 
 ```
 docker/data/savegame   the world: accounts, characters, everything
@@ -232,8 +239,10 @@ docker/data/channel    the logs, including player chat
 
 **Without the mount the world lives in the container's writable layer and
 `docker rm` destroys it.** The Dockerfile also declares `VOLUME` for both, so a
-bare `docker run` gets anonymous volumes rather than silent loss — but those are
-orphans you will not find again. Use the compose file.
+`docker run` with no `-v` gets anonymous volumes rather than silent loss — but
+those are orphans you will not find again. This is why `setup.mjs` (and the
+by-hand `docker run` above) bind these two host directories explicitly; the
+compose file mounts the same two if you use it instead.
 
 Nothing else needs persisting. `memmap/` and `loadkod/` are rebuilt from the
 image, and a restore works without them.
@@ -316,7 +325,7 @@ and the fleet page at **http://127.0.0.1:8902/fleet**.
 
 | symptom | cause |
 |---|---|
-| `no maintenance socket on 127.0.0.1:9998` | server not running, or 9998 not published. `docker compose -f docker/docker-compose.yml ps` |
+| `no maintenance socket on 127.0.0.1:9998` | server not running, or 9998 not published. `docker ps --filter name=m59` |
 | image build fails on `-Werror` | the container strips it from `common.mak.linux`; if you build natively you may hit it. |
 | broker starts but every character is empty | a second broker took the stdio path and was refused the lock. Use `m59-mcp-attach.mjs`. |
 | `reroll` says the server substituted junk | the request was rejected silently. Do not re-roll anything real until it passes on a spare. |

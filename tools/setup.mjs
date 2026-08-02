@@ -89,6 +89,52 @@ function dockerReady() {
   } catch { return false; }
 }
 
+// The server runs in a plain `docker run` container — NO compose binary needed.
+// A stock Docker install ships the CLI and daemon but not `docker compose` (the
+// v2 plugin) or `docker-compose` (the v1 standalone), and requiring one turns a
+// working build into a dead end at the last step. These args are the whole of
+// docker/docker-compose.yml, spelled out: same container name, ports, mounts and
+// restart policy. The compose file stays valid for anyone who prefers it, but
+// nothing here depends on it — keep the two in sync if you change either.
+//
+//   * name m59, so shutdown and restart can find the container by name.
+//   * 5959 open, so a client on the host or the LAN can reach the game; 9998 on
+//     loopback only, because the admin socket is gated by IP mask with no
+//     password and must never be reachable off-box.
+//   * channel/ is where player chat lands once tracing is on; savegame/ is the
+//     world. Absolute host paths, because `docker run` has no compose-style
+//     working directory to resolve "./data" against.
+//   * -it because blakserv writes to a tty; --restart so it survives a reboot.
+const M59_CONTAINER = 'm59';
+function serverRunArgs() {
+  const data = join(REPO, 'docker', 'data');
+  return [
+    'run', '-d',
+    '--name', M59_CONTAINER,
+    '--restart', 'unless-stopped',
+    '-p', '5959:5959',
+    '-p', '127.0.0.1:9998:9998',
+    '-v', `${join(data, 'channel')}:/m59/channel`,
+    '-v', `${join(data, 'savegame')}:/m59/savegame`,
+    '-i', '-t',
+    'm59-blakserv:local',
+  ];
+}
+
+// Idempotent start. `docker run --name m59` refuses if a container of that name
+// already exists at all — even stopped — so reuse a stopped one with `docker
+// start` rather than erroring out or, worse, orphaning its savegame in a second
+// container. (This path is only reached when 5959 is closed, so a *running* m59
+// has already short-circuited server() above; a container found here is stopped.)
+function startServer() {
+  const found = spawnSync('docker', ['ps', '-aq', '--filter', `name=^${M59_CONTAINER}$`],
+                          { encoding: 'utf8', timeout: 15000 });
+  if (!found.error && (found.stdout || '').trim()) {
+    return run('docker', ['start', M59_CONTAINER]);
+  }
+  return run('docker', serverRunArgs());
+}
+
 function portOpen(port, host = '127.0.0.1', ms = 2000) {
   return new Promise(resolve => {
     const s = net.connect({ port, host });
@@ -157,7 +203,7 @@ async function doctor() {
   const game = await portOpen(5959);
   add('server :5959', game ? 'listening' : null, 'node tools/setup.mjs server');
   const adminSock = await portOpen(9998);
-  add('admin :9998', adminSock ? 'listening' : null, 'published by docker/docker-compose.yml');
+  add('admin :9998', adminSock ? 'listening' : null, 'published by node tools/setup.mjs server');
   const broker = await portOpen(8901);
   add('broker :8901', broker ? 'listening' : null, 'node tools/setup.mjs broker');
 
@@ -232,8 +278,8 @@ async function server() {
   mkdirSync(join(REPO, 'docker', 'data', 'savegame'), { recursive: true });
 
   console.log('\nstarting it...');
-  if (!run('docker', ['compose', '-f', join(REPO, 'docker', 'docker-compose.yml'), 'up', '-d'])) {
-    console.error(c.bad('docker compose failed.'));
+  if (!startServer()) {
+    console.error(c.bad('could not start the server container. The output above is the reason.'));
     return 1;
   }
 
@@ -249,7 +295,7 @@ async function server() {
     await new Promise(r => setTimeout(r, 2000));
   }
   console.error(c.bad('\nthe container started but nothing is listening on 5959.'));
-  console.error('  docker compose -f docker/docker-compose.yml logs');
+  console.error(`  docker logs ${M59_CONTAINER}`);
   return 1;
 }
 
