@@ -205,6 +205,13 @@ const RECORD_KEEP = Number(process.env.M59_RECORD_KEEP || 15);                  
 const STATE_FILE = process.env.M59_STATE_FILE ||
   new URL('../substrate/fleet-state.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 
+// Which checkout this broker belongs to. Reported by /health so a tool can tell
+// one broker from another BEFORE acting on it. More than one checkout can be
+// running at once, and "a node process with m59-broker in its command line" is
+// not an identity — treating it as one let a shutdown in one repository log out
+// another repository's whole fleet.
+const BROKER_ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+
 // Which rooms generate which creatures. Built by: node tools/m59-spawns.mjs
 // The Grand Museum of Raza. The map labels it "Tutorial Exit Inside"; the portal is
 // at (11,2) and takes two touches. This is THE way out of the newbie zone.
@@ -4046,7 +4053,8 @@ function serveHttp(port) {
     }
     if (req.method === 'GET' && req.url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      return res.end(JSON.stringify({ ok: true, sessions: [...sessions.keys()], tools: TOOLS.length }));
+      return res.end(JSON.stringify({ ok: true, pid: process.pid, root: BROKER_ROOT,
+                                      sessions: [...sessions.keys()], tools: TOOLS.length }));
     }
     if (req.method !== 'POST') { res.writeHead(405); return res.end(); }
     let body = '';

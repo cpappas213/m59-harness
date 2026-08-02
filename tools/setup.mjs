@@ -7,6 +7,7 @@
 //   node tools/setup.mjs broker        start the MCP broker
 //   node tools/setup.mjs fleet 10      create ten characters
 //   node tools/setup.mjs all 10        all of the above, in order
+//   node tools/setup.mjs shutdown      checkpoint the world, then stop everything
 //
 // Every step is idempotent: running it twice finds what the first run made and
 // says so rather than making a second one.
@@ -335,11 +336,15 @@ const commands = {
     rc = await broker(); if (rc) return rc;
     return fleet(n);
   },
+  // Deliberate shutdown keeps two snapshots and then stops. A `docker stop` is a
+  // hard stop with no save at all — see tools/m59-shutdown.mjs.
+  shutdown: async () =>
+    run(process.execPath, [join(HERE, 'm59-shutdown.mjs')], { cwd: REPO }) ? 0 : 1,
 };
 
 if (!commands[cmd]) {
   console.error(`unknown command: ${cmd}`);
-  console.error(`usage: node tools/setup.mjs [doctor|server|client|broker|fleet N|all N]`);
+  console.error('usage: node tools/setup.mjs [doctor|server|client|broker|fleet N|all N|shutdown]');
   process.exit(2);
 }
 process.exit(await commands[cmd]());

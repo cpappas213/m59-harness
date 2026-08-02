@@ -216,6 +216,74 @@ can actually cast them.
 Account passwords are generated and written to `substrate/fleet-accounts.json`,
 which is gitignored. That file is the only record — do not delete it.
 
+## Saving, and why the volume is not optional
+
+Saves and restores work in the container, and they need the bind mount to do it.
+Verified: create an account, `save game`, destroy the container entirely, bring
+it back on the same volumes — the server logs `LoadAll loaded game saved at ...`
+and the account is there.
+
+`docker-compose.yml` mounts two directories, and both matter:
+
+```
+docker/data/savegame   the world: accounts, characters, everything
+docker/data/channel    the logs, including player chat
+```
+
+**Without the mount the world lives in the container's writable layer and
+`docker rm` destroys it.** The Dockerfile also declares `VOLUME` for both, so a
+bare `docker run` gets anonymous volumes rather than silent loss — but those are
+orphans you will not find again. Use the compose file.
+
+Nothing else needs persisting. `memmap/` and `loadkod/` are rebuilt from the
+image, and a restore works without them.
+
+A save set is four files sharing a timestamp — `gameuser`, `accounts`,
+`striings`, `dynarscs` — plus `lastsave.txt`, whose `LASTSAVE <stamp>` line is
+what blakserv reads to decide which set to load.
+
+### `docker stop` does not save
+
+blakserv installs no SIGTERM handler — the only signal it touches is `SIGPIPE`
+(`blakserv/osd_epoll.c`) — so `docker stop` terminates it outright. Measured: it
+dies in about 1.5 seconds, and an account created just before the stop is gone
+afterwards. `[Auto] SavePeriod` defaults to **180 minutes**, so a hard stop can
+cost three hours.
+
+That is fine for a hard stop, which is what it is. For a deliberate shutdown:
+
+```bash
+node tools/m59-shutdown.mjs
+```
+
+It keeps **two** snapshots under `docker/data/checkpoints/`, then stops the
+broker and the server:
+
+| | |
+|---|---|
+| `<time>-standing` | the save already on disk when you asked, copied aside untouched |
+| `<time>-checkpoint` | a fresh `save game` taken right then |
+
+Two, because the fresh save is the one that can be bad — if the fleet has just
+walked into something, or a re-roll went wrong, or errands are half-finished, the
+checkpoint preserves exactly that, and the standing save is what you actually
+want. Saving over the only copy is how you discover which one you needed.
+
+```bash
+node tools/m59-shutdown.mjs --checkpoint          # snapshot, stop nothing
+node tools/m59-shutdown.mjs --keep-server         # stop the broker only
+node tools/m59-shutdown.mjs --label "before the raid"
+node tools/m59-shutdown.mjs --list
+node tools/m59-shutdown.mjs --restore 2026-08-02T17-46-44-standing
+```
+
+Restore refuses while the server is running, because a live server holds the
+world in memory and would write over the restored files at its next save.
+
+If you would rather lose less to a hard stop, shorten the auto-save period —
+`[Auto] SavePeriod` in `blakserv.cfg`, in minutes. Each save garbage-collects
+first, so there is a cost to making it very frequent.
+
 ## 4. Wire up your agent
 
 `.mcp.json` in this repository:

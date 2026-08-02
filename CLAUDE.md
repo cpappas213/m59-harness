@@ -29,6 +29,35 @@ what the first run made and says so.
 | 3 | `node tools/setup.mjs broker` | starts the MCP broker on 8901, dashboard 8902 |
 | 4 | `node tools/setup.mjs fleet 10` | creates ten characters |
 
+## Asked to shut down, stop the server, or "we're done for now"?
+
+```bash
+node tools/m59-shutdown.mjs
+```
+
+**Always this, never a bare `docker stop`.** blakserv installs no SIGTERM
+handler, and `[Auto] SavePeriod` defaults to 180 minutes, so stopping the
+container directly can silently throw away three hours of play.
+
+This keeps **two** snapshots under `docker/data/checkpoints/`, then stops the
+broker and the server:
+
+- `<time>-standing` — the save already on disk when the shutdown was asked for,
+  copied aside untouched.
+- `<time>-checkpoint` — a fresh `save game` taken right then.
+
+Both, because the fresh one is the one that can be bad: if the fleet just walked
+into something, or a re-roll went wrong, or errands are half-finished, the
+checkpoint faithfully preserves that mess and the standing save is what you
+actually want back. Do not "tidy up" by keeping only one.
+
+Useful variants: `--checkpoint` (snapshot, stop nothing), `--keep-server`
+(stop the broker only), `--label "before the raid"`, `--list`, and
+`--restore <id>`. Restoring refuses while the server is up, because a live
+server would overwrite it at the next save.
+
+Report where the checkpoints went. Do not delete old ones without being asked.
+
 ## Things to tell the user rather than work around
 
 **Steam cannot be automated.** It will not install a game the user does not own,

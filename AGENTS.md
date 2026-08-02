@@ -22,6 +22,26 @@ Ten to fifteen minutes, mostly compiling. Every step is idempotent. Individually
 | 3 | `node tools/setup.mjs broker` — MCP broker on 8901, dashboard 8902 |
 | 4 | `node tools/setup.mjs fleet 10` — creates ten characters |
 
+## Asked to shut down, stop the server, or "we're done for now"?
+
+```bash
+node tools/m59-shutdown.mjs
+```
+
+**Always this, never a bare `docker stop`.** blakserv has no SIGTERM handler and
+`[Auto] SavePeriod` defaults to 180 minutes, so stopping the container directly
+can silently discard three hours of play.
+
+It keeps **two** snapshots under `docker/data/checkpoints/` and then stops the
+broker and server: `<time>-standing` (the save already on disk when you were
+asked) and `<time>-checkpoint` (a fresh `save game`). Keep both — the fresh one
+is the one that can capture a bad state, and the standing one is then what you
+want back.
+
+Variants: `--checkpoint` (snapshot only), `--keep-server`, `--label "..."`,
+`--list`, `--restore <id>`. Restore refuses while the server is up. Report where
+the checkpoints went; do not delete old ones unasked.
+
 ## Tell the user, do not work around
 
 - **Steam cannot be automated.** It will not install a game the user does not own
