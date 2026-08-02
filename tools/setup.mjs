@@ -33,12 +33,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
 const WIN = process.platform === 'win32';
 
-// Upstream first, and deliberately. It is public, and it is the tree the
-// container path is actually tested against — build, run, admin socket, account
-// creation and a real fleet, end to end. The Deck fork is private (so most
-// people cannot clone it at all) and its Linux server currently exits during
-// startup, so preferring it would hand most users a server that does not run.
-// Point M59_ROOT at the fork if you have it and want it.
+// Upstream is the default because it is the plainest thing that works. The Deck
+// fork (github.com/tpeppers/Meridian59-deck) builds and runs here too and adds
+// gamepad and Steam Deck support to the client; point M59_ROOT at it to use it.
+// Both are tested end to end by the container path.
 const SERVER_REPOS = [
   { url: 'https://github.com/Meridian59/Meridian59', name: 'Meridian59' },
 ];
@@ -194,10 +192,8 @@ async function server() {
       const dest = join(parent, r.name);
       if (existsSync(dest)) continue;
       console.log(`\ncloning ${r.url} ...`);
-      // The fork is private; failing over to upstream is the expected path for
-      // anyone who is not its owner, so a failure here is not an error.
       if (run('git', ['clone', '--depth', '1', r.url, dest])) { src = dest; break; }
-      console.log(c.warn(`  could not clone ${r.name} (private, or no access) — trying the next one`));
+      console.log(c.warn(`  could not clone ${r.name} — trying the next one`));
     }
     if (!src) src = findServerSrc();
   }

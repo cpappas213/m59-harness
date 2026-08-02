@@ -56,22 +56,22 @@ MCP or HTTP. Your **agent** is whatever drives it.
 
 ### Where the source comes from
 
-Two trees work, and the container in `docker/` builds either one unmodified:
+Two trees work, and the container in `docker/` builds either one unmodified.
+Both are public, and both are tested end to end — clone, build, run, admin
+socket, `create automated`, `save game`:
 
-- **https://github.com/Meridian59/Meridian59** — upstream, public. Use this. It
-  is what the container path is tested against: clone, build, run, admin socket,
-  `create automated`, `save game`, and a two-character fleet all verified end to
-  end.
+- **https://github.com/Meridian59/Meridian59** — upstream. The default, and what
+  `setup.mjs server` clones.
 - **https://github.com/tpeppers/Meridian59-deck** — a fork adding gamepad
-  support, borderless full screen and Steam Deck staging. **Private**, so
-  cloning it fails for anyone without access and `setup.mjs` falls through to
-  upstream. Note that as of its `1c58ad92`, this fork's Linux server build
-  compiles but exits 1 during startup, so the container path does not currently
-  work against it — use upstream for the server, or build the fork natively on
-  Windows.
+  support, borderless full screen and Steam Deck staging. Use it if you want a
+  controller or a Deck client. Its server needs `2c6d8091` or later; before that
+  it built and then exited during startup.
 
-`setup.mjs server` clones upstream beside this repository. To use a tree you
-already have, set `M59_ROOT`.
+To use a tree you already have, or to prefer the fork, set `M59_ROOT`:
+
+```bash
+M59_ROOT=/path/to/Meridian59-deck node tools/setup.mjs server
+```
 
 ### The container path (both platforms)
 

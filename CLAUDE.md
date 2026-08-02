@@ -41,11 +41,10 @@ attempt to script a Steam login or download the client from anywhere else.
 compendium's sprite art. If the user only wants a fleet, a missing client is not
 a blocker and you should not present it as one.
 
-**Use upstream for the server.** `setup.mjs` clones the public
-`Meridian59/Meridian59`, which is the tree the container path is tested against.
-The `tpeppers/Meridian59-deck` fork is private and its Linux server build
-currently exits during startup, so do not switch to it to "fix" a problem — that
-makes things worse. Someone who wants it can set `M59_ROOT`.
+**Either server tree works.** `setup.mjs` clones `Meridian59/Meridian59`
+(upstream) by default. `tpeppers/Meridian59-deck` is a public fork adding gamepad
+and Steam Deck support; it works too, from `2c6d8091` onward. Someone who wants
+it sets `M59_ROOT`. Do not switch trees to "fix" an unrelated problem.
 
 **Docker's daemon is separate from its CLI.** `docker --version` succeeding does
 not mean anything can be built. If the daemon is down, say so and ask the user to

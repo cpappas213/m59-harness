@@ -32,11 +32,10 @@ Ten to fifteen minutes, mostly compiling. Every step is idempotent. Individually
   `Meridian.exe` is involved. It is for watching the fleet and for compendium
   art. A missing client does not block anything and should not be presented as
   if it does.
-- **Use upstream for the server.** `setup.mjs` clones public
-  `Meridian59/Meridian59`, the tree the container path is tested against. The
-  `tpeppers/Meridian59-deck` fork is private *and* its Linux server currently
-  exits during startup, so switching to it does not fix anything. Someone who
-  wants it can set `M59_ROOT`.
+- **Either server tree works.** `setup.mjs` clones `Meridian59/Meridian59`
+  (upstream) by default. `tpeppers/Meridian59-deck` is a public fork adding
+  gamepad and Steam Deck support and works too, from `2c6d8091` onward. Set
+  `M59_ROOT` to prefer it. Do not switch trees to "fix" an unrelated problem.
 - **Docker's daemon is separate from its CLI.** `docker --version` succeeding
   proves nothing can be built. If the daemon is down, ask the user to start
   Docker Desktop rather than starting it yourself.

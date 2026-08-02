@@ -33,15 +33,27 @@ COPY . /src
 # Warnings here are not the project's finding; a failed build would just be noise.
 RUN sed -i 's/ -Werror//' common.mak.linux
 
+# MAKE THE OUTPUT DIRECTORIES BEFORE BUILDING IN PARALLEL.
+#
+# Both makefiles read `all : makedirs $(OUTDIR)/<target>`, and prerequisites of
+# one rule are not ordered relative to each other — so under -j, `mkdir -p
+# release/` races the first compile. It usually wins. When it does not, flex
+# reports "could not create release/lexyy.c" and the build fails somewhere that
+# has nothing to do with what you changed. Running makedirs to completion first
+# costs nothing and removes the race, without giving up the parallel build.
+
 # blakcomp produces bc, the Blakod compiler.
-RUN make -C blakcomp -f makefile.linux RELEASE=1 -j"$(nproc)"
+RUN make -C blakcomp -f makefile.linux RELEASE=1 makedirs \
+ && make -C blakcomp -f makefile.linux RELEASE=1 -j"$(nproc)"
 
 # Compile the game code to .bof bytecode. The kod makefile copies output into
-# run/server/loadkod itself.
+# run/server/loadkod itself. Serial: it has no makedirs target and its rules
+# share generated state.
 RUN make -C kod -f makefile.linux RELEASE=1
 
 # The server itself.
-RUN make -C blakserv -f makefile.linux RELEASE=1 -j"$(nproc)"
+RUN make -C blakserv -f makefile.linux RELEASE=1 makedirs \
+ && make -C blakserv -f makefile.linux RELEASE=1 -j"$(nproc)"
 
 RUN find . -name blakserv -type f -perm -u+x -newer common.mak.linux \
       -exec cp {} /tmp/blakserv \; -quit && test -x /tmp/blakserv
