@@ -15,6 +15,15 @@ node_modules/
 /substrate/*.log
 /commissions/
 
+# The account passwords for a fleet made by tools/m59-makefleet.mjs. This is the
+# ONLY copy of them — back it up if you care about the characters, but never
+# commit it.
+/substrate/fleet-accounts.json
+
+# The server container's state: the world, the accounts, and the channel logs,
+# which are real player chat. Delete to start the server over.
+/docker/data/
+
 # Transient logs from background helpers and test sweeps. Each is a record of one
 # run against one server state, so none of it is worth carrying forward.
 .m59-*.log

@@ -1,0 +1,30 @@
+# Meridian 59 server, portable. Same on Windows and Linux.
+#
+#   node tools/setup.mjs server          builds the image and brings this up
+#
+# or by hand, from the repository root:
+#
+#   docker build -f docker/Dockerfile -t m59-blakserv:local /path/to/Meridian59
+#   docker compose -f docker/docker-compose.yml up -d
+#
+# The image is built separately rather than by compose, because the build
+# context is the server source tree and this file lives somewhere else.
+
+services:
+  blakserv:
+    image: m59-blakserv:local
+    container_name: m59
+    ports:
+      # Game port. Open, so a client on the host or the LAN can reach it.
+      - "5959:5959"
+      # Admin socket. Loopback only — it is gated by IP mask with no password,
+      # so it must never be reachable off-box.
+      - "127.0.0.1:9998:9998"
+    volumes:
+      # Player chat lands here once tracing is on; the bridge tails it.
+      - ./data/channel:/m59/channel
+      # Accounts, characters, the world. Delete this to start over.
+      - ./data/savegame:/m59/savegame
+    stdin_open: true
+    tty: true
+    restart: unless-stopped

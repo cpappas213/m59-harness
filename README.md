@@ -15,13 +15,41 @@ chat history is in here; what is here is the protocol client, the world model,
 the behaviours, and a reference compendium compiled from the game's own source.
 Build your own fleet management on top.
 
+## Install it
+
+From nothing to ten characters playing, on Windows or Linux:
+
+```bash
+git clone https://github.com/tpeppers/m59-harness
+cd m59-harness
+node tools/setup.mjs all 10
+```
+
+That clones the [Meridian 59](https://github.com/Meridian59/Meridian59) source,
+builds the server in a container, starts it, starts the broker, and creates ten
+characters. Ten to fifteen minutes, mostly compiling. `node tools/setup.mjs
+doctor` reports what is present and what is missing without changing anything.
+
+Or open the repository in Claude Code or Codex and ask it to install the game and
+make you a fleet — [`CLAUDE.md`](CLAUDE.md) and [`AGENTS.md`](AGENTS.md) are the
+procedure, written for an agent.
+
+The manual, with both platforms, the native build, and troubleshooting, is
+[`docs/INSTALL.md`](docs/INSTALL.md).
+
+**The Steam client is optional.** Agents log in over the wire; no `Meridian.exe`
+is involved in running a fleet. You need
+[the client](https://store.steampowered.com/app/893390/Meridian_59/) to watch a
+character in first person, and for the compendium's sprite art.
+
 ## What you need
 
 | | |
 |---|---|
-| a server | [Meridian59](https://github.com/Meridian59/Meridian59) — build it, or point at one you may use |
-| Node | any recent version. Every tool in `tools/` is standalone `.mjs` with no dependencies |
-| Python 3 | only for the source-analysis scripts and the sprite puller |
+| Node 18+ | everything. Tools in `tools/` are standalone `.mjs` with no dependencies |
+| Docker | building and running the server, the same way on both platforms |
+| git | fetching the server source |
+| Python 3 | the sprite puller and the source-analysis scripts. Optional |
 | the source tree | set `M59_ROOT` (default `C:/code/Meridian59`). The compendium's citations point into it |
 
 One dependency exists, for the chat responder only: `npm install`.
@@ -54,6 +82,12 @@ the world, written for something that is about to play it.
 ## The map
 
 ```
+tools/setup.mjs                     doctor / server / client / broker / fleet — the bootstrapper
+tools/m59-makefleet.mjs             make N characters that are worth growing
+tools/pull-client-assets.py         decode the client's sprites into the compendium
+docker/Dockerfile                   builds blakserv from either source tree, on any platform
+
+docs/INSTALL.md                     the manual: both platforms, both build paths, traps
 docs/m59-agent-primer.md            the rules of the world, for an agent that will play it
 docs/m59-progression.md             how a character grows, how fast, how to tell it is working
 docs/m59-mcp.md                     the broker: run it, wire it up, what the tools do

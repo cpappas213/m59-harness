@@ -1,0 +1,305 @@
+#!/usr/bin/env node
+// MAKE A FLEET FROM NOTHING. Zero dependencies.
+//
+//   node tools/m59-makefleet.mjs --count 10
+//   node tools/m59-makefleet.mjs --count 10 --dry-run     plan only, touch nothing
+//   node tools/m59-makefleet.mjs --count 4 --prefix crew  a second batch
+//
+// THE PATH IS THREE STEPS AND EVERY ONE OF THEM IS LOAD-BEARING.
+//
+// 1. `create automated <acct> <pw>` on the maintenance socket makes an account and a
+//    character together. That character has ZERO in every attribute. Attributes are
+//    fixed at creation and never move, and stamina IS the max-health ceiling
+//    (101 + stamina), so it is permanently capped at 102 max health and permanently
+//    bad at everything. It is a placeholder, not a character.
+//
+// 2. `join` through the broker logs in as it.
+//
+// 3. `reroll` suicides it and sends BP_NEW_CHARINFO with real stats. The suicide is
+//    not incidental — the server only accepts a new character while IsFirstTime()
+//    holds, and PerformSuicide (user.kod:1447) setting piLastLoginTime = 0 is what
+//    makes that true.
+//
+// THE SERVER NEVER SAYS NO. Over budget, out of range, wrong list length — none of it
+// is refused. It silently stamps 3/1/4/1/5/9 and the default face on you, and you find
+// out weeks later when the character cannot get past level 15. So every character is
+// verified after the fact against what was asked for, and a mismatch is reported as a
+// failure rather than counted as a success.
+//
+// Suicide cooldown is ten minutes per character (user.kod:32), but a brand-new one has
+// none, which is why this works in a single pass on a fresh account. It also means a
+// re-run against a character that already exists cannot re-roll it for ten minutes —
+// so this script skips accounts that already have a grown character rather than
+// stepping on them.
+
+import net from 'node:net';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
+import { STAT_PRESETS } from './m59-newchar.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = join(HERE, '..');
+const ROSTER_FILE = join(REPO, 'substrate', 'fleet-accounts.json');
+
+const ADMIN_HOST = process.env.M59_HOST || '127.0.0.1';
+const ADMIN_PORT = Number(process.env.M59_ADMIN_PORT || 9998);
+
+// ------------------------------------------------------------------ names
+//
+// Must satisfy the server's name rule (player.kod, mirrored in m59-newchar.mjs):
+// a letter, then 1..15 more of letter, apostrophe, space or hyphen.
+const NAMES = [
+  'Aldric', 'Rowena', 'Torvald', 'Elspeth', 'Bramwell', 'Sable', 'Merida', 'Godfrey',
+  'Cassia', 'Aldwin', 'Kestrel', 'Morwenna', 'Reynard', 'Isolde', 'Alaric', 'Brenna',
+  'Faelan', 'Gwendolyn', 'Hollis', 'Ingrid', 'Jorah', 'Katriona', 'Lorcan', 'Maeve',
+  'Nerys', 'Osric', 'Perrin', 'Quenna', 'Rurik', 'Seren', 'Tamsin', 'Ulric',
+  'Verity', 'Wystan', 'Yrsa', 'Zephyrine', 'Corwin', 'Delwyn', 'Eirian', 'Fenwick',
+];
+
+// ------------------------------------------------------------------ mix
+//
+// Roughly half melee, because melee is what farms; a third casters, because the two
+// spells that stop a fleet stalling — create weapon and create food — have to come
+// from somewhere and both are karma-free. The pattern repeats for any count.
+const MIX = ['melee', 'melee', 'caster', 'melee', 'archer',
+             'melee', 'caster', 'balanced', 'melee', 'caster'];
+
+// ------------------------------------------------------------------ admin socket
+
+function admin(cmds, settle = 1200) {
+  const list = Array.isArray(cmds) ? cmds : [cmds];
+  return new Promise((resolve, reject) => {
+    const s = net.connect(ADMIN_PORT, ADMIN_HOST);
+    let buf = '';
+    const bail = setTimeout(() => { s.destroy(); resolve(buf); }, 20000 + settle);
+    s.on('connect', () => {
+      let i = 0;
+      const t = setInterval(() => {
+        if (i < list.length) s.write(list[i++] + '\r\n');
+        else { clearInterval(t); setTimeout(() => s.end(), settle); }
+      }, 400);
+    });
+    s.on('data', d => { buf += d; });
+    s.on('close', () => { clearTimeout(bail); resolve(buf); });
+    s.on('error', e => { clearTimeout(bail); reject(e); });
+  });
+}
+
+const clean = out => String(out).split(/\r?\n/)
+  .filter(l => l.trim() && l.trim() !== '>')
+  .map(l => l.replace(/^>\s?/, '')).join('\n');
+
+// ------------------------------------------------------------------ broker
+
+async function rpc(port, name, args, timeoutMs = 120000) {
+  const body = JSON.stringify({
+    jsonrpc: '2.0', id: Date.now(), method: 'tools/call',
+    params: { name, arguments: args },
+  });
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(`http://127.0.0.1:${port}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body, signal: ctl.signal,
+    });
+  } finally { clearTimeout(t); }
+  const j = await res.json();
+  if (j.error) throw new Error(`${name}: ${j.error.message}`);
+  const text = j.result?.content?.[0]?.text ?? '';
+  let parsed; try { parsed = JSON.parse(text); } catch { parsed = text; }
+  if (j.result?.isError) throw new Error(`${name}: ${text.slice(0, 300)}`);
+  return parsed;
+}
+
+async function brokerAlive(port) {
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(3000) });
+    return r.ok;
+  } catch { return false; }
+}
+
+// ------------------------------------------------------------------ roster file
+
+function loadRoster() {
+  try { return JSON.parse(readFileSync(ROSTER_FILE, 'utf8')); }
+  catch { return { note: 'Account credentials for a locally created fleet. Gitignored.', accounts: {} }; }
+}
+
+function saveRoster(r) {
+  mkdirSync(dirname(ROSTER_FILE), { recursive: true });
+  writeFileSync(ROSTER_FILE, JSON.stringify(r, null, 2));
+}
+
+// ------------------------------------------------------------------ main
+
+function parseArgs(argv) {
+  const a = { count: 10, prefix: 'fleet', broker: 8901, loadout: 'selfSufficient',
+              dryRun: false, stats: null };
+  for (let i = 0; i < argv.length; i++) {
+    const v = argv[i];
+    if (v === '--count' || v === '-n') a.count = Number(argv[++i]);
+    else if (v === '--prefix') a.prefix = argv[++i];
+    else if (v === '--broker') a.broker = Number(argv[++i]);
+    else if (v === '--loadout') a.loadout = argv[++i];
+    else if (v === '--stats') a.stats = argv[++i];
+    else if (v === '--dry-run' || v === '-d') a.dryRun = true;
+    else if (v === '--help' || v === '-h') a.help = true;
+    else { console.error(`unknown argument: ${v}`); process.exit(2); }
+  }
+  return a;
+}
+
+async function main() {
+  const a = parseArgs(process.argv.slice(2));
+  if (a.help) {
+    console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8')
+      .split('\n').filter(l => l.startsWith('//')).slice(0, 12).join('\n'));
+    return 0;
+  }
+  if (!Number.isInteger(a.count) || a.count < 1 || a.count > NAMES.length) {
+    console.error(`--count must be 1..${NAMES.length}`);
+    return 2;
+  }
+
+  // What we are about to make.
+  const plan = [];
+  for (let i = 0; i < a.count; i++) {
+    plan.push({
+      account: `${a.prefix}${String(i + 1).padStart(2, '0')}`,
+      name: NAMES[i],
+      stats: a.stats || MIX[i % MIX.length],
+    });
+  }
+
+  console.log(`fleet of ${a.count}, loadout ${a.loadout}\n`);
+  for (const p of plan) {
+    const s = STAT_PRESETS[p.stats];
+    console.log(`  ${p.account.padEnd(10)} ${p.name.padEnd(12)} ${p.stats.padEnd(9)}` +
+      (s ? ` mig ${s.might} int ${s.intellect} sta ${s.stamina} agi ${s.agility} mys ${s.mysticism} aim ${s.aim}` : ''));
+  }
+  const counts = plan.reduce((m, p) => (m[p.stats] = (m[p.stats] || 0) + 1, m), {});
+  console.log(`\n  ${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ')}`);
+  console.log(`  every character gets max stamina — 50 is the per-stat cap, and`);
+  console.log(`  max health is 101 + stamina, so this is the 151 ceiling.\n`);
+
+  if (a.dryRun) { console.log('--dry-run: nothing was created.'); return 0; }
+
+  // Both ends have to be up before anything is created, or we leave half a fleet.
+  if (!await brokerAlive(a.broker)) {
+    console.error(`no broker on 127.0.0.1:${a.broker}.\n` +
+      `  start one first:  node tools/m59-broker.mjs --http ${a.broker} --dashboard 8902`);
+    return 1;
+  }
+  try {
+    const status = clean(await admin('show status', 800));
+    if (!status.trim()) throw new Error('no reply');
+  } catch (e) {
+    console.error(`no maintenance socket on ${ADMIN_HOST}:${ADMIN_PORT} (${e.message}).\n` +
+      `  the server must be running, and 9998 published on loopback.`);
+    return 1;
+  }
+
+  const roster = loadRoster();
+  const made = [], failed = [], skipped = [];
+
+  for (const p of plan) {
+    const known = roster.accounts[p.account];
+    const password = known?.password || randomBytes(9).toString('base64url');
+    const agent = p.account;
+    process.stdout.write(`${p.account} → ${p.name} (${p.stats}) `);
+
+    try {
+      // 1. account + placeholder character. The two replies that matter are exact
+      //    (blakserv/adminfn.c AdminCreateAutomated): "Created account <n>." on
+      //    success, "Account name <x> already exists" on a duplicate — and a
+      //    duplicate creates nothing and changes no password, so re-running this
+      //    is safe. Anything else is a reply we do not understand, and guessing
+      //    which of the two it meant is how you end up locked out of an account.
+      const out = clean(await admin([`create automated ${p.account} ${password}`], 1500));
+      const created = /Created account\s+\d+/i.test(out);
+      const existed = /already exists/i.test(out);
+      if (!created && !existed) {
+        console.log(`FAILED — unrecognised reply: ${out.slice(0, 120) || '(silence)'}`);
+        failed.push({ ...p, why: `unrecognised reply to create automated: ${out.slice(0, 120)}` });
+        continue;
+      }
+      if (existed && !known) {
+        // The account is there but we have no password for it: we cannot log in, and
+        // guessing is worse than stopping.
+        console.log(`skip — account exists and its password is not in ${ROSTER_FILE}`);
+        skipped.push({ ...p, why: 'pre-existing account, password unknown' });
+        continue;
+      }
+      if (!existed) {
+        roster.accounts[p.account] = { password, created: new Date().toISOString() };
+        saveRoster(roster);
+      }
+
+      // 2. log in as the placeholder.
+      process.stdout.write('join ');
+      await rpc(a.broker, 'join', { agent, account: p.account, password });
+
+      // 3. replace it with a real character.
+      process.stdout.write('reroll ');
+      const r = await rpc(a.broker, 'reroll', {
+        action: 'reroll', agent, name: p.name,
+        stats: p.stats, loadout: a.loadout, confirm: true,
+      });
+
+      // ABSENCE IS NOT AGREEMENT. The broker already compares every stat against
+      // what was asked and refuses to call an unreadable character a pass, so the
+      // verdict to trust is its `stats_as_asked` — not a fresh comparison here that
+      // could reintroduce the exact bug that flag exists to prevent.
+      if (!r?.done) {
+        console.log(`FAILED — no character came back. ${r?.verdict || ''}`.trim());
+        failed.push({ ...p, why: r?.verdict || 'reroll reported no character' });
+        continue;
+      }
+      if (r.looks_like_the_junk_default) {
+        console.log('FAILED — the server substituted its 3/1/4/1/5/9 junk character');
+        failed.push({ ...p, why: 'server substituted the junk default' });
+        continue;
+      }
+      if (!r.stats_readable || !r.stats_as_asked) {
+        console.log(`FAILED — ${r.verdict}`);
+        failed.push({ ...p, why: r.verdict });
+        continue;
+      }
+      roster.accounts[p.account].character = p.name;
+      roster.accounts[p.account].stats = p.stats;
+      saveRoster(roster);
+      // Report the CEILING, not max_health_now. A level-1 character has about 20
+      // max health whatever its stamina, so printing that reads like the stats
+      // did not take — the number that says they did is 101 + stamina, which is
+      // what this character can eventually reach and can never exceed.
+      console.log(`ok — stamina ${r.stamina_now}, ceiling ${101 + Number(r.stamina_now)} max health`);
+      made.push(p);
+    } catch (e) {
+      console.log(`FAILED — ${e.message}`);
+      failed.push({ ...p, why: e.message });
+    }
+  }
+
+  // Without this the whole fleet evaporates on the next server restart.
+  if (made.length) {
+    process.stdout.write('\nsaving game... ');
+    await admin('save game', 4000);
+    console.log('done');
+  }
+
+  console.log(`\n${made.length} made, ${failed.length} failed, ${skipped.length} skipped`);
+  if (made.length) console.log(`credentials: ${ROSTER_FILE} (gitignored)`);
+  for (const f of failed) console.log(`  FAILED ${f.account} ${f.name}: ${f.why}`);
+  for (const s of skipped) console.log(`  skipped ${s.account}: ${s.why}`);
+  if (made.length) {
+    console.log(`\nnext:  node tools/m59-fleet.mjs            list them`);
+    console.log(`       http://127.0.0.1:8902/fleet        the fleet page`);
+  }
+  return failed.length ? 1 : 0;
+}
+
+main().then(c => process.exit(c)).catch(e => { console.error(e); process.exit(1); });
