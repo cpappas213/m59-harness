@@ -1158,8 +1158,22 @@ export class Autopilot {
       .find(o => (o.flags & OF.PLAYER) &&
                  (c.rsc.get(o.nameRsc) || '').toLowerCase() === String(e.supplicant_name || '').toLowerCase());
     if (!them) {
+      // They roamed. Follow once rather than abandoning: we are already out here, the
+      // spell is already known, and giving up sends the whole errand back to the planner
+      // only for it to pair the same two characters again against another stale room.
+      const now = whereIs(e.supplicant);
+      if (now && now.room !== e.room && (e.chases || 0) < 2) {
+        e.chases = (e.chases || 0) + 1;
+        this.note('supplicant has moved — following', {
+          wanted: e.supplicant_name, expected: e.room_name, now: now.name ?? now.room,
+          chase: e.chases });
+        e.room = now.room; e.room_name = now.name ?? String(now.room);
+        return true;
+      }
       e.done = true; e.why_done = 'they had moved on';
-      this.note('supplicant not here', { wanted: e.supplicant_name, room: e.room_name });
+      this.note('supplicant not here', { wanted: e.supplicant_name, room: e.room_name,
+        chases: e.chases ?? 0,
+        why: now ? 'followed as far as we are willing to' : 'no recent reading of where they went' });
       return true;
     }
 
@@ -1713,6 +1727,10 @@ export class Autopilot {
     const s = this.s;
     if (!s.live) { this.note('not in game'); return; }
     const c = s.client;
+    // Post where we are, every pass. Cheap, and it is the only way one keeper can find
+    // another that has wandered — see runProvision, where a quartermaster arrives to
+    // find the supplicant has roamed off and would otherwise abandon the errand.
+    if (s.world?.room?.num != null) noteWhere(s.name, s.world.room.num, s.world.room.name);
 
     // FROZEN after a panic logoff. Do nothing that the server counts as an action:
     // no room-contents request, no movement, no turning, no fighting. Rest, read the
@@ -3118,6 +3136,23 @@ export function spotTakenByAnother(agent, room, col, row) {
 }
 export const claimedSpotList = () =>
   [...claimedSpots.entries()].map(([k, who]) => ({ at: k, agent: who }));
+
+// WHICH ROOM EACH KEEPER IS IN, refreshed every pass.
+//
+// Errands name a destination room, and by the time the character has walked there the
+// target may have roamed — the supervisor runs the fleet with roam on, so they move
+// constantly. Without this, a quartermaster that arrives to an empty room can only give
+// up, and the commonest provisioning outcome was "they had moved on". One shared map in
+// the module, the same trick as claimedSpots: every session in a broker is this process.
+const lastRoom = new Map();            // agent -> { room, name, at }
+export function noteWhere(agent, room, name = null) {
+  lastRoom.set(agent, { room: Number(room), name, at: Date.now() });
+}
+export function whereIs(agent, { staleMs = 120000 } = {}) {
+  const r = lastRoom.get(agent);
+  if (!r) return null;
+  return (Date.now() - r.at) > staleMs ? null : r;   // a stale reading is worse than none
+}
 
 // Where a particular keeper is standing, for the one case that WANTS to share: a loot
 // runner sheltering on the farmer's wall while it picks up behind them.
