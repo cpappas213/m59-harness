@@ -89,7 +89,7 @@ the checkpoints went; do not delete old ones unasked.
   responder needs `npm install`.
 - `M59_ROOT` points at the Meridian 59 source tree.
 - Offline tests, safe any time: `node tools/m59-safespot-test.mjs` (91),
-  `node tools/m59-chat-test.mjs` (102). The rest need a live server.
+  `node tools/m59-chat-test.mjs` (102) and `node tools/m59-rest-test.mjs` (6). The rest need a live server.
 - Sprites are not committed; `python tools/pull-client-assets.py` decodes them
   from a local client. Do not commit `compendium/assets/img/`.
 - Do not commit what a running fleet writes — `fleet-state.json`, `history/`,

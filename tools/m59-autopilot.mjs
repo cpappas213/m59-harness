@@ -2137,13 +2137,48 @@ export class Autopilot {
         // A short leash while the spot is only a hypothesis: resting does not look at
         // anything, so a two-minute rest in a corner that does not work is two minutes
         // of being hit with nobody watching.
-        maxSeconds: testing ? 15 : (sheltered ? 150 : 90) });
+        //
+        // AND A PROOF IS ABOUT THE ROOM IT WAS TAKEN IN. The long leash is earned by
+        // evidence — this square held while N things stood next to it — and it stops
+        // meaning anything once more than N are there. Twenty-one of our own characters
+        // moved into the Mausoleum and the mummy cap is twenty; squares proven against
+        // one or two attackers were suddenly being approached by four, from angles the
+        // proof never covered. Zoot took the full sheltered leash on such a square and
+        // spent it going from 17 health to 3.
+        //
+        // So the leash is the SHORT one whenever the present crowd is bigger than the
+        // one the square was proven against. Not a demotion — the square may well still
+        // work — just a refusal to bet two minutes of not looking on it.
+        maxSeconds: testing ? 15
+                  : (sheltered ? (near.length > (this.hold?.mostAttackers ?? 0) ? 20 : 150)
+                               : 90) });
       this.note('rested', { seconds: r.seconds, to: r.vitals?.health, reached: r.reached_target, why: r.note,
                             in_safe_spot: sheltered || undefined,
                             crowd: sheltered ? near.length : undefined,
-                            note: sheltered
+                            interrupted: r.interrupted || undefined,
+                            note: r.interrupted
+                              ? 'cut short — see interrupted'
+                              : sheltered
                               ? 'resting to full in a monster room, which the safe spot is what makes possible'
                               : 'resting restores vigor, and vigor sets how fast health regenerates' });
+      // TAKING DAMAGE THROUGH A REST IS EVIDENCE, AND IT IS THE SAME EVIDENCE the hold
+      // evaluator acts on — hit while standing still and not swinging. It just arrived
+      // three seconds after the fact instead of at the end of the leash, which is the
+      // entire point. Give the square up now rather than resting into it again on the
+      // next pass and waiting for observe() to reach the same conclusion a minute later.
+      if (r.interrupted && this.hold) {
+        this.book.failed(this.hold.room, {
+          col: this.hold.col, row: this.hold.row, damage: 1, attackers: near.length });
+        this.book.save();
+        this.note('THIS IS NOT A SAFE SPOT', {
+          where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
+          attackers: near.length, proven_against: this.hold.mostAttackers ?? 0,
+          why: 'we were hit while resting, which is standing still and not swinging — the ' +
+               'one thing that cannot happen in a working spot',
+          caveat: 'found by the rest rather than by observe(), so it is one reading like any ' +
+                  'other: it demotes the square, and a second stops it being recommended' });
+        this.releaseHold('we were hit while resting in it');
+      }
       return;
     }
 

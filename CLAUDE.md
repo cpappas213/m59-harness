@@ -155,8 +155,9 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/<name>.mjs`. Only the chat responder needs `npm install`.
 - `M59_ROOT` points at the Meridian 59 source tree. The compendium's citations
   and the Python analysis scripts both read it.
-- Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (91)
-  and `node tools/m59-chat-test.mjs` (102). The rest need a live server.
+- Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (91),
+  `node tools/m59-chat-test.mjs` (102) and
+  `node tools/m59-rest-test.mjs` (6). The rest need a live server.
 - The compendium's sprites are not committed. `python tools/pull-client-assets.py`
   decodes them from a local client. Do not commit `compendium/assets/img/`.
 - Do not commit anything a running fleet writes — `fleet-state.json`,

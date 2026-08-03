@@ -454,7 +454,20 @@ export async function returnToSpot(s, spot, { maxSteps = 20, tolerance = 12 } = 
 // Sit until a vital comes back, or until nothing is improving. Resting is silent
 // unless something changes, so "no reply" is the normal case and cannot be used as a
 // stop condition — the stop condition has to be the numbers themselves.
-export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAULT_REST_UNTIL, maxSeconds = 120 } = {}) {
+// STOP RESTING IF THE RESTING IS NOT WORKING.
+//
+// `abortOnDamage` is on by default and is the difference between a rest and a
+// beating. Resting restores health slowly and does nothing whatsoever to stop
+// anything hitting you, so the only evidence that a rest is going badly is that
+// health is going DOWN — and the loop below already reads vitals every three
+// seconds to decide whether it is finished. It simply never asked.
+//
+// Zoot rested 61 seconds on a square proven safe while four mummies that the proof
+// never covered took him from 17 health to 3. Every one of those reads saw the
+// number falling and none of them was allowed to care. Three seconds of that is a
+// bad break; a minute of it is nearly a death.
+export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAULT_REST_UNTIL,
+                                     maxSeconds = 120, abortOnDamage = true } = {}) {
   const c = s.need();
   const read = async () => {
     await s.pacer.submit('read', () => c.stats(1));
@@ -468,10 +481,25 @@ export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAUL
 
   await s.pacer.submit('rest', () => c.rest());
   const t0 = Date.now();
-  let stalled = 0, last = -1;
+  let stalled = 0, last = -1, interrupted = null;
+  // The best health seen SO FAR in this rest, not the health we sat down at: a rest
+  // that climbs 12 -> 16 and is then hit back to 14 is being interrupted, and
+  // comparing against the starting 12 would call that progress and sit through it.
+  let peak = v?.health?.value ?? null;
   while (Date.now() - t0 < maxSeconds * 1000) {
     await sleep(3000);
     v = await read();
+    const hp = v?.health?.value ?? null;
+    if (abortOnDamage && hp != null) {
+      if (peak == null || hp > peak) peak = hp;
+      else if (hp < peak) {
+        // Health only falls while resting if something is hitting us. Whatever the
+        // caller believed about this square, it is wrong NOW — hand that back rather
+        // than sitting out the remaining leash.
+        interrupted = `took ${peak - hp} damage while resting — something is hitting us`;
+        break;
+      }
+    }
     if (done()) break;
     // A room can prevent resting, and standing back up is silent too. If nothing has
     // moved for three checks, say so rather than sitting for the full timeout.
@@ -485,7 +513,11 @@ export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAUL
     seconds: Math.round((Date.now() - t0) / 1000),
     from: started, vitals: v,
     reached_target: done(),
-    note: done() ? undefined
+    // Set when the rest was cut short by incoming damage. Callers should treat this
+    // as "the square you trusted is not working", not as an ordinary short rest.
+    interrupted,
+    note: interrupted ? interrupted
+      : done() ? undefined
       : (stalled >= 3 ? 'nothing recovered for several checks — something may be preventing rest, or you are already at your ceiling'
                       : 'timed out before reaching the target'),
   };
