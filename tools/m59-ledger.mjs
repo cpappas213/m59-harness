@@ -238,7 +238,27 @@ export function summarise({ sinceMs = 24 * 3600 * 1000 } = {}) {
       kills_last: s.kills, room_last: s.room, samples: 0,
     };
     e.last_seen = s.t;
-    e.level_last = s.level;
+    // IS THIS A READING, OR A NOTE THAT WE COULD NOT TAKE ONE?
+    //
+    // A character that is not in game still gets sampled every thirty seconds, and
+    // every field of that sample is null. That is honest — we genuinely do not know
+    // anything right now — but it is not new information about the CHARACTER, whose
+    // state is frozen: a logged-off character is out of the world entirely, so
+    // nothing can move it, hurt it or heal it until it logs back in.
+    //
+    // So an offline sample must never overwrite a real one. It records only that we
+    // stopped being able to see, and when.
+    const offline = s.stalled === 'not in game';
+    if (!offline) e.last_in_game = s.t;
+    e.online = !offline;
+    // Last KNOWN level, not last sampled. Every other column below already falls back
+    // this way; this one did not, so an offline fleet reported a page of characters
+    // with no levels — which reads as "they are all level nothing" rather than "we
+    // cannot see them", and takes `gained` and the strategy comparison down with it.
+    e.level_last = s.level ?? e.level_last ?? null;
+    // Likewise the baseline: if the first sample of the window was taken mid-login or
+    // while offline it has no level, and `gained` would be measured from zero.
+    e.level_first ??= s.level ?? null;
     // MEASURE EACH CHARACTER FROM WHEN ITS CURRENT STRATEGY STARTED, not from the
     // beginning of the window. Ten hours of pre-experiment history — including a
     // spell trapped in a sealed town and a run of deaths caused by a safety rule that
@@ -296,6 +316,11 @@ export function summarise({ sinceMs = 24 * 3600 * 1000 } = {}) {
     left_newbie_zone: !!e.events?.left_the_newbie_zone,
     room: e.room_last,
     room_num: e.room_num_last ?? null,
+    // Everything to the right of here may be a memory rather than a reading. `online`
+    // says which, and `last_in_game` says how old the memory is, so a page can show
+    // the state as it was instead of a row of dashes.
+    online: e.online !== false,
+    last_in_game: e.last_in_game ?? null,
     health: e.health_last ?? null,
     mana: e.mana_last ?? null,
     vigor: e.vigor_last ?? null,
@@ -338,9 +363,31 @@ export function summarise({ sinceMs = 24 * 3600 * 1000 } = {}) {
     deaths_per_hour: g.hours ? +(g.deaths / g.hours).toFixed(3) : null,
   })).sort((a, b) => (b.levels_per_hour ?? 0) - (a.levels_per_hour ?? 0));
 
+  // WHEN DID WE LAST SEE ANY OF THEM?
+  //
+  // The banner is about the fleet, not about one character, so the moment that
+  // matters is the last time ANYBODY was in game — that is when the connection went,
+  // and counting from any individual character's last sighting would start the clock
+  // early for whoever dropped first.
+  const online = rows.filter(r => r.online);
+  const lastAnyone = rows.reduce((m, r) => Math.max(m, r.last_in_game ?? 0), 0) || null;
+
   return {
     window_hours: +(sinceMs / 3600000).toFixed(1),
     characters: rows.length,
+    online: online.length,
+    // Null while anyone is still in game. A timestamp means the whole fleet is dark
+    // and this is when it went dark.
+    offline_since: online.length === 0 ? lastAnyone : null,
+    last_in_game: lastAnyone,
+    // WHEN DID A SAMPLE LAST ARRIVE AT ALL — in game or not.
+    //
+    // `offline_since` can only be set by something that is still running and still
+    // writing "not in game" every thirty seconds. If the BROKER dies, nobody writes
+    // anything, every character's last sample is a healthy one, and the page would
+    // report a fleet in perfect condition for ever. The age of the newest sample is
+    // the one signal that survives the reporter itself going away.
+    last_sample_at: samples.reduce((m, s) => Math.max(m, s.t ?? 0), 0) || null,
     samples: samples.length,
     total_levels_gained: rows.reduce((a, r) => a + Math.max(0, r.gained), 0),
     total_deaths: rows.reduce((a, r) => a + r.deaths, 0),

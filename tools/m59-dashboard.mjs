@@ -152,6 +152,41 @@ export function renderDashboard({ hours = 24 } = {}) {
   const sum = summarise({ sinceMs });
   const { events } = readLedger({ sinceMs });
 
+  // THE FLEET IS DARK, AND EVERY NUMBER BELOW IS A MEMORY.
+  //
+  // Worth saying loudly, and worth saying that it is only a memory — but the memory
+  // is not stale in the way a cached page is stale. A character that is not in game
+  // is out of the world: nothing can move it, hurt it or heal it until it logs back
+  // in. So the health and the room shown here are not "what it was last time we
+  // looked", they are what it still IS, and will be when the connection returns.
+  //
+  // The elapsed time is handed over as a number rather than a timestamp so the count
+  // is immune to the viewer's clock disagreeing with this machine's — the page counts
+  // up from however long it had been when it was rendered.
+  // TWO WAYS TO BE IN THE DARK, and the page has to catch both.
+  //
+  //   every character reports "not in game"  — the broker is alive and telling us
+  //   no sample has arrived for minutes      — the broker is not alive to tell us
+  //
+  // The second is the one that used to be invisible: with nothing writing samples,
+  // every character's newest sample is a healthy one and the page reported a fleet in
+  // perfect condition indefinitely. Sample age is the only signal that outlives the
+  // reporter, so it is checked here rather than trusted to the reporter.
+  const NO_NEWS_MS = 3 * 60 * 1000;
+  const sampleAge = sum.last_sample_at ? Date.now() - sum.last_sample_at : null;
+  const noNews = sampleAge != null && sampleAge > NO_NEWS_MS;
+  const darkSince = sum.offline_since ?? (noNews ? sum.last_sample_at : null);
+  const offlineForMs = darkSince ? Math.max(0, Date.now() - darkSince) : null;
+  const why = sum.offline_since
+    ? `every character reports "not in game"`
+    : 'no sample has arrived — the broker may not be running';
+  const offlineBanner = offlineForMs == null ? '' : `
+  <div class="offline-banner" role="status">
+    <span>Connection Unavailable — disconnected for <span class="clock" id="offline-clock">…</span></span>
+    <span class="since">last seen ${esc(new Date(darkSince).toLocaleTimeString())} · ${esc(why)} ·
+      showing each character's last known state, which is still its real one while it is logged out</span>
+  </div>`;
+
   const goal = 50;
   const atGoal = sum.fleet.filter(r => (r.level ?? 0) >= goal).length;
   const at30 = sum.fleet.filter(r => (r.level ?? 0) >= 30).length;
@@ -267,10 +302,21 @@ export function renderDashboard({ hours = 24 } = {}) {
   .bar span { display:block; height:7px; border-radius:4px; background:var(--accent); min-width:2px; }
   .ev { white-space:nowrap; }
   footer { color:var(--dim); font-size:.78rem; text-align:center; }
+  /* THE FLEET IS DARK. Loud, because every number under it is a memory. */
+  .offline-banner { display:flex; flex-wrap:wrap; align-items:baseline; gap:.5rem .75rem;
+    background:var(--bad); color:#fff; border-radius:8px; padding:.7rem .9rem; margin:0 0 1.25rem;
+    font-size:.95rem; font-weight:600; }
+  .offline-banner .since { font-weight:400; opacity:.9; font-size:.85rem; }
+  .offline-banner .clock { font-variant-numeric:tabular-nums; }
+  /* Every vital in the table is last-known rather than current while this is on. */
+  .stale tbody tr td { opacity:.72; }
+  .stale .vital .vnum::after { content:''; }
+  .asof { color:var(--dim); font-size:.78rem; font-weight:400; }
 </style></head>
 <body><div class="wrap">
   <h1>Meridian 59 — ${esc(FLEET_LABEL)} fleet</h1>
   <div class="sub">last ${hours}h · ${sum.samples} samples · refreshes every 60s</div>
+${offlineBanner}
 
   <div class="cards">
     <div class="card"><div class="k">characters</div><div class="v">${sum.characters}</div></div>
@@ -310,7 +356,7 @@ export function renderDashboard({ hours = 24 } = {}) {
       <em>weapon?</em> are the two things that fail silently: an unarmed character punches monsters
       instead of erroring, and one with no food never gets vigor above the 80 that resting alone
       reaches. Rooms link to the compendium.</p>
-    <table>
+    <table class="${offlineForMs == null ? '' : 'stale'}">
       <thead><tr><th>character</th><th class="num">level</th><th class="num">gained</th>
         <th>health</th><th>mana</th><th>vigor</th>
         <th class="num">food?</th><th class="num">weapon?</th>
@@ -329,5 +375,29 @@ export function renderDashboard({ hours = 24 } = {}) {
   </section>
 
   <footer>${esc(LEDGER_DIR)} · append-only · keyed by character name</footer>
-</div></body></html>`;
+</div>
+<script>
+// The disconnected-for clock. Counts up from however long it had already been when
+// this page was rendered, NOT from a timestamp — the viewer is often a phone, and a
+// phone whose clock is a few minutes off would otherwise show a confidently wrong
+// number, or a negative one.
+(function () {
+  var el = document.getElementById('offline-clock');
+  if (!el) return;
+  var began = ${offlineForMs == null ? 'null' : offlineForMs}, t0 = Date.now();
+  if (began === null) return;
+  function fmt(ms) {
+    var s = Math.max(0, Math.round(ms / 1000));
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    var out = x + 's';
+    if (h || m) out = m + 'm ' + (x < 10 ? '0' : '') + out;
+    if (h) out = h + 'h ' + (m < 10 ? '0' : '') + out;
+    return out;
+  }
+  function tick() { el.textContent = fmt(began + (Date.now() - t0)); }
+  tick();
+  setInterval(tick, 1000);
+})();
+</script>
+</body></html>`;
 }

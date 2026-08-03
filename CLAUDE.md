@@ -157,7 +157,8 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   and the Python analysis scripts both read it.
 - Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (91),
   `node tools/m59-chat-test.mjs` (102) and
-  `node tools/m59-rest-test.mjs` (6). The rest need a live server.
+  `node tools/m59-rest-test.mjs` (6) and
+  `node tools/m59-ledger-test.mjs` (15). The rest need a live server.
 - The compendium's sprites are not committed. `python tools/pull-client-assets.py`
   decodes them from a local client. Do not commit `compendium/assets/img/`.
 - Do not commit anything a running fleet writes — `fleet-state.json`,
