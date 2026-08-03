@@ -667,24 +667,47 @@ function releasePilot(agent, why = 'released') {
 //
 // Deliberately absent, and not merely gated: rerolling, leaving, anything touching
 // credentials. There is no phrasing that reaches them.
+// EVERY ENTRY HERE HAS BEEN CHECKED AGAINST THE TOOL IT CALLS. The first draft was
+// written from memory and three of eight verbs were malformed — `give` was not a tool
+// at all, and `act` takes {verb, target} rather than the {follow}/{drop} shapes used.
+// They would have failed at the moment of use, which is the worst moment: mid-fight,
+// with a hand on the keys, looking like the character ignored you. If a verb is added
+// here, call its tool once by hand first.
+//
+// Anchored at the START of the message on purpose. `\brest\b` matched "give me the
+// rest of your money" and sat the character down; `\b(stop|hold)\b` matched "stop
+// hitting me" and "hold on". An instruction is something you issue, so it may begin
+// with one of these words and not merely contain it.
 const OPERATOR_VERBS = [
-  { re: /\b(give|hand)\s+(me\s+)?(your\s+)?(money|coins?|shillings?|gold)\b|\bpay\s+me\b/i,
-    what: 'give money', run: async (a, me) => await callTool('give', { agent: a, to: me, money: 'all' }) },
-  { re: /\b(heal|cure)\s+me\b|\bcast\s+heal\s+(on\s+)?me\b/i,
-    what: 'cast heal on the operator', run: async (a, me) => await callTool('cast', { agent: a, spell: 'heal', target: me }) },
-  { re: /\bfollow\s+me\b/i,
-    what: 'follow', run: async (a, me) => await callTool('act', { agent: a, follow: me }) },
-  { re: /\b(come|get)\s+(here|to\s+me)\b/i,
-    what: 'come to the operator', run: async (a, me, ctx) => await callTool('travel', { agent: a, to: ctx.room, background: true }) },
-  { re: /\bdrop\s+(all|everything)\b/i,
-    what: 'drop everything', run: async (a) => await callTool('act', { agent: a, drop: 'all' }) },
-  { re: /\b(stop|halt|wait|hold)\b/i,
-    what: 'stop the keeper', run: async (a) => await callTool('autopilot', { agent: a, action: 'stop' }) },
-  { re: /\b(resume|carry on|continue|back to work)\b/i,
-    what: 'restart the keeper', run: async (a) => await callTool('autopilot', { agent: a, action: 'start' }) },
-  { re: /\brest\b|\bsit\b/i,
-    what: 'rest', run: async (a) => await callTool('rest_up', { agent: a }) },
+  { re: /^\s*(please\s+)?(heal|cure)\s+me\b|^\s*(please\s+)?cast\s+heal\s+(on\s+)?me\b/i,
+    what: 'cast heal on the operator',
+    run: async (a, me) => await callTool('cast', { agent: a, spell: 'heal', target: me }) },
+  { re: /^\s*(please\s+)?(come|get)\s+(here|to\s+me)\b/i,
+    what: 'come to the operator',
+    run: async (a, me, ctx) => await callTool('travel', { agent: a, to: ctx.room, background: true }) },
+  { re: /^\s*(please\s+)?(follow|approach)\s+me\b|^\s*(please\s+)?stand\s+(by|next to)\s+me\b/i,
+    what: 'come and stand next to the operator',
+    run: async (a, me) => await callTool('approach', { agent: a, target: me, distance: 1 }) },
+  { re: /^\s*(please\s+)?(stop|halt|hold on|wait)\b/i,
+    what: 'stop the keeper',
+    run: async (a) => await callTool('autopilot', { agent: a, action: 'stop' }) },
+  { re: /^\s*(please\s+)?(resume|carry on|continue|back to work)\b/i,
+    what: 'restart the keeper',
+    run: async (a) => await callTool('autopilot', { agent: a, action: 'start' }) },
+  { re: /^\s*(please\s+)?(rest|sit down|take a break)\b/i,
+    what: 'rest',
+    run: async (a) => await callTool('rest_up', { agent: a }) },
 ];
+
+// DELIBERATELY NOT HERE YET.
+//
+// "give me your money" and "drop everything" were in the first draft and are removed
+// rather than shipped broken. Handing money over is not one call: `trade` is an
+// offer/counter/accept exchange over object ids, and `supply` wants to know what and
+// how much. Dropping needs a target per item — `act`'s verb list has `drop` but no
+// notion of "all" — and on a shared server dropping a pack in a public room is a gift
+// to whoever is standing there, so it wants a confirmation step this table does not
+// have. Both are worth adding; neither is worth guessing at.
 
 // Returns true when the message was consumed as an instruction. False means "this was
 // not from a piloted character, or said nothing I understand" — and it goes back to
