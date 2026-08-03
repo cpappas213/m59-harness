@@ -249,8 +249,19 @@ function launch(row) {
   if (!creds) { S.status = c.red('no credentials on file for ' + row.agent); return; }
   const exe = env.M59_CLIENT_EXE ||
     'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Meridian 59\\Meridian.exe';
-  const host = env.M59_HOST || '127.0.0.1';
-  const port = env.M59_PORT || '5959';
+  // THE CHARACTER'S OWN SERVER, not this machine's.
+  //
+  // A roster entry records the host and port it was joined against, because a fleet is
+  // per-server and one broker can hold characters on several. Reading the environment
+  // instead sent the client to 127.0.0.1 for every character in it — fine while the
+  // only server was local, and silently wrong the moment one was not. It does not fail
+  // cleanly either: the client opens, finds nothing on that port, and sits there, which
+  // reads as the launch key doing nothing rather than as connecting to the wrong place.
+  //
+  // The environment stays as the fallback for a roster written before host and port
+  // were recorded.
+  const host = creds.host || env.M59_HOST || '127.0.0.1';
+  const port = String(creds.port || env.M59_PORT || '5959');
   const inject = join(REPO, 'tools', 'm59-inject.ps1');
   // LAUNCH IT FROM ITS OWN DIRECTORY. The client resolves `resource\` relative to the
   // working directory, so started from the repo it cannot find the module DLLs it is

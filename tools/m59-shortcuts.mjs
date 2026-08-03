@@ -218,7 +218,13 @@ function writeWindowsShortcut(path, e, exe, args, opts) {
 // The four values, in the order the client's own parser takes them. /Q is what
 // makes it a shortcut rather than a form to fill in.
 function clientArgs(e, opts, steam) {
-  const args = [`/H:${opts.host}`, `/P:${opts.port}`, `/U:${e.account}`, `/W:${e.password}`, '/Q'];
+  // EACH CHARACTER'S OWN SERVER. The roster records the host and port every entry was
+  // joined against, and one broker can hold characters on more than one — so a single
+  // host for the whole run is wrong as soon as that is true, and quietly: the shortcut
+  // opens a client that finds nothing on the port and waits.
+  const host = e.host || opts.host;
+  const port = String(e.port || opts.port);
+  const args = [`/H:${host}`, `/P:${port}`, `/U:${e.account}`, `/W:${e.password}`, '/Q'];
   if (steam) args.push('/S');
   return args;
 }
