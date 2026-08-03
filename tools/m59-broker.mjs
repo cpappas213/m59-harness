@@ -32,6 +32,7 @@
 
 import http from 'node:http';
 import os from 'node:os';
+import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { M59Client, KOD_FINENESS } from './m59-client.mjs';
@@ -430,6 +431,132 @@ async function resumeFleet() {
     } catch (e) { console.error(`[state] ${agent} did not resume: ${e.message}`); }
   }
   saveFleetState();
+}
+
+// ------------------------------------------------------------------ reconnecting
+
+// PUT BACK WHAT FELL OUT, WITHOUT PUTTING BACK WHAT WAS TAKEN OUT.
+//
+// The broker resumed the fleet at boot and then never looked again. Twenty-one
+// characters dropped out of the game and sat logged out for twenty-five minutes while
+// this process reported itself healthy, holding twenty-one sessions, every one of them
+// answering "not in game". The server was fine throughout and the credentials were on
+// disk the whole time. Nothing was watching.
+//
+// Three things this must not do:
+//
+//   * Undo a deliberate `leave`. Without `forget` that means "logged out until a
+//     restart", which is documented and is a thing people rely on. Agents left on
+//     purpose are remembered here and skipped until something joins them again.
+//   * Fight a human. Meridian allows ONE connection per character, so a person opening
+//     a click-to-play shortcut bumps the broker off — and rejoining would bump them
+//     straight back, forever, from a process with no hands. A rejoin that drops again
+//     within CONTENTION_MS is read as exactly that and backs off hard.
+//   * Hammer a server that is refusing us. Every failure doubles the wait.
+//
+// This is a SHARED server. Backoff is not politeness here, it is the difference
+// between a reconnect and a login flood.
+const REJOIN = process.env.M59_REJOIN !== '0' && !process.argv.includes('--no-rejoin');
+const RECONCILE_MS = Number(process.env.M59_RECONCILE_MS || 45_000);
+const CONTENTION_MS = 90_000;
+const BACKOFF_BASE_MS = 30_000;
+const BACKOFF_MAX_MS = 15 * 60_000;
+
+const leftOnPurpose = new Set();          // agent -> do not rejoin until asked
+const rejoinState = new Map();            // agent -> { failures, nextTryAt, lastJoinAt }
+
+function backoffFor(failures) {
+  return Math.min(BACKOFF_BASE_MS * (2 ** Math.max(0, failures - 1)), BACKOFF_MAX_MS);
+}
+
+async function reconcileFleet() {
+  // Someone else owns this roster. Rejoining its characters would be the two-brokers
+  // failure the lock exists to prevent, arriving one character at a time.
+  if (fleetOwnedByAnotherProcess()) return;
+
+  for (const [agent, entry] of [...fleetState]) {
+    const credentials = entry?.credentials;
+    if (!credentials) continue;
+    if (leftOnPurpose.has(agent)) continue;
+
+    const existing = sessions.get(agent);
+    if (existing?.live) {
+      // Healthy. Clear the backoff, remember WHEN it came back so a drop shortly after
+      // a rejoin can be told apart from a drop out of the blue, and — the important
+      // one — remember whether its keeper was actually running.
+      //
+      // WHAT WAS RUNNING WHEN IT DROPPED, NOT WHAT THE ROSTER REMEMBERS. Stopping a
+      // keeper does not clear the orders saved on disk, so restoring them blindly
+      // resurrects work somebody deliberately stopped. Fozzie was walked out of the
+      // newbie zone with his keeper switched off; the roster still said "farm mummy",
+      // and a rejoin would have set him hunting mummies in an inn that has none.
+      const st = rejoinState.get(agent) || { failures: 0, nextTryAt: 0, lastJoinAt: null };
+      if (!st.lastJoinAt) st.lastJoinAt = Date.now();
+      st.keeperWasRunning = !!autopilotIfAny(agent)?.running;
+      rejoinState.set(agent, st);
+      continue;
+    }
+
+    const st = rejoinState.get(agent) || { failures: 0, nextTryAt: 0, lastJoinAt: null };
+    if (Date.now() < st.nextTryAt) continue;
+
+    // Dropped again almost immediately after we put it back: something else wants this
+    // character. Treat it as a failure so the wait grows, rather than as a fresh
+    // problem to solve at full speed.
+    const contended = st.lastJoinAt && (Date.now() - st.lastJoinAt) < CONTENTION_MS;
+    if (contended) {
+      st.failures++;
+      st.nextTryAt = Date.now() + backoffFor(st.failures);
+      st.lastJoinAt = null;
+      rejoinState.set(agent, st);
+      console.error(`[rejoin] ${agent} dropped again ${Math.round((Date.now() - (st.lastJoinAt || Date.now())) / 1000)}s ` +
+                    `after rejoining — something else may be holding this character; ` +
+                    `waiting ${Math.round(backoffFor(st.failures) / 1000)}s`);
+      continue;
+    }
+
+    try {
+      const s = session(agent);
+      await s.join(credentials);
+      listen(agent, s);
+      let keeper = null;
+      // `undefined` means we never saw this session live in this process — a drop
+      // during boot, say — and the roster is then the best evidence we have, which is
+      // the resume behaviour. `false` means we watched its keeper be stopped, and that
+      // is a decision to respect rather than an outage to repair.
+      const restoreKeeper = entry.autopilot && st.keeperWasRunning !== false;
+      if (restoreKeeper) {
+        const p = autopilotFor(s);
+        p.mode = entry.autopilot.mode || p.mode;
+        Object.assign(p.policy, entry.autopilot.policy || {});
+        p.start();
+        keeper = p.running ? `${p.mode}/${p.policy.hunt || '-'}` : 'FAILED TO START';
+      } else if (entry.autopilot) {
+        keeper = 'left stopped — it was not running when it dropped';
+      }
+      rejoinState.set(agent, { failures: 0, nextTryAt: 0, lastJoinAt: Date.now(),
+                               keeperWasRunning: st.keeperWasRunning });
+      console.error(`[rejoin] ${agent} (${credentials.character || '?'}) is back` +
+                    (keeper ? ` keeper=${keeper}` : ' no keeper'));
+    } catch (e) {
+      st.failures++;
+      st.nextTryAt = Date.now() + backoffFor(st.failures);
+      st.lastJoinAt = null;
+      rejoinState.set(agent, st);
+      console.error(`[rejoin] ${agent} failed (${st.failures}): ${e.message} — ` +
+                    `next try in ${Math.round(backoffFor(st.failures) / 1000)}s`);
+    }
+  }
+}
+
+function startReconciling() {
+  if (!REJOIN) {
+    console.error('[rejoin] disabled — characters that drop will stay out until something joins them');
+    return;
+  }
+  const t = setInterval(() => { reconcileFleet().catch(() => {}); }, RECONCILE_MS);
+  t.unref?.();
+  console.error(`[rejoin] watching every ${Math.round(RECONCILE_MS / 1000)}s`);
 }
 
 class Recorder {
@@ -1523,6 +1650,10 @@ const TOOLS = [
       // whatever the environment happens to say months later — the failure this and
       // the per-fleet state file exist to prevent.
       rememberJoin(a.agent, s.credentials);
+      // Asked for by name, so it is wanted again — clear any deliberate `leave` and
+      // any accumulated backoff, or the reconciler would keep ignoring it.
+      leftOnPurpose.delete(a.agent);
+      rejoinState.delete(a.agent);
       listen(a.agent, s);
       return r;
     },
@@ -3959,6 +4090,10 @@ const TOOLS = [
       dropAutopilot(a.agent);
       dropChatter(a.agent);
       if (a.forget) forgetAgent(a.agent);
+      // Deliberate. The reconciler puts back characters that FELL out; this one was
+      // taken out, and without `forget` it stays out until a restart or an explicit
+      // join — which is what this tool has always promised.
+      leftOnPurpose.add(a.agent);
       try { s.client.send(20 /* BP_LOGOFF */); } catch {}
       s.client.sock?.destroy();
       // Flush the recorder before dropping the session, or the last few seconds —
@@ -4191,10 +4326,67 @@ const isLocal = (req) => {
   return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
 };
 
+// STOPPING AND RESTARTING HAVE TO BE DONE BY SOMEBODY ELSE.
+//
+// A process can stop itself but it cannot start itself afterwards, so restart is handed
+// to a DETACHED m59-service.mjs, which outlives the broker it is about to kill and then
+// brings the replacement up. Doing it in-process would kill the thing doing it halfway.
+//
+// Rejoin is different — it is just the reconciler, running now instead of at the next
+// tick — so it is answered here and needs nothing external.
+function handleControl(action, res) {
+  const reply = (code, body) => {
+    res.writeHead(code, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(body));
+  };
+  if (action === 'rejoin') {
+    if (!REJOIN) return reply(409, { ok: false, note: 'rejoining is disabled on this broker (--no-rejoin)' });
+    // Kick it off and answer immediately: joining twenty characters takes longer than
+    // any browser is willing to wait, and the page polls anyway.
+    reconcileFleet().catch(e => console.error(`[rejoin] sweep failed: ${e.message}`));
+    const out = [...fleetState].filter(([a]) => !sessions.get(a)?.live && !leftOnPurpose.has(a)).length;
+    return reply(200, { ok: true, note: out ? `rejoining ${out} character(s) — watch the log` : 'everyone is already in game' });
+  }
+  if (action === 'restart' || action === 'stop') {
+    const svc = new URL('./m59-service.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+    const args = [svc, action];
+    if (FLEET) args.push('--fleet', FLEET);
+    try {
+      const child = spawn(process.execPath, args,
+        { detached: true, stdio: 'ignore', cwd: BROKER_ROOT });
+      child.unref();
+    } catch (e) {
+      return reply(500, { ok: false, note: `could not spawn the service: ${e.message}` });
+    }
+    // Answered before we are killed, which is the last useful thing this process does.
+    return reply(200, { ok: true,
+      note: action === 'restart'
+        ? 'restarting — every character logs out and back in; this page returns in a few seconds'
+        : 'stopping — start it again with: node tools/m59-service.mjs start' +
+          (FLEET ? ` --fleet ${FLEET}` : '') });
+  }
+  return reply(404, { ok: false, note: `no such control "${action}"` });
+}
+
 function serveDashboard(port) {
   const server = http.createServer((req, res) => {
+    const url0 = new URL(req.url, 'http://x');
+    // THE ONLY WRITES THIS SERVER ACCEPTS, and only from the machine it runs on.
+    //
+    // This port binds to every interface so the page can be read from a phone, and the
+    // argument for that is that there is nothing here to abuse. Controls are a write,
+    // so they are refused for anything that is not loopback — checked here, at the
+    // socket, not merely hidden in the markup.
+    if (req.method === 'POST' && url0.pathname.startsWith('/control/')) {
+      if (!isLocal(req)) {
+        res.writeHead(403, { 'content-type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false,
+          note: 'controls are served only to 127.0.0.1 — open this page on the broker machine' }));
+      }
+      return handleControl(url0.pathname.slice('/control/'.length), res);
+    }
     if (req.method !== 'GET') { res.writeHead(405); return res.end('read-only'); }
-    const url = new URL(req.url, 'http://x');
+    const url = url0;
     if (url.pathname === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ ok: true, view: 'dashboard', readonly: true }));
@@ -4235,7 +4427,7 @@ function serveDashboard(port) {
     try {
       const hours = Number(url.searchParams.get('hours')) || 24;
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-      res.end(renderDashboard({ hours }));
+      res.end(renderDashboard({ hours, localhost: isLocal(req) }));
     } catch (e) {
       res.writeHead(500, { 'content-type': 'text/plain' });
       res.end('dashboard failed: ' + e.message);
@@ -4340,12 +4532,14 @@ if (argv.includes('--selftest')) {
   serveHttp(Number(argv[argv.indexOf('--http') + 1] || 8899));
   if (!argv.includes('--no-resume')) resumeFleet();
   startLedger();
+  startReconciling();
   const di = argv.indexOf('--dashboard');
   if (di >= 0) serveDashboard(Number(argv[di + 1] || 8902));
 } else {
   serveStdio();
   if (!argv.includes('--no-resume')) resumeFleet();
   startLedger();
+  startReconciling();
 }
 
 

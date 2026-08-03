@@ -18,6 +18,9 @@ node_modules/
 /substrate/history/
 /substrate/recordings/
 /substrate/*.log
+# Which process m59-service.mjs last started, per fleet. Runtime state, and wrong the
+# moment it is read on any other machine.
+/substrate/*.pid
 /commissions/
 
 # The account passwords for a fleet made by tools/m59-makefleet.mjs. This is the

@@ -147,7 +147,7 @@ const ago = (t) => {
   return (s / 3600).toFixed(1) + 'h ago';
 };
 
-export function renderDashboard({ hours = 24 } = {}) {
+export function renderDashboard({ hours = 24, localhost = false } = {}) {
   const sinceMs = hours * 3600 * 1000;
   const sum = summarise({ sinceMs });
   const { events } = readLedger({ sinceMs });
@@ -185,6 +185,26 @@ export function renderDashboard({ hours = 24 } = {}) {
     <span>Connection Unavailable — disconnected for <span class="clock" id="offline-clock">…</span></span>
     <span class="since">last seen ${esc(new Date(darkSince).toLocaleTimeString())} · ${esc(why)} ·
       showing each character's last known state, which is still its real one while it is logged out</span>
+  </div>`;
+
+  // CONTROLS ARE FOR THE MACHINE THE BROKER IS ON, AND NOWHERE ELSE.
+  //
+  // This page binds to every interface on purpose — it is meant to be read from a
+  // phone — and its whole safety argument is that there is nothing here to abuse: no
+  // tools, no sessions, no writes. Buttons are a write, so they are rendered only for
+  // 127.0.0.1 and the POST that backs them is refused for anything else. Both halves,
+  // because a hidden button is not a permission check.
+  //
+  // There is no Start button, and there cannot be: when the broker is down nothing is
+  // serving this page. Starting is `node tools/m59-service.mjs start`, which is the
+  // one thing that genuinely needs a terminal.
+  const controls = !localhost ? '' : `
+  <div class="controls">
+    <span class="ctl-label">this machine only</span>
+    <button data-act="rejoin" class="ctl">Rejoin dropped characters</button>
+    <button data-act="restart" class="ctl">Restart broker</button>
+    <button data-act="stop" class="ctl danger">Stop broker</button>
+    <span class="ctl-msg" id="ctl-msg"></span>
   </div>`;
 
   const goal = 50;
@@ -312,11 +332,24 @@ export function renderDashboard({ hours = 24 } = {}) {
   .stale tbody tr td { opacity:.72; }
   .stale .vital .vnum::after { content:''; }
   .asof { color:var(--dim); font-size:.78rem; font-weight:400; }
+  /* Localhost-only controls. Deliberately plain — this is plumbing, not the content. */
+  .controls { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem;
+    background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:.6rem .75rem; margin:0 0 1.25rem; }
+  .ctl-label { color:var(--dim); font-size:.72rem; text-transform:uppercase;
+    letter-spacing:.06em; margin-right:.25rem; }
+  button.ctl { font:inherit; font-size:.85rem; padding:.35rem .7rem; cursor:pointer;
+    color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:6px; }
+  button.ctl:hover:not(:disabled) { border-color:var(--accent); }
+  button.ctl:disabled { opacity:.5; cursor:default; }
+  button.ctl.danger:hover:not(:disabled) { border-color:var(--bad); color:var(--bad); }
+  .ctl-msg { font-size:.82rem; color:var(--dim); }
 </style></head>
 <body><div class="wrap">
   <h1>Meridian 59 — ${esc(FLEET_LABEL)} fleet</h1>
   <div class="sub">last ${hours}h · ${sum.samples} samples · refreshes every 60s</div>
 ${offlineBanner}
+${controls}
 
   <div class="cards">
     <div class="card"><div class="k">characters</div><div class="v">${sum.characters}</div></div>
@@ -397,6 +430,46 @@ ${offlineBanner}
   function tick() { el.textContent = fmt(began + (Date.now() - t0)); }
   tick();
   setInterval(tick, 1000);
+})();
+
+// The localhost-only controls. Present only when this page was served to 127.0.0.1;
+// the POST is checked again at the server, because a button that is merely absent is
+// not a permission check.
+(function () {
+  var msg = document.getElementById('ctl-msg');
+  var btns = document.querySelectorAll('button.ctl');
+  if (!btns.length) return;
+  function setBusy(on) {
+    for (var i = 0; i < btns.length; i++) btns[i].disabled = on;
+  }
+  function run(act) {
+    // Stopping and restarting are how you lose a fleet by misclick, so they ask first.
+    if (act !== 'rejoin' &&
+        !confirm('This will ' + act + ' the broker. Every keeper runs inside it, so all ' +
+                 'characters log out until it is back. Continue?')) return;
+    setBusy(true);
+    msg.textContent = act + 'ing…';
+    fetch('/control/' + act, { method: 'POST' })
+      .then(function (r) { return r.json().catch(function () { return { ok: r.ok }; }); })
+      .then(function (j) {
+        msg.textContent = j && j.note ? j.note : (j && j.ok ? 'done' : 'failed');
+        // A restart takes the server that is answering us with it, so do not reload
+        // straight away — give it time to come back, then let the page refresh.
+        var wait = act === 'rejoin' ? 2000 : 12000;
+        if (act !== 'stop') setTimeout(function () { location.reload(); }, wait);
+        else setBusy(false);
+      })
+      .catch(function (e) {
+        // A restart kills the connection mid-request; that is success, not failure.
+        msg.textContent = act === 'restart' ? 'broker went down — waiting for it to come back'
+                                            : 'failed: ' + e.message;
+        if (act === 'restart') setTimeout(function () { location.reload(); }, 12000);
+        else setBusy(false);
+      });
+  }
+  for (var i = 0; i < btns.length; i++) {
+    (function (b) { b.addEventListener('click', function () { run(b.dataset.act); }); })(btns[i]);
+  }
 })();
 </script>
 </body></html>`;

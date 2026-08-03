@@ -66,6 +66,53 @@ Properties → Launch Options.
 connection per character. That is expected, and is how `m59-fleet.mjs spec`
 works; use `--proxy` when you do not want it.
 
+## Running the broker as a service
+
+```bash
+node tools/m59-service.mjs start   --fleet prod     # detached, survives this terminal
+node tools/m59-service.mjs status  --fleet prod     # up/down, pid, how many are in game
+node tools/m59-service.mjs restart --fleet prod
+node tools/m59-service.mjs stop    --fleet prod
+node tools/m59-service.mjs logs    --fleet prod --follow
+```
+
+**Start it this way rather than by hand.** A broker started from a terminal belongs to
+that terminal. One was found running with its whole ancestry dead — it had survived only
+because Windows does not cascade-kill children — while its log went to a temp directory
+that gets cleaned up. This gives it a pid file, a log in `substrate/broker-<fleet>.log`,
+and a stop that finds it by `/health` rather than by process name.
+
+It does **not** survive a reboot. `start` is one command; a Windows service would have
+meant a third-party binary in a repository where every other tool is dependency-free.
+
+**Every keeper runs inside the broker.** Stopping it logs out every character; there is
+no separate keeper process to survive it.
+
+### The page has buttons, on the broker machine only
+
+The fleet page carries Rejoin / Restart / Stop when it is opened on `127.0.0.1`. It binds
+to every interface so it can be read from a phone, so the controls are rendered only for
+loopback **and** the POST behind them is refused at the socket for anything else — a
+hidden button is not a permission check. There is no Start button and there cannot be:
+when the broker is down, nothing is serving that page.
+
+### It puts back characters that fall out
+
+The broker rejoins sessions that drop, every 45s, and restarts their keepers. This exists
+because twenty-one characters once sat logged out for twenty-five minutes while the
+broker reported itself healthy and holding twenty-one sessions, every one of them
+answering "not in game". Three things it will not do:
+
+- **Undo a `leave`.** Without `forget` that means "out until a restart", and it is honoured.
+- **Fight a human.** One connection per character, so a click-to-play shortcut bumps the
+  broker off. A character that drops again within 90s of being rejoined is read as
+  contention and the wait doubles, to a 15-minute cap. To play one yourself, `leave` it
+  first or use `--proxy` shortcuts.
+- **Restore orders that were stopped on purpose.** It restarts the keeper that was
+  running when the drop happened, not whatever the roster last wrote down.
+
+`--no-rejoin` or `M59_REJOIN=0` turns it off.
+
 ## Asked to shut down, stop the server, or "we're done for now"?
 
 ```bash
