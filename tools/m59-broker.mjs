@@ -320,6 +320,9 @@ function listen(name, s) {
         isPeer: (id) => [...sessions.values()]
           .some(o => o !== s && o.client?.selfId === id),
         autopilotStatus: () => autopilotIfAny(name)?.status() ?? null,
+        // Speech from a character the operator is currently playing is direction, not
+        // conversation. Returns true when it consumed the message.
+        operatorInstruction: (said) => routeOperatorInstruction(name, said),
       },
     });
     ch.reattach();
@@ -478,6 +481,10 @@ async function reconcileFleet() {
     const credentials = entry?.credentials;
     if (!credentials) continue;
     if (leftOnPurpose.has(agent)) continue;
+    // Being played by a person. Not missing — occupied. Rejoining would take the
+    // character out from under a hand that is on the keys, and the login would bump
+    // them straight out of the world.
+    if (pilotOf(agent)) continue;
 
     const existing = sessions.get(agent);
     if (existing?.live) {
@@ -547,6 +554,166 @@ async function reconcileFleet() {
                     `next try in ${Math.round(backoffFor(st.failures) / 1000)}s`);
     }
   }
+}
+
+// ------------------------------------------------------------------ piloting
+
+// WHEN THE OPERATOR IS PLAYING ONE OF THEM HIMSELF.
+//
+// Meridian allows ONE connection per character, so a person opening a client as Kermit
+// takes Kermit away from us — and everything this broker does next is a fight it should
+// not be having: the reconciler rejoins and bumps the human out, the keeper resumes and
+// walks the character somewhere while a hand is on the keys.
+//
+// So a character can be CLAIMED. While claimed:
+//
+//   * the reconciler ignores it entirely — it is not missing, it is being played
+//   * its keeper stays stopped
+//   * speech FROM it is treated as instruction rather than as chat (see below)
+//
+// THE CLAIM IS BOUND TO A LOCAL PROCESS, and that is the whole security argument. Not
+// "a message said it was Kermit" — anyone who guesses a password can be Kermit, and on
+// this server the passwords are weak. What is trusted is narrower and local: WE spawned
+// this client, on this machine, its pid is still alive, and one-connection-per-character
+// means it therefore holds the only session permitted for that character. Nothing in
+// that chain travels over the wire.
+//
+// When the pid dies the claim is released and the character goes back to work, which is
+// the whole of requirement B.
+const piloted = new Map();     // agent -> { pid, since, objectId, character, keeperWasRunning }
+const PILOT_POLL_MS = Number(process.env.M59_PILOT_POLL_MS || 4000);
+
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+// The claim, and the only thing that may promote speech to instruction. A stale entry
+// whose process has gone is not a claim, so this checks liveness rather than trusting
+// the map — the poller is a convenience, not the authority.
+function pilotOf(agent) {
+  const p = piloted.get(agent);
+  if (!p) return null;
+  if (!pidAlive(p.pid)) { releasePilot(agent, 'the client process is gone'); return null; }
+  return p;
+}
+
+// Which piloted agent is speaking, by OBJECT ID. Object ids are reissued by `save game`,
+// so a renumber makes this stop matching — and that fails CLOSED, back to ordinary
+// untrusted chat, which is the right direction to fail in.
+function pilotedSpeaker(objectId) {
+  for (const agent of [...piloted.keys()]) {
+    const p = pilotOf(agent);
+    if (p && p.objectId != null && p.objectId === objectId) return { agent, pilot: p };
+  }
+  return null;
+}
+
+function claimPilot(agent, pid, { character = null } = {}) {
+  const s = sessions.get(agent);
+  const objectId = s?.client?.selfId ?? null;
+  const keeper = autopilotIfAny(agent);
+  const keeperWasRunning = !!keeper?.running;
+  if (keeper?.running) keeper.stop();
+  piloted.set(agent, { pid, since: Date.now(), objectId,
+                       character: character ?? s?.client?.me?.name ?? null, keeperWasRunning });
+  console.error(`[pilot] ${agent} claimed by pid ${pid}` +
+                ` (object ${objectId ?? '?'}, keeper ${keeperWasRunning ? 'was running' : 'was stopped'})`);
+  return { agent, pid, object_id: objectId, keeper_was_running: keeperWasRunning };
+}
+
+function releasePilot(agent, why = 'released') {
+  const p = piloted.get(agent);
+  if (!p) return null;
+  piloted.delete(agent);
+  console.error(`[pilot] ${agent} released — ${why}. ` +
+                (p.keeperWasRunning ? 'the keeper will start again once it is back in game'
+                                    : 'its keeper was stopped before, so it stays stopped'));
+  const st = rejoinState.get(agent) || { failures: 0, nextTryAt: 0, lastJoinAt: null };
+  st.failures = 0; st.nextTryAt = 0; st.lastJoinAt = null;
+  st.keeperWasRunning = p.keeperWasRunning;
+  rejoinState.set(agent, st);
+
+  // TWO WAYS A CLAIM ENDS, and only one of them goes through the reconciler.
+  //
+  // Usually the human's client took the character from us when it logged in, so our
+  // session is dead and the reconciler does the whole job: rejoin, then restore the
+  // keeper that was running. But a claim can also end while our session is still up —
+  // released by hand, or a launch that never reached the login screen — and then there
+  // is nothing for the reconciler to notice. The character would sit in the world doing
+  // nothing, which looks exactly like a keeper that crashed.
+  const s = sessions.get(agent);
+  if (s?.live && p.keeperWasRunning) {
+    try {
+      const keeper = autopilotFor(s);
+      const saved = fleetState.get(agent)?.autopilot;
+      if (saved) {
+        keeper.mode = saved.mode || keeper.mode;
+        Object.assign(keeper.policy, saved.policy || {});
+      }
+      keeper.start();
+      console.error(`[pilot] ${agent} still in game — keeper restarted here rather than ` +
+                    `waiting for a rejoin that is not coming`);
+    } catch (e) { console.error(`[pilot] ${agent} keeper did not restart: ${e.message}`); }
+  }
+  return p;
+}
+
+// WHAT THE OPERATOR CAN SAY TO A CHARACTER WHILE PLAYING BESIDE IT.
+//
+// A deliberately small, deterministic table — not a language model. Two reasons. This
+// runs with no confirmation step, so a misreading spends real items on a shared server;
+// and a table can be read in one screen and argued with, which a prompt cannot.
+//
+// Anything not matched here falls through to ordinary chat handling, so an unrecognised
+// sentence is answered by the chatter rather than silently swallowed.
+//
+// Deliberately absent, and not merely gated: rerolling, leaving, anything touching
+// credentials. There is no phrasing that reaches them.
+const OPERATOR_VERBS = [
+  { re: /\b(give|hand)\s+(me\s+)?(your\s+)?(money|coins?|shillings?|gold)\b|\bpay\s+me\b/i,
+    what: 'give money', run: async (a, me) => await callTool('give', { agent: a, to: me, money: 'all' }) },
+  { re: /\b(heal|cure)\s+me\b|\bcast\s+heal\s+(on\s+)?me\b/i,
+    what: 'cast heal on the operator', run: async (a, me) => await callTool('cast', { agent: a, spell: 'heal', target: me }) },
+  { re: /\bfollow\s+me\b/i,
+    what: 'follow', run: async (a, me) => await callTool('act', { agent: a, follow: me }) },
+  { re: /\b(come|get)\s+(here|to\s+me)\b/i,
+    what: 'come to the operator', run: async (a, me, ctx) => await callTool('travel', { agent: a, to: ctx.room, background: true }) },
+  { re: /\bdrop\s+(all|everything)\b/i,
+    what: 'drop everything', run: async (a) => await callTool('act', { agent: a, drop: 'all' }) },
+  { re: /\b(stop|halt|wait|hold)\b/i,
+    what: 'stop the keeper', run: async (a) => await callTool('autopilot', { agent: a, action: 'stop' }) },
+  { re: /\b(resume|carry on|continue|back to work)\b/i,
+    what: 'restart the keeper', run: async (a) => await callTool('autopilot', { agent: a, action: 'start' }) },
+  { re: /\brest\b|\bsit\b/i,
+    what: 'rest', run: async (a) => await callTool('rest_up', { agent: a }) },
+];
+
+// Returns true when the message was consumed as an instruction. False means "this was
+// not from a piloted character, or said nothing I understand" — and it goes back to
+// being ordinary, untrusted chat.
+function routeOperatorInstruction(targetAgent, said) {
+  const from = pilotedSpeaker(said?.speaker);
+  if (!from) return false;                       // not the operator: not privileged
+  if (from.agent === targetAgent) return false;  // talking to itself
+  const text = String(said?.text ?? '');
+  const hit = OPERATOR_VERBS.find(v => v.re.test(text));
+  if (!hit) return false;
+  const me = from.pilot.character || from.agent;
+  const room = sessions.get(targetAgent)?.client?.room?.num ?? null;
+  console.error(`[operator] ${from.agent} -> ${targetAgent}: ${hit.what}  ("${text.slice(0, 60)}")`);
+  Promise.resolve()
+    .then(() => hit.run(targetAgent, me, { room, speaker: said.speaker }))
+    .then(r => console.error(`[operator] ${targetAgent} ${hit.what}: ` +
+                             `${typeof r === 'object' ? JSON.stringify(r).slice(0, 140) : r}`))
+    .catch(e => console.error(`[operator] ${targetAgent} ${hit.what} FAILED: ${e.message}`));
+  return true;
+}
+
+function startPilotWatch() {
+  const t = setInterval(() => {
+    for (const [agent, p] of [...piloted]) {
+      if (!pidAlive(p.pid)) releasePilot(agent, `client pid ${p.pid} exited`);
+    }
+  }, PILOT_POLL_MS);
+  t.unref?.();
 }
 
 function startReconciling() {
@@ -4070,6 +4237,56 @@ const TOOLS = [
     },
   },
   {
+    name: 'pilot',
+    description:
+      'HAND A CHARACTER OVER TO THE PERSON AT THE KEYBOARD, or take it back.\n' +
+      'Meridian allows one connection per character, so a human opening a client as Kermit takes ' +
+      'Kermit away from this broker. Claiming says that is deliberate: the keeper stops, the ' +
+      'reconciler stops trying to rejoin, and the character is left alone until the client exits.\n' +
+      'THE CLAIM IS BOUND TO A LOCAL PROCESS ID, and that is what makes it trustworthy. Not the ' +
+      'character name, which anyone who guesses a password can wear — but a client this machine ' +
+      'spawned, still running, holding the only session the server permits for that character. ' +
+      'The broker polls that pid and releases the claim by itself when it exits, so B needs no ' +
+      'second call; `release` is for giving the character back early.\n' +
+      'While claimed, speech FROM that character to other fleet members is treated as instruction ' +
+      'rather than as chat — see the operator verb table. That privilege lasts exactly as long as ' +
+      'the pid does.',
+    schema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['claim', 'release', 'status'] },
+        agent: { type: 'string', description: 'the character being played; required for claim/release' },
+        pid: { type: 'number', description: 'process id of the client that was launched, required for claim' },
+        character: { type: 'string', description: 'name to expect in speech; defaults to the session\'s' },
+      },
+      required: ['action'],
+    },
+    run: async (a) => {
+      if (a.action === 'status') {
+        return {
+          piloted: [...piloted.entries()].map(([agent, p]) => ({
+            agent, character: p.character, pid: p.pid, object_id: p.objectId,
+            alive: pidAlive(p.pid), held_s: Math.round((Date.now() - p.since) / 1000),
+            keeper_resumes_on_release: p.keeperWasRunning })),
+          note: piloted.size ? undefined : 'nobody is being played by hand right now',
+        };
+      }
+      if (!a.agent) return { error: 'agent is required' };
+      if (a.action === 'release') {
+        const p = releasePilot(a.agent, 'released by request');
+        return p ? { released: true, agent: a.agent,
+                     note: 'the reconciler will log it back in and restore the keeper it had' }
+                 : { released: false, note: 'that character was not claimed' };
+      }
+      if (!a.pid) return { error: 'pid is required for claim — the claim is the process, not the name' };
+      if (!pidAlive(a.pid)) return { error: `pid ${a.pid} is not running; refusing to claim on a dead process` };
+      const r = claimPilot(a.agent, a.pid, { character: a.character });
+      return { ...r, claimed: true,
+               note: 'keeper stopped and the reconciler will leave it alone. Speech from this ' +
+                     'character now counts as instruction, until pid ' + a.pid + ' exits.' };
+    },
+  },
+  {
     name: 'leave',
     description:
       'Log the character out and free the session. It STAYS IN THE ROSTER by default, so a broker ' +
@@ -4533,6 +4750,7 @@ if (argv.includes('--selftest')) {
   if (!argv.includes('--no-resume')) resumeFleet();
   startLedger();
   startReconciling();
+  startPilotWatch();
   const di = argv.indexOf('--dashboard');
   if (di >= 0) serveDashboard(Number(argv[di + 1] || 8902));
 } else {
@@ -4540,6 +4758,7 @@ if (argv.includes('--selftest')) {
   if (!argv.includes('--no-resume')) resumeFleet();
   startLedger();
   startReconciling();
+  startPilotWatch();
 }
 
 

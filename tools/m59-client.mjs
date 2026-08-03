@@ -53,6 +53,10 @@ export const BP = {
   SEND_PLAYERS: 44, SEND_CHARACTERS: 45, USE_CHARACTER: 46,
   DELETE_CHARACTER: 47, NEW_CHARINFO: 48, SEND_CHARINFO: 49,
   CHARINFO_OK: 56, CHARINFO_NOT_OK: 57, CHARINFO: 140,
+  // include/proto.h: BP_CHANGE_PASSWORD = 23, and the two replies to it. The ordinary
+  // client offers this on its account menu, so it is the normal port and needs no
+  // maintenance socket — which matters when the server belongs to somebody else.
+  CHANGE_PASSWORD: 23, PASSWORD_OK: 160, PASSWORD_NOT_OK: 161,
   SEND_SPELLS: 50, SEND_SKILLS: 51, SEND_STAT_GROUPS: 52, SEND_ENCHANTMENTS: 53,
   REQ_QUIT: 54,
   LOAD_MODULE: 58, UNLOAD_MODULE: 59,
@@ -491,6 +495,30 @@ export class M59Client {
   broadcast(text)       { this.say(text, 3); }
   emote(text)           { this.say(text, 6); }
   sayGuild(text)        { this.say(text, 10); }
+
+  // CHANGE THIS ACCOUNT'S PASSWORD, over the ordinary game port.
+  //
+  // Both values are MD5 digests, not text: clientd3d/maindlg.c runs MDString over each
+  // before sending, and the server calls SetAccountPasswordAlreadyEncrypted with what
+  // arrives. Sending plaintext here would store the plaintext AS the digest, and the
+  // account would then only be reachable by an client that hashed to that same string
+  // — which is to say, never again.
+  //
+  // Resolves true on BP_PASSWORD_OK, false on BP_PASSWORD_NOT_OK, and rejects on
+  // silence. The caller MUST record the new password before relying on this: there is
+  // no way to read a password back, so a change that is not written down is a
+  // character lost.
+  async changePassword(oldPw, newPw, { timeoutMs = 8000 } = {}) {
+    // Take the sequence number BEFORE sending, or a reply that arrives while we are
+    // still setting up the wait is missed and the whole thing times out.
+    const since = this.evSeq;
+    this.send(BP.CHANGE_PASSWORD, pbuf(mdpass(oldPw)), pbuf(mdpass(newPw)));
+    const { events } = await this.waitFor({
+      since, kinds: ['password-ok', 'password-not-ok'], timeoutMs });
+    const hit = events.find(e => e.kind === 'password-ok' || e.kind === 'password-not-ok');
+    if (!hit) throw new Error('no reply to BP_CHANGE_PASSWORD');
+    return hit.kind === 'password-ok';
+  }
 
   // BP_SAY_GROUP {2,LIST_OBJ_PARM} {0,TAG_TEMP_STRING} (sprocket.c:28) — the
   // "tell"/"send" system, and a DIFFERENT opcode from say. It carries a list of
@@ -1053,6 +1081,21 @@ export class M59Client {
       case BP.CHARINFO_NOT_OK:
         this.log('character creation refused');
         this.emit('charinfo-not-ok', {});
+        break;
+
+      case BP.PASSWORD_OK:
+        this.log('password changed');
+        this.emit('password-ok', {});
+        break;
+
+      // blakserv/game.c sends this when it declines. Note the check it guards is
+      // `s->account->password == password` — a POINTER comparison between the stored
+      // password and a local buffer, so it is never true and the old password is in
+      // practice never verified. We send it correctly anyway: the check may be fixed,
+      // and relying on a server bug is not a design.
+      case BP.PASSWORD_NOT_OK:
+        this.log('password change refused');
+        this.emit('password-not-ok', {});
         break;
 
       case BP.QUIT:

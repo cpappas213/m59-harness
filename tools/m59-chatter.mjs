@@ -198,6 +198,23 @@ export class Chatter {
 
   hear(said) {
     const c = this.s.client;
+    // AN INSTRUCTION FROM THE OPERATOR, NOT SOMETHING A STRANGER SAID.
+    //
+    // When the human is playing one of these characters himself, what he types to the
+    // others is direction, not conversation — and answering "give me your money" with
+    // small talk is the wrong response to both. The hook decides; it says yes only for a
+    // speaker whose client this machine spawned and whose process is still alive, which
+    // is a fact about this computer rather than a claim carried over the wire.
+    //
+    // Everything else, including anything merely CLAIMING to be him, falls through to
+    // the ordinary untrusted path below.
+    try {
+      if (this.hooks.operatorInstruction?.(said)) {
+        this.did.instructed = (this.did.instructed ?? 0) + 1;
+        this.note('operator', 'took it as an instruction', { said: said?.text });
+        return;
+      }
+    } catch (e) { this.note('error', 'operator routing: ' + String(e?.message ?? e)); }
     const res = this.inbox.admit(said, { selfId: c?.selfId ?? null, isPeer: (id) => this.isPeer(id) });
     if (!res.admitted) { this.note('refused', res.why); return; }
     this.did.heard++;

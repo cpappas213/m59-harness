@@ -282,6 +282,17 @@ function launch(row) {
     // the old client and leaving the new one bare. Injection itself is idempotent —
     // m59-inject.ps1 skips a client that already carries the module — so the sweep it
     // does afterwards is safe.
+    // CLAIM THE CHARACTER THE MOMENT THE CLIENT EXISTS, and do it from here rather
+    // than from the TUI: this script already holds the pid, and it runs whether or not
+    // the terminal is still open. The claim stops the keeper and tells the reconciler
+    // to leave the character alone; the broker then polls this pid and gives the
+    // character back on its own when the client is closed.
+    `$body = '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"pilot",'`
+      + `+ '"arguments":{"action":"claim","agent":"${row.agent}","pid":' + $p.Id + '}}}'`,
+    `try { Invoke-RestMethod -Uri 'http://127.0.0.1:${PORT}/' -Method Post `
+      + `-ContentType 'application/json' -Body $body -TimeoutSec 10 | Out-Null; `
+      + `Write-Output "claimed ${row.agent} for pid $($p.Id)" } `
+      + `catch { Write-Output "pilot claim FAILED: $_" }`,
     `$t=0; while ($t -lt 120 -and -not $p.HasExited -and $p.MainWindowHandle -eq 0) `
       + `{ Start-Sleep -Milliseconds 500; $p.Refresh(); $t++ }`,
     `Write-Output "waited $($t*0.5)s for a window; pid $($p.Id); exited $($p.HasExited)"`,
