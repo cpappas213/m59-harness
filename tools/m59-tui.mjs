@@ -16,10 +16,13 @@
 // the whole screen on a timer — twenty-five rows is far too little to need anything
 // cleverer, and a dependency here would be a dependency in the one tool you reach for
 // when things are already broken.
-import { stdin, stdout, env, exit, cwd, argv } from 'node:process';
+import { stdin, stdout, env, exit, argv } from 'node:process';
 import { spawn } from 'node:child_process';
 import { readFileSync, openSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const PORT = env.M59_BROKER_PORT || '8901';
 const URL_ = `http://127.0.0.1:${PORT}/`;
@@ -244,7 +247,7 @@ function launch(row) {
     'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Meridian 59\\Meridian.exe';
   const host = env.M59_HOST || '127.0.0.1';
   const port = env.M59_PORT || '5959';
-  const inject = `${cwd()}\\tools\\m59-inject.ps1`;
+  const inject = join(REPO, 'tools', 'm59-inject.ps1');
   // LAUNCH IT FROM ITS OWN DIRECTORY. The client resolves `resource\` relative to the
   // working directory, so started from the repo it cannot find the module DLLs it is
   // told to load and takes an access violation shortly after BP_LOAD_MODULE — which
@@ -286,7 +289,7 @@ function launch(row) {
   // from a slow one — the injector reports its verdict on stdout and exits 1 on trouble,
   // and with stdio ignored none of that survived to be read. It goes to a log instead,
   // which the status line names so there is somewhere to look.
-  const logPath = `${cwd()}\\substrate\\m59-launch.log`;
+  const logPath = join(REPO, 'substrate', 'm59-launch.log');
   let stdio = 'ignore';
   try { const fd = openSync(logPath, 'a'); stdio = ['ignore', fd, fd]; } catch { /* keep going */ }
   // NOT detached — that is what made this key do nothing at all. `detached: true` on
@@ -327,7 +330,12 @@ if (li >= 0) {
 // fetched, because the broker deliberately does not serve them over the network.
 function rosterFor(agent) {
   try {
-    const f = env.M59_STATE_FILE || `${cwd()}\\substrate\\fleet-state.json`;
+    // Relative to this file, not to cwd. Every other tool resolves the roster this
+    // way, and the TUI is often launched from somewhere else entirely — from a
+    // parent repository that vendors this one, or by a shortcut with no working
+    // directory set. Reading cwd gave a missing file, which rosterFor reports as
+    // "no credentials" — indistinguishable from a character that genuinely has none.
+    const f = env.M59_STATE_FILE || join(REPO, 'substrate', 'fleet-state.json');
     const s = JSON.parse(readFileSync(f, 'utf8'));
     return s[agent]?.credentials ?? null;
   } catch { return null; }
