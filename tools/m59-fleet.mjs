@@ -35,9 +35,13 @@ import http from 'node:http';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { resolveFleet } from './m59-fleetpath.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const STATE = path.join(HERE, '..', 'substrate', 'fleet-state.json');
+// Same resolver the broker uses. If this file disagreed with the broker about which
+// roster is the fleet, the disagreement would show up as an empty list rather than
+// as an error — pass --fleet <name> here exactly as you pass it there.
+const { label: FLEET_LABEL, stateFile: STATE } = resolveFleet();
 
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : d; };
 const CONTROL = Number(arg('--control', 8910));

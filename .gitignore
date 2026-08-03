@@ -10,6 +10,11 @@ node_modules/
 # plain text, and the flight recordings are one server's history, not reference.
 /substrate/fleet-state.json
 /substrate/fleet-state.json.*
+# Named fleets (--fleet <name>) keep a roster each under here. Same plaintext
+# passwords as the file above, one file per server, so the whole directory goes —
+# a rule naming only fleet-state.json stops covering the roster the moment anyone
+# runs the very feature that directory exists for.
+/substrate/fleets/
 /substrate/history/
 /substrate/recordings/
 /substrate/*.log

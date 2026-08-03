@@ -42,6 +42,7 @@ import { loadMap, resolveRoom, forgetInferredExit } from './m59-map.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
 import * as skills from './m59-skills.mjs';
+import { resolveFleet } from './m59-fleetpath.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import { loadSpawns, huntingGrounds, roomThreats, preyFor } from './m59-spawns.mjs';
@@ -202,8 +203,34 @@ const RECORD_KEEP = Number(process.env.M59_RECORD_KEEP || 15);                  
 // So the two facts needed to rebuild a session — how to log in, and what the keeper
 // was told to do — are written to disk as they are set, and replayed on boot. The
 // characters keep playing across a restart; only the process is new.
-const STATE_FILE = process.env.M59_STATE_FILE ||
-  new URL('../substrate/fleet-state.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+// WHICH FLEET THIS BROKER HOLDS.
+//
+// A roster is per-server, not per-machine. Characters on one server share nothing
+// with characters on another — not accounts, not object ids, not the world — so
+// putting two servers' characters in one file gives you a roster whose entries are
+// only meaningful next to a host you have to remember separately.
+//
+// That was survivable while there was one server. It stops being survivable the
+// moment M59_HOST is repointed: every entry that predates the change has no host of
+// its own, silently inherits the new one, and the broker spends its boot trying
+// yesterday's passwords against today's server. Twenty failed logins look exactly
+// like a server that is refusing connections.
+//
+// So each fleet gets its own file, and the file *is* the fleet's identity. Naming
+// one selects it; naming none keeps the original path, so an existing checkout that
+// has never heard of fleets behaves exactly as it did.
+//
+//   node tools/m59-broker.mjs --fleet prod        substrate/fleets/prod.json
+//   M59_FLEET=prod node tools/m59-broker.mjs      the same
+//   node tools/m59-broker.mjs                     substrate/fleet-state.json
+//
+// The lock is derived from this path, so two brokers on two fleets no longer
+// contend — which is the point. Two brokers on the SAME fleet still cannot, and
+// that check is unchanged.
+const { fleet: FLEET, stateFile: STATE_FILE } = (() => {
+  try { return resolveFleet(); }
+  catch (e) { console.error(`[state] ${e.message}`); process.exit(2); }
+})();
 
 // Which checkout this broker belongs to. Reported by /health so a tool can tell
 // one broker from another BEFORE acting on it. More than one checkout can be
@@ -1489,8 +1516,13 @@ const TOOLS = [
       const r = await s.join(a);
       // Recorded only after the login actually succeeded, so a bad password never
       // ends up in the resume file to be retried on every future boot.
-      rememberJoin(a.agent, { account: a.account, password: a.password,
-                              character: a.character, host: a.host, port: a.port });
+      //
+      // The SESSION's credentials, not the ones we were handed: those have the host
+      // and port resolved against M59_HOST/M59_PORT already. Persisting the caller's
+      // undefined leaves an entry with no server of its own, which resumes against
+      // whatever the environment happens to say months later — the failure this and
+      // the per-fleet state file exist to prevent.
+      rememberJoin(a.agent, s.credentials);
       listen(a.agent, s);
       return r;
     },
@@ -4054,6 +4086,7 @@ function serveHttp(port) {
     if (req.method === 'GET' && req.url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ ok: true, pid: process.pid, root: BROKER_ROOT,
+                                      fleet: FLEET || 'default', state: STATE_FILE,
                                       sessions: [...sessions.keys()], tools: TOOLS.length }));
     }
     if (req.method !== 'POST') { res.writeHead(405); return res.end(); }

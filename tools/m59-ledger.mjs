@@ -22,9 +22,12 @@
 // morning", which is the question actually worth being able to ask.
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { fleetName, ledgerDirFor } from './m59-fleetpath.mjs';
 
-const DIR = process.env.M59_LEDGER_DIR ||
-  new URL('../substrate/history/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+// Per-fleet, because this is keyed by character name and names are only unique
+// within a server. See ledgerDirFor. Naming no fleet keeps the original directory,
+// so an existing checkout's history stays exactly where it was.
+const DIR = ledgerDirFor(fleetName());
 
 const dayFile = (t = Date.now()) =>
   join(DIR, 'fleet-' + new Date(t).toISOString().slice(0, 10) + '.jsonl');

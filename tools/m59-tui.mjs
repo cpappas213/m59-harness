@@ -21,8 +21,12 @@ import { spawn } from 'node:child_process';
 import { readFileSync, openSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveFleet } from './m59-fleetpath.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
+// Which roster this TUI is looking at. Must match the broker it is talking to —
+// pass --fleet <name> to both, or neither.
+const { label: FLEET_LABEL, stateFile: STATE_FILE } = resolveFleet();
 
 const PORT = env.M59_BROKER_PORT || '8901';
 const URL_ = `http://127.0.0.1:${PORT}/`;
@@ -330,12 +334,12 @@ if (li >= 0) {
 // fetched, because the broker deliberately does not serve them over the network.
 function rosterFor(agent) {
   try {
-    // Relative to this file, not to cwd. Every other tool resolves the roster this
-    // way, and the TUI is often launched from somewhere else entirely — from a
-    // parent repository that vendors this one, or by a shortcut with no working
-    // directory set. Reading cwd gave a missing file, which rosterFor reports as
-    // "no credentials" — indistinguishable from a character that genuinely has none.
-    const f = env.M59_STATE_FILE || join(REPO, 'substrate', 'fleet-state.json');
+    // Resolved from this file and the --fleet flag, never from cwd. The TUI is often
+    // launched from somewhere else entirely — from a parent repository that vendors
+    // this one, or by a shortcut with no working directory set. Reading cwd gave a
+    // missing file, which this reports as "no credentials" — indistinguishable from
+    // a character that genuinely has none.
+    const f = STATE_FILE;
     const s = JSON.parse(readFileSync(f, 'utf8'));
     return s[agent]?.credentials ?? null;
   } catch { return null; }

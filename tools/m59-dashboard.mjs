@@ -11,6 +11,14 @@
 // advancement test outright, so a character can kill all night and gain nothing.
 import { readFileSync, readdirSync } from 'node:fs';
 import { summarise, readLedger } from './m59-ledger.mjs';
+import { resolveFleet } from './m59-fleetpath.mjs';
+
+// WHICH FLEET THIS PAGE IS OF. Named on the page rather than left implicit: the
+// dashboard binds to every interface and is the thing people leave open on a phone,
+// and two fleets' pages are otherwise identical down to the character count. A page
+// that does not say which fleet it is showing is a page that will eventually be read
+// as the wrong one.
+const { label: FLEET_LABEL, ledgerDir: LEDGER_DIR } = resolveFleet();
 
 // WHERE THE COMPENDIUM PAGE FOR A ROOM LIVES.
 //
@@ -197,7 +205,7 @@ export function renderDashboard({ hours = 24 } = {}) {
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meridian 59 fleet</title>
+<title>Meridian 59 — ${esc(FLEET_LABEL)} fleet</title>
 <meta http-equiv="refresh" content="60">
 <style>
   :root { color-scheme: light dark; --fg:#1a1a1a; --dim:#767676; --bg:#fbfbfa;
@@ -261,7 +269,7 @@ export function renderDashboard({ hours = 24 } = {}) {
   footer { color:var(--dim); font-size:.78rem; text-align:center; }
 </style></head>
 <body><div class="wrap">
-  <h1>Meridian 59 fleet</h1>
+  <h1>Meridian 59 — ${esc(FLEET_LABEL)} fleet</h1>
   <div class="sub">last ${hours}h · ${sum.samples} samples · refreshes every 60s</div>
 
   <div class="cards">
@@ -320,6 +328,6 @@ export function renderDashboard({ hours = 24 } = {}) {
     </table>
   </section>
 
-  <footer>substrate/history · append-only · keyed by character name</footer>
+  <footer>${esc(LEDGER_DIR)} · append-only · keyed by character name</footer>
 </div></body></html>`;
 }
