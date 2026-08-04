@@ -18,6 +18,9 @@
 // the state was when it stopped.
 
 import { OF, isTeleporter, describeObject } from './m59-parse.mjs';
+// The Underworld's exits, and which city is nearest to any room. As a namespace,
+// because escapeUnderworld re-exports most of it and a bare import would shadow.
+import * as UW from './m59-underworld.mjs';
 
 // Health fractions. Chosen from what the game does rather than taste: a monster that
 // can take you from half to nothing in one exchange is common, and the server's
@@ -56,7 +59,7 @@ const WEAPON_WORDS = [
   [/short ?sword|falchion/i, 4], [/sword/i, 4], [/dagger|knife/i, 2],
   [/staff|club|cudgel/i, 2], [/bow|crossbow|sling/i, 3],
 ];
-const weaponScore = name => {
+export const weaponScore = name => {
   if (isJunk(name)) return 0;
   for (const [re, n] of WEAPON_WORDS) if (re.test(name)) return n;
   return 0;
@@ -259,11 +262,16 @@ export async function equipBest(s, { priority = null, maxTries = 4 } = {}) {
 
 // What is in the pack that should not be: junk, and weapons the server has refused.
 // Returned rather than dropped, because dropping is the caller's decision to make.
+//
+// Anything currently equipped is excluded whatever its name. A junk NAME on a worn item
+// is not a reason to strip the character — and "broken mace" is a real junk item, so
+// the name test alone would happily list the mace somebody is holding.
 export function junkAndBroken(c) {
   const broken = brokenSet(c);
+  const worn = equippedNow(c) ?? new Set();
   return (c.inventory || [])
     .map(o => ({ o, name: c.rsc.get(o.nameRsc) || '' }))
-    .filter(x => isJunk(x.name) || broken.has(x.o.id))
+    .filter(x => !worn.has(x.o.id) && (isJunk(x.name) || broken.has(x.o.id)))
     .map(x => ({ id: x.o.id, name: x.name,
                  why: broken.has(x.o.id) ? 'broken — the server refuses to wield it' : 'junk' }));
 }
@@ -1024,25 +1032,98 @@ export async function fight(s, {
 // Getting out of the Underworld, which is where you wake up after dying and which has
 // no exits in the room graph at all.
 //
-// Five portals stand in a pentagram with FIXED destinations, each dead until its
-// brazier is lit — Portal.SomethingMoved returns immediately if the portal is not
-// animating, so an unlit one silently does nothing. A sixth, the "rip in space",
-// re-rolls its destination every 5-10 seconds and only says where it currently leads
-// if you look at it, in prose that names an inn rather than a city.
+// Six teleporters, and the difference between them is the whole of this function:
 //
-// So: if the caller wants a particular city, stand next to the shifting portal and
-// poll it, stepping on when it reads right. Otherwise take the nearest working one.
-export const RIP_DESTINATIONS = [
-  { match: /bustling bar of Familiars/i, city: 'Tos' },
-  { match: /Limping Toad/i, city: 'Marion' },
-  { match: /Yonder Inn of Jasper/i, city: 'Jasper' },
-  { match: /Cibilo Creek Inn/i, city: 'Cornoth' },
-  { match: /Brownstone Inn/i, city: 'Barloque' },
-  { match: /island fortress of Ko'catan/i, city: "Ko'catan" },
-];
-export const readRipDestination = text => RIP_DESTINATIONS.find(d => d.match.test(text || ''))?.city ?? null;
+//   FIVE FIXED PORTALS in a pentagram, each with a destination hard-coded at room
+//   construction (uworld.kod:649-662). One or two are unlit at random (ResetPuzzle,
+//   uworld.kod:460) and an unlit one is SILENT — Portal.SomethingMoved returns
+//   immediately when it is not animating — so a dead portal and a portal you never
+//   reached look identical unless you check which happened.
+//
+//   ONE SHIFTING PORTAL, the "rip in space", re-rolling every 5-10 seconds among the
+//   same five inns and only saying where it leads if you LOOK at it.
+//
+// THIS USED TO ONLY KNOW ABOUT THE RIP. Asking for a named city meant standing beside
+// the anomaly polling it for up to three minutes — while a portal that goes to that
+// city every time, without waiting, stood a few squares away. Now a named city walks
+// to its own portal, and the rip is the fallback rather than the plan.
+//
+// The tables, the descriptions and the nearest-city graph live in m59-underworld.mjs.
+export { RIP_DESTINATIONS, readRipDestination, UNDERWORLD_PORTALS, nearestCity,
+         citiesByDistance, CITY_INNS, KOCATAN_IS_DEATH_ONLY } from './m59-underworld.mjs';
 
-export async function escapeUnderworld(s, { city = null, maxSeconds = 180 } = {}) {
+// Which teleporters in this room are which. The rip announces itself by name, so it
+// costs nothing; the fixed ones have to be looked at, and each look is a request out of
+// a budget of five a second — so they are looked at in the order most likely to end the
+// search, not all of them up front.
+async function identifyPortals(s, found, { want = null, maxLooks = 6 } = {}) {
+  const c = s.need();
+  const rows = found.map(o => {
+    const name = c.rsc.get(o.nameRsc) || '';
+    const expected = UW.UNDERWORLD_PORTALS.find(
+      p => p.clientCol === o.col && p.clientRow === o.row) ?? null;
+    return { o, name, rip: UW.RIP_NAME.test(name), expected, city: null, desc: null };
+  });
+
+  // The rip needs no look to be identified, and looking at it here would be wasted —
+  // its answer expires in seconds and is only useful immediately before stepping on.
+  const toLook = rows.filter(r => !r.rip);
+
+  // Best first: the portal whose square matches the one we want, then everything else
+  // by how far it is to walk. The coordinates are only a hint — the description is what
+  // decides — but a hint that is right most of the time saves four looks.
+  toLook.sort((a, b) => {
+    const aw = a.expected?.city === want ? 0 : 1;
+    const bw = b.expected?.city === want ? 0 : 1;
+    if (aw !== bw) return aw - bw;
+    const ar = s.world?.reach?.(a.o.col, a.o.row)?.steps ?? 99;
+    const br = s.world?.reach?.(b.o.col, b.o.row)?.steps ?? 99;
+    return ar - br;
+  });
+
+  let looks = 0;
+  for (const r of toLook) {
+    if (looks >= maxLooks) break;
+    looks++;
+    const before = c.evSeq;
+    await s.pacer.submit('look', () => c.look(r.o.id));
+    const ev = await c.waitFor({ since: before, kinds: ['look'], timeoutMs: 3000 });
+    r.desc = ev.events.find(e => e.id === r.o.id)?.description || '';
+    const sign = UW.readPortalSign(r.desc, r.name);
+    r.city = sign.city;
+    r.shifting = sign.shifting;
+    // A description that reads as the rip's, on an object not named "rip in space".
+    // Believe the description: the name can be a resource we failed to resolve.
+    if (sign.shifting) r.rip = true;
+    if (want && r.city === want && !r.shifting) break;
+  }
+  return { rows, looked: looks };
+}
+
+// Walk onto a teleporter and say whether it fired. Factored out because getting the
+// bookkeeping wrong here is what produced the two oldest wrong diagnoses in this file:
+// a portal that fires on the LAST STEP of the walk reports arrived:false, and a cursor
+// taken after the walk looks past the very event it is waiting for.
+async function stepOnto(s, o) {
+  const c = s.need();
+  const before = c.evSeq;
+  const wasIn = c.room.id;
+  const walk = await s.walkTo(o.col, o.row, { maxSteps: 80 });
+  const arr = await c.waitFor({ since: before, kinds: ['room-entered'],
+                                timeoutMs: walk.arrived ? 3000 : 500 });
+  const entered = arr.events.find(e => e.kind === 'room-entered');
+  const now = { id: c.room.id, name: c.roomNameRsc ? c.rsc.get(c.roomNameRsc) : null };
+  if (entered || now.id !== wasIn)
+    return { left: true, arrived_in: entered?.roomName ?? now.name, room: now.id };
+  return { left: false, walked: walk.arrived,
+           why: walk.arrived
+             ? 'stood on it and nothing happened — it is unlit; one or two of the five ' +
+               'are, at random, and its brazier needs activating'
+             : `never got onto its square (${walk.reason || walk.note || 'the walk did not arrive'})` };
+}
+
+export async function escapeUnderworld(s, { city = null, nearestTo = null,
+                                            maxSeconds = 180, allowRip = true } = {}) {
   const c = s.need();
   const portals = () => [...c.room.objects.values()].filter(o => isTeleporter(o.flags));
   // Which room we are in, read from the client rather than from an event: c.room.id and
@@ -1062,10 +1143,51 @@ export async function escapeUnderworld(s, { city = null, maxSeconds = 180 } = {}
   if (!found.length)
     return { left: false, stood_up: true, reason: 'no teleporter in this room', room: here?.name };
 
-  // The shifting one describes a destination; the fixed ones do not.
-  const rip = found.find(o => /rip in space/i.test(c.rsc.get(o.nameRsc)));
+  // WHICH CITY. An explicit one wins; otherwise, if the caller said where the character
+  // died, the answer is almost always "put me back nearest to that" — the corpse and
+  // everything it was carrying is lying there, and the walk back is the real cost of
+  // dying. See m59-underworld.mjs for how the distance is worked out.
+  let wanted = city ?? null, chosenBecause = city ? 'asked for' : null;
+  let near = null;
+  if (!wanted && nearestTo != null) {
+    near = UW.nearestCity(nearestTo);
+    if (near.city) { wanted = near.city; chosenBecause = `nearest to where it died (${near.hops} rooms)`; }
+  }
 
-  if (city && rip) {
+  // The shifting one describes a destination; the fixed ones do not.
+  const rip = found.find(o => UW.RIP_NAME.test(c.rsc.get(o.nameRsc) || ''));
+
+  // ---- a named city: walk to its own portal, which goes there every time ----
+  const cityAttempts = [];
+  if (wanted && found.length > (rip ? 1 : 0)) {
+    const { rows } = await identifyPortals(s, found, { want: wanted });
+    const match = rows.find(r => !r.rip && r.city
+                                 && r.city.toLowerCase() === String(wanted).toLowerCase());
+    if (match) {
+      const step = await stepOnto(s, match.o);
+      if (step.left)
+        return { left: true, stood_up: true, arrived_in: step.arrived_in, room: step.room,
+                 wanted, city: wanted, chosen_because: chosenBecause,
+                 via: `the fixed ${wanted} portal`,
+                 ...(near ? { died_in_room: nearestTo, hops_from_death: near.hops } : {}),
+                 note: 'a fixed portal, so this is repeatable — no waiting and no luck involved' };
+      cityAttempts.push({ portal: `fixed ${wanted}`, why: step.why });
+    } else {
+      cityAttempts.push({
+        portal: `fixed ${wanted}`,
+        why: rows.some(r => r.desc)
+          ? `no portal here reads as ${wanted} — saw ` +
+            JSON.stringify(rows.filter(r => !r.rip).map(r => r.city ?? 'unreadable'))
+          : 'could not read any portal description',
+      });
+    }
+  }
+
+  // Ko'catan is not in the pentagram at all, so there was never a fixed portal to try.
+  if (wanted && String(wanted).toLowerCase().startsWith("ko") && !UW.portalFor(wanted))
+    cityAttempts.push({ portal: "fixed Ko'catan", why: UW.KOCATAN_IS_DEATH_ONLY });
+
+  if (wanted && rip && allowRip) {
     // Stand next to it FIRST. The window is 5-10 seconds and walking is a second a
     // square, so polling from across the room means reading a destination you can no
     // longer reach in time.
@@ -1083,9 +1205,9 @@ export async function escapeUnderworld(s, { city = null, maxSeconds = 180 } = {}
       await s.pacer.submit('look', () => c.look(rip.id));
       const ev = await c.waitFor({ since: b, kinds: ['look'], timeoutMs: 3000 });
       const desc = ev.events.find(e => e.id === rip.id)?.description || '';
-      const dest = readRipDestination(desc);
+      const dest = UW.readRipDestination(desc);
       if (dest) seen.push(dest);
-      if (dest && dest.toLowerCase().includes(String(city).toLowerCase())) {
+      if (dest && dest.toLowerCase().includes(String(wanted).toLowerCase())) {
         const before = c.evSeq;
         const wasIn = c.room.id;
         await s.pacer.submit('move', () => c.moveToSquare(rip.col, rip.row), 1050);
@@ -1093,19 +1215,27 @@ export async function escapeUnderworld(s, { city = null, maxSeconds = 180 } = {}
         const entered = arr.events.find(e => e.kind === 'room-entered');
         const now = whereAmI();
         return (entered || now.id !== wasIn)
-          ? { left: true, stood_up: true, arrived_in: entered?.roomName ?? now.name, wanted: city, saw: seen }
+          ? { left: true, stood_up: true, arrived_in: entered?.roomName ?? now.name,
+              wanted, city: wanted, chosen_because: chosenBecause, via: 'the rip in space',
+              ...(near ? { died_in_room: nearestTo, hops_from_death: near.hops } : {}),
+              ...(cityAttempts.length ? { fixed_portal_first: cityAttempts } : {}), saw: seen }
           : { left: false, stood_up: true,
               reason: 'stepped on it as it read right, but nothing happened — it may have swapped first',
               saw: seen, note: 'try again; the window is 5-10 seconds and unknown which' };
       }
       await sleep(1200);
     }
-    return { left: false, stood_up: true, reason: `never saw ${city} in ${maxSeconds}s`, saw: seen,
-             note: 'the rip picks from five inns and never repeats twice running, so it is luck plus patience' };
+    // Out of patience on the rip. Do NOT stop here — the caller wanted OUT, and a city
+    // it did not ask for is enormously better than another spell in the Underworld.
+    // Fall through to the nearest working portal, and say plainly that the city was not
+    // the one wanted so the walk back is not a surprise.
+    cityAttempts.push({ portal: 'rip in space', why: `never showed ${wanted} in ${maxSeconds}s; saw ` +
+                                                     JSON.stringify(seen) });
   }
 
-  // No preference: take whichever teleporter is closest and actually works. The fixed
-  // ones may be switched off, and an off portal is silent, so try in order.
+  // No preference, or the preference could not be had: take whichever teleporter is
+  // closest and actually works. One or two of the pentagram are unlit at random and an
+  // unlit one is silent, so try in order rather than trusting any single portal.
   const reachable = found
     .map(o => ({ o, r: s.world.reach(o.col, o.row) }))
     .filter(x => x.r.reachable)
@@ -1123,8 +1253,24 @@ export async function escapeUnderworld(s, { city = null, maxSeconds = 180 } = {}
     const entered = arr.events.find(e => e.kind === 'room-entered');
     const now = whereAmI();
     // A walk that "failed" because it left the room is the walk that worked.
-    if (entered || now.id !== wasIn)
-      return { left: true, stood_up: true, arrived_in: entered?.roomName ?? now.name, via: name, tried };
+    if (entered || now.id !== wasIn) {
+      const arrivedIn = entered?.roomName ?? now.name;
+      // Which city we ACTUALLY came out in, so a caller that asked for one and got
+      // another finds out here rather than after walking the wrong way for ten minutes.
+      const landed = Object.entries(UW.CITY_INNS)
+        .find(([, v]) => v.inn === now.id || (arrivedIn && v.innName === arrivedIn))?.[0] ?? null;
+      return { left: true, stood_up: true, arrived_in: arrivedIn, room: now.id, via: name,
+               ...(landed ? { city: landed } : {}), tried,
+               ...(wanted ? {
+                 wanted, chosen_because: chosenBecause,
+                 got_what_was_wanted: landed === wanted,
+                 ...(cityAttempts.length ? { could_not_use: cityAttempts } : {}),
+                 ...(landed && landed !== wanted ? {
+                   note: `OUT, but in ${landed} rather than ${wanted}. The corpse and everything ` +
+                         `it was carrying is still where it died; check the walk before setting off.`,
+                 } : {}),
+               } : {}) };
+    }
     // Only blame the brazier if we actually got onto the square. Not arriving is a
     // different fault with a different fix, and reporting it as an unlit portal sends
     // the caller hunting for something to activate that was never the problem.
@@ -1133,10 +1279,13 @@ export async function escapeUnderworld(s, { city = null, maxSeconds = 180 } = {}
       : `never got onto its square (${walk.reason || walk.note || 'the walk did not arrive'})` });
   }
   return { left: false, stood_up: true, reason: 'none of the teleporters here worked', tried,
+           ...(wanted ? { wanted, could_not_use: cityAttempts } : {}),
            note: tried.some(t => /never got onto/.test(t.why))
              ? 'at least one was never reached, so this is not evidence that the portals are dead — ' +
                'we stood up before walking, so it is not resting either; check the route'
-             : 'the pentagram portals are dead until their brazier is lit — look for objects with "activate" and try those' };
+             : 'one or two of the five pentagram portals are unlit at random and an unlit one is ' +
+               'silent (uworld.kod:460). If EVERY one is dead, look for the braziers — objects ' +
+               'with "activate" — or wait for the room to reset, which it does when empty.' };
 }
 
 // ---------------------------------------------------------------- commerce

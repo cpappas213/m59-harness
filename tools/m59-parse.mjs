@@ -280,7 +280,14 @@ export function parseUseList(body) {
   const r = new Reader(body);
   const count = r.u16();
   const ids = [];
-  for (let i = 0; i < count; i++) ids.push(objId(r.u32()));
+  for (let i = 0; i < count; i++) {
+    // A short read here must not become "nothing is equipped". Report it the way
+    // parseRoomContents does and let the caller leave the last known set alone — a
+    // truncated packet is a gap in perception, and an empty hand is a fact.
+    try { ids.push(objId(r.u32())); }
+    catch (e) { return { count, ids, exact: false, leftover: r.left,
+                         error: `id ${i}/${count}: ${e.message}` }; }
+  }
   return done(r, { count, ids });
 }
 

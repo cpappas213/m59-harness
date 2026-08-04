@@ -814,11 +814,47 @@ object's `can` list and as `kind: "portal"` in `exits`.
 
 ### The Underworld specifically
 
-Five portals stand in a pentagram, each with a **fixed** destination, and each is
-**switched off until its brazier is lit**. The braziers carry `activate`
-(`TogglePortal`, `uworld.kod:155`) — `Portal.SomethingMoved` returns immediately if
-the portal is not animating, so an unlit portal does nothing at all when you stand
-on it.
+**Which exit you take matters more than getting out.** Everything you were carrying
+is on the floor where you died, so coming out at the wrong end of the world is the
+expensive half of dying. `escape_underworld` therefore aims, by default, at the city
+**nearest to where the character died** — measured over the room graph, from that
+character's own death record. It needs no argument to do that.
+
+#### The five fixed portals
+
+Five portals stand in a pentagram, each going to one city **every time**, hard-coded
+when the room is built (`uworld.kod:649-662`):
+
+| city | the inn you arrive in | kod square |
+|---|---|---|
+| Tos | Familiars (52) | row 3, col 7 |
+| Cornoth | Cibilo Creek Inn (153) | row 2, col 25 |
+| Barloque | Brownestone Inn (106) | row 21, col 30 |
+| Marion | The Limping Toad (202) | row 32, col 16 |
+| Jasper | Yonder Inn of Jasper (370) | row 21, col 2 |
+
+(kod squares are 1-based; the client reports them 0-based.)
+
+**They are not all off.** `ResetPuzzle` (`uworld.kod:460`) lights all five and then
+turns **one or two off at random** — so three or four are live at any moment. An
+unlit one is *silent*: `Portal.SomethingMoved` returns immediately when the portal is
+not animating, so standing on a dead portal does nothing at all and looks exactly
+like a portal that is not there. The braziers carry `activate` (`TogglePortal`,
+`uworld.kod:155`) and each one toggles **three** portals at once, which is the puzzle.
+
+Each fixed portal describes itself, and in different words from the rip — the two
+tables below are both needed, and the Cornoth and Barloque wordings share nothing at
+all between them:
+
+| what you read on a fixed portal | where it goes |
+|---|---|
+| Looking in the portal, you see the bustling bar of Familiars. | Tos |
+| A lazy inn next to a quiet creek rests on the other side of this portal. | Cornoth |
+| Gazing into the portal, you see an expensive inn in a bustling city. | Barloque |
+| Through the portal, you see the laid-back atmosphere of the Limping Toad. | Marion |
+| The quiet Yonder Inn of Jasper lies through this portal. | Jasper |
+
+#### The rip in space — the fallback, not the plan
 
 A sixth, the **"rip in space"** (`HellPortal`), shifts. Every
 `random(5000, 10000)` milliseconds it picks a new destination from five city inns,
@@ -836,12 +872,28 @@ city:
 | the quiet Yonder Inn of Jasper | Jasper |
 | the lazy happenings in the Cibilo Creek Inn | Cornoth |
 | the fine Brownstone Inn in a bustling Barloque | Barloque |
-| the sturdy, island fortress of Ko'catan | Ko'catan — shown **only** if you died there |
+| the sturdy, island fortress of Ko'catan | Ko'catan — see below |
 
-So getting where you want is a timing problem: `look_at` the rip repeatedly, and when
-it reads as your destination, walk onto it before the next swap. You have between 5
-and 10 seconds, unknown which — and walking there is a second per square, so **stand
-adjacent first and check from there**, not from across the room.
+Using it is a timing problem: `look_at` the rip repeatedly, and when it reads as your
+destination, walk onto it before the next swap. You have between 5 and 10 seconds,
+unknown which — and walking there is a second per square, so **stand adjacent first
+and check from there**, not from across the room.
+
+Which is why you should not use it if you do not have to. A named city has a portal
+that goes there every time, standing a few squares away; `escape_underworld` walks to
+that and only falls back to polling the anomaly if it is one of the unlit ones.
+
+**Ko'catan is not a choice.** It has no portal in the pentagram, and the rip's five
+possible destinations are the mainland inns (`hellport.kod:57`). The one exception is
+a character who *died* in Ko'catan: `NewDeath` sets `PFLAG2_KOCATAN_DEATH`
+(`uworld.kod:598`), and for that character the rip shows the island and nothing else
+and takes them there regardless of where it currently points
+(`hellport.kod:106,148`). So if you died there the rip is a Ko'catan-only door until
+you use it, and if you did not, no exit from the Underworld goes there.
+
+`node tools/m59-underworld.mjs` prints all of this, and
+`node tools/m59-underworld.mjs <room>` says which city is nearest to any room and how
+far every other one is.
 
 **Stand up before you try any of this.** Resting sets `PFLAG_NO_MOVE`
 (`ResetPlayerFlagList`, `player.kod:1162`), and a move request from a player carrying

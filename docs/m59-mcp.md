@@ -167,15 +167,17 @@ disengages at 35% health and says so, because dying drops everything you carry.
 | `rest_up` | sit until health and vigor come back, watching the numbers since resting is silent |
 | `equip_best` | wield the best weapon you carry |
 | `sell_all` | quote and sell everything a merchant will take, keeping money and weapons |
-| `escape_underworld` | stand up, then walk onto a portal, optionally waiting for a named city |
+| `escape_underworld` | stand up, then walk onto the portal for the city nearest where you died |
 | `autopilot` | a background keeper: rests, withdraws, escapes death, optionally farms |
 | `abilities` | **how good you are** at each skill and spell, 0-100 — the only progress signal |
 | `bank` | deposit, withdraw, balance. A bank balance is the only thing that survives dying |
 | `safety` | the PvP safety flag: refuse to strike innocents, so you never become a murderer |
 | `inventory` | what you carry, with ids |
+| `equipment` | **what you are actually wearing and wielding** — the server's own list, not a guess |
 | `who` | everyone logged in, agents and humans |
 | `status` | health, mana, vigor, attributes, position, what you know, queue depth |
 | `say` | speak — `say`, `yell`, `broadcast`, `emote` |
+| `chat` | **what people have said** — its own stream, which combat cannot evict |
 | `act` | `use`, `unuse`, `get`, `drop`, `activate`, `go` |
 | `rest` | sit to recover vigor, or stand |
 | `wait_for_event` | **block until something happens** |
@@ -213,6 +215,43 @@ alpha drained 1 backlogged event(s), backlog=true
 alpha then heard:
   [say] User778682567 (obj 6845): User778682567 says, "yes. loud and clear."
 ```
+
+### Speech is a separate stream from everything else
+
+`wait_for_event` is one 500-entry ring carrying everything the world does, and a
+fight writes hundreds of lines into it. Speech was being evicted from it before
+anyone polled — by the character's own swings.
+
+So speech has its own ring, its own sequence, and its own tool. `chat` reads it,
+for one character or the whole fleet; the two cursors are independent and cannot be
+used for each other. Server prose — combat text, refusals, a shopkeeper reading
+from a script — is **not** in it, which is what keeps the untrusted-input banner on
+`chat` meaning "a player wrote this".
+
+`inbox` is still the queue for things that need *answering*, and `converse` is what
+puts a character on it. `chat` is the transcript: always on, no policy, every
+character.
+
+## `equipment` — what is actually being worn
+
+The pack and the equipped set are two different lists in Meridian, and the harness
+used to only read the first. The server keeps the second in `plUsing` and volunteers
+it: whole on `BP_USE_LIST`, then one line per change on `BP_USE` / `BP_UNUSE`. The
+use list rides along behind **every** inventory request (`user.kod:955`), including
+the keepalive's, so it stays current at no cost in requests.
+
+Every earlier way of answering "what is it wielding" was an inference, and each
+failed differently:
+
+| the guess | how it broke |
+|---|---|
+| the weapon `equip_best` picked | it never read the reply, so a refusal still reported success |
+| "the `use` was not refused as broken" | wielding something already wielded is refused with **"your hands are too full"**, which is not the broken message |
+| "it is in the inventory" | that is what you *carry* |
+
+`known: false` means no use list has arrived yet. That is **not** the same as
+empty-handed and is never reported as such — on `fleet`, the `wielding` field is
+simply absent rather than `false`.
 
 ---
 

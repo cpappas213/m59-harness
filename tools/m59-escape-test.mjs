@@ -22,6 +22,7 @@
 
 import { escapeUnderworld, standUp, fight } from './m59-skills.mjs';
 import { MOVEON, OF } from './m59-parse.mjs';
+import { readPortalSign, UNDERWORLD_PORTALS, nearestCity } from './m59-underworld.mjs';
 
 function underworld({ resting = false, deaf = false, portals = [], unwalkable = [] } = {}) {
   const log = [];
@@ -32,6 +33,11 @@ function underworld({ resting = false, deaf = false, portals = [], unwalkable = 
     names.set(id, p.name);
     objects.set(id, { id, flags: MOVEON.TELEPORTER, col: p.col, row: p.row, nameRsc: id });
   });
+  // Each portal may carry its own sign and its own destination, which is what makes the
+  // five fixed ones tellable apart at all. The defaults keep the older cases below
+  // reading exactly as they did.
+  const descOf = (id) => portals[id - 1]?.desc
+    ?? 'Through it you glimpse the bustling bar of Familiars.';
 
   const c = {
     room: { id: 10, objects },
@@ -51,7 +57,7 @@ function underworld({ resting = false, deaf = false, portals = [], unwalkable = 
     // `deaf` is a character that cannot stand up however politely asked — held, webbed,
     // or a stand that got dropped. The report must stay honest about that too.
     stand() { log.push('stand'); if (!deaf) resting = false; },
-    look(id) { c.emit('look', { id, description: 'Through it you glimpse the bustling bar of Familiars.' }); },
+    look(id) { log.push(`look ${id}`); c.emit('look', { id, description: descOf(id) }); },
     moveToSquare(col, row) { step(col, row); },
   };
 
@@ -62,9 +68,12 @@ function underworld({ resting = false, deaf = false, portals = [], unwalkable = 
     c.self = { col, row };
     const p = portals.find(p => p.col === col && p.row === row);
     if (p?.live) {
-      c.room = { id: 20, objects: new Map() };
-      c.roomNameRsc = 901;
-      c.emit('room-entered', { room: 20, roomName: 'The Blue Sow' });
+      const room = p.arriveRoom ?? 20;
+      const name = p.arriveName ?? 'The Blue Sow';
+      names.set(902, name);
+      c.room = { id: room, objects: new Map() };
+      c.roomNameRsc = 902;
+      c.emit('room-entered', { room, roomName: name });
     }
   }
 
@@ -167,6 +176,138 @@ const ok = (name, cond, extra = '') => {
   const { s, log } = underworld({ resting: true });
   await standUp(s);
   ok('standUp sends exactly one stand', log.filter(x => x === 'stand').length === 1, JSON.stringify(log));
+}
+
+// ------------------------------------------------------ which door, and to where
+//
+// The Underworld has six exits and they are not interchangeable. Everything you were
+// carrying is on the floor where you died, so coming out at the wrong end of the world
+// is the expensive half of dying. These check that a named city takes the portal that
+// goes there — rather than standing at the anomaly hoping, which is what it used to do.
+
+// The real signs, verbatim from uworld.kod:31-35 and hellport.kod:23-33.
+const SIGN = {
+  tos:      'Looking in the portal, you see the bustling bar of Familiars.',
+  jasper:   'The quiet Yonder Inn of Jasper lies through this portal.',
+  cornoth:  'A lazy inn next to a quiet creek rests on the other side of this portal.',
+  barloque: 'Gazing into the portal, you see an expensive inn in a bustling city.',
+  marion:   'Through the portal, you see the laid-back atmosphere of the Limping Toad.',
+  ripJasper:  'Gazing through the anomaly, you can see the quiet Yonder Inn of Jasper.',
+  ripBarloque: 'Gazing through the anomaly, you can see the fine Brownstone Inn in a bustling Barloque.',
+};
+const INN = { Jasper: 'Yonder Inn of Jasper', Tos: 'Familiars', Barloque: 'Brownestone Inn' };
+
+console.log('\nreading a portal sign');
+{
+  ok('a fixed Tos portal reads as Tos', readPortalSign(SIGN.tos).city === 'Tos');
+  ok('and is marked stable, not shifting', readPortalSign(SIGN.tos).stable === true);
+  // The two the old table could not read at all. Its regexes were the RIP's wording,
+  // and these two portals word the same destination completely differently.
+  ok('the fixed Cornoth portal reads as Cornoth', readPortalSign(SIGN.cornoth).city === 'Cornoth',
+     JSON.stringify(readPortalSign(SIGN.cornoth)));
+  ok('the fixed Barloque portal reads as Barloque', readPortalSign(SIGN.barloque).city === 'Barloque',
+     JSON.stringify(readPortalSign(SIGN.barloque)));
+  ok('the rip reads its city too', readPortalSign(SIGN.ripBarloque).city === 'Barloque');
+  ok('but is marked shifting, because the answer expires',
+     readPortalSign(SIGN.ripBarloque).shifting === true && readPortalSign(SIGN.ripBarloque).stable === false);
+  ok('an unreadable sign is null, not a guess', readPortalSign('a plain grey arch').city === null);
+}
+
+console.log('\nthe five fixed portals');
+{
+  ok('there are five', UNDERWORLD_PORTALS.length === 5);
+  ok('each names a real destination room',
+     UNDERWORLD_PORTALS.every(p => Number.isFinite(p.inn)));
+  ok('Ko\'catan is NOT among them, because it is not in the pentagram',
+     !UNDERWORLD_PORTALS.some(p => /ko/i.test(p.city)));
+  // kod is 1-based and the client is 0-based; getting this backwards would put every
+  // portal one square from where it is.
+  const tos = UNDERWORLD_PORTALS.find(p => p.city === 'Tos');
+  ok('kod coordinates are converted for the client', tos.kodCol === 7 && tos.clientCol === 6);
+}
+
+console.log('\nasking for a city takes that city\'s own portal');
+{
+  const { s, log } = underworld({ portals: [
+    { name: 'portal', col: 6, row: 2, live: true, desc: SIGN.tos,
+      arriveRoom: 52, arriveName: INN.Tos },
+    { name: 'portal', col: 1, row: 20, live: true, desc: SIGN.jasper,
+      arriveRoom: 370, arriveName: INN.Jasper },
+    { name: 'rip in space', col: 9, row: 9, live: true, desc: SIGN.ripBarloque },
+  ] });
+  const r = await escapeUnderworld(s, { city: 'Jasper' });
+  ok('it gets out', r.left === true, JSON.stringify(r));
+  ok('in the city that was asked for', r.city === 'Jasper', JSON.stringify(r));
+  ok('by the fixed portal, not the rip', /fixed Jasper/.test(r.via || ''), r.via);
+  ok('and lands in that city\'s inn', r.arrived_in === INN.Jasper);
+  // The whole point. The old code polled the anomaly for up to three minutes for this.
+  ok('the rip was never polled at all', !log.includes('look 3'), JSON.stringify(log));
+  ok('and it says the result is repeatable rather than lucky', /repeatable/.test(r.note || ''), r.note);
+}
+
+console.log('\nthe wanted city\'s portal is one of the unlit ones');
+{
+  const { s } = underworld({ portals: [
+    { name: 'portal', col: 1, row: 20, live: false, desc: SIGN.jasper },
+    { name: 'portal', col: 6, row: 2, live: true, desc: SIGN.tos,
+      arriveRoom: 52, arriveName: INN.Tos },
+  ] });
+  const r = await escapeUnderworld(s, { city: 'Jasper' });
+  ok('it still gets the character out', r.left === true, JSON.stringify(r));
+  ok('rather than leaving it in the Underworld to be right', r.city === 'Tos');
+  ok('and says plainly that this is not what was asked for',
+     r.got_what_was_wanted === false && r.wanted === 'Jasper', JSON.stringify(r));
+  ok('naming the corpse problem, which is the reason anyone cares',
+     /corpse/.test(r.note || ''), r.note);
+  ok('and why the wanted portal could not be used',
+     /unlit/.test(JSON.stringify(r.could_not_use)), JSON.stringify(r.could_not_use));
+}
+
+console.log('\nwhere it died picks the city on its own');
+{
+  // Room 568, the Lake of Jala's Song — three rooms from Jasper and eleven from
+  // Barloque. Nobody should have to know that; that is what the room graph is for.
+  ok('the graph knows which city that is', nearestCity(568).city === 'Jasper',
+     JSON.stringify(nearestCity(568)));
+  const { s } = underworld({ portals: [
+    { name: 'portal', col: 1, row: 20, live: true, desc: SIGN.jasper,
+      arriveRoom: 370, arriveName: INN.Jasper },
+    { name: 'portal', col: 20, row: 29, live: true, desc: SIGN.barloque,
+      arriveRoom: 106, arriveName: INN.Barloque },
+  ] });
+  const r = await escapeUnderworld(s, { nearestTo: 568 });
+  ok('it comes out nearest to where it died', r.city === 'Jasper', JSON.stringify(r));
+  ok('and says that is why', /nearest to where it died/.test(r.chosen_because || ''), r.chosen_because);
+  ok('carrying the distance, so the walk back is known before setting off',
+     r.hops_from_death === 3, JSON.stringify(r));
+}
+
+console.log('\na room with no city, and a city with no portal');
+{
+  // Raza is one-way — the museum portal goes out and nothing comes back — so no path
+  // exists and none should be invented.
+  const raza = nearestCity(1012);
+  ok('an unreachable room gets null, not a default', raza.city === null, JSON.stringify(raza));
+  ok('and explains itself', /one-way|no path/.test(raza.why || ''), raza.why);
+
+  const { s } = underworld({ portals: [
+    { name: 'portal', col: 6, row: 2, live: true, desc: SIGN.tos, arriveRoom: 52, arriveName: INN.Tos },
+  ] });
+  const r = await escapeUnderworld(s, { city: "Ko'catan" });
+  ok('asking for Ko\'catan still gets you out', r.left === true, JSON.stringify(r));
+  ok('and explains that it is death-only, not merely absent today',
+     /died in Ko'catan/.test(JSON.stringify(r.could_not_use)), JSON.stringify(r.could_not_use));
+}
+
+console.log('\nno city asked for still behaves exactly as it did');
+{
+  const { s, log } = underworld({ portals: [
+    { name: 'portal', col: 5, row: 5, live: true, desc: SIGN.tos },
+  ] });
+  const r = await escapeUnderworld(s);
+  ok('it takes the nearest working portal', r.left === true, JSON.stringify(r));
+  ok('without looking at anything first — no city, no question to answer',
+     !log.some(l => l.startsWith('look')), JSON.stringify(log));
 }
 
 // ------------------------------------------------------------------------ fighting

@@ -20,7 +20,7 @@
 
 import {
   isJunk, JUNK_NAMES, proficiencyFor, weaponRanking, equipBest, junkAndBroken,
-  brokenSet, brokenWeaponText, abilityOf,
+  brokenSet, brokenWeaponText, abilityOf, equippedNow,
 } from './m59-skills.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
 import { RoomGeometry } from './m59-roo.mjs';
@@ -34,9 +34,16 @@ const ok = (what, cond, extra = '') => {
   else { fail++; console.log(`  FAIL ${what}${extra ? ` — ${extra}` : ''}`); }
 };
 
-// A client whose inventory is a list of [id, name], and whose `use` replies with
-// whatever the script says the server would say.
-function fakeClient(items, replies = {}) {
+// A client whose inventory is a list of [id, name], and whose `use` replies the way the
+// server does: either a refusal text from the script, or silence and the id joining the
+// use list.
+//
+// That last part is the whole of the authoritative equipment change. BP_USE is the
+// server saying "it is in plUsing now" (player.kod:3425-3426), and it is the only
+// difference between "we asked to wield this" and "this is wielded". `tracksUse: false`
+// models a client that keeps no use list, which must report NOT verified rather than
+// fall back to the old guess.
+function fakeClient(items, replies = {}, { tracksUse = true } = {}) {
   const names = new Map(items.map(([id, name]) => [id, name]));
   return {
     inventory: items.map(([id]) => ({ id, nameRsc: id })),
@@ -44,11 +51,18 @@ function fakeClient(items, replies = {}) {
     statsById: new Map(),
     evSeq: 0,
     used: [],
+    events: [],
+    ...(tracksUse ? { using: new Set() } : {}),
     requestInventory() {},
-    use(id) { this.used.push(id); this._last = id; },
-    waitFor() {
-      const text = replies[this._last];
-      return { events: text ? [{ text }] : [] };
+    use(id) {
+      this.used.push(id);
+      const text = replies[id];
+      if (text) { this.events.push({ seq: ++this.evSeq, kind: 'message', text }); return; }
+      this.using?.add(id);
+      this.events.push({ seq: ++this.evSeq, kind: 'equipment', how: 'used', id });
+    },
+    waitFor({ since = 0 } = {}) {
+      return { events: this.events.filter(e => e.seq > since) };
     },
   };
 }
@@ -141,6 +155,75 @@ console.log('\nwhen everything in the pack is broken');
   ok('both are now known broken', brokenSet(c).size === 2);
 }
 
+// ------------------------------------------------------- what is actually equipped
+//
+// Every claim below used to be an inference, and each one was wrong in its own way.
+// The server has kept the answer the whole time, in plUsing, and sends it unasked.
+
+console.log('\nequipping is verified against the server\'s use list');
+{
+  const c = fakeClient([[1, 'long sword'], [2, 'dagger']]);
+  const r = await equipBest(fakeSession(c));
+  ok('the wielded weapon is the one the server put in the use list',
+     r.wielding === 'long sword' && c.using.has(1), JSON.stringify(r));
+  ok('and that is what "verified" now means', r.verified === true);
+  ok('it says what confirmed it', /use list/.test(r.confirmed_by || ''), r.confirmed_by);
+}
+
+// The refusal that read as success for as long as this code has existed. Re-`use` of a
+// wielded item is not a toggle — CheckPosition counts the item against its own slot and
+// answers "your hands are too full" (player.kod:131,3235). The old check only looked for
+// the BROKEN message, so this came back verified with the weapon unchanged.
+console.log('\na refusal that is not the broken message is still a refusal');
+{
+  const c = fakeClient([[1, 'long sword'], [2, 'dagger']],
+                       { 1: 'Your hands are too full to use that.' });
+  const r = await equipBest(fakeSession(c));
+  ok('a hands-full refusal does not count as wielding it', r.wielding !== 'long sword',
+     JSON.stringify(r));
+  ok('it moves on to the next weapon', r.wielding === 'dagger' && c.using.has(2));
+  ok('and says what was in the way rather than blaming the weapon',
+     /hands too full/.test(r.rejected?.[0]?.why || ''), JSON.stringify(r.rejected));
+  ok('the hands-full weapon is NOT remembered as broken', !brokenSet(c).has(1));
+}
+
+// A refusal with no text at all — the server declining silently. Nothing to pattern
+// match on, and the old code therefore called it a success.
+console.log('\na silent refusal is caught by the use list alone');
+{
+  const c = fakeClient([[1, 'long sword']]);
+  c.use = function (id) { this.used.push(id); };     // accepts, confirms nothing, says nothing
+  const r = await equipBest(fakeSession(c));
+  ok('silence is not taken for consent', r.wielding === null && r.verified === false,
+     JSON.stringify(r));
+  ok('and it says the server never added it', /never added it to the use list/.test(r.rejected?.[0]?.why || ''),
+     JSON.stringify(r.rejected));
+}
+
+// `fight` calls equipBest before every engagement. Without this the common case spends
+// a request — out of five a second, right before a fight — being told no.
+console.log('\nalready holding the best weapon costs no request');
+{
+  const c = fakeClient([[1, 'long sword'], [2, 'dagger']]);
+  await equipBest(fakeSession(c));
+  const sent = c.used.length;
+  const r = await equipBest(fakeSession(c));
+  ok('the second call sends no use at all', c.used.length === sent, `used=${JSON.stringify(c.used)}`);
+  ok('and still reports the weapon', r.wielding === 'long sword' && r.verified === true);
+  ok('saying it was already wielded', r.already_wielded === true, JSON.stringify(r));
+}
+
+// The honest degradation. A client with no use list must not silently reuse the old
+// guess and call it verified.
+console.log('\na client that keeps no use list says so');
+{
+  const c = fakeClient([[1, 'long sword']], {}, { tracksUse: false });
+  const r = await equipBest(fakeSession(c));
+  ok('it still wields something', r.wielding === 'long sword');
+  ok('but does not claim it was verified', r.verified === false, JSON.stringify(r));
+  ok('and explains what it does not know', /keeps no use list/.test(r.note || ''), r.note);
+}
+
 console.log('\nwhat should be dropped');
 {
   const c = fakeClient([[1, 'broken mace'], [2, 'long sword'], [3, 'shilling']]);
@@ -155,6 +238,42 @@ console.log('\nwhat should be dropped');
   const keep = /shilling|coin|armor|shield|sword|mace|hammer|axe|bow|helm/i;
   ok('both would have been protected by the old keep list',
      dead.every(d => keep.test(d.name)), JSON.stringify(dead.map(d => d.name)));
+}
+
+// The mirror of that bug. Protecting equipment by NAME cuts both ways: the name test
+// that wrongly kept a shattered sword also wrongly dropped anything worn that is not
+// named after a weapon. The use list answers it exactly, for both directions.
+console.log('\nnothing you are wearing is dead weight');
+{
+  const c = fakeClient([[1, 'broken mace'], [2, 'ring of the sun'], [3, 'rat pelt']]);
+  c.using.add(1);                                  // wielding it, junk name and all
+  const dead = junkAndBroken(c);
+  ok('a junk NAME on a worn item is not a reason to strip the character',
+     !dead.some(d => d.id === 1), JSON.stringify(dead));
+  c.using.delete(1);
+  ok('and the moment it is taken off, it is dead weight again',
+     junkAndBroken(c).some(d => d.id === 1));
+
+  // The pack-clearer's own guard, which is a value regex and always was. A worn ring
+  // matches nothing in it, so before the use list it was as droppable as the pelt.
+  const keep = /shilling|coin|diamond|ruby|emerald|sapphire|armor|armour|shield|sword|mace|hammer|axe|bow|helm|gauntlet/i;
+  ok('a worn ring is protected by no name in the keep list', !keep.test('ring of the sun'));
+  const worn = equippedNow(c) ?? new Set();
+  worn.add(2);
+  const droppable = c.inventory.filter(o => !worn.has(o.id) && !keep.test(c.rsc.get(o.nameRsc)));
+  ok('but the use list protects it', !droppable.some(o => o.id === 2),
+     JSON.stringify(droppable.map(o => c.rsc.get(o.nameRsc))));
+  ok('while the rat pelt is still fair game', droppable.some(o => o.id === 3));
+}
+
+console.log('\nequippedNow is null, not empty, when the client cannot answer');
+{
+  // The distinction the whole change rests on. A client with no use list must return
+  // null so callers fall back to their old guard; returning an empty Set would say
+  // "nothing is equipped", and every drop guard downstream would believe it.
+  ok('a tracking client gives a Set', equippedNow(fakeClient([[1, 'x']])) instanceof Set);
+  ok('a non-tracking one gives null, not an empty Set',
+     equippedNow(fakeClient([[1, 'x']], {}, { tracksUse: false })) === null);
 }
 
 console.log('\nthe cliff detector');

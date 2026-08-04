@@ -202,6 +202,20 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   without checking `stats_as_asked` in the `reroll` result. `m59-makefleet.mjs`
   already does this; if you do it by hand, do it too.
 
+- **What you CARRY and what you are WEARING are two different lists.** Equipment
+  lives in `plUsing`, not the inventory, and the server volunteers it: whole on
+  `BP_USE_LIST`, one line per change on `BP_USE`/`BP_UNUSE`, and free behind every
+  inventory request (`user.kod:955`). `client.equipment()` is the only authoritative
+  answer — do not re-derive it from what a `use` was asked to do. Wielding something
+  you already wield is **refused** ("your hands are too full", `player.kod:131`), so
+  "no error" has never meant "equipped".
+
+- **One or two of the five Underworld portals are unlit, not all of them.**
+  `ResetPuzzle` (`uworld.kod:460`) lights all five and turns one or two off at
+  random, so three or four work at any moment and each has a fixed, known
+  destination. An unlit one is silent, which is why the old code read a working
+  pentagram as a dead one. `node tools/m59-underworld.mjs` prints the table.
+
 - **Attach to the broker, do not spawn a second one.** `m59-broker.mjs` with no
   arguments serves stdio MCP *and* resumes a fleet. With one already running,
   the second is refused the lock, comes up healthy and **empty**, and answers
@@ -230,7 +244,15 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-chat-test.mjs` (102) and
   `node tools/m59-rest-test.mjs` (6) and
   `node tools/m59-ledger-test.mjs` (15) and
-  `node tools/m59-escape-test.mjs` (29). The rest need a live server.
+  `node tools/m59-escape-test.mjs` (61) and
+  `node tools/m59-combat-test.mjs` (142) and
+  `node tools/m59-stream-test.mjs` (54) and
+  `node tools/m59-prey-test.mjs` (56). The rest need a live server —
+  `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on
+  8899 and fail with `ECONNREFUSED` without one, which is not a regression.
+- **Do not `import` `m59-broker.mjs` to check it.** Importing runs it: it tries to
+  take the fleet lock and start rejoin timers. `node --check tools/m59-broker.mjs`
+  is the syntax check.
 - The compendium's sprites are not committed. `python tools/pull-client-assets.py`
   decodes them from a local client. Do not commit `compendium/assets/img/`.
 - Do not commit anything a running fleet writes — `fleet-state.json`,

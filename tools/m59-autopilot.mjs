@@ -2452,18 +2452,28 @@ export class Autopilot {
 
       // NEVER SIT HERE. The Underworld has no exits in the room graph — only
       // portals you walk onto — so a character left in it stays in it until
-      // something acts. One failed attempt is not a reason to stop trying: the
-      // usable portal is the shifting one, and it changes destination every few
-      // seconds, so trying again IS the strategy.
+      // something acts. One failed attempt is not a reason to stop trying: one or
+      // two of the five fixed portals are unlit at random and the sixth changes
+      // destination every few seconds, so trying again IS the strategy.
       this.underworldTries = (this.underworldTries || 0) + 1;
-      const e = await skills.escapeUnderworld(s, { maxSeconds: 120 });
+      // COME OUT NEAR THE CORPSE. Everything the character was carrying is on the floor
+      // where it died, and the walk back is the real cost of dying — a keeper that comes
+      // out at the far end of the world has turned a recoverable death into an
+      // unrecoverable one. The room is in the post-mortem we just wrote, which is
+      // deliberately taken before the Underworld overwrites the frames.
+      const diedIn = this.lastPostMortem?.where?.num ?? null;
+      const e = await skills.escapeUnderworld(s, { maxSeconds: 120, nearestTo: diedIn });
       if (e.left) {
         this.reportedDeath = false;
         this.tally.rooms_moved++;
         this.underworldTries = 0;
         this.needsRecovery = true;      // we lost everything we were carrying
         this.progress('escaped the underworld');
-        this.note('escaped the underworld', { to: e.arrived_in, via: e.via });
+        this.note('escaped the underworld', {
+          to: e.arrived_in, via: e.via, city: e.city ?? null,
+          ...(e.wanted ? { wanted: e.wanted, got_it: e.got_what_was_wanted !== false } : {}),
+          ...(diedIn != null ? { died_in_room: diedIn, hops_from_death: e.hops_from_death ?? null } : {}),
+        });
       } else {
         this.noProgress('stuck in the Underworld: ' + (e.reason || 'no portal took us'));
         this.note('could not escape — will keep trying', { why: e.reason, tried: e.tried });
@@ -3587,11 +3597,22 @@ export class Autopilot {
                detail: { now_carrying: c.inventory.length, dead_weight_left: dead.length - 1 } };
     }
 
-    // The keep list doubles as the equipment guard: weapons and armour are named in
-    // it, so "drop the biggest pile of junk" can never strip the character.
+    // The keep list is a VALUE guard — money, gems, the sort of gear worth carrying a
+    // spare of. It used to double as the equipment guard, and that was only ever an
+    // approximation: it protects things whose NAMES look like equipment, so anything
+    // worn that is not named after a weapon or a piece of armour — a ring, a cloak, an
+    // amulet, boots, a lute — was as droppable as a rat pelt while the character was
+    // wearing it.
+    //
+    // The server keeps the real answer in plUsing and sends it on every inventory read,
+    // which is exactly what just happened above. Use it: this cannot be got wrong by a
+    // name nobody thought of.
     const keep = /shilling|coin|diamond|ruby|emerald|sapphire|armor|armour|shield|sword|mace|hammer|axe|bow|helm|gauntlet/i;
+    const worn = skills.equippedNow(c) ?? new Set();
     const junk = (c.inventory || [])
-      .filter(o => !keep.test(c.rsc.get(o.nameRsc) || '') && !this.wontDrop?.has(o.id))
+      .filter(o => !worn.has(o.id)
+                   && !keep.test(c.rsc.get(o.nameRsc) || '')
+                   && !this.wontDrop?.has(o.id))
       .sort((a, b) => (b.amount || 1) - (a.amount || 1));
     if (!junk.length) {
       return { ok: false, did: 'nothing safe to drop',
