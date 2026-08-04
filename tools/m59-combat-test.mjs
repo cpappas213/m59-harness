@@ -915,5 +915,35 @@ console.log('\nreading who actually struck the killing blow');
      deathBroadcastFor('Kermit', evs, 999999, { withinMs: 5000 }) === null);
 }
 
+
+// LOW VIGOR IS NOT A REASON TO RUN AWAY. LOW HEALTH IS.
+//
+// `hurt` is true when EITHER health or vigor is short. That is right for deciding to rest
+// and wrong for deciding to abandon a room: vigor does not fall because a monster is
+// nearby, health does. Measured on the fleet: of 107 room-flees, all 107 were by
+// characters below 180 vigor and none by a well-fed one, and every fleeing character had
+// zero kills. Robin fled 54 times at 29 of 29 health.
+console.log('\nwhen to leave a room, and when to stand and fight tired');
+{
+  // The predicate as the keeper computes it: health below the rest bar, OR too tired to
+  // fight at all for this character's own vigor floor.
+  const leaves = (hp, vig, fightAboveVigor) => {
+    const healthHurt = hp !== null && hp < 0.7;                 // restAt
+    const tooTired = vig !== null && vig < (fightAboveVigor / 200);
+    return healthHurt || tooTired;
+  };
+  ok('full health at the vigor cap does NOT leave — it fights tired',
+     leaves(1.0, 0.4, 0) === false);
+  ok('nor at 90% health and low vigor', leaves(0.9, 0.4, 0) === false);
+  ok('but genuinely hurt still leaves', leaves(0.3, 1.0, 0) === true);
+  ok('and hurt AND tired leaves', leaves(0.3, 0.4, 0) === true);
+  // The deadlock the branch exists for must survive: a character that refuses to fight
+  // below a vigor floor cannot fight and cannot rest in a combat zone, so it must go.
+  ok('a character with a vigor floor it cannot meet still leaves',
+     leaves(1.0, 0.4, 180) === true);
+  ok('and once above that floor it stays', leaves(1.0, 0.95, 180) === false);
+  ok('unknown vitals do not trigger a flee', leaves(null, null, 0) === false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

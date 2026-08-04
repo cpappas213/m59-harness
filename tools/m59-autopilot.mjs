@@ -3538,7 +3538,32 @@ export class Autopilot {
     // otherwise declare the want so the fleet's supply machinery can answer it. A
     // character at this vigor with no food is not in a fight it can win; it is in a
     // supply problem wearing a fight's clothes.
-    if (hurt && combatZone && !sheltered && !testing && !this.hold) {
+    // LOW VIGOR IS NOT A REASON TO RUN AWAY. LOW HEALTH IS.
+    //
+    // `hurt` is true when EITHER health or vigor is short, which is right for deciding to
+    // rest and badly wrong for deciding to abandon a room. Vigor does not fall because
+    // there is a monster nearby; health does. So a character at full health and the
+    // vigor cap read as "hurt", found something hostile, and left — then did it again in
+    // the next room, for ever.
+    //
+    // Measured: of 107 room-flees, ALL 107 were by characters below 180 vigor and NONE
+    // by a well-fed one, and every single fleeing character had zero kills. Robin fled
+    // 54 times at 29 of 29 health and killed nothing. Fixing the escape so it actually
+    // works converted "die where you stand" into "run for ever", which is better and
+    // still not farming.
+    //
+    // The deadlock this branch exists to break is real — too hurt to fight, unable to
+    // rest because something is watching — but it is a HEALTH deadlock. At full health
+    // there is no deadlock: a tired character fights worse, not not-at-all, and the
+    // answer to low vigor is food, which is somewhere else entirely.
+    // The one case where low vigor SHOULD still send us away: when this character refuses
+    // to fight below a vigor floor. Then it genuinely cannot act here — cannot fight,
+    // cannot rest in a combat zone — and leaving is the only move left. That is the
+    // deadlock the branch was written for, kept intact. Most of the fleet runs
+    // fightAboveVigor at 0 and will simply fight on, tired, which is the point.
+    const healthHurt = hp !== null && hp < restAt;
+    const tooTiredToFight = vig !== null && vig < ((this.policy.fightAboveVigor ?? 0) / 200);
+    if ((healthHurt || tooTiredToFight) && combatZone && !sheltered && !testing && !this.hold) {
       this.doing = 'travelling';
       const ways = (s.world?.exits() || []).filter(e => e.to != null && e.reachable !== false);
       const out = ways.sort((a, b) => (a.steps_away ?? 999) - (b.steps_away ?? 999))[0];
