@@ -6094,8 +6094,19 @@ async function supplyBetween(a) {
         restore.push(sess);
       };
       try {
+        // HOLD BOTH KEEPERS FOR THE TRADE, NOT JUST FOR THE WALK.
+        //
+        // The first version held them only when travel was needed, so an in-room
+        // handover ran with both keepers live — and a trade is four interleaved steps
+        // across two sessions, any of which a keeper can cancel by acting. Fozzie and
+        // four hungry characters were standing in the same room; the first offer went
+        // out, the receiver's keeper cancelled it, and the food was left sitting in a
+        // dead trade window. The next three deliveries then reported "carrying nothing
+        // matching food", because it was no longer in the pack.
+        //
+        // Held for the whole exchange, restored in the finally below.
+        holdStill(gs); holdStill(rs);
         if (who !== 'neither' && (gs.world?.room?.num !== rs.world?.room?.num)) {
-          holdStill(gs); holdStill(rs);
           const mover = who === 'to' ? rs : gs;
           const other = who === 'to' ? gs : rs;
           let arrived = false, why = null;
@@ -6119,6 +6130,12 @@ async function supplyBetween(a) {
       const them = [...g.room.objects.values()]
         .find(o => (o.flags & OF.PLAYER) && (g.rsc.get(o.nameRsc) || '') === (r.me?.name || ''));
       if (!them) return { supplied: false, reason: `${r.me?.name} is not in the room with ${g.me?.name}` };
+
+      // A HALF-FINISHED TRADE HOLDS THE GOODS. Clearing both sides first is cheap and
+      // stops one failed delivery from eating the larder for every delivery after it.
+      await gs.pacer.submit('trade', () => g.cancelOffer()).catch(() => {});
+      await rs.pacer.submit('trade', () => r.cancelOffer()).catch(() => {});
+      await new Promise(x => setTimeout(x, 400));
 
       const handed = items.map(nameOf);
       const before = (r.inventory || []).length;
