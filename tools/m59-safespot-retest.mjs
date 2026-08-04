@@ -32,8 +32,35 @@
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
 
 const arg = (n) => process.argv.includes('--' + n);
+const argVal = (n) => { const i = process.argv.indexOf('--' + n); return i < 0 ? null : process.argv[i + 1]; };
 const DRY = arg('dry-run');
 const ONLY_UNHELD = arg('only-unheld');
+
+// THE BETTER DISCRIMINATOR, FOUND LATER: WHEN the failure was recorded.
+//
+// This tool was written on the theory that failures were positioning artefacts — the
+// square was entered at its centre rather than against the wall. That theory turned out
+// to be wrong: fine coordinates are invisible to the server's reach test, which is
+// SquaredDistanceTo on SQUARE coordinates (nomoveon.kod:121), so where in the square a
+// character stood never mattered.
+//
+// What WAS wrong is bigger. The model that chose these squares counted the eight
+// neighbours as "who can hit you", when reach is a disc of radius 3 — up to 28 squares —
+// filtered by line of sight. It rated 94% of squares identically, correlated with the
+// observed hold rate at r=0.41, and approved six of the seven squares that got a
+// character killed. Every failure recorded under it is a measurement taken with a broken
+// instrument: not a bad square, a badly chosen one.
+//
+// So --before <iso|ms> clears only the failures older than a given moment, which is how
+// you retire the judgements of a superseded model without discarding the ones the
+// corrected model has since made. Those newer failures are real evidence and are kept.
+const BEFORE = (() => {
+  const v = argVal('before');
+  if (!v) return null;
+  const t = /^\d+$/.test(v) ? Number(v) : Date.parse(v);
+  if (!Number.isFinite(t)) { console.error(`--before: cannot read "${v}" as a time`); process.exit(1); }
+  return t;
+})();
 
 const FILE = new URL('../substrate/m59-safespots.json', import.meta.url).pathname
                .replace(/^\/([A-Za-z]:)/, '$1');
@@ -52,6 +79,10 @@ for (const [room, spots] of Object.entries(rooms)) {
     // ones with no positive evidence at all, so leaving them out keeps the change to
     // the squares we have direct reason to doubt.
     if (ONLY_UNHELD && rec.held > 0) { kept++; continue; }
+    // Newer than the cutoff means it was judged by the corrected model, and that is
+    // evidence rather than an artefact. A record with no timestamp is left alone too:
+    // unknown is not the same as old, and this only ever removes evidence.
+    if (BEFORE != null && !(rec.at > 0 && rec.at < BEFORE)) { kept++; continue; }
     if (rec.held > 0) alsoHeld++;
     cleared++;
     perRoom[room] = (perRoom[room] || 0) + 1;
@@ -68,9 +99,13 @@ for (const [room, spots] of Object.entries(rooms)) {
 
 console.log(`${squares} squares in the book across ${Object.keys(rooms).length} rooms`);
 console.log(`${cleared} failure record(s) ${DRY ? 'would be' : ''} cleared` +
-            (ONLY_UNHELD ? ` (${kept} kept: they have held before)` : ''));
-if (!ONLY_UNHELD) console.log(`  of those, ${alsoHeld} are squares that had ALSO held — the clearest ` +
-                              'sign the failure was a positioning artefact');
+            (kept ? ` (${kept} kept)` : ''));
+if (BEFORE != null)
+  console.log(`  only failures recorded before ${new Date(BEFORE).toISOString()} — anything ` +
+              'newer was judged by the corrected reach model and is real evidence');
+if (!ONLY_UNHELD) console.log(`  of those, ${alsoHeld} are squares that had ALSO held — a square ` +
+                              'that both holds and fails is the clearest sign the failure was the ' +
+                              'measurement rather than the wall');
 const top = Object.entries(perRoom).sort((a, b) => b[1] - a[1]).slice(0, 8);
 for (const [room, n] of top) console.log(`  room ${String(room).padStart(5)}: ${n}`);
 

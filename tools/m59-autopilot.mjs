@@ -1621,6 +1621,63 @@ export class Autopilot {
     return { settled: !!w.arrived, spot };
   }
 
+  // GO TO TOWN WHEN THE WILDERNESS HAS STOPPED WORKING.
+  //
+  // Called after a successful escape. Two flees is a bad patch; a third says this
+  // character cannot fight anywhere it can currently reach, and the next wilderness room
+  // will be the same. See the note at the call site for how that state is manufactured.
+  //
+  // FED AND RESTED CHARACTERS ARE EXEMPT. Above 140 vigor with food in the pack, the
+  // fleeing is tactical — a bad room, a bad crowd — and hauling it to town would throw
+  // away a working session for nothing.
+  async townTripIfCornered() {
+    const s = this.s, c = s.client;
+    if ((this.fledInARow || 0) <= 2) return false;
+    const v = c?.vitals?.();
+    const vig = v?.vigor?.value ?? 0;
+    const fed = skills.larderOf(c).length > 0;
+    if (vig > 140 && fed) { this.fledInARow = 0; return false; }
+    if (this.sanctuary()) { this.fledInARow = 0; return false; }   // already somewhere safe
+
+    // The nearest room nothing is generated in, by hops. Sanctuary is the right test
+    // rather than a list of town names: an inn qualifies, so does a bank, a shop and a
+    // stretch of road, and "tavern" is not a flag on anything.
+    const here = s.world?.room?.num;
+    const spawns = loadSpawns(SPAWN_FILE)?.rooms || {};
+    const safeRooms = Object.keys(spawns)
+      .filter(n => !(spawns[n] || []).some(x => x.huntable))
+      .map(Number).filter(n => n !== here);
+    let best = null;
+    for (const room of safeRooms) {
+      const r = s.world?.route?.(room);
+      if (!r?.found) continue;
+      const hops = r.hops.length;
+      if (hops > 3) continue;                 // further than that is its own expedition
+      if (!best || hops < best.hops) best = { room, hops };
+    }
+    if (!best) {
+      this.note('cornered but no town within reach', {
+        fled_in_a_row: this.fledInARow, vigor: vig, has_food: fed,
+        why: 'nothing unhuntable within three hops — carrying on in the wilderness ' +
+             'because the alternative is a long walk through worse' });
+      this.fledInARow = 0;                    // do not re-decide this every pass
+      return false;
+    }
+    this.doing = 'travelling';
+    this.note('going to town', {
+      fled_in_a_row: this.fledInARow, vigor: vig, has_food: fed,
+      to_room: best.room, hops: best.hops,
+      why: 'fled more than twice with neither the vigor nor the food to fight — the ' +
+           'wilderness cannot fix that, and a town can: resting is safe there and the ' +
+           'counters sell bread, which is the only way past the resting cap of 80' });
+    const t = await s.travel(best.room, { maxHops: 6 }).catch(e => ({ arrived: false, reason: e.message }));
+    this.fledInARow = 0;
+    if (!t.arrived) { this.noProgress('could not reach town: ' + (t.reason || 'refused')); return false; }
+    this.progress('reached town to resupply');
+    await this.hibernate('resting in town after being driven out of the wilderness').catch(() => {});
+    return true;
+  }
+
   // Nothing to do and nowhere to be: sit down somewhere safe and get the bar back up.
   // Vigor is what a character actually leaves an inn with, and resting is the only way
   // to raise it without food — so idling on your feet is throwing away the one thing
@@ -3624,11 +3681,29 @@ export class Autopilot {
       };
       const gotOut = async (r) => {
         this.tally.fled_rooms = (this.tally.fled_rooms || 0) + 1;
+        this.fledInARow = (this.fledInARow || 0) + 1;
         await skills.restUntil(s, { health: 0.95, vigor: REST_VIGOR_CAP, maxSeconds: 90 })
                     .catch(() => {});
         await this.cookSomething('got out of a bad room and need food before going back')
                   .catch(() => {});
         this.progress('left a room I could neither fight nor rest in');
+        // FLEEING TWICE IS A SUPPLY PROBLEM WEARING A TACTICS PROBLEM'S CLOTHES.
+        //
+        // Leaving one bad room is a decision. Leaving three is a character that cannot
+        // fight anywhere, and walking to a fourth wilderness room will not change that.
+        // Animal proved it: 168 flees and 2 kills, because the supervisor graduates a
+        // pair with fight_above_vigor 180 and a character at the resting cap of 80 can
+        // never meet it — so it refused every fight, fled every room, earned nothing,
+        // and therefore never got the food that would have let it fight. The loop is
+        // closed and nothing inside the wilderness opens it.
+        //
+        // Town does open it: it is a sanctuary, so resting is legal and safe, and it
+        // has counters that sell bread — which is the only route past 80 vigor.
+        //
+        // The exemption is for a character that is merely having a bad room: plenty of
+        // vigor and food in the pack means the fleeing is tactical, not structural, and
+        // sending it to town would be throwing away a working session.
+        await this.townTripIfCornered().catch(() => {});
         return r;
       };
 
@@ -4399,6 +4474,10 @@ export class Autopilot {
       const looted = (f.looted || []).map(x => x.name + (x.amount ? ` x${x.amount}` : ''));
       if (f.killed) {
         this.tally.kills++;
+        // A kill means the wilderness is working again, so the run of flees that would
+        // otherwise accumulate over a long healthy session is cleared. Without this a
+        // character that fled three times an hour ago gets marched to town mid-fight.
+        this.fledInARow = 0;
         // Remember where the work is. This is what roaming steers back toward.
         if (room?.num != null) this.homeRoom = room.num;
         this.progress('killed something');

@@ -323,7 +323,10 @@ export function nearestSafeSpot(geo, from, {
     // halves the number of attackers is worth the two squares. Proof is worth more
     // than either — a square that has held under attack beats any amount of
     // promising-looking wall.
-    const proof = seen?.held ? 20 + Math.min(10, seen.held) : 0;
+    // A marked square outranks any amount of promising-looking wall, and outranks a
+    // square that merely held — holding is our own measurement, marking is somebody's
+    // judgement made from inside the game.
+    const proof = (seen?.verified ? 60 : 0) + (seen?.held ? 20 + Math.min(10, seen.held) : 0);
     // Distance from the fight counts twice over: it is walked once to fetch and once
     // to come back, and every step of it is taken in the open with the monster
     // already awake. Weighted more heavily than distance from us for that reason.
@@ -428,7 +431,40 @@ export class SafeSpotBook {
   // turn out not to be — a crowd big enough simply reaches around the wall — and the
   // number of squares in a room is large. So a failure is permanent and there is no
   // route back into the recommendations.
-  discredited(rec) { return !!rec && (rec.failed || 0) >= 1; }
+  // A HUMAN STOOD HERE AND SAYS IT WORKS.
+  //
+  // Ground truth, and it outranks everything this file infers. The model reasons from a
+  // one-byte-per-square grid and a transcription of the server's reach test; a person
+  // playing the character sees the actual geometry and, more to the point, has fought
+  // from the square. Every automatic judgement in this book has been wrong at least once
+  // — the reach model condemned 560 squares it should not have, including all 132 in the
+  // Valley of Ileria — and a marked square is the one kind of record that was not
+  // produced by a model that might be wrong.
+  //
+  // Failures are still COUNTED on a verified square, because a human can be wrong too
+  // and the record should say so. They just do not retire it: unmarking is a human's job.
+  verify(room, { col, row, by = null, note = null }) {
+    const rec = this.touch(room, col, row);
+    rec.verified = true;
+    rec.verified_by = by;
+    rec.verified_at = Date.now();
+    if (note) rec.verified_note = note;
+    this.dirty = true;
+    return rec;
+  }
+
+  unverify(room, { col, row }) {
+    const rec = this.touch(room, col, row);
+    delete rec.verified; delete rec.verified_by; delete rec.verified_at; delete rec.verified_note;
+    this.dirty = true;
+    return rec;
+  }
+
+  discredited(rec) {
+    if (!rec) return false;
+    if (rec.verified) return false;             // a person's word beats our arithmetic
+    return (rec.failed || 0) >= 1;
+  }
 
   // We stood here under attack and nothing landed while we were not swinging.
   held(room, { col, row, x = null, y = null, seconds = 0, attackers = 0 }) {

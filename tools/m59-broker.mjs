@@ -32,7 +32,7 @@
 
 import http from 'node:http';
 import os from 'node:os';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { M59Client, KOD_FINENESS } from './m59-client.mjs';
@@ -554,6 +554,31 @@ async function reconcileFleet() {
     // problem to solve at full speed.
     const contended = st.lastJoinAt && (Date.now() - st.lastJoinAt) < CONTENTION_MS;
     if (contended) {
+      // IF THERE IS A CLIENT ON THIS MACHINE, THE CONTENDER IS PROBABLY THE OPERATOR.
+      //
+      // Backing off is right but it is not enough: while we back off, the character is
+      // merely un-fought-over, not HANDED OVER. Its keeper may restart, and speech from
+      // it is still treated as ordinary chat — so the operator cannot use any of the
+      // spoken commands, which is exactly when they most want to.
+      //
+      // That is not hypothetical. The whole point of claiming was to let a person mark
+      // safe spots by standing on them and saying so; the operator said "Safe spot here."
+      // four times, every fleet character in the room HEARD it, and nothing happened —
+      // because the claim was bound to a client pid, the client had been bumped off and
+      // relaunched, and the new process had a different pid. The mechanism worked
+      // perfectly and was pointed at a process that no longer existed.
+      //
+      // So: if a Meridian client is running locally, claim the character for it. The
+      // trust argument is unchanged — a live local process holding the only session the
+      // server permits — it just stops requiring somebody to look the pid up by hand.
+      const client = localClientPid();
+      if (client && !piloted.has(agent)) {
+        claimPilot(agent, client, { character: credentials.character ?? null });
+        console.error(`[rejoin] ${agent} (${credentials.character || '?'}) is being played by a local ` +
+                      `client (pid ${client}) — claimed for it, keeper stopped, and it will be released ` +
+                      `when that process exits`);
+        continue;
+      }
       st.failures++;
       st.nextTryAt = Date.now() + backoffFor(st.failures);
       st.lastJoinAt = null;
@@ -626,6 +651,29 @@ const piloted = new Map();     // agent -> { pid, since, objectId, character, ke
 const PILOT_POLL_MS = Number(process.env.M59_PILOT_POLL_MS || 4000);
 
 const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+// IS THERE A MERIDIAN CLIENT RUNNING ON THIS MACHINE, and what is its pid?
+//
+// Only ever used to answer "the operator is probably the one holding that character",
+// and only when a character has already been taken from us twice in quick succession.
+// It is a convenience, not an authority: the authority is still that the pid is alive
+// and the server permits one connection per character.
+//
+// Windows-only by inspection, and silent everywhere else — a missing answer just means
+// the old back-off behaviour, which is what happened before this existed.
+let clientPidCache = { at: 0, pid: null };
+function localClientPid({ ttlMs = 10_000 } = {}) {
+  if (Date.now() - clientPidCache.at < ttlMs) return clientPidCache.pid;
+  let pid = null;
+  try {
+    const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq meridian.exe', '/FO', 'CSV', '/NH'],
+                             { encoding: 'utf8', timeout: 3000 });
+    const m = /^"[^"]+","(\d+)"/m.exec(out.trim());
+    if (m) pid = Number(m[1]);
+  } catch { /* no tasklist, or none running */ }
+  clientPidCache = { at: Date.now(), pid };
+  return pid;
+}
 
 // The claim, and the only thing that may promote speech to instruction. A stale entry
 // whose process has gone is not a claim, so this checks liveness rather than trusting
@@ -739,6 +787,64 @@ const OPERATOR_VERBS = [
   { re: /^\s*(please\s+)?(rest|sit down|take a break)\b/i,
     what: 'rest',
     run: async (a) => await callTool('rest_up', { agent: a }) },
+
+  // MARK THE SQUARE THE OPERATOR IS STANDING ON.
+  //
+  // Safe spots are trivial for a person and hard to compute, and the gap is not
+  // knowledge — it is that a person has FOUGHT there. Every automatic judgement in this
+  // book has been wrong at least once: the reach model condemned 560 squares it should
+  // not have, all 132 of the Valley of Ileria among them. A human's mark is the one kind
+  // of record not produced by a model that might be wrong, so it outranks the rest.
+  //
+  // NO CLIENT MODIFICATION NEEDED, which is the good part. We cannot see inside the
+  // operator's client — but we do not need to, because the SERVER sends every object's
+  // square to everyone in the room. So a fleet character standing nearby reads the
+  // speaker's square off its own room contents. Dropping an item to mark a spot would
+  // also work, and costs an item and litters a shared server.
+  { re: /^\s*safe\s*spot\s+here\b|^\s*(mark|remember|save)\s+(this\s+)?(as\s+)?(a\s+)?(safe\s+)?(spot|square|wall)\b/i,
+    what: 'mark the operator\'s square as a verified safe spot',
+    run: async (a, me, ctx) => {
+      const s = sessions.get(a);
+      const c = s?.client;
+      const room = s?.world?.room?.num;
+      if (!c || room == null) return { marked: false, why: 'the hearer cannot say which room it is in' };
+      const them = c.room?.objects?.get(ctx.speaker);
+      if (!them || them.col == null) return { marked: false, why: 'cannot see the speaker to read their square' };
+      const book = safeSpotBook(SAFESPOT_FILE);
+      const rec = book.verify(room, { col: them.col, row: them.row, by: me,
+                                      note: 'marked in game by the operator' });
+      // Keep the FINE position too. The square is what the reach test uses, but getting
+      // back to a marked spot is a walk, and walkTo aims at the square's centre — so the
+      // exact place the operator was standing is worth writing down even though nothing
+      // about being hit depends on it. x/y are kod fine units, 64 to the square, which is
+      // the finest the protocol carries.
+      if (them.x != null) { rec.x = them.x; rec.y = them.y; }
+      book.save();
+      // SAY IT BACK, WITH NUMBERS. Marking spots is fiddly and the operator cannot see
+      // our coordinate system — an unacknowledged mark is indistinguishable from a
+      // misheard one, and getting these right matters more than the round trip costs.
+      const fine = them.x != null ? `, fine ${them.x},${them.y}` : '';
+      const hist = rec.held || rec.failed
+        ? ` (previously held ${rec.held || 0}, failed ${rec.failed || 0})` : ' (no history here)';
+      await callTool('say', { agent: a,
+        text: `Confirmed, safe spot at room ${room} col ${them.col} row ${them.row}${fine}${hist}` })
+        .catch(() => {});
+      return { marked: true, room, col: them.col, row: them.row, x: them.x ?? null, y: them.y ?? null,
+               by: me, held_before: rec.held ?? 0, failed_before: rec.failed ?? 0 };
+    } },
+
+  { re: /^\s*(unmark|forget)\s+(this\s+)?(safe\s+)?(spot|square|wall)\b/i,
+    what: 'un-mark the operator\'s square',
+    run: async (a, me, ctx) => {
+      const s = sessions.get(a);
+      const room = s?.world?.room?.num;
+      const them = s?.client?.room?.objects?.get(ctx.speaker);
+      if (!them || room == null) return { unmarked: false, why: 'cannot see the speaker' };
+      const book = safeSpotBook(SAFESPOT_FILE);
+      book.unverify(room, { col: them.col, row: them.row });
+      book.save();
+      return { unmarked: true, room, col: them.col, row: them.row };
+    } },
 ];
 
 // DELIBERATELY NOT HERE YET.

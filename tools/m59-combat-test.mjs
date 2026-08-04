@@ -1027,5 +1027,69 @@ console.log('\ntelling a crash from a clean shutdown');
   rmSync(tmp, { recursive: true, force: true });
 }
 
+
+// FLEEING TWICE IS A SUPPLY PROBLEM WEARING A TACTICS PROBLEM'S CLOTHES.
+//
+// Animal: 168 flees, 2 kills. The supervisor graduates a pair with fight_above_vigor 180
+// and a character stuck at the resting cap of 80 can never meet it -- so it refuses every
+// fight, flees every room, earns nothing, and therefore never gets the food that would
+// let it fight. The loop is closed and nothing in the wilderness opens it.
+console.log('\ngoing to town when the wilderness has stopped working');
+{
+  // The decision as townTripIfCornered makes it, isolated from the walking.
+  const decide = (fledInARow, vigor, fed, inSanctuary) => {
+    if (fledInARow <= 2) return 'carry on';
+    if (vigor > 140 && fed) return 'carry on';        // tactical, not structural
+    if (inSanctuary) return 'already safe';
+    return 'go to town';
+  };
+  ok('one flee is a bad room, not a pattern', decide(1, 80, false, false) === 'carry on');
+  ok('two is still not a pattern', decide(2, 80, false, false) === 'carry on');
+  ok('three with no vigor and no food is a trip to town',
+     decide(3, 80, false, false) === 'go to town');
+  // The exemption: a fed, rested character having a bad patch must not be marched away
+  // from a working session.
+  ok('fed and above 140 vigor carries on even after three',
+     decide(3, 160, true, false) === 'carry on');
+  ok('but 160 vigor with an EMPTY pack still goes — the vigor will not last',
+     decide(3, 160, false, false) === 'go to town');
+  ok('and food alone at low vigor still goes', decide(3, 80, true, false) === 'go to town');
+  ok('exactly 140 is not above 140', decide(3, 140, true, false) === 'go to town');
+  ok('already somewhere safe means stay put', decide(3, 80, false, true) === 'already safe');
+}
+
+
+// A HUMAN'S MARK OUTRANKS OUR ARITHMETIC.
+//
+// Safe spots are trivial for a person and hard to compute, and the gap is not knowledge
+// -- it is that a person has FOUGHT there. Every automatic judgement in this book has
+// been wrong at least once: the reach model condemned 560 squares it should not have,
+// all 132 of the Valley of Ileria among them.
+console.log('\nsquares a person has marked by hand');
+{
+  const { SafeSpotBook } = await import('./m59-safespots.mjs');
+  const book = new SafeSpotBook(null);          // null file: never touches disk
+  book.failed(544, { col: 3, row: 21, damage: 4, attackers: 2 });
+  const bad = book.recall(544).get('3,21');
+  ok('a failure discredits an ordinary square', book.discredited(bad) === true);
+
+  book.verify(544, { col: 3, row: 21, by: 'Floyd', note: 'stood here and fought' });
+  const marked = book.recall(544).get('3,21');
+  ok('marking it un-discredits it', book.discredited(marked) === false);
+  ok('and records who said so', marked.verified_by === 'Floyd');
+  ok('the failure history is KEPT, not erased', marked.failed === 1,
+     'a person can be wrong too, and the record should say so');
+  ok('a later failure still does not retire a marked square', (() => {
+    book.failed(544, { col: 3, row: 21, damage: 9, attackers: 3 });
+    return book.discredited(book.recall(544).get('3,21')) === false;
+  })());
+  ok('but it is still counted', book.recall(544).get('3,21').failed === 2);
+
+  book.unverify(544, { col: 3, row: 21 });
+  ok('un-marking hands it back to the arithmetic',
+     book.discredited(book.recall(544).get('3,21')) === true);
+  ok('and clears who marked it', book.recall(544).get('3,21').verified_by === undefined);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
