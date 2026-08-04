@@ -21,7 +21,7 @@
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import {
   isJunk, JUNK_NAMES, proficiencyFor, weaponRanking, equipBest, junkAndBroken,
-  brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit,
+  brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit, signetRings, returnSignetRings,
 } from './m59-skills.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
 import { RoomGeometry } from './m59-roo.mjs';
@@ -749,6 +749,68 @@ console.log('\nthe room that filled up with what nobody would kill');
      JSON.stringify(mst.clearable.map(x => `${x.count}x ${x.name}`)));
   ok('an unknown creature is still clearable — no level means no band to exceed',
      mst.clearable.some(x => x.name === 'rat'));
+}
+
+
+// A SIGNET RING IS 1500 SHILLINGS THE FLEET WAS CARRYING AS LOOT.
+console.log('\ngiving a signet ring back to whoever is named on it');
+{
+  const CREST = (who) => `This ring is worn and dirty, but you make out the family crest of ${who}. Surely, its return would be appreciated.`;
+  const build = ({ owners = {}, present = [], takes = true } = {}) => {
+    const items = Object.keys(owners).map(id => [Number(id), 'signet ring']);
+    const c = fakeClient(items.length ? items : [[1, 'signet ring']]);
+    c.looked = [];
+    c.offered = [];
+    c.room = { objects: new Map(present.map((n, i) => [900 + i, { id: 900 + i, nameRsc: 900 + i }])) };
+    const names = new Map(present.map((n, i) => [900 + i, n]));
+    const base = c.rsc.get;
+    c.rsc = { get: (r) => names.get(r) ?? base(r) };
+    c.selfId = 1;
+    c.look = function (id) {
+      this.looked.push(id);
+      this.events.push({ seq: ++this.evSeq, kind: 'look', id, description: CREST(owners[id]) });
+    };
+    c.offer = function (to, ids) {
+      this.offered.push({ to, ids });
+      if (takes) this.inventory = this.inventory.filter(o => !ids.includes(o.id));
+    };
+    c.waitFor = function ({ kinds } = {}) {
+      const evs = this.events.filter(e => !kinds || kinds.includes(e.kind));
+      this.events = [];
+      return { events: evs };
+    };
+    return c;
+  };
+
+  const c1 = build({ owners: { 1: 'Pietro' }, present: ['Pietro'] });
+  const r1 = await returnSignetRings(fakeSession(c1));
+  ok('the ring goes back when its owner is standing here',
+     r1.returned.length === 1 && r1.returned[0].to === 'Pietro', JSON.stringify(r1));
+  ok('and it was offered to that object, not to anyone else', c1.offered[0].to === 900);
+
+  const c2 = build({ owners: { 1: 'Pietro' }, present: ['Hester Gilk'] });
+  const r2 = await returnSignetRings(fakeSession(c2));
+  ok('a different NPC is not offered the ring', r2.returned.length === 0 && c2.offered.length === 0);
+  ok('and we say we are still carrying it', r2.carrying === 1);
+
+  const c3 = build({ owners: { 1: 'Pietro' }, present: [] });
+  ok('an empty room costs no offers', (await returnSignetRings(fakeSession(c3))).returned.length === 0);
+
+  // The owner is read once and remembered — a look per ring per pass would be absurd.
+  const c4 = build({ owners: { 1: 'Pietro' }, present: ['Pietro'] });
+  const s4 = fakeSession(c4);
+  await signetRings(s4);
+  const afterFirst = c4.looked.length;
+  await signetRings(s4);
+  ok('the owner is looked up once and cached', c4.looked.length === afterFirst && afterFirst === 1,
+     `looked ${c4.looked.length} times`);
+
+  // If the NPC does not take it, that is reported rather than counted as returned.
+  const c5 = build({ owners: { 1: 'Pietro' }, present: ['Pietro'], takes: false });
+  const r5 = await returnSignetRings(fakeSession(c5));
+  ok('a refusal is not counted as a return', r5.returned.length === 0 && r5.refused.length === 1,
+     JSON.stringify(r5));
+  ok('proof is the ring LEAVING the pack, not the offer being sent', r5.carrying === 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

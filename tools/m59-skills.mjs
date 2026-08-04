@@ -1719,3 +1719,85 @@ export async function sellAll(s, { merchant, keep = [], minPrice = 1 } = {}) {
   return { sold, refused, total_received: total, kept_for_the_fleet: held,
            note: refused.length ? 'refusals are usually "this merchant does not deal in that" — check merchants for who does' : undefined };
 }
+
+// ------------------------------------------------------- returning signet rings
+
+// A SIGNET RING IS 1500 SHILLINGS LYING IN THE PACK.
+//
+// Monsters drop them and the fleet hauls them around as loot. They are not loot: each
+// one belongs to a named NPC, and handing it back pays viValue_average * 10 for any
+// character that has not enabled player-killing — 150 * 10 (ringsgnt.kod:94
+// RewardReturner, and viValue_average at :39). Statler was carrying six.
+//
+// WHO IT BELONGS TO IS READABLE, which is the part that makes this cheap. The ring
+// describes itself as "the family crest of <name>" (ringsgnt.kod:22), so one look names
+// the owner. There is no NPC-location table to build and none would help: these owners
+// wander. So the check is simply "is the person named on this ring standing here", asked
+// wherever we happen to be — which is also why it costs nothing to ask often.
+//
+// The handover is a trade. Monster.CheckWhyWanted (monster.kod:3994) fires when the ring
+// is offered: if it is the right mob it takes it, pays, and says so; if it is the wrong
+// one it refuses and NAMES the correct owner, which is a free correction if our reading
+// of the description was ever wrong.
+const SIGNET_NAME = /signet ring/i;
+const SIGNET_CREST = /family crest of ([^.]+)\./i;
+
+// Cached per client and per object id, because a ring's owner never changes and looking
+// costs a round trip. Cleared naturally when the ring leaves the pack.
+const signetOwners = (c) => (c._signetOwners ??= new Map());
+
+// Every signet ring in the pack, with whoever it names, looking only at the ones we have
+// not already read. Unknown owners are reported rather than guessed.
+export async function signetRings(s) {
+  const c = s.need();
+  const known = signetOwners(c);
+  const out = [];
+  for (const o of c.inventory || []) {
+    const name = c.rsc.get(o.nameRsc) || '';
+    if (!SIGNET_NAME.test(name)) continue;
+    if (!known.has(o.id)) {
+      // Same retry as inspectForBroken: the first look after another look comes back
+      // empty, reproducibly.
+      let desc = null;
+      for (let i = 0; i < 2 && desc == null; i++) {
+        await s.pacer.submit('look', () => c.look(o.id));
+        const { events } = await c.waitFor({ kinds: ['look'], timeoutMs: 3000 });
+        desc = events.find(e => e.id === o.id)?.description ?? null;
+      }
+      known.set(o.id, desc ? (desc.match(SIGNET_CREST)?.[1]?.trim() ?? null) : null);
+    }
+    out.push({ id: o.id, owner: known.get(o.id) });
+  }
+  return out;
+}
+
+// Hand back any ring whose owner is standing in this room. Returns what it managed to
+// give away; an empty list is the overwhelmingly common answer and costs one look per
+// ring the first time and nothing after that.
+export async function returnSignetRings(s, { max = 3 } = {}) {
+  const c = s.need();
+  const rings = await signetRings(s);
+  if (!rings.length) return { returned: [], carrying: 0 };
+  const here = [...c.room.objects.values()]
+    .filter(o => o.id !== c.selfId)
+    .map(o => ({ id: o.id, name: c.rsc.get(o.nameRsc) || '' }));
+  const returned = [], refused = [];
+  for (const ring of rings) {
+    if (returned.length >= max) break;
+    if (!ring.owner) continue;                       // never read — leave it alone
+    const npc = here.find(o => o.name.toLowerCase() === ring.owner.toLowerCase());
+    if (!npc) continue;
+    const before = c.evSeq;
+    await s.pacer.submit('trade', () => c.offer(npc.id, [ring.id]));
+    const ev = await c.waitFor({ since: before, kinds: ['message', 'trade-ended', 'offer-sent'], timeoutMs: 4000 });
+    // The ring leaving the pack is the only proof that matters — the NPC takes it
+    // outright rather than countering, so there is no accept step to wait for.
+    await s.pacer.submit('read', () => c.requestInventory());
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+    const gone = !(c.inventory || []).some(o => o.id === ring.id);
+    if (gone) { returned.push({ to: ring.owner, ring: ring.id }); signetOwners(c).delete(ring.id); }
+    else refused.push({ to: ring.owner, ring: ring.id,
+                        said: ev.events.filter(e => e.text).map(e => e.text).slice(0, 2) });
+  }
+  return { returned, ...(refused.length ? { refused } : {}), carrying: rings.length - returned.length };
+}

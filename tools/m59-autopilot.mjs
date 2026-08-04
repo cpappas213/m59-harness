@@ -2946,6 +2946,29 @@ export class Autopilot {
     // trying to help should not have to wait for a fight to finish.
     await this.social().catch(e => this.note('social failed', { why: e.message }));
 
+    // GIVE BACK ANY SIGNET RING WHOSE OWNER IS STANDING HERE.
+    //
+    // Each one pays ten times its value to a non-PK character — 1500 shillings — and the
+    // fleet had been carrying them as loot; Statler had six. The owner is named in the
+    // ring's own description, so this needs no NPC-location table, and none would help
+    // because the owners wander. So it is asked wherever we are rather than routed to.
+    //
+    // Cheap enough to ask every pass ONLY because the answer is cached: a ring's owner
+    // never changes, so it is one look per ring ever, and afterwards this is a name
+    // comparison against the objects already in the room snapshot. Gated on carrying one
+    // at all, which is almost never.
+    if ((c.inventory || []).some(o => /signet ring/i.test(c.rsc.get(o.nameRsc) || ''))) {
+      const gave = await skills.returnSignetRings(s).catch(() => null);
+      if (gave?.returned?.length) {
+        this.progress('returned a signet ring');
+        this.note('returned a signet ring', {
+          to: gave.returned.map(r => r.to),
+          still_carrying: gave.carrying,
+          why: 'the owner was standing here, and a returned ring pays ten times its value',
+        });
+      }
+    }
+
     // 0. Do we still know who we are? A `save game` renumbers every object, and a
     //    session that was live across one keeps a selfId the server no longer uses.
     //    Nothing errors. Position reads null, our own object is missing from room
