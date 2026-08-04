@@ -3663,6 +3663,11 @@ const TOOLS = [
       return { items: c.inventory.map(o => ({ id: o.id, name: c.rsc.get(o.nameRsc),
                                               amount: o.amount || undefined, can: affordances(o.flags) })),
                equipped: c.equipment().equipped.map(e => e.name ?? e.id),
+               // HOW FULL, in the units the server actually refuses on. The ceiling is
+               // 1700 + might*20 for weight and bulk alike; the load is added up from a
+               // table of every item class's viWeight/viBulk, because neither the load
+               // nor any item's weight is ever sent. See m59-items.mjs.
+               carry: skills.carryCapacity(c),
                equipped_note: 'the pack is what you CARRY. `equipped` is what you are wearing and ' +
                               'wielding — a different list, and the server\'s own. Call `equipment` for it.' };
     },

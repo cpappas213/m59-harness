@@ -21,7 +21,7 @@
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import {
   isJunk, JUNK_NAMES, proficiencyFor, weaponRanking, equipBest, junkAndBroken,
-  brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor,
+  brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit,
 } from './m59-skills.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
 import { RoomGeometry } from './m59-roo.mjs';
@@ -205,11 +205,30 @@ console.log('\nwhat the mana says about a cast, and what we can know about carry
   ok('the ceiling is 1700 + might*20', cap.weight_max === 2200 && cap.bulk_max === 2200,
      JSON.stringify(cap));
   ok('weight and bulk share one formula', cap.weight_max === cap.bulk_max);
-  ok('the current load is reported as UNKNOWN, never guessed', cap.load === null);
+  ok('the load is now added up from the kod table', cap.load?.weight === 62,   // mace 60 + herb 2
+     JSON.stringify(cap.load));
+  ok('and bulk is counted separately from weight', cap.load?.bulk === 64,      // mace 60 + herb 4
+     JSON.stringify(cap.load));
+  ok('room_for is the ceiling minus the load', cap.room_for?.weight === 2200 - 62);
   const blind = fakeClient([[1, 'mace']]);
   blind.stat = () => null;
   ok('with might unread it says so rather than assuming a default',
      carryCapacity(blind).known === false);
+
+  // The honesty rule: an unrecognised item makes the total a LOWER BOUND, and room_for
+  // must be withheld rather than computed from an undercount.
+  const odd = fakeClient([[1, 'mace'], [2, 'nameless curio']]);
+  odd.stat = (k) => (k === 'might' ? 25 : null);
+  const capOdd = carryCapacity(odd);
+  ok('an unweighed item marks the load inexact', capOdd.load.exact === false,
+     JSON.stringify(capOdd.load));
+  ok('and room_for is withheld rather than guessed low', capOdd.room_for === null);
+  ok('the unweighed ones are named so the table can be fixed',
+     (capOdd.load.unweighed || []).includes('nameless curio'));
+  ok('wouldFit returns null when it cannot know, so callers cannot read it as yes',
+     wouldFit(odd, 60) === null);
+  ok('and answers honestly when it can', wouldFit(c, 60) === true);
+  ok('refusing what genuinely will not fit', wouldFit(c, 5000) === false);
 
   // freeRoomFor sheds only what is already known dead — it never gambles on the load.
   const c2 = fakeClient([[1, 'mace'], [2, 'broken mace'], [3, 'dagger']]);

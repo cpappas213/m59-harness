@@ -1,0 +1,2378 @@
+{
+ "builtAt": "2026-08-04T18:37:42.922Z",
+ "source": "compendium/data/koddb.json",
+ "defaults": {
+  "weight": 10,
+  "bulk": 10,
+  "from": "item.kod:66-67"
+ },
+ "capacity_formula": "1700 + might * 20, for weight AND bulk (player.kod:10456, :10461)",
+ "counts": {
+  "item_classes": 217,
+  "distinct_names": 212,
+  "used_defaults": 0
+ },
+ "items": {
+  "alchemical formula": {
+   "name": "alchemical formula",
+   "weight": 3,
+   "bulk": 10,
+   "cls": "FormulaScroll",
+   "declared_by": {
+    "weight": "FormulaScroll",
+    "bulk": "FormulaScroll"
+   },
+   "also": []
+  },
+  "ammunition": {
+   "name": "ammunition",
+   "weight": 0,
+   "bulk": 0,
+   "cls": "Ammo",
+   "declared_by": {
+    "weight": "NumberItem",
+    "bulk": "NumberItem"
+   },
+   "also": []
+  },
+  "amulet of shadows": {
+   "name": "Amulet of Shadows",
+   "weight": 25,
+   "bulk": 25,
+   "cls": "ShadowAmulet",
+   "declared_by": {
+    "weight": "ShadowAmulet",
+    "bulk": "ShadowAmulet"
+   },
+   "also": []
+  },
+  "amulet of the three": {
+   "name": "Amulet of the Three",
+   "weight": 25,
+   "bulk": 25,
+   "cls": "NecromancerAmulet",
+   "declared_by": {
+    "weight": "NecromancerAmulet",
+    "bulk": "NecromancerAmulet"
+   },
+   "also": []
+  },
+  "ancient shield": {
+   "name": "Ancient Shield",
+   "weight": 100,
+   "bulk": 100,
+   "cls": "TotemFour",
+   "declared_by": {
+    "weight": "TotemFour",
+    "bulk": "TotemFour"
+   },
+   "also": []
+  },
+  "ant mask": {
+   "name": "ant mask",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "AntMask",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "apple": {
+   "name": "apple",
+   "weight": 6,
+   "bulk": 6,
+   "cls": "Apple",
+   "declared_by": {
+    "weight": "Apple",
+    "bulk": "Apple"
+   },
+   "also": []
+  },
+  "arrows": {
+   "name": "arrows",
+   "weight": 4,
+   "bulk": 4,
+   "cls": "Arrow",
+   "declared_by": {
+    "weight": "Arrow",
+    "bulk": "Arrow"
+   },
+   "also": []
+  },
+  "axe": {
+   "name": "axe",
+   "weight": 90,
+   "bulk": 90,
+   "cls": "Axe",
+   "declared_by": {
+    "weight": "Axe",
+    "bulk": "Axe"
+   },
+   "also": []
+  },
+  "battle bow": {
+   "name": "battle bow",
+   "weight": 70,
+   "bulk": 80,
+   "cls": "BattleBow",
+   "declared_by": {
+    "weight": "BattleBow",
+    "bulk": "BattleBow"
+   },
+   "also": []
+  },
+  "berserker ring": {
+   "name": "berserker ring",
+   "weight": 10,
+   "bulk": 5,
+   "cls": "BerserkerRing",
+   "declared_by": {
+    "weight": "BerserkerRing",
+    "bulk": "BerserkerRing"
+   },
+   "also": []
+  },
+  "black dagger": {
+   "name": "black dagger",
+   "weight": 25,
+   "bulk": 35,
+   "cls": "BlackDagger",
+   "declared_by": {
+    "weight": "BlackDagger",
+    "bulk": "BlackDagger"
+   },
+   "also": []
+  },
+  "blood of the innocent": {
+   "name": "blood of the innocent",
+   "weight": 25,
+   "bulk": 30,
+   "cls": "OfferingQor",
+   "declared_by": {
+    "weight": "Offering",
+    "bulk": "Offering"
+   },
+   "also": []
+  },
+  "blue dragon scale": {
+   "name": "blue dragon scale",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "BlueDragonScale",
+   "declared_by": {
+    "weight": "BlueDragonScale",
+    "bulk": "BlueDragonScale"
+   },
+   "also": []
+  },
+  "blue heartstone": {
+   "name": "blue heartstone",
+   "weight": 20,
+   "bulk": 10,
+   "cls": "BlueHeartStone",
+   "declared_by": {
+    "weight": "BlueHeartStone",
+    "bulk": "BlueHeartStone"
+   },
+   "also": []
+  },
+  "blue mushroom": {
+   "name": "blue mushroom",
+   "weight": 2,
+   "bulk": 5,
+   "cls": "BlueMushroom",
+   "declared_by": {
+    "weight": "BlueMushroom",
+    "bulk": "BlueMushroom"
+   },
+   "also": []
+  },
+  "bolts": {
+   "name": "bolts",
+   "weight": 3,
+   "bulk": 2,
+   "cls": "Bolt",
+   "declared_by": {
+    "weight": "Bolt",
+    "bulk": "Bolt"
+   },
+   "also": []
+  },
+  "bonkstick": {
+   "name": "bonkstick",
+   "weight": 25,
+   "bulk": 25,
+   "cls": "BonkStick",
+   "declared_by": {
+    "weight": "BonkStick",
+    "bulk": "BonkStick"
+   },
+   "also": []
+  },
+  "book": {
+   "name": "book",
+   "weight": 50,
+   "bulk": 50,
+   "cls": "Book",
+   "declared_by": {
+    "weight": "Book",
+    "bulk": "Book"
+   },
+   "also": []
+  },
+  "bottle of lies": {
+   "name": "bottle of lies",
+   "weight": 25,
+   "bulk": 30,
+   "cls": "OfferingRiija",
+   "declared_by": {
+    "weight": "Offering",
+    "bulk": "Offering"
+   },
+   "also": []
+  },
+  "bow": {
+   "name": "bow",
+   "weight": 70,
+   "bulk": 80,
+   "cls": "Bow",
+   "declared_by": {
+    "weight": "Bow",
+    "bulk": "Bow"
+   },
+   "also": []
+  },
+  "bowl of soup": {
+   "name": "bowl of soup",
+   "weight": 9,
+   "bulk": 9,
+   "cls": "Soup",
+   "declared_by": {
+    "weight": "Soup",
+    "bulk": "Soup"
+   },
+   "also": []
+  },
+  "brass medallion": {
+   "name": "brass medallion",
+   "weight": 25,
+   "bulk": 20,
+   "cls": "FarenCharm",
+   "declared_by": {
+    "weight": "FarenCharm",
+    "bulk": "FarenCharm"
+   },
+   "also": []
+  },
+  "bronze room key": {
+   "name": "bronze room key",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "RoomKeySecureCopy",
+   "declared_by": {
+    "weight": "RoomKeySecureCopy",
+    "bulk": "RoomKeySecureCopy"
+   },
+   "also": []
+  },
+  "brown heartstone": {
+   "name": "brown heartstone",
+   "weight": 25,
+   "bulk": 10,
+   "cls": "BrownHeartStone",
+   "declared_by": {
+    "weight": "BrownHeartStone",
+    "bulk": "BrownHeartStone"
+   },
+   "also": []
+  },
+  "brown potion": {
+   "name": "brown potion",
+   "weight": 20,
+   "bulk": 20,
+   "cls": "IllusionaryFormPotion",
+   "declared_by": {
+    "weight": "IllusionaryFormPotion",
+    "bulk": "IllusionaryFormPotion"
+   },
+   "also": []
+  },
+  "bunch of grapes": {
+   "name": "bunch of grapes",
+   "weight": 7,
+   "bulk": 7,
+   "cls": "Grapes",
+   "declared_by": {
+    "weight": "Grapes",
+    "bulk": "Grapes"
+   },
+   "also": []
+  },
+  "burning water": {
+   "name": "burning water",
+   "weight": 25,
+   "bulk": 30,
+   "cls": "OfferingFaren",
+   "declared_by": {
+    "weight": "Offering",
+    "bulk": "Offering"
+   },
+   "also": []
+  },
+  "chain armor": {
+   "name": "chain armor",
+   "weight": 200,
+   "bulk": 250,
+   "cls": "ChainArmor",
+   "declared_by": {
+    "weight": "ChainArmor",
+    "bulk": "ChainArmor"
+   },
+   "also": []
+  },
+  "chalice of the rain": {
+   "name": "Chalice of the Rain",
+   "weight": 20,
+   "bulk": 20,
+   "cls": "Chalice",
+   "declared_by": {
+    "weight": "Chalice",
+    "bulk": "Chalice"
+   },
+   "also": []
+  },
+  "chess board": {
+   "name": "chess board",
+   "weight": 10,
+   "bulk": 30,
+   "cls": "Chess",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Chess"
+   },
+   "also": []
+  },
+  "chocolate mint": {
+   "name": "chocolate mint",
+   "weight": 1,
+   "bulk": 1,
+   "cls": "Mint",
+   "declared_by": {
+    "weight": "Mint",
+    "bulk": "Mint"
+   },
+   "also": []
+  },
+  "chunk of nerudite": {
+   "name": "chunk of nerudite",
+   "weight": 300,
+   "bulk": 300,
+   "cls": "NeruditeOreChunk",
+   "declared_by": {
+    "weight": "NeruditeOreChunk",
+    "bulk": "NeruditeOreChunk"
+   },
+   "also": []
+  },
+  "chunk of ore": {
+   "name": "chunk of ore",
+   "weight": 600,
+   "bulk": 600,
+   "cls": "OreChunk",
+   "declared_by": {
+    "weight": "OreChunk",
+    "bulk": "OreChunk"
+   },
+   "also": [
+    {
+     "cls": "CheapOreChunk",
+     "weight": 500,
+     "bulk": 500
+    }
+   ]
+  },
+  "circlet": {
+   "name": "circlet",
+   "weight": 20,
+   "bulk": 15,
+   "cls": "Circlet",
+   "declared_by": {
+    "weight": "Circlet",
+    "bulk": "Circlet"
+   },
+   "also": []
+  },
+  "cow mask": {
+   "name": "cow mask",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "CowMask",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "crossbow": {
+   "name": "crossbow",
+   "weight": 120,
+   "bulk": 100,
+   "cls": "Crossbow",
+   "declared_by": {
+    "weight": "Crossbow",
+    "bulk": "Crossbow"
+   },
+   "also": []
+  },
+  "crystal sphere token": {
+   "name": "crystal sphere token",
+   "weight": 500,
+   "bulk": 50,
+   "cls": "FiveToken",
+   "declared_by": {
+    "weight": "Token",
+    "bulk": "Token"
+   },
+   "also": []
+  },
+  "daemon skeleton mask": {
+   "name": "daemon skeleton mask",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "DaemonMask",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "dark angel feather": {
+   "name": "dark angel feather",
+   "weight": 2,
+   "bulk": 4,
+   "cls": "DarkAngelFeather",
+   "declared_by": {
+    "weight": "DarkAngelFeather",
+    "bulk": "DarkAngelFeather"
+   },
+   "also": []
+  },
+  "dark blade of roq": {
+   "name": "Dark Blade of Roq",
+   "weight": 25,
+   "bulk": 35,
+   "cls": "UniqueWeapon",
+   "declared_by": {
+    "weight": "UniqueWeapon",
+    "bulk": "UniqueWeapon"
+   },
+   "also": []
+  },
+  "demon skull token": {
+   "name": "demon skull token",
+   "weight": 500,
+   "bulk": 50,
+   "cls": "FourToken",
+   "declared_by": {
+    "weight": "Token",
+    "bulk": "Token"
+   },
+   "also": []
+  },
+  "diamond pendant": {
+   "name": "diamond pendant",
+   "weight": 25,
+   "bulk": 20,
+   "cls": "ShalilleCharm",
+   "declared_by": {
+    "weight": "ShalilleCharm",
+    "bulk": "ShalilleCharm"
+   },
+   "also": []
+  },
+  "diamond": {
+   "name": "diamond",
+   "weight": 1,
+   "bulk": 1,
+   "cls": "Diamond",
+   "declared_by": {
+    "weight": "Diamond",
+    "bulk": "Diamond"
+   },
+   "also": []
+  },
+  "dragonfly eye": {
+   "name": "dragonfly eye",
+   "weight": 2,
+   "bulk": 3,
+   "cls": "DragonflyEye",
+   "declared_by": {
+    "weight": "DragonflyEye",
+    "bulk": "DragonflyEye"
+   },
+   "also": []
+  },
+  "dress pattern": {
+   "name": "dress pattern",
+   "weight": 4,
+   "bulk": 10,
+   "cls": "DressPattern",
+   "declared_by": {
+    "weight": "DressPattern",
+    "bulk": "DressPattern"
+   },
+   "also": []
+  },
+  "drumstick": {
+   "name": "drumstick",
+   "weight": 9,
+   "bulk": 15,
+   "cls": "Drumstick",
+   "declared_by": {
+    "weight": "Drumstick",
+    "bulk": "Drumstick"
+   },
+   "also": []
+  },
+  "edible mushroom": {
+   "name": "edible mushroom",
+   "weight": 2,
+   "bulk": 3,
+   "cls": "Snack",
+   "declared_by": {
+    "weight": "Snack",
+    "bulk": "Snack"
+   },
+   "also": []
+  },
+  "egg shell": {
+   "name": "egg shell",
+   "weight": 10,
+   "bulk": 20,
+   "cls": "SpiderEggShell",
+   "declared_by": {
+    "weight": "SpiderEggShell",
+    "bulk": "SpiderEggShell"
+   },
+   "also": []
+  },
+  "egg": {
+   "name": "egg",
+   "weight": 25,
+   "bulk": 30,
+   "cls": "SpiderEgg",
+   "declared_by": {
+    "weight": "SpiderEgg",
+    "bulk": "SpiderEgg"
+   },
+   "also": []
+  },
+  "elderberry": {
+   "name": "elderberry",
+   "weight": 3,
+   "bulk": 3,
+   "cls": "ElderBerry",
+   "declared_by": {
+    "weight": "ElderBerry",
+    "bulk": "ElderBerry"
+   },
+   "also": []
+  },
+  "emerald": {
+   "name": "emerald",
+   "weight": 1,
+   "bulk": 1,
+   "cls": "Emerald",
+   "declared_by": {
+    "weight": "Emerald",
+    "bulk": "Emerald"
+   },
+   "also": []
+  },
+  "entroot berry": {
+   "name": "entroot berry",
+   "weight": 2,
+   "bulk": 2,
+   "cls": "EntrootBerry",
+   "declared_by": {
+    "weight": "EntrootBerry",
+    "bulk": "EntrootBerry"
+   },
+   "also": []
+  },
+  "fairy wing": {
+   "name": "fairy wing",
+   "weight": 2,
+   "bulk": 5,
+   "cls": "FairyWing",
+   "declared_by": {
+    "weight": "FairyWing",
+    "bulk": "FairyWing"
+   },
+   "also": []
+  },
+  "feather of an avar shaman": {
+   "name": "feather of an avar shaman",
+   "weight": 2,
+   "bulk": 5,
+   "cls": "AvarShamanFeather",
+   "declared_by": {
+    "weight": "AvarShamanFeather",
+    "bulk": "AvarShamanFeather"
+   },
+   "also": []
+  },
+  "feathered choker": {
+   "name": "feathered choker",
+   "weight": 25,
+   "bulk": 20,
+   "cls": "RiijaCharm",
+   "declared_by": {
+    "weight": "RiijaCharm",
+    "bulk": "RiijaCharm"
+   },
+   "also": []
+  },
+  "fey mask": {
+   "name": "fey mask",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "FeyMask",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "fine lute": {
+   "name": "fine lute",
+   "weight": 85,
+   "bulk": 150,
+   "cls": "FineLute",
+   "declared_by": {
+    "weight": "FineLute",
+    "bulk": "FineLute"
+   },
+   "also": []
+  },
+  "fire arrows": {
+   "name": "fire arrows",
+   "weight": 4,
+   "bulk": 4,
+   "cls": "FireArrow",
+   "declared_by": {
+    "weight": "FireArrow",
+    "bulk": "FireArrow"
+   },
+   "also": []
+  },
+  "firesand": {
+   "name": "firesand",
+   "weight": 7,
+   "bulk": 4,
+   "cls": "FireSand",
+   "declared_by": {
+    "weight": "FireSand",
+    "bulk": "FireSand"
+   },
+   "also": []
+  },
+  "flag of the duke": {
+   "name": "flag of the Duke",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "DukeFlag",
+   "declared_by": {
+    "weight": "FactionFlag",
+    "bulk": "FactionFlag"
+   },
+   "also": []
+  },
+  "flag of the princess": {
+   "name": "flag of the Princess",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "PrincessFlag",
+   "declared_by": {
+    "weight": "FactionFlag",
+    "bulk": "FactionFlag"
+   },
+   "also": []
+  },
+  "flag": {
+   "name": "flag",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "FactionFlag",
+   "declared_by": {
+    "weight": "FactionFlag",
+    "bulk": "FactionFlag"
+   },
+   "also": []
+  },
+  "flask": {
+   "name": "flask",
+   "weight": 20,
+   "bulk": 20,
+   "cls": "Arsenic",
+   "declared_by": {
+    "weight": "Arsenic",
+    "bulk": "Arsenic"
+   },
+   "also": [
+    {
+     "cls": "Flask",
+     "weight": 20,
+     "bulk": 25
+    }
+   ]
+  },
+  "fortune cookie": {
+   "name": "fortune cookie",
+   "weight": 2,
+   "bulk": 2,
+   "cls": "FortuneCookie",
+   "declared_by": {
+    "weight": "FortuneCookie",
+    "bulk": "FortuneCookie"
+   },
+   "also": []
+  },
+  "frenzy food": {
+   "name": "Frenzy Food",
+   "weight": 5000,
+   "bulk": 10,
+   "cls": "ChaosFood",
+   "declared_by": {
+    "weight": "ChaosFood",
+    "bulk": "ChaosFood"
+   },
+   "also": []
+  },
+  "game board": {
+   "name": "game board",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "MiniGame",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "gauntlets": {
+   "name": "gauntlets",
+   "weight": 50,
+   "bulk": 50,
+   "cls": "Gauntlet",
+   "declared_by": {
+    "weight": "Gauntlet",
+    "bulk": "Gauntlet"
+   },
+   "also": []
+  },
+  "generic magical ring": {
+   "name": "generic magical ring",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "Ring",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "gift": {
+   "name": "gift",
+   "weight": 50,
+   "bulk": 50,
+   "cls": "Gift",
+   "declared_by": {
+    "weight": "Gift",
+    "bulk": "Gift"
+   },
+   "also": []
+  },
+  "gnarled staff": {
+   "name": "gnarled staff",
+   "weight": 40,
+   "bulk": 40,
+   "cls": "StaffOfJolting",
+   "declared_by": {
+    "weight": "StaffOfJolting",
+    "bulk": "StaffOfJolting"
+   },
+   "also": []
+  },
+  "goblet of ale": {
+   "name": "goblet of ale",
+   "weight": 10,
+   "bulk": 15,
+   "cls": "Goblet",
+   "declared_by": {
+    "weight": "Goblet",
+    "bulk": "Goblet"
+   },
+   "also": []
+  },
+  "goblet of wine": {
+   "name": "goblet of wine",
+   "weight": 10,
+   "bulk": 12,
+   "cls": "wineGoblet",
+   "declared_by": {
+    "weight": "wineGoblet",
+    "bulk": "wineGoblet"
+   },
+   "also": []
+  },
+  "gold room key": {
+   "name": "gold room key",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "RoomKey",
+   "declared_by": {
+    "weight": "RoomKey",
+    "bulk": "RoomKey"
+   },
+   "also": []
+  },
+  "gold round shield": {
+   "name": "gold round shield",
+   "weight": 225,
+   "bulk": 150,
+   "cls": "GoldShield",
+   "declared_by": {
+    "weight": "GoldShield",
+    "bulk": "GoldShield"
+   },
+   "also": []
+  },
+  "gold sword": {
+   "name": "gold sword",
+   "weight": 90,
+   "bulk": 60,
+   "cls": "GoldSword",
+   "declared_by": {
+    "weight": "GoldSword",
+    "bulk": "GoldSword"
+   },
+   "also": []
+  },
+  "gold urn": {
+   "name": "Gold Urn",
+   "weight": 100,
+   "bulk": 100,
+   "cls": "TotemTwo",
+   "declared_by": {
+    "weight": "TotemTwo",
+    "bulk": "TotemTwo"
+   },
+   "also": []
+  },
+  "hammer": {
+   "name": "hammer",
+   "weight": 80,
+   "bulk": 75,
+   "cls": "Hammer",
+   "declared_by": {
+    "weight": "Hammer",
+    "bulk": "Hammer"
+   },
+   "also": []
+  },
+  "heartstone": {
+   "name": "heartstone",
+   "weight": 20,
+   "bulk": 10,
+   "cls": "HeartStone",
+   "declared_by": {
+    "weight": "HeartStone",
+    "bulk": "HeartStone"
+   },
+   "also": []
+  },
+  "helm": {
+   "name": "helm",
+   "weight": 50,
+   "bulk": 25,
+   "cls": "SimpleHelm",
+   "declared_by": {
+    "weight": "SimpleHelm",
+    "bulk": "SimpleHelm"
+   },
+   "also": []
+  },
+  "herald shield": {
+   "name": "herald shield",
+   "weight": 200,
+   "bulk": 150,
+   "cls": "GuildShield",
+   "declared_by": {
+    "weight": "GuildShield",
+    "bulk": "GuildShield"
+   },
+   "also": []
+  },
+  "herb": {
+   "name": "herb",
+   "weight": 2,
+   "bulk": 4,
+   "cls": "Herbs",
+   "declared_by": {
+    "weight": "Herbs",
+    "bulk": "Herbs"
+   },
+   "also": []
+  },
+  "inky-cap mushroom": {
+   "name": "Inky-cap mushroom",
+   "weight": 4,
+   "bulk": 10,
+   "cls": "InkyCap",
+   "declared_by": {
+    "weight": "InkyCap",
+    "bulk": "InkyCap"
+   },
+   "also": []
+  },
+  "invitation": {
+   "name": "invitation",
+   "weight": 0,
+   "bulk": 0,
+   "cls": "GuildInvitation",
+   "declared_by": {
+    "weight": "GuildInvitation",
+    "bulk": "GuildInvitation"
+   },
+   "also": []
+  },
+  "iron key": {
+   "name": "iron key",
+   "weight": 12,
+   "bulk": 10,
+   "cls": "SanctuaryKey",
+   "declared_by": {
+    "weight": "SanctuaryKey",
+    "bulk": "SanctuaryKey"
+   },
+   "also": []
+  },
+  "ivy circlet": {
+   "name": "ivy circlet",
+   "weight": 10,
+   "bulk": 20,
+   "cls": "IvyCirclet",
+   "declared_by": {
+    "weight": "IvyCirclet",
+    "bulk": "IvyCirclet"
+   },
+   "also": []
+  },
+  "jade cat token": {
+   "name": "jade cat token",
+   "weight": 500,
+   "bulk": 50,
+   "cls": "ThreeToken",
+   "declared_by": {
+    "weight": "Token",
+    "bulk": "Token"
+   },
+   "also": []
+  },
+  "jewel of froz": {
+   "name": "Jewel of Froz",
+   "weight": 15,
+   "bulk": 10,
+   "cls": "JewelofFroz",
+   "declared_by": {
+    "weight": "JewelofFroz",
+    "bulk": "JewelofFroz"
+   },
+   "also": []
+  },
+  "jeweled egg token": {
+   "name": "jeweled egg token",
+   "weight": 500,
+   "bulk": 50,
+   "cls": "TwoToken",
+   "declared_by": {
+    "weight": "Token",
+    "bulk": "Token"
+   },
+   "also": []
+  },
+  "key": {
+   "name": "key",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "Key",
+   "declared_by": {
+    "weight": "Key",
+    "bulk": "Key"
+   },
+   "also": []
+  },
+  "knight's shield": {
+   "name": "knight's shield",
+   "weight": 175,
+   "bulk": 200,
+   "cls": "Knightshield",
+   "declared_by": {
+    "weight": "Knightshield",
+    "bulk": "Knightshield"
+   },
+   "also": []
+  },
+  "kriipa claw": {
+   "name": "kriipa claw",
+   "weight": 4,
+   "bulk": 2,
+   "cls": "KriipaClaw",
+   "declared_by": {
+    "weight": "KriipaClaw",
+    "bulk": "KriipaClaw"
+   },
+   "also": []
+  },
+  "kriipa mask": {
+   "name": "kriipa mask",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "KriipaMask",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "leather armor": {
+   "name": "leather armor",
+   "weight": 100,
+   "bulk": 150,
+   "cls": "LeatherArmor",
+   "declared_by": {
+    "weight": "LeatherArmor",
+    "bulk": "LeatherArmor"
+   },
+   "also": []
+  },
+  "letter": {
+   "name": "letter",
+   "weight": 3,
+   "bulk": 10,
+   "cls": "CouncilLetter",
+   "declared_by": {
+    "weight": "CouncilLetter",
+    "bulk": "CouncilLetter"
+   },
+   "also": [
+    {
+     "cls": "Letter",
+     "weight": 3,
+     "bulk": 10
+    },
+    {
+     "cls": "NecromancerWarningLetter",
+     "weight": 3,
+     "bulk": 10
+    }
+   ]
+  },
+  "light robes": {
+   "name": "light robes",
+   "weight": 75,
+   "bulk": 125,
+   "cls": "LightRobe",
+   "declared_by": {
+    "weight": "LightRobe",
+    "bulk": "LightRobe"
+   },
+   "also": []
+  },
+  "loaf of bread": {
+   "name": "loaf of bread",
+   "weight": 20,
+   "bulk": 20,
+   "cls": "Bread",
+   "declared_by": {
+    "weight": "Bread",
+    "bulk": "Bread"
+   },
+   "also": []
+  },
+  "long skirt": {
+   "name": "long skirt",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "Skirt",
+   "declared_by": {
+    "weight": "Pants",
+    "bulk": "Pants"
+   },
+   "also": []
+  },
+  "long sword": {
+   "name": "long sword",
+   "weight": 80,
+   "bulk": 60,
+   "cls": "LongSword",
+   "declared_by": {
+    "weight": "LongSword",
+    "bulk": "LongSword"
+   },
+   "also": []
+  },
+  "longbow": {
+   "name": "longbow",
+   "weight": 70,
+   "bulk": 80,
+   "cls": "Longbow",
+   "declared_by": {
+    "weight": "Longbow",
+    "bulk": "Longbow"
+   },
+   "also": []
+  },
+  "love letter": {
+   "name": "love letter",
+   "weight": 3,
+   "bulk": 10,
+   "cls": "LoveLetter",
+   "declared_by": {
+    "weight": "LoveLetter",
+    "bulk": "LoveLetter"
+   },
+   "also": []
+  },
+  "lute": {
+   "name": "lute",
+   "weight": 75,
+   "bulk": 150,
+   "cls": "Lute",
+   "declared_by": {
+    "weight": "Lute",
+    "bulk": "Lute"
+   },
+   "also": []
+  },
+  "mace": {
+   "name": "mace",
+   "weight": 60,
+   "bulk": 60,
+   "cls": "Mace",
+   "declared_by": {
+    "weight": "Mace",
+    "bulk": "Mace"
+   },
+   "also": []
+  },
+  "magic bow": {
+   "name": "magic bow",
+   "weight": 70,
+   "bulk": 70,
+   "cls": "MagicBow",
+   "declared_by": {
+    "weight": "MagicBow",
+    "bulk": "MagicBow"
+   },
+   "also": []
+  },
+  "magic spirit helmet": {
+   "name": "magic spirit helmet",
+   "weight": 30,
+   "bulk": 50,
+   "cls": "Helm",
+   "declared_by": {
+    "weight": "Helm",
+    "bulk": "Helm"
+   },
+   "also": []
+  },
+  "mana crystal": {
+   "name": "mana crystal",
+   "weight": 5,
+   "bulk": 5,
+   "cls": "ManaCrystal",
+   "declared_by": {
+    "weight": "ManaCrystal",
+    "bulk": "ManaCrystal"
+   },
+   "also": []
+  },
+  "mask": {
+   "name": "mask",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "FaceMask",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "meat pie": {
+   "name": "meat pie",
+   "weight": 30,
+   "bulk": 20,
+   "cls": "Meatpie",
+   "declared_by": {
+    "weight": "Meatpie",
+    "bulk": "Meatpie"
+   },
+   "also": []
+  },
+  "minjaka vase": {
+   "name": "Minjaka Vase",
+   "weight": 100,
+   "bulk": 100,
+   "cls": "TotemThree",
+   "declared_by": {
+    "weight": "TotemThree",
+    "bulk": "TotemThree"
+   },
+   "also": []
+  },
+  "monocle": {
+   "name": "monocle",
+   "weight": 25,
+   "bulk": 20,
+   "cls": "QorCharm",
+   "declared_by": {
+    "weight": "QorCharm",
+    "bulk": "QorCharm"
+   },
+   "also": []
+  },
+  "mug of brew": {
+   "name": "mug of brew",
+   "weight": 10,
+   "bulk": 15,
+   "cls": "StoutGoblet",
+   "declared_by": {
+    "weight": "StoutGoblet",
+    "bulk": "StoutGoblet"
+   },
+   "also": []
+  },
+  "mug of pekonch": {
+   "name": "mug of Pekonch",
+   "weight": 10,
+   "bulk": 15,
+   "cls": "KocatanMug",
+   "declared_by": {
+    "weight": "KocatanMug",
+    "bulk": "KocatanMug"
+   },
+   "also": []
+  },
+  "mug of stout": {
+   "name": "mug of stout",
+   "weight": 7,
+   "bulk": 10,
+   "cls": "Mug",
+   "declared_by": {
+    "weight": "Mug",
+    "bulk": "Mug"
+   },
+   "also": []
+  },
+  "mummy mask": {
+   "name": "mummy mask",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "MummyMask",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "mushroom": {
+   "name": "mushroom",
+   "weight": 2,
+   "bulk": 5,
+   "cls": "Mushroom",
+   "declared_by": {
+    "weight": "Mushroom",
+    "bulk": "Mushroom"
+   },
+   "also": []
+  },
+  "mysterious potion": {
+   "name": "mysterious potion",
+   "weight": 17,
+   "bulk": 20,
+   "cls": "MysteryPotion",
+   "declared_by": {
+    "weight": "MysteryPotion",
+    "bulk": "MysteryPotion"
+   },
+   "also": []
+  },
+  "mysterious wand": {
+   "name": "mysterious wand",
+   "weight": 15,
+   "bulk": 20,
+   "cls": "MysteryWand",
+   "declared_by": {
+    "weight": "MysteryWand",
+    "bulk": "MysteryWand"
+   },
+   "also": []
+  },
+  "mystic perfume": {
+   "name": "mystic perfume",
+   "weight": 25,
+   "bulk": 30,
+   "cls": "OfferingJala",
+   "declared_by": {
+    "weight": "Offering",
+    "bulk": "Offering"
+   },
+   "also": []
+  },
+  "mystic sword": {
+   "name": "mystic sword",
+   "weight": 60,
+   "bulk": 60,
+   "cls": "MysticSword",
+   "declared_by": {
+    "weight": "MysticSword",
+    "bulk": "MysticSword"
+   },
+   "also": []
+  },
+  "necklace of jala": {
+   "name": "necklace of Jala",
+   "weight": 25,
+   "bulk": 20,
+   "cls": "JalaNecklace",
+   "declared_by": {
+    "weight": "JalaNecklace",
+    "bulk": "JalaNecklace"
+   },
+   "also": []
+  },
+  "nerudite armor": {
+   "name": "nerudite armor",
+   "weight": 500,
+   "bulk": 500,
+   "cls": "NeruditeArmor",
+   "declared_by": {
+    "weight": "NeruditeArmor",
+    "bulk": "NeruditeArmor"
+   },
+   "also": []
+  },
+  "nerudite arrows": {
+   "name": "nerudite arrows",
+   "weight": 5,
+   "bulk": 4,
+   "cls": "NeruditeArrow",
+   "declared_by": {
+    "weight": "NeruditeArrow",
+    "bulk": "NeruditeArrow"
+   },
+   "also": []
+  },
+  "nerudite bow": {
+   "name": "nerudite bow",
+   "weight": 100,
+   "bulk": 100,
+   "cls": "NeruditeBow",
+   "declared_by": {
+    "weight": "NeruditeBow",
+    "bulk": "NeruditeBow"
+   },
+   "also": []
+  },
+  "nerudite sword": {
+   "name": "nerudite sword",
+   "weight": 80,
+   "bulk": 70,
+   "cls": "NeruditeSword",
+   "declared_by": {
+    "weight": "NeruditeSword",
+    "bulk": "NeruditeSword"
+   },
+   "also": []
+  },
+  "notice of delinquent taxes": {
+   "name": "notice of delinquent taxes",
+   "weight": 3,
+   "bulk": 10,
+   "cls": "TaxLetter",
+   "declared_by": {
+    "weight": "TaxLetter",
+    "bulk": "TaxLetter"
+   },
+   "also": []
+  },
+  "obfuscatory document": {
+   "name": "obfuscatory document",
+   "weight": 3,
+   "bulk": 10,
+   "cls": "ScamScroll",
+   "declared_by": {
+    "weight": "ScamScroll",
+    "bulk": "ScamScroll"
+   },
+   "also": []
+  },
+  "orc pit boss head": {
+   "name": "orc pit boss head",
+   "weight": 80,
+   "bulk": 100,
+   "cls": "OrcPitBossHead",
+   "declared_by": {
+    "weight": "OrcPitBossHead",
+    "bulk": "OrcPitBossHead"
+   },
+   "also": []
+  },
+  "orc shield": {
+   "name": "orc shield",
+   "weight": 250,
+   "bulk": 200,
+   "cls": "OrcShield",
+   "declared_by": {
+    "weight": "OrcShield",
+    "bulk": "OrcShield"
+   },
+   "also": []
+  },
+  "orc tooth": {
+   "name": "orc tooth",
+   "weight": 3,
+   "bulk": 3,
+   "cls": "OrcTooth",
+   "declared_by": {
+    "weight": "OrcTooth",
+    "bulk": "OrcTooth"
+   },
+   "also": []
+  },
+  "pants": {
+   "name": "pants",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "Pants",
+   "declared_by": {
+    "weight": "Pants",
+    "bulk": "Pants"
+   },
+   "also": []
+  },
+  "personal letter": {
+   "name": "personal letter",
+   "weight": 3,
+   "bulk": 10,
+   "cls": "WarLetter",
+   "declared_by": {
+    "weight": "WarLetter",
+    "bulk": "WarLetter"
+   },
+   "also": []
+  },
+  "plate armor": {
+   "name": "plate armor",
+   "weight": 600,
+   "bulk": 600,
+   "cls": "PlateArmor",
+   "declared_by": {
+    "weight": "PlateArmor",
+    "bulk": "PlateArmor"
+   },
+   "also": []
+  },
+  "polished seraphym": {
+   "name": "polished seraphym",
+   "weight": 4,
+   "bulk": 3,
+   "cls": "PolishedSeraphym",
+   "declared_by": {
+    "weight": "PolishedSeraphym",
+    "bulk": "PolishedSeraphym"
+   },
+   "also": []
+  },
+  "potion of forgetfulness": {
+   "name": "potion of forgetfulness",
+   "weight": 20,
+   "bulk": 20,
+   "cls": "ForgetPotion",
+   "declared_by": {
+    "weight": "ForgetPotion",
+    "bulk": "ForgetPotion"
+   },
+   "also": []
+  },
+  "practice bow": {
+   "name": "practice bow",
+   "weight": 50,
+   "bulk": 60,
+   "cls": "PracticeBow",
+   "declared_by": {
+    "weight": "PracticeBow",
+    "bulk": "PracticeBow"
+   },
+   "also": []
+  },
+  "priceless heirloom of barloque": {
+   "name": "Priceless Heirloom of Barloque",
+   "weight": 100,
+   "bulk": 100,
+   "cls": "TotemOne",
+   "declared_by": {
+    "weight": "TotemOne",
+    "bulk": "TotemOne"
+   },
+   "also": []
+  },
+  "prism": {
+   "name": "prism",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "Prism",
+   "declared_by": {
+    "weight": "Prism",
+    "bulk": "Prism"
+   },
+   "also": []
+  },
+  "purple mushroom": {
+   "name": "purple mushroom",
+   "weight": 2,
+   "bulk": 5,
+   "cls": "PurpleMushroom",
+   "declared_by": {
+    "weight": "PurpleMushroom",
+    "bulk": "PurpleMushroom"
+   },
+   "also": []
+  },
+  "rainbow fern": {
+   "name": "rainbow fern",
+   "weight": 2,
+   "bulk": 4,
+   "cls": "RainbowFern",
+   "declared_by": {
+    "weight": "RainbowFern",
+    "bulk": "RainbowFern"
+   },
+   "also": []
+  },
+  "rat mask": {
+   "name": "rat mask",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "RatMask",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "rebel flag": {
+   "name": "rebel flag",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "RebelFlag",
+   "declared_by": {
+    "weight": "FactionFlag",
+    "bulk": "FactionFlag"
+   },
+   "also": []
+  },
+  "recipe for a stunted dwarf": {
+   "name": "Recipe for a Stunted Dwarf",
+   "weight": 3,
+   "bulk": 10,
+   "cls": "RecipeScroll",
+   "declared_by": {
+    "weight": "RecipeScroll",
+    "bulk": "RecipeScroll"
+   },
+   "also": []
+  },
+  "red heartstone": {
+   "name": "red heartstone",
+   "weight": 20,
+   "bulk": 10,
+   "cls": "RedHeartStone",
+   "declared_by": {
+    "weight": "RedHeartStone",
+    "bulk": "RedHeartStone"
+   },
+   "also": []
+  },
+  "red mushroom": {
+   "name": "red mushroom",
+   "weight": 2,
+   "bulk": 5,
+   "cls": "RedMushroom",
+   "declared_by": {
+    "weight": "RedMushroom",
+    "bulk": "RedMushroom"
+   },
+   "also": []
+  },
+  "relic of qor": {
+   "name": "relic of Qor",
+   "weight": 75,
+   "bulk": 50,
+   "cls": "Scepter",
+   "declared_by": {
+    "weight": "Scepter",
+    "bulk": "Scepter"
+   },
+   "also": []
+  },
+  "ring of acid resistance": {
+   "name": "ring of acid resistance",
+   "weight": 10,
+   "bulk": 5,
+   "cls": "AcidRing",
+   "declared_by": {
+    "weight": "ResistRing",
+    "bulk": "ResistRing"
+   },
+   "also": []
+  },
+  "ring of cold resistance": {
+   "name": "ring of cold resistance",
+   "weight": 10,
+   "bulk": 5,
+   "cls": "ColdRing",
+   "declared_by": {
+    "weight": "ResistRing",
+    "bulk": "ResistRing"
+   },
+   "also": []
+  },
+  "ring of far'nohl": {
+   "name": "ring of Far'nohl",
+   "weight": 10,
+   "bulk": 5,
+   "cls": "ReagentRing",
+   "declared_by": {
+    "weight": "ReagentRing",
+    "bulk": "ReagentRing"
+   },
+   "also": []
+  },
+  "ring of fire resistance": {
+   "name": "ring of fire resistance",
+   "weight": 10,
+   "bulk": 5,
+   "cls": "FireRing",
+   "declared_by": {
+    "weight": "ResistRing",
+    "bulk": "ResistRing"
+   },
+   "also": []
+  },
+  "ring of invisibility": {
+   "name": "ring of invisibility",
+   "weight": 10,
+   "bulk": 5,
+   "cls": "RingInvisibility",
+   "declared_by": {
+    "weight": "RingInvisibility",
+    "bulk": "RingInvisibility"
+   },
+   "also": []
+  },
+  "ring of lethargy": {
+   "name": "ring of lethargy",
+   "weight": 10,
+   "bulk": 5,
+   "cls": "RingofLethargy",
+   "declared_by": {
+    "weight": "RingofLethargy",
+    "bulk": "RingofLethargy"
+   },
+   "also": []
+  },
+  "ring of shock resistance": {
+   "name": "ring of shock resistance",
+   "weight": 10,
+   "bulk": 5,
+   "cls": "ShockRing",
+   "declared_by": {
+    "weight": "ResistRing",
+    "bulk": "ResistRing"
+   },
+   "also": []
+  },
+  "robes of the disciple": {
+   "name": "robes of the disciple",
+   "weight": 130,
+   "bulk": 160,
+   "cls": "DiscipleRobe",
+   "declared_by": {
+    "weight": "DiscipleRobe",
+    "bulk": "DiscipleRobe"
+   },
+   "also": []
+  },
+  "robes": {
+   "name": "robes",
+   "weight": 100,
+   "bulk": 150,
+   "cls": "Robe",
+   "declared_by": {
+    "weight": "Robe",
+    "bulk": "Robe"
+   },
+   "also": []
+  },
+  "royal ballot": {
+   "name": "Royal Ballot",
+   "weight": 2,
+   "bulk": 10,
+   "cls": "BallotItem",
+   "declared_by": {
+    "weight": "BallotItem",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "royal shirt": {
+   "name": "royal shirt",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "RoyalShirt",
+   "declared_by": {
+    "weight": "Shirt",
+    "bulk": "Shirt"
+   },
+   "also": []
+  },
+  "ruby": {
+   "name": "ruby",
+   "weight": 1,
+   "bulk": 1,
+   "cls": "Ruby",
+   "declared_by": {
+    "weight": "Ruby",
+    "bulk": "Ruby"
+   },
+   "also": []
+  },
+  "runed coffer token": {
+   "name": "runed coffer token",
+   "weight": 500,
+   "bulk": 50,
+   "cls": "OneToken",
+   "declared_by": {
+    "weight": "Token",
+    "bulk": "Token"
+   },
+   "also": []
+  },
+  "sapphire": {
+   "name": "sapphire",
+   "weight": 1,
+   "bulk": 1,
+   "cls": "Sapphire",
+   "declared_by": {
+    "weight": "Sapphire",
+    "bulk": "Sapphire"
+   },
+   "also": []
+  },
+  "scale armor": {
+   "name": "scale armor",
+   "weight": 330,
+   "bulk": 350,
+   "cls": "ScaleArmor",
+   "declared_by": {
+    "weight": "ScaleArmor",
+    "bulk": "ScaleArmor"
+   },
+   "also": []
+  },
+  "scimitar": {
+   "name": "scimitar",
+   "weight": 85,
+   "bulk": 70,
+   "cls": "Scimitar",
+   "declared_by": {
+    "weight": "Scimitar",
+    "bulk": "Scimitar"
+   },
+   "also": []
+  },
+  "shaman blood": {
+   "name": "shaman blood",
+   "weight": 4,
+   "bulk": 5,
+   "cls": "ShamanBlood",
+   "declared_by": {
+    "weight": "ShamanBlood",
+    "bulk": "ShamanBlood"
+   },
+   "also": []
+  },
+  "shield of the duke's army": {
+   "name": "shield of the Duke's army",
+   "weight": 0,
+   "bulk": 0,
+   "cls": "DukeShield",
+   "declared_by": {
+    "weight": "SoldierShield",
+    "bulk": "SoldierShield"
+   },
+   "also": []
+  },
+  "shield of the princess' army": {
+   "name": "shield of the Princess' army",
+   "weight": 0,
+   "bulk": 0,
+   "cls": "PrincessShield",
+   "declared_by": {
+    "weight": "SoldierShield",
+    "bulk": "SoldierShield"
+   },
+   "also": []
+  },
+  "shield of the rebel militia": {
+   "name": "shield of the rebel militia",
+   "weight": 0,
+   "bulk": 0,
+   "cls": "RebelShield",
+   "declared_by": {
+    "weight": "SoldierShield",
+    "bulk": "SoldierShield"
+   },
+   "also": []
+  },
+  "shilling": {
+   "name": "shilling",
+   "weight": 0,
+   "bulk": 0,
+   "cls": "Money",
+   "declared_by": {
+    "weight": "Money",
+    "bulk": "Money"
+   },
+   "also": []
+  },
+  "shirt": {
+   "name": "shirt",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "Shirt",
+   "declared_by": {
+    "weight": "Shirt",
+    "bulk": "Shirt"
+   },
+   "also": []
+  },
+  "short skirt": {
+   "name": "short skirt",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "ShortSkirt",
+   "declared_by": {
+    "weight": "Pants",
+    "bulk": "Pants"
+   },
+   "also": []
+  },
+  "short sword": {
+   "name": "short sword",
+   "weight": 50,
+   "bulk": 50,
+   "cls": "ShortSword",
+   "declared_by": {
+    "weight": "ShortSword",
+    "bulk": "ShortSword"
+   },
+   "also": []
+  },
+  "shrunken head mask": {
+   "name": "shrunken head mask",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "ShrunkenHeadMask",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "shrunken head": {
+   "name": "shrunken head",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "ShrunkenHead",
+   "declared_by": {
+    "weight": "ShrunkenHead",
+    "bulk": "ShrunkenHead"
+   },
+   "also": []
+  },
+  "signet ring": {
+   "name": "signet ring",
+   "weight": 2,
+   "bulk": 2,
+   "cls": "SignetRing",
+   "declared_by": {
+    "weight": "SignetRing",
+    "bulk": "SignetRing"
+   },
+   "also": []
+  },
+  "silver arrows": {
+   "name": "silver arrows",
+   "weight": 5,
+   "bulk": 4,
+   "cls": "SilverArrow",
+   "declared_by": {
+    "weight": "SilverArrow",
+    "bulk": "SilverArrow"
+   },
+   "also": []
+  },
+  "silver room key": {
+   "name": "silver room key",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "RoomKeyCopy",
+   "declared_by": {
+    "weight": "RoomKeyCopy",
+    "bulk": "RoomKeyCopy"
+   },
+   "also": []
+  },
+  "sinister parchment": {
+   "name": "sinister parchment",
+   "weight": 3,
+   "bulk": 10,
+   "cls": "NecromancerLetter",
+   "declared_by": {
+    "weight": "NecromancerLetter",
+    "bulk": "NecromancerLetter"
+   },
+   "also": []
+  },
+  "skull mask": {
+   "name": "skull mask",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "SkullMask",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "sky heartstone": {
+   "name": "sky heartstone",
+   "weight": 5,
+   "bulk": 10,
+   "cls": "SkyHeartStone",
+   "declared_by": {
+    "weight": "SkyHeartStone",
+    "bulk": "SkyHeartStone"
+   },
+   "also": []
+  },
+  "slice of pork": {
+   "name": "slice of pork",
+   "weight": 9,
+   "bulk": 9,
+   "cls": "Pork",
+   "declared_by": {
+    "weight": "Pork",
+    "bulk": "Pork"
+   },
+   "also": []
+  },
+  "slip of parchment": {
+   "name": "slip of parchment",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "InscriptionItem",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "small round shield": {
+   "name": "small round shield",
+   "weight": 100,
+   "bulk": 125,
+   "cls": "MetalShield",
+   "declared_by": {
+    "weight": "MetalShield",
+    "bulk": "MetalShield"
+   },
+   "also": []
+  },
+  "soldier's shield": {
+   "name": "soldier's shield",
+   "weight": 0,
+   "bulk": 0,
+   "cls": "SoldierShield",
+   "declared_by": {
+    "weight": "SoldierShield",
+    "bulk": "SoldierShield"
+   },
+   "also": []
+  },
+  "special gift": {
+   "name": "special gift",
+   "weight": 50,
+   "bulk": 50,
+   "cls": "SpecialGiftTwo",
+   "declared_by": {
+    "weight": "SpecialGiftTwo",
+    "bulk": "SpecialGiftTwo"
+   },
+   "also": [
+    {
+     "cls": "SpecialGift",
+     "weight": 50,
+     "bulk": 50
+    }
+   ]
+  },
+  "spider eye": {
+   "name": "spider eye",
+   "weight": 9,
+   "bulk": 9,
+   "cls": "Spideye",
+   "declared_by": {
+    "weight": "Spideye",
+    "bulk": "Spideye"
+   },
+   "also": []
+  },
+  "spiritual hammer": {
+   "name": "spiritual hammer",
+   "weight": 15,
+   "bulk": 60,
+   "cls": "SpiritualHammer",
+   "declared_by": {
+    "weight": "SpiritualHammer",
+    "bulk": "SpiritualHammer"
+   },
+   "also": []
+  },
+  "steel torc": {
+   "name": "steel torc",
+   "weight": 25,
+   "bulk": 20,
+   "cls": "KraananCharm",
+   "declared_by": {
+    "weight": "KraananCharm",
+    "bulk": "KraananCharm"
+   },
+   "also": []
+  },
+  "sweat of the warrior king": {
+   "name": "sweat of the warrior king",
+   "weight": 25,
+   "bulk": 30,
+   "cls": "OfferingKraanan",
+   "declared_by": {
+    "weight": "Offering",
+    "bulk": "Offering"
+   },
+   "also": []
+  },
+  "sword of riija": {
+   "name": "sword of Riija",
+   "weight": 90,
+   "bulk": 90,
+   "cls": "RiijaSword",
+   "declared_by": {
+    "weight": "RiijaSword",
+    "bulk": "RiijaSword"
+   },
+   "also": []
+  },
+  "sword of the hunt": {
+   "name": "Sword of the Hunt",
+   "weight": 70,
+   "bulk": 50,
+   "cls": "HunterSword",
+   "declared_by": {
+    "weight": "HunterSword",
+    "bulk": "HunterSword"
+   },
+   "also": []
+  },
+  "tears of a newborn": {
+   "name": "tears of a newborn",
+   "weight": 25,
+   "bulk": 30,
+   "cls": "OfferingShalille",
+   "declared_by": {
+    "weight": "Offering",
+    "bulk": "Offering"
+   },
+   "also": []
+  },
+  "the emperor's chalice": {
+   "name": "The Emperor's Chalice",
+   "weight": 100,
+   "bulk": 100,
+   "cls": "TotemFive",
+   "declared_by": {
+    "weight": "TotemFive",
+    "bulk": "TotemFive"
+   },
+   "also": []
+  },
+  "the widow qesino's famous chicken soup": {
+   "name": "The Widow Qesino's famous chicken soup",
+   "weight": 15,
+   "bulk": 20,
+   "cls": "ChickenSoup",
+   "declared_by": {
+    "weight": "ChickenSoup",
+    "bulk": "ChickenSoup"
+   },
+   "also": []
+  },
+  "token": {
+   "name": "Token",
+   "weight": 500,
+   "bulk": 50,
+   "cls": "Token",
+   "declared_by": {
+    "weight": "Token",
+    "bulk": "Token"
+   },
+   "also": []
+  },
+  "torch": {
+   "name": "torch",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "Torch",
+   "declared_by": {
+    "weight": "Torch",
+    "bulk": "Torch"
+   },
+   "also": []
+  },
+  "totem": {
+   "name": "totem",
+   "weight": 100,
+   "bulk": 100,
+   "cls": "Totem",
+   "declared_by": {
+    "weight": "Totem",
+    "bulk": "Totem"
+   },
+   "also": []
+  },
+  "treaty": {
+   "name": "treaty",
+   "weight": 0,
+   "bulk": 0,
+   "cls": "GuildTreaty",
+   "declared_by": {
+    "weight": "GuildTreaty",
+    "bulk": "GuildTreaty"
+   },
+   "also": []
+  },
+  "troll mask": {
+   "name": "troll mask",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "TrollMask",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "true lute": {
+   "name": "true lute",
+   "weight": 100,
+   "bulk": 150,
+   "cls": "TrueLute",
+   "declared_by": {
+    "weight": "TrueLute",
+    "bulk": "TrueLute"
+   },
+   "also": []
+  },
+  "turkey leg": {
+   "name": "turkey leg",
+   "weight": 9,
+   "bulk": 10,
+   "cls": "TurkeyLeg",
+   "declared_by": {
+    "weight": "TurkeyLeg",
+    "bulk": "TurkeyLeg"
+   },
+   "also": []
+  },
+  "uncut seraphym": {
+   "name": "uncut seraphym",
+   "weight": 6,
+   "bulk": 5,
+   "cls": "UncutSeraphym",
+   "declared_by": {
+    "weight": "UncutSeraphym",
+    "bulk": "UncutSeraphym"
+   },
+   "also": []
+  },
+  "vial of perfume": {
+   "name": "vial of perfume",
+   "weight": 20,
+   "bulk": 25,
+   "cls": "AphrodesiacPotion",
+   "declared_by": {
+    "weight": "AphrodesiacPotion",
+    "bulk": "AphrodesiacPotion"
+   },
+   "also": []
+  },
+  "vial of sacchaqua": {
+   "name": "vial of sacchaqua",
+   "weight": 20,
+   "bulk": 25,
+   "cls": "Sacchaqua",
+   "declared_by": {
+    "weight": "Sacchaqua",
+    "bulk": "Sacchaqua"
+   },
+   "also": []
+  },
+  "vial of solagh": {
+   "name": "vial of solagh",
+   "weight": 4,
+   "bulk": 6,
+   "cls": "Solagh",
+   "declared_by": {
+    "weight": "Solagh",
+    "bulk": "Solagh"
+   },
+   "also": []
+  },
+  "wand of fire": {
+   "name": "wand of fire",
+   "weight": 25,
+   "bulk": 20,
+   "cls": "FireWand",
+   "declared_by": {
+    "weight": "FireWand",
+    "bulk": "FireWand"
+   },
+   "also": []
+  },
+  "wand of healing": {
+   "name": "wand of healing",
+   "weight": 25,
+   "bulk": 20,
+   "cls": "HealWand",
+   "declared_by": {
+    "weight": "HealWand",
+    "bulk": "HealWand"
+   },
+   "also": []
+  },
+  "wand of vampiric shock": {
+   "name": "wand of vampiric shock",
+   "weight": 25,
+   "bulk": 25,
+   "cls": "VampireWand",
+   "declared_by": {
+    "weight": "VampireWand",
+    "bulk": "VampireWand"
+   },
+   "also": []
+  },
+  "war pendant": {
+   "name": "war pendant",
+   "weight": 0,
+   "bulk": 0,
+   "cls": "WarJoinPendant",
+   "declared_by": {
+    "weight": "WarJoinPendant",
+    "bulk": "WarJoinPendant"
+   },
+   "also": []
+  },
+  "water skin": {
+   "name": "water skin",
+   "weight": 30,
+   "bulk": 15,
+   "cls": "Waterskin",
+   "declared_by": {
+    "weight": "Waterskin",
+    "bulk": "Waterskin"
+   },
+   "also": []
+  },
+  "web moss": {
+   "name": "web moss",
+   "weight": 1,
+   "bulk": 3,
+   "cls": "WebMoss",
+   "declared_by": {
+    "weight": "WebMoss",
+    "bulk": "WebMoss"
+   },
+   "also": []
+  },
+  "wedding ring": {
+   "name": "wedding ring",
+   "weight": 3,
+   "bulk": 2,
+   "cls": "RingWedding",
+   "declared_by": {
+    "weight": "RingWedding",
+    "bulk": "RingWedding"
+   },
+   "also": []
+  },
+  "wheel of cheese": {
+   "name": "wheel of cheese",
+   "weight": 30,
+   "bulk": 30,
+   "cls": "Cheese",
+   "declared_by": {
+    "weight": "Cheese",
+    "bulk": "Cheese"
+   },
+   "also": []
+  },
+  "xeochicatl mask": {
+   "name": "xeochicatl mask",
+   "weight": 10,
+   "bulk": 10,
+   "cls": "XeoMask",
+   "declared_by": {
+    "weight": "Item",
+    "bulk": "Item"
+   },
+   "also": []
+  },
+  "yrxl sap": {
+   "name": "yrxl sap",
+   "weight": 4,
+   "bulk": 5,
+   "cls": "Yrxlsap",
+   "declared_by": {
+    "weight": "Yrxlsap",
+    "bulk": "Yrxlsap"
+   },
+   "also": []
+  }
+ }
+}

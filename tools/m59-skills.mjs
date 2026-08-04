@@ -21,6 +21,7 @@ import { OF, isTeleporter, describeObject } from './m59-parse.mjs';
 // The Underworld's exits, and which city is nearest to any room. As a namespace,
 // because escapeUnderworld re-exports most of it and a bare import would shadow.
 import * as UW from './m59-underworld.mjs';
+import { weighPack } from './m59-items.mjs';
 
 // Health fractions. Chosen from what the game does rather than taste: a monster that
 // can take you from half to nothing in one exchange is common, and the server's
@@ -512,31 +513,47 @@ export async function standToAct(s) {
 //
 //     GetWeightMax = GetBulkMax = 1700 + might * 20     player.kod:10456, :10461
 //
-// WHAT WE CANNOT KNOW IS THE CURRENT LOAD. piWeight_hold and piBulk_hold live on the
-// server and are never sent, and no packet carries an item's weight or bulk either — so
-// the load cannot be re-derived from the inventory without a table of every item class's
-// viWeight/viBulk lifted out of the kod (219 files under object/item declare one).
+// THE CURRENT LOAD IS NOT ON THE WIRE, so it is added up here. piWeight_hold lives on
+// the server and is never sent, and no packet carries an item's weight or bulk either —
+// but those weights are not secret, they are just static. m59-items.mjs lifts every item
+// class's viWeight/viBulk out of the kod once, and weighPack adds up an inventory.
 //
-// So this reports the ceiling and says the load is UNKNOWN rather than inventing one.
-// That is deliberate: the only thing a load figure would be used for is deciding whether
-// there is room, and a wrong estimate there fails in the expensive direction — it burns
-// 15 mana on a create weapon that the server then throws away, which is exactly the bug
-// this was written for. `freeRoomFor` below acts on that honestly, by making room rather
-// than by predicting whether room exists.
+// `exact` is the field that decides whether the total means anything. A load of 900 with
+// three unrecognised items in the pack is not a load of 900, it is a LOWER BOUND — so
+// `room_for` is reported as null rather than as a number whenever anything was unknown.
+// Underestimating the load is the direction that fails: it says there is room when there
+// is not, which burns 15 mana on a create weapon the server then deletes.
 export function carryCapacity(c) {
   const might = c?.stat?.('might') ?? null;
-  const items = (c?.inventory || []).length;
+  const inv = c?.inventory || [];
+  const items = inv.length;
   if (might == null)
     return { known: false, items, why: 'might has not been read yet — call stats first' };
-  // The attribute arrives scaled for display, so the raw value the kod multiplies is not
-  // necessarily this one. Report both the input and the arithmetic instead of a single
-  // confident number, because a ceiling quoted wrongly is worse than one quoted openly.
   const max = 1700 + might * 20;
-  return { known: true, might, weight_max: max, bulk_max: max, items, load: null,
-           formula: '1700 + might * 20 (player.kod:10456, :10461)',
-           note: 'the CEILING is exact; the current LOAD is not sent by the server and is ' +
-                 'not derivable from any packet, so "is there room" can only be answered ' +
-                 'by trying, or by making room first — see freeRoomFor()' };
+  // Names, because that is all the protocol gives us — an inventory entry carries no class.
+  const named = inv.map(o => ({ name: c.rsc?.get?.(o.nameRsc) ?? o.name, amount: o.amount }));
+  const load = weighPack(named);
+  const spare = { weight: max - load.weight, bulk: max - load.bulk };
+  return {
+    known: true, might, weight_max: max, bulk_max: max, items,
+    load: { weight: load.weight, bulk: load.bulk, exact: load.exact,
+            ...(load.unknown.length ? { unweighed: load.unknown } : {}) },
+    // How much more can go in, and null when we cannot honestly say.
+    room_for: load.exact ? { weight: spare.weight, bulk: spare.bulk } : null,
+    formula: '1700 + might * 20, weight and bulk alike (player.kod:10456, :10461)',
+    ...(load.exact ? {} : {
+      note: 'some items are not in the weight table, so the load is a LOWER BOUND and ' +
+            'room_for is withheld. Treat that as "make room", never as "there is room". ' +
+            'Rebuild the table with: node tools/m59-items.mjs build' }),
+  };
+}
+
+// Would this fit? Only ever answered with certainty; `null` means we do not know, and a
+// caller must treat that exactly as it treats false.
+export function wouldFit(c, weight, bulk = weight) {
+  const cap = carryCapacity(c);
+  if (!cap.known || !cap.room_for) return null;
+  return cap.room_for.weight >= weight && cap.room_for.bulk >= bulk;
 }
 
 // MAKE ROOM BEFORE ASKING FOR SOMETHING, because asking and being refused is expensive.
