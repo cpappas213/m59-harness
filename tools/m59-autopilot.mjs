@@ -26,6 +26,7 @@ import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe 
 import { findPath } from './m59-map.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
 import { inboxIfAny } from './m59-inbox.mjs';
+import { recordEvent } from './m59-ledger.mjs';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 
 // Built by: node tools/m59-spawns.mjs
@@ -343,6 +344,24 @@ export class Autopilot {
     this.lastError = null;
     // What actually happened, so a returning model gets a summary rather than a tail.
     this.tally = { kills: 0, deaths: 0, rests: 0, withdrawals: 0, rooms_moved: 0, looted: {} };
+    // EVERY CAST, AND EVERY CAST IT DECIDED AGAINST.
+    //
+    // The keeper's self-supply decisions are the ones hardest to check from outside,
+    // because both spells it relies on refuse SILENTLY: `create food` without 2
+    // ElderBerry and 2 Herbs, `create weapon` below 15 mana. Neither says a word, so a
+    // character that cast forty times and got nothing looks exactly like one that cast
+    // forty times and ate well — and a character that never cast at all looks exactly
+    // like one that does not know the spell. A count of actions cannot separate those;
+    // the OUTCOME and the REFUSAL have to be recorded with the attempt.
+    //
+    // `declined` is the half a log of actions can never give you, and it is why this is
+    // an audit rather than a counter.
+    this.spellbook = { casts: [], by_spell: {}, declined_logged: new Map() };
+    // WHAT IT SPENT MONEY ON. The economic half of the same question: a character can
+    // keep its vigor up by buying food, or by buying the two reagents and casting for
+    // it, and those cost differently and fail differently. Recorded per purchase so
+    // the mix is readable rather than inferred from a shrinking purse.
+    this.spending = { bought: [], spent: 0, by_kind: {}, declined: {} };
     // HOW WELL THE ASSIGNMENT IS HOLDING. Read by `status` and by the spread tool.
     //   effective  — returned_to_assignment / relocations
     //   consistent — drifted, and drifted_to says WHERE it keeps losing them to
@@ -550,6 +569,61 @@ export class Autopilot {
     this.note('made our own food', { made: made.map(o => c.rsc.get(o.nameRsc)), from: r });
     this.progress('cooked');
     return true;
+  }
+
+  // MAKE A WEAPON RATHER THAN ASK FOR ONE.
+  //
+  // An unarmed character is not hunting, it is standing in a monster room punching
+  // things: GetWeapon returns nothing for an empty hand and UserAttack quietly falls
+  // back to a punch, so nothing about it reads as broken from the outside. The keeper
+  // used to answer that by wielding whatever survived and, failing that, broadcasting
+  // for charity — while carrying a spell that makes a weapon out of nothing but mana.
+  //
+  // `create weapon` costs 15 mana and refuses SILENTLY below it, so the check is on
+  // mana before the cast rather than on the absence of an item afterwards. What it
+  // makes is temporary: this buys the fight in front of us and the walk to a shop, and
+  // it is not a substitute for a real blade.
+  async makeWeapon() {
+    const s = this.s, c = s.client;
+    if (!c) return false;
+    const mana = c.vitals?.()?.mana;
+    if ((mana?.value ?? 0) < 15) return false;
+    await s.pacer.submit('read', () => c.requestSpells()).catch(() => {});
+    await new Promise(x => setTimeout(x, 400));
+    const spell = (c.spells || []).find(sp => (c.rsc.get(sp.nameRsc) || '').toLowerCase() === 'create weapon');
+    if (!spell) return false;
+    const had = new Set((c.inventory || []).map(o => o.id));
+    await s.pacer.submit('cast', () => c.cast(spell.id, []), 1050);
+    await c.waitFor({ kinds: ['message', 'inventory'], timeoutMs: 4000 }).catch(() => {});
+    await new Promise(x => setTimeout(x, 1000));
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    const made = (c.inventory || []).filter(o => !had.has(o.id));
+    if (!made.length) {
+      this.tally.weapons_conjured_failed = (this.tally.weapons_conjured_failed || 0) + 1;
+      this.note('create weapon produced nothing', { mana: mana?.value,
+        why: 'it refuses silently below 15 mana' });
+      return false;
+    }
+    const eq = await skills.equipBest(s).catch(() => null);
+    this.tally.weapons_conjured = (this.tally.weapons_conjured || 0) + 1;
+    this.note('conjured a weapon', { made: made.map(o => c.rsc.get(o.nameRsc)),
+      now_wielding: eq?.wielding, mana_left: c.vitals?.()?.mana?.value,
+      caveat: 'a made weapon is temporary — it buys this fight and the walk to a shop' });
+    this.progress('armed itself');
+    return true;
+  }
+
+  // ARE WE ACTUALLY ARMED, and if not, fix it with what we are carrying or can cast.
+  // Called before picking a fight, because the alternative is a level-25 character
+  // punching a level-30 centipede and neither the log nor the fleet page saying so.
+  async armSelf() {
+    const c = this.s.client;
+    if (!c) return false;
+    if (skills.weaponsOf(c).length) {
+      const eq = await skills.equipBest(this.s).catch(() => null);
+      if (eq?.wielding) return true;
+    }
+    return await this.makeWeapon().catch(() => false);
   }
 
   async provision(plan, v) {
@@ -2728,7 +2802,17 @@ export class Autopilot {
     // it with margin in hand. Anything else, with anything hostile in the room, and the
     // answer is to go and get a wall first — not to sit down and find out.
     const combatZone = hostiles.length > 0;
-    if (hurt && combatZone && !sheltered && !testing && this.policy.useSafeSpots) {
+    // Go and get a wall — but DO NOT CONSUME THE PASS DOING IT. The first version
+    // returned as soon as takeSafeSpot() succeeded, and that deadlocked characters
+    // outright: holding a square is not the same as the square being PROVEN, so
+    // `sheltered` stayed false, the branch fired again next pass, and a character at
+    // 100% health spent sixty consecutive passes taking a wall and doing nothing else.
+    // It was `hurt` on VIGOR, not health, which is the state a keeper is in most of the
+    // time. Take the spot as a side effect and let the pass carry on — the rest gate
+    // below already refuses to rest in the open, which was the actual requirement.
+    if (hurt && combatZone && !sheltered && !testing && this.policy.useSafeSpots && !this.hold
+        && (!this.wallTriedAt || Date.now() - this.wallTriedAt > 30_000)) {
+      this.wallTriedAt = Date.now();
       const got = await this.takeSafeSpot(
         'hurt in a room with monsters in it — a wall before a rest', near[0] ?? hostiles[0] ?? null)
         .catch(() => false);
@@ -2737,7 +2821,6 @@ export class Autopilot {
         monsters_in_room: hostiles.length, adjacent: near.length, got_a_wall: !!got,
         why: 'resting is sitting still and not looking; doing it where something can reach us is ' +
              'how a rest becomes a death' });
-      if (got) return;                     // rest properly next pass, from behind the wall
     }
     if ((!combatZone || sheltered || testing) && hurt) {
       if (testing && near.length)
@@ -3029,6 +3112,23 @@ export class Autopilot {
       // between fights several times faster than a merely rested one.
       const plan = STRATEGIES[this.policy.strategy] || STRATEGIES.baseline;
       if (await this.provision(plan, v)) return;   // still stocking up — do not engage
+
+      // ARMED? Both of this fleet's characters-can-fix-it-themselves problems are
+      // checked in the same place and for the same reason: they are silent. An empty
+      // larder caps vigor at what resting gives, and an empty hand turns every fight
+      // into punching — and the server reports neither. `create food` and `create
+      // weapon` are carried by every character here, so the first question when either
+      // is missing is whether we can simply make one.
+      if (!skills.weaponsOf(this.s.client).length) {
+        const armed = await this.armSelf().catch(() => false);
+        if (!armed) {
+          this.note('about to fight unarmed', {
+            mana: this.s.client?.vitals?.()?.mana?.value,
+            why: 'no weapon in the pack and create weapon could not be cast — it needs 15 mana',
+            note: 'UserAttack falls back to a punch silently, so this would otherwise look like ' +
+                  'a character that is fighting badly rather than one that is not armed' });
+        }
+      }
 
       // Resume the creature we already hurt rather than whatever is nearest now. A
       // kill scores nothing unless we damaged it and it was our current target, and
@@ -3747,7 +3847,11 @@ export class Autopilot {
     await s.pacer.submit('read', () => c.requestInventory());
     await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
 
-    const eq = await skills.equipBest(s).catch(() => null);
+    let eq = await skills.equipBest(s).catch(() => null);
+    // Before asking a stranger for a blade, try the one we can make. Charity is slow,
+    // uncertain, and costs another player something; the spell costs 15 mana.
+    if (!eq?.wielding && await this.makeWeapon().catch(() => false))
+      eq = await skills.equipBest(s).catch(() => eq);
     const armed = !!eq?.wielding;
     const where = c.rsc.get(c.roomNameRsc) || 'somewhere';
     const hurt = /hurt|heal|flask/i.test(reason || '');
