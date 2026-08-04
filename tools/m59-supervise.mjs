@@ -238,7 +238,27 @@ async function deploy(a, b, room, name, hunt) {
                `${t.why}${t.left_in ? ` (left in ${t.left_in})` : ''} — keeper restarted where it stands`);
       continue;
     }
-    await orders(me.agent, room, hunt, mate.agent).catch(e => out.push(`${me.character}: ${e.message}`));
+    // AND IF GIVING THE ORDERS FAILS, THE KEEPER IS STILL OFF.
+    //
+    // The failed-travel path above is careful about this and this one was not: a throw
+    // from orders() was caught, noted, and the loop moved on — leaving a character
+    // standing in a room with nothing driving it, indefinitely, for whatever reason the
+    // call failed. It is the same hazard the comment above names, on the success path.
+    //
+    // Found by the uptime ledger within an hour of it existing: t1 and t5 stopped 104ms
+    // apart, travelled to Marion, and sat there at full health with no keeper for eight
+    // minutes. The stops had no matching starts, which is exactly what that ledger is
+    // for. Falling back to "farm where you stand" is worse than the intended orders and
+    // enormously better than nothing.
+    const gave = await orders(me.agent, room, hunt, mate.agent)
+                         .then(() => true)
+                         .catch(e => { out.push(`${me.character}: ${e.message}`); return false; });
+    if (!gave) {
+      const back = await call('autopilot', { agent: me.agent, action: 'start', mode: 'farm',
+                                             hunt: me.hunting || hunt }).catch(() => null);
+      out.push(`${me.character}: orders failed after arriving — keeper ${back ? 'restarted plainly' : 'COULD NOT BE RESTARTED'}`);
+      continue;
+    }
     out.push(`${me.character} -> ${name} (${room}) hunting ${hunt}, partnered with ${mate.character}`);
   }
   return out;
