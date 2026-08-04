@@ -346,6 +346,19 @@ console.log('\nthe post-mortem');
      live.where === null && live.vitals.health_per_second === null);
 }
 
+console.log('\ndropping a stack needs the quantity');
+{
+  const k = new Autopilot({ name: 't6', world: { room: {} }, client: null }, {});
+  // encodeIdList has always taken {id, amount}; every caller passed a bare id, and
+  // UserDrop (user.kod:3802) returns early on `number <= 0` without dropping anything.
+  // Beaker spent 14 passes on "dropped red mushroom x20" while still carrying 15 of 14.
+  ok('a stack is sent with its quantity',
+     JSON.stringify(k.dropSpec({ id: 7, amount: 20 })) === '{"id":7,"amount":20}');
+  ok('a single item is still sent as a bare id', k.dropSpec({ id: 7, amount: 1 }) === 7);
+  ok('and so is one with no amount at all', k.dropSpec({ id: 7 }) === 7);
+  ok('a missing object does not throw', k.dropSpec(undefined) === undefined);
+}
+
 console.log('\nthe room that filled up with what nobody would kill');
 {
   // East Merchant Way as found live: cap 10, and ten monsters in it — eight baby

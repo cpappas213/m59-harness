@@ -1600,6 +1600,22 @@ export class Autopilot {
     return this.stalledSince ? `stuck: ${this.stalledWhy}` : 'waiting';
   }
 
+  // DROPPING A STACK NEEDS THE QUANTITY, or the server refuses and says nothing useful.
+  //
+  // UserDrop (user.kod:3802) on a NumberItem does `if number <= 0 { return }` -- so a
+  // drop request carrying no count drops NOTHING, silently as far as the keeper is
+  // concerned. encodeIdList has taken {id, amount} all along; every caller here passed a
+  // bare id.
+  //
+  // The cost was not one item. makeRoom returns from the pass as soon as it has "made
+  // room", so a character whose overflow was a stack dropped nothing, stayed over the
+  // limit, and returned at the top of every pass for ever. Beaker did it 14 passes
+  // running -- "bags full - dropped red mushroom x20", still carrying 15 of 14 -- and
+  // never reached the hunting code at all.
+  dropSpec(o) {
+    return (o?.amount ?? 1) > 1 ? { id: o.id, amount: o.amount } : o?.id;
+  }
+
   // THE ROOM HAS FILLED UP WITH THINGS WE DECLINED TO KILL.
   //
   // The cap is a room-wide TOTAL (monsroom.kod:242) and the generator is gated on it
@@ -3391,7 +3407,7 @@ export class Autopilot {
     const dead = skills.junkAndBroken(c);
     if (this.policy.dropJunk !== false && dead.length) {
       const d = dead[0];
-      await s.pacer.submit('drop', () => c.drop([d.id]));
+      await s.pacer.submit('drop', () => c.drop([this.dropSpec(d)]));
       await new Promise(r => setTimeout(r, 900));
       await s.pacer.submit('read', () => c.requestInventory());
       await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
@@ -3403,7 +3419,7 @@ export class Autopilot {
     // it, so "drop the biggest pile of junk" can never strip the character.
     const keep = /shilling|coin|diamond|ruby|emerald|sapphire|armor|armour|shield|sword|mace|hammer|axe|bow|helm|gauntlet/i;
     const junk = (c.inventory || [])
-      .filter(o => !keep.test(c.rsc.get(o.nameRsc) || ''))
+      .filter(o => !keep.test(c.rsc.get(o.nameRsc) || '') && !this.wontDrop?.has(o.id))
       .sort((a, b) => (b.amount || 1) - (a.amount || 1));
     if (!junk.length) {
       return { ok: false, did: 'nothing safe to drop',
@@ -3411,10 +3427,22 @@ export class Autopilot {
     }
     const drop = junk[0];
     const name = c.rsc.get(drop.nameRsc);
-    await s.pacer.submit('drop', () => c.drop([drop.id]));
+    const before = c.inventory.length;
+    await s.pacer.submit('drop', () => c.drop([this.dropSpec(drop)]));
     await new Promise(r => setTimeout(r, 900));
     await s.pacer.submit('read', () => c.requestInventory());
     await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+    // DID IT ACTUALLY GO? A drop the server refused looks exactly like one it accepted
+    // from here, and makeRoom returns from the pass either way, so a refusal that repeats
+    // is a character that never does anything again. Refuse to report success for a drop
+    // that changed nothing, and remember the item so the next pass tries something else.
+    if (c.inventory.length >= before) {
+      (this.wontDrop ??= new Set()).add(drop.id);
+      return { ok: false, did: `the server would not drop ${name}`,
+               detail: { still_carrying: c.inventory.length, refused: name,
+                         hint: 'a stacked item needs a quantity (UserDrop returns early on ' +
+                               'number <= 0); this one is now skipped for the rest of the session' } };
+    }
     return { ok: true, did: `dropped ${name}${drop.amount > 1 ? ` x${drop.amount}` : ''}`,
              detail: { now_carrying: c.inventory.length } };
   }
