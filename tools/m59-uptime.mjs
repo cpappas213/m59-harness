@@ -172,9 +172,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const fs = await import('node:fs');
     const files = existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith('.json')) : [];
     let marked = 0, total = 0;
+    // ONLY JUDGE THE DEATHS THIS LEDGER COULD HAVE SEEN.
+    //
+    // The first version counted every postmortem on disk and reported "0 of 264
+    // unattended (0%)" — which reads as a finding and is nothing of the kind, because
+    // 263 of them happened before the ledger existed. A denominator that includes
+    // unmeasurable cases makes a young ledger look like an exoneration.
+    const ledgerBegan = Math.min(...ledger.map(e => e.at));
+    let tooOld = 0;
     for (const f of files) {
       const d = JSON.parse(fs.readFileSync(join(dir, f), 'utf8'));
       if (d.reason !== 'died' || !d.at || !d.agent) continue;
+      if (d.at < ledgerBegan) { tooOld++; continue; }
       total++;
       const o = outageAround(d.agent, d.at, ledger);
       if (o) { marked++;
@@ -182,7 +191,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           `${Math.round(o.died_ms_into_outage / 1000)}s into an outage of ${Math.round(o.ms / 1000)}s` +
           (o.after_resume ? ` (${Math.round(o.after_resume / 1000)}s after the keeper came back)` : '')); }
     }
-    console.log(`\n${marked} of ${total} deaths happened with nothing driving the character (${total ? (100 * marked / total).toFixed(0) : 0}%)`);
+    console.log(`\n${marked} of ${total} judgeable deaths happened with nothing driving ` +
+      `the character${total ? ` (${(100 * marked / total).toFixed(0)}%)` : ''}`);
+    console.log(`the ledger starts at ${new Date(ledgerBegan).toISOString().slice(0, 19)}Z; ` +
+      `${tooOld} earlier death(s) cannot be judged and are excluded.`);
+    if (total < 20)
+      console.log(`NOT YET A RESULT — ${total} death(s) is too few to conclude anything either way.`);
   } else {
     const all = agents.flatMap(a => outages(a).map(o => ({ ...o, agent: a })))
                       .sort((x, y) => y.ms - x.ms);
