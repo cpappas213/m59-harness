@@ -24,6 +24,7 @@ import {
   brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit, signetRings, returnSignetRings,
 } from './m59-skills.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
+import { isFood } from './m59-items.mjs';
 import { RoomGeometry } from './m59-roo.mjs';
 import { roomCap, karmaSafe } from './m59-spawns.mjs';
 import { OF } from './m59-parse.mjs';
@@ -840,6 +841,29 @@ console.log('\nrefusing to hunt with nothing in hand');
   // the guard catches empty hands rather than becoming a new way to stop.
   ok('an unreadable use list is treated as armed, not as unarmed',
      keeper([], false).armed() === true);
+}
+
+
+// THE VIGOR CAP IS A SHOPPING PROBLEM, AND THE FLEET WAS NEVER SHOPPING.
+//
+// Resting stops awarding vigor at 80 of 200, so everything above it has to be eaten.
+// restockReagents filtered every shop list through shareKind -- elderberry and herbs and
+// nothing else -- so a character could stand at a counter selling bread with money in
+// hand and buy nothing. Ten of twenty-one sat at exactly 80 for a whole session.
+console.log('\nknowing what is food, from the class tree rather than a word list');
+{
+  ok('bread is food', isFood('loaf of bread'));
+  ok('so is an apple', isFood('apple'));
+  ok('and a drink counts — vigor is vigor', isFood('mug of stout'));
+  // The two that a name-matching rule would get wrong, in both directions.
+  ok('an Inky-cap mushroom is food, which "contains mushroom" would have to guess at',
+     isFood('Inky-cap mushroom'));
+  ok('but elderberry is a REAGENT, not food', !isFood('elderberry'));
+  ok('and so is a herb', !isFood('herb'));
+  ok('a weapon is not food', !isFood('mace'));
+  ok('an unknown name is not food — buying scenery wastes money', !isFood('nameless curio'));
+  ok('and it is case-insensitive, because names arrive as the server spells them',
+     isFood('LOAF OF BREAD') && isFood('  apple '));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

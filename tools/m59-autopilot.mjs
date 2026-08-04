@@ -22,6 +22,7 @@
 
 import * as skills from './m59-skills.mjs';
 import { OF, affordances } from './m59-parse.mjs';
+import { isFood } from './m59-items.mjs';
 import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe } from './m59-spawns.mjs';
 import { findPath } from './m59-map.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
@@ -4787,9 +4788,28 @@ export class Autopilot {
       this.declinedPurchase('the merchant never opened a shop list');
       return [];
     }
+    // BUY FOOD TOO, NOT JUST REAGENTS.
+    //
+    // This filtered every shop list through shareKind, which matches elderberry and herbs
+    // and nothing else — so a character could stand at a counter selling bread, with
+    // money in hand and vigor pinned at the resting cap, and buy nothing. Ten of
+    // twenty-one sat at exactly 80 for an entire session on that.
+    //
+    // Resting stops awarding vigor at 80 of 200, so everything above it has to be EATEN.
+    // Making food needs elderberry and herbs in the eater's own pack, and the fleet's
+    // reagents are hoarded in rooms nobody hungry ever visits — buying is the route that
+    // does not depend on the geography lining up.
+    //
+    // isFood comes from the Food class tree (m59-items.mjs), not a word list: guessing by
+    // name would miss "Inky-cap mushroom" and "goblet of ale" and would wrongly include
+    // the mushrooms that are reagents.
+    const hungry = (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
     const wanted = (shop.items || []).filter(it => {
+      const cost = it.cost ?? 0;
+      if (cost <= 0 || cost > purse - floor) return false;
       const k = skills.shareKind(it.name);
-      return k && need[k] > 0 && (it.cost ?? 0) > 0 && (it.cost ?? 0) <= purse - floor;
+      if (k && need[k] > 0) return true;
+      return hungry && isFood(it.name);
     });
     if (!wanted.length) {
       // WHICH of the two it was matters, and both look like "bought nothing" from the
@@ -4808,10 +4828,10 @@ export class Autopilot {
       await s.pacer.submit('buy', () => c.buyItems(shop.sellerId, [it.id]));
       await new Promise(r => setTimeout(r, 700));
       got.push(`${it.name} @${it.cost}`);
-      this.recordPurchase(it.name, it.cost, { kind: skills.shareKind(it.name),
+      this.recordPurchase(it.name, it.cost, { kind: skills.shareKind(it.name) || (isFood(it.name) ? 'food' : null),
         // seller may be a bare id — the signature accepts both — so do not assume an object.
         from: seller?.nameRsc ? (c.rsc.get(seller.nameRsc) ?? null) : null,
-        why: 'reagent top-up at a counter we were already standing at, to keep create food castable' });
+        why: isFood(it.name) ? 'food bought at a counter we were already standing at — the only way past the vigor-80 resting cap' : 'reagent top-up at a counter we were already standing at, to keep create food castable' });
     }
     await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
     if (got.length) this.note('restocked reagents', { bought: got, had: have, target: want,

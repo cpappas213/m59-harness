@@ -1,5 +1,5 @@
 {
- "builtAt": "2026-08-04T18:37:42.922Z",
+ "builtAt": "2026-08-04T19:38:49.242Z",
  "source": "compendium/data/koddb.json",
  "defaults": {
   "weight": 10,
@@ -10,7 +10,8 @@
  "counts": {
   "item_classes": 217,
   "distinct_names": 212,
-  "used_defaults": 0
+  "used_defaults": 0,
+  "foods": 21
  },
  "items": {
   "alchemical formula": {
@@ -2373,6 +2374,92 @@
     "bulk": "Yrxlsap"
    },
    "also": []
+  }
+ },
+ "food": {
+  "apple": {
+   "name": "apple",
+   "cls": "Apple"
+  },
+  "loaf of bread": {
+   "name": "loaf of bread",
+   "cls": "Bread"
+  },
+  "frenzy food": {
+   "name": "Frenzy Food",
+   "cls": "ChaosFood"
+  },
+  "wheel of cheese": {
+   "name": "wheel of cheese",
+   "cls": "Cheese"
+  },
+  "drumstick": {
+   "name": "drumstick",
+   "cls": "Drumstick"
+  },
+  "fortune cookie": {
+   "name": "fortune cookie",
+   "cls": "FortuneCookie"
+  },
+  "goblet of ale": {
+   "name": "goblet of ale",
+   "cls": "Goblet"
+  },
+  "mug of brew": {
+   "name": "mug of brew",
+   "cls": "StoutGoblet"
+  },
+  "goblet of wine": {
+   "name": "goblet of wine",
+   "cls": "wineGoblet"
+  },
+  "bunch of grapes": {
+   "name": "bunch of grapes",
+   "cls": "Grapes"
+  },
+  "inky-cap mushroom": {
+   "name": "Inky-cap mushroom",
+   "cls": "InkyCap"
+  },
+  "mug of pekonch": {
+   "name": "mug of Pekonch",
+   "cls": "KocatanMug"
+  },
+  "meat pie": {
+   "name": "meat pie",
+   "cls": "Meatpie"
+  },
+  "chocolate mint": {
+   "name": "chocolate mint",
+   "cls": "Mint"
+  },
+  "mug of stout": {
+   "name": "mug of stout",
+   "cls": "Mug"
+  },
+  "slice of pork": {
+   "name": "slice of pork",
+   "cls": "Pork"
+  },
+  "edible mushroom": {
+   "name": "edible mushroom",
+   "cls": "Snack"
+  },
+  "bowl of soup": {
+   "name": "bowl of soup",
+   "cls": "Soup"
+  },
+  "spider eye": {
+   "name": "spider eye",
+   "cls": "Spideye"
+  },
+  "turkey leg": {
+   "name": "turkey leg",
+   "cls": "TurkeyLeg"
+  },
+  "water skin": {
+   "name": "water skin",
+   "cls": "Waterskin"
   }
  }
 }

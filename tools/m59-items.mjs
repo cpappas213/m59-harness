@@ -110,13 +110,34 @@ export function buildItemTable(koddbFile = KODDB) {
     }
   }
 
+  // WHAT COUNTS AS FOOD, taken from the class tree rather than from a word list.
+  //
+  // This matters more than it looks. Resting stops awarding vigor at 80 of 200
+  // (REST_VIGOR_CAP), so everything above that has to be EATEN — food is not a
+  // convenience here, it is the only route to the vigor a character needs to fight well.
+  // And the fleet had never bought any: restockReagents filtered every shop list through
+  // shareKind, which matches elderberry and herbs and nothing else, so a character could
+  // stand in a shop selling bread and buy nothing. Ten characters sat at exactly 80 for
+  // an entire session because of it.
+  //
+  // Anything descending from Food is food. Guessing by name would have missed "Inky-cap
+  // mushroom" and "goblet of ale" and included the mushrooms that are reagents.
+  const food = {};
+  for (const cls of Object.values(classes)) {
+    if (!(cls.chain || []).some(x => String(x).toLowerCase() === 'food')) continue;
+    const name = displayName(cls);
+    if (name) food[name.toLowerCase()] = { name, cls: cls.name };
+  }
+
   return {
     builtAt: null,                              // stamped by the caller; see build()
     source: 'compendium/data/koddb.json',
     defaults: { weight: DEFAULT_WEIGHT, bulk: DEFAULT_BULK, from: 'item.kod:66-67' },
     capacity_formula: '1700 + might * 20, for weight AND bulk (player.kod:10456, :10461)',
-    counts: { item_classes: considered, distinct_names: byName.size, used_defaults: defaulted },
+    counts: { item_classes: considered, distinct_names: byName.size, used_defaults: defaulted,
+              foods: Object.keys(food).length },
     items: Object.fromEntries([...byName.entries()].sort()),
+    food,
   };
 }
 
@@ -185,4 +206,13 @@ if (import.meta.url === `file://${process.argv[1]}` ||
     console.log(`${t.counts.used_defaults} used Item's default 10/10`);
     console.log(t.capacity_formula);
   }
+}
+
+// Is this item food — i.e. does eating it raise vigor past the resting cap of 80?
+// Answered from the Food class tree, not from a word list. Unknown names are NOT food:
+// buying something that turns out to be scenery wastes money the fleet does not have.
+export function isFood(name, file = ITEMS_FILE) {
+  const t = loadItems(file);
+  if (!t?.food) return false;
+  return !!t.food[String(name || '').trim().toLowerCase()];
 }
