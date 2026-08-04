@@ -472,6 +472,26 @@ export class Autopilot {
     return want;
   }
 
+  // TELL THE REST OF THE FLEET WHAT WE ARE SHORT OF AND WHAT WE CAN SPARE.
+  //
+  // Cheap, and called every pass, because the whole value is in it being current when
+  // somebody else is standing at a merchant deciding what to sell.
+  declareInterest() {
+    const c = this.s.client;
+    if (!c) return;
+    const want = this.policy.reagentTarget ?? 6;
+    const r = this.reagentCount();
+    const wants = [], spare = new Map();
+    for (const [kind, have] of [['elderberry', r.elderberry], ['herb', r.herbs]]) {
+      if (have < want) wants.push(kind);
+      else if (have > want) spare.set(kind, have - want);
+    }
+    // No food and nothing to cook with is a want somebody else can answer directly.
+    if (!skills.larderOf(c).length && (r.elderberry < 2 || r.herbs < 2)) wants.push('food');
+    if (!skills.weaponsOf(c).length) wants.push('weapon');
+    skills.interest.declare(this.name ?? this.s.name, { wants, spare });
+  }
+
   // What `create food` eats: 2 ElderBerry and 2 Herbs, from OUR pack, and it refuses
   // SILENTLY without them — so the count has to be checked before casting rather than
   // inferred from a failure.
@@ -2271,6 +2291,9 @@ export class Autopilot {
     // another that has wandered — see runProvision, where a quartermaster arrives to
     // find the supplicant has roamed off and would otherwise abandon the errand.
     if (s.world?.room?.num != null) noteWhere(s.name, s.world.room.num, s.world.room.name);
+    // And post what we need and what we can spare, for the same reason: the sell and
+    // drop paths read the aggregate, and a stale board sells somebody else's herbs.
+    this.declareInterest();
 
     // FROZEN after a panic logoff. Do nothing that the server counts as an action:
     // no room-contents request, no movement, no turning, no fighting. Rest, read the
@@ -3560,6 +3583,47 @@ export class Autopilot {
                          : 'dead broke and unarmed — waiting on charity');
   }
 
+  // BUY THE INGREDIENTS, NOT THE MEAL, and only while we are already at a counter.
+  //
+  // Buying from a vendor pays their spread, which is why this is a top-up rather than
+  // the supply plan: the fleet's own herbs are free and are handled by not selling them
+  // in the first place. But `create food` refuses silently without 2 ElderBerry and 2
+  // Herbs, and a character stuck at 80 vigor for want of four items is losing far more
+  // than the markup. Bounded by reagentTarget and by walkingMoney, so it can never eat
+  // the money a character needs to get home.
+  async restockReagents(seller) {
+    const s = this.s, c = s.need();
+    const want = this.policy.reagentTarget ?? 6;
+    const have = this.reagentCount();
+    const need = { elderberry: Math.max(0, want - have.elderberry), herb: Math.max(0, want - have.herbs) };
+    if (!need.elderberry && !need.herb) return [];
+    const purse = (c.inventory || []).filter(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))
+                                     .reduce((t, o) => t + (o.amount || 1), 0);
+    const floor = this.policy.walkingMoney ?? 400;
+    if (purse <= floor) return [];
+
+    const before = c.evSeq;
+    await s.pacer.submit('buy', () => c.buy(seller.id ?? seller));
+    const ev = await c.waitFor({ since: before, kinds: ['shop', 'message'], timeoutMs: 4000 }).catch(() => ({ events: [] }));
+    const shop = ev.events?.find(e => e.kind === 'shop');
+    if (!shop) return [];
+    const wanted = (shop.items || []).filter(it => {
+      const k = skills.shareKind(it.name);
+      return k && need[k] > 0 && (it.cost ?? 0) > 0 && (it.cost ?? 0) <= purse - floor;
+    });
+    if (!wanted.length) return [];
+    const got = [];
+    for (const it of wanted) {
+      await s.pacer.submit('buy', () => c.buyItems(shop.sellerId, [it.id]));
+      await new Promise(r => setTimeout(r, 700));
+      got.push(`${it.name} @${it.cost}`);
+    }
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    if (got.length) this.note('restocked reagents', { bought: got, had: have, target: want,
+      why: 'create food refuses silently without 2 elderberry and 2 herbs' });
+    return got;
+  }
+
   // Free up carrying space rather than announcing that we cannot. Sell if anyone
   // here buys; otherwise drop the largest pile of the least valuable thing. Money,
   // gems and anything we are wearing or wielding are never touched.
@@ -3569,10 +3633,19 @@ export class Autopilot {
     const buyer = [...c.room.objects.values()].find(o => affordances(o.flags).includes('buy'));
     if (buyer) {
       const sold = await skills.sellAll(s, { merchant: buyer.id }).catch(e => ({ error: e.message }));
+      // WE ARE STANDING AT A SHOP WITH MONEY IN HAND. Restocking reagents here costs
+      // nothing extra — the walk is already paid for — and it is the one time buying
+      // from a vendor is not simply losing the spread to them.
+      const bought = await this.restockReagents(buyer).catch(() => null);
       if (!sold.error && sold.sold?.length) {
         return { ok: true, did: 'sold to ' + c.rsc.get(buyer.nameRsc),
-                 detail: { earned: sold.total_received, sold: sold.sold.length } };
+                 detail: { earned: sold.total_received, sold: sold.sold.length,
+                           kept_for_the_fleet: sold.kept_for_the_fleet?.length || undefined,
+                           bought: bought?.length || undefined } };
       }
+      if (bought?.length)
+        return { ok: true, did: 'restocked reagents at ' + c.rsc.get(buyer.nameRsc),
+                 detail: { bought } };
     }
     // No buyer. Drop the biggest stack of something expendable.
     await s.pacer.submit('read', () => c.requestInventory());
@@ -3609,11 +3682,31 @@ export class Autopilot {
     // name nobody thought of.
     const keep = /shilling|coin|diamond|ruby|emerald|sapphire|armor|armour|shield|sword|mace|hammer|axe|bow|helm|gauntlet/i;
     const worn = skills.equippedNow(c) ?? new Set();
+    const me = this.s.name;
+    // THE ORDER THINGS GET GIVEN UP IN. Own needs first — reagents we are short of
+    // ourselves are covered by `keep` below via mine(). Then anything a crewmate is
+    // short of, which outranks loot we are only carrying in order to sell it: the
+    // vendor spread means a herb dropped here and bought back there costs twice, and
+    // the character who needed it could not eat in the meantime. Bulk breaks ties,
+    // because the point of the drop is to make room.
+    const r = this.reagentCount();
+    const target = this.policy.reagentTarget ?? 6;
+    const mine = name => {
+      const k = skills.shareKind(name);
+      if (!k) return false;
+      return (k === 'elderberry' ? r.elderberry : r.herbs) <= target;   // still short ourselves
+    };
+    const rank = o => {
+      const name = c.rsc.get(o.nameRsc) || '';
+      if (mine(name)) return 2;                                          // ours, keep longest
+      if (skills.interest.anyoneWants(name, { except: me })) return 1;    // somebody's, keep
+      return 0;                                                          // sell-fodder, goes first
+    };
     const junk = (c.inventory || [])
       .filter(o => !worn.has(o.id)
                    && !keep.test(c.rsc.get(o.nameRsc) || '')
                    && !this.wontDrop?.has(o.id))
-      .sort((a, b) => (b.amount || 1) - (a.amount || 1));
+      .sort((a, b) => rank(a) - rank(b) || (b.amount || 1) - (a.amount || 1));
     if (!junk.length) {
       return { ok: false, did: 'nothing safe to drop',
                detail: { hint: 'raise maxCarry, or go and sell — everything carried looks worth keeping' } };

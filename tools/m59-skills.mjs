@@ -497,6 +497,69 @@ export function larderOf(c) {
     .sort((a, b) => (b.food.nutrition / b.food.filling) - (a.food.nutrition / a.food.filling));
 }
 
+// WHAT THE FLEET WANTS, so that nothing another character needs is ever sold to an NPC.
+//
+// A merchant buys low and sells high. A herb sold by one character and bought back by
+// another pays that spread TWICE, and the fleet is a single owner — the only reason a
+// reagent ever reached a shop counter is that neither end knew about the other. Worse
+// than the money: `create food` refuses silently without 2 ElderBerry and 2 Herbs, so a
+// character that sold its herbs cannot raise its vigor above the 80 that resting gives,
+// and fights permanently tired next to someone carrying sixty of them.
+//
+// A process-wide board rather than anything on the wire — every keeper in this broker
+// writes what it is short of and what it can spare, and the sell and drop paths read the
+// aggregate before letting anything go. When the guild hall lands, its store is another
+// holder to publish into this same board rather than a second mechanism.
+export const interest = {
+  byAgent: new Map(),          // agent -> { wants:Set<string>, spare:Map<string,number>, at:number }
+
+  declare(agent, { wants = [], spare = new Map() } = {}) {
+    this.byAgent.set(agent, {
+      wants: new Set(wants.map(w => String(w).toLowerCase())),
+      spare: spare instanceof Map ? spare : new Map(Object.entries(spare)),
+      at: Date.now(),
+    });
+  },
+  forget(agent) { this.byAgent.delete(agent); },
+
+  // Who wants a thing by this name — matched loosely, because the server hands us
+  // display names ("herb", "elderberry") and callers think in kinds.
+  wantedBy(name, { except = null } = {}) {
+    const n = String(name || '').toLowerCase();
+    if (!n) return [];
+    const out = [];
+    for (const [agent, rec] of this.byAgent) {
+      if (agent === except) continue;
+      for (const w of rec.wants) if (n.includes(w) || w.includes(n)) { out.push(agent); break; }
+    }
+    return out;
+  },
+  anyoneWants(name, opts) { return this.wantedBy(name, opts).length > 0; },
+
+  // Who is carrying spare of a thing, most first. Used to pair a giver with a needer.
+  holdersOf(kind) {
+    const k = String(kind || '').toLowerCase();
+    return [...this.byAgent].filter(([, r]) => (r.spare.get(k) ?? 0) > 0)
+      .map(([agent, r]) => ({ agent, count: r.spare.get(k) }))
+      .sort((a, b) => b.count - a.count);
+  },
+
+  board() {
+    return [...this.byAgent].map(([agent, r]) => ({
+      agent, wants: [...r.wants], spare: Object.fromEntries(r.spare),
+    }));
+  },
+};
+
+// The things a fleet member is ever worth holding for somebody else. Deliberately short:
+// the point is to stop reagents leaking to vendors, not to turn every character into a
+// warehouse. Weight is the reason this is a list and not "anything anyone wants".
+export const SHAREABLE = [
+  { kind: 'elderberry', re: /elder\s?berry/i, why: 'create food, 2 per casting' },
+  { kind: 'herb',       re: /^herbs?$/i,      why: 'create food, 2 per casting' },
+];
+export const shareKind = (name) => SHAREABLE.find(s => s.re.test(String(name || '')))?.kind ?? null;
+
 // What in the pack could be swung at something, best first.
 //
 // The mirror of larderOf, and it exists for the same reason: "can this character
@@ -1335,11 +1398,24 @@ export async function sellAll(s, { merchant, keep = [], minPrice = 1 } = {}) {
   // names happened to match `keep`. It is the server's use list now, so it is right by
   // construction rather than by a name pattern somebody has to maintain.
   const wielded = equippedNow(c) ?? new Set();
-  const items = c.inventory
+  let items = c.inventory
     .map(o => ({ o, name: c.rsc.get(o.nameRsc) }))
     .filter(x => !keepRe.test(x.name) && !wielded.has(x.o.id) && weaponScore(x.name) === 0);
 
-  if (!items.length) return { sold: [], note: 'nothing to sell that is not money, equipment you are wearing, or a weapon you are carrying' };
+  // DO NOT SELL WHAT A CRewMATE IS SHORT OF. The merchant buys low and sells high, so
+  // this round trip costs the fleet twice over, and the thing being round-tripped is
+  // usually the reagent that decides whether somebody can eat.
+  const held = [];
+  items = items.filter(x => {
+    if (!interest.anyoneWants(x.name, { except: s.name })) return true;
+    held.push({ name: x.name, wanted_by: interest.wantedBy(x.name, { except: s.name }) });
+    return false;
+  });
+
+  if (!items.length) return { sold: [], kept_for_the_fleet: held,
+    note: held.length
+      ? 'nothing left to sell — what is in the pack is either yours to keep or wanted by another character'
+      : 'nothing to sell that is not money, equipment you are wearing, or a weapon you are carrying' };
 
   const sold = [], refused = [];
   let total = 0;
@@ -1355,6 +1431,6 @@ export async function sellAll(s, { merchant, keep = [], minPrice = 1 } = {}) {
     else refused.push({ name: it.name, why: done.note || 'accept failed' });
     await sleep(900);
   }
-  return { sold, refused, total_received: total,
+  return { sold, refused, total_received: total, kept_for_the_fleet: held,
            note: refused.length ? 'refusals are usually "this merchant does not deal in that" — check merchants for who does' : undefined };
 }

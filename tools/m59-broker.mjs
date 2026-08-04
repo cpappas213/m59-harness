@@ -4758,9 +4758,16 @@ const TOOLS = [
         }
       }
       const short = held.filter(h => h.elderberry < 2 || h.herbs < 2);
+      // The board every keeper writes to each pass. It is what stops a character
+      // selling a herb that somebody two rooms away cannot eat without, so it is worth
+      // showing next to the moves rather than in a tool of its own.
+      const board = skills.interest.board()
+        .filter(b => b.wants.length || Object.keys(b.spare).length)
+        .map(b => ({ agent: b.agent, wants: b.wants, spare: b.spare }));
       return {
         applied: !!a.apply, want_each: want,
         moves: a.apply ? done : moves,
+        wants_and_has: board,
         still_cannot_cast: short.map(h => `${h.character}@${h.room} (eb ${h.elderberry}, hb ${h.herbs})`),
         note: moves.length
           ? (a.apply ? 'moved; a character can now cast create food for itself'
