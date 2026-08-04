@@ -1091,5 +1091,29 @@ console.log('\nsquares a person has marked by hand');
   ok('and clears who marked it', book.recall(544).get('3,21').verified_by === undefined);
 }
 
+
+// A PAIR THAT NEVER MEETS IS TWO CHARACTERS DOING NOTHING.
+//
+// "Do not start a paired fight alone" is sound -- a fungus beast at level 30 is only
+// survivable two-handed. The wait it produced was not: 15 of 18 paired characters were
+// in a different room from their partner, Gonzo had waited 640 CONSECUTIVE passes, and
+// every waiting character had zero kills. The only three killing anything were unpaired.
+console.log('\nbounding the wait for a partner');
+{
+  // The escalation as the keeper runs it.
+  const decide = (waited, mateRoom, myRoom) => {
+    if (waited > 8 && mateRoom != null && mateRoom !== myRoom) return 'go to them';
+    if (waited > 20) return 'engage alone';
+    return 'keep waiting';
+  };
+  ok('a short wait is still a wait', decide(1, 544, 535) === 'keep waiting');
+  ok('and so is eight', decide(8, 544, 535) === 'keep waiting');
+  ok('past that, go to them', decide(9, 544, 535) === 'go to them');
+  ok('a partner in the SAME room is not chased', decide(30, 535, 535) === 'engage alone');
+  // The whole point: it must terminate. 640 passes was the observed record.
+  ok('an unreachable partner does not wait for ever', decide(21, null, 535) === 'engage alone');
+  ok('nor does one we cannot locate at all', decide(640, null, 535) === 'engage alone');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

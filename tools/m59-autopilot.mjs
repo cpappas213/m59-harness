@@ -4345,7 +4345,41 @@ export class Autopilot {
       if (this.policy.partner && !party.together(this.s.name, room?.num ?? null)) {
         const mate = party.mateOf(this.s.name);
         this.doing = 'travelling';
+        this.waitedForMate = (this.waitedForMate || 0) + 1;
+
+        // THE WAIT WAS NOT SELF-CORRECTING, AND IT WAS NOT CHEAP.
+        //
+        // The note below says the partner is walking to the same assigned room. It very
+        // often is not: characters drift, the supervisor re-deploys one of a pair, and
+        // the two simply stay in different rooms. Measured on the fleet: 15 of 18 paired
+        // characters were in a different room from their partner, and Gonzo had been
+        // waiting 640 CONSECUTIVE PASSES. Every one of those waiting characters had zero
+        // kills; the only three killing anything were the unpaired ones.
+        //
+        // So bound it. First go to them — the pairing is worth keeping and the partner's
+        // room is known. If that keeps failing, engage alone: a worse plan than the pair,
+        // and an enormously better one than standing still for an hour.
+        if (this.waitedForMate > 8 && mate?.room != null && mate.room !== room?.num) {
+          this.note('going to my partner rather than waiting for it', {
+            partner: this.policy.partner, they_are_in: mate.room, waited_passes: this.waitedForMate,
+            why: 'the wait assumed they were walking to meet us and they are not — 640 passes ' +
+                 'of waiting was the record before this was bounded' });
+          const t = await this.s.travel(mate.room, { maxHops: 8 })
+                              .catch(e => ({ arrived: false, reason: e.message }));
+          if (t.arrived) { this.waitedForMate = 0; this.progress('joined my partner'); return; }
+          this.note('could not reach my partner', { why: t.reason ?? 'refused' });
+        }
+        if (this.waitedForMate > 20) {
+          this.note('engaging without my partner', {
+            partner: this.policy.partner, waited_passes: this.waitedForMate,
+            why: 'we could neither meet nor reach them. Fighting this alone is the worse ' +
+                 'plan and standing here is not a plan at all — nothing has been earned ' +
+                 'in twenty passes of waiting' });
+          this.waitedForMate = 0;
+          // fall through to the ordinary fight path
+        } else {
         this.note('waiting for my partner before engaging', {
+          waited_passes: this.waitedForMate,
           partner: this.policy.partner,
           they_are_in: mate?.room ?? 'unknown — no fresh reading',
           i_am_in: room?.num ?? null,
@@ -4357,8 +4391,12 @@ export class Autopilot {
         // Rest while waiting rather than standing about: arriving at full is the point.
         await skills.restUntil(this.s, { health: 0.98, vigor: REST_VIGOR_CAP, maxSeconds: 20 })
                     .catch(() => {});
-        this.progress('waiting for my partner');
+        // NOT progress(). Calling it here is why nobody noticed: progress clears the
+        // stall detector, so a character waiting for a partner it will never meet looked
+        // busy and honest for 640 passes and never once reported itself stuck.
+        this.noProgress(`waiting for ${this.policy.partner}, who is in ${mate?.room ?? 'somewhere unknown'}`);
         return;
+        }   // end of "still willing to wait"
       }
 
       // WHOEVER IS BEING HURT STOPS SWINGING. The monster chooses who it hits and
