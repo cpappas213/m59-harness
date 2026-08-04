@@ -676,18 +676,34 @@ export class Autopilot {
     const spell = (c.spells || []).find(sp => (c.rsc.get(sp.nameRsc) || '').toLowerCase() === 'create weapon');
     if (!spell)
       return this.declinedCast('create weapon', 'the character does not have the spell');
+    // STAND UP. This is the whole reason the spell appeared not to work: a sitting
+    // character's cast is swallowed entirely — no mana, no message, no effect — and
+    // "make a weapon" is reached almost exclusively from resting, so it was sitting
+    // nearly every time. Scooter cast it forty times from an inn for nothing; standing
+    // first produced a mace on the next attempt. See standToAct.
+    await skills.standToAct(s).catch(() => null);
+    // And shed anything already known dead, because the mana is spent whether or not the
+    // weapon survives ReqNewHold (creaweap.kod:116-129).
+    await skills.freeRoomFor(s).catch(() => null);
     const had = new Set((c.inventory || []).map(o => o.id));
     await s.pacer.submit('cast', () => c.cast(spell.id, []), 1050);
     await c.waitFor({ kinds: ['message', 'inventory'], timeoutMs: 4000 }).catch(() => {});
     await new Promise(x => setTimeout(x, 1000));
     await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
     const made = (c.inventory || []).filter(o => !had.has(o.id));
+    const manaAfter = c.vitals?.()?.mana?.value ?? null;
+    const spent = mana?.value != null && manaAfter != null ? mana.value - manaAfter : null;
     if (!made.length) {
       this.tally.weapons_conjured_failed = (this.tally.weapons_conjured_failed || 0) + 1;
       this.recordCast('create weapon', { ok: false, why,
-        mana_before: mana?.value ?? null, mana_after: c.vitals?.()?.mana?.value ?? null });
-      this.note('create weapon produced nothing', { mana: mana?.value,
-        why: 'it refuses silently below 15 mana' });
+        mana_before: mana?.value ?? null, mana_after: manaAfter, mana_spent: spent });
+      // The mana says which failure this was, and the reply never does: nothing spent
+      // means the cast did not happen at all, half means it rolled and failed, full
+      // means it worked and something downstream refused the weapon.
+      this.note('create weapon produced nothing', { mana: mana?.value, mana_spent: spent,
+        why: spent === 0 ? 'NOTHING was spent — the cast did not happen. Still sitting, frozen, or blocked.'
+           : spent != null && spent < 15 ? 'half cost — it was cast and failed its roll'
+           : 'full cost — it was cast and succeeded, so the weapon was refused on being handed over' });
       return false;
     }
     const eq = await skills.equipBest(s).catch(() => null);
@@ -948,6 +964,22 @@ export class Autopilot {
   // right? Nothing in this file may spend the safe-spot advantage on a guess: an
   // unproven spot is treated exactly like open floor, which is what it might be.
   holdWorks() { return !!(this.hold && this.hold.proven); }
+
+  // IS THERE A WEAPON IN OUR HAND — asked of the server, never of our own intentions.
+  //
+  // plUsing is the only authority (see equipment()): "the last use we sent was not
+  // refused" has been wrong every time it mattered, because a weapon that shatters
+  // mid-fight leaves the use list without anything being sent at all. A character that
+  // cannot answer is treated as ARMED, because refusing to fight on a failed read would
+  // idle the whole fleet the first time an inventory request timed out — the guard is
+  // meant to catch the empty hand, not to become a new way to stop.
+  armed() {
+    const c = this.s.client;
+    const eq = c?.equipment?.();
+    if (!eq || eq.known === false) return true;
+    return (eq.equipped || []).some(o =>
+      skills.weaponScore(o.name ?? c.rsc?.get?.(o.nameRsc) ?? '') > 0);
+  }
 
   // WHOLE ENOUGH TO GO BACK OUT, asked only after a death.
   //
@@ -3127,6 +3159,27 @@ export class Autopilot {
       return;
     }
 
+    // NO WEAPON: FIX IT BEFORE ANYTHING ELSE, and never walk out to hunt without one.
+    //
+    // armSelf() already wields from the pack and falls back to conjuring, and makeWeapon
+    // already exists — but nothing was GATING on the result, so a character whose weapon
+    // shattered simply carried on hunting bare-handed. Scooter did it three times today,
+    // Rowlf, Gonzo and Animal once each. An empty hand still swings and still reports
+    // fighting, so it never reads as broken from outside.
+    //
+    // Ahead of the danger and rest branches on purpose: being unarmed is WHY the fight
+    // is going badly, and the shortest way out is to be holding something.
+    if (!this.armed()) {
+      const ok = await this.armSelf().catch(() => false);
+      if (ok && this.armed()) { this.progress('armed itself'); return; }
+      // Not enough mana to conjure one yet. Sit down somewhere safe and come back to it:
+      // resting is what restores mana, and there is nothing else worth doing unarmed.
+      this.doing = 'recovering';
+      await this.settle('no weapon, resting for the mana to make one').catch(() => {});
+      this.noProgress(`unarmed — ${c.vitals?.()?.mana?.value ?? 0} mana, needs 15 to make one`);
+      return;
+    }
+
     // 2. In danger. "Something attackable is adjacent and we are hurt" is the only
     //    threat signal available — the protocol does not say who is targeting us.
     //
@@ -3267,7 +3320,22 @@ export class Autopilot {
     // way to sit down; refusing to fight alone would leave it standing around at 11%
     // health because the ordinary restBelow of 0.7 was already satisfied.
     const recovering = !!this.recoverUntilWhole && !this.recovered();
-    const wantsToFight = this.mode === 'farm' && !!this.policy.hunt && !recovering;
+    // AN EMPTY HAND IS NOT A FIGHT, IT IS A BEATING.
+    //
+    // The keeper sent unarmed characters out to hunt over and over: Scooter three times,
+    // Rowlf, Gonzo, Animal. An unarmed character still swings, still reports fighting,
+    // and punches for almost nothing while everything hits back — so nothing about it
+    // reads as broken from outside, and the only reason it was ever caught is that a
+    // human looked at the board.
+    //
+    // Weapons break constantly here and the pack usually has no spare, so this is not an
+    // edge case. It is the steady state after a few hours. The answer is not to hunt
+    // anyway: it is to stop, make one, and go back out — which costs a couple of minutes
+    // and 15 mana, against a character that otherwise farms nothing until someone
+    // notices. See armed() for why the server's own use list is the only acceptable
+    // evidence here.
+    const unarmed = !this.armed();
+    const wantsToFight = this.mode === 'farm' && !!this.policy.hunt && !recovering && !unarmed;
     const restAt = Math.max(
       this.policy.restBelow,
       sheltered ? this.policy.holdResumeAbove : 0,
