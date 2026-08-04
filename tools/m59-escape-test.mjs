@@ -98,6 +98,8 @@ function underworld({ resting = false, deaf = false, portals = [], unwalkable = 
   return { s, log };
 }
 
+import { spreadEdges } from './m59-world.mjs';
+
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
   if (cond) { pass++; console.log('  ok   ' + name); }
@@ -383,6 +385,39 @@ function safeSpot({ resting = false, deaf = false, hits = 3 } = {}) {
   ok('an ordinary fight sends no stand at all', !log.includes('stand'), JSON.stringify(log));
   ok('and takes exactly the rounds it needed', r.killed === true && r.rounds === 3, 'rounds=' + r.rounds);
   ok('and claims no stand it did not do', r.stood_up === undefined);
+}
+
+
+// A WIDE BOUNDARY IS ONE EXIT, NOT ONE SQUARE.
+//
+// StandardLeaveDir fires wherever the condition lets you step past the edge, so every
+// standable square on that wall crosses it. exits() used to find them all and then keep
+// only the nearest, so "every square for that exit refused (2 tried)" was being reported
+// about boundaries fifty squares wide — and that one line killed the outfitting trip,
+// four money transfers and the reagent bridging in a single afternoon.
+console.log('\nan edge is a wall, and every square on it crosses');
+{
+  const edge = {
+    kind: 'edge', direction: 'west', to: 564, stand_on: { col: 1, row: 29 }, steps_away: 11,
+    alternates: [{ col: 1, row: 12, steps: 20 }, { col: 1, row: 40, steps: 18 }],
+  };
+  const spread = spreadEdges([edge]);
+  ok('the nearest square is still tried first', spread[0].stand_on.row === 29);
+  ok('and every alternate becomes a candidate of its own', spread.length === 3,
+     JSON.stringify(spread.map(e => e.stand_on)));
+  ok('each carries its own step count, so the walk budget scales with it',
+     spread[1].steps_away === 20 && spread[2].steps_away === 18);
+  ok('alternates are marked, so a caller can tell them from a declared exit',
+     spread[1].from_alternate === true && spread[0].from_alternate === undefined);
+  ok('and they carry no alternates of their own, which would expand for ever',
+     spread[1].alternates === undefined);
+  ok('everything else about the exit survives the copy',
+     spread[1].to === 564 && spread[1].direction === 'west' && spread[1].kind === 'edge');
+  const plain = { kind: 'go', to: 200, stand_on: { col: 5, row: 5 } };
+  ok('an exit with no alternates is passed through unchanged', spreadEdges([plain]).length === 1);
+  ok('and several exits all still appear', spreadEdges([edge, plain]).length === 4);
+  ok('empty and missing input do not throw',
+     spreadEdges([]).length === 0 && spreadEdges(undefined).length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

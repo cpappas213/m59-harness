@@ -193,7 +193,7 @@ export class World {
       // The boundary square to aim for. Walking past row 0 or piRows+1 is what
       // triggers StandardLeaveDir, so the target is one step outside the grid, and
       // the square to stand on first is the last one inside it.
-      let approach = null;
+      let approach = null, alternates = [], viableCount = 0;
       if (geo && me) {
         const cands = [];
         if (e.leave === LEAVE.NORTH) for (let c = 1; c <= geo.cols; c++) cands.push([1, c]);
@@ -212,14 +212,49 @@ export class World {
           if (type === 4) return c < threshold;
           return true;                       // NO_OTHER_CONDITIONS is the fallback
         };
-        let best = null;
+        // KEEP THE WHOLE BOUNDARY, NOT JUST THE NEAREST SQUARE.
+        //
+        // This found every viable square along the edge and then threw all but one
+        // away. StandardLeaveDir fires on crossing the boundary ANYWHERE the condition
+        // allows, so the discarded ones were not worse routes — they were equally good
+        // doors. With two declared exits to a destination that meant exactly two squares
+        // were ever tried, and "every square for that exit refused (2 tried)" was the
+        // commonest way a multi-room errand died: the outfitting trip, four money
+        // transfers and the reagent bridging all failed on it in one afternoon, against
+        // boundaries fifty squares wide.
+        //
+        // A refusal is usually LOCAL — something standing on the square, or no floor on
+        // the far side of that column — so the alternates are SPREAD along the boundary
+        // rather than taken in distance order. Trying (1,5) then (1,6) then (1,7) mostly
+        // re-asks the same question; sampling across the width asks a different one.
+        const viable = [];
         for (const [r, c] of cands) {
           if (!ok([r, c]) || !geo.walkable(r, c)) continue;
           const p = (origin.row === r && origin.col === c) ? { found: true, steps: [] } : geo.path(origin.row, origin.col, r, c);
           if (!p.found) continue;
-          if (!best || p.steps.length < best.steps) best = { col: c, row: r, steps: p.steps.length };
+          viable.push({ col: c, row: r, steps: p.steps.length });
         }
-        approach = best;
+        viable.sort((a, b) => a.steps - b.steps);
+        approach = viable[0] ?? null;
+        // Nearest first — it is still the cheapest thing to try — then a spread of the
+        // rest, each at least MIN_APART from everything already chosen so the tries are
+        // genuinely different parts of the wall. Capped because each attempt is a walk.
+        const MIN_APART = 4, MAX_ALTS = 7;
+        const along = s => (e.leave === LEAVE.NORTH || e.leave === LEAVE.SOUTH) ? s.col : s.row;
+        const picked = approach ? [approach] : [];
+        for (const s of viable) {
+          if (picked.length > MAX_ALTS) break;
+          if (picked.some(p => Math.abs(along(p) - along(s)) < MIN_APART)) continue;
+          picked.push(s);
+        }
+        // Anything left over is still better than giving up, so keep them as a tail in
+        // distance order for the case where the spread found nothing.
+        for (const s of viable) {
+          if (picked.length > MAX_ALTS) break;
+          if (!picked.includes(s)) picked.push(s);
+        }
+        alternates = picked.slice(1).map(s => ({ col: s.col, row: s.row, steps: s.steps }));
+        viableCount = viable.length;
       }
       out.push({
         kind: 'edge',
@@ -228,8 +263,15 @@ export class World {
         to_name: this.map.rooms[e.to]?.name ?? `room ${e.to}`,
         stand_on: approach ? { col: approach.col, row: approach.row } : null,
         steps_away: approach ? approach.steps : null,
+        // OTHER WAYS THROUGH THE SAME WALL. Not second-best routes — the boundary is
+        // one exit and any square on it crosses. leaveViaAny works through these when
+        // the nearest is blocked, which is what makes a wide edge reliable instead of a
+        // coin flip on whichever square happened to be closest.
+        ...(alternates.length ? { alternates } : {}),
+        ...(viableCount ? { standable_on_this_boundary: viableCount } : {}),
         how: approach
-          ? `walk_to (${approach.col},${approach.row}) then one more step ${e.leaveName}`
+          ? `walk_to (${approach.col},${approach.row}) then one more step ${e.leaveName}` +
+            (alternates.length ? ` — ${alternates.length} other square(s) on that boundary also cross` : '')
           : `walk ${e.leaveName} past the room edge`,
         condition: e.condition ? `${e.condition.name}${e.condition.threshold}` : null,
         reachable: approach ? true : (geo && me ? false : null),
@@ -523,4 +565,25 @@ export function sharedWorldMap(loader) {
     try { sharedMap = loader(); } catch { sharedMap = false; }
   }
   return sharedMap || null;
+}
+
+// EXPAND EACH EDGE INTO EVERY SQUARE THAT CROSSES IT.
+//
+// An edge exit is a whole boundary, not a doorway: StandardLeaveDir fires wherever the
+// condition allows you to step past it, so every standable square on that wall is the
+// same exit. exits() reports the ones it used to discard as `alternates`; this turns
+// each into a candidate of its own, so a caller working through a list tries the wall
+// rather than one square of it.
+//
+// Kept here, beside the code that builds the alternates, so it can be tested — importing
+// the broker starts a broker.
+export function spreadEdges(candidates) {
+  const out = [];
+  for (const e of candidates || []) {
+    out.push(e);
+    for (const alt of e.alternates || [])
+      out.push({ ...e, stand_on: { col: alt.col, row: alt.row }, steps_away: alt.steps,
+                 alternates: undefined, from_alternate: true });
+  }
+  return out;
 }

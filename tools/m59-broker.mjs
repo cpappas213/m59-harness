@@ -38,7 +38,7 @@ import { join, dirname } from 'node:path';
 import { M59Client, KOD_FINENESS } from './m59-client.mjs';
 import { loadResources } from './m59-rsc.mjs';
 import { describeObject, affordances, OF } from './m59-parse.mjs';
-import { World, sharedWorldMap } from './m59-world.mjs';
+import { World, sharedWorldMap, spreadEdges } from './m59-world.mjs';
 import { loadMap, resolveRoom, forgetInferredExit } from './m59-map.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -1830,7 +1830,10 @@ class Session {
   // report what each said.
   async leaveViaAny(candidates, { movementGeneration = this.movementGeneration, controlToken } = {}) {
     const tried = [];
-    for (const exit of orderExits(candidates)) {
+    // spreadEdges turns each declared edge into one candidate per square that crosses
+    // that boundary — see m59-world.mjs. Without it this tried the nearest square and
+    // called the whole wall refused.
+    for (const exit of orderExits(spreadEdges(candidates))) {
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement({ tried });
       const r = await this.leaveVia(exit, { movementGeneration, controlToken });
       if (r.left) return { ...r, used_exit: exit, ...(tried.length ? { tried } : {}) };
