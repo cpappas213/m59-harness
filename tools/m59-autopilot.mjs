@@ -22,7 +22,7 @@
 
 import * as skills from './m59-skills.mjs';
 import { OF, affordances } from './m59-parse.mjs';
-import { loadSpawns, huntingGrounds, roomThreats } from './m59-spawns.mjs';
+import { loadSpawns, huntingGrounds, roomThreats, goalYield } from './m59-spawns.mjs';
 import { findPath } from './m59-map.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
 import { inboxIfAny } from './m59-inbox.mjs';
@@ -154,9 +154,43 @@ export class Autopilot {
       fleeBelow: 0.4,
       // What to hunt in `farm` mode. Never guessed — if it is empty, farm does nothing.
       hunt: null,
+      // WHAT THE FARMING IS FOR — 'money' | 'items' | 'advance' | null. See scorePrey in
+      // m59-spawns.mjs, which is where the rules live.
+      //
+      // This does NOT make the keeper choose prey. `hunt` is still never guessed, and
+      // still only changes when someone changes it over MCP; the trade-off between money,
+      // items and advancement is a decision about what a character is FOR, and the keeper
+      // has no business inventing one.
+      //
+      // What it buys is the check in yieldCheck(): whether the thing we are already
+      // killing still pays for the thing we said we were farming. That gap is the reason
+      // this exists. A keeper grinding worthless prey looks EXACTLY like a healthy one —
+      // it kills something every pass, so progress() fires, so the stall detector never
+      // trips, and the board reads `hunting: giant rat` for as long as you leave it.
+      // Twenty-one characters can farm nothing for an afternoon that way.
+      purpose: null,
+      // What `purpose: 'advance'` is trying to raise:
+      //   [{ kind: 'hp' },
+      //    { kind: 'skill', name: 'slash' },
+      //    { kind: 'spell', name: 'blast', ability: 20, requisite: 25 }]
+      // Empty means the check cannot run and says so, rather than passing silently.
+      goals: [],
       // Stop farming when carrying this many things, so the character does not spend
       // an hour filling up and dropping the overflow.
       maxCarry: 14,
+      // WHICH WEAPON TO REACH FOR. null ranks by the character's proficiency in each
+      // weapon's own skill (m59-skills.mjs weaponRanking). A list of name fragments
+      // overrides it — ['axe'] trains the axe on a character who would otherwise wield
+      // its 90% sword for ever, because ranking by proficiency is a feedback loop that
+      // only ever rewards what you are already good at.
+      weaponPriority: null,
+      // Drop junk, and weapons the server has told us are broken. A broken weapon is
+      // NOT renamed (weapon.kod:788 changes only the icon), so it keeps out-scoring the
+      // working one in the pack and cannot be recognised except by having been refused.
+      dropJunk: true,
+      // How many pulls that never turn into a fight before the square is written off.
+      // See pullDidNotConvert(): this is the cliff detector.
+      pullsBeforeBarren: 3,
       // How long to wait between passes when there is nothing to do.
       idleMs: 8000,
       // Move to a neighbouring room when this one has nothing left to hunt. Monsters
@@ -1511,8 +1545,119 @@ export class Autopilot {
     if (this.doing === 'travelling') return 'travelling';
     if (this.doing === 'trading') return 'trading';
     if (this.doing === 'recovering') return this.climbing ? 'eating to raise vigor' : 'resting';
-    if (this.mode === 'farm' && this.policy.hunt) return `hunting: ${this.policy.hunt}`;
+    if (this.mode === 'farm' && this.policy.hunt) {
+      // A keeper earning nothing must not describe itself the same way as one that is.
+      // This string is what the fleet board renders, and it is where the afternoon of
+      // worthless grinding would have been visible had there been anything to see.
+      const y = this.yieldCheck();
+      return y && !y.paying
+        ? `hunting: ${this.policy.hunt} — PAYS NOTHING for ${this.policy.purpose}`
+        : `hunting: ${this.policy.hunt}`;
+    }
     return this.stalledSince ? `stuck: ${this.stalledWhy}` : 'waiting';
+  }
+
+  // THE SPOT NOTHING CAN ACTUALLY REACH — the cliff.
+  //
+  // A whole band of the fleet stood on the clifftop above West Merchant Way, taking a
+  // swing at things below, walking back to the wall, and waiting for a fight that could
+  // not happen: the monsters could not climb, and the characters were holding melee
+  // weapons that could not reach down. Statler, Bunsen, Scooter, Beaker and Janice all
+  // reported "fighting from an untrusted safe spot" and "hunting centipedes" while doing
+  // neither, for hours.
+  //
+  // Nothing caught it, and the reason is precise. barrenSpots is written when pull()
+  // FAILS. Here pull() SUCCEEDED every time — it reached the monster, hit it, and walked
+  // back, which is exactly what it claims to do — so `progress('pulled something to the
+  // wall')` fired every pass and cleared the stall counter. The keeper was busy, honest,
+  // and completely stuck, and its own health check said so.
+  //
+  // The missing question is not "did the pull work" but "did the pull CONVERT". A pull
+  // that never once results in something standing next to us is a pull into a place the
+  // monster cannot follow, whatever the geometry says about the square. Counting them is
+  // empirical and needs no height data, which is just as well: none is available, and
+  // this failure catches human players too.
+  pullDidNotConvert(why) {
+    this.pullsWithoutContact = (this.pullsWithoutContact ?? 0) + 1;
+    const limit = this.policy.pullsBeforeBarren ?? 3;
+    if (this.pullsWithoutContact < limit) {
+      this.note('pulled, but nothing came', {
+        attempt: this.pullsWithoutContact, of: limit, why,
+        hint: 'if this keeps happening the square cannot be fought from' });
+      return false;
+    }
+    const room = this.s.world?.room;
+    if (room?.num != null && this.hold) {
+      (this.barrenSpots ??= new Map());
+      const set = this.barrenSpots.get(room.num) ?? new Set();
+      set.add(`${this.hold.col},${this.hold.row}`);
+      this.barrenSpots.set(room.num, set);
+    }
+    // NOT recorded in the SafeSpotBook, deliberately. The book's `failed` means "we were
+    // hit standing here" and feeds `discredited`, which is a SAFETY judgement. A cliff
+    // square is perfectly safe — it is useless, which is the opposite problem — and
+    // filing it under failed would teach the book a lie to get one convenient effect.
+    // The cost is that this knowledge is per-process and a restart re-learns it, three
+    // wasted passes at a time. Worth fixing with a second book, not with a wrong flag.
+    this.note('SPOT UNUSABLE — nothing can reach it', {
+      at: this.hold ? { col: this.hold.col, row: this.hold.row } : null,
+      room: room?.num, attempts: this.pullsWithoutContact,
+      why: 'every pull reached the target and none of them ever produced a fight. The ' +
+           'commonest cause is standing somewhere the monsters cannot climb to, which ' +
+           'also means a melee weapon cannot reach down to them.',
+      note: 'excluded in this room; the keeper will pick somewhere else' });
+    this.pullsWithoutContact = 0;
+    this.releaseHold('nothing can reach this square');
+    this.noProgress('holding a square nothing can reach');
+    return true;
+  }
+
+  // Contact happened, so whatever we are standing on works. Called from the fight path.
+  pullConverted() { this.pullsWithoutContact = 0; }
+
+  // DOES WHAT WE ARE KILLING STILL PAY FOR WHAT WE SAID WE WERE FARMING?
+  //
+  // The one question the stall detector structurally cannot ask. noProgress() fires when
+  // nothing WORKS; this fires when everything works and none of it is worth anything.
+  // They are different failures and they need different words, because the second one
+  // wears the first one's healthy face.
+  //
+  // Returns null when it cannot know — no purpose set, no spawn index, prey not in the
+  // index, vitals not read yet. Null means "no opinion", never "fine".
+  yieldCheck() {
+    const { purpose, goals, hunt } = this.policy;
+    if (purpose !== 'advance' || !hunt) return null;
+    if (!goals?.length)
+      return { paying: false, why: 'purpose is `advance` but no goals are set, so nothing ' +
+                                   'can be checked — set policy.goals or clear policy.purpose' };
+    const spawns = loadSpawns(SPAWN_FILE);
+    if (!spawns) return null;
+    const needle = String(hunt).toLowerCase();
+    const c = Object.values(spawns.creatures)
+      .find(x => x.name.toLowerCase().includes(needle) || x.cls.toLowerCase() === needle);
+    if (!c) return null;
+    const maxHealth = this.s.client?.vitals?.()?.health?.max ?? 0;
+    if (!maxHealth) return null;
+    // Stamina only moves the hit-point CEILING. Unknown is reported as unknown rather
+    // than as 0, because 0 would put the ceiling at 101 and declare a healthy character
+    // finished twenty hit points early.
+    const stamina = this.s.client?.statsById?.get?.('stamina')?.value;
+    const known = Number.isFinite(stamina) && stamina > 0;
+    const ys = goals.map(g => goalYield(g, c, { maxHealth, stamina: known ? stamina : 0 }));
+    const paying = ys.filter(y => y.pays);
+    if (paying.length)
+      return { paying: true, creature: c.name, level: c.level,
+               for: paying.map(y => y.goal) };
+    // Suppress a "finished" verdict we are not entitled to.
+    const trustworthy = ys.filter(y => known || !y.done);
+    if (!trustworthy.length) return null;
+    return {
+      paying: false, creature: c.name, level: c.level,
+      why: trustworthy.map(y => `${y.goal} — ${y.why}`),
+      hint: 'this keeper is working and gaining nothing. Re-target it with the `prey` ' +
+            'tool; nothing in here will re-target it for you.',
+      ...(known ? {} : { caveat: 'stamina unknown, so the hit-point ceiling was not checked' }),
+    };
   }
 
   // Something useful happened; clear the stall.
@@ -1561,6 +1706,9 @@ export class Autopilot {
       // The one field worth reading before anything else. Everything this keeper got
       // wrong in practice was invisible: it kept running, kept journalling, and did
       // no work. If this is set, it has been going through the motions.
+      // The second invisible failure, alongside `stalled`: working perfectly and earning
+      // nothing. Null when there is no opinion to give — never a quiet "fine".
+      yield_check: this.yieldCheck(),
       stalled: this.stalledSince
         ? { since_seconds: Math.round((Date.now() - this.stalledSince) / 1000),
             idle_passes: this.idlePasses, why: this.stalledWhy }
@@ -2449,20 +2597,30 @@ export class Autopilot {
       const f = await skills.fight(s, { target: engageName,
                                         preferId: bystander ? bystander.id : this.foeId,
                                         disengageAt: safe.fleeAt, loot: true,
-                                        holdPosition: holding, reach: REACH });
+                                        holdPosition: holding, reach: REACH,
+                                        weaponPriority: this.policy.weaponPriority });
 
       // NOTHING IN REACH, AND WE ARE NOT GOING TO CHASE IT. fight() refuses to walk
       // while we are holding, which is correct and leaves the interesting half to us:
       // a monster that will not come to the wall has to be fetched. Hit it once and
       // walk back, and the fight happens where we chose.
       if (f.out_of_reach) {
+        // WE PULLED LAST PASS AND WE ARE STILL STANDING HERE ALONE. The pull did what it
+        // said and the monster never arrived, so this square is a candidate for the
+        // cliff. Ask before pulling again, or we spend the afternoon proving it.
+        if (this.pulledLastPass && this.pullDidNotConvert(f.reason || 'still nothing in reach'))
+          return;
         const quarry = found.find(o => o.id === f.nearest?.id) || found[0];
         const p = quarry ? await this.pull(quarry) : { pulled: false, why: 'nothing to pull' };
         if (p.pulled && p.back) {
-          this.progress('pulled something to the wall');
+          this.pulledLastPass = true;
+          // DELIBERATELY NOT progress(). A pull is not an achievement, it is an attempt,
+          // and calling it progress is what kept the stall detector quiet through hours
+          // of this. Contact is the achievement, and the fight path below reports that.
           this.note('waiting for it at the wall', {
-            target: p.target,
-            why: 'it has been hit and is following; the next pass fights it from here' });
+            target: p.target, pull_attempt: (this.pullsWithoutContact ?? 0) + 1,
+            why: 'it has been hit and is following; the next pass fights it from here — ' +
+                 'if it never arrives, the square gets written off' });
         } else {
           // Fetching failed. Give the spot up — but REMEMBER that it cannot be used,
           // or the next pass picks the identical square for the identical reason and
@@ -2483,6 +2641,9 @@ export class Autopilot {
         }
         return;
       }
+      // We got a fight. Whatever we are standing on can be fought from, so the cliff
+      // counter resets — this is the only evidence that actually settles the question.
+      if (f.rounds > 0) { this.pullConverted(); this.pulledLastPass = false; }
       this.swungAt = Date.now();
       this.foeId = f.foe_id ?? null;
       // fight() can now tell death apart from a stale object id. If it is the
@@ -2898,6 +3059,26 @@ export class Autopilot {
     // No buyer. Drop the biggest stack of something expendable.
     await s.pacer.submit('read', () => c.requestInventory());
     await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+
+    // DEAD WEIGHT FIRST, and it has to be first because the keep list below protects it.
+    //
+    // `keep` names sword|mace|hammer|axe|bow to stop the pack-clearer stripping the
+    // character's weapon — sound, except that a BROKEN weapon is not renamed
+    // (weapon.kod:788 changes only the icon) and the junk item is literally called
+    // "broken mace". So the guard that exists to protect equipment was the reason every
+    // character hauled its shattered swords around for ever: unsellable, unwieldable,
+    // and specifically exempted from being dropped.
+    const dead = skills.junkAndBroken(c);
+    if (this.policy.dropJunk !== false && dead.length) {
+      const d = dead[0];
+      await s.pacer.submit('drop', () => c.drop([d.id]));
+      await new Promise(r => setTimeout(r, 900));
+      await s.pacer.submit('read', () => c.requestInventory());
+      await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+      return { ok: true, did: `dropped ${d.name} (${d.why})`,
+               detail: { now_carrying: c.inventory.length, dead_weight_left: dead.length - 1 } };
+    }
+
     // The keep list doubles as the equipment guard: weapons and armour are named in
     // it, so "drop the biggest pile of junk" can never strip the character.
     const keep = /shilling|coin|diamond|ruby|emerald|sapphire|armor|armour|shield|sword|mace|hammer|axe|bow|helm|gauntlet/i;

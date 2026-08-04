@@ -22,10 +22,44 @@ import { readFileSync, writeFileSync } from 'node:fs';
 // Room keys in spawns.json are kod class names — "OutdoorsF7" — and the map records
 // the same string as `cls`, so this join is exact. (The creature PAGES cite the .roo
 // basename instead; different key, same rooms.)
-export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, outFile }) {
+export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFile, outFile }) {
   const raw = JSON.parse(readFileSync(spawnsFile, 'utf8'));
   const map = JSON.parse(readFileSync(mapFile, 'utf8'));
   const mons = JSON.parse(readFileSync(monstersFile, 'utf8'));
+
+  // WHAT A KILL LEAVES BEHIND, from compendium/data/treasure.json.
+  //
+  // This file used to say a drop table could not be built without tracing item creation
+  // through 172 monster kod files. That was wrong, and it was wrong in the way worth
+  // recording: the compendium had already done it — extract-treasure.mjs reads the
+  // TreasureType classes rather than the monsters, which is where the tables actually
+  // live, and each type already carries the list of monster classes that resolve to it.
+  // 42 treasure ids, 38 tables, 435 rows, 171 monsters mapped, and every row cited.
+  //
+  // Optional on purpose. The index is still built without it, and every consumer treats
+  // a missing `loot` as "unknown", never as "drops nothing".
+  const loot = new Map();               // monster class (lower) -> loot record
+  if (treasureFile) {
+    let tre = null;
+    try { tre = JSON.parse(readFileSync(treasureFile, 'utf8')); } catch { tre = null; }
+    for (const [tid, t] of Object.entries(tre?.types ?? {})) {
+      const rec = {
+        tid,
+        // chancePercent is that row's share of ONE roll of the table. A monster rolls
+        // the table more than once (1 + level/55 + random(0, difficulty/3)), so this is
+        // a per-roll share and not a per-kill probability. Named so nobody reads it as one.
+        items: (t.items ?? []).map(i => ({
+          item: i.cls, per_roll_percent: i.chancePercent, count: i.count ?? 1, cite: i.cite,
+        })),
+        money: t.money
+          ? { min: t.money.min, max: t.money.max, per_roll_percent: t.money.chancePercent,
+              cite: t.money.cite }
+          : null,
+        cite: t.classCite ?? t.cite ?? null,
+      };
+      for (const m of t.monsters ?? []) loot.set(String(m).toLowerCase(), rec);
+    }
+  }
 
   const byCls = new Map();
   for (const r of Object.values(map.rooms))
@@ -68,7 +102,9 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, outFile }) 
                                       how: e.how, huntable: e.how === 'generator' });
     }
     creatures[meta.name.toLowerCase()] = { name: meta.name, cls, level: meta.level,
-                                           karma: meta.karma, sites };
+                                           karma: meta.karma, sites,
+                                           ...(loot.has(cls.toLowerCase())
+                                                 ? { loot: loot.get(cls.toLowerCase()) } : {}) };
   }
 
   // Precompute the danger of each room once: the toughest thing its table can
@@ -81,9 +117,11 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, outFile }) 
                     kinds: list.length };
   }
 
+  const withLoot = Object.values(creatures).filter(c => c.loot).length;
   const out = { creatures, rooms, danger,
                 stats: { creatures: Object.keys(creatures).length, rooms: Object.keys(rooms).length,
                          sites_joined: joined, sites_unjoined: unjoined,
+                         creatures_with_loot: withLoot,
                          unmapped_rooms: [...missingRooms].slice(0, 40) } };
   if (outFile) writeFileSync(outFile, JSON.stringify(out));
   return out;
@@ -275,12 +313,380 @@ export function roomThreats(spawns, roomNum) {
   return [...list].sort((a, b) => (b.level ?? 0) - (a.level ?? 0));
 }
 
+// ===================================================== WHAT THE FARMING IS *FOR*
+//
+// `preyFor` above answers exactly one question: what is worth killing to gain a HIT
+// POINT. That was the only goal the fleet had, and it is not the only goal a character
+// has. Farming divides into three purposes, and they rank prey differently:
+//
+//   money    sell what drops. Nearly everything drops something, so almost nothing is
+//            disqualified; the ranking is safety first, then whatever advancement
+//            happens to come free alongside the money.
+//   items    a named thing — orc teeth, inky cap mushrooms. Searches the drop index by
+//            item name; a caller may still name creatures directly. See THE DROP INDEX.
+//   advance  raise something specific: max health, a skill, or a spell. Those three
+//            advance under three DIFFERENT rules, and confusing them is how a
+//            character grinds for an hour and gains nothing.
+//
+// -------------------------------------------------------------- THE THREE RULES
+//
+// Derived from the kod, not from playing memory. `node tools/m59-progression.mjs check`
+// re-reads the constants, so this cannot quietly drift away from the game.
+//
+// HIT POINTS — player.kod:7736 AdvancementCheck
+//   Rolls only when `monster_level > piBase_Max_health`. Prey at or below your own
+//   level pays literally nothing. Stops entirely at `piBase_Max_health >= 101+stamina`.
+//   The roll improves with the gap: `bound((monster_level - max_health)/5, 0, 10)`.
+//   NOT subject to the advancement-point cap — there is no CheckAdvancementPoints call
+//   anywhere in that path. Hit points are an uncapped track.
+//
+// SKILLS — skill.kod:294 ImproveAbility, factor at :414
+//   factor = bound(2*difficulty - iAbility + 10, 50, 100),  difficulty = monster level
+//   BUT for a SKILL, `iAbility` is read with `Send(who,@GetSpellAbility,#spell_num=
+//   viSkill_num)` — a SPELL-table lookup keyed by a SKILL number. It yields 0. So:
+//
+//     *** A SKILL'S IMPROVE CHANCE DOES NOT DEPEND ON YOUR CURRENT SKILL PERCENT. ***
+//
+//   factor collapses to bound(2*level + 10, 50, 100): flat below level 20, rising to
+//   level 45, saturated above it. Rats are exactly as good for slash at 31% as at 11% —
+//   they are simply worse than a level-45 monster, at every ability. This is a bug in
+//   the game, it is load-bearing here, and it is the one place where the obvious
+//   intuition ("I have outgrown rats for slash") is wrong.
+//
+// SPELLS — same formula, real ability
+//   Here `iAbility` IS the spell's ability, so the chance DOES fall as ability rises,
+//   and collapses at the softcap once ability >= 2 x the requisite stat. One trap:
+//   `difficulty` defaults to 60 and a MONSTER TARGET REPLACES IT with the monster's
+//   level. Casting at a level-30 rat is therefore WORSE than casting at no monster at
+//   all. Break-even is a level-60 monster.
+//
+// ------------------------------------------------------------ THE SHARED CEILING
+//
+// player.kod:7630 AddAdvancementPoints — "A player can only gain so many advancement
+// points per hour, in spells / And skills combined." Ten per 15-22 minute window, with
+// 2 refunded per room change (player.kod:1465, commented "give them a break on the
+// botting imp cap").
+//
+// So the pools are NOT symmetric, and this is what decides how goals combine:
+//
+//   hit points          uncapped   — stacks with anything, for free
+//   skills + spells     ONE shared capped pool
+//
+// Killing something above your max health with your weapon advances both tracks at
+// once and the two do not compete. Chasing a skill AND a spell together does compete:
+// the cap binds long before the odds do, so a second capped goal diversifies what you
+// gain without raising throughput. combine() below encodes exactly that asymmetry.
+//
+// ------------------------------------------------------------------- THE DROP INDEX
+//
+// This block used to say a drop table could not be built, on the grounds that monsters
+// carry items in inventory and spill them into a DeadBody (monster.kod:3056), so drops
+// would have to be traced per-monster across ~172 kod files. That was wrong, and the
+// mistake is worth keeping written down: I searched the MONSTERS for a loot list and
+// concluded from finding none that there was none to find.
+//
+// The tables are not on the monsters. They are TreasureType classes — one per TID, with
+// weighted rows — and `compendium/data/treasure.json` has held all of them the whole
+// time: 42 treasure ids, 38 tables, 435 rows, 132 distinct items, 171 monsters mapped,
+// zero unresolved, every row carrying its kod cite. buildSpawnIndex now joins it in, so
+// every creature in the index carries `loot`.
+//
+// What the index does NOT cover, and neither does anything downstream:
+//   * things that GROW IN ROOMS rather than dropping. Inky caps are generated by
+//     kcforest/ka0.kod and marcry3a.kod. They are also a drop, which is exactly why
+//     "is it a drop" is not answerable by intuition.
+//   * merchant stock, and anything else acquired by trade rather than by killing.
+// A creature with no `loot` key is UNKNOWN, never "drops nothing".
+
+export const PURPOSES = ['money', 'items', 'advance'];
+
+// WHO DROPS THIS.
+//
+// The caller types what the thing is called out loud and the kod holds a class name, and
+// the two disagree in the ordinary ways: "orc teeth" against `OrcTooth`, "inky cap
+// mushrooms" against `InkyCap`. A plain substring match answers "nothing drops that" to a
+// perfectly good question, which is the worst available answer because it reads as a fact
+// about the world rather than about the spelling.
+//
+// So: strip punctuation, singularise each word, and match if the joined form appears in
+// the class name OR every word does. `suggest` exists for the remaining misses — an
+// unmatched query should come back with the near names, not with silence.
+const IRREGULAR = { teeth: 'tooth', feet: 'foot', mice: 'mouse', geese: 'goose',
+                    children: 'child', men: 'man', women: 'woman', leaves: 'leaf',
+                    knives: 'knife', wolves: 'wolf', lice: 'louse' };
+const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
+const singular = (w) => IRREGULAR[w]
+  ?? (w.endsWith('ies') && w.length > 4 ? `${w.slice(0, -3)}y`
+    : w.endsWith('ses') || w.endsWith('xes') || w.endsWith('hes') ? w.slice(0, -2)
+    : w.endsWith('s') && !w.endsWith('ss') && w.length > 3 ? w.slice(0, -1) : w);
+const words = (s) => String(s).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(singular);
+
+export function whoDrops(spawns, item) {
+  if (!spawns || !item) return [];
+  const toks = words(item);
+  if (!toks.length) return [];
+  const joined = toks.join('');
+  const matches = (cls) => {
+    const n = norm(cls);
+    // Three ways round, because callers both abbreviate and elaborate. "orc teeth" is
+    // SHORTER than nothing and matches by tokens; "inky cap mushrooms" is LONGER than
+    // `InkyCap` and matches only because the query contains the class name. The length
+    // guard on that third case stops a three-letter class matching half the world.
+    return n.includes(joined) || (n.length >= 4 && joined.includes(n))
+        || toks.every(t => n.includes(t));
+  };
+  const out = [];
+  for (const c of Object.values(spawns.creatures ?? {})) {
+    const hit = (c.loot?.items ?? []).find(i => matches(i.item));
+    if (hit) out.push({ creature: c.name, level: c.level, karma: c.karma,
+                        item: hit.item, per_roll_percent: hit.per_roll_percent, cite: hit.cite });
+  }
+  return out.sort((a, b) => (b.per_roll_percent ?? 0) - (a.per_roll_percent ?? 0));
+}
+
+// Every item the drop index knows, for the "did you mean" on a miss.
+export function knownDrops(spawns) {
+  const s = new Set();
+  for (const c of Object.values(spawns?.creatures ?? {}))
+    for (const i of c.loot?.items ?? []) s.add(i.item);
+  return [...s].sort();
+}
+
+// Near names for a query that matched nothing: anything sharing one of its words.
+export function suggestDrops(spawns, item, limit = 8) {
+  const toks = words(item);
+  return knownDrops(spawns)
+    .filter(n => toks.some(t => t.length > 2 && norm(n).includes(t)))
+    .slice(0, limit);
+}
+
+// What one kill is worth in shillings, at the midpoint of the money range. Used only to
+// ORDER candidates for `money` — the absolute number is a table midpoint, not a forecast,
+// because the roll count varies with level and difficulty and the server's ItemFactor.
+export const moneyPerKill = (c) => {
+  const m = c?.loot?.money;
+  if (!m) return null;
+  return ((m.min + m.max) / 2) * ((m.per_roll_percent ?? 0) / 100);
+};
+
+// The advancement ceiling, and the reason a hit-point goal can be *finished*.
+export const healthCeiling = (stamina) => 101 + (stamina ?? 0);
+
+// One goal's opinion of one creature, normalised to 0..1 so goals can be added up.
+// `pays: false` means this creature does nothing for this goal — for `advance` that
+// disqualifies it, for `money` it merely scores no bonus.
+export function goalYield(goal, creature, { maxHealth, stamina = 0 } = {}) {
+  const level = creature.level;
+  if (level == null) return { goal: goal.kind, pays: false, why: 'creature level unknown' };
+
+  if (goal.kind === 'hp') {
+    if (maxHealth >= healthCeiling(stamina))
+      return { goal: 'hp', pays: false, done: true,
+               why: `max health ${maxHealth} is at the ceiling of ${healthCeiling(stamina)} ` +
+                    `(101 + stamina ${stamina}) — no kill raises it again` };
+    if (level <= maxHealth)
+      return { goal: 'hp', pays: false,
+               why: `level ${level} is not above max health ${maxHealth}; AdvancementCheck never rolls` };
+    // The roll bonus is the only part prey choice controls. It saturates 50 levels up,
+    // which no safety band will ever reach, so inside the band higher is always better.
+    const edge = Math.min(Math.max((level - maxHealth) / 5, 0), 10) / 10;
+    return { goal: 'hp', pays: true, capped: false, value: 0.5 + 0.5 * edge,
+             why: `level ${level} is ${level - maxHealth} above max health ${maxHealth}` };
+  }
+
+  if (goal.kind === 'skill') {
+    // iAbility is 0 for skills — the GetSpellAbility lookup bug. Current percent is
+    // deliberately NOT read here; including it would encode a rule the game does not have.
+    const factor = Math.min(Math.max(2 * level + 10, 50), 100);
+    const saturated = level >= 45;
+    return { goal: `skill:${goal.name ?? '?'}`, pays: true, capped: true, value: factor / 100,
+             why: `improve factor ${factor}/100 at monster level ${level}` +
+                  (saturated ? ' (saturated — nothing above level 45 improves this further)'
+                             : `; a level-45 target would give 100`),
+             note: goal.ability != null
+               ? `current ability ${goal.ability}% is irrelevant to a SKILL's improve chance ` +
+                 `(skill.kod:414 reads the spell table by skill number and gets 0)`
+               : undefined };
+  }
+
+  if (goal.kind === 'spell') {
+    const ability = goal.ability ?? 0;
+    const requisite = goal.requisite ?? null;
+    if (requisite != null && ability >= 2 * requisite)
+      return { goal: `spell:${goal.name ?? '?'}`, pays: false, softcapped: true,
+               why: `ability ${ability} is at or past the softcap of 2 x requisite stat ` +
+                    `${requisite} = ${2 * requisite}; the improve chance has collapsed` };
+    const factor = Math.min(Math.max(2 * level - ability + 10, 50), 100);
+    // The honest comparison is not "does this help" but "does this beat not targeting a
+    // monster at all", because difficulty falls back to 60 without a monster target.
+    const baseline = Math.min(Math.max(2 * 60 - ability + 10, 50), 100);
+    return { goal: `spell:${goal.name ?? '?'}`, pays: factor >= baseline, capped: true,
+             value: factor / 100,
+             why: factor >= baseline
+               ? `improve factor ${factor}/100 at monster level ${level}, at or above the ` +
+                 `no-monster baseline of ${baseline}`
+               : `improve factor ${factor}/100 at monster level ${level} is BELOW the ${baseline} ` +
+                 `you would get casting at no monster — this prey actively costs you` };
+  }
+
+  return { goal: String(goal.kind), pays: false, why: `unknown goal kind ${goal.kind}` };
+}
+
+// How several goals add up for one creature. See THE SHARED CEILING: hit points are a
+// separate uncapped track and stack freely; skills and spells share one capped pool, so
+// the best capped goal sets the throughput and further capped goals add only a little.
+const SECOND_CAPPED_GOAL_BONUS = 0.15;
+function combine(yields) {
+  const paying = yields.filter(y => y.pays);
+  const uncapped = paying.filter(y => !y.capped).reduce((a, y) => a + (y.value ?? 0), 0);
+  const capped = paying.filter(y => y.capped).map(y => y.value ?? 0).sort((a, b) => b - a);
+  const cappedScore = capped.length
+    ? capped[0] + SECOND_CAPPED_GOAL_BONUS * capped.slice(1).reduce((a, v) => a + v, 0)
+    : 0;
+  return { score: uncapped + cappedScore, satisfied: paying.length };
+}
+
+// WHAT SHOULD THIS CHARACTER BE KILLING, GIVEN WHAT IT IS TRYING TO GET.
+//
+// This RANKS and EXPLAINS. It does not choose, and nothing in the keeper calls it — prey
+// selection stays with whoever is driving over MCP, because the trade-off between money,
+// items and advancement is a decision about what the character is for, and the keeper
+// has no business inventing one. See the keeper's `hunt`, which is still never guessed.
+//
+// `character`: { maxHealth, stamina }.  `goals`: [{kind:'hp'} | {kind:'skill',name,ability}
+// | {kind:'spell',name,ability,requisite}].  `want`: karma school, as preyFor.
+export function scorePrey(spawns, character, {
+  purpose = 'advance', goals = [], over = 6, limit = 8, want = null, creatures = null,
+  item = null,
+} = {}) {
+  if (!spawns) return { purpose, candidates: [], note: 'no spawn index loaded' };
+  if (!PURPOSES.includes(purpose))
+    return { purpose, candidates: [], note: `unknown purpose — one of ${PURPOSES.join(', ')}` };
+
+  const maxHealth = character?.maxHealth ?? 0;
+  const stamina = character?.stamina ?? 0;
+  if (!maxHealth)
+    return { purpose, candidates: [], note: 'character max health unknown; every rule keys on it' };
+
+  // A finished goal is worth saying out loud rather than silently scoring zero for ever.
+  const finished = goals
+    .map(g => goalYield(g, { level: maxHealth + 1 }, { maxHealth, stamina }))
+    .filter(y => y.done || y.softcapped)
+    .map(y => ({ goal: y.goal, why: y.why }));
+
+  // `items` searches the drop index imported from the compendium. A caller may still name
+  // creatures instead, for a thing the index does not know about.
+  let dropChance = null;
+  if (purpose === 'items') {
+    if (!item && !creatures?.length)
+      return { purpose, candidates: [], finished,
+               note: 'say what you are farming: pass `item` (e.g. "orc teeth") to search the ' +
+                     'drop index, or `creatures` to name the quarry yourself.' };
+    if (item) {
+      const drops = whoDrops(spawns, item);
+      if (!drops.length) {
+        const near = suggestDrops(spawns, item);
+        return { purpose, item, candidates: [], finished,
+                 ...(near.length ? { did_you_mean: near } : {}),
+                 note: `no monster treasure table lists anything matching "${item}". The index ` +
+                       'covers monster drops only: things that grow in rooms and things sold by ' +
+                       'merchants are not drops and will never appear here, however common they ' +
+                       'are in the world.' };
+      }
+      dropChance = new Map(drops.map(d => [d.creature.toLowerCase(), d]));
+    }
+  }
+
+  const pool = dropChance
+    ? Object.values(spawns.creatures).filter(c => dropChance.has(c.name.toLowerCase()))
+    : creatures?.length
+      ? Object.values(spawns.creatures).filter(c =>
+          creatures.some(n => c.name.toLowerCase().includes(String(n).toLowerCase())))
+      : Object.values(spawns.creatures);
+
+  const karmaOk = (k) => want === 'evil' ? (k != null && k > 0)
+                       : want === 'good' ? (k != null && k < 0)
+                       : want === 'neutral' ? k === 0 : true;
+
+  const ceiling = maxHealth + over;
+  const rows = [];
+  for (const c of pool) {
+    if (c.level == null || !karmaOk(c.karma)) continue;
+    // The safety band is the one rule every purpose obeys. It is about the room's whole
+    // table, not the quarry — huntingGrounds rejects on the worst OTHER thing present.
+    if (c.level > ceiling) continue;
+
+    const yields = goals.map(g => goalYield(g, c, { maxHealth, stamina }));
+    const { score, satisfied } = combine(yields);
+    // `advance` is the purpose with teeth: prey that pays no goal is not a candidate.
+    // `money` and `items` keep it — anything sellable is acceptable — and treat the
+    // advancement score purely as a tie-breaker, which is the whole point of the
+    // "hunt what pays twice" preference.
+    if (purpose === 'advance' && satisfied === 0) continue;
+
+    const rooms = huntingGrounds(spawns, c.name, { maxDanger: ceiling, limit: 20 })
+      .filter(r => !r.rejected && r.creature === c.name);
+    if (!rooms.length) continue;
+    const best = rooms[0];
+
+    const money = moneyPerKill(c);
+    const drop = dropChance?.get(c.name.toLowerCase());
+    rows.push({
+      creature: c.name, level: c.level, karma: c.karma,
+      score: +score.toFixed(3), goals_satisfied: satisfied, goals_total: goals.length,
+      best_room: best.room, best_room_name: best.room_name,
+      chance: best.chance, share_of_room: best.share_of_room, rooms: rooms.map(r => r.room),
+      ...(drop ? { drops: drop.item, drop_per_roll_percent: drop.per_roll_percent,
+                   drop_cite: drop.cite } : {}),
+      ...(money != null ? { money_per_kill: +money.toFixed(1) } : {}),
+      ...(c.loot ? {} : { loot: 'unknown — this creature is not in the drop index' }),
+      pays: yields.filter(y => y.pays).map(y => `${y.goal}: ${y.why}`),
+      pays_nothing_for: yields.filter(y => !y.pays).map(y => `${y.goal}: ${y.why}`),
+      notes: yields.map(y => y.note).filter(Boolean),
+    });
+  }
+
+  // MULTI-GOAL PREY FIRST, whatever the purpose. That is the "satisfies more criteria"
+  // preference, and it leads deliberately: two half-good tracks beat one excellent one
+  // when they draw on different pools. What breaks the tie is what the farming is FOR —
+  // shillings for money, drop share for items, advancement score for advance. With no
+  // goals set, `money` is therefore ranked purely on money, which is what you want.
+  const tiebreak = purpose === 'money'
+    ? (a, b) => (b.money_per_kill ?? -1) - (a.money_per_kill ?? -1)
+    : purpose === 'items'
+      ? (a, b) => (b.drop_per_roll_percent ?? -1) - (a.drop_per_roll_percent ?? -1)
+      : () => 0;
+  rows.sort((a, b) => b.goals_satisfied - a.goals_satisfied
+                   || tiebreak(a, b)
+                   || b.score - a.score
+                   || (b.share_of_room ?? 0) - (a.share_of_room ?? 0));
+
+  const out = { purpose, band: { max_level: ceiling, why: `max health ${maxHealth} + over ${over}` },
+                candidates: rows.slice(0, limit) };
+  if (item) out.item = item;
+  if (finished.length) out.finished = finished;
+  const unknown = rows.filter(r => r.loot).length;
+  if (purpose === 'money')
+    out.note = 'money_per_kill is the treasure table\'s midpoint times its chance, for ORDERING ' +
+               'only — the real yield also depends on how many times the table is rolled ' +
+               '(1 + level/55 + random(0, difficulty/3)) and on the server\'s ItemFactor. ' +
+               'Goals still lead the ranking, so prey that pays twice comes first.' +
+               (unknown ? ` ${unknown} of these are not in the drop index and are ranked last.` : '');
+  // The single most useful thing to say when a skill goal is in play: what is stopping you.
+  if (goals.some(g => g.kind === 'skill') && ceiling < 45)
+    out.limited_by = `the safety band (${ceiling}), not the rule — a skill improves fastest ` +
+                     `against level-45 prey, which is ${45 - ceiling} above what this ` +
+                     `character can safely fight.`;
+  return out;
+}
+
 if (process.argv[1]?.endsWith('m59-spawns.mjs')) {
   const root = new URL('../', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
   const idx = buildSpawnIndex({
     spawnsFile: root + 'compendium/data/spawns.json',
     mapFile: root + 'substrate/m59-map.json',
     monstersFile: root + 'tools/monsters.json',
+    treasureFile: root + 'compendium/data/treasure.json',
     outFile: root + 'substrate/m59-spawns.json',
   });
   console.log(JSON.stringify({ ...idx.stats, unmapped_rooms: idx.stats.unmapped_rooms.length }));

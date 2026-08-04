@@ -46,7 +46,7 @@ import * as skills from './m59-skills.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
-import { loadSpawns, huntingGrounds, roomThreats, preyFor } from './m59-spawns.mjs';
+import { loadSpawns, huntingGrounds, roomThreats, preyFor, scorePrey, PURPOSES } from './m59-spawns.mjs';
 import { safeSpots, safeSpotBook } from './m59-safespots.mjs';
 import { planRuns, planProvisioning } from './m59-lootrun.mjs';
 import { planCharacter, STAT_ORDER, STAT_PRESETS } from './m59-newchar.mjs';
@@ -2669,6 +2669,14 @@ const TOOLS = [
       rest_below: { type: 'number', description: 'rest when a vital drops under this fraction, default 0.7' },
       flee_below: { type: 'number', description: 'withdraw under this fraction, default 0.4' },
       max_carry: { type: 'number', description: 'stop farming at this many items, default 14' },
+      weapon_priority: { type: 'array', items: { type: 'string' },
+        description: 'name fragments, best first — e.g. ["axe","mace"]. Default (null) ranks by ' +
+                     'the character\'s proficiency in each weapon\'s own skill, which only ever ' +
+                     'rewards what it is already best at; set this to train a weak weapon skill. ' +
+                     'Pass [] to go back to proficiency ranking.' },
+      drop_junk: { type: 'boolean',
+        description: 'drop junk and weapons the server has refused as broken, default true. A ' +
+                     'broken weapon is NOT renamed, so it otherwise outranks the working one for ever' },
       roam: { type: 'boolean', description: 'when the room is cleared, move to a neighbouring one instead of waiting for respawns. Off by default because it changes where the character is.' },
       roam_limit: { type: 'number', description: 'how many rooms it may wander before stopping, default 6' },
       strategy: { type: 'string', enum: ['baseline', 'wellfed', 'fieldrest', 'trader', 'coop'],
@@ -2709,6 +2717,12 @@ const TOOLS = [
       if (a.rest_below !== undefined) p.policy.restBelow = Number(a.rest_below);
       if (a.flee_below !== undefined) p.policy.fleeBelow = Number(a.flee_below);
       if (a.max_carry !== undefined) p.policy.maxCarry = Number(a.max_carry);
+      // An empty list means "go back to ranking by proficiency", which is null internally.
+      // Treating [] as an empty priority list would rank every weapon equally instead.
+      if (a.weapon_priority !== undefined)
+        p.policy.weaponPriority = Array.isArray(a.weapon_priority) && a.weapon_priority.length
+          ? a.weapon_priority.map(String) : null;
+      if (a.drop_junk !== undefined) p.policy.dropJunk = !!a.drop_junk;
       if (a.roam !== undefined) p.policy.roam = !!a.roam;
       if (a.roam_limit !== undefined) p.policy.roamLimit = Number(a.roam_limit);
       if (a.strategy !== undefined) {
@@ -4067,6 +4081,96 @@ const TOOLS = [
     },
   },
   {
+    name: 'prey',
+    description:
+      'WHAT TO KILL, GIVEN WHAT THE FARMING IS FOR. `hunting_grounds` answers where a creature lives; ' +
+      'this answers which creature, and it is the only tool that knows the three advancement rules ' +
+      'are different from each other.\n' +
+      'Set purpose. `advance` disqualifies prey that pays none of your goals. `money` disqualifies ' +
+      'almost nothing — nearly everything drops something sellable — and uses the goals purely to ' +
+      'break ties, which is how you end up hunting the thing that pays twice. `items` takes an item ' +
+      'name — "orc teeth" finds OrcTooth — and searches the drop index joined in from the ' +
+      'compendium\'s treasure tables (171 monsters, every row cited). It covers MONSTER DROPS ONLY: ' +
+      'things that grow in rooms and things merchants sell are not drops and will never appear, ' +
+      'however common they are. A miss comes back with near names rather than silence.\n' +
+      'THE THREE RULES, because two of them are counter-intuitive:\n' +
+      '  hp     — rolls only above your max health (max health IS your level), stops for ever at ' +
+      '101 + stamina, and is NOT subject to the advancement-point cap.\n' +
+      '  skill  — does NOT depend on your current skill percent. At all. skill.kod:414 reads the ' +
+      'spell table with a skill number and gets 0, so rats are exactly as good for slash at 31% as ' +
+      'at 11%; they are just worse than a level-45 target, which is where the rule saturates. Do not ' +
+      '"correct" this by passing ability and expecting it to matter.\n' +
+      '  spell  — DOES depend on ability, falls as it rises, and dies at the softcap of 2 x the ' +
+      'requisite stat. A weak monster target is worse than none: difficulty falls back to 60 without ' +
+      'a monster, so casting at a level-30 rat is actively worse than casting at a wall.\n' +
+      'Hit points are an uncapped track; skills and spells share ONE pool of 10 points per 15-22 ' +
+      'minutes (2 refunded per room change). So hp+skill stacks for free and skill+spell does not, ' +
+      'and the ranking here reflects that. Prey satisfying more goals sorts first.\n' +
+      'This RANKS. It does not re-target anything — the keeper never guesses prey, and setting a ' +
+      'purpose does not make it start. Use `autopilot` to actually change hunt.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string', description: 'read max health and stamina from this live character' },
+      max_health: { type: 'number', description: 'instead of agent — the character\'s max health' },
+      stamina: { type: 'number', description: 'instead of agent — only affects the hit-point ceiling' },
+      purpose: { type: 'string', enum: PURPOSES, description: 'default advance' },
+      goals: { type: 'array', description:
+        'e.g. [{"kind":"hp"},{"kind":"skill","name":"slash"},' +
+        '{"kind":"spell","name":"blast","ability":20,"requisite":25}]',
+        items: { type: 'object', properties: {
+          kind: { type: 'string', enum: ['hp', 'skill', 'spell'] },
+          name: { type: 'string' },
+          ability: { type: 'number', description: 'spells only — ignored for skills, by the rule above' },
+          requisite: { type: 'number', description: 'spells only — the requisite stat, for the softcap' },
+        }, required: ['kind'] } },
+      item: { type: 'string', description: 'for purpose:"items" — what you are farming, e.g. "orc teeth"' },
+      creatures: { type: 'array', items: { type: 'string' },
+                   description: 'restrict to these. An alternative to `item` for purpose:"items"' },
+      karma: { type: 'string', enum: ['evil', 'good', 'neutral'] },
+      over: { type: 'number', description: 'how far above your level to accept. Default 6' },
+      limit: { type: 'number' },
+    } },
+    run: async (a) => {
+      const spawns = loadSpawns(SPAWN_FILE);
+      if (!spawns)
+        throw new Error('no spawn index — build it with: node tools/m59-spawns.mjs');
+      let maxHealth = a.max_health != null ? Number(a.max_health) : null;
+      let stamina = a.stamina != null ? Number(a.stamina) : null;
+      let from = 'the arguments given';
+      if (a.agent) {
+        const s = session(a.agent);
+        const c = s.need();
+        maxHealth = maxHealth ?? c.vitals?.()?.health?.max ?? null;
+        const st = c.statsById?.get?.('stamina')?.value;
+        if (stamina == null && Number.isFinite(st) && st > 0) stamina = st;
+        from = `${a.agent} as it stands now`;
+      }
+      if (!maxHealth)
+        throw new Error('pass agent, or max_health — every one of these rules keys on it');
+      const goals = Array.isArray(a.goals) ? a.goals : [];
+      const purpose = a.purpose || 'advance';
+      const out = scorePrey(spawns, { maxHealth, stamina: stamina ?? 0 }, {
+        purpose, goals, want: a.karma || null,
+        over: a.over != null ? Number(a.over) : 6,
+        limit: num(a.limit, 8),
+        creatures: Array.isArray(a.creatures) ? a.creatures : null,
+        item: a.item || null,
+      });
+      return {
+        ...out,
+        read_from: from,
+        character: { max_health: maxHealth, stamina: stamina ?? 'unknown' },
+        ...(stamina == null && goals.some(g => g.kind === 'hp')
+          ? { caveat: 'stamina unknown, so the hit-point ceiling (101 + stamina) was assumed to be ' +
+                      '101 — a character above that may be told a finished goal is still live, or ' +
+                      'the reverse. Pass stamina, or an agent whose stats have been read.' }
+          : {}),
+        ...(purpose === 'advance' && !goals.length
+          ? { note: 'purpose `advance` with no goals ranks nothing — say what you are raising' }
+          : {}),
+      };
+    },
+  },
+  {
     name: 'fleet',
     description:
       'EVERY CHARACTER YOU ARE RUNNING, IN ONE CALL. One line each: where it is, health, its level ' +
@@ -4537,6 +4641,7 @@ function heroSnapshot(name) {
       inventory: (c.inventory || []).map(o => ({
         name: c.rsc.get(o.nameRsc), amount: o.amount || undefined, can: affordances(o.flags) })),
       max_carry: st?.policy?.maxCarry ?? null,
+      weapon_priority: st?.policy?.weaponPriority ?? 'by proficiency',
       skills: (c.skills || []).map(x => ({ name: c.rsc.get(x.nameRsc), ability: x.ability })),
       spells: (c.spells || []).map(x => ({
         name: c.rsc.get(x.nameRsc), ability: x.ability, school: x.school })),

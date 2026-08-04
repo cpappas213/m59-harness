@@ -57,29 +57,157 @@ const WEAPON_WORDS = [
   [/staff|club|cudgel/i, 2], [/bow|crossbow|sling/i, 3],
 ];
 const weaponScore = name => {
+  if (isJunk(name)) return 0;
   for (const [re, n] of WEAPON_WORDS) if (re.test(name)) return n;
   return 0;
 };
 
-export async function equipBest(s) {
+// JUNK THAT LOOKS LIKE GEAR. kod/object/item/passitem/junk.kod builds thirteen items
+// whose whole design is to carry a real item's ICON and a worthless body, and one of
+// them is called "broken mace". weaponScore matched it on /mace/ and gave it 5 — ahead
+// of a real dagger at 2 — so a character holding both wielded the junk. Junk is a
+// PassiveItem and not a Weapon, so the wield silently did nothing and the character
+// punched things while this function reported it was holding a mace.
+//
+// Junk is not literally worthless (value 5-30, junk.kod:27-90) but it is 10-40 weight
+// and 10-40 bulk for it, and the broken mace is the only one that corrupts a decision.
+export const JUNK_NAMES = [
+  'broken mace', 'undecipherable book', 'fake chalice', 'glass pendant',
+  'surplus legion helmet', 'tanned kriipa leather', 'scrap metal',
+  "bones of konima's original war party", 'ketchikan hoop', 'pamyan drapery',
+  'toy ant mask', 'rusty armor', 'water finding arrow',
+];
+export const isJunk = (name) => JUNK_NAMES.includes(String(name || '').trim().toLowerCase());
+
+// A BROKEN WEAPON IS NOT RENAMED. Only its icon group changes (weapon.kod:788-836,
+// viBroken_group), so nothing about the name, and nothing this client can see in the
+// inventory, distinguishes a working long sword from a shattered one. `piHits <= 0` is
+// the whole of it and it is server-side.
+//
+// What IS visible is what the server says, and it says three different things:
+export const WEAPON_SHATTERED = /shatters into pieces/i;          // it broke just now, mid-fight
+export const WEAPON_IS_BROKEN = /is broken; you can'?t use it/i;  // we tried to wield a dead one
+export const WEAPON_CONDITION = /shattered by a powerful blow/i;  // seen when examining it
+export const brokenWeaponText = (t) => WEAPON_SHATTERED.test(t || '') || WEAPON_IS_BROKEN.test(t || '')
+                                    || WEAPON_CONDITION.test(t || '');
+
+// Learned, per client, because it cannot be read. A weapon enters this set the moment
+// the server refuses it or announces it shattering, and leaves only when it leaves the
+// pack. Without it every pass re-picks the same dead sword — it still scores highest.
+export const brokenSet = (c) => (c._brokenWeapons ??= new Set());
+
+// WHICH PROFICIENCY A WEAPON TRAINS. From viProficiency_Needed on each weapon class
+// rather than from the skill names, because the two do not line up by spelling: every
+// sword in the game routes to SKID_PROFICIENCY_SWORD (451) including the gold, mystic,
+// nerudite and Riija swords, while the short sword has its own (457).
+export const WEAPON_PROFICIENCY = [
+  [/short ?sword/i, 'shortsword proficiency'],       // shrtswrd.kod:39, SKID 457
+  [/scimitar/i, 'scimitar proficiency'],             // scimitar.kod:39, SKID 453
+  [/hammer/i, 'hammer proficiency'],                 // hammer.kod, spirhamm.kod, SKID 454
+  [/axe/i, 'axe proficiency'],                       // axe.kod:39, SKID 455
+  [/mace|morning ?star|club|cudgel/i, 'mace proficiency'],   // mace.kod:39, SKID 452
+  [/bow|crossbow|sling|arrow/i, 'archery'],          // ranged.kod, SKID 456
+  [/sword|dagger|knife|falchion|blade/i, 'sword proficiency'], // longswrd/goldswrd/..., SKID 451
+];
+export const proficiencyFor = (name) => {
+  for (const [re, skill] of WEAPON_PROFICIENCY) if (re.test(name || '')) return skill;
+  return null;
+};
+
+// The character's ability in a named skill. Skill ability levels are stat GROUP 4
+// (m59-client.mjs:701); statsById is keyed by name as well as by group.num, so this
+// asks by name and returns null rather than 0 when it simply has not been read —
+// "no skill" and "never asked" must not rank the same.
+export function abilityOf(c, skillName) {
+  if (!skillName) return null;
+  const direct = c?.statsById?.get?.(skillName)?.value;
+  if (Number.isFinite(direct)) return direct;
+  for (const [k, v] of c?.statsById ?? []) {
+    if (typeof k === 'string' && k.toLowerCase() === skillName.toLowerCase()
+        && Number.isFinite(v?.value)) return v.value;
+  }
+  return null;
+}
+
+// WHAT TO WIELD, BEST FIRST.
+//
+// `priority` overrides the ordering with a list of name fragments — the point of it is
+// training: a character with 90% sword and 11% axe will otherwise wield the sword for
+// ever and never move the axe, because proficiency ranking is a feedback loop that
+// rewards what you are already good at. Pass ['axe'] and it trains the axe.
+export function weaponRanking(c, { priority = null } = {}) {
+  const broken = brokenSet(c);
+  const rows = (c.inventory || [])
+    .map(o => ({ o, name: c.rsc.get(o.nameRsc) || '' }))
+    .filter(x => !isJunk(x.name) && weaponScore(x.name) > 0 && !broken.has(x.o.id))
+    .map(x => {
+      const skill = proficiencyFor(x.name);
+      return { ...x, skill, ability: abilityOf(c, skill), base: weaponScore(x.name) };
+    });
+  if (priority?.length) {
+    const rank = (n) => {
+      const i = priority.findIndex(p => n.toLowerCase().includes(String(p).toLowerCase()));
+      return i === -1 ? priority.length : i;
+    };
+    return rows.sort((a, b) => rank(a.name) - rank(b.name) || b.base - a.base);
+  }
+  // Proficiency first — a weapon you are good with hits more often than a nominally
+  // bigger one you are not. Unread abilities fall back to the crude name score rather
+  // than sorting as zero, which would put the greatsword last on a fresh login.
+  return rows.sort((a, b) => (b.ability ?? -1) - (a.ability ?? -1) || b.base - a.base);
+}
+
+export async function equipBest(s, { priority = null, maxTries = 4 } = {}) {
   const c = s.need();
   await s.pacer.submit('read', () => c.requestInventory());
   await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
-  const scored = c.inventory
-    .map(o => ({ o, name: c.rsc.get(o.nameRsc), score: weaponScore(c.rsc.get(o.nameRsc)) }))
-    .filter(x => x.score > 0)
-    .sort((a, b) => b.score - a.score);
-  if (!scored.length)
-    return { wielding: null, note: 'nothing weapon-like in inventory — you will fight with your fists, which works but badly' };
-  const best = scored[0];
-  const before = c.evSeq;
-  await s.pacer.submit('use', () => c.use(best.o.id));
-  const ev = await c.waitFor({ since: before, timeoutMs: 3000 });
-  return {
-    wielding: best.name, id: best.o.id,
-    considered: scored.map(x => x.name),
-    messages: ev.events.filter(e => e.text).map(e => e.text),
-  };
+  const broken = brokenSet(c);
+  const ranked = weaponRanking(c, { priority });
+  if (!ranked.length)
+    return { wielding: null, verified: false,
+             ...(broken.size ? { known_broken: broken.size } : {}),
+             note: 'nothing wieldable in the pack — you will fight with your fists, which ' +
+                   'works but badly. Junk and weapons known to be broken are excluded.' };
+
+  // TRY, THEN CHECK. The previous version sent `use` and reported the name it had picked
+  // without ever reading the reply, so a shattered weapon was reported as wielded for as
+  // long as the character carried it. That is the whole of the "it never re-equips" bug:
+  // nothing was wrong with the choosing, and nothing ever noticed the refusal.
+  const rejected = [];
+  for (const cand of ranked.slice(0, maxTries)) {
+    const before = c.evSeq;
+    await s.pacer.submit('use', () => c.use(cand.o.id));
+    const ev = await c.waitFor({ since: before, timeoutMs: 3000 });
+    const texts = ev.events.filter(e => e.text).map(e => e.text);
+    if (texts.some(brokenWeaponText)) {
+      broken.add(cand.o.id);
+      rejected.push({ name: cand.name, id: cand.o.id, why: 'the server says it is broken' });
+      continue;
+    }
+    return {
+      wielding: cand.name, id: cand.o.id, verified: true,
+      skill: cand.skill, ability: cand.ability,
+      ...(priority ? { by: 'the priority list given' } : { by: 'proficiency, then weapon class' }),
+      ...(rejected.length ? { rejected } : {}),
+      considered: ranked.map(x => x.name),
+      messages: texts,
+    };
+  }
+  return { wielding: null, verified: false, rejected,
+           considered: ranked.map(x => x.name),
+           note: `every candidate was refused as broken (${rejected.length}). Fighting bare-handed; ` +
+                 'these should be dropped — see junkAndBroken().' };
+}
+
+// What is in the pack that should not be: junk, and weapons the server has refused.
+// Returned rather than dropped, because dropping is the caller's decision to make.
+export function junkAndBroken(c) {
+  const broken = brokenSet(c);
+  return (c.inventory || [])
+    .map(o => ({ o, name: c.rsc.get(o.nameRsc) || '' }))
+    .filter(x => isJunk(x.name) || broken.has(x.o.id))
+    .map(x => ({ id: x.o.id, name: x.name,
+                 why: broken.has(x.o.id) ? 'broken — the server refuses to wield it' : 'junk' }));
 }
 
 // ---------------------------------------------------------------- resting
@@ -587,6 +715,8 @@ export async function fight(s, {
   // How far a swing carries. One square plus the diagonal; the caller can widen it
   // for a bow.
   reach = 1.5,
+  // Name fragments overriding which weapon to reach for. See weaponRanking.
+  weaponPriority = null,
 } = {}) {
   const c = s.need();
   const log = [];
@@ -632,9 +762,12 @@ export async function fight(s, {
                  ...(resumed ? { resumed: 'the one we already damaged' } : {}),
                  ...(holdPosition ? { holding: 'fighting from where we stand' } : {}) });
 
+  let wielded = null;
   if (equip) {
-    const e = await equipBest(s);
-    say('equipped', { wielding: e.wielding, note: e.note });
+    const e = await equipBest(s, { priority: weaponPriority });
+    wielded = e.id ?? null;
+    say('equipped', { wielding: e.wielding, verified: e.verified, skill: e.skill,
+                      ability: e.ability, rejected: e.rejected, note: e.note });
   }
 
   // Health BEFORE, so the report can say what the fight cost.
@@ -676,6 +809,21 @@ export async function fight(s, {
     const res = await s.attackRounds(foe.id, swingsPerRound);
     roundsFought++;
     combatLines.push(...res.messages);
+
+    // IT BROKE MID-FIGHT, which is the ordinary way a weapon leaves service and was
+    // previously invisible. ReqWeaponAttack unequips the weapon itself (weapon.kod:513)
+    // and every later swing is a punch, so a character finished the fight, and the next
+    // twenty fights, bare-handed while the keeper reported it armed. Re-arm here rather
+    // than at the next pass: the rest of THIS fight is the part that was being lost.
+    if (res.messages.some(brokenWeaponText)) {
+      if (wielded != null) brokenSet(c).add(wielded);
+      say('weapon broke', { was: wielded, round: roundsFought });
+      if (equip) {
+        const again = await equipBest(s, { priority: weaponPriority });
+        wielded = again.id ?? null;
+        say('re-armed', { wielding: again.wielding, verified: again.verified, note: again.note });
+      }
+    }
 
     // Are we dead? "Our own object is missing from the room list" is NOT the test,
     // however obvious it looks. It is also true when a save-game renumbers object
