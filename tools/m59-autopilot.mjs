@@ -189,8 +189,15 @@ export class Autopilot {
       // working one in the pack and cannot be recognised except by having been refused.
       dropJunk: true,
       // How many pulls that never turn into a fight before the square is written off.
-      // See pullDidNotConvert(): this is the cliff detector.
+      // See pullDidNotConvert(): the empirical cliff detector, and now the BACKSTOP —
+      // takeSafeSpot refuses unreachable squares up front, so this should rarely fire.
       pullsBeforeBarren: 3,
+      // WHICH MOVEMENT GRID THE SERVER PUTS MONSTERS ON. room.kod:2102 reads one
+      // server-wide setting: 0 LOS_OLD (default — everyone coarse), 1 monsters fine,
+      // 2 players fine, 3 both. Getting this wrong in the permissive direction is what
+      // put five characters on a clifftop, so it defaults to the server's own default
+      // rather than to the value that would let the keeper roam most freely.
+      los: 0,
       // How long to wait between passes when there is nothing to do.
       idleMs: 8000,
       // Move to a neighbouring room when this one has nothing left to hunt. Monsters
@@ -825,8 +832,17 @@ export class Autopilot {
     // keeper re-picks the same unusable corner every pass for ever, because the
     // geometry's opinion of it never changes and neither does ours.
     const barren = this.barrenSpots?.get(room.num);
+    // Can the thing we came to fight actually get to the square? We already have the
+    // quarry here and only ever used it to bias direction; this is the same fact asked
+    // from the other end, and it is the one that was missing.
+    const los = this.policy.los ?? 0;                       // LOS_OLD, the server default
+    const quarryReach = (quarry && quarry.col != null && geo.monsterCanReach)
+      ? (col, r2) => geo.monsterCanReach(quarry.row, quarry.col, r2, col, { los })
+      : null;
+    const spotStats = {};
     const spot = nearestSafeSpot(geo, me, {
-      within: 12, minAvoided: 3, book: this.book, room: room.num,
+      within: 12, minAvoided: 3, book: this.book, room: room.num, quarryReach,
+      stats: spotStats,
       toward: quarry ? { col: quarry.col, row: quarry.row } : null,
       // Skip squares another keeper is already standing on, and squares nothing can be
       // fetched to. Both are expressed as "unreachable" because that is the question
@@ -837,7 +853,22 @@ export class Autopilot {
         return s.world.reach(col, r2);
       },
     });
-    if (!spot) return { took: false, why: 'nothing in this room is more defensible than open floor' };
+    if (!spot) {
+      // Distinguish "flat room" from "ledge system". The second reads as the first
+      // unless it is said out loud, and it was West Merchant Way for five characters.
+      if (spotStats.unreachable_by_quarry > 0) {
+        this.note('every defensible square here is out of the fight\'s reach', {
+          considered: spotStats.considered, unreachable: spotStats.unreachable_by_quarry,
+          quarry: quarry ? { col: quarry.col, row: quarry.row } : null,
+          why: 'this is a ledge or clifftop system: the squares that score well do so ' +
+               'BECAUSE nothing can get to them, which also means nothing will come.',
+          note: 'fighting in the open here is the correct answer; a better room is a better one' });
+        return { took: false, unreachable_terrain: true,
+                 why: `${spotStats.unreachable_by_quarry} of ${spotStats.considered} defensible ` +
+                      'squares here cannot be reached by what we are fighting' };
+      }
+      return { took: false, why: 'nothing in this room is more defensible than open floor' };
+    }
 
     // CLAIM IT BEFORE WALKING, not after arriving. Choosing and taking are separated
     // by a walk, and a walk is an await: three keepers each looked at the room, each

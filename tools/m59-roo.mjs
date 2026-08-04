@@ -106,6 +106,42 @@ export class RoomGeometry {
   // stricter grid is the safer answer: a route it accepts, the loose one accepts too.
   get moveGrid() { return this.monsterGrid || this.grid; }
 
+  // WHICH GRID GOVERNS WHOM, and it is not a property of the room.
+  //
+  // room.kod:2102 reads ONE server-wide setting and picks per moving object:
+  //
+  //   LOS_OLD (0)          nobody uses the fine grid — coarse for players AND monsters
+  //   LOS_NEW_MONSTER (1)  monsters fine, players coarse
+  //   LOS_NEW_PLAYER (2)   players fine, monsters coarse
+  //   LOS_NEW_BOTH (3)     everyone fine
+  //
+  // `piLOS = LOS_OLD` is the default (kod/util/settings.kod:119), so on a stock server
+  // MONSTERS MOVE ON THE COARSE GRID. That matters more than it sounds: in West Merchant
+  // Way the coarse grid connects 24% of the floor to the clifftop and the fine grid
+  // connects 99.9%, so the two grids disagree about the whole point of the room.
+  //
+  // Everything in this file defaulted to fine:true, which is a reasonable default for
+  // planning OUR OWN movement and a badly wrong one for predicting a monster's. Five
+  // characters stood where the fine grid said a centipede could reach them and the coarse
+  // grid said it could not, and the coarse grid was right.
+  static LOS = { OLD: 0, NEW_MONSTER: 1, NEW_PLAYER: 2, NEW_BOTH: 3 };
+  static monsterUsesFine(los) { return los === 1 || los === 3; }
+  static playerUsesFine(los) { return los === 2 || los === 3; }
+
+  // CAN A MONSTER STANDING THERE ACTUALLY GET TO HERE?
+  //
+  // Directed, because the search follows the outgoing direction bits of each square it
+  // leaves, and a one-way ledge is expressible in that graph. This is the question the
+  // safe-spot chooser has to ask and never did: it asked whether WE could reach the
+  // square, which on a cliff is exactly the wrong end.
+  monsterCanReach(fromRow, fromCol, toRow, toCol, { los = 0, maxNodes = 200000 } = {}) {
+    const fine = RoomGeometry.monsterUsesFine(los);
+    const r = this.path(fromRow, fromCol, toRow, toCol, { fine, maxNodes });
+    return { reachable: !!r.found, steps: r.found ? r.steps.length : null,
+             grid: fine ? 'fine' : 'coarse', los,
+             ...(r.found ? {} : { why: r.reason }) };
+  }
+
   inBounds(row, col) { return row >= 1 && row <= this.rows && col >= 1 && col <= this.cols; }
 
   // Is there floor on this square? kod-style 1-based.

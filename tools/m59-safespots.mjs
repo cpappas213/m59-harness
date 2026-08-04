@@ -125,17 +125,36 @@ export function safeSpots(geo, { limit = 8, mustReach = null } = {}) {
 // discovers the nearest centipede is twelve steps away and cannot be fetched, gives
 // the corner up, and picks the same one again next pass. A safe spot nothing can be
 // brought to is not a safe spot, it is a bench.
+// THE SPOT MUST BE ONE THE FIGHT CAN REACH, and that is a different question from
+// whether we can reach it. A clifftop scores beautifully on defensibility — almost
+// nothing can stand next to you, which is the whole metric — and we can walk up to it,
+// so every test this function used to run said yes. The monsters could not follow, and
+// nothing asked them.
+//
+// `quarryReach(col,row)` answers "could the thing we came to fight get here", on the
+// grid that governs MONSTERS (see RoomGeometry.LOS — the stock server puts them on the
+// coarse grid). Null means the caller cannot say, and then this reverts to the old
+// behaviour rather than refusing every square.
 export function nearestSafeSpot(geo, from, {
   within = 12, minAvoided = 3, reach = null, book = null, room = null, toward = null,
+  quarryReach = null, stats = null,
 } = {}) {
   if (!geo || !from) return null;
   const all = safeSpots(geo, { limit: 400 });
   const known = book && room != null ? book.recall(room) : null;
   let best = null;
+  let unreachableByQuarry = 0;
   for (const s of all) {
     const seen = known?.get(key(s.col, s.row)) || null;
     // Never send a character back to a square that has already been disproved.
     if (seen && book.discredited(seen)) continue;
+    // A square nothing can walk to is not a safe spot, it is a balcony. Checked before
+    // the defensibility cutoff because a cliff passes that cutoff easily — being
+    // unreachable is precisely what makes it score well.
+    if (quarryReach) {
+      const q = quarryReach(s.col, s.row);
+      if (q && q.reachable === false) { unreachableByQuarry++; continue; }
+    }
     // A proven square is allowed to be less defensible on paper than the cutoff: it
     // has passed the only test that counts.
     if (s.attackers_avoided < minAvoided && !(seen && seen.held > 0)) continue;
@@ -162,6 +181,14 @@ export function nearestSafeSpot(geo, from, {
                // SafeSpotBook. The square is only how we get there.
                fine: seen?.x != null ? { x: seen.x, y: seen.y } : null };
   }
+  // Say how many were dropped for being unreachable, INCLUDING when nothing was found.
+  // "no spot here" and "203 spots here and the fight cannot get to any of them" are
+  // different facts about a room, and only the second one explains West Merchant Way.
+  if (stats) {
+    stats.considered = all.length;
+    stats.unreachable_by_quarry = unreachableByQuarry;
+  }
+  if (best && unreachableByQuarry) best.rejected_unreachable_by_quarry = unreachableByQuarry;
   return best;
 }
 

@@ -23,6 +23,8 @@ import {
   brokenSet, brokenWeaponText, abilityOf,
 } from './m59-skills.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
+import { RoomGeometry } from './m59-roo.mjs';
+import { nearestSafeSpot } from './m59-safespots.mjs';
 
 let pass = 0, fail = 0;
 const ok = (what, cond, extra = '') => {
@@ -189,6 +191,58 @@ console.log('\nthe cliff detector');
 
   const k3 = keeper(1);
   ok('the limit is configurable', k3.pullDidNotConvert('x') === true);
+}
+
+console.log('\nthe cliff, from the geometry instead of from experience');
+{
+  // West Merchant Way in miniature. A ledge along the top, reachable from below on the
+  // FINE grid only — which is the shape of the real room: the fine grid connects 99.9%
+  // of the floor to the clifftop and the coarse grid connects 24%.
+  const rows = 6, cols = 6;
+  // Floor only in the 4x4 interior, so the edge squares are backed by rock and actually
+  // score as defensible. A room with floor everywhere has no safe spots at all, which is
+  // a fact about safeSpots() worth knowing before writing a fixture for it.
+  const flags = Buffer.alloc(rows * cols, 0x00);
+  for (let r = 2; r <= 5; r++) for (let c = 2; c <= 5; c++) flags[(r - 1) * cols + (c - 1)] = 0x01;
+  const fine = Buffer.alloc(rows * cols, 0xff);           // fine: everything connects
+  const coarse = Buffer.alloc(rows * cols, 0xff);
+  // Coarse: nothing may step NORTH out of row 4 — the cliff face. N 0x01, NE 0x02, NW 0x80.
+  // Rows 2-3 are the ledge; rows 4-5 are the ground the monsters are on.
+  for (let c = 1; c <= cols; c++) coarse[(4 - 1) * cols + (c - 1)] &= ~(0x01 | 0x02 | 0x80);
+  const geo = new RoomGeometry({ file: 'test', version: 12, rows, cols,
+                                 grid: coarse, flags, monsterGrid: fine,
+                                 walls: [], sidedefs: [], clientSize: null });
+
+  const TOP = [2, 2], BOT = [5, 3];                       // [row, col] — ledge corner, ground
+  const canReach = (los) => geo.monsterCanReach(BOT[0], BOT[1], TOP[0], TOP[1], los == null ? {} : { los });
+  ok('LOS_NEW_BOTH: the monster climbs it', canReach(3).reachable === true);
+  ok('LOS_NEW_MONSTER: also climbs', canReach(1).reachable === true);
+  ok('LOS_OLD: it cannot', canReach(0).reachable === false);
+  ok('LOS_NEW_PLAYER: still cannot — players fine, monsters coarse',
+     canReach(2).reachable === false);
+  ok('and LOS_OLD is the default, because that is what the server ships',
+     canReach().reachable === false);
+  ok('the answer names the grid it used', canReach(0).grid === 'coarse');
+  // The asymmetry that hid this: we walk DOWN fine, it cannot come UP.
+  ok('we can still walk down to it, which is why every earlier check passed',
+     geo.path(TOP[0], TOP[1], BOT[0], BOT[1], { fine: false }).found === true);
+
+  // And the chooser must refuse the ledge rather than score it well for being empty.
+  const qr = (col, r2) => geo.monsterCanReach(BOT[0], BOT[1], r2, col, { los: 0 });
+  const stats = {};
+  const picked = nearestSafeSpot(geo, { col: 3, row: 2 },
+    { within: 12, minAvoided: 0, quarryReach: qr, stats });
+  ok('no square the quarry cannot reach is offered',
+     !picked || qr(picked.col, picked.row).reachable === true,
+     JSON.stringify(picked && { col: picked.col, row: picked.row }));
+  ok('the refused count is reported even when nothing is chosen',
+     stats.unreachable_by_quarry > 0, JSON.stringify(stats));
+  ok('considered is reported too, so "no spots" and "no reachable spots" differ',
+     stats.considered > 0, JSON.stringify(stats));
+  // Without a quarry the old behaviour must be untouched: this runs in rooms where
+  // nothing is being hunted, and refusing every square there would strand the fleet.
+  const noQuarry = nearestSafeSpot(geo, { col: 3, row: 2 }, { within: 12, minAvoided: 0 });
+  ok('with no quarry to ask about, nothing is filtered', noQuarry !== null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
