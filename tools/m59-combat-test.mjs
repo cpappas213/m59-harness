@@ -22,6 +22,7 @@ import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; se
 import {
   isJunk, JUNK_NAMES, proficiencyFor, weaponRanking, equipBest, junkAndBroken,
   brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit, signetRings, returnSignetRings,
+  parseDeathBroadcast, deathBroadcastFor,
 } from './m59-skills.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
 import { isFood } from './m59-items.mjs';
@@ -864,6 +865,54 @@ console.log('\nknowing what is food, from the class tree rather than a word list
   ok('an unknown name is not food — buying scenery wastes money', !isFood('nameless curio'));
   ok('and it is case-insensitive, because names arrive as the server spells them',
      isFood('LOAF OF BREAD') && isFood('  apple '));
+}
+
+
+// THE SERVER ANNOUNCES THE KILLER, AND NOTHING WAS READING IT.
+//
+// killed_by was "everything standing next to us at the end". Against 249 deaths that have
+// a matching broadcast, the crowd's most common member was the real killer 51% of the
+// time -- a coin flip written into the record as a cause of death. It also invented a
+// culprit: twelve Badlands deaths were blamed on "soldier of the Duke's army" for being
+// nearby, when the broadcasts say groundworm nine times and troll four.
+console.log('\nreading who actually struck the killing blow');
+{
+  const p = parseDeathBroadcast;
+  ok('the ordinary form names the killer',
+     p('### Kermit was just killed by a giant rat.')?.killer === 'giant rat');
+  ok('and names the victim', p('### Kermit was just killed by a giant rat.')?.who === 'Kermit');
+  ok('the article is stripped, so it joins to a creature name',
+     p('### Zoot was just killed by an ant.')?.killer === 'ant');
+  // A player kill does NOT name the killer -- the record must not invent one.
+  const murder = p('### Piggy has been murdered in cold blood.');
+  ok('murder in cold blood is recognised', murder?.how === 'murdered by a player');
+  ok('and leaves the killer null rather than guessing', murder?.killer === null);
+  ok('the room killing you is its own cause',
+     p('### Zoot met an untimely end.')?.how === 'the room itself');
+  ok('so is your own folly',
+     p('### Beaker was just slain by his own folly.')?.how === 'own folly');
+  ok('a murderer being killed still yields the killer',
+     p('### The notorious murderer, Lew, has been killed by a troll.')?.killer === 'troll');
+  // Same channel, not a death. Treating it as one would file a token loss as a fatality.
+  ok('"lost a token to" is NOT a death', p('### Rowlf lost a token to a centipede.') === null);
+  ok('ordinary combat text is not a broadcast', p('You hit the giant rat for 4 damage.') === null);
+  ok('empty input does not throw', p('') === null && p(null) === null);
+
+  // Matching to the right character matters: twenty-one characters die often enough that
+  // "the most recent ### line" is regularly about somebody else.
+  const evs = [
+    { at: 1000, text: '### Scooter was just killed by a centipede.' },
+    { at: 1900, text: '### Kermit was just killed by a giant rat.' },
+    { at: 2500, text: '### Beaker was just killed by a slime.' },
+  ];
+  ok('it picks the broadcast naming US, not the nearest in time',
+     deathBroadcastFor('Kermit', evs, 2400)?.killer === 'giant rat');
+  ok('and is case-insensitive about the name',
+     deathBroadcastFor('kermit', evs, 2000)?.killer === 'giant rat');
+  ok('a character with no broadcast gets null, not somebody else\'s',
+     deathBroadcastFor('Rowlf', evs, 2000) === null);
+  ok('and one far outside the window is not claimed',
+     deathBroadcastFor('Kermit', evs, 999999, { withinMs: 5000 }) === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

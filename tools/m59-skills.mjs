@@ -1801,3 +1801,70 @@ export async function returnSignetRings(s, { max = 3 } = {}) {
   }
   return { returned, ...(refused.length ? { refused } : {}), carrying: rings.length - returned.length };
 }
+
+// ------------------------------------------------------- who actually killed you
+
+// THE SERVER ANNOUNCES THE KILLER. NOTHING WAS READING IT.
+//
+// Every death is broadcast to the whole world, and the broadcast names the creature that
+// struck the killing blow — not the crowd, the killer (system.kod:49-57). The postmortem
+// was instead reporting `killed_by` as "everything standing next to us at the end", which
+// is a different question and answers it badly: checked against 249 deaths that DO have a
+// matching broadcast, the crowd's most-common member was the real killer only 51% of the
+// time. A coin flip was being written into the record as a cause of death.
+//
+// It also invented a villain. Twelve deaths at the border of the Badlands were attributed
+// to "soldier of the Duke's army" because soldiers were standing there; the broadcasts say
+// groundworm nine times and troll four, and no soldier at all. Faction soldiers do not
+// start fights with the unaligned, which is exactly why they were there to be blamed.
+//
+// The seven forms, all from system.kod. %q is a name, %s an article.
+const DEATH_FORMS = [
+  // "### Kermit was just killed by a giant rat."
+  { re: /^###\s+(.+?)\s+was just killed by\s+(?:an?\s+|the\s+)?(.+?)\.?$/i,
+    how: 'killed', who: 1, killer: 2 },
+  // "### The notorious murderer, X, has been killed by a troll."
+  { re: /^###\s+The notorious murderer,\s*(.+?),\s*has been killed by\s+(?:an?\s+|the\s+)?(.+?)\.?$/i,
+    how: 'killed as a murderer', who: 1, killer: 2 },
+  // "### The feared outlaw, X, has just met justice at Y's hands."
+  { re: /^###\s+The feared outlaw,\s*(.+?),\s*has just met justice at\s+(?:an?\s+|the\s+)?(.+?)'s hands\.?$/i,
+    how: 'killed as an outlaw', who: 1, killer: 2 },
+  // "### X has been murdered in cold blood."  — a player killed them, and is NOT named
+  { re: /^###\s+(.+?)\s+has been murdered in cold blood\.?$/i,
+    how: 'murdered by a player', who: 1, killer: null },
+  // "### X was just slain by his own folly."
+  { re: /^###\s+(.+?)\s+was just slain by\s+\S+\s+own folly\.?$/i,
+    how: 'own folly', who: 1, killer: null },
+  // "### X met an untimely end."  — the room did it: lava, a fall, a trap
+  { re: /^###\s+(.+?)\s+met an untimely end\.?$/i,
+    how: 'the room itself', who: 1, killer: null },
+];
+
+// Parse one broadcast. Returns null for anything that is not a death — notably the
+// "lost a token to" line, which is the same ### channel and is not a death at all.
+export function parseDeathBroadcast(text) {
+  const t = String(text || '').trim();
+  if (!t.startsWith('###')) return null;
+  for (const f of DEATH_FORMS) {
+    const m = f.re.exec(t);
+    if (!m) continue;
+    return { who: m[f.who].trim(), killer: f.killer ? m[f.killer].trim() : null, how: f.how, text: t };
+  }
+  return null;
+}
+
+// The broadcast naming this character, nearest in time to when they died. Returns null
+// rather than the wrong one: a fleet of twenty-one dies often enough that "the most
+// recent ### line" is frequently about somebody else entirely.
+export function deathBroadcastFor(name, events, at, { withinMs = 30_000 } = {}) {
+  if (!name) return null;
+  let best = null;
+  for (const e of events || []) {
+    const p = parseDeathBroadcast(e.text);
+    if (!p || p.who.toLowerCase() !== String(name).toLowerCase()) continue;
+    const dt = Math.abs((e.at ?? 0) - (at ?? 0));
+    if (dt > withinMs) continue;
+    if (!best || dt < best.dt) best = { ...p, at: e.at, dt };
+  }
+  return best;
+}

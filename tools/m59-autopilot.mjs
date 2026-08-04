@@ -683,6 +683,9 @@ export class Autopilot {
     // nearly every time. Scooter cast it forty times from an inn for nothing; standing
     // first produced a mace on the next attempt. See standToAct.
     await skills.standToAct(s).catch(() => null);
+    // Standing invalidates any rest in progress, so stop believing we are seated — else
+    // the unarmed branch will not sit again and the mana never comes back.
+    this.sittingFor = null;
     // And shed anything already known dead, because the mana is spent whether or not the
     // weapon survives ReqNewHold (creaweap.kod:116-129).
     await skills.freeRoomFor(s).catch(() => null);
@@ -2210,6 +2213,25 @@ export class Autopilot {
 
   // The whole record, as one object. Written on death, and readable any time — calling
   // it while alive is how you check the recorder works without killing anything.
+  // Listen for our own death broadcast. Bounded and short: it normally lands within a
+  // second, and everything after this point — the Underworld, the walk back — destroys
+  // the evidence, so waiting long is worse than missing it.
+  //
+  // Matched on OUR name. A fleet of twenty-one dies often enough that "the most recent
+  // ### line" is regularly about somebody else, which is exactly the sort of near-miss
+  // that would make the record confidently wrong instead of honestly empty.
+  async awaitDeathBroadcast({ waitMs = 3000 } = {}) {
+    const c = this.s.client;
+    if (!c) return null;
+    const name = c.me?.name ?? this.s.name;
+    const at = Date.now();
+    const seen = () => skills.deathBroadcastFor(name, c.events ?? [], at);
+    const already = seen();
+    if (already) return already;
+    await c.waitFor({ kinds: ['message'], timeoutMs: waitMs }).catch(() => null);
+    return seen();
+  }
+
   postMortem(reason = 'died') {
     const frames = (this.recent5 || []).filter(f => !/underworld/i.test(f.room || ''));
     const last = frames[frames.length - 1] || null;
@@ -3097,7 +3119,39 @@ export class Autopilot {
         // somebody can actually read afterwards.
         //
         // Assembled from `lastDeath` rather than beside it, so the two cannot drift.
-        const pm = { ...this.postMortem('died'), summary: this.lastDeath };
+        // WAIT FOR THE SERVER TO SAY WHO DID IT.
+        //
+        // The death is broadcast to the whole world and the broadcast NAMES THE KILLER —
+        // the one that struck the final blow, not the crowd (system.kod:49-57). It
+        // arrives a moment after we notice we are dead, so the record used to be written
+        // just before the single most authoritative fact about the death showed up, and
+        // `killed_by` was filled in from whatever happened to be standing next to us.
+        //
+        // That is a different question and it answers it badly. Against 249 deaths with a
+        // matching broadcast, the crowd's most common member was the actual killer 51% of
+        // the time — a coin flip, written into the record as a cause of death. It also
+        // manufactured a culprit: twelve deaths at the border of the Badlands were blamed
+        // on "soldier of the Duke's army" purely for being nearby, when the broadcasts say
+        // groundworm and troll, and faction soldiers do not start fights with the
+        // unaligned in the first place.
+        //
+        // A couple of seconds is worth it once per death. If it never comes, the record
+        // says so rather than falling back silently.
+        const bcast = await this.awaitDeathBroadcast().catch(() => null);
+        const pm = { ...this.postMortem('died'), summary: this.lastDeath,
+                     killed_by_broadcast: bcast };
+        if (bcast) {
+          // The authoritative answer wins, and what was nearby is kept beside it — the
+          // crowd is still the right answer to "how outnumbered were we".
+          this.lastDeath.was_nearby = this.lastDeath.killed_by;
+          this.lastDeath.killed_by = bcast.killer ? [bcast.killer] : [];
+          this.lastDeath.death_broadcast = bcast.text;
+          this.lastDeath.how_died = bcast.how;
+        } else {
+          this.lastDeath.killed_by_is_a_guess = true;
+          this.lastDeath.note_killer = 'no death broadcast arrived within the wait, so ' +
+            'killed_by is only what was standing nearby — right about half the time';
+        }
         const file = this.writePostMortem(pm);
         this.lastDeath.post_mortem = file;
         this.lastPostMortem = pm;
@@ -3191,12 +3245,26 @@ export class Autopilot {
       const sat = await this.settle('no weapon, resting for the mana to make one')
                             .catch(() => ({ settled: false }));
       if (!sat?.settled && this.sanctuary()) {
-        await s.pacer.submit('rest', () => c.rest()).catch(() => {});
-        this.note('sitting down anywhere to regain mana', {
-          mana: c.vitals?.()?.mana?.value ?? null, needs: 15,
-          why: 'settle() found nowhere it liked, and standing up regenerates mana far too ' +
-               'slowly to ever reach the 15 this needs — sitting is what matters, not where',
-        });
+        // SIT ONCE AND THEN LEAVE IT ALONE.
+        //
+        // The pass is about a second long, so the first version of this re-sent REST
+        // every second. Rowlf spent hundreds of passes "sitting down anywhere to regain
+        // mana" while its mana crawled from 2 to 4 — an interrupted rest restores
+        // nothing, and a rest re-issued every second is an interrupted rest. It also
+        // wrote the same journal line hundreds of times, which buries everything else.
+        //
+        // So sit when we are not already sitting, and say so once. Standing up for any
+        // reason clears the flag, because the next thing to do is sit again.
+        const now = Date.now();
+        if (!this.sittingFor || now - this.sittingFor > 60_000) {
+          await s.pacer.submit('rest', () => c.rest()).catch(() => {});
+          this.sittingFor = now;
+          this.note('sitting down anywhere to regain mana', {
+            mana: c.vitals?.()?.mana?.value ?? null, needs: 15,
+            why: 'settle() found nowhere it liked, and standing regenerates mana far too ' +
+                 'slowly to ever reach the 15 this needs — sitting is what matters, not where',
+          });
+        }
       }
       this.noProgress(`unarmed — ${c.vitals?.()?.mana?.value ?? 0} mana, needs 15 to make one`);
       return;
