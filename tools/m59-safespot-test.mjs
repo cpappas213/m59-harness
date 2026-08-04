@@ -12,6 +12,7 @@
 // directions and expensive in both. Believing a bad square is safe makes the keeper
 // stand still and rest while something eats it. Refusing to believe a good one throws
 // away the largest advantage in the game — a free heal to full in a monster room.
+import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import { unlinkSync } from 'node:fs';
 import { Autopilot } from './m59-autopilot.mjs';
 import { SafeSpotBook } from './m59-safespots.mjs';
@@ -314,7 +315,11 @@ console.log('\n--- stopping is not instant, and starting has to know that ---');
   const w = world();
   const p = keeper(w);
   p.pass = async () => { await new Promise(r => setTimeout(r, 30)); };   // a slow pass
-  p.policy.idleMs = 10;              // ...and a short gap, so the test is not a sleep
+  // ...and a short gap, so the test is not a sleep. decideMs is what the loop waits on
+  // now — deciding was un-bundled from resyncing, and idleMs only sets how often the
+  // server is re-asked. Both are set so the intent survives whichever one is read.
+  p.policy.decideMs = 10;
+  p.policy.idleMs = 10;
   p.start();
   ok('starts', p.running);
   p.stop();

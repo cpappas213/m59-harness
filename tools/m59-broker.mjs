@@ -48,11 +48,12 @@ import { resolveFleet } from './m59-fleetpath.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
          POSTMORTEM_DIR } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
+import * as parties from './m59-party.mjs';
 import { loadSpawns, huntingGrounds, roomThreats, preyFor, scorePrey, PURPOSES } from './m59-spawns.mjs';
 import { safeSpots, safeSpotBook } from './m59-safespots.mjs';
 import { planRuns, planProvisioning } from './m59-lootrun.mjs';
 import { planCharacter, STAT_ORDER, STAT_PRESETS } from './m59-newchar.mjs';
-import { recordSample, recordEvent, summarise as ledgerSummary, readLedger, deathReport, timeReport } from './m59-ledger.mjs';
+import { recordSample, recordEvent, summarise as ledgerSummary, readLedger, deathReport, timeReport, spellReport } from './m59-ledger.mjs';
 import { renderDashboard } from './m59-dashboard.mjs';
 import { renderHero, startScript } from './m59-hero-page.mjs';
 import { inboxIfAny, dropInbox } from './m59-inbox.mjs';
@@ -434,6 +435,12 @@ async function resumeFleet() {
         const p = autopilotFor(s);
         p.mode = autopilot.mode || p.mode;
         Object.assign(p.policy, autopilot.policy || {});
+        // RE-ESTABLISH THE PAIRING, which the policy remembers and the register does
+        // not. m59-party's register is process-wide and in-memory, so it is empty after
+        // a restart — and a keeper whose policy says it has a partner, in a register
+        // that says it has none, waits for somebody who will never be reported. The
+        // instruction is the durable half; this turns it back into a live pairing.
+        if (autopilot.policy?.partner) parties.pair(agent, autopilot.policy.partner);
         p.start();
         keeper = p.running ? `${p.mode}/${p.policy.hunt || '-'}` : 'FAILED TO START';
       }
@@ -958,6 +965,12 @@ const arrivalReport = (s) => {
 
 const orderExits = (candidates) => candidates.slice().sort((a, b) =>
   (a.reachable === false) - (b.reachable === false) ||
+  // AN EXIT WITH NO SQUARE TO STAND ON GOES LAST. Without a stand_on, leaveVia falls
+  // back to scanning the whole boundary line for somewhere walkable — and when that
+  // line has no floor it fails outright, which is the "no floor anywhere on the west
+  // boundary" dead end. A sibling exit that names an actual square is strictly better,
+  // even if it is further away, because it is the one that can be walked to.
+  (a.stand_on == null) - (b.stand_on == null) ||
   (a.steps_away ?? Infinity) - (b.steps_away ?? Infinity));
 
 class Session {
@@ -1551,28 +1564,65 @@ class Session {
 
     let queue = plan.steps.slice();
     let taken = 0, replans = 0;
+    // SQUARES SOMETHING IS STANDING ON. The geometry models walls and knows nothing
+    // about occupancy, and these rooms cap at seven to twelve monsters — so the common
+    // reason a step does not happen is that something is in the way.
+    const occupied = new Set();
+    let stalledOn = null, stalledTimes = 0;
     while (queue.length && taken < maxSteps) {
       if (this.movementWasCancelled(movementGeneration, controlToken))
         return this.cancelledMovement({ steps: taken, replans });
       const next = queue.shift();
+      const was = c.self ? { col: c.self.col, row: c.self.row } : null;
       const r = await this.step(next.col, next.row);
       taken++;
       if (r.left_room)
         return { arrived: false, left_room: true, steps: taken, note: 'a step crossed the room edge' };
       const now = c.self;
       if (!now) break;
-      if (now.col !== next.col || now.row !== next.row) {
-        // The server put us somewhere other than the plan said. Something the
-        // geometry does not model is in the way, so replan from where we actually
-        // are rather than walking on down a stale route.
-        if (++replans > 3)
-          return { arrived: false, blocked_at: { col: now.col, row: now.row }, steps: taken,
-                   note: 'kept ending up somewhere other than the planned square' };
-        const re = geo.path(now.row, now.col, row, col);
-        if (!re.found)
-          return { arrived: false, blocked_at: { col: now.col, row: now.row }, steps: taken, reason: re.reason };
-        queue = re.steps.slice();
+      if (now.col === next.col && now.row === next.row) { stalledOn = null; stalledTimes = 0; continue; }
+
+      // DID NOT MOVE AT ALL vs ENDED UP SOMEWHERE ELSE. These were treated the same and
+      // they need opposite responses. Ending up elsewhere means the route is stale, so
+      // replanning from the new position is right. NOT MOVING means the next square is
+      // occupied — and replanning from an unchanged position returns the identical
+      // route, so the walker spent its three replans re-deciding to walk into the same
+      // monster and then reported "kept ending up somewhere other than the planned
+      // square" about a character that had not moved at all.
+      const didNotMove = was && now.col === was.col && now.row === was.row;
+      if (didNotMove) {
+        // Monsters wander. One retry costs a second and often clears it, which is
+        // cheaper and less disruptive than routing the long way round.
+        if (stalledOn === `${next.row},${next.col}` && stalledTimes >= 1) {
+          occupied.add(`${next.row},${next.col}`);
+          stalledOn = null; stalledTimes = 0;
+        } else {
+          stalledOn = `${next.row},${next.col}`;
+          stalledTimes++;
+          queue.unshift(next);                       // try the same square once more
+          await new Promise(res => setTimeout(res, 700));
+          continue;
+        }
       }
+
+      if (++replans > 8)
+        return { arrived: false, blocked_at: { col: now.col, row: now.row }, steps: taken,
+                 routed_around: [...occupied],
+                 note: 'kept ending up somewhere other than the planned square' };
+      const re = geo.path(now.row, now.col, row, col, { avoid: occupied });
+      if (!re.found) {
+        // With nothing to route around, the answer is genuinely "no route". With
+        // squares excluded, the exclusions may BE the problem — so try once more
+        // without them rather than reporting a room as impassable because of a monster.
+        const open = occupied.size ? geo.path(now.row, now.col, row, col) : re;
+        if (!open.found)
+          return { arrived: false, blocked_at: { col: now.col, row: now.row }, steps: taken,
+                   reason: open.reason };
+        occupied.clear();
+        queue = open.steps.slice();
+        continue;
+      }
+      queue = re.steps.slice();
     }
     const me = c.self;
     return { arrived: !!me && me.col === col && me.row === row,
@@ -1861,7 +1911,41 @@ class Session {
     cands.sort((a, b) => manhattan(a) - manhattan(b));
     cands = cands.slice(0, maxItems);
 
+    // DO NOT PICK UP A WEAPON THAT IS ALREADY BROKEN.
+    //
+    // A shattered weapon is worth nothing, cannot be wielded, cannot be sold, and is not
+    // renamed — so it looks exactly like the real thing on the floor and gets taken every
+    // time. That is where the fleet's dead maces came from: Floyd carrying six and Kermit
+    // eight, all picked up off corpses, all indistinguishable until something tried to
+    // wield one. Asking the server here costs one look per weapon-shaped candidate and
+    // saves a pack slot carried across the world.
+    //
+    // Only weapon-shaped names are checked, because that is the only class whose
+    // brokenness we can read, and only when nothing was asked for by id — an explicit
+    // `ids` request is the caller overriding us on purpose. UNKNOWN is taken, not
+    // skipped: a look that came back empty is not evidence of anything.
+    const brokenSkipped = [];
+    if (!ids?.length && cands.length) {
+      const weaponish = cands.filter(o => skills.weaponScore(c.rsc.get(o.nameRsc) || '') > 0);
+      if (weaponish.length) {
+        const verdict = await skills.inspectForBroken(this, weaponish.map(o => o.id))
+                                    .catch(() => ({ broken: [] }));
+        const dead = new Set(verdict.broken || []);
+        if (dead.size) {
+          cands = cands.filter(o => {
+            if (!dead.has(o.id)) return true;
+            brokenSkipped.push(c.rsc.get(o.nameRsc) || 'a weapon');
+            return false;
+          });
+        }
+      }
+    }
+
     const taken = [], refused = [];
+    for (const n of brokenSkipped)
+      refused.push({ item: n, why: 'BROKEN — the server says it has been shattered. It cannot be ' +
+                                   'wielded or sold, and its name does not say so, which is why the ' +
+                                   'fleet used to carry them for ever. Left on the floor.' });
     for (const n of cursedSkipped)
       refused.push({ item: n, why: 'CURSED — it equips itself, cannot be removed without an ' +
                                    'uncurse spell, and makes you easier to hit. Leave it.' });
@@ -1951,8 +2035,21 @@ class Session {
       // A room often publishes SEVERAL squares for the same doorway — the Royal
       // Bank of Jasper lists two, and the first has a brazier standing on it.
       // Taking whichever came first in the file is a coin flip, so try them all.
-      const candidates = this.world.exits().filter(e =>
-        e.to === nextHop.to && e.kind === nextHop.kind);
+      // MATCH ON THE DESTINATION, NOT ON THE KIND.
+      //
+      // Requiring e.kind === nextHop.kind threw away every working way out. Cor Noth
+      // publishes THREE exits to room 574: one declared `edge`/west with
+      // reachable:false and stand_on:null, and two more at row 1 — the north boundary —
+      // both reachable with real squares. The route planner names the west one, the
+      // kind filter then discarded the two that work, and the hop failed with "no floor
+      // anywhere on the west boundary" about a room with two usable doors to that
+      // destination. It stranded every donor in that town for hours, and read as a
+      // sealed area rather than as a bad pick.
+      //
+      // A room's several ways to the same place are alternatives, not different
+      // journeys. Take them all and let orderExits choose — it already prefers
+      // reachable ones and then the nearest.
+      const candidates = this.world.exits().filter(e => e.to === nextHop.to);
       const exit = orderExits(candidates)[0];
       if (!exit)
         return { arrived: false, log, reason: 'cannot find the exit to ' + nextHop.to_name + ' from here' };
@@ -2914,6 +3011,30 @@ const TOOLS = [
     run: (a) => skills.equipBest(session(a.agent)),
   },
   {
+    name: 'wear_best',
+    description:
+      'Put on the best armour, shield and helm in your inventory. The counterpart to equip_best, ' +
+      'which handles WEAPONS ONLY — a character can own leather armour and fight in its shirt, and ' +
+      'the pack will not tell you: only the server\'s use list (plUsing) says what is actually worn.\n' +
+      'HEAVY ARMOUR IS NOT SIMPLY BETTER HERE, which is why this ranks rather than picking the ' +
+      'dearest. Each piece carries viDefense_base (how often you are hit at all) and viDamage_base ' +
+      '(a flat amount absorbed per hit), and they pull opposite ways: leather is +50 defence and ' +
+      'absorbs nothing, plate is -200 defence and absorbs 6, with a -30 spell modifier on top. ' +
+      'Against a monster whose entire attack rating is around 210, -200 defence is enormous — and ' +
+      'if you are fighting from a safe spot the intended number of hits is zero, which absorption ' +
+      'does nothing about and defence does everything about. So leather outranks plate for these ' +
+      'characters, deliberately.\n' +
+      'Wearing something already worn is REFUSED ("your hands are too full"), so this reads the use ' +
+      'list first and only sends what is actually missing.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      slots: { type: 'array', items: { type: 'string', enum: ['armour', 'shield', 'helm'] },
+               description: 'default all three' },
+    }, required: ['agent'] },
+    run: (a) => skills.wearBest(session(a.agent),
+                               a.slots?.length ? { slots: a.slots } : {}),
+  },
+  {
     name: 'escape_underworld',
     description:
       'Get out of the Underworld, which is where you wake up after dying and which has NO exits in the ' +
@@ -3062,6 +3183,25 @@ const TOOLS = [
           'and it goes here instead. Still refused if the room cannot generate the prey. ' +
           'null clears it. `spread` sets these for a whole fleet at once' },
       roam_limit: { type: 'number', description: 'how many rooms it may wander before stopping, default 6' },
+      decide_ms: { type: 'number', description:
+        'HOW OFTEN THE KEEPER RE-DECIDES, default 1000. This is nearly free: the server pushes the ' +
+        'world (BP.CREATE / BP.REMOVE / BP.MOVE keep room.objects live, stats arrive on change), so ' +
+        'a decision reads cache and sends nothing. It used to be bound to resync_ms at 8000, which ' +
+        'meant up to eight seconds of taking hits in the open before anything reconsidered' },
+      resync_ms: { type: 'number', description:
+        'HOW OFTEN TO RE-ASK the server for the room and stats, default 8000. Not free and not ' +
+        'passive: it is two requests plus up to four seconds waiting, and roomContents counts as an ' +
+        'action that calls NotifyMonstersOfPresence — it WAKES THE ROOM, which is why playing dead ' +
+        'forbids it. Lower this and a character in a safe spot repeatedly announces itself. The ' +
+        'push stream is the primary source; this only corrects drift' },
+      partner: { type: ['string', 'null'], description:
+        'FIGHT ALONGSIDE THIS AGENT. There is no party system in the game — this is a convention two ' +
+        'keepers hold — and what it buys is that BOTH advance from one kill: advancement needs that ' +
+        'you damaged it and it was your current target, per character, so two characters on one ' +
+        'creature both gain from the one corpse. They also share one wall, converge on one target, ' +
+        'and whichever is hurt stops swinging (without re-targeting, which would discard its credit) ' +
+        'while the other carries the fight. A partnered character will not start a fight while its ' +
+        'partner is in another room. null clears it. Set it on BOTH sides' },
       strategy: { type: 'string', enum: ['baseline', 'wellfed', 'fieldrest', 'trader', 'coop'],
         description: 'which farming pattern to run. These exist to be compared against each other: ' +
           'the ledger records the strategy with every sample, so `history` reports max health gained ' +
@@ -3112,6 +3252,18 @@ const TOOLS = [
       if (a.bank_above !== undefined)
         p.policy.bankAbove = a.bank_above == null ? null : Number(a.bank_above);
       if (a.roam_limit !== undefined) p.policy.roamLimit = Number(a.roam_limit);
+      if (a.decide_ms !== undefined) p.policy.decideMs = Math.max(250, Number(a.decide_ms));
+      if (a.resync_ms !== undefined) p.policy.resyncMs = Math.max(1000, Number(a.resync_ms));
+      // PAIRING IS TWO THINGS AND BOTH HAVE TO HAPPEN: the instruction on the policy,
+      // which is what survives into the roster and a restart, and the registration in
+      // the process-wide party register, which is what the keepers actually read.
+      // Setting only the first is silent — the character believes it has a partner and
+      // no other keeper knows.
+      if (a.partner !== undefined) {
+        p.policy.partner = a.partner || null;
+        if (a.partner) parties.pair(a.agent, a.partner);
+        else parties.unpair(a.agent);
+      }
       if (a.strategy !== undefined) {
         if (!STRATEGIES[a.strategy])
           throw new Error(`strategy must be one of ${Object.keys(STRATEGIES).join(', ')}`);
@@ -3126,7 +3278,14 @@ const TOOLS = [
       if (a.fight_above_vigor !== undefined) p.policy.fightAboveVigor = Number(a.fight_above_vigor);
       if (a.use_safe_spots !== undefined) p.policy.useSafeSpots = !!a.use_safe_spots;
       if (a.hold_resume_above !== undefined) p.policy.holdResumeAbove = Number(a.hold_resume_above);
-      if (a.pull_within !== undefined) p.policy.pullWithin = Number(a.pull_within);
+      // 0 or null means NO LIMIT, not "never pull anything". There is no sensible reading
+      // of "fetch things within zero steps", and the default is unlimited — see pull() —
+      // so this is the only way to express "put the ceiling back where it was" and then
+      // take it off again. Number(null) is 0, which without this line silently froze a
+      // keeper out of every fight it could otherwise have had.
+      if (a.pull_within !== undefined)
+        p.policy.pullWithin = (a.pull_within === null || Number(a.pull_within) <= 0)
+          ? null : Number(a.pull_within);
       if (a.break_out_via_logoff !== undefined) p.policy.breakOutViaLogoff = !!a.break_out_via_logoff;
       if (p.mode === 'farm' && !p.policy.hunt)
         return { started: false, reason: 'farm mode needs something to hunt — pass hunt with a creature name' };
@@ -4044,10 +4203,20 @@ const TOOLS = [
         'fighting / recovering / travelling, plus what each stall was and what ended it. Resting and ' +
         'eating count as ACTIVE — a character regenerating is working, and counting that as a stall ' +
         'made a working fleet look broken' },
+      spells: { type: 'boolean', description: 'AUDIT THE CASTING. What each keeper cast, what it ' +
+        'REFUSED to cast and why, and what it bought instead. Read `worked` first: both supply ' +
+        'spells refuse silently — create food without 2 elderberry + 2 herbs, create weapon below ' +
+        '15 mana — so a count of casts cannot tell forty meals from forty silent refusals, and ' +
+        'nothing else in the record can either. `declined` is the half a log of actions cannot ' +
+        'give you: a spell listed there with cast: 0 means the loop never started rather than that ' +
+        'it is failing. Combines with `character` for one keeper' },
       limit: { type: 'number' },
     } },
     run: async (a) => {
       const sinceMs = (Number(a.hours) > 0 ? Number(a.hours) : 24) * 3600 * 1000;
+      // Before the per-character branch: `spells` wants the same narrowing but a
+      // different report, and falling through would give the level summary instead.
+      if (a.spells) return spellReport({ sinceMs, character: a.character || null });
       if (a.character) {
         const { samples, events } = readLedger({ sinceMs });
         const mine = samples.filter(x => x.character?.toLowerCase() === a.character.toLowerCase());
@@ -4437,11 +4606,15 @@ const TOOLS = [
       'again from the top — or leave, at full health, having decided to. A fight you were going to ' +
       'die in becomes a draw.\n' +
       'Two things this returns, and the difference between them is the whole point:\n' +
-      '  GUESSES   the most defensible squares by geometry, best first, with how many sides are open ' +
-      '(`can_reach_you`) and the longest unbroken wall arc behind you (`back_cover`). This is what ' +
-      'the one-byte-per-square movement grid can see, and the real mechanic is finer than that — it ' +
-      'lives in the BSP walls and probably the angles, which is why players learn specific spots by ' +
-      'experiment. Treat a high score as a hypothesis.\n' +
+      '  GUESSES   the most defensible squares by geometry, best first. `can_reach_you` is how many ' +
+      'of the 28 squares within melee reach something could actually swing at you from — reach is ' +
+      'SquaredDistanceTo <= range^2 with range 2 or 3 (monster.kod:1682), so it is a DISC OF RADIUS 3, ' +
+      'not the eight squares touching you — filtered by the server\'s own LineOfSight walk. ' +
+      '`free_shots` is the number within OUR reach whose line back to us is blocked: stand there, hit ' +
+      'whatever steps into one, and it cannot answer, because Player.TargetWithinSightAndRange ' +
+      '(player.kod:4115) checks range and facing but never calls LineOfSight while the monster does. ' +
+      'That asymmetry is the mechanic. `back_cover` is the longest unbroken wall arc behind you, kept ' +
+      'as a tie-break. Treat a high score as a hypothesis — a good one, but the book still outranks it.\n' +
       '  PROVEN    `known` is what has actually been tested here, by standing in it while something ' +
       'tried to kill us: `holds` means nothing landed, `does not work` means something did. This ' +
       'outranks the geometry in both directions and persists across sessions, so one character\'s ' +
@@ -5060,6 +5233,14 @@ const TOOLS = [
           autopilot: st ? { mode: st.mode, running: st.running, kills: st.did?.kills ?? 0 } : null,
           // Which farming pattern this one is running, so the ledger can compare them.
           strategy: st?.policy?.strategy ?? null,
+          // WHO IT FIGHTS ALONGSIDE, and whether that is currently mutual. A pairing is
+          // two halves and both must agree: a character whose policy names a partner
+          // that does not name it back is not in a party, and the whole tactic quietly
+          // degrades to two characters standing in the same room. `partner_ok` is the
+          // field to read, because the failure is invisible in `partner` alone.
+          partner: st?.policy?.partner ?? null,
+          partner_ok: st?.policy?.partner
+            ? parties.arePartners(name, st.policy.partner) : null,
           // Time by activity. `stalled_pct` is the honest health metric: recovering
           // is active, and a character sitting down regenerating is working.
           time: st?.time ?? null,

@@ -32,7 +32,34 @@ const DIR = ledgerDirFor(fleetName());
 const dayFile = (t = Date.now()) =>
   join(DIR, 'fleet-' + new Date(t).toISOString().slice(0, 10) + '.jsonl');
 
+// A TEST MUST NEVER WRITE INTO A REAL FLEET'S HISTORY.
+//
+// This file is appended and never rotated — it is the only record of what the fleet
+// did over days, and the reports built on it are read as fact. A test fixture's
+// character landing in it is not a cosmetic problem: `Tester` becomes a character in
+// the audit, and nothing downstream can tell it from a real one.
+//
+// It happened the moment the keeper started recording its own casts. The offline
+// suites build extremely convincing sessions — fake client, fake pacer, a character
+// with a name — so nothing about the OBJECT distinguishes a test from a keeper by
+// inspection. The entry point does, and a fixture cannot fake it.
+//
+// The rule is therefore: a test that touches keeper code sets M59_LEDGER_DIR to a
+// scratch directory, exactly as m59-ledger-test.mjs does. If it forgets, this says so
+// on stderr instead of quietly corrupting the record.
+const IS_TEST = /[\\/]m59-[a-z-]+-test\.mjs$/.test(process.argv[1] || '');
+let warnedTestWrite = false;
+
 function append(obj) {
+  if (IS_TEST && !process.env.M59_LEDGER_DIR) {
+    if (!warnedTestWrite) {
+      warnedTestWrite = true;
+      console.error('[ledger] REFUSING to write from a test into ' + DIR +
+                    '\n[ledger] set M59_LEDGER_DIR to a scratch directory before importing ' +
+                    'anything that records — see m59-ledger-test.mjs');
+    }
+    return;
+  }
   try {
     mkdirSync(DIR, { recursive: true });
     appendFileSync(dayFile(), JSON.stringify(obj) + '\n');
@@ -46,9 +73,20 @@ function append(obj) {
 // having to be reported from a dozen call sites that would each forget one.
 const last = new Map();
 
+// THE PAYLOAD MUST NOT BE ABLE TO OVERWRITE THE EVENT'S OWN FIELDS.
+//
+// `detail` is spread over the record, so a detail field called `kind` silently becomes
+// the event kind — an item purchase carrying `kind: 'elderberry'` files itself as an
+// elderberry event, every reader filtering on 'bought' finds nothing, and the write
+// itself looks perfectly fine. This is the same shape as the `emit(kind, data)` bug in
+// m59-client, and it cost the same afternoon twice.
+//
+// So the identity fields are applied AFTER the spread. A caller that puts `kind` in a
+// detail is always making a mistake; this makes the mistake inert rather than silent.
 export function recordEvent(character, kind, detail = {}) {
   if (!character) return;
-  append({ t: Date.now(), iso: new Date().toISOString(), type: 'event', character, kind, ...detail });
+  append({ t: Date.now(), iso: new Date().toISOString(), ...detail,
+           type: 'event', character, kind });
 }
 
 // `rows` is the fleet tool's own output, so the ledger records exactly what a
@@ -189,6 +227,146 @@ export function deathReport({ sinceMs = 24 * 3600 * 1000, limit = 20 } = {}) {
       'than one keeper pass — raising the threshold will not help and only fighting ' +
       'something weaker will. A trail that decays through the threshold means the ' +
       'withdrawal was attempted and lost, which is a speed problem, not a policy one.',
+  };
+}
+
+// WHAT THE KEEPERS CAST, WHAT THEY REFUSED TO CAST, AND WHAT THEY BOUGHT INSTEAD.
+//
+// The fleet's supply plan is to make its own food rather than shop for it: `create
+// food` turns 2 ElderBerry and 2 Herbs into a meal, and the two reagents drop free in
+// the rooms these characters already hunt. Whether that plan is actually running is
+// not visible anywhere else. Both spells it depends on refuse SILENTLY — create food
+// without its reagents, create weapon below 15 mana — so a keeper whose supply loop
+// has been broken since Tuesday looks exactly like one that simply had a quiet day.
+//
+// Four questions, and each needs a different one of these fields:
+//
+//   is it casting at all           by_spell[].cast
+//   does casting WORK              by_spell[].worked — the one that matters
+//   why is it not casting          declined, which no log of actions can tell you
+//   is it shopping instead         purchases.by_kind — reagent, food, or neither
+//
+// `worked` is the number to read first. A count of casts alone cannot separate forty
+// meals from forty silent refusals, and the fleet spent a while believing the first.
+export function spellReport({ sinceMs = 24 * 3600 * 1000, character = null } = {}) {
+  const { events } = readLedger({ sinceMs });
+  const mine = (e) => !character || e.character?.toLowerCase() === character.toLowerCase();
+  const casts = events.filter(e => e.kind === 'cast' && mine(e));
+  const declines = events.filter(e => e.kind === 'cast_declined' && mine(e));
+  const buys = events.filter(e => e.kind === 'bought' && mine(e));
+  const buyDeclines = events.filter(e => e.kind === 'buy_declined' && mine(e));
+
+  const bySpell = new Map();
+  for (const e of casts) {
+    const k = e.spell || 'unknown';
+    const b = bySpell.get(k) || { spell: k, cast: 0, produced: 0, nothing: 0,
+                                  mana_spent: 0, characters: new Set(), why: {} };
+    b.cast++;
+    if (e.ok) b.produced++; else b.nothing++;
+    b.mana_spent += Number(e.mana_cost) || 0;
+    if (e.character) b.characters.add(e.character);
+    if (e.why) b.why[e.why] = (b.why[e.why] || 0) + 1;
+    bySpell.set(k, b);
+  }
+  // A spell that was ONLY ever declined has no cast row, and that is the most
+  // interesting row there is — it is the difference between "this loop is failing" and
+  // "this loop never started". Give it one.
+  for (const e of declines) {
+    const k = e.spell || 'unknown';
+    if (!bySpell.has(k))
+      bySpell.set(k, { spell: k, cast: 0, produced: 0, nothing: 0, mana_spent: 0,
+                       characters: new Set(), why: {} });
+    if (e.character) bySpell.get(k).characters.add(e.character);
+  }
+
+  // Declines are rate-limited to one line per ten minutes per (spell, reason), so the
+  // LINE count is meaningless and `times_so_far` is the real one — it is that keeper's
+  // running total. Take the largest seen per character, then add them up: keepers are
+  // restarted often and each restart starts its own count from zero, so summing every
+  // line would multiply, and taking one would drop every character but the last.
+  const declineTotals = new Map();
+  for (const e of declines) {
+    const key = (e.spell || 'unknown') + ' | ' + (e.why || 'unspecified');
+    const per = declineTotals.get(key) || new Map();
+    const seen = per.get(e.character) || 0;
+    per.set(e.character, Math.max(seen, Number(e.times_so_far) || 1));
+    declineTotals.set(key, per);
+  }
+
+  // `item_kind`, not `kind` — `kind` on one of these records is always 'bought', which
+  // is how the filter above found it. See recordEvent.
+  const kinds = {};
+  for (const e of buys) {
+    const k = e.item_kind || 'other';
+    const v = kinds[k] || (kinds[k] = { items: 0, spent: 0 });
+    v.items++; v.spent += Number(e.cost) || 0;
+  }
+
+  const perChar = new Map();
+  const charOf = (n) => {
+    let v = perChar.get(n);
+    if (!v) perChar.set(n, v = { character: n, cast: 0, produced: 0, spent: 0, bought: 0 });
+    return v;
+  };
+  for (const e of casts) {
+    if (!e.character) continue;
+    const v = charOf(e.character);
+    v.cast++; if (e.ok) v.produced++;
+  }
+  for (const e of buys) {
+    if (!e.character) continue;
+    const v = charOf(e.character);
+    v.bought++; v.spent += Number(e.cost) || 0;
+  }
+
+  const spells = [...bySpell.values()].map(b => ({
+    spell: b.spell, cast: b.cast, produced: b.produced, nothing: b.nothing,
+    worked: b.cast ? Math.round(100 * b.produced / b.cast) + '%' : null,
+    mana_spent: b.mana_spent || undefined,
+    characters: b.characters.size,
+    reasons: Object.entries(b.why).sort((a, b2) => b2[1] - a[1])
+                   .map(([w, n]) => ({ why: w, times: n })),
+  })).sort((a, b) => b.cast - a.cast);
+
+  return {
+    window_hours: +(sinceMs / 3600000).toFixed(1),
+    ...(character ? { character } : {}),
+    by_spell: spells,
+    declined: [...declineTotals.entries()].map(([key, per]) => {
+      const [spell, why] = key.split(' | ');
+      return { spell, why, times: [...per.values()].reduce((a, b) => a + b, 0),
+               characters: per.size };
+    }).sort((a, b) => b.times - a.times),
+    purchases: {
+      total_spent: Object.values(kinds).reduce((a, v) => a + v.spent, 0),
+      by_kind: Object.entries(kinds).map(([kind, v]) => ({ kind, items: v.items, spent: v.spent })),
+      // The direct answer to "are they buying food or reagents", stated rather than
+      // left to be inferred from an absent row.
+      bought_food: !!kinds.food,
+      bought_reagents: !!(kinds.elderberry || kinds.herb),
+      never_offered_food:
+        'nothing in the fleet can buy prepared food. restockReagents filters a ' +
+        'merchant\'s list through skills.SHAREABLE, which contains elderberry and ' +
+        'herbs and nothing else — so an empty larder is only ever answered by casting ' +
+        'or by looting. If food should be purchasable, that list is where to add it.',
+      why_declined: [...new Set(buyDeclines.map(e => e.why))].slice(0, 8),
+    },
+    by_character: [...perChar.values()]
+      .map(v => ({ ...v, worked: v.cast ? Math.round(100 * v.produced / v.cast) + '%' : null }))
+      .sort((a, b) => b.cast - a.cast),
+    recent: casts.slice(-25).reverse().map(e => ({
+      at: e.iso || new Date(e.t).toISOString(), character: e.character,
+      spell: e.spell, ok: e.ok, why: e.why,
+      ...(e.made ? { made: e.made } : {}), ...(e.target ? { target: e.target } : {}),
+      ...(e.reagents_before ? { reagents_before: e.reagents_before } : {}),
+    })),
+    read_this_way:
+      '`worked` is the percentage of casts that produced something, and it is the only ' +
+      'field that distinguishes a supply loop from a character wasting mana — neither ' +
+      'spell reports its own failure. `declined` is why a cast did NOT happen, and a ' +
+      'spell appearing there with cast: 0 means the loop never started rather than that ' +
+      'it is failing. `times` in declined is summed from each keeper\'s own running ' +
+      'count, so a broker restart resets it and the total is a floor, not an exact figure.',
   };
 }
 

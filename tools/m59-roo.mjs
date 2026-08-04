@@ -211,7 +211,12 @@ export class RoomGeometry {
   // A* over the real geometry. Diagonals cost slightly more so paths hug the
   // straight line rather than staircasing, which matters because every step is a
   // separate second of wall-clock time.
-  path(fromRow, fromCol, toRow, toCol, { fine = true, maxNodes = 200000 } = {}) {
+  // `avoid` is a Set of "row,col" the caller has discovered are impassable even though
+  // the geometry says otherwise — almost always a monster standing on one. The map
+  // knows about walls and nothing about occupancy, so without this a route through a
+  // blocked square is replanned identically for ever: the walker steps, does not move,
+  // asks for a route from the same place, and is given the same one.
+  path(fromRow, fromCol, toRow, toCol, { fine = true, maxNodes = 200000, avoid = null } = {}) {
     if (!this.inBounds(fromRow, fromCol)) return { found: false, reason: 'start is outside the room grid' };
     if (!this.inBounds(toRow, toCol)) return { found: false, reason: 'goal is outside the room grid' };
     if (!this.walkable(toRow, toCol)) return { found: false, reason: 'goal square has no floor' };
@@ -282,6 +287,10 @@ export class RoomGeometry {
       for (const n of this.neighbors(cur.r, cur.c, { fine })) {
         const nk = key(n.row, n.col);
         if (closed.has(nk)) continue;
+        // Never the GOAL, only the way there: if the destination itself is occupied we
+        // still want the route, because whatever is standing on it will move and the
+        // caller would otherwise be told the square is unreachable for ever.
+        if (avoid && !(n.row === toRow && n.col === toCol) && avoid.has(`${n.row},${n.col}`)) continue;
         const cost = (gScore.get(ck) ?? Infinity) + (n.diagonal ? 1.4142 : 1);
         if (cost >= (gScore.get(nk) ?? Infinity)) continue;
         gScore.set(nk, cost);

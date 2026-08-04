@@ -18,15 +18,16 @@
 //      shattered mid-fight was reported as wielded for as long as it was carried, while
 //      every swing after it broke was a punch.
 
+import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import {
   isJunk, JUNK_NAMES, proficiencyFor, weaponRanking, equipBest, junkAndBroken,
-  brokenSet, brokenWeaponText, abilityOf, equippedNow,
+  brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken,
 } from './m59-skills.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
 import { RoomGeometry } from './m59-roo.mjs';
 import { roomCap, karmaSafe } from './m59-spawns.mjs';
 import { OF } from './m59-parse.mjs';
-import { nearestSafeSpot } from './m59-safespots.mjs';
+import { nearestSafeSpot, safeSpots, exposureAt, lineOfSight, MAX_ATTACKERS } from './m59-safespots.mjs';
 
 let pass = 0, fail = 0;
 const ok = (what, cond, extra = '') => {
@@ -134,6 +135,65 @@ console.log('\nthe server refusing a broken weapon');
     ok(`recognised: "${t.slice(0, 34)}..."`, brokenWeaponText(t));
   ok('ordinary combat text is not mistaken for it',
      !brokenWeaponText('You hit the giant rat for 4 damage.'));
+}
+
+console.log('\nasking whether a weapon is broken BEFORE carrying it home');
+{
+  // A client that answers `look` from a script. `null` models the empty first reply the
+  // live server gives when two looks come back to back — measured, not assumed.
+  const looker = (descriptions) => {
+    const c = fakeClient([[1, 'mace'], [2, 'long sword'], [3, 'dagger']]);
+    c.looked = [];
+    c.look = function (id) {
+      this.looked.push(id);
+      const seq = descriptions[id];
+      const d = Array.isArray(seq) ? seq[this.looked.filter(x => x === id).length - 1] : seq;
+      this.events.push({ seq: ++this.evSeq, kind: 'look', id, description: d ?? null });
+    };
+    c.waitFor = function ({ kinds } = {}) {
+      const evs = this.events.filter(e => !kinds || kinds.includes(e.kind));
+      this.events = [];
+      return { events: evs };
+    };
+    return c;
+  };
+  const SHATTERED = 'A heavy mace.\r\n\r\nThis mace has been shattered by a powerful blow.';
+
+  const c1 = looker({ 1: SHATTERED, 2: 'A fine blade.', 3: 'A small knife.' });
+  const r1 = await inspectForBroken(fakeSession(c1), [1, 2, 3]);
+  ok('the shattered one is identified from its description', r1.broken.join() === '1',
+     JSON.stringify(r1));
+  ok('the sound ones are not condemned', r1.sound.join() === '2,3');
+  ok('and it is remembered, so junkAndBroken can drop it', brokenSet(c1).has(1));
+
+  // The retry. First look returns null, second returns the truth.
+  const c2 = looker({ 1: [null, SHATTERED] });
+  const r2 = await inspectForBroken(fakeSession(c2), [1]);
+  ok('an empty first reply is retried rather than believed', r2.broken.join() === '1',
+     JSON.stringify(r2));
+  ok('which took two looks', c2.looked.length === 2);
+
+  // The case that must never be guessed.
+  const c3 = looker({ 1: [null, null] });
+  const r3 = await inspectForBroken(fakeSession(c3), [1]);
+  ok('no answer at all is UNKNOWN, not broken', r3.unknown.join() === '1' && !r3.broken.length,
+     JSON.stringify(r3));
+  ok('and an unknown weapon is NOT condemned — we would be throwing away good ones',
+     !brokenSet(c3).has(1));
+
+  // Already-known ones cost nothing to re-ask about.
+  const c4 = looker({ 1: SHATTERED });
+  brokenSet(c4).add(1);
+  const r4 = await inspectForBroken(fakeSession(c4), [1]);
+  ok('a weapon already known broken is not looked at again', c4.looked.length === 0);
+  ok('but it is still reported broken', r4.broken.join() === '1');
+
+  // And junkAndBroken must then actually offer it up.
+  const c5 = looker({ 1: SHATTERED });
+  await inspectForBroken(fakeSession(c5), [1]);
+  const dead = junkAndBroken(c5);
+  ok('what inspection condemns, junkAndBroken lists for dropping',
+     dead.some(d => d.id === 1), JSON.stringify(dead));
 }
 
 console.log('\nequipBest tries the next one instead of lying');
@@ -320,6 +380,68 @@ console.log('\nthe cliff detector');
 
   const k3 = keeper(1);
   ok('the limit is configurable', k3.pullDidNotConvert('x') === true);
+}
+
+console.log('\nreach is a disc of radius 3, not the eight squares touching you');
+{
+  // An open field with one wall stub, so every claim below is about the arithmetic
+  // rather than about a fixture's corners.
+  const mk = (rows, cols, holes = []) => {
+    const flags = Buffer.alloc(rows * cols, 0x01);
+    for (const [r, c] of holes) flags[(r - 1) * cols + (c - 1)] = 0x00;
+    // Every direction open from every square; walls are expressed as missing floor,
+    // which is what CanMoveInRoom checks first.
+    const grid = Buffer.alloc(rows * cols, 0xff);
+    return new RoomGeometry({ file: 'test', version: 12, rows, cols, grid, flags,
+                              monsterGrid: null, walls: [], sidedefs: [], clientSize: null });
+  };
+
+  ok('the disc has 28 squares in it, not 8', MAX_ATTACKERS === 28);
+
+  // Open floor: everything in the disc can reach us, and nothing is a free shot.
+  const open = mk(15, 15);
+  const mid = exposureAt(open, 8, 8);
+  ok('in the open every one of the 28 can hit you', mid.attackers === 28, JSON.stringify(mid));
+  ok('and nothing can be hit for free', mid.free_shots === 0);
+  ok('but there is ground to fight from', mid.our_ground === 12);
+
+  // The square two away is inside reach and would have been missed by an adjacency
+  // model — this is the specific error the old ring made.
+  const twoAway = mk(15, 15, [[8, 9], [8, 10]]);   // a two-square stub due east
+  ok('a square two east is in reach when the floor is there',
+     exposureAt(mk(15, 15), 8, 8).attackers > exposureAt(twoAway, 8, 8).attackers);
+
+  // LineOfSight is the server's staircase walk, and it is what makes a free shot.
+  const wall = mk(15, 15, [[7, 9], [8, 9], [9, 9]]);   // a north-south wall one east
+  ok('sight through a wall square is refused', lineOfSight(wall, 8, 10, 8, 8) === false);
+  ok('sight along open floor is granted', lineOfSight(wall, 8, 6, 8, 8) === true);
+  const behind = exposureAt(wall, 8, 8);
+  ok('the wall denies squares behind it, not just the ones it occupies',
+     behind.attackers < 28 - 3, `${behind.attackers} attackers`);
+  ok('and it creates squares we can hit that cannot answer',
+     behind.free_shots > 0, JSON.stringify(behind));
+
+  // A square with no floor within our reach is a cell, not a fighting position. Our
+  // reach is 2, so clearing only the eight touching squares does NOT make one — which
+  // is the same mistake in miniature, and worth pinning.
+  const cell = mk(9, 9);
+  for (let r = 1; r <= 9; r++) for (let c = 1; c <= 9; c++) {
+    const dr = r - 5, dc = c - 5;
+    if ((dr || dc) && dr * dr + dc * dc <= 4) cell.flags[(r - 1) * 9 + (c - 1)] = 0x00;
+  }
+  ok('walling only the eight neighbours does not make a cell',
+     exposureAt(mk(9, 9, [[4,4],[4,5],[4,6],[5,4],[5,6],[6,4],[6,5],[6,6]]), 5, 5).our_ground > 0);
+  ok('a square with nothing in our reach is not offered as a spot',
+     safeSpots(cell, { limit: Infinity }).every(s => !(s.col === 5 && s.row === 5)));
+
+  // The score has to prefer the free shot over mere enclosure, because the book says
+  // free shots hold 89% against 31% for none.
+  const scored = safeSpots(wall, { limit: Infinity });
+  const best = scored[0];
+  ok('the best-scoring square in a room with a wall has free shots',
+     best && best.free_shots > 0, JSON.stringify(best && { col: best.col, row: best.row, free: best.free_shots }));
+  ok('open floor scores nothing, so it is never the pick',
+     scored.every(s => s.can_reach_you < MAX_ATTACKERS));
 }
 
 console.log('\nthe cliff, from the geometry instead of from experience');

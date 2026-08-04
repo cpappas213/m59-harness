@@ -45,6 +45,89 @@ const RING = [
   [-1, 0], [-1, 1], [0, 1], [1, 1], [1, 0], [1, -1], [0, -1], [-1, -1],
 ];
 
+// WHAT CAN ACTUALLY HIT YOU, TAKEN FROM THE SERVER'S OWN ARITHMETIC RATHER THAN GUESSED.
+//
+// Everything above was written against the assumption that melee is an adjacency
+// relation — that the things which can hit you are the eight squares touching yours.
+// It is not, and the kod is unambiguous. Both sides run the same two tests:
+//
+//   REACH   SquaredDistanceTo(what) <= GetAttackRange^2, where SquaredDistanceTo is
+//           (piRow-row)^2 + (piCol-col)^2 on SQUARE coordinates (nomoveon.kod:121).
+//           A monster's range is Bound(2 + viDifficulty/6, 2, 3) (monster.kod:1682);
+//           ours is 2 for bludgeon and slash, 3 for thrust (weapon.kod:52-54).
+//   SIGHT   Room.LineOfSight from the attacker's square to yours (monster.kod:1782).
+//
+// So the squares something can hit you from are a DISC OF RADIUS 3 — up to 28 of them —
+// filtered by line of sight. Not the eight that touch you. That single mistake is why
+// this module kept recommending squares that then failed under attack: a flat wall
+// blocks three of eight neighbours and scores as a 62% improvement, while leaving
+// twenty of the twenty-eight squares that can really reach you completely open.
+//
+// AND ONLY THE MONSTER CHECKS SIGHT. Player.TargetWithinSightAndRange (player.kod:4115)
+// checks range and a facing cone and never calls LineOfSight. That asymmetry IS the
+// mechanic players describe: from the right square you can hit it and it cannot hit you
+// back, so the fight becomes something you choose one exchange at a time. It is a
+// property of specific squares and it is computable, which is what `free_shots` counts
+// below. Nothing in this repository was looking for it.
+//
+// Radius 3 is the worst case, and deliberately so: a spot chosen against a 3 is safe
+// against the 2 that most things actually have.
+const MONSTER_REACH = 3;
+// Our own worst case, which is the pessimistic direction for a DIFFERENT reason — it is
+// the range we are sure we can strike at, so it is the range a free shot must be within.
+const PLAYER_REACH = 2;
+
+function disc(radius) {
+  const out = [];
+  for (let dr = -radius; dr <= radius; dr++)
+    for (let dc = -radius; dc <= radius; dc++)
+      if ((dr || dc) && dr * dr + dc * dc <= radius * radius) out.push([dr, dc]);
+  return out;
+}
+const MONSTER_DISC = disc(MONSTER_REACH);      // 28 squares
+const PLAYER_DISC = disc(PLAYER_REACH);        // 12 squares
+export const MAX_ATTACKERS = MONSTER_DISC.length;
+
+// Room.LineOfSight (room.kod:2125), transcribed rather than approximated.
+//
+// It is NOT Bresenham. It advances one axis per iteration — whichever is currently
+// further from the target — and asks CanMoveInRoom for that single step, giving up on
+// the first refusal. The line it traces is therefore a staircase, and it is directional:
+// sight from A to B is not always sight from B to A. The direction that matters is the
+// attacker's, so callers pass the attacker's square first.
+export function lineOfSight(geo, fromRow, fromCol, toRow, toCol, { fine = false } = {}) {
+  let r = fromRow, c = fromCol, r2 = r, c2 = c;
+  const rs = toRow - fromRow >= 0 ? 1 : -1;
+  const cs = toCol - fromCol >= 0 ? 1 : -1;
+  // Bounded because the caller's squares come from a disc, so the walk is at most six
+  // steps; the guard is against a malformed geometry, not against the algorithm.
+  for (let guard = 0; (r !== toRow || c !== toCol) && guard < 64; guard++) {
+    if (Math.abs(r - toRow) > Math.abs(c - toCol)) r2 += rs; else c2 += cs;
+    if (!geo.canMove(r, c, r2, c2, { fine })) return false;
+    r = r2; c = c2;
+  }
+  return true;
+}
+
+// How exposed one square is: how many squares something could hit you from, and how
+// many you could hit it from while it could not answer.
+export function exposureAt(geo, row, col, { fine = false } = {}) {
+  let attackers = 0, freeShots = 0, ourGround = 0;
+  for (const [dr, dc] of MONSTER_DISC) {
+    const ar = row + dr, ac = col + dc;
+    if (!geo.walkable(ar, ac)) continue;              // nothing can stand in a wall
+    if (lineOfSight(geo, ar, ac, row, col, { fine })) attackers++;
+  }
+  for (const [dr, dc] of PLAYER_DISC) {
+    const ar = row + dr, ac = col + dc;
+    if (!geo.walkable(ar, ac)) continue;
+    ourGround++;
+    // Within our reach, and the wall between us stops its line but not ours.
+    if (!lineOfSight(geo, ar, ac, row, col, { fine })) freeShots++;
+  }
+  return { attackers, free_shots: freeShots, our_ground: ourGround };
+}
+
 // The longest run of blocked directions, treating the ring as circular. A square
 // with four blocked neighbours scattered around it is exposed from every side; one
 // with four in a row has its back covered, which is the thing players describe.
@@ -65,8 +148,11 @@ function backCover(blocked) {
 // `backCover` is the longest contiguous wall arc behind you. Both matter, and they
 // are not the same: a doorway has few open neighbours but no back cover, while a
 // long flat wall has plenty of open neighbours and excellent cover.
-export function safeSpots(geo, { limit = 8, mustReach = null } = {}) {
+export function safeSpots(geo, { limit = 8, mustReach = null, los = 0 } = {}) {
   if (!geo) return [];
+  // Which grid governs the thing trying to hit us. LOS_OLD is the server default, so
+  // monsters move and see on the COARSE grid — see RoomGeometry.LOS.
+  const fine = RoomGeometry.monsterUsesFine(los);
   const out = [];
   for (let r = 1; r <= geo.rows; r++) {
     for (let c = 1; c <= geo.cols; c++) {
@@ -78,19 +164,54 @@ export function safeSpots(geo, { limit = 8, mustReach = null } = {}) {
       if (r <= 1 || c <= 1 || r >= geo.rows || c >= geo.cols) continue;
       const blocked = RING.map(([dr, dc]) => !geo.walkable(r + dr, c + dc));
       const open = blocked.filter(b => !b).length;
-      // A square nothing can reach is a cell, not a fighting position — we need at
-      // least one open side to hit out of, and to have got there ourselves.
-      if (open === 0) continue;
-      // Nor is a completely open square worth naming.
-      if (open >= 8) continue;
+      // THE NUMBER THAT DECIDES EVERYTHING, and it is not `open`. See MONSTER_DISC.
+      const { attackers, free_shots, our_ground } = exposureAt(geo, r, c, { fine });
+      // A square nothing can stand within reach of is a cell, not a fighting position:
+      // we could hold it for ever and never kill anything. Measured on OUR reach, which
+      // is the one that has to find a target.
+      if (our_ground === 0) continue;
+      // Nor is a square that hides from nothing worth naming. Fully exposed is exactly
+      // as good as open floor, which is what the caller already has.
+      if (attackers >= MAX_ATTACKERS) continue;
       const cover = backCover(blocked);
+      // WHICH WAY THE WALL IS, so a character can be put against it rather than in the
+      // middle of the square.
+      //
+      // This matters more than it looks. The real mechanic is finer than this grid —
+      // it is in the BSP walls and the angles — and moveToSquare aims at the CENTRE of
+      // a square (col*64+32). A spot that works by hugging a wall can be most of a
+      // square away from that centre, so a character sent to a good square by name
+      // stands in the middle of it, gets hit, and the square is written down as one
+      // that does not work. Every FIRST visit was made that way, which is a mechanism
+      // for manufacturing false failures out of good walls.
+      //
+      // The sum of the blocked directions points into the wall. Normalised to at most
+      // one step on each axis, because it is used as a direction, not a distance.
+      let dr = 0, dc = 0;
+      for (let i = 0; i < RING.length; i++) {
+        if (!blocked[i]) continue;
+        dr += RING[i][0]; dc += RING[i][1];
+      }
+      const wall = (dr || dc) ? { dr: Math.sign(dr), dc: Math.sign(dc) } : null;
       out.push({
         col: c, row: r,
-        can_reach_you: open,
+        // How many squares something can actually swing at us from. The old field name
+        // is kept because it is written into the book and the fleet page, but it now
+        // counts the disc rather than the eight neighbours, so it runs 0..28 not 0..8.
+        can_reach_you: attackers,
+        // Squares within OUR reach whose line back to us is blocked: stand here, hit
+        // whatever walks into one, and it cannot answer. The thing players call a safe
+        // wall. Worth more than any amount of ordinary cover.
+        free_shots,
+        open_neighbours: open,
         back_cover: cover,
-        // How much better than standing in the open: eight attackers down to `open`.
-        attackers_avoided: 8 - open,
-        score: (8 - open) * 2 + cover,
+        wall,
+        // How much better than standing in the open.
+        attackers_avoided: MAX_ATTACKERS - attackers,
+        // Exposure dominates, and a free shot is worth about three squares of it: it is
+        // not merely safer, it is the only arrangement that lets a fight be won without
+        // taking a hit. Cover stays in as a tie-break — it is cheap and it correlates.
+        score: (MAX_ATTACKERS - attackers) + free_shots * 3 + cover * 0.5,
       });
     }
   }
@@ -105,7 +226,7 @@ export function safeSpots(geo, { limit = 8, mustReach = null } = {}) {
       s.steps_away = p.steps;
     }
     picked.push(s);
-    if (picked.length >= limit) break;
+    if (picked.length >= limit) break;   // Infinity means "all of them" — see nearestSafeSpot
   }
   return picked;
 }
@@ -136,11 +257,42 @@ export function safeSpots(geo, { limit = 8, mustReach = null } = {}) {
 // coarse grid). Null means the caller cannot say, and then this reverts to the old
 // behaviour rather than refusing every square.
 export function nearestSafeSpot(geo, from, {
-  within = 12, minAvoided = 3, reach = null, book = null, room = null, toward = null,
-  quarryReach = null, stats = null,
+  within = 12, minAvoided = 20, reach = null, book = null, room = null, toward = null,
+  quarryReach = null, stats = null, los = 0,
 } = {}) {
   if (!geo || !from) return null;
-  const all = safeSpots(geo, { limit: 400 });
+  // EVERY QUALIFYING SQUARE, NOT THE TOP FEW HUNDRED BY SCORE.
+  //
+  // This asked for the 400 best-scoring squares in the room and then filtered THOSE by
+  // distance and by the book. Both of those orderings are wrong way round, and in a
+  // big outdoor room the effect is severe: score rewards enclosure, so a tight alcove
+  // scores roughly twice a plain wall edge and the 400 slots fill up with alcoves
+  // before a single edge is considered. Discredit the alcoves — which is
+  // what happens after a few hours in a room, 95 of them at the Tos gate — and this
+  // returns null, reporting "nothing here is more defensible than open floor" about a
+  // room with hundreds of perfectly good walls in it.
+  //
+  // MINAVOIDED IS 20 OF 28, AND IT IS SET FROM THE BOOK RATHER THAN FROM TASTE.
+  //
+  // It was 3 of 8, which sounded like "a wall at your back" and was in practice no
+  // filter at all: of the 826 recorded squares with an outcome, 777 — 94% of them —
+  // scored 3 or 4 on the ring, so the cutoff admitted almost everything and the model
+  // could not tell a good square from a bad one. Those 777 held 39.5% of the time.
+  //
+  // On the reach disc the same squares separate properly, and the separation is sharp:
+  //
+  //   avoided 10-14   26.8% held        free_shots 0     30.6% held
+  //   avoided 15-19   39.2% held        free_shots 1-2   42.4% held
+  //   avoided 20+     84.7% held        free_shots 3+    89.4% held
+  //
+  // 20 is where that cliff is. It is affordable: across the 107 rooms the fleet hunts
+  // in or has a book entry for, 106 have squares clearing it, and the busy ones have
+  // between 43 and 404 of them. So this refuses far more than it used to and still
+  // leaves every real hunting room hundreds of candidates.
+  //
+  // The cap bought nothing anyway — the loop below already narrows by `within` long
+  // before anything expensive happens. Scoring every square is one pass over the room.
+  const all = safeSpots(geo, { limit: Infinity, los });
   const known = book && room != null ? book.recall(room) : null;
   let best = null;
   let unreachableByQuarry = 0;
@@ -148,18 +300,23 @@ export function nearestSafeSpot(geo, from, {
     const seen = known?.get(key(s.col, s.row)) || null;
     // Never send a character back to a square that has already been disproved.
     if (seen && book.discredited(seen)) continue;
+    // CHEAP TESTS FIRST. Distance and the defensibility cutoff are arithmetic on two
+    // integers; quarryReach and reach are pathfinds. With the candidate list no longer
+    // capped this ordering is the difference between one pass over the room and a
+    // pathfind per square in it — the far corners of a 58x44 room were being routed to
+    // and then discarded for being out of range.
+    const d = Math.max(Math.abs(s.col - from.col), Math.abs(s.row - from.row));
+    if (d > within) continue;
+    // A proven square is allowed to be less defensible on paper than the cutoff: it
+    // has passed the only test that counts.
+    if (s.attackers_avoided < minAvoided && !(seen && seen.held > 0)) continue;
     // A square nothing can walk to is not a safe spot, it is a balcony. Checked before
-    // the defensibility cutoff because a cliff passes that cutoff easily — being
-    // unreachable is precisely what makes it score well.
+    // the reachability test because a cliff passes that easily — being unreachable is
+    // precisely what makes it score well.
     if (quarryReach) {
       const q = quarryReach(s.col, s.row);
       if (q && q.reachable === false) { unreachableByQuarry++; continue; }
     }
-    // A proven square is allowed to be less defensible on paper than the cutoff: it
-    // has passed the only test that counts.
-    if (s.attackers_avoided < minAvoided && !(seen && seen.held > 0)) continue;
-    const d = Math.max(Math.abs(s.col - from.col), Math.abs(s.row - from.row));
-    if (d > within) continue;
     const p = reach ? reach(s.col, s.row) : { reachable: true, steps: d };
     if (!p?.reachable) continue;
     // Prefer defensibility, then closeness. A spot two squares further away that

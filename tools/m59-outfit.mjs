@@ -1,0 +1,227 @@
+#!/usr/bin/env node
+// GET THE FLEET ARMED AND ARMOURED, and pay for it out of the bank.
+//
+//   node tools/m59-outfit.mjs                      # everyone who is short of something
+//   node tools/m59-outfit.mjs --agents t1,t2       # just these
+//   node tools/m59-outfit.mjs --at 201             # shop here rather than the nearest
+//   node tools/m59-outfit.mjs --withdraw 1000      # how much to take out per character
+//   node tools/m59-outfit.mjs --dry-run            # say what it would buy and stop
+//
+// WHY THIS EXISTS AS A TRIP RATHER THAN A KEEPER RULE. Buying is several minutes of
+// walking, a shop, and a bank, and the keeper's pass is eight seconds long — so this
+// stops the keeper, does the errand, and puts the orders back exactly as they were.
+// Anything that drives a character has to be serialised against everything else that
+// drives one, or two loops walk the same character to two different towns.
+//
+// BUYING ORDER IS DEFENCE FIRST. A weapon changes how fast something dies; armour
+// changes whether you are still standing when it does. See m59-skills.mjs ARMOUR for
+// why leather outranks plate here rather than being the cheap option.
+//
+// EACH TOWN KEEPS A SEPARATE BANK ACCOUNT (holder.kod:828 relays the request to
+// whatever is in the room). Money paid in at Tos is not available in Marion. So the
+// withdrawal is attempted where the character already is, and a character whose money
+// is in another town is reported rather than silently left broke — with `--from-mate`
+// a partner standing there can cover it instead.
+import { readFileSync } from 'node:fs';
+
+const arg = (name, def = null) => {
+  const i = process.argv.indexOf('--' + name);
+  if (i < 0) return def;
+  const v = process.argv[i + 1];
+  return v && !v.startsWith('--') ? v : true;
+};
+const PORT = Number(arg('port', 8901));
+const URL = `http://127.0.0.1:${PORT}/`;
+const DRY = !!arg('dry-run', false);
+const AT = arg('at', null) == null ? null : Number(arg('at'));
+const WITHDRAW = Number(arg('withdraw', 1000));
+const ONLY = arg('agents', null);
+const FROM_MATE = !!arg('from-mate', false);
+
+let id = 0;
+async function call(name, args = {}) {
+  const r = await fetch(URL, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method: 'tools/call',
+                           params: { name, arguments: args } }),
+  });
+  const j = await r.json();
+  if (j.error) throw new Error(`${name}: ${JSON.stringify(j.error)}`);
+  const text = j.result?.content?.[0]?.text;
+  if (j.result?.isError) throw new Error(`${name}: ${text}`);
+  try { return JSON.parse(text); } catch { return text; }
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// WHAT A CHARACTER GOING TO THE VALLEY NEEDS. One line each so the list is the
+// argument: a mace because these characters' proficiency is in mace fighting, leather
+// because it is the only armour with positive defence and no spell penalty, a shield
+// because it is the cheapest defence in the game at 160.
+const WANTS = [
+  { slot: 'armour', re: /leather (armor|armour)/i,  fallback: /armor|armour|mail/i, what: 'leather armour' },
+  { slot: 'shield', re: /metal shield/i,            fallback: /shield/i,            what: 'a shield' },
+  { slot: 'weapon', re: /\bmace\b/i,                fallback: /sword|axe|hammer|mace/i, what: 'a mace' },
+];
+
+const nameOf = (i) => String(i?.name ?? i ?? '');
+const carries = (items, re) => items.some(i => re.test(nameOf(i)));
+const purseOf = (items) => items.filter(i => /shilling/i.test(nameOf(i)))
+                                .reduce((t, i) => t + (i.amount || 1), 0);
+
+// What is this character missing? Read the PACK for what it owns; wearing is a
+// separate question and wear_best answers it afterwards.
+function missingFor(items) {
+  return WANTS.filter(w => !carries(items, w.re) && !carries(items, w.fallback));
+}
+
+async function outfit(row) {
+  const who = row.character || row.agent;
+  const inv0 = await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }));
+  let items = inv0.items || [];
+  const missing = missingFor(items);
+  if (!missing.length) {
+    // Owning is not wearing. Even a fully-stocked character is worth a wear_best.
+    if (!DRY) {
+      const w = await call('wear_best', { agent: row.agent }).catch(() => null);
+      await call('equip_best', { agent: row.agent }).catch(() => null);
+      if (w?.worn?.length) return `${who}: already stocked — put on ${w.worn.map(x => x.name).join(', ')}`;
+    }
+    return `${who}: already stocked`;
+  }
+  if (DRY) return `${who}: would buy ${missing.map(m => m.what).join(', ')}`;
+
+  // Stop the keeper, and remember EXACTLY what it was running so the errand cannot
+  // quietly re-write a character's orders. Restored in the finally below.
+  const was = await call('autopilot', { agent: row.agent, action: 'status' }).catch(() => null);
+  await call('autopilot', { agent: row.agent, action: 'stop' }).catch(() => {});
+  const log = [];
+  try {
+    // Where to shop. An explicit room wins; otherwise ask which merchants sell what we
+    // lack and take the fewest hops, which is the same question gear-buying always is.
+    let shopRoom = AT;
+    if (shopRoom == null) {
+      const seen = new Map();
+      for (const what of ['armor', 'shield', 'mace']) {
+        const m = await call('merchants', { agent: row.agent, sells: what }).catch(() => ({ matches: [] }));
+        for (const x of m.matches || []) if (x.room != null) seen.set(x.room, x);
+      }
+      const priced = [];
+      for (const m of seen.values()) {
+        const rt = await call('map', { agent: row.agent, to: m.room }).catch(() => null);
+        if (rt?.route?.found) priced.push({ room: m.room, hops: rt.route.hops.length });
+      }
+      priced.sort((a, b) => a.hops - b.hops);
+      if (!priced.length) return `${who}: no smith reachable`;
+      shopRoom = priced[0].room;
+    }
+
+    // TRAVEL IS FLAKY IN THE MIDDLE AND RESUMABLE, so retry rather than give up: a
+    // multi-hop route fails part-way with "start is outside the room grid" when the
+    // character's position has not settled after an edge crossing, and the next
+    // attempt continues from wherever it actually got to.
+    let arrived = false, lastWhy = null;
+    for (let i = 0; i < 3 && !arrived; i++) {
+      const t = await call('travel', { agent: row.agent, to: shopRoom, max_hops: 20 })
+                      .catch(e => ({ arrived: false, why: e.message }));
+      if (t.arrived) { arrived = true; break; }
+      const stuck = (t.log || []).filter(h => !h.ok).slice(-1)[0];
+      lastWhy = stuck ? `${stuck.from} -> ${stuck.to}: ${stuck.also_tried?.[0]?.why ?? 'refused'}`
+                      : (t.why || 'travel refused');
+      const st = await call('status', { agent: row.agent, brief: true }).catch(() => null);
+      if (st?.where?.num === shopRoom) { arrived = true; break; }
+      await sleep(1500);
+    }
+    if (!arrived) return `${who}: could not reach room ${shopRoom} — ${lastWhy}`;
+    log.push(`at ${shopRoom}`);
+
+    // FUND IT. The purse first, then the bank we are standing next to, then a partner.
+    items = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
+    let money = purseOf(items);
+    if (money < WITHDRAW / 2) {
+      const b = await call('bank', { agent: row.agent, action: 'withdraw', amount: WITHDRAW })
+                      .catch(e => ({ error: e.message }));
+      if (b?.balance != null || /shilling/i.test(String(b?.said ?? ''))) {
+        await sleep(800);
+        items = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
+        const now = purseOf(items);
+        if (now > money) { log.push(`withdrew ${now - money}sh`); money = now; }
+      } else if (b?.error) {
+        // Not a failure worth stopping for: there may be no bank in this room, or the
+        // account may be in another town. Say which, and carry on with what we carry.
+        log.push('no withdrawal here (each town banks separately)');
+      }
+    }
+
+    // Sell what we are carrying if that is what it takes. A character that has been
+    // farming carries reagents and drops worth more than the armour costs.
+    const room = await call('look', { agent: row.agent }).catch(() => ({ objects: [] }));
+    const seller = (room.objects || []).find(o => (o.can || []).includes('buy'));
+    if (!seller) return `${who}: nobody here sells anything (room ${shopRoom})`;
+    if (money < 400) {
+      const sold = await call('sell_all', { agent: row.agent, merchant: seller.id,
+        keep: ['flask', 'mace', 'sword', 'axe', 'hammer', 'armor', 'armour', 'shield', 'helm'] })
+        .catch(() => null);
+      if (sold?.total_received) { money += sold.total_received; log.push(`sold for ${sold.total_received}sh`); }
+    }
+
+    const shop = await call('shop', { agent: row.agent, seller: seller.id }).catch(() => ({}));
+    const stock = shop.items || [];
+    for (const w of missing) {
+      // Prefer the exact thing asked for; fall back to the same slot if the shop has
+      // no leather but does have something wearable.
+      const pick = (re) => stock.filter(i => re.test(nameOf(i)))
+                                .sort((a, b) => (a.cost ?? a.price ?? 9e9) - (b.cost ?? b.price ?? 9e9))[0];
+      const opt = pick(w.re) || pick(w.fallback);
+      if (!opt) { log.push(`${w.what}: not sold here`); continue; }
+      const cost = opt.cost ?? opt.price ?? 0;
+      if (cost > money) { log.push(`${w.what}: ${cost}sh, only ${money}sh`); continue; }
+      await call('shop', { agent: row.agent, seller: seller.id, buy_ids: [opt.id] }).catch(() => null);
+      money -= cost;
+      log.push(`bought ${nameOf(opt)} @${cost}`);
+    }
+
+    // WEAR IT. Buying without equipping is the same as not buying — and the shop
+    // replies before the server has finished moving the goods, so an immediate read
+    // reports the state from BEFORE the trade and every character comes back "still
+    // missing armour" while carrying what it just paid for.
+    await sleep(1500);
+    const worn = await call('wear_best', { agent: row.agent }).catch(() => null);
+    const held = await call('equip_best', { agent: row.agent }).catch(() => null);
+    if (worn?.worn?.length) log.push('wearing ' + worn.worn.map(x => x.name).join(', '));
+    if (held?.wielding) log.push('wielding ' + held.wielding);
+
+    items = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
+    const still = missingFor(items).map(w => w.what);
+    return `${who}: ${log.join(', ')}` + (still.length ? ` — STILL MISSING ${still.join(', ')}` : '');
+  } finally {
+    // Put the orders back exactly as they were, including the strategy and the room
+    // assignment — an errand must not become a re-tasking.
+    if (was?.running) {
+      await call('autopilot', {
+        agent: row.agent, action: 'start', mode: was.mode, hunt: was.policy?.hunt,
+        strategy: was.policy?.strategy, flee_below: was.policy?.fleeBelow,
+        rest_below: was.policy?.restBelow, max_carry: was.policy?.maxCarry,
+        roam: was.policy?.roam, assigned_room: was.policy?.assignedRoom ?? null,
+      }).catch(() => {});
+    }
+  }
+}
+
+const f = await call('fleet', {});
+let rows = (f.fleet || []).filter(r => r.in_game !== false);
+if (ONLY && ONLY !== true) {
+  const want = new Set(String(ONLY).split(',').map(x => x.trim()));
+  rows = rows.filter(r => want.has(r.agent) || want.has(r.character));
+}
+console.log(`outfitting ${rows.length} character(s)${DRY ? ' (dry run)' : ''}` +
+            (AT ? ` at room ${AT}` : ' at the nearest smith'));
+
+// In small batches: each of these walks a character across the world, and running the
+// whole fleet at once makes the broker's pacer the bottleneck for everything else.
+const BATCH = 4;
+for (let i = 0; i < rows.length; i += BATCH) {
+  const res = await Promise.all(rows.slice(i, i + BATCH).map(r =>
+    outfit(r).catch(e => `${r.character || r.agent}: FAILED ${e.message}`)));
+  res.forEach(x => console.log('  ' + x));
+}
+process.exit(0);

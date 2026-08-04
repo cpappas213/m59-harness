@@ -292,12 +292,196 @@ export async function equipBest(s, { priority = null, maxTries = 4 } = {}) {
                  'should be dropped, see junkAndBroken().' };
 }
 
+// WHAT YOU ARE WEARING, WHICH NOTHING IN THIS FILE USED TO ASK ABOUT.
+//
+// equipBest ranks WEAPONS and nothing else, so a character could be carrying leather
+// armour and a shield it had paid for and fight in its shirt for ever — the pack said
+// it owned armour, the use list said it was wearing none, and only the second is what
+// the server fights with.
+//
+// Armour, shields and helms are separate USE SLOTS from the weapon (viUse_type 16, 8
+// and 4 against the weapon's own), so wearing them costs nothing a weapon needs, and
+// wearing one does not refuse the others. What it does refuse is re-wearing something
+// already worn: TryUseItem runs CheckPosition, counts the item against its own slot,
+// finds no room, and answers "hands are too full" (player.kod:131) — the identical
+// refusal a weapon gets, and the reason this checks the use list before sending.
+//
+// DEFENCE, NOT ARMOUR CLASS. Every one of these carries two numbers and they pull in
+// opposite directions:
+//
+//   viDefense_base  changes how often you are hit at all — it feeds GetDefenseAbility
+//   viDamage_base   absorbs a flat amount from each hit that lands
+//
+//   LeatherArmor  def  +50   absorb 0   spell   0
+//   Robe          def  +20   absorb 0   spell +10
+//   ChainArmor    def  -50   absorb 2   spell -15
+//   ScaleArmor    def -100   absorb 4   spell -20
+//   NeruditeArmor def -150   absorb 5   spell -20
+//   PlateArmor    def -200   absorb 6   spell -30
+//
+// So the heavy armour in this game is not simply better, and for these characters it
+// is worse. Plate absorbs six of a fungus beast's three-to-five damage — nearly all of
+// it — but -200 defence on a scale where a monster's whole attack rating is 210 means
+// being hit far more often, and -30 spell modifier costs the create food and create
+// weapon this fleet lives on. Above all, the survival model here is a safe spot, where
+// the goal is to be hit ZERO times; absorption is worth nothing against zero hits and
+// defence is worth everything.
+//
+// Hence leather. The ranking below is robust to what absorption is worth — leather
+// wins for any weighting under about 25 per point, and the real answer is well under
+// that — but the weight is named rather than hidden so it can be argued with.
+const ABSORB_IS_WORTH = 10;
+
+export const ARMOUR = [
+  // slot, and the two numbers, from the class definitions in
+  // kod/object/item/passitem/defmod/{armor,shield,helmet}/*.kod
+  { re: /leather armor|leather armour/i, slot: 'armour', defense: 50,   absorb: 0, spell: 0 },
+  { re: /\brobe\b/i,                     slot: 'armour', defense: 20,   absorb: 0, spell: 10 },
+  { re: /chain (armor|armour|mail)/i,    slot: 'armour', defense: -50,  absorb: 2, spell: -15 },
+  { re: /scale (armor|armour)/i,         slot: 'armour', defense: -100, absorb: 4, spell: -20 },
+  { re: /nerudite (armor|armour)/i,      slot: 'armour', defense: -150, absorb: 5, spell: -20 },
+  { re: /plate (armor|armour)/i,         slot: 'armour', defense: -200, absorb: 6, spell: -30 },
+  { re: /guild shield/i,                 slot: 'shield', defense: 20,   absorb: 2, spell: 0 },
+  { re: /orc shield/i,                   slot: 'shield', defense: 20,   absorb: 2, spell: 0 },
+  { re: /soldier'?s? shield/i,           slot: 'shield', defense: 20,   absorb: 2, spell: 0 },
+  { re: /knight'?s? shield/i,            slot: 'shield', defense: 15,   absorb: 2, spell: 0 },
+  { re: /gold shield/i,                  slot: 'shield', defense: 10,   absorb: 1, spell: 0 },
+  { re: /metal shield/i,                 slot: 'shield', defense: 5,    absorb: 1, spell: 0 },
+  { re: /\bhelm\b/i,                     slot: 'helm',   defense: 25,   absorb: 1, spell: -5 },
+  { re: /simple helm/i,                  slot: 'helm',   defense: 20,   absorb: 1, spell: -5 },
+  { re: /ivy circlet/i,                  slot: 'helm',   defense: 10,   absorb: 0, spell: 0 },
+  { re: /circlet/i,                      slot: 'helm',   defense: 5,    absorb: 0, spell: 0 },
+];
+
+export const ARMOUR_SLOTS = ['armour', 'shield', 'helm'];
+
+// What a name is, or null. Longest-pattern-first matters: "simple helm" must not be
+// read as the plain "helm", which is a different and better item.
+export function armourKind(name) {
+  const n = String(name || '');
+  let best = null;
+  for (const a of ARMOUR) {
+    if (!a.re.test(n)) continue;
+    if (!best || a.re.source.length > best.re.source.length) best = a;
+  }
+  return best;
+}
+
+export const armourScore = (a) => a ? a.defense + a.absorb * ABSORB_IS_WORTH : -Infinity;
+
+// Everything wearable in the pack, best first, grouped by slot. Broken items are
+// excluded for the same reason weapons are: the server does not rename them, so the
+// only record that a thing has been refused is the one we keep.
+export function armourOf(c) {
+  const broken = brokenSet(c);
+  const out = { armour: [], shield: [], helm: [] };
+  for (const o of c.inventory || []) {
+    if (broken.has(o.id)) continue;
+    const name = c.rsc.get(o.nameRsc) || '';
+    const kind = armourKind(name);
+    if (!kind) continue;
+    out[kind.slot].push({ o, name, kind, score: armourScore(kind) });
+  }
+  for (const k of ARMOUR_SLOTS) out[k].sort((a, b) => b.score - a.score);
+  return out;
+}
+
+// PUT THE BEST OF EACH ON, and confirm with the server rather than with hope.
+//
+// Same shape as equipBest and for the same reason: sending `use` and reporting what we
+// meant to wear is how a fleet ends up believing it is armoured. `equipped` here means
+// the id is in plUsing and the server said so, nothing weaker.
+export async function wearBest(s, { slots = ARMOUR_SLOTS } = {}) {
+  const c = s.need();
+  await s.pacer.submit('read', () => c.requestInventory());
+  await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+  const have = armourOf(c);
+  const worn = [], skipped = [], rejected = [];
+
+  for (const slot of slots) {
+    const best = have[slot]?.[0];
+    if (!best) { skipped.push({ slot, why: 'nothing of this kind in the pack' }); continue; }
+    // Already wearing it: the use list is the authority, and re-using is refused
+    // rather than ignored, so this check saves a request AND a false failure.
+    const using = equippedNow(c);
+    if (using?.has(best.o.id)) {
+      worn.push({ slot, name: best.name, already: true, defense: best.kind.defense });
+      continue;
+    }
+    const before = c.evSeq;
+    await s.pacer.submit('use', () => c.use(best.o.id));
+    const ev = await c.waitFor({ since: before, kinds: ['equipment', 'message'], timeoutMs: 3000 })
+                      .catch(() => ({ events: [] }));
+    const texts = (ev.events || []).filter(e => e.text).map(e => e.text);
+    const now = equippedNow(c);
+    if (now && !now.has(best.o.id)) {
+      rejected.push({ slot, name: best.name, id: best.o.id,
+                      why: texts.find(handsFullText)
+                        ? 'refused: that slot is already full, and not by this item — we checked'
+                        : texts[0] || 'the server never added it to the use list, and said nothing' });
+      continue;
+    }
+    worn.push({ slot, name: best.name, defense: best.kind.defense, absorb: best.kind.absorb,
+                verified: !!now });
+  }
+
+  const total = worn.reduce((t, w) => t + (w.defense ?? 0), 0);
+  return {
+    worn, ...(skipped.length ? { skipped } : {}), ...(rejected.length ? { rejected } : {}),
+    defense_total: total,
+    confirmed_by: equippedNow(c) ? 'the server\'s use list (BP_USE)' : null,
+    ...(equippedNow(c) ? {} : {
+      note: 'NOT verified — this client keeps no use list, so all that is known is that ' +
+            'the server did not refuse out loud.' }),
+  };
+}
+
 // What is in the pack that should not be: junk, and weapons the server has refused.
 // Returned rather than dropped, because dropping is the caller's decision to make.
 //
 // Anything currently equipped is excluded whatever its name. A junk NAME on a worn item
 // is not a reason to strip the character — and "broken mace" is a real junk item, so
 // the name test alone would happily list the mace somebody is holding.
+// IS THIS WEAPON ALREADY DEAD — ASKED BEFORE PICKING IT UP, NOT AFTER CARRYING IT HOME.
+//
+// Brokenness is `piHits <= 0` and lives on the server; the name never changes
+// (weapon.kod:788 moves only the icon group). So there were exactly two ways to learn
+// it, and until now the code only used the worse one: TRY TO WIELD IT, which teaches
+// brokenSet one weapon per attempt, after the thing has already been carried across the
+// world and taken a pack slot. Floyd was hauling six dead maces on that basis and Kermit
+// eight, and handing two of them to an unarmed character taught us nothing we could not
+// have known on the floor where they dropped.
+//
+// The other way is to LOOK at it. Examining says so in prose — "This mace has been
+// shattered by a powerful blow", WEAPON_CONDITION — and that question can be asked about
+// an object lying on the ground, before it costs anything.
+//
+// THE FIRST LOOK AFTER ANOTHER LOOK COMES BACK EMPTY. Measured against the live server,
+// repeatedly and in both directions: examine two items back to back and the first
+// returns null while a retry returns the real description. So each candidate gets a retry,
+// and a null after that is UNKNOWN — never "sound" and never "broken". Guessing either
+// way is worse than admitting it: guess broken and we throw away working weapons, guess
+// sound and we are exactly where we started.
+export async function inspectForBroken(s, ids, { retries = 1, timeoutMs = 3000 } = {}) {
+  const c = s.need();
+  const broken = brokenSet(c);
+  const out = { broken: [], sound: [], unknown: [] };
+  for (const id of ids) {
+    // Already condemned — do not spend a round trip re-confirming it.
+    if (broken.has(id)) { out.broken.push(id); continue; }
+    let desc = null;
+    for (let i = 0; i <= retries && desc == null; i++) {
+      await s.pacer.submit('look', () => c.look(id));
+      const { events } = await c.waitFor({ kinds: ['look'], timeoutMs });
+      desc = events.find(e => e.id === id)?.description ?? null;
+    }
+    if (desc == null) { out.unknown.push(id); continue; }
+    if (WEAPON_CONDITION.test(desc)) { broken.add(id); out.broken.push(id); }
+    else out.sound.push(id);
+  }
+  return out;
+}
+
 export function junkAndBroken(c) {
   const broken = brokenSet(c);
   const worn = equippedNow(c) ?? new Set();

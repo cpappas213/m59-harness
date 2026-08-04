@@ -237,6 +237,29 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   starves while the emit itself looks fine. The ability event carries `what`, not
   `kind`, for exactly this reason.
 
+  The ledger's `recordEvent(character, kind, detail)` had the same shape and the same
+  bug: a purchase whose detail carried `kind: 'elderberry'` filed itself as an
+  elderberry event, so nothing searching for `bought` ever found one — and the write
+  succeeded. It now applies `type`/`character`/`kind` *after* the spread, so a detail
+  field of the same name is inert instead of silent. The purchase payload is
+  `item_kind`. `m59-spellaudit-test.mjs` pins both halves.
+
+- **EXITS ARE NOT DOORS, AND THEY ARE NOT 1:1.** Walking from room A to room B through
+  an edge does NOT put you where the return trip starts. You arrive somewhere in B, and
+  the edge back to A can be a long way from there — often most of a room away. There is
+  no turning round and stepping back through the way you came.
+
+  This breaks the intuition every routing bug in this repo has been debugged with. A
+  route that worked outbound failing on the return leg is the NORMAL case, not evidence
+  of a one-way door, a broken boundary, or an unmapped region. `no floor anywhere on the
+  <dir> boundary` in particular means only that the boundary column the router chose has
+  no standable square — the connection can still be perfectly traversable by walking to
+  where the real exit actually is.
+
+  Do not conclude "unidirectional travel" or "sealed area" from a failed return trip.
+  The map graph records that A and B connect; it does not record that the two ends are
+  in the same place, and they usually are not.
+
 - **One or two of the five Underworld portals are unlit, not all of them.**
   `ResetPuzzle` (`uworld.kod:460`) lights all five and turns one or two off at
   random, so three or four work at any moment and each has a fixed, known
@@ -276,12 +299,52 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-stream-test.mjs` (54) and
   `node tools/m59-ability-test.mjs` (44) and
   `node tools/m59-compendium-test.mjs` (42) and
-  `node tools/m59-prey-test.mjs` (56). The rest need a live server —
+  `node tools/m59-prey-test.mjs` (56) and
+  `node tools/m59-spellaudit-test.mjs` (28) and
+  `node tools/m59-party-test.mjs` (45). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on
   8899 and fail with `ECONNREFUSED` without one, which is not a regression.
 - **Do not `import` `m59-broker.mjs` to check it.** Importing runs it: it tries to
   take the fleet lock and start rejoin timers. `node --check tools/m59-broker.mjs`
-  is the syntax check.
+  is the syntax check. `m59-supervise.mjs` had the same problem and now guards its
+  main loop on being the entry point, so it can be imported for its pure helpers.
+
+- **MELEE REACH IS A DISC OF RADIUS 2–3 SQUARES, AND FINE COORDINATES DO NOT EXIST TO IT.**
+  Both sides run the same test: `SquaredDistanceTo <= GetAttackRange^2`, where the
+  distance is `(piRow-row)^2 + (piCol-col)^2` on **square** coordinates
+  (`nomoveon.kod:121`) and the range is `Bound(2 + viDifficulty/6, 2, 3)` for a monster
+  (`monster.kod:1682`) or 2–3 by weapon type for us (`weapon.kod:52`). So up to 28
+  squares can hit you, not the 8 that touch you.
+
+  `piFine_row`/`piFine_col` exist on every object and **nothing about being hit reads
+  them** — the only consumer in the whole tree is `MonsterOrient`, choosing the angle a
+  monster is *drawn* facing (`monster.kod:2189`). Standing hard against a wall inside a
+  square is therefore worth exactly nothing, and an earlier "hug the wall by 24 of 64
+  fine units" change was inert by construction. Do not reach for sub-square positioning
+  to explain a safe spot; the answer is always in the squares.
+
+- **The safe wall is an asymmetry in who checks line of sight.** `Monster.CanReach`
+  calls `Room.LineOfSight` (`monster.kod:1782`); `Player.TargetWithinSightAndRange`
+  (`player.kod:4115`) checks range and a facing cone and **never calls it**. So a square
+  whose line to a patch of floor is broken, while that floor is still inside your weapon
+  range, lets you hit what stands there and take nothing back. `free_shots` in
+  `m59-safespots.mjs` counts exactly those. Only lich and revenant ignore walls
+  (`AI_FIGHT_THROUGH_WALLS`).
+
+- **A creature's LEVEL is not how dangerous it is.** Level sets hit points and what
+  the kill pays; what it hits you *with* is `viDifficulty`, via
+  `GetAttackAbility = 3*viLevel + 60*viDifficulty` (`monster.kod`). A fungus beast is
+  level 50 and difficulty 1, so it rates 210 — against a centipede's 390 at level 30.
+  Damage is `Fuzzy(viLevel/Random(10,15))`, 3–5 against 2–3. The level-50 creature is
+  the *safer* fight, and the `prey` band, which sorts on level alone, will not offer
+  it. `tools/m59-supervise.mjs` documents the full arithmetic.
+
+- **Heavy armour is worse here.** Each piece carries `viDefense_base` (how often you
+  are hit) and `viDamage_base` (a flat absorb). They pull opposite ways: leather is
+  +50/0, plate is -200/6 with a -30 spell modifier. On a scale where a monster's whole
+  attack rating is ~210, -200 is enormous — and a character fighting from a safe spot
+  intends to be hit zero times, which absorption does nothing about. `wear_best` ranks
+  on that, so it buys leather over plate deliberately. See `ARMOUR` in `m59-skills.mjs`.
 - The compendium's sprites are not committed. `python tools/pull-client-assets.py`
   decodes them from a local client. Do not commit `compendium/assets/img/`.
 - Do not commit anything a running fleet writes — `fleet-state.json`,
