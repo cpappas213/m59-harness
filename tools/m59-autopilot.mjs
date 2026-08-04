@@ -93,6 +93,16 @@ const WANT_FIGHT_VIGOR = 140;     // what every pattern aims to set out at
 // resting alone can actually deliver. This is a SUPPLY failure and is counted as one.
 const STARVED_FIGHT_VIGOR = 70;
 
+// WHERE THE MONEY GOES. Jasper and Tos share one banking system, so either counter
+// pays into the same balance and the only question is which is nearer — which really
+// does flip across this fleet's rooms: Jasper is closer to the Merchant Way rooms,
+// Tos to the gate rooms. Ko'catan keeps a separate account and is deliberately not
+// here; banking into it would strand the money somewhere nobody goes.
+const BANKS = [
+  { room: 54,  name: 'First Royal Bank of Tos' },
+  { room: 376, name: 'The Royal Bank of Jasper' },
+];
+
 export const MODES = ['survive', 'farm', 'idle'];
 
 // Farming patterns, as a table rather than scattered conditionals, so that adding a
@@ -311,6 +321,13 @@ export class Autopilot {
       // Shillings to keep in hand for flasks and food; everything above this goes to
       // the bank, where death cannot take it.
       walkingMoney: 400,
+      // CARRY MORE THAN THIS AND GO AND BANK IT, wherever you are. On by default,
+      // because the alternative is what this fleet was already doing: 35,920 shillings
+      // in pockets across twenty-one characters, one of them holding 5,840, all of it
+      // dropped on a corpse the moment anything killed them. Two thousand is roughly
+      // where a player stops what they are doing and walks to Jasper or Tos.
+      // Set 0 or null to keep the old behaviour — bank only if you happen to walk past one.
+      bankAbove: 2000,
       ...policy,
     };
     // What we believe is in the stomach. Nothing reports it, so it is modelled from
@@ -340,6 +357,9 @@ export class Autopilot {
     // reaches is a wish, and the commonest reason to miss it is an empty larder.
     this.vigor = { engagements: 0, total_at_engage: 0, lowest_at_engage: null,
                    below_want: 0, waited: 0, starved_passes: 0, cooked: 0, cook_failed: 0 };
+    // Whether the money is actually getting to a bank, and what stops it when it does
+    // not. `carried_at_death` is the number this whole mechanism exists to drive to 0.
+    this.money = { trips: 0, trips_failed: 0, carried_at_death: 0, why_not: [] };
     this.emptyPasses = 0;
     this.roamedFrom = null;
     this.roamedRooms = 0;
@@ -2102,6 +2122,16 @@ export class Autopilot {
         cooked: this.vigor.cooked, cook_failed: this.vigor.cook_failed,
         reagents: this.reagentCount(),
       } : null,
+      // IS THE MONEY GETTING TO A BANK. banked is the total put away; carried_at_death
+      // is what was lost on the floor anyway, and is the number to drive to zero.
+      money: (this.money.trips || this.money.carried_at_death || this.tally.banked) ? {
+        bank_above: this.policy.bankAbove, float_kept: this.policy.walkingMoney ?? 400,
+        carrying: this.lastSeenPurse ?? null,
+        banked: this.tally.banked ?? 0,
+        trips: this.money.trips, trips_failed: this.money.trips_failed,
+        carried_at_death: this.money.carried_at_death,
+        why_not: this.money.why_not,
+      } : null,
       // WHERE IT WAS PUT, AND WHETHER THAT STUCK. Three numbers, in the order worth
       // arguing about: did the assignment work, does it work every time, and how does
       // it fail. `held` null means it has never had to relocate, which is the good
@@ -2294,6 +2324,12 @@ export class Autopilot {
     // And post what we need and what we can spare, for the same reason: the sell and
     // drop paths read the aggregate, and a stale board sells somebody else's herbs.
     this.declareInterest();
+    // Remember the purse while we still can. After a death the inventory is already on
+    // the corpse, so the only way to know what was lost is to have looked before.
+    if (c?.inventory?.length)
+      this.lastSeenPurse = c.inventory
+        .filter(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))
+        .reduce((t, o) => t + (o.amount || 1), 0);
 
     // FROZEN after a panic logoff. Do nothing that the server counts as an action:
     // no room-contents request, no movement, no turning, no fighting. Rest, read the
@@ -2406,6 +2442,18 @@ export class Autopilot {
     if (room && /underworld/i.test(room.name)) {
       this.tally.deaths++;
       this.deathsThisRun = (this.deathsThisRun || 0) + 1;
+      // WHAT THE PURSE WAS WORTH WHEN IT HIT THE FLOOR. Recorded from the last frame
+      // before the Underworld, because by now the inventory is already gone — and it
+      // is the only honest score for whether the banking trips are worth their walk.
+      const lastPurse = this.lastSeenPurse ?? 0;
+      if (lastPurse > 0) {
+        this.money.carried_at_death += lastPurse;
+        this.note('died carrying money', { shillings: lastPurse,
+          bank_above: this.policy.bankAbove,
+          why: lastPurse > (this.policy.bankAbove ?? Infinity)
+            ? 'over the banking threshold — the trip did not happen in time'
+            : 'under the banking threshold, so this was the float we accept losing' });
+      }
 
       // Reconstruct the death from the short memory, ONCE, on the pass that first
       // finds us here. The last frame that was not the Underworld is where it
@@ -2537,6 +2585,14 @@ export class Autopilot {
     const near = me ? [...c.room.objects.values()].filter(o =>
       o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER) &&
       Math.hypot(o.col - me.col, o.row - me.row) <= 2) : [];
+    // EVERYTHING IN THE ROOM THAT CAN SWING, not just what is adjacent right now.
+    // `near` looks two squares out, which is the right question for "am I in a fight"
+    // and the WRONG one for "is this a place to sit down": a room with four monsters
+    // in it and none of them currently beside us read as safe to rest in, and the
+    // first one to wander over got a free run at a character sitting still and not
+    // looking. Most of this fleet's deaths were logged as happening while resting.
+    const hostiles = [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER));
 
     // ABOUT TO DIE. Below two hits of margin with something adjacent, withdrawing is
     // a gamble — the walk takes seconds during which it keeps swinging, and losing
@@ -2667,7 +2723,23 @@ export class Autopilot {
     // one pass at a time, so observe() gets to adjudicate quickly either way.
     const testing = !sheltered && !!this.hold && !this.hold.failures &&
                     hp !== null && hp >= this.policy.fleeBelow;
-    if ((!near.length || sheltered || testing) && hurt) {
+    // RESTING IN A COMBAT ZONE IS SOMETHING YOU DO BEHIND A WALL OR NOT AT ALL.
+    // Sheltered means the square is proven; testing means we are deliberately proving
+    // it with margin in hand. Anything else, with anything hostile in the room, and the
+    // answer is to go and get a wall first — not to sit down and find out.
+    const combatZone = hostiles.length > 0;
+    if (hurt && combatZone && !sheltered && !testing && this.policy.useSafeSpots) {
+      const got = await this.takeSafeSpot(
+        'hurt in a room with monsters in it — a wall before a rest', near[0] ?? hostiles[0] ?? null)
+        .catch(() => false);
+      this.note('will not rest in the open here', {
+        health: hp === null ? null : Math.round(hp * 100) + '%',
+        monsters_in_room: hostiles.length, adjacent: near.length, got_a_wall: !!got,
+        why: 'resting is sitting still and not looking; doing it where something can reach us is ' +
+             'how a rest becomes a death' });
+      if (got) return;                     // rest properly next pass, from behind the wall
+    }
+    if ((!combatZone || sheltered || testing) && hurt) {
       if (testing && near.length)
         this.note('testing this spot the only way there is', {
           where: { col: this.hold.col, row: this.hold.row }, crowd: near.length,
@@ -2777,19 +2849,7 @@ export class Autopilot {
       // three seconds after the fact instead of at the end of the leash, which is the
       // entire point. Give the square up now rather than resting into it again on the
       // next pass and waiting for observe() to reach the same conclusion a minute later.
-      if (r.interrupted && this.hold) {
-        this.book.failed(this.hold.room, {
-          col: this.hold.col, row: this.hold.row, damage: 1, attackers: near.length });
-        this.book.save();
-        this.note('THIS IS NOT A SAFE SPOT', {
-          where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
-          attackers: near.length, proven_against: this.hold.mostAttackers ?? 0,
-          why: 'we were hit while resting, which is standing still and not swinging — the ' +
-               'one thing that cannot happen in a working spot',
-          caveat: 'found by the rest rather than by observe(), so it is one reading like any ' +
-                  'other: it demotes the square, and a second stops it being recommended' });
-        this.releaseHold('we were hit while resting in it');
-      }
+      if (r.interrupted) { await this.restBroken(room, near).catch(() => {}); return; }
       return;
     }
 
@@ -2802,6 +2862,8 @@ export class Autopilot {
 
     // Standing in a bank? Put the takings away before anything can take them.
     await this.bankSurplus().catch(() => {});
+    // Carrying enough that it is worth WALKING to one? Go. See bankRun().
+    if (await this.bankRun().catch(() => false)) return;
 
     // Someone else is standing here and we can mend them: do that first. It costs a
     // second and it is the only action available that helps another character.
@@ -3353,6 +3415,141 @@ export class Autopilot {
         this.note('could not answer where', { why: e.message });
       }
     }
+  }
+
+  // HIT WHILE RESTING. The one response that must never happen is the one that used
+  // to: note it and rest again next pass on the same square.
+  //
+  // Being hit while resting is proof that this is not a place to rest — resting is
+  // standing still and not swinging, which is the one thing a working safe spot makes
+  // free. So do the two things that change the situation, in the order that makes both
+  // of them work:
+  //
+  //   RECONNECT first. It drops the aggro of whatever is on us and hands back the entry
+  //   grace period, so the walk out is made past monsters that have to notice us one at
+  //   a time. It costs nothing we were not already losing: health regeneration is gated
+  //   on PFLAG_MOVED_SINCE_ENTRY, so we cannot heal until we have moved anyway.
+  //
+  //   THEN take a real wall, rather than sitting back down where we are. Since we have
+  //   to move before we can heal regardless, we may as well move somewhere that holds.
+  //
+  // Only after both is resting allowed again, and by then it is a different square.
+  async restBroken(room, near) {
+    this.tally.rests_broken = (this.tally.rests_broken || 0) + 1;
+    // Evidence first, while we still know which square failed.
+    if (this.hold) {
+      this.book.failed(this.hold.room, {
+        col: this.hold.col, row: this.hold.row, damage: 1, attackers: near.length });
+      this.book.save();
+      this.note('THIS IS NOT A SAFE SPOT', {
+        where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
+        attackers: near.length, proven_against: this.hold.mostAttackers ?? 0,
+        why: 'we were hit while resting, which is standing still and not swinging — the ' +
+             'one thing that cannot happen in a working spot',
+        caveat: 'found by the rest rather than by observe(), so it is one reading like any ' +
+                'other: it demotes the square, and a second stops it being recommended' });
+      this.releaseHold('we were hit while resting in it');
+    } else {
+      this.note('hit while resting in the open', { room: room?.num, attackers: near.length,
+        why: 'there was no wall at our back; this is the case the safe spot exists for' });
+    }
+
+    // Shed the aggro before walking anywhere.
+    let dropped = false;
+    if (this.policy.breakOutViaLogoff !== false) {
+      const rc = await this.reconnect('hit while resting — shedding aggro before moving')
+                           .catch(e => ({ ok: false, why: e.message }));
+      dropped = !!rc?.ok;
+      this.note(dropped ? 'reconnected to shed aggro' : 'could not reconnect', {
+        why: dropped
+          ? 'the entry grace period is handed back, so the walk to a real spot is made past ' +
+            'monsters that have to notice us one at a time'
+          : rc?.why });
+    }
+    // Then go and get a wall. Not resting again until we have one.
+    if (this.policy.useSafeSpots) {
+      const got = await this.takeSafeSpot('hit while resting — need a square that holds',
+                                          near[0] ?? null).catch(() => false);
+      this.note('moving rather than resting again', { got_a_wall: !!got, shed_aggro: dropped,
+        why: 'resting again where we were just hit is the loop that kills characters "while resting"' });
+    }
+    this.progress('left a square that could not be rested in');
+  }
+
+  // MAKE THE TRIP, once there is enough in the purse to be worth it.
+  //
+  // bankSurplus() only ever fired when a character HAPPENED to be standing in a bank —
+  // sound for the strategies that pass through town, and dead code for `fieldrest`,
+  // whose whole point is that it never goes. The fleet ran that way for hours and
+  // accumulated 35,920 shillings in pockets, single characters holding five thousand,
+  // every coin of it on the floor the moment they died.
+  //
+  // This is what a player does instead: at a few thousand you stop what you are doing
+  // and walk to Jasper or Tos, whichever is nearer, because it is the only way a death
+  // is a setback rather than a reset. The walk is not free and neither is dying with
+  // 5,840 on you.
+  //
+  // No return leg is needed. A bank is a town room and generates no prey, so the
+  // relocation in farm() sends the character back to its assignedRoom on the next pass
+  // — the same mechanism that used to scatter the fleet, working for us.
+  async bankRun() {
+    const above = this.policy.bankAbove;
+    if (!above) return false;                       // 0 or null turns the trips off
+    const s = this.s, c = s.need();
+    const room = s.world?.room;
+    if (!room || BANKS.some(b => b.room === room.num)) return false;   // already there
+    // Wait for the reply, not just the request. Reading c.inventory straight after
+    // submitting reads the PREVIOUS snapshot, which is the whole family of bugs this
+    // file keeps re-learning.
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+    const carried = (c.inventory || [])
+      .filter(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))
+      .reduce((t, o) => t + (o.amount || 1), 0);
+    if (carried <= above) {
+      // Say what we saw, occasionally. A threshold that never trips is indistinguishable
+      // from one that is never checked, and that cost an eight-minute run to find out.
+      if (carried > 0 && (!this.notedPurse || Date.now() - this.notedPurse > 120_000)) {
+        this.notedPurse = Date.now();
+        this.note('carrying, but under the banking threshold', { carrying: carried, banks_at: above });
+      }
+      return false;
+    }
+
+    // Jasper and Tos share one account, so the only question is which is nearer.
+    // world.route() returns {found, hops:[...]}, NOT an array — taking .length off it
+    // gives undefined, every bank scores Infinity, and the character stands in a field
+    // with 5,840 shillings reporting that it cannot reach a bank seven hops away.
+    const options = BANKS
+      .map(b => { const r = s.world?.route?.(b.room);
+                  return { ...b, hops: r?.found ? r.hops.length : Infinity }; })
+      .sort((x, y) => x.hops - y.hops);
+    const target = options[0];
+    if (!Number.isFinite(target.hops)) {
+      if (!this.warnedNoBank) {
+        this.warnedNoBank = true;
+        this.note('cannot reach a bank', { carrying: carried, tried: options.map(o => o.name) });
+      }
+      return false;
+    }
+
+    this.doing = 'travelling';
+    this.note('going to the bank', {
+      carrying: carried, to: target.name, hops: target.hops, keeping: this.policy.walkingMoney ?? 400,
+      why: 'everything carried is dropped on death and usually unrecoverable; a balance is not' });
+    await this.leaveHold('walking to the bank');
+    const r = await s.travel(target.room, { maxHops: Math.max(12, target.hops + 4) })
+                    .catch(e => ({ arrived: false, reason: e.message }));
+    this.money.trips++;
+    if (!r.arrived) {
+      this.money.trips_failed++;
+      if (this.money.why_not.length < 6) this.money.why_not.push({ to: target.room, why: r.reason || 'did not arrive' });
+      this.noProgress('could not reach the bank');
+      return true;                                   // the pass was spent walking either way
+    }
+    await this.bankSurplus().catch(() => {});
+    this.progress('banked the takings');
+    return true;
   }
 
   // BANK THE MONEY BEFORE GOING BACK OUT.

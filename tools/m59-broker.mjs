@@ -3048,6 +3048,12 @@ const TOOLS = [
         description: 'drop junk and weapons the server has refused as broken, default true. A ' +
                      'broken weapon is NOT renamed, so it otherwise outranks the working one for ever' },
       roam: { type: 'boolean', description: 'when the room is cleared, move to a neighbouring one instead of waiting for respawns. Off by default because it changes where the character is.' },
+      bank_above: { type: ['number', 'null'],
+        description: 'carry more than this many shillings and the character stops what it is doing ' +
+          'and walks to Jasper or Tos, whichever is nearer, to deposit down to walking money. ' +
+          'Default 2000. Everything carried is dropped on death and is usually unrecoverable; a ' +
+          'balance is not. 0 or null reverts to banking only when it happens to walk past one, ' +
+          'which for a strategy that never enters a town means never' },
       assigned_room: { type: ['number', 'null'],
         description: 'WHERE THIS CHARACTER FARMS. Without it the keeper sends every character ' +
           'hunting the same creature to the same top-ranked room, so a fleet spread across six ' +
@@ -3103,6 +3109,8 @@ const TOOLS = [
       if (a.roam !== undefined) p.policy.roam = !!a.roam;
       if (a.assigned_room !== undefined)
         p.policy.assignedRoom = a.assigned_room == null ? null : Number(a.assigned_room);
+      if (a.bank_above !== undefined)
+        p.policy.bankAbove = a.bank_above == null ? null : Number(a.bank_above);
       if (a.roam_limit !== undefined) p.policy.roamLimit = Number(a.roam_limit);
       if (a.strategy !== undefined) {
         if (!STRATEGIES[a.strategy])
