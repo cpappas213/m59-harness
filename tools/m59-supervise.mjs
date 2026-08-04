@@ -215,9 +215,32 @@ async function travelTo(agent, room, { tries = 3, hops = 20 } = {}) {
            left_in: st?.where?.name ?? null };
 }
 
+// GUARANTEE THE KEEPER IS RUNNING WHEN WE LEAVE, WHATEVER HAPPENED.
+//
+// Patching individual failure paths was not enough. The travel path restored the keeper,
+// then the orders path was made to restore it too — and t1 was STILL found stopped for
+// ten minutes, skipped while the supervisor cycled five other characters happily. Any
+// throw between the stop and the restart strands the character, and there are more ways
+// to throw than there are paths worth enumerating: a status read, a map lookup, a socket
+// dying mid-call.
+//
+// So this stops enumerating and states the invariant instead: whoever we stopped is
+// running again by the time we return, on every path out including a throw. Checked
+// rather than assumed, because "start" on an already-running keeper is a no-op and
+// costs nothing, while the alternative costs a character.
+async function ensureKeeper(agent, hunt) {
+  try {
+    const st = await call('autopilot', { agent, action: 'status' }).catch(() => null);
+    if (st?.running) return true;
+    await call('autopilot', { agent, action: 'start', mode: 'farm', hunt });
+    return true;
+  } catch { return false; }
+}
+
 async function deploy(a, b, room, name, hunt) {
   const out = [];
   for (const [me, mate] of [[a, b], [b, a]]) {
+   try {
     // STOP THE KEEPER BEFORE WALKING IT ACROSS THE WORLD.
     //
     // A running keeper is also moving the character — taking safe spots, pulling
@@ -260,6 +283,13 @@ async function deploy(a, b, room, name, hunt) {
       continue;
     }
     out.push(`${me.character} -> ${name} (${room}) hunting ${hunt}, partnered with ${mate.character}`);
+   } catch (e) {
+     out.push(`${me.character}: deploy threw — ${e.message}`);
+   } finally {
+     // The invariant. Nothing above may leave this character unattended.
+     const ok = await ensureKeeper(me.agent, me.hunting || hunt);
+     if (!ok) out.push(`${me.character}: COULD NOT RESTART ITS KEEPER — it is standing unattended`);
+   }
   }
   return out;
 }
