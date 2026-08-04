@@ -482,6 +482,90 @@ export async function inspectForBroken(s, ids, { retries = 1, timeoutMs = 3000 }
   return out;
 }
 
+// A SITTING CHARACTER'S CAST IS SWALLOWED WHOLE — no mana, no message, no effect.
+//
+// This cost most of an afternoon. Scooter cast create weapon forty times from an inn and
+// produced nothing; the same call, after standing up, took mana 19 -> 4 on the first
+// try. Resting sets PFLAG_NO_CAST alongside PFLAG_NO_MOVE (player.kod:1162) exactly as
+// it sets PFLAG_NO_FIGHT — and the refusal is silent, so `cast` returned success every
+// time and the keeper had no way to tell a swallowed cast from an unlucky one.
+//
+// Read the MANA, not the reply, to tell those apart: a cast that never happened costs
+// nothing, a failed roll costs half (spell.kod:1163), and a successful one costs the
+// full price. That is the only honest signal available here.
+// Unconditional, because nothing on the wire says whether we are sitting — BP has no
+// posture field — and standing while already standing costs one packet and does nothing.
+// Guessing wrong in the other direction costs 15 mana and an afternoon.
+export async function standToAct(s) {
+  const c = s.need();
+  await s.pacer.submit('stand', () => c.stand());
+  await new Promise(r => setTimeout(r, 400));
+  return { stood: true };
+}
+
+// HOW MUCH THIS CHARACTER CAN CARRY — and the honest edge of what we can know.
+//
+// The server refuses a pickup, and DELETES a spell-created weapon rather than handing
+// it over, when `piWeight_hold + weight > GetWeightMax` or the same for bulk
+// (holder.kod:259 ReqNewHold -> :281 CanHoldWeightAndBulk). Both ceilings are one
+// formula, and it is computable from an attribute we already read:
+//
+//     GetWeightMax = GetBulkMax = 1700 + might * 20     player.kod:10456, :10461
+//
+// WHAT WE CANNOT KNOW IS THE CURRENT LOAD. piWeight_hold and piBulk_hold live on the
+// server and are never sent, and no packet carries an item's weight or bulk either — so
+// the load cannot be re-derived from the inventory without a table of every item class's
+// viWeight/viBulk lifted out of the kod (219 files under object/item declare one).
+//
+// So this reports the ceiling and says the load is UNKNOWN rather than inventing one.
+// That is deliberate: the only thing a load figure would be used for is deciding whether
+// there is room, and a wrong estimate there fails in the expensive direction — it burns
+// 15 mana on a create weapon that the server then throws away, which is exactly the bug
+// this was written for. `freeRoomFor` below acts on that honestly, by making room rather
+// than by predicting whether room exists.
+export function carryCapacity(c) {
+  const might = c?.stat?.('might') ?? null;
+  const items = (c?.inventory || []).length;
+  if (might == null)
+    return { known: false, items, why: 'might has not been read yet — call stats first' };
+  // The attribute arrives scaled for display, so the raw value the kod multiplies is not
+  // necessarily this one. Report both the input and the arithmetic instead of a single
+  // confident number, because a ceiling quoted wrongly is worse than one quoted openly.
+  const max = 1700 + might * 20;
+  return { known: true, might, weight_max: max, bulk_max: max, items, load: null,
+           formula: '1700 + might * 20 (player.kod:10456, :10461)',
+           note: 'the CEILING is exact; the current LOAD is not sent by the server and is ' +
+                 'not derivable from any packet, so "is there room" can only be answered ' +
+                 'by trying, or by making room first — see freeRoomFor()' };
+}
+
+// MAKE ROOM BEFORE ASKING FOR SOMETHING, because asking and being refused is expensive.
+//
+// create weapon costs its full 15 mana whether or not the weapon survives: the spell
+// rolls, succeeds, builds the weapon, and only then asks ReqNewHold — and if that says
+// no the weapon is Deleted and the caster is out the mana with nothing to show
+// (creaweap.kod:116-129). Since the load cannot be read, the only reliable move is to
+// shed what we already know is worthless first.
+//
+// Returns what it dropped. Dropping nothing is a perfectly good outcome — it means
+// there was nothing dead to shed, not that there is room.
+export async function freeRoomFor(s, { max = 4 } = {}) {
+  const c = s.need();
+  const dead = junkAndBroken(c).slice(0, max);
+  const dropped = [];
+  for (const d of dead) {
+    // Same spec shape the keeper's pack-clearer uses: a bare id, or {id, amount} for a
+    // stack. Passing {id} for a single item is refused as a partial-stack drop.
+    await s.pacer.submit('drop', () => c.drop([(d.amount ?? 1) > 1 ? { id: d.id, amount: d.amount } : d.id]));
+    dropped.push(d);
+  }
+  if (dropped.length) {
+    await s.pacer.submit('read', () => c.requestInventory());
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+  }
+  return { dropped, note: dropped.length ? undefined : 'nothing known-dead to shed' };
+}
+
 export function junkAndBroken(c) {
   const broken = brokenSet(c);
   const worn = equippedNow(c) ?? new Set();

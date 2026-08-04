@@ -3505,6 +3505,13 @@ const TOOLS = [
                  note: 'target counts come from the server, in BP_SPELLS' };
       }
 
+      // STAND UP FIRST. A sitting character's cast is swallowed whole — no mana, no
+      // message, no effect, and this tool returned cast:true anyway. Scooter cast create
+      // weapon forty times from an inn for nothing; the same call after standing took
+      // mana 19 -> 4 immediately. See standToAct.
+      const manaBefore = c.vitals()?.mana?.value ?? null;
+      await skills.standToAct(s).catch(() => null);
+
       const before = c.evSeq;
       await s.pacer.submit('cast', () => c.cast(mine.id, targets), ATTACK_INTERVAL_MS);
       const unpriced = !info;
@@ -3512,9 +3519,23 @@ const TOOLS = [
       const messages = ev.events.filter(e => e.text).map(e => e.text);
       await s.pacer.submit('read', () => c.stats(1));
       await c.waitFor({ kinds: ['stat'], timeoutMs: 1500 });
+      // WHAT THE MANA SAYS, because the reply does not say it. A cast that never happened
+      // costs nothing; a failed roll costs half (spell.kod:1163); a successful one costs
+      // the full price. That is the only way to tell those three apart from out here, and
+      // without it "cast: true" meant nothing more than "the packet went out".
+      const manaAfter = c.vitals()?.mana?.value ?? null;
+      const spent = manaBefore != null && manaAfter != null ? manaBefore - manaAfter : null;
+      const cost = info?.mana ?? null;
+      const reading = spent == null ? null
+        : spent === 0 ? 'NOTHING was spent — the cast did not happen at all. Being asleep, ' +
+                        'frozen or otherwise blocked looks exactly like this.'
+        : cost != null && spent < cost ? `half cost (${spent} of ${cost}) — the spell was cast and FAILED its roll`
+        : `full cost (${spent}) — the spell was cast and succeeded; if nothing appeared, ` +
+          'something downstream refused it (create weapon deletes the weapon when it will not fit)';
       return {
         cast: true, spell: mine.name, targets,
         messages,
+        mana_spent: spent, what_the_mana_says: reading,
         vitals: c.vitals(),
         ...(unpriced ? { costs_unknown: true,
           note_costs: 'the catalogue has no entry for this one, so it was sent without an affordability check' } : {}),

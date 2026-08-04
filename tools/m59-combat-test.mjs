@@ -21,7 +21,7 @@
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import {
   isJunk, JUNK_NAMES, proficiencyFor, weaponRanking, equipBest, junkAndBroken,
-  brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken,
+  brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor,
 } from './m59-skills.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
 import { RoomGeometry } from './m59-roo.mjs';
@@ -194,6 +194,35 @@ console.log('\nasking whether a weapon is broken BEFORE carrying it home');
   const dead = junkAndBroken(c5);
   ok('what inspection condemns, junkAndBroken lists for dropping',
      dead.some(d => d.id === 1), JSON.stringify(dead));
+}
+
+console.log('\nwhat the mana says about a cast, and what we can know about carrying');
+{
+  // The ceiling is exact arithmetic; the load is not knowable and must not be invented.
+  const c = fakeClient([[1, 'mace'], [2, 'herb']]);
+  c.stat = (k) => (k === 'might' ? 25 : null);
+  const cap = carryCapacity(c);
+  ok('the ceiling is 1700 + might*20', cap.weight_max === 2200 && cap.bulk_max === 2200,
+     JSON.stringify(cap));
+  ok('weight and bulk share one formula', cap.weight_max === cap.bulk_max);
+  ok('the current load is reported as UNKNOWN, never guessed', cap.load === null);
+  const blind = fakeClient([[1, 'mace']]);
+  blind.stat = () => null;
+  ok('with might unread it says so rather than assuming a default',
+     carryCapacity(blind).known === false);
+
+  // freeRoomFor sheds only what is already known dead — it never gambles on the load.
+  const c2 = fakeClient([[1, 'mace'], [2, 'broken mace'], [3, 'dagger']]);
+  c2.dropped = [];
+  c2.drop = function (ids) { this.dropped.push(...ids); };
+  const freed = await freeRoomFor(fakeSession(c2));
+  ok('junk is shed to make room', freed.dropped.some(d => d.name === 'broken mace'),
+     JSON.stringify(freed.dropped));
+  ok('and a sound weapon is not', !freed.dropped.some(d => d.name === 'dagger'));
+  const c3 = fakeClient([[1, 'dagger']]);
+  c3.drop = function () { throw new Error('should not drop anything'); };
+  const none = await freeRoomFor(fakeSession(c3));
+  ok('nothing dead means nothing dropped, not a panic clear-out', none.dropped.length === 0);
 }
 
 console.log('\nequipBest tries the next one instead of lying');
