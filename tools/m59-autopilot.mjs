@@ -3480,19 +3480,59 @@ export class Autopilot {
         why: 'too hurt to fight, too tired to be worth walking far, and resting where something ' +
              'can reach us is how a rest becomes a death. Out of the room none of that is true',
         then: 'find food — that is the thing actually wrong' });
-      if (out) {
-        const r = await s.leaveVia(out).catch(e => ({ left: false, reason: e.message }));
-        if (r.left) {
-          this.tally.fled_rooms = (this.tally.fled_rooms || 0) + 1;
-          // Somewhere quieter: rest first, then deal with the larder.
-          await skills.restUntil(s, { health: 0.95, vigor: REST_VIGOR_CAP, maxSeconds: 90 })
-                      .catch(() => {});
-          await this.cookSomething('got out of a bad room and need food before going back')
+      // TRY EVERY WAY OUT, AND THEN STOP BEING SURROUNDED.
+      //
+      // THIS IS WHAT IS KILLING THE FLEET. Of 37 deaths since the reach model went in,
+      // 33 decided to leave and 13 recorded "could not leave" — and every single death
+      // was slow attrition: median -0.03 health per second, nothing worse than -0.22.
+      // Nobody was killed in a fight. They chose correctly, failed to get out, and then
+      // bled to death over minutes at 10-12 attackers, standing exactly where they were.
+      //
+      // Two things were wrong here and both are one-liners:
+      //
+      //   ONE EXIT. This picked the nearest and tried it once, so the boundary-wide
+      //   candidates from world.exits() were never used. leaveViaAny walks the whole
+      //   wall and every other exit besides.
+      //
+      //   NO FALLBACK. When the walk out failed it gave up and returned, and the pass
+      //   ended with the character still standing in the room. But a walk failing while
+      //   surrounded is the EXPECTED case — that is what being surrounded does — and
+      //   there is already a tool for it: a reconnect hands back the entry grace period,
+      //   so we come back with about one of them aware of us instead of twelve. It was
+      //   only ever wired to stepping off a safe spot, which is the same problem in a
+      //   politer setting.
+      const tryOut = async () => {
+        const cands = ways.length ? ways : (s.world?.exits() || []).filter(e => e.to != null);
+        if (!cands.length) return { left: false, reason: 'no exit from this room at all' };
+        return await s.leaveViaAny(cands).catch(e => ({ left: false, reason: e.message }));
+      };
+      const gotOut = async (r) => {
+        this.tally.fled_rooms = (this.tally.fled_rooms || 0) + 1;
+        await skills.restUntil(s, { health: 0.95, vigor: REST_VIGOR_CAP, maxSeconds: 90 })
                     .catch(() => {});
-          this.progress('left a room I could neither fight nor rest in');
+        await this.cookSomething('got out of a bad room and need food before going back')
+                  .catch(() => {});
+        this.progress('left a room I could neither fight nor rest in');
+        return r;
+      };
+
+      let r = await tryOut();
+      if (r.left) { await gotOut(r); return; }
+      this.note('could not leave', { why: r.reason, tried: r.tried?.length ?? 1,
+        next: 'reconnecting to shed the crowd, then trying again' });
+
+      // Being unable to walk out IS the crowd. Reset it and try once more.
+      const broke = await this.breakOut('cannot walk out of a room that is killing us')
+                              .catch(() => ({ did: false }));
+      if (broke.did) {
+        r = await tryOut();
+        if (r.left) {
+          this.note('got out after reconnecting', { crowd_before: broke.crowd,
+            why: 'the walk failed because twelve things were already swinging; after a ' +
+                 'reconnect only about one of them has noticed' });
+          await gotOut(r);
           return;
         }
-        this.note('could not leave', { why: r.reason });
       }
       // Nowhere to go. Say what is actually needed rather than looping silently — the
       // interest board is what the almoner and the quartermaster read.
