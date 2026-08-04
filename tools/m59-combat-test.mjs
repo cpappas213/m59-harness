@@ -268,7 +268,8 @@ console.log('\nthe post-mortem');
       moved_ms: 30_000, swung_ms: 500, threats: ['centipede'] },
     { at: 20_000, room: 'West Merchant Way', num: 545, col: 91, row: 21, health: 14, max: 25,
       vigor: 150, doing: 'fighting', holding: false,
-      moved_ms: 1_000, swung_ms: 400, threats: ['centipede', 'baby spider'] },
+      moved_ms: 1_000, swung_ms: 400, threats: ['centipede', 'baby spider'],
+      players_present: ['Janice', 'Waldorf'] },
     { at: 30_000, room: 'Underworld', num: 999, col: 1, row: 1, health: 0, max: 25,
       vigor: 100, doing: null, holding: false, moved_ms: 100, swung_ms: 9_000, threats: [] },
   ];
@@ -308,6 +309,13 @@ console.log('\nthe post-mortem');
      pm.threats.present_at_the_end.join(',') === 'centipede,baby spider');
   ok('and the worst moment, which is usually not the last one',
      pm.threats.most_at_once === 2);
+  // Found live: every character in this fleet is ATTACKABLE and they stand together,
+  // so without the player filter a death record names four Muppets as the killers.
+  ok('fleetmates are not listed as threats',
+     !pm.threats.present_at_the_end.some(t => /Janice|Beaker|Waldorf/.test(t)));
+  ok('but who was standing there is still recorded',
+     pm.threats.players_present.join(',') === 'Janice,Waldorf',
+     JSON.stringify(pm.threats.players_present));
 
   // The reason it is written to disk at all.
   const k2 = new Autopilot({ name: 't9', world: { room: {} },

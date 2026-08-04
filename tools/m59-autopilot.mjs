@@ -1663,6 +1663,9 @@ export class Autopilot {
       threats: {
         present_at_the_end: last?.threats ?? [],
         most_at_once: worst?.threats?.length ?? 0,
+        // Who else was standing there. Not a threat — these are ours — but it answers
+        // "was anyone with it", which is the second question after "what killed it".
+        players_present: last?.players_present ?? [],
       },
       // The three things that were being kept and never joined.
       frames,
@@ -2077,8 +2080,19 @@ export class Autopilot {
                         // asking "was it moving", not "what was the clock".
                         moved_ms: this.movedAt ? nowT - this.movedAt : null,
                         swung_ms: this.swungAt ? nowT - this.swungAt : null,
+                        // NOT FLEETMATES — the same filter the fight path already
+                        // carries, and it was missing here. Every character in this
+                        // fleet is ATTACKABLE and they stand next to each other by
+                        // design, so without the player bit a death record names four
+                        // Muppets as the things that killed you. They are recorded
+                        // separately instead: who was standing there is real context
+                        // for a death, it is just not a threat.
                         threats: [...c.room.objects.values()]
-                          .filter(o => o.id !== c.selfId && (o.flags & OF.ATTACKABLE))
+                          .filter(o => o.id !== c.selfId && (o.flags & OF.ATTACKABLE)
+                                       && !(o.flags & OF.PLAYER))
+                          .map(o => c.rsc.get(o.nameRsc)).slice(0, 6),
+                        players_present: [...c.room.objects.values()]
+                          .filter(o => o.id !== c.selfId && (o.flags & OF.PLAYER))
                           .map(o => c.rsc.get(o.nameRsc)).slice(0, 6) });
     // Deep enough to cover the whole of a death rather than its last few seconds. At an
     // 8s pass this is about three minutes, which is longer than any fight that kills
