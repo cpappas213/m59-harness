@@ -44,7 +44,8 @@ import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
 import * as skills from './m59-skills.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
-import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES } from './m59-autopilot.mjs';
+import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
+         POSTMORTEM_DIR } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import { loadSpawns, huntingGrounds, roomThreats, preyFor, scorePrey, PURPOSES } from './m59-spawns.mjs';
 import { safeSpots, safeSpotBook } from './m59-safespots.mjs';
@@ -4077,6 +4078,80 @@ const TOOLS = [
         rejected: rows.filter(r => r.rejected),
         note: ok.length ? undefined
           : 'nothing generates that; check the name, or it may be summoned rather than spawned',
+      };
+    },
+  },
+  {
+    name: 'post_mortem',
+    description:
+      'WHAT WAS HAPPENING WHEN A CHARACTER DIED. One record per death, written at the moment ' +
+      'it happened and kept on disk, because everything that explains a death is gone within ' +
+      'a minute of it: the client\'s event buffer fills with the Underworld, the keeper\'s ' +
+      'frames roll over, and the journal moves on.\n' +
+      'Each record joins four things that were always being kept separately — the last 30 ' +
+      'lines the SERVER sent (combat text, a weapon shattering, what other players said), the ' +
+      'keeper\'s last 14 DECISIONS, ~24 per-pass FRAMES carrying health/vigor/position/what it ' +
+      'was doing, and a summary naming what was standing there.\n' +
+      'READ text AND decisions SIDE BY SIDE against the timestamps. The interesting moment is ' +
+      'almost always where they disagree — the server saying one thing while the keeper was ' +
+      'deciding another.\n' +
+      'health_per_second is the number to look at first. Around -0.3 is attrition somebody ' +
+      'should have withdrawn from and the flee threshold is too low; -4 was never survivable ' +
+      'by fleeing and the mistake was made earlier, somewhere in frames.\n' +
+      'With no arguments this lists what exists, newest first. Pass agent for that character\'s ' +
+      'latest, or file for one exactly. Pass live:true to get the SAME record for a character ' +
+      'that is still alive — which is how you check the recorder works without killing anything.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string', description: 'the character whose latest death to read' },
+      file: { type: 'string', description: 'an exact filename from the listing' },
+      live: { type: 'boolean', description: 'with agent — build the record NOW, for a living character' },
+      limit: { type: 'number', description: 'how many to list, default 20' },
+    } },
+    run: async (a) => {
+      if (a.live) {
+        if (!a.agent) throw new Error('live:true needs an agent');
+        const p = autopilotIfAny(a.agent);
+        if (!p) throw new Error(`no keeper for "${a.agent}" — nothing is recording`);
+        return { live: true, agent: a.agent, record: p.postMortem('still alive'),
+                 note: 'built from the buffers as they stand right now; nothing was written to disk' };
+      }
+      let files = [];
+      try {
+        files = readdirSync(POSTMORTEM_DIR).filter(f => f.endsWith('.json')).sort().reverse();
+      } catch { files = []; }
+      if (!files.length)
+        return { deaths: [], note: `nothing under ${POSTMORTEM_DIR} — no character has died since ` +
+                                   'this was added. Use live:true to see what a record looks like.' };
+      const read = (f) => JSON.parse(readFileSync(`${POSTMORTEM_DIR}/${f}`, 'utf8'));
+      if (a.file) {
+        if (!files.includes(a.file)) throw new Error(`no such record "${a.file}"`);
+        return { file: a.file, record: read(a.file) };
+      }
+      if (a.agent) {
+        const mine = files.filter(f => f.toLowerCase().startsWith(String(a.agent).toLowerCase() + '-'));
+        // The file is named for the CHARACTER; an agent name like t5 will not match it,
+        // so fall back to reading records rather than reporting a character never died.
+        const hit = mine[0] ?? files.find(f => {
+          try { const r = read(f); return r.agent === a.agent || r.character === a.agent; }
+          catch { return false; }
+        });
+        if (!hit) return { agent: a.agent, deaths: [],
+                           note: 'no death recorded for that name. Names in the listing are the ' +
+                                 'CHARACTER, not the agent — try `post_mortem` with no arguments.' };
+        return { file: hit, record: read(hit) };
+      }
+      return {
+        deaths: files.slice(0, num(a.limit, 20)).map(f => {
+          try {
+            const r = read(f);
+            return { file: f, character: r.character, at: new Date(r.at).toISOString(),
+                     died_in: r.where?.room ?? null, doing: r.was?.doing ?? null,
+                     in_safe_spot: !!r.was?.in_safe_spot,
+                     health_per_second: r.vitals?.health_per_second ?? null,
+                     killed_by: r.threats?.present_at_the_end ?? [] };
+          } catch { return { file: f, unreadable: true }; }
+        }),
+        note: 'pass file to open one in full',
       };
     },
   },

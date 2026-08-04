@@ -26,6 +26,7 @@ import { loadSpawns, huntingGrounds, roomThreats, goalYield } from './m59-spawns
 import { findPath } from './m59-map.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
 import { inboxIfAny } from './m59-inbox.mjs';
+import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 
 // Built by: node tools/m59-spawns.mjs
 const SPAWN_FILE = process.env.M59_SPAWN_FILE ||
@@ -33,6 +34,9 @@ const SPAWN_FILE = process.env.M59_SPAWN_FILE ||
 // Learned by standing in them. See SafeSpotBook.
 const SAFESPOT_FILE = process.env.M59_SAFESPOT_FILE ||
   new URL('../substrate/m59-safespots.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+// One file per death. Gitignored, like everything a running fleet writes.
+export const POSTMORTEM_DIR = process.env.M59_POSTMORTEM_DIR ||
+  new URL('../substrate/postmortems', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 
 // How long a spot must go quiet, with something adjacent to us that wants to kill us,
 // before we believe it works. Two passes' worth: one quiet reading is also what you
@@ -1588,6 +1592,106 @@ export class Autopilot {
     return this.stalledSince ? `stuck: ${this.stalledWhy}` : 'waiting';
   }
 
+  // ------------------------------------------------------------------ post-mortem
+  //
+  // WHAT WAS HAPPENING WHEN IT DIED, written down while it is still true.
+  //
+  // `lastDeath` already said where and to what. It could not say WHY, because the two
+  // things that answer why were never joined to it: the text the server sent — which is
+  // where "you are hit for 11 damage" and "your sword shatters into pieces" live — and
+  // the keeper's own decisions, which is where "gave up the safe spot" lives. Both were
+  // being kept, in separate buffers, and neither survived the process.
+  //
+  // Nothing here is gathered specially. The client already keeps its last 500 events and
+  // the keeper already keeps 200 journal entries; this is a join and a file.
+
+  // The last N lines of text the server actually sent us, newest last. `said` is speech,
+  // `message` is everything else — combat, refusals, the weapon breaking.
+  recentText(limit = 30) {
+    const evs = this.s.client?.events || [];
+    const out = [];
+    for (let i = evs.length - 1; i >= 0 && out.length < limit; i--) {
+      const e = evs[i];
+      if (e.kind === 'said' && e.text) out.push({ at: e.at, kind: 'said', who: e.name ?? null,
+                                                  channel: e.type ?? null, text: e.text });
+      else if (e.kind === 'message' && e.text) out.push({ at: e.at, kind: 'message', text: e.text });
+    }
+    return out.reverse();
+  }
+
+  // How fast health was going, in points per second, over the frames we have. Negative
+  // means losing. A death at -0.3/s is attrition somebody should have withdrawn from;
+  // a death at -4/s was not survivable by fleeing and the mistake was earlier.
+  healthRate(frames) {
+    const f = (frames || []).filter(x => x.health != null && x.at);
+    if (f.length < 2) return null;
+    const dt = (f[f.length - 1].at - f[0].at) / 1000;
+    if (dt <= 0) return null;
+    return +(((f[f.length - 1].health - f[0].health) / dt).toFixed(2));
+  }
+
+  // The whole record, as one object. Written on death, and readable any time — calling
+  // it while alive is how you check the recorder works without killing anything.
+  postMortem(reason = 'died') {
+    const frames = (this.recent5 || []).filter(f => !/underworld/i.test(f.room || ''));
+    const last = frames[frames.length - 1] || null;
+    const worst = frames.reduce((a, f) =>
+      (a && a.threats?.length >= (f.threats?.length ?? 0)) ? a : f, null);
+    return {
+      character: this.s.client?.me?.name ?? this.s.name ?? null,
+      agent: this.s.name ?? null,
+      at: Date.now(), reason,
+      // WHAT IT WAS DOING. The question everyone asks first.
+      was: {
+        doing: last?.doing ?? this.doing ?? null,
+        mode: this.mode, hunting: this.policy.hunt, purpose: this.policy.purpose ?? null,
+        strategy: this.policy.strategy,
+        in_safe_spot: last?.holding ?? false,
+        moving: last?.moved_ms != null && last.moved_ms < 12_000,
+        swinging: last?.swung_ms != null && last.swung_ms < 12_000,
+        ms_since_moved: last?.moved_ms ?? null,
+        ms_since_swung: last?.swung_ms ?? null,
+      },
+      where: last ? { room: last.room, num: last.num, col: last.col, row: last.row } : null,
+      vitals: {
+        last_health: last?.health ?? null, level: last?.max ?? null,
+        last_vigor: last?.vigor ?? null,
+        health_per_second: this.healthRate(frames),
+        trail: frames.map(f => f.health).filter(h => h != null),
+        flee_threshold: this.safety?.().fleeAt ?? null,
+      },
+      threats: {
+        present_at_the_end: last?.threats ?? [],
+        most_at_once: worst?.threats?.length ?? 0,
+      },
+      // The three things that were being kept and never joined.
+      frames,
+      decisions: (this.journal || []).slice(-14),
+      text: this.recentText(30),
+      note: 'frames are one keeper pass each, oldest first. `text` is what the server ' +
+            'sent, `decisions` is what the keeper chose. Read them side by side against ' +
+            'the timestamps — the interesting moment is usually where they disagree.',
+    };
+  }
+
+  // Durable, because the whole point is that somebody picks it up later. One file per
+  // death under substrate/postmortems/, gitignored with everything else a fleet writes.
+  writePostMortem(record) {
+    try {
+      mkdirSync(POSTMORTEM_DIR, { recursive: true });
+      const who = String(record.character || record.agent || 'unknown').replace(/[^A-Za-z0-9_-]/g, '');
+      const stamp = new Date(record.at).toISOString().replace(/[:.]/g, '-');
+      const file = `${POSTMORTEM_DIR}/${who}-${stamp}.json`;
+      writeFileSync(file, JSON.stringify(record, null, 2));
+      return file;
+    } catch (e) {
+      // A failed write must not take the keeper down on the one pass where it is
+      // already having a bad time.
+      this.note('could not write the post-mortem', { why: e.message });
+      return null;
+    }
+  }
+
   // THE SPOT NOTHING CAN ACTUALLY REACH — the cliff.
   //
   // A whole band of the fleet stood on the clifftop above West Merchant Way, taking a
@@ -1955,15 +2059,31 @@ export class Autopilot {
     // in an inn. They died somewhere else, minutes later, and the sample was stale.
     //
     // The keeper is the only thing running at the resolution a death happens at.
+    //
+    // Each frame also records WHAT WE WERE DOING, because "health 22, 14, 6" is a
+    // description of dying and not an explanation of it. Standing on a wall at 6 health
+    // and running for a door at 6 health are the same three numbers and opposite
+    // mistakes, and only the second column tells them apart.
+    const nowT = Date.now();
     this.recent5 = (this.recent5 || []);
-    this.recent5.push({ at: Date.now(), room: room?.name ?? null, num: room?.num ?? null,
+    this.recent5.push({ at: nowT, room: room?.name ?? null, num: room?.num ?? null,
                         col: c.self?.col ?? null, row: c.self?.row ?? null,
                         health: v.health?.value ?? null, max: v.health?.max ?? null,
                         vigor: v.vigor?.value ?? null,
+                        doing: this.doing ?? null,
+                        holding: this.hold ? { col: this.hold.col, row: this.hold.row,
+                                               proven: this.holdWorks?.() ?? null } : false,
+                        // Ages rather than timestamps: a post-mortem is read by someone
+                        // asking "was it moving", not "what was the clock".
+                        moved_ms: this.movedAt ? nowT - this.movedAt : null,
+                        swung_ms: this.swungAt ? nowT - this.swungAt : null,
                         threats: [...c.room.objects.values()]
                           .filter(o => o.id !== c.selfId && (o.flags & OF.ATTACKABLE))
                           .map(o => c.rsc.get(o.nameRsc)).slice(0, 6) });
-    if (this.recent5.length > 8) this.recent5.shift();
+    // Deep enough to cover the whole of a death rather than its last few seconds. At an
+    // 8s pass this is about three minutes, which is longer than any fight that kills
+    // one of these characters.
+    if (this.recent5.length > 24) this.recent5.shift();
 
     // Answer people and take hand-outs before anything else. Cheap, and a player
     // trying to help should not have to wait for a fight to finish.
@@ -2045,7 +2165,18 @@ export class Autopilot {
             damage: diedHolding.proven ? 99 : 1, attackers: diedHolding.mostAttackers });
           this.book.save();
         }
-        this.note('DIED', this.lastDeath);
+        // THE FULL RECORD, WRITTEN BEFORE ANYTHING ELSE HAPPENS. Everything below this
+        // point — escaping the Underworld, walking back, rejoining — overwrites the
+        // evidence: the client's event buffer fills with the Underworld, the frames roll
+        // over, and the journal moves on. `lastDeath` is the summary; this is the thing
+        // somebody can actually read afterwards.
+        //
+        // Assembled from `lastDeath` rather than beside it, so the two cannot drift.
+        const pm = { ...this.postMortem('died'), summary: this.lastDeath };
+        const file = this.writePostMortem(pm);
+        this.lastDeath.post_mortem = file;
+        this.lastPostMortem = pm;
+        this.note('DIED', { ...this.lastDeath, ...(file ? { post_mortem: file } : {}) });
       }
       this.note('woke up dead', { room: room.name, attempt: (this.underworldTries || 0) + 1 });
       // A tell costs nothing and we have no mana for anything else.

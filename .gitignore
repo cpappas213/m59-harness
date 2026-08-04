@@ -17,6 +17,10 @@ node_modules/
 /substrate/fleets/
 /substrate/history/
 /substrate/recordings/
+# One JSON per death. Carries the last thirty lines the server sent that character,
+# which is other players' speech as well as combat text, so it is one server's
+# transcript and not reference material.
+/substrate/postmortems/
 /substrate/*.log
 # Which process m59-service.mjs last started, per fleet. Runtime state, and wrong the
 # moment it is read on any other machine.

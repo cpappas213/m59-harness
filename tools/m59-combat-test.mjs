@@ -245,5 +245,80 @@ console.log('\nthe cliff, from the geometry instead of from experience');
   ok('with no quarry to ask about, nothing is filtered', noQuarry !== null);
 }
 
+console.log('\nthe post-mortem');
+{
+  // A keeper with a client that has an event buffer, and a few passes of history.
+  const events = [
+    { seq: 1, kind: 'moved', at: 1000, col: 5, row: 5 },
+    { seq: 2, kind: 'message', at: 1100, text: 'The centipede hits you for 7 damage.' },
+    { seq: 3, kind: 'said', at: 1200, name: 'Waldorf', type: 'say', text: 'run!' },
+    { seq: 4, kind: 'message', at: 1300, text: 'Your long sword shatters into pieces.' },
+    { seq: 5, kind: 'room-contents', at: 1400, count: 3 },
+    { seq: 6, kind: 'message', at: 1500, text: 'You are hit for 11 damage.' },
+  ];
+  const k = new Autopilot({ name: 't9', world: { room: { num: 545 } },
+                            client: { events, me: { name: 'Scooter' } } }, {});
+  k.policy.hunt = 'centipede';
+  k.mode = 'farm';
+  k.doing = 'fighting';
+  k.journal = [{ at: 900, what: 'took a safe spot' }, { at: 1200, what: 'gave up the safe spot' }];
+  k.recent5 = [
+    { at: 10_000, room: 'West Merchant Way', num: 545, col: 90, row: 20, health: 25, max: 25,
+      vigor: 180, doing: 'fighting', holding: { col: 90, row: 20, proven: true },
+      moved_ms: 30_000, swung_ms: 500, threats: ['centipede'] },
+    { at: 20_000, room: 'West Merchant Way', num: 545, col: 91, row: 21, health: 14, max: 25,
+      vigor: 150, doing: 'fighting', holding: false,
+      moved_ms: 1_000, swung_ms: 400, threats: ['centipede', 'baby spider'] },
+    { at: 30_000, room: 'Underworld', num: 999, col: 1, row: 1, health: 0, max: 25,
+      vigor: 100, doing: null, holding: false, moved_ms: 100, swung_ms: 9_000, threats: [] },
+  ];
+
+  const pm = k.postMortem('died');
+  ok('it names the character, not just the agent', pm.character === 'Scooter');
+  ok('the Underworld frame is excluded from where it died',
+     pm.where.room === 'West Merchant Way', JSON.stringify(pm.where));
+
+  // The four things that were being kept separately.
+  ok('it carries the server text', pm.text.length === 4, JSON.stringify(pm.text.length));
+  ok('text is oldest-first, so it reads in order',
+     pm.text[0].text === 'The centipede hits you for 7 damage.'
+     && pm.text.at(-1).text === 'You are hit for 11 damage.');
+  ok('speech is kept with who said it', pm.text.find(t => t.kind === 'said')?.who === 'Waldorf');
+  ok('non-text events are left out', !pm.text.some(t => !t.text));
+  ok('the weapon breaking is in there, which is often the whole answer',
+     pm.text.some(t => /shatters/.test(t.text)));
+  ok('it carries the decisions', pm.decisions.length === 2);
+  ok('it carries the frames', pm.frames.length === 2, JSON.stringify(pm.frames.length));
+
+  // What it was doing.
+  ok('what it was doing', pm.was.doing === 'fighting');
+  ok('whether it was in a safe spot at the end', pm.was.in_safe_spot === false);
+  ok('and the frame before shows it had been', pm.frames[0].holding.proven === true);
+  ok('whether it was moving', pm.was.moving === true, JSON.stringify(pm.was));
+  ok('whether it was swinging', pm.was.swinging === true);
+  ok('what it was hunting', pm.was.hunting === 'centipede');
+
+  // The rate — 25 to 14 over ten seconds.
+  ok('health rate is points per second and negative while dying',
+     pm.vitals.health_per_second === -1.1, String(pm.vitals.health_per_second));
+  ok('the trail is there too', pm.vitals.trail.join(',') === '25,14');
+  ok('a single frame cannot give a rate, and says null rather than 0',
+     k.healthRate([{ at: 1, health: 5 }]) === null);
+  ok('threats at the end are recorded',
+     pm.threats.present_at_the_end.join(',') === 'centipede,baby spider');
+  ok('and the worst moment, which is usually not the last one',
+     pm.threats.most_at_once === 2);
+
+  // The reason it is written to disk at all.
+  const k2 = new Autopilot({ name: 't9', world: { room: {} },
+                             client: { events: [], me: { name: 'Scooter' } } }, {});
+  k2.recent5 = []; k2.journal = [];
+  const live = k2.postMortem('still alive');
+  ok('it works on a living character, so the recorder is testable',
+     live.reason === 'still alive' && live.text.length === 0);
+  ok('and degrades to nulls rather than throwing on an empty history',
+     live.where === null && live.vitals.health_per_second === null);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
