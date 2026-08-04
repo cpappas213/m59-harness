@@ -1625,10 +1625,13 @@ export class Autopilot {
     const mons = [...c.room.objects.values()].filter(o =>
       o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER));
     const present = mons.length;
-    const status = { cap, present, full: present >= cap, clearable: [], blocked: [] };
+    const want = String(this.policy.hunt || '').toLowerCase();
+    const preyPresent = want
+      ? mons.filter(o => (c.rsc.get(o.nameRsc) || '').toLowerCase().includes(want)).length : 0;
+    const status = { cap, present, prey_present: preyPresent,
+                     full: present >= cap, clearable: [], blocked: [] };
     if (!status.full) return status;
 
-    const want = String(this.policy.hunt || '').toLowerCase();
     const level = c.vitals?.()?.health?.max ?? 0;
     const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
     const seen = new Set();
@@ -1658,6 +1661,26 @@ export class Autopilot {
     // the slots are.
     status.clearable.sort((a, b) => b.count - a.count);
     status.blocked.sort((a, b) => b.count - a.count);
+
+    // SHOULD WE ACTUALLY STOP AND CLEAR, or just get on with hunting?
+    //
+    // The first version only asked when NO prey was in the room, and that was wrong in
+    // the exact case it was written for. East Merchant Way was 8 baby spiders to 2
+    // centipedes at a cap of 10: prey WAS present, so the keeper hunted the two and never
+    // touched the eight, and the moment it killed them the generator refilled at 65%
+    // spiders. The room degrades to all-spiders whatever you do, one kill at a time.
+    //
+    // So the trigger is composition, not absence. A full room where the things we will
+    // not hunt outnumber the things we will is a room going the wrong way, and the only
+    // move that reverses it is killing them.
+    const blockerCount = status.clearable.reduce((a, b) => a + b.count, 0);
+    status.should_clear = status.clearable.length > 0
+      && (preyPresent === 0 || blockerCount > preyPresent);
+    status.why_clear = !status.should_clear ? null
+      : preyPresent === 0
+        ? `the room is at ${present}/${cap} and none of it is what we hunt`
+        : `${blockerCount} of the ${present} here are not our prey and only ${preyPresent} ` +
+          `are — at cap that composition only gets worse`;
     return status;
   }
 
@@ -2672,22 +2695,29 @@ export class Autopilot {
       let found = skills.findCreature(s, this.policy.hunt);
       this.clearing = null;
 
-      // NOTHING TO HUNT — BUT IS THE ROOM EMPTY, OR IS IT FULL OF THE WRONG THING?
-      // Those look identical from here and call for opposite moves. See capBlockers().
-      if (!found.length && this.policy.clearWeak !== false) {
+      // IS THIS ROOM STILL WORTH HUNTING IN, or is it silting up?
+      //
+      // Asked whether or not our prey is present — see capBlockers().should_clear. The
+      // first version only asked when the room held no prey at all, and so did nothing
+      // in the case it was built for: two centipedes among eight baby spiders reads as
+      // "prey available", and the keeper hunted the two while the eight held the cap.
+      if (this.policy.clearWeak !== false) {
         const capped = this.capBlockers(room);
-        if (capped?.full && capped.clearable.length) {
+        if (capped?.should_clear) {
           const target = capped.clearable[0];
-          this.clearing = target.name;
-          found = skills.findCreature(s, target.name);
-          if (found.length)
+          const shot = skills.findCreature(s, target.name);
+          if (shot.length) {
+            this.clearing = target.name;
+            found = shot;
             this.note('clearing the room so it can spawn again', {
               killing: target.name, of_them: target.count,
               room: room?.name, at_cap: `${capped.present}/${capped.cap}`,
-              hunting: this.policy.hunt,
-              why: 'the cap is a room-wide total, so what we decline to kill is what ' +
-                   'stops our prey appearing. Leaving would not reset it.' });
-        } else if (capped?.full && capped.blocked.length) {
+              prey_present: capped.prey_present, hunting: this.policy.hunt,
+              why: capped.why_clear,
+              note: 'the cap is a room-wide total, so what we decline to kill is what ' +
+                    'stops our prey appearing. Leaving would not reset it.' });
+          }
+        } else if (capped?.full && !capped.clearable.length && capped.blocked.length) {
           // Cannot clear it, so the room is finished for us — and it will still be
           // finished when we come back, because an abandoned full room keeps its
           // generator switched off. Go, and prefer somewhere else next time.

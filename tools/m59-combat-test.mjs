@@ -393,6 +393,19 @@ console.log('\nthe room that filled up with what nobody would kill');
   const notFull = mk({ 'baby spider': 3, centipede: 2 });
   ok('a room below cap is not full and offers nothing to clear',
      notFull.capBlockers({ num: 554 }).full === false);
+  ok('and is not a reason to stop hunting', !notFull.capBlockers({ num: 554 }).should_clear);
+
+  // THE CASE THE FIRST VERSION MISSED, and it was the live one. Prey IS present -- two
+  // centipedes -- so "no prey here" never fired, and the keeper hunted the two while
+  // eight spiders held the cap. At 65% spider spawn the room only gets worse.
+  ok('a full room where blockers outnumber prey is cleared even though prey is present',
+     st.should_clear === true, JSON.stringify({ prey: st.prey_present, why: st.why_clear }));
+  ok('it counts the prey that is present', st.prey_present === 2);
+  ok('and says composition is the reason, not absence', /only 2/.test(st.why_clear ?? ''));
+  const mostlyPrey = mk({ 'baby spider': 2, centipede: 8 });
+  const mp = mostlyPrey.capBlockers({ num: 554 });
+  ok('a full room that is mostly prey is left alone — hunting is better than tidying',
+     mp.full === true && mp.should_clear === false, JSON.stringify(mp.why_clear));
 
   // EXCEPTION 1 — karma. A kill is worth the NEGATIVE of the victim's karma.
   ok('killing negative-karma pushes you good, so an evil character refuses',
