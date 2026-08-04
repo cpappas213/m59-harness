@@ -9,8 +9,12 @@ sprite files, and every quantitative claim carries a `file:line` citation into
 ## Read it
 
 ```bash
-node tools/serve.mjs          # http://localhost:8099/
+node tools/serve.mjs          # http://127.0.0.1:8099/ , loopback only
 ```
+
+If you have the harness's fleet running, `node ../tools/m59-compendium.mjs --open
+--agent t1` serves it instead and loads a **real character** into the bestiary — or
+just press `C` in the fleet terminal on whichever character you are looking at.
 
 1,003 pages: 186 spells, 323 items, 267 zones, 171 creatures and NPCs, 22 skills,
 23 guides, and nine catalogue indexes. 5,355 sprites decoded from the client's
@@ -30,6 +34,12 @@ Two pages do real work rather than listing things:
   reordered. The arithmetic is `tools/calc.mjs`, which the generator and the
   browser both use, so the page cannot disagree with itself.
   It opens filtered to **monsters that actually spawn somewhere**.
+  When it is served by the harness's `tools/m59-compendium.mjs`, a **live
+  character** appears in the dropdown under "From the game" and is selected on
+  arrival: its real attributes, the abilities the server has confirmed, and what
+  it is genuinely wielding and wearing. Anything it has never learned counts as
+  zero and the page says which, because every number in the table is computed
+  from those. Absent everywhere else — the site stays static and works as files.
 - **`zones/world-map.html`** lays the outdoor rooms out geographically by
   walking the compass exits declared in the source, and reports the seams where
   the world does not tile flat.

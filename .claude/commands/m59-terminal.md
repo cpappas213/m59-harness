@@ -17,6 +17,19 @@ to open a character, a key that starts a program — needs a terminal that is yo
 drive. So this launches one. It talks to the same broker on 8901 that everything else
 does, so it is the same fleet, live.
 
+**The keys.** `↑↓` or `jk` to move, `⏎` for a character's full sheet, `r` to refresh,
+`q` to quit — and two that do something outside the terminal:
+
+- **`L`** launches the real game client logged in as the selected character, with the
+  agent DLL injected, and claims it from the keeper so the broker stops driving it.
+- **`C`** opens the **compendium** in your browser with that character loaded into it.
+  It starts a loopback-only server (`tools/m59-compendium.mjs`, port 8099) if one is
+  not already up, reads the character's attributes, confirmed abilities and actual
+  equipment out of the broker, and hands them over as a cookie — so the bestiary's
+  171 rows are computed against the character you are looking at rather than a preset
+  you would otherwise type in by hand. Skills it has not learned are counted as zero
+  and the page says so, because the whole table is computed from them.
+
 !`node -e "
 const { spawn } = require('child_process');
 const cwd = process.cwd();

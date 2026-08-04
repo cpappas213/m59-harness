@@ -27,4 +27,8 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream' });
     res.end(buf);
   });
-}).listen(PORT, () => console.log(`compendium on http://localhost:${PORT}/`));
+// Loopback only. This is a reading tool for the person running it, and binding every
+// interface — which is what listen(port) alone does — publishes the whole tree to
+// whatever network the machine happens to be on. Nothing here is secret, but "I ran a
+// local viewer" should not mean "I started a web server for the coffee shop".
+}).listen(PORT, '127.0.0.1', () => console.log(`compendium on http://127.0.0.1:${PORT}/  (loopback only)`));

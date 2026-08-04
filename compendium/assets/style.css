@@ -393,6 +393,12 @@ footer.sitefoot code { font-size: .95em; }
 .btn.primary:hover { background: var(--accent-soft); border-color: var(--accent-soft); color: #fff; }
 
 .refgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .7rem; }
+/* `hidden` is display:none from the UA stylesheet, and a class selector beats it — so
+   the rule above kept BOTH grids on screen and the Detailed/Simple toggle looked like
+   it did nothing. It was working the whole time: the toggle sets data-mode, which is
+   what readForm reads, so the arithmetic followed the toggle while the panel showed
+   two sets of numbers and no clue which was live. */
+.refgrid[hidden] { display: none; }
 .refgrid fieldset {
   border: 1px solid var(--rule); border-radius: 7px; margin: 0; padding: .5rem .7rem .65rem;
   background: var(--bg);
@@ -413,6 +419,19 @@ footer.sitefoot code { font-size: .95em; }
   border: 1px solid var(--rule-strong); border-radius: 4px;
   background: var(--bg-raised); color: var(--ink);
 }
+
+/* A character read out of the running game rather than typed in. Only ever present
+   when the compendium is being served by tools/m59-compendium.mjs, which is the
+   loopback server the fleet terminal's C key starts. */
+.livenote { margin-top: .8rem; padding: .55rem .7rem; border-radius: 4px;
+  background: var(--note-bg); border: 1px solid var(--note-rule); font-size: .82rem;
+  color: var(--ink-soft); }
+.livenote .livehead b { color: var(--ink); }
+/* Not styled as an aside. A skill the character has never learned is counted as zero,
+   and the whole table is computed from that — the reader has to see it. */
+.livenote .livewarn { margin-top: .4rem; padding-top: .4rem;
+  border-top: 1px dashed var(--note-rule); color: var(--ink); }
+.livenote .livewarn b { color: var(--accent); }
 
 .refsummary { display: flex; gap: .5rem 1.1rem; flex-wrap: wrap; margin-top: .8rem;
   padding-top: .7rem; border-top: 1px solid var(--rule); font-size: .85rem; }

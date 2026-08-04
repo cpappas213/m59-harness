@@ -83,29 +83,37 @@ console.log('\njunk that looks like gear');
   ok('so the junk mace can no longer outrank a real dagger', r[0].name === 'dagger');
 }
 
+// THESE ASSERTIONS USED TO PIN INVENTED NAMES — "mace proficiency", "sword
+// proficiency" and five more that no skill in the game is called. They were changed
+// because they were wrong, not to make the code pass: each name below is verbatim from
+// that skill's own resource string in kod, cited beside it.
+//
+// The reason it survived so long is worth keeping: the only consumer is a by-name
+// lookup, and a name nothing answers to is indistinguishable from a skill the
+// character has not learned. Both come back null.
 console.log('\nwhich proficiency a weapon trains (viProficiency_Needed)');
 {
-  ok('short sword has its own', proficiencyFor('short sword') === 'shortsword proficiency');
-  ok('a long sword is sword proficiency', proficiencyFor('long sword') === 'sword proficiency');
-  ok('and so is a nerudite sword', proficiencyFor('nerudite sword') === 'sword proficiency');
-  ok('scimitar is its own', proficiencyFor('scimitar') === 'scimitar proficiency');
-  ok('axe', proficiencyFor('battle axe') === 'axe proficiency');
-  ok('mace', proficiencyFor('mace') === 'mace proficiency');
-  ok('hammer', proficiencyFor('war hammer') === 'hammer proficiency');
-  ok('bows are archery', proficiencyFor('crossbow') === 'archery');
+  ok('short sword has its own', proficiencyFor('short sword') === 'short sword fighting');  // profshsw.kod
+  ok('a long sword is fencing', proficiencyFor('long sword') === 'fencing');                // profswrd.kod
+  ok('and so is a nerudite sword', proficiencyFor('nerudite sword') === 'fencing');
+  ok('scimitar is its own', proficiencyFor('scimitar') === 'scimitar wielding');            // profscim.kod
+  ok('axe', proficiencyFor('battle axe') === 'axe wielding');                               // profaxe.kod
+  ok('mace', proficiencyFor('mace') === 'mace fighting');                                   // profmace.kod
+  ok('hammer', proficiencyFor('war hammer') === 'hammer wielding');                         // profhamr.kod
+  ok('bows are archery', proficiencyFor('crossbow') === 'archery');                         // archery.kod
   ok('something unrecognised gets null, not a guess', proficiencyFor('turnip') === null);
   // Order matters: "short sword" must not fall through to the /sword/ rule.
   ok('the short sword rule wins over the generic sword rule',
-     proficiencyFor('short sword') !== 'sword proficiency');
+     proficiencyFor('short sword') !== 'fencing');
 }
 
 console.log('\nranking by proficiency, and overriding it');
 {
   const c = fakeClient([[1, 'long sword'], [2, 'battle axe']]);
-  c.statsById.set('sword proficiency', { value: 90 });
-  c.statsById.set('axe proficiency', { value: 11 });
-  ok('abilityOf reads a named skill', abilityOf(c, 'sword proficiency') === 90);
-  ok('and returns null when never read, not 0', abilityOf(c, 'mace proficiency') === null);
+  c.statsById.set('fencing', { value: 90 });
+  c.statsById.set('axe wielding', { value: 11 });
+  ok('abilityOf reads a named skill', abilityOf(c, 'fencing') === 90);
+  ok('and returns null when never read, not 0', abilityOf(c, 'mace fighting') === null);
   ok('the weapon it is good with leads', weaponRanking(c)[0].name === 'long sword');
   // The whole point of the override: proficiency ranking only ever rewards what you are
   // already best at, so a training goal needs a way to say otherwise.

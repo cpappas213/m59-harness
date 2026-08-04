@@ -30,8 +30,38 @@
 
   // ------------------------------------------------------------- builds
 
+  // ------------------------------------------------- a character from the harness
+  //
+  // The compendium is a static site and stays one. But when it is being served by
+  // `tools/m59-compendium.mjs` — the loopback server the fleet terminal's C key
+  // starts — that server sets a cookie holding a real character, read from the game
+  // over the wire: its actual attributes, the abilities the server has confirmed, and
+  // what it is genuinely wielding and wearing.
+  //
+  // A cookie rather than a query string because it has to survive navigation. "Your
+  // character" should still be selected three creatures later, and a query string is
+  // gone the moment the reader clicks anything — as well as being in their history and
+  // in the address bar of any screenshot.
+  //
+  // Everything here is optional and absent by design when the site is opened as files
+  // or served by anything else. A missing or malformed cookie leaves the presets
+  // exactly as they were.
+  function liveBuild() {
+    try {
+      var m = document.cookie.match(/(?:^|;\s*)m59char=([^;]*)/);
+      if (!m) return null;
+      var b = JSON.parse(decodeURIComponent(m[1]));
+      if (!b || !b.skills || !b.stats) return null;
+      b.id = b.id || 'live';
+      b.builtin = true;              // it is not the reader's to delete; it is re-imported
+      return b;
+    } catch (e) { return null; }
+  }
+  var LIVE = null;
+
   function allBuilds() {
     var out = DATA.presets.map(function (p) { return p; });
+    if (LIVE) out = [LIVE].concat(out);
     return out.concat(load(LS_BUILDS, []));
   }
   function findBuild(id) {
@@ -46,6 +76,12 @@
     var cur = sel || s.value;
     var custom = load(LS_BUILDS, []);
     s.innerHTML = '';
+    if (LIVE) {
+      var g0 = document.createElement('optgroup'); g0.label = 'From the game';
+      var o0 = document.createElement('option');
+      o0.value = LIVE.id; o0.textContent = LIVE.name; g0.appendChild(o0);
+      s.appendChild(g0);
+    }
     var g1 = document.createElement('optgroup'); g1.label = 'Presets';
     DATA.presets.forEach(function (p) {
       var o = document.createElement('option'); o.value = p.id; o.textContent = p.name; g1.appendChild(o);
@@ -159,6 +195,47 @@
     return v >= 100 ? String(Math.round(v)) : v.toFixed(1);
   }
 
+  // WHAT WAS READ AND WHAT WAS NOT. Shown whenever the live character is the selected
+  // build, and it is not decoration: a skill the character has never learned comes
+  // through as 0, and 0 is a legitimate number that the whole table is then computed
+  // from. Without this, "your parry is 0 because we could not find a parry skill" and
+  // "your parry is 0" render identically — and only one of them is a reading.
+  function showLive() {
+    var host = document.getElementById('refSummary');
+    if (!host) return;
+    var el = document.getElementById('liveNote');
+    var sel = document.getElementById('refPreset');
+    var on = LIVE && sel && sel.value === LIVE.id;
+    if (!on) { if (el) el.hidden = true; return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'liveNote';
+      el.className = 'livenote';
+      host.parentNode.insertBefore(el, host);
+    }
+    el.hidden = false;
+    var f = LIVE.from || {};
+    var bits = [];
+    bits.push('<b>' + esc(f.character || 'this character') + '</b> as it stands in the game');
+    bits.push(f.weapon ? 'wielding ' + esc(f.weapon) : 'empty-handed');
+    if (f.worn && f.worn.length) bits.push('wearing ' + f.worn.map(esc).join(', '));
+    if (f.stroke) bits.push('stroke: ' + esc(f.stroke));
+    if (f.proficiency) bits.push('proficiency: ' + esc(f.proficiency));
+    var warn = '';
+    if (f.missing_skills && f.missing_skills.length)
+      warn += '<div class="livewarn">Counted as 0, because this character has not learned them: <b>' +
+              f.missing_skills.map(esc).join(', ') + '</b>. Every number below is computed from that.</div>';
+    if (f.unmatched_gear && f.unmatched_gear.length)
+      warn += '<div class="livewarn">Carried but not modelled here: <b>' +
+              f.unmatched_gear.map(esc).join(', ') + '</b> — the compendium has no entry to match it to.</div>';
+    el.innerHTML = '<div class="livehead">' + bits.join(' · ') + '</div>' + warn;
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch];
+    });
+  }
+
   function recompute() {
     var b = readForm();
     var r = resolve(b);
@@ -193,6 +270,7 @@
       var v = m.verdict;
       set(tr, 'verdict', '<span class="verdict v-' + v.key + '">' + v.label + '</span>', m.margin, true);
     }
+    showLive();
     flash();
   }
 
@@ -317,10 +395,16 @@
       buildColumnUI(fresh);
     };
 
-    refreshPresetSelect(load(LS_CURRENT, DATA.presets[2].id));
+    // A live character wins over whatever was last selected. It only exists because
+    // somebody just asked for it — the C key in the fleet terminal fetches the
+    // character and lands the reader here — so restoring their old preset instead
+    // would be ignoring the thing they just did.
+    LIVE = liveBuild();
+    refreshPresetSelect(LIVE ? LIVE.id : load(LS_CURRENT, DATA.presets[2].id));
     var start = findBuild(document.getElementById('refPreset').value);
     writeForm(start);
     recompute();
+    if (LIVE) showLive();
 
     document.getElementById('refPreset').onchange = function () {
       var b = findBuild(this.value);

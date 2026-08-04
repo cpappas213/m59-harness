@@ -218,6 +218,14 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   read once after login and kept: `substrate/abilities/<character>.json`, one file per
   character, `node tools/m59-abilities.mjs` to read it.
 
+- **The skill names are not what they sound like.** Seven of the eight weapon
+  proficiencies were invented in this repository until recently: the mace one is
+  called **"mace fighting"**, the sword one **"fencing"**, and axe/scimitar/hammer are
+  **"wielding"** rather than "proficiency". Take them from `WEAPON_PROFICIENCY` in
+  `m59-skills.mjs`, which cites each kod file. A name nothing answers to is
+  indistinguishable from a skill the character has not learned — both come back null,
+  which is why it survived so long.
+
 - **A stat's `name` only exists for groups 1 and 2.** `STAT_NAMES` covers condition
   and attributes, so `statsById` files a group-3/4 stat under `"4.7"` and nothing
   else. Any by-name search of that map for a skill returns null — which is also the
@@ -267,6 +275,7 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-combat-test.mjs` (142) and
   `node tools/m59-stream-test.mjs` (54) and
   `node tools/m59-ability-test.mjs` (44) and
+  `node tools/m59-compendium-test.mjs` (42) and
   `node tools/m59-prey-test.mjs` (56). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on
   8899 and fail with `ECONNREFUSED` without one, which is not a regression.

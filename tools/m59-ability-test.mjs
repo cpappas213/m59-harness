@@ -10,7 +10,7 @@
 //   are STATS_LIST and therefore carry the spell's or skill's OBJECT ID. They were
 //   being filed in `statsById` under "4.7" and nothing else, because that map indexes
 //   a stat by name only `if (s.name)` and `name` comes from STAT_NAMES, which covers
-//   groups 1 and 2. So `abilityOf(c, 'axe proficiency')` searched by name, found
+//   groups 1 and 2. So `abilityOf(c, 'axe wielding')` searched by name, found
 //   nothing, and returned null — every time, for every character, since the beginning.
 //   Nothing noticed, because null is also the honest "not read yet" answer and
 //   weaponRanking falls back to a name score for it.
@@ -69,7 +69,10 @@ const spellList = (rows) => Buffer.concat([u16(rows.length),
 
 const RSC = new Map([
   [700, 'skillicon.bgf'],
-  [801, 'axe proficiency'], [802, 'sword proficiency'], [803, 'slash'],
+  // The server's own names for these — see m59-skills.mjs WEAPON_PROFICIENCY. Using
+  // the invented ones here would make weaponRanking's lookup miss and the test would
+  // be pinning the wrong vocabulary as firmly as the code once did.
+  [801, 'axe wielding'], [802, 'fencing'], [803, 'slash'],
   [901, 'create food'], [902, 'blast'],
 ]);
 const client = () => new M59Client({ resources: RSC, verbose: false });
@@ -82,7 +85,7 @@ console.log('\nreading an ability off the wire');
   c.onGameMessage(BP_SKILLS, skillList([[11, 801], [12, 802]]));
   c.onGameMessage(BP_STAT_GROUP, statGroup(STAT_GROUP_SKILLS, [[1, 11, 37], [2, 12, 62]]));
   eq('both abilities land', [...c.abilities.values()].map(a => [a.name, a.ability]),
-     [['axe proficiency', 37], ['sword proficiency', 62]]);
+     [['axe wielding', 37], ['fencing', 62]]);
   ok('and the group is marked read', c.abilitiesKnown().known.skills === true);
   ok('spells are NOT — they are a separate group and were never asked for',
      c.abilitiesKnown().known.spells === false);
@@ -94,14 +97,14 @@ console.log('\nasking how good we are, by name');
   const c = client();
   c.onGameMessage(BP_SKILLS, skillList([[11, 801], [12, 802]]));
   c.onGameMessage(BP_STAT_GROUP, statGroup(STAT_GROUP_SKILLS, [[1, 11, 37], [2, 12, 62]]));
-  eq('the client answers by name', c.abilityOf('axe proficiency'), 37);
-  eq('and so does the skills-layer helper', abilityOf(c, 'sword proficiency'), 62);
-  eq('case does not matter', c.abilityOf('AXE Proficiency'), 37);
+  eq('the client answers by name', c.abilityOf('axe wielding'), 37);
+  eq('and so does the skills-layer helper', abilityOf(c, 'fencing'), 62);
+  eq('case does not matter', c.abilityOf('AXE Wielding'), 37);
   // The distinction that has to survive: a skill we do not have is null, not 0.
-  eq('an unread skill is null, not zero', abilityOf(c, 'mace proficiency'), null);
+  eq('an unread skill is null, not zero', abilityOf(c, 'mace fighting'), null);
   // statsById still files it positionally, and that is exactly why the by-name search
   // of it never worked.
-  ok('statsById has it only under its slot', c.statsById.has('4.1') && !c.statsById.has('axe proficiency'));
+  ok('statsById has it only under its slot', c.statsById.has('4.1') && !c.statsById.has('axe wielding'));
 }
 
 // The consequence: proficiency-weighted weapon choice has never actually run.
@@ -132,7 +135,7 @@ console.log('\na pushed advancement');
   c.onGameMessage(BP_STAT, oneStat(STAT_GROUP_SKILLS, 1, 11, 38));
   ok('a change emits exactly one event', seen.length === 1, JSON.stringify(seen));
   eq('naming what moved and by how much',
-     [seen[0].name, seen[0].from, seen[0].to, seen[0].by], ['axe proficiency', 37, 38, 1]);
+     [seen[0].name, seen[0].from, seen[0].to, seen[0].by], ['axe wielding', 37, 38, 1]);
   ok('and marked as pushed, not as the answer to a question', seen[0].pushed === true);
   // The event's own discriminator survives its payload. emit() spreads the payload
   // over the event, so a payload field called `kind` REPLACES the event kind — which
@@ -142,7 +145,7 @@ console.log('\na pushed advancement');
   // starved.
   eq('the event kind is the event\'s, not the payload\'s', seen[0].kind, 'ability');
   eq('and which of the two rides alongside it', seen[0].what, 'skill');
-  eq('the cache is updated', c.abilityOf('axe proficiency'), 38);
+  eq('the cache is updated', c.abilityOf('axe wielding'), 38);
 
   // A repeat of the same value is not a change.
   c.onGameMessage(BP_STAT, oneStat(STAT_GROUP_SKILLS, 1, 11, 38));
@@ -162,7 +165,7 @@ console.log('\nwhen the stat arrives before the list that names it');
   ok('the number is kept even with no name for it', c.abilities.get(11)?.ability === 37);
   ok('and it is reported as unnamed rather than dropped', c.abilitiesKnown().unnamed === 1);
   c.onGameMessage(BP_SKILLS, skillList([[11, 801]]));
-  eq('the list backfills the name', c.abilityOf('axe proficiency'), 37);
+  eq('the list backfills the name', c.abilityOf('axe wielding'), 37);
   ok('and nothing is unnamed any more', c.abilitiesKnown().unnamed === 0);
 }
 
@@ -183,25 +186,25 @@ console.log('\nthe durable record');
 {
   const b = emptyBook('Kermit');
   const t0 = 1_000_000;
-  let moved = mergeAbilities(b, { skills: [{ name: 'axe proficiency', id: 11, ability: 37 }] },
+  let moved = mergeAbilities(b, { skills: [{ name: 'axe wielding', id: 11, ability: 37 }] },
                              { why: 'read', at: t0 });
   // Otherwise a fresh character looks like it just learned everything it knows.
   eq('a first sighting is not logged as a gain', moved, []);
-  eq('but it is stored', b.skills['axe proficiency'].ability, 37);
+  eq('but it is stored', b.skills['axe wielding'].ability, 37);
 
-  moved = mergeAbilities(b, { skills: [{ name: 'axe proficiency', id: 11, ability: 40 }] },
+  moved = mergeAbilities(b, { skills: [{ name: 'axe wielding', id: 11, ability: 40 }] },
                          { why: 'read', at: t0 + 1000 });
-  eq('a rise is logged', moved.map(m => [m.name, m.from, m.to]), [['axe proficiency', 37, 40]]);
+  eq('a rise is logged', moved.map(m => [m.name, m.from, m.to]), [['axe wielding', 37, 40]]);
   eq('and kept in the history', b.history.length, 1);
 
   // Atrophy. What you stop using decays when the advancement window rolls over, and a
   // record that only ever took the maximum would hide the one thing worth seeing.
-  moved = mergeAbilities(b, { skills: [{ name: 'axe proficiency', id: 11, ability: 36 }] },
+  moved = mergeAbilities(b, { skills: [{ name: 'axe wielding', id: 11, ability: 36 }] },
                          { why: 'read', at: t0 + 2000 });
   eq('a fall is logged too, not discarded as noise', moved[0].by, -4);
-  eq('the current value follows it down', b.skills['axe proficiency'].ability, 36);
+  eq('the current value follows it down', b.skills['axe wielding'].ability, 36);
   eq('while the peak is remembered, which is what makes atrophy visible',
-     b.skills['axe proficiency'].best, 40);
+     b.skills['axe wielding'].best, 40);
 }
 
 console.log('\nwhat a partial read must not do');

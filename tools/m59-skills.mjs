@@ -117,15 +117,35 @@ export const cannotSwingText = (t) => CANNOT_SWING.test(t || '');
 // rather than from the skill names, because the two do not line up by spelling: every
 // sword in the game routes to SKID_PROFICIENCY_SWORD (451) including the gold, mystic,
 // nerudite and Riija swords, while the short sword has its own (457).
+//
+// THE NAMES ON THE RIGHT ARE THE SERVER'S, verbatim from each skill's own resource
+// string, and seven of the eight used to be invented. "mace proficiency" is called
+// "mace fighting"; the sword one is "fencing"; axe, scimitar and hammer are "wielding"
+// rather than "proficiency"; the short sword is "short sword fighting". Only archery
+// happened to be right.
+//
+// That mattered more than it looks, because the only consumer is a by-name lookup:
+// every one of these returned a skill the character does not have, `abilityOf` gave
+// null, and weaponRanking fell back to its crude name score. Both halves of the
+// proficiency feature were broken at once and each hid the other — a wrong name looks
+// exactly like a skill that has not been read.
 export const WEAPON_PROFICIENCY = [
-  [/short ?sword/i, 'shortsword proficiency'],       // shrtswrd.kod:39, SKID 457
-  [/scimitar/i, 'scimitar proficiency'],             // scimitar.kod:39, SKID 453
-  [/hammer/i, 'hammer proficiency'],                 // hammer.kod, spirhamm.kod, SKID 454
-  [/axe/i, 'axe proficiency'],                       // axe.kod:39, SKID 455
-  [/mace|morning ?star|club|cudgel/i, 'mace proficiency'],   // mace.kod:39, SKID 452
-  [/bow|crossbow|sling|arrow/i, 'archery'],          // ranged.kod, SKID 456
-  [/sword|dagger|knife|falchion|blade/i, 'sword proficiency'], // longswrd/goldswrd/..., SKID 451
+  [/short ?sword/i, 'short sword fighting'],         // profshsw.kod, SKID 457
+  [/scimitar/i, 'scimitar wielding'],                // profscim.kod, SKID 453
+  [/hammer/i, 'hammer wielding'],                    // profhamr.kod, SKID 454
+  [/axe/i, 'axe wielding'],                          // profaxe.kod, SKID 455
+  [/mace|morning ?star|club|cudgel/i, 'mace fighting'],        // profmace.kod, SKID 452
+  [/bow|crossbow|sling|arrow/i, 'archery'],          // archery.kod, SKID 456
+  [/sword|dagger|knife|falchion|blade/i, 'fencing'], // profswrd.kod, SKID 451
 ];
+
+// The rest of the combat skills, by the server's names. Strokes are what you swing
+// with and the defences are checked before their ability is even read — parry is zero
+// without a weapon and block is zero without a shield (player.kod:4294).
+export const STROKE_SKILLS = { slash: 'slash', thrust: 'thrust', fire: 'fire',
+                               unarmed: 'Unarmed Combat' };
+export const DEFENCE_SKILLS = { parry: 'parry', block: 'block', dodge: 'dodge' };
+export const BRAWLING_SKILL = 'brawling';
 export const proficiencyFor = (name) => {
   for (const [re, skill] of WEAPON_PROFICIENCY) if (re.test(name || '')) return skill;
   return null;

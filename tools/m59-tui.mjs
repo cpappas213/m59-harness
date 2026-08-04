@@ -10,7 +10,8 @@
 //
 // So this is the same information with the last step joined on: arrow keys to pick a
 // character, Enter for its full sheet, L to LAUNCH the client logged in as it with the
-// agent DLL injected. No copying, no pasting.
+// agent DLL injected, C to open the COMPENDIUM with that character's real numbers in
+// it. No copying, no pasting.
 //
 // Zero dependencies and no framework. It draws with ANSI, reads raw keys, and repaints
 // the whole screen on a timer — twenty-five rows is far too little to need anything
@@ -22,6 +23,7 @@ import { readFileSync, openSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveFleet } from './m59-fleetpath.mjs';
+import { ensureServing, openBrowser, importUrl, COMPENDIUM_PORT } from './m59-compendium.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Which roster this TUI is looking at. Must match the broker it is talking to —
@@ -163,7 +165,7 @@ function listView() {
     L.push((i === S.sel ? c.inv('▸ ') : '  ') + line);
   }
   L.push('');
-  L.push(c.dim('  ↑↓/jk move · ⏎ open · L launch client as selected · r refresh · q quit'));
+  L.push(c.dim('  ↑↓/jk move · ⏎ open · L launch client · C compendium for the selected · r refresh · q quit'));
   if (S.status) L.push('  ' + S.status);
   if (S.lastError) L.push('  ' + c.red(S.lastError));
   return L;
@@ -367,6 +369,36 @@ function rosterFor(agent) {
   } catch { return null; }
 }
 
+// ------------------------------------------------------------- the compendium
+//
+// The compendium's bestiary already recalculates every row against a reference
+// character — but that character is a preset you type in by hand, and the real one is
+// on the line above the cursor. So C hands it over: it starts the loopback server if
+// nothing is serving, then opens the browser at an endpoint that reads the character
+// out of the broker, sets a cookie with it, and redirects to the bestiary.
+//
+// A character not in game gets the compendium anyway, without the import. The pages
+// are worth reading on their own, and an error page would be a worse answer to a key
+// than a working one with a note.
+async function compendium(row) {
+  const live = row?.in_game !== false && row?.agent;
+  S.status = c.dim('opening the compendium…');
+  draw();
+  try {
+    const how = await ensureServing(COMPENDIUM_PORT);
+    const url = live ? importUrl(row.agent, '/creatures/', COMPENDIUM_PORT)
+                     : `http://127.0.0.1:${COMPENDIUM_PORT}/creatures/`;
+    openBrowser(url);
+    S.status = c.green(how.already ? 'compendium already serving' : 'started the compendium')
+      + ' ' + c.dim(`· 127.0.0.1:${COMPENDIUM_PORT} · `)
+      + (live ? c.cyan(`bestiary computed for ${row.character ?? row.agent}`)
+              : c.yellow('no character imported — that one is not in game'));
+  } catch (e) {
+    S.status = c.red('compendium: ' + e.message);
+  }
+  draw();
+}
+
 // ------------------------------------------------------------------ keys
 
 function onKey(str, key) {
@@ -379,11 +411,13 @@ function onKey(str, key) {
       S.hero = S.rows[S.sel]; S.view = 'hero'; S.status = '';
       loadHero(S.hero).then(draw);
     } else if (str === 'L' || str === 'l') launch(S.rows[S.sel]);
+    else if (str === 'C' || str === 'c') compendium(S.rows[S.sel]);
     else if (str === 'r') { S.status = c.dim('refreshing…'); refresh().then(draw); }
   } else {
     if (key.name === 'q' || key.name === 'escape' || key.name === 'return') {
       S.view = 'list'; S.detail = null; S.status = '';
     } else if (str === 'L' || str === 'l') launch(S.hero);
+    else if (str === 'C' || str === 'c') compendium(S.hero);
     else if (str === 'r') { refresh().then(() => { S.hero = S.rows.find(r => r.agent === S.hero.agent) ?? S.hero; draw(); }); }
   }
   draw();
