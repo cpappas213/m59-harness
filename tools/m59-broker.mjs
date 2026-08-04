@@ -43,6 +43,7 @@ import { loadMap, resolveRoom, forgetInferredExit } from './m59-map.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
 import * as skills from './m59-skills.mjs';
+import * as abilities from './m59-abilities.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
          POSTMORTEM_DIR } from './m59-autopilot.mjs';
@@ -468,6 +469,12 @@ async function resumeFleet() {
 // between a reconnect and a login flood.
 const REJOIN = process.env.M59_REJOIN !== '0' && !process.argv.includes('--no-rejoin');
 const RECONCILE_MS = Number(process.env.M59_RECONCILE_MS || 45_000);
+// The ability cache is kept current by the server's own pushes, so these two are the
+// backstop and are deliberately slow: one character re-read every two minutes, and
+// only if its last full read is over half an hour old. Set M59_ABILITY_SWEEP_MS=0 to
+// turn the sweep off entirely — the pushes still work without it.
+const ABILITY_SWEEP_MS = Number(process.env.M59_ABILITY_SWEEP_MS ?? 120_000);
+const ABILITY_MAX_AGE_MS = Number(process.env.M59_ABILITY_MAX_AGE_MS || abilities.DEFAULT_MAX_AGE_MS);
 const CONTENTION_MS = 90_000;
 const BACKOFF_BASE_MS = 30_000;
 const BACKOFF_MAX_MS = 15 * 60_000;
@@ -756,6 +763,52 @@ function startReconciling() {
   console.error(`[rejoin] watching every ${Math.round(RECONCILE_MS / 1000)}s`);
 }
 
+// ONE ABILITY READ, and then write down what it found.
+//
+// Four requests: the spell and skill LISTS have to be re-read before the ability
+// groups, because a group-3 packet is one slot per entry of plSpells and carries
+// nothing that says which spell a slot is — against a stale list every number is
+// mislabelled, silently and plausibly.
+async function readAbilitiesOnce(s, { why = 'read', kinds = 'both' } = {}) {
+  if (!s.live) return null;
+  await abilities.readLive(s, { kinds });
+  return s.recordAbilities({ why });
+}
+
+// THE SAFETY NET, not the mechanism. The pushes are what keep the cache true; this
+// catches the cases they cannot: a character that advanced while logged out of this
+// broker, a push dropped with a reconnect, and atrophy — which decays what you stop
+// using when the advancement window rolls over and, as far as I can tell, arrives the
+// same way but is easy to be out of the room for.
+//
+// One character per tick, oldest reading first, so a fleet of twenty-one spreads its
+// eighty-four requests over twenty-one ticks instead of spending them at once.
+function startAbilitySweep() {
+  if (ABILITY_SWEEP_MS <= 0) {
+    console.error('[abilities] periodic re-read disabled — the server pushes changes, so the ' +
+                  'cache is still maintained; only atrophy and offline gains can be missed');
+    return;
+  }
+  const t = setInterval(async () => {
+    const due = [...sessions.values()]
+      .filter(s => s.live && !abilities.isFresh(s.client, { maxAgeMs: ABILITY_MAX_AGE_MS }))
+      .sort((a, b) => (Math.min(a.client.abilitiesAt.skills ?? 0, a.client.abilitiesAt.spells ?? 0)) -
+                      (Math.min(b.client.abilitiesAt.skills ?? 0, b.client.abilitiesAt.spells ?? 0)));
+    if (!due.length) return;
+    const s = due[0];
+    try {
+      const changed = await readAbilitiesOnce(s, { why: 'read' });
+      if (changed?.length)
+        console.error(`[abilities] ${s.client?.me?.name ?? s.name}: ` +
+                      changed.map(x => `${x.name} ${x.from}->${x.to}`).join(', ') +
+                      ' (found by the sweep, not pushed — worth knowing why)');
+    } catch { /* a character mid-walk or mid-logout is not an error worth logging */ }
+  }, ABILITY_SWEEP_MS);
+  t.unref?.();
+  console.error(`[abilities] re-reading one stale character every ${Math.round(ABILITY_SWEEP_MS / 1000)}s ` +
+                `(stale = older than ${Math.round(ABILITY_MAX_AGE_MS / 60000)}m)`);
+}
+
 class Recorder {
   constructor(name) {
     this.name = String(name).replace(/[^A-Za-z0-9_-]/g, '_');
@@ -922,9 +975,60 @@ class Session {
     // orders. This is deliberately session-local: one character has one body.
     this.movementGeneration = 0;
     this.cancelledMovementTokens = new Set();
+    // HOW GOOD THIS CHARACTER IS, kept across logins and across restarts of this
+    // process. Loaded lazily by character name, because the agent name is which slot
+    // of the fleet is driving and gets reassigned — the character is the thing that
+    // has the skills. See m59-abilities.mjs.
+    this.book = null;
+    this.bookSaveTimer = null;
   }
 
   get live() { return this.client && this.client.state === 'game'; }
+
+  // The ability record for whoever this session is currently playing.
+  abilityBook() {
+    const who = this.client?.me?.name ?? null;
+    if (!who) return null;
+    if (!this.book || this.book.character !== who) this.book = abilities.loadBook(who);
+    return this.book;
+  }
+
+  // Writes are batched. An advancement arrives as its own packet and a character in a
+  // good fight can gain several in a minute; one file write each would be a lot of
+  // syscalls to record a number that nothing reads until somebody asks.
+  saveBookSoon() {
+    if (this.bookSaveTimer) return;
+    this.bookSaveTimer = setTimeout(() => {
+      this.bookSaveTimer = null;
+      if (this.book) abilities.saveBook(this.book);
+    }, 5000);
+    this.bookSaveTimer.unref?.();
+  }
+
+  // One advancement, as the server pushed it. This is the whole reason the cache does
+  // not need polling: ChangeSkillAbility sends BP_STAT for the slot that moved, every
+  // time (player.kod:7343), so the record is written as it happens rather than
+  // reconstructed later from two reads and a subtraction.
+  noteAdvancement(ev) {
+    const book = this.abilityBook();
+    if (!book) return;
+    const changed = abilities.noteAdvancement(book, ev);
+    if (changed.length) this.saveBookSoon();
+  }
+
+  // Fold everything the client currently holds into the record. Called after the read
+  // that follows a login, and after any refresh.
+  recordAbilities({ why = 'read' } = {}) {
+    const book = this.abilityBook();
+    if (!book || !this.client) return null;
+    const known = this.client.abilitiesKnown();
+    const changed = abilities.mergeAbilities(book, {
+      skills: known.known.skills ? known.skills : null,
+      spells: known.known.spells ? known.spells : null,
+    }, { why });
+    abilities.saveBook(book);
+    return changed;
+  }
 
   // The server accepts one move packet per second and there is no way around that,
   // so a cross-map walk genuinely costs minutes of wall clock. For a single
@@ -999,7 +1103,15 @@ class Session {
     const c = new M59Client({ host, port, verbose: false, resources });
     // Everything the server says, straight to disk. This is the only place the raw
     // stream is kept — the in-memory event ring is small and is overwritten fast.
-    c.onEvent = ev => this.recorder.line('event', ev);
+    //
+    // Advancement is picked off the same stream on its way past. It has to be caught
+    // here rather than polled for: the server sends one BP_STAT the instant an ability
+    // moves and never mentions it again, so a poll that arrives later sees the number
+    // but not the event, and cannot tell a gain from a value it had all along.
+    c.onEvent = ev => {
+      this.recorder.line('event', ev);
+      if (ev.kind === 'ability') this.noteAdvancement(ev);
+    };
     if (character) c.wantName = character;
     await c.login(account, password);
     this.client = c;
@@ -1012,6 +1124,17 @@ class Session {
     await this.pacer.submit('read', () => c.stats(1));
     await this.pacer.submit('read', () => c.stats(2));
     await new Promise(r => setTimeout(r, 600));
+
+    // ABILITIES, ONCE, HERE. Four more requests, and this is the only place they have
+    // to be spent: from now on the server pushes every change, so the cache stays
+    // true without anybody asking again.
+    //
+    // Deliberately not awaited. It is four paced requests and a settle, and a fleet
+    // resume brings twenty-one sessions up at once — making each login wait for its
+    // own ability read would add that to the time the fleet is not playing, to
+    // populate something nothing needs in the first second.
+    this.firstAbilityRead = readAbilitiesOnce(this)
+      .catch(e => { this.recorder.line('note', { what: 'ability read failed', why: e.message }); });
     // A chatter binds to the CLIENT, not to the session, so a rejoin after a save-game
     // renumber leaves it listening to a socket that no longer exists. Rebind here rather
     // than making every caller remember to.
@@ -3637,9 +3760,16 @@ const TOOLS = [
       'weighted by how hard the target was (ImproveAbility, skill.kod:294). Practising on something ' +
       'trivial is close to worthless, and a town or other ROOM_HARD_LEARN room divides the chance by ' +
       'ten. What you stop using ATROPHIES when the advancement window rolls over.\n' +
-      'So: record these numbers, fight something difficult, read them again. If nothing moved, you are ' +
-      'either throttled (10 points per 15-22 minute window), in a hard-learn room, or fighting prey too weak ' +
-      'to teach you anything.\n' +
+      'THESE ARE KEPT, NOT RE-ASKED. They are read once after login and then maintained from the ' +
+      'server\'s own pushes: ChangeSkillAbility sends BP_STAT for the slot that moved on EVERY change ' +
+      '(player.kod:7343), so an advancement arrives the moment it happens. The record is on disk, one ' +
+      'file per character, and survives a broker restart — so `advancement` below is a LOG of what ' +
+      'actually happened, not the difference between two polls, and it still has a "before" from ' +
+      'before the last restart.\n' +
+      'If nothing moved, you are either throttled (10 points per 15-22 minute window), in a ' +
+      'hard-learn room, or fighting prey too weak to teach you anything.\n' +
+      'Watch `atrophied`: what you stop using DECAYS when the advancement window rolls over, and a ' +
+      'number quietly going back down is invisible without a record of what it used to be.\n' +
       'Weapon proficiencies and strokes improve from ORDINARY ATTACKS with the matching weapon, so `fight` ' +
       'and `attack` are the practice loop for them. In this fork the other skills are passive — the server ' +
       'invokes them for you, and there is no way for any client to invoke one directly.',
@@ -3648,21 +3778,34 @@ const TOOLS = [
       kind: { type: 'string', enum: ['skills', 'spells', 'both'], description: 'default both' },
       known_only: { type: 'boolean', description: 'default true — hide entries still at 0' },
       name: { type: 'string', description: 'just the ones matching this' },
+      refresh: { type: 'boolean',
+                 description: 'force a live re-read (4 requests + ~1.2s). Rarely needed — the server ' +
+                              'pushes every change — but it is how you prove the record right.' },
+      max_age_ms: { type: 'number',
+                    description: 'serve the cache only if it is younger than this. Default 30 min.' },
     }, required: ['agent'] },
     run: async (a) => {
       const s = session(a.agent), c = s.need();
       const kind = a.kind || 'both';
       const wantSpells = kind !== 'skills', wantSkills = kind !== 'spells';
 
-      // The lists must be re-requested before the ability groups: a group-3 packet
-      // carries one slot per entry of plSpells and nothing that identifies which
-      // spell a slot is, so a stale list mislabels every number.
-      if (wantSpells) await s.pacer.submit('read', () => c.requestSpells());
-      if (wantSkills) await s.pacer.submit('read', () => c.requestSkills());
-      await new Promise(r => setTimeout(r, 500));
-      if (wantSpells) await s.pacer.submit('read', () => c.stats(3));
-      if (wantSkills) await s.pacer.submit('read', () => c.stats(4));
-      await new Promise(r => setTimeout(r, 700));
+      // SERVE THE CACHE UNLESS IT IS STALE. This used to spend four requests and 1.2s
+      // on every single call — for a fleet of twenty-one that is eighty-four requests
+      // out of a budget of five a second to answer a question whose answer moves a few
+      // times an hour. The read still happens, once, after login; from then on the
+      // server pushes every change and the cache is current without being asked.
+      //
+      // `refresh` forces it, for the one case the pushes cannot cover: proving to
+      // yourself that the record is right.
+      const cached = await abilities.ensureAbilities(s, {
+        kinds: kind, force: a.refresh === true,
+        maxAgeMs: a.max_age_ms != null ? Number(a.max_age_ms) : ABILITY_MAX_AGE_MS,
+      });
+      // Fold whatever we now hold into the durable record, and notice what moved since
+      // anybody last looked. This is where a refresh that finds an unpushed change
+      // gets written down.
+      const moved = s.recordAbilities({ why: cached.from === 'a live read' ? 'read' : 'cache' }) || [];
+      const book = s.abilityBook();
 
       // Join on the object id the stat carries rather than on slot order. The
       // order does match, but an id is checkable and a position is not.
@@ -3724,8 +3867,42 @@ const TOOLS = [
             : undefined,
         };
       }
-      out.note = 'record these, do something difficult, read them again — the delta is the only ' +
-                 'progress signal the game gives you for skills and spells';
+      // WHERE THIS ANSWER CAME FROM, and how much of it we are standing behind. A
+      // number read half an hour ago and a number read just now are different claims
+      // and must not render the same.
+      out.freshness = {
+        from: cached.from,
+        age_ms: cached.age_ms,
+        known: cached.known,
+        ...(cached.requests_spent ? { requests_spent: cached.requests_spent } : {}),
+        ...(cached.cached_note ? { note: cached.cached_note } : {}),
+      };
+
+      // THE DELTA, WHICH IS THE WHOLE POINT, kept for you rather than left to you.
+      // The old advice here was "record these, do something difficult, read them
+      // again" — sound, and nothing ever did it, because the before was gone the
+      // moment the process ended. It is on disk now, one file per character.
+      if (book) {
+        const hist = (book.history || []).filter(h => kind === 'both' || h.kind === kind.slice(0, -1));
+        out.advancement = {
+          since_first_seen: book.first_seen ? new Date(book.first_seen).toISOString() : null,
+          changes_on_record: hist.length,
+          recent: hist.slice(-12),
+          ...(moved.length ? { found_by_this_call: moved } : {}),
+          // Atrophy: what you stop using decays when the advancement window rolls
+          // over, and a number quietly going back down is invisible without a record.
+          atrophied: Object.entries({ ...(book.skills || {}), ...(book.spells || {}) })
+            .filter(([, v]) => v.best != null && v.ability != null && v.ability < v.best)
+            .map(([name, v]) => ({ name, now: v.ability, peaked_at: v.best })),
+        };
+        if (!hist.length)
+          out.advancement.note = 'nothing has moved since this character was first read. That is a ' +
+                                 'real answer, not a missing one — the record starts at the first login.';
+      }
+
+      out.note = 'these are kept, not re-read: the server sends BP_STAT the instant an ability moves ' +
+                 '(player.kod:7343), so `advancement` is a log of what actually happened rather than ' +
+                 'the difference between two polls.';
       return out;
     },
   },
@@ -5489,6 +5666,7 @@ if (argv.includes('--selftest')) {
   startLedger();
   startReconciling();
   startPilotWatch();
+  startAbilitySweep();
   const di = argv.indexOf('--dashboard');
   if (di >= 0) serveDashboard(Number(argv[di + 1] || 8902));
 } else {
@@ -5497,6 +5675,7 @@ if (argv.includes('--selftest')) {
   startLedger();
   startReconciling();
   startPilotWatch();
+  startAbilitySweep();
 }
 
 

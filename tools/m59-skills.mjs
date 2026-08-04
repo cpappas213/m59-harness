@@ -131,12 +131,24 @@ export const proficiencyFor = (name) => {
   return null;
 };
 
-// The character's ability in a named skill. Skill ability levels are stat GROUP 4
-// (m59-client.mjs:701); statsById is keyed by name as well as by group.num, so this
-// asks by name and returns null rather than 0 when it simply has not been read —
-// "no skill" and "never asked" must not rank the same.
+// The character's ability in a named skill. Returns null rather than 0 when it has
+// simply not been read — "no skill" and "never asked" must not rank the same.
+//
+// THIS USED TO ALWAYS RETURN NULL, and nothing noticed because null is also the
+// legitimate "not read yet" answer and weaponRanking falls back to the crude name
+// score for it. Skill abilities are stat GROUP 4, and `statsById` indexes a stat by
+// name only `if (s.name)` — but `name` comes from STAT_NAMES, which covers groups 1
+// and 2 only. So a group-4 stat was filed under "4.7" and nothing else, and every
+// by-name search of that map missed it. Proficiency-weighted weapon choice has
+// therefore never actually run.
+//
+// The ability map is keyed by the skill's object id and carries its real name, which
+// is what makes the by-name question answerable at all. The statsById scan stays as a
+// fallback for clients that predate it.
 export function abilityOf(c, skillName) {
   if (!skillName) return null;
+  const fromMap = c?.abilityOf?.(skillName);
+  if (Number.isFinite(fromMap)) return fromMap;
   const direct = c?.statsById?.get?.(skillName)?.value;
   if (Number.isFinite(direct)) return direct;
   for (const [k, v] of c?.statsById ?? []) {

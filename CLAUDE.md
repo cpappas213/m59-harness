@@ -210,6 +210,25 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   you already wield is **refused** ("your hands are too full", `player.kod:131`), so
   "no error" has never meant "equipped".
 
+- **Ability levels are pushed, so do not poll for them.** `ChangeSkillAbility` calls
+  `DrawStatSkill` on every change (`player.kod:7343`), which sends `BP_STAT` for the
+  one slot that moved. Reading them costs four requests and 1.2s — the spell and skill
+  LISTS have to be re-read first, because a group-3 packet is positional against
+  `plSpells` and against a stale list every number is mislabelled silently. So it is
+  read once after login and kept: `substrate/abilities/<character>.json`, one file per
+  character, `node tools/m59-abilities.mjs` to read it.
+
+- **A stat's `name` only exists for groups 1 and 2.** `STAT_NAMES` covers condition
+  and attributes, so `statsById` files a group-3/4 stat under `"4.7"` and nothing
+  else. Any by-name search of that map for a skill returns null — which is also the
+  legitimate "not read yet" answer, which is why it went unnoticed for so long. Use
+  `client.abilityOf(name)`, which is keyed off the object id the stat actually carries.
+
+- **`emit(kind, data)` spreads `data` over the event.** A payload field called `kind`
+  replaces the event's own, and every listener waiting on the real kind silently
+  starves while the emit itself looks fine. The ability event carries `what`, not
+  `kind`, for exactly this reason.
+
 - **One or two of the five Underworld portals are unlit, not all of them.**
   `ResetPuzzle` (`uworld.kod:460`) lights all five and turns one or two off at
   random, so three or four work at any moment and each has a fixed, known
@@ -247,6 +266,7 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-escape-test.mjs` (61) and
   `node tools/m59-combat-test.mjs` (142) and
   `node tools/m59-stream-test.mjs` (54) and
+  `node tools/m59-ability-test.mjs` (44) and
   `node tools/m59-prey-test.mjs` (56). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on
   8899 and fail with `ECONNREFUSED` without one, which is not a regression.

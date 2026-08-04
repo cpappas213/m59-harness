@@ -21,6 +21,10 @@ node_modules/
 # which is other players' speech as well as combat text, so it is one server's
 # transcript and not reference material.
 /substrate/postmortems/
+# One JSON per character: how good it is at each skill and spell, and every change
+# since it was first read. One server's characters, and the history is theirs — the
+# same reason the roster and the post-mortems are not here.
+/substrate/abilities/
 /substrate/*.log
 # Which process m59-service.mjs last started, per fleet. Runtime state, and wrong the
 # moment it is read on any other machine.

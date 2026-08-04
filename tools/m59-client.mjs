@@ -29,7 +29,7 @@ import {
   parseChangeResource, parsePlayer, parseBuyList, parseStringMessage, parseSaid,
   parseLook, parseStat, parseStatGroup, parseSpells, parseSkills,
   parseOffer, parseOfferItems, parseInventoryAdd, encodeIdList, describeObject,
-  parseUseList, parseObjectId, affordances,
+  parseUseList, parseObjectId, affordances, STAT_GROUP,
 } from './m59-parse.mjs';
 
 export { OF, KOD_FINENESS };
@@ -243,6 +243,13 @@ export class M59Client {
     this.chat = [];
     this.maxChat = 300;
     this.chatSeq = 0;
+
+    // HOW GOOD THIS CHARACTER IS AT EACH SKILL AND SPELL. Keyed by the spell/skill
+    // object id, which is what groups 3 and 4 carry — see noteAbility. Read once after
+    // login and then kept current by the server's own pushes, so this is a cache that
+    // does not go stale on its own.
+    this.abilities = new Map();
+    this.abilitiesAt = { skills: null, spells: null };   // last FULL read of each group
   }
 
   // Every perceived change lands here. MCP is request/response, so an agent can
@@ -423,11 +430,97 @@ export class M59Client {
   // Stats are identified by their (group, slot) position, not by name — their
   // `name_res` resolves to a bitmap filename. Index by both the slot pair and the
   // name STAT_NAMES gives it, so an agent can ask for "health".
-  noteStat(s) {
+  noteStat(s, { bulk = false } = {}) {
     this.statsById.set(`${s.group}.${s.num}`, s);
     if (s.name) this.statsById.set(s.name, s);
     this.emit('stat', { name: s.name || `${s.group}.${s.num}`,
                         value: s.value, max: s.currentMax, text: s.text });
+    if (s.group === STAT_GROUP.SPELLS || s.group === STAT_GROUP.SKILLS)
+      this.noteAbility(s, { bulk });
+  }
+
+  // HOW GOOD THIS CHARACTER IS AT ONE THING, and when we learned it.
+  //
+  // Ability levels arrive in stat groups 3 (spells) and 4 (skills), and — this is the
+  // part worth building on — the server does not only send them when asked.
+  // ChangeSkillAbility calls DrawStatSkill on EVERY change, before and regardless of
+  // its own `report` flag (player.kod:7343), and DrawStatSkill sends BP_STAT group 4
+  // for that one slot (user.kod). So an advancement arrives here the moment it
+  // happens, unprompted, and the cache stays true between reads for free.
+  //
+  // Groups 3 and 4 are STATS_LIST, so each carries the spell's or skill's OBJECT ID.
+  // Key on that, not on the slot number: the slot is a position in plSkills and means
+  // nothing on its own, which is why `statsById`'s "4.7" keys cannot answer "how good
+  // am I with an axe".
+  noteAbility(s, { bulk = false } = {}) {
+    if (s.id == null) return null;
+    const kind = s.group === STAT_GROUP.SKILLS ? 'skill' : 'spell';
+    const prev = this.abilities.get(s.id) ?? null;
+    // The name comes from the spell/skill LIST, which may not have arrived yet — a
+    // stat can land before the list that explains it. Keep the number either way and
+    // backfill the name in nameAbilities() when the list turns up; a nameless ability
+    // is still a true one, and dropping it would lose an advancement.
+    const list = kind === 'skill' ? this.skills : this.spells;
+    const entry = (list || []).find(o => o.id === s.id);
+    const name = entry ? this.rsc.get(entry.nameRsc) : (prev?.name ?? null);
+
+    const now = { kind, id: s.id, name, ability: s.value, slot: s.num, at: Date.now() };
+    this.abilities.set(s.id, now);
+    if (bulk) this.abilitiesAt[kind === 'skill' ? 'skills' : 'spells'] = now.at;
+
+    // Only a CHANGE is advancement. The first sighting of a number is not news — it is
+    // the read that established it — and emitting for those would put one event per
+    // skill into the stream every time anything asks for the group.
+    if (!prev || prev.ability === s.value) return null;
+    // `what`, not `kind`. emit() spreads this object over the event and the event's own
+    // discriminator is called `kind` — so a payload field of that name silently
+    // replaces it, and every listener waiting for kind:'ability' sees kind:'skill' and
+    // never fires. Which is exactly what happened.
+    return this.emit('ability', {
+      what: kind, id: s.id, name, from: prev.ability, to: s.value,
+      by: s.value - prev.ability,
+      pushed: !bulk,     // true means the server volunteered it: a real advancement
+    });
+  }
+
+  // Put names to abilities learned before the list that explains them arrived.
+  nameAbilities() {
+    for (const [kind, list] of [['skill', this.skills], ['spell', this.spells]]) {
+      for (const o of list || []) {
+        const a = this.abilities.get(o.id);
+        if (a && !a.name && a.kind === kind) a.name = this.rsc.get(o.nameRsc);
+      }
+    }
+  }
+
+  // HOW GOOD ARE WE AT <name>. This is the lookup the harness has always wanted and
+  // never had: group 3 and 4 stats have no `name` — STAT_NAMES only covers groups 1
+  // and 2 — so they were never indexed by name, and every by-name search of
+  // `statsById` for a proficiency returned nothing at all. Ask the ability map.
+  abilityOf(name) {
+    if (!name) return null;
+    const q = String(name).toLowerCase();
+    for (const a of this.abilities.values())
+      if (a.name && a.name.toLowerCase() === q) return a.ability;
+    return null;
+  }
+
+  // Everything we know about how good this character is, and how stale it is allowed
+  // to be. `known` is per kind, because the two groups are asked for separately and
+  // one can be current while the other has never been read.
+  abilitiesKnown() {
+    const rows = [...this.abilities.values()];
+    const of = k => rows.filter(a => a.kind === k)
+      .sort((x, y) => (y.ability ?? -1) - (x.ability ?? -1) ||
+                      String(x.name).localeCompare(String(y.name)));
+    const age = t => (t === null ? null : Date.now() - t);
+    return {
+      skills: of('skill'), spells: of('spell'),
+      read_at: { ...this.abilitiesAt },
+      age_ms: { skills: age(this.abilitiesAt.skills), spells: age(this.abilitiesAt.spells) },
+      known: { skills: this.abilitiesAt.skills !== null, spells: this.abilitiesAt.spells !== null },
+      unnamed: rows.filter(a => !a.name).length,
+    };
   }
 
   stat(name) {
@@ -1182,10 +1275,18 @@ export class M59Client {
         break;
       }
 
+      // A whole group at once — the reply to an explicit stats(n). That is what makes
+      // it a READ rather than a push, which is the difference between "we asked and
+      // this is the answer" and "something just changed". Only the former refreshes
+      // the ability cache's age.
       case BP.STAT_GROUP: {
         const res = parseStatGroup(body, this.lookup);
         if (!this.check('STAT_GROUP', res)) break;
-        for (const s of res.stats) this.noteStat(s);
+        for (const s of res.stats) this.noteStat(s, { bulk: true });
+        // An empty group is still an answer: a character with no spells at all would
+        // otherwise never be marked as read and would be re-asked for ever.
+        if (res.group === STAT_GROUP.SPELLS) this.abilitiesAt.spells = Date.now();
+        if (res.group === STAT_GROUP.SKILLS) this.abilitiesAt.skills = Date.now();
         break;
       }
 
@@ -1193,6 +1294,9 @@ export class M59Client {
         const res = parseSpells(body);
         if (!this.check('SPELLS', res)) break;
         this.spells = res.spells;
+        // The list is what puts names to the ability numbers, and the two arrive in
+        // either order — a BP_STAT can land before the list that explains it.
+        this.nameAbilities();
         this.emit('spells', { spells: res.spells.map(s =>
           ({ id: s.id, name: this.rsc.get(s.nameRsc), targets: s.numTargets, school: s.school })) });
         break;
@@ -1202,6 +1306,7 @@ export class M59Client {
         const res = parseSkills(body);
         if (!this.check('SKILLS', res)) break;
         this.skills = res.skills;
+        this.nameAbilities();
         this.emit('skills', { skills: res.skills.map(s => ({ id: s.id, name: this.rsc.get(s.nameRsc) })) });
         break;
       }

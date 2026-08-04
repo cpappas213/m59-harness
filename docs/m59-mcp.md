@@ -169,7 +169,7 @@ disengages at 35% health and says so, because dying drops everything you carry.
 | `sell_all` | quote and sell everything a merchant will take, keeping money and weapons |
 | `escape_underworld` | stand up, then walk onto the portal for the city nearest where you died |
 | `autopilot` | a background keeper: rests, withdraws, escapes death, optionally farms |
-| `abilities` | **how good you are** at each skill and spell, 0-100 — the only progress signal |
+| `abilities` | **how good you are** at each skill and spell, 0-100, kept across restarts with a log of every change |
 | `bank` | deposit, withdraw, balance. A bank balance is the only thing that survives dying |
 | `safety` | the PvP safety flag: refuse to strike innocents, so you never become a murderer |
 | `inventory` | what you carry, with ids |
@@ -231,6 +231,38 @@ from a script — is **not** in it, which is what keeps the untrusted-input bann
 `inbox` is still the queue for things that need *answering*, and `converse` is what
 puts a character on it. `chat` is the transcript: always on, no policy, every
 character.
+
+## `abilities` — kept, not re-asked
+
+Ability levels are the only progress signal the game gives for skills and spells, and
+reading them is expensive: four requests and ~1.2s, because the spell and skill lists
+have to be re-read before the ability groups — a group-3 packet is one slot per entry
+of `plSpells` and carries nothing that says which spell a slot is, so against a stale
+list every number is mislabelled, silently and plausibly. For twenty-one characters
+that is eighty-four requests out of a budget of five a second.
+
+So it is read **once after login** and then kept current from the server's own pushes:
+`ChangeSkillAbility` calls `DrawStatSkill` on every change (`player.kod:7343`), which
+sends `BP_STAT` for the slot that moved. A periodic re-read exists but is a safety net
+for what the pushes cannot cover — a character that advanced while logged out, and
+atrophy.
+
+The record is on disk, one file per **character** (the agent name is which slot of the
+fleet is driving, and gets reassigned):
+
+```bash
+node tools/m59-abilities.mjs                # every character on record
+node tools/m59-abilities.mjs Kermit         # one, with its history
+```
+
+That is what makes `advancement` in the tool's reply a **log of what happened** rather
+than the difference between two polls — and it still has a "before" from before the
+last broker restart. Watch `atrophied`: what you stop using decays when the
+advancement window rolls over, and a number quietly going back down is invisible
+without a record of what it used to be.
+
+`refresh: true` forces a live read. It is rarely needed and is mostly for proving the
+record right.
 
 ## `equipment` — what is actually being worn
 
