@@ -26,7 +26,12 @@ import {
 } from './m59-skills.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
 import { isFood } from './m59-items.mjs';
-import { outages, outageAround } from './m59-uptime.mjs';
+import { outages, outageAround, recoverCrash, readLedger, ACTIVE_FILE } from './m59-uptime.mjs';
+import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const recoverCrashAt = (activeFile, ledgerFile) => recoverCrash({ activeFile, ledgerFile });
+const readLedgerAt = (f) => readLedger(f);
 import { RoomGeometry } from './m59-roo.mjs';
 import { roomCap, karmaSafe } from './m59-spawns.mjs';
 import { OF } from './m59-parse.mjs';
@@ -980,6 +985,46 @@ console.log('\nmarking the deaths that happened with nobody driving');
   ok('but not long after', outageAround('t1', 5000 + 300000, led) === null);
   ok('another agent is never blamed for this one\'s outage',
      outageAround('t9', 3000, led) === null);
+}
+
+
+// A CRASH WRITES NOTHING, which is the hole in the uptime ledger: stop() records "I am
+// going away" and a process that dies cannot. So the worst outages -- twenty-one
+// characters standing still until somebody notices -- were the ones it could not see.
+// A file that exists only while keepers run, removed on clean shutdown, closes it; the
+// heartbeat inside it is what turns "it crashed" into "it crashed at 21:47".
+console.log('\ntelling a crash from a clean shutdown');
+{
+  const tmp = mkdtempSync(join(tmpdir(), 'm59-crash-'));
+  const active = join(tmp, 'keeper-active.json');
+  const led = join(tmp, 'uptime.jsonl');
+  const beat = Date.now() - 120000;
+
+  // A file left behind by a pid that is gone == the last run died.
+  writeFileSync(active, JSON.stringify({ pid: 999999, beat_at: beat, agents: ['t1', 't2'] }));
+  const found = recoverCrashAt(active, led);
+  ok('a leftover liveness file is read as a crash', !!found, JSON.stringify(found));
+  ok('and it names every agent that was being driven', found.agents.join() === 't1,t2');
+  ok('the last heartbeat dates it', found.last_beat === beat);
+  ok('the file is cleared so it is not counted twice', !existsSync(active));
+  const rows = readLedgerAt(led);
+  ok('a stop is recorded for each agent', rows.length === 2 && rows.every(r => r.event === 'stop'),
+     `${rows.length} rows`);
+  // rows.length is asserted separately: .every() on an empty array passes vacuously, and
+  // that is exactly how the first version of this reported success while writing nothing.
+  ok('marked as an estimate, not a fact', rows.length > 0 && rows.every(r => r.estimated === true));
+  ok('and says why', /crashed/.test(rows[0].why));
+
+  // Clean shutdown: no file, so nothing to recover.
+  ok('no liveness file means the last shutdown was clean',
+     recoverCrashAt(join(tmp, 'absent.json'), led) === null);
+
+  // A live pid is a second broker, not a crash — that is the fleet lock's problem.
+  const live = join(tmp, 'live.json');
+  writeFileSync(live, JSON.stringify({ pid: process.pid, beat_at: beat, agents: ['t1'] }));
+  ok('a file held by a LIVE process is not a crash', recoverCrashAt(live, led) === null);
+  ok('and it is left alone for the owner', existsSync(live));
+  rmSync(tmp, { recursive: true, force: true });
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

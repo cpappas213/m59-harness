@@ -72,3 +72,4 @@ node_modules/
 __pycache__/
 *.pyc
 /substrate/keeper-uptime.jsonl
+/substrate/keeper-active.json

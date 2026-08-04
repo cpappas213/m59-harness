@@ -45,6 +45,7 @@ import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mj
 import * as skills from './m59-skills.mjs';
 import * as abilities from './m59-abilities.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
+import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
          POSTMORTEM_DIR } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
@@ -391,7 +392,13 @@ function claimFleet() {
   try {
     mkdirSync(dirname(LOCK_FILE), { recursive: true });
     writeFileSync(LOCK_FILE, JSON.stringify({ pid: process.pid, at: Date.now() }));
-    const drop = () => { try { unlinkSync(LOCK_FILE); } catch { /* already gone */ } };
+    const drop = () => {
+      try { unlinkSync(LOCK_FILE); } catch { /* already gone */ }
+      // The liveness file is the OTHER half, and it must go on every orderly path: its
+      // absence is precisely the signal that the last shutdown was clean. Left behind,
+      // the next start reads it as a crash and invents an outage.
+      uptime.markStopped();
+    };
     process.on('exit', drop);
     process.on('SIGINT', () => { drop(); process.exit(0); });
     process.on('SIGTERM', () => { drop(); process.exit(0); });
@@ -415,7 +422,21 @@ async function resumeFleet() {
   catch { return; }
   const names = Object.keys(saved);
   if (!names.length) return;
+
+  // DID THE LAST RUN DIE ON ITS FEET? Asked BEFORE claiming anything, because the
+  // answer is about the previous process and claiming overwrites the evidence. A
+  // liveness file left behind means nobody removed it, which means nobody shut down
+  // cleanly — and its last heartbeat brackets when that happened, so the outage can be
+  // written into the ledger the dead process could not write for itself.
+  const crashed = uptime.recoverCrash();
+  if (crashed)
+    console.error(`[uptime] the previous broker (pid ${crashed.pid}) did not shut down cleanly — ` +
+      `${crashed.agents.length} keeper(s) unattended from ${new Date(crashed.last_beat).toISOString()} ` +
+      `(${Math.round(crashed.silent_for_ms / 1000)}s of silence). Recorded as an outage.`);
+
   claimFleet();
+  // Alive from here, touched every BEAT_MS. See m59-uptime.mjs.
+  uptime.markRunning(names, { fleet: FLEET ?? null, startedAt: Date.now() });
   console.error(`[state] resuming ${names.length} session(s) from ${STATE_FILE}`);
   for (const agent of names) {
     const { credentials, autopilot } = saved[agent] || {};

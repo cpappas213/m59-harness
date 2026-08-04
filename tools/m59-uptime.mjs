@@ -19,8 +19,9 @@
 //
 // This is deliberately a SEPARATE ledger from the journal. The journal lives in the
 // keeper, and a keeper that is gone cannot write "I am gone".
-import { appendFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const HERE = dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 export const UPTIME_FILE = process.env.M59_UPTIME_FILE ||
@@ -32,10 +33,13 @@ export const UPTIME_FILE = process.env.M59_UPTIME_FILE ||
 // look around — so the death lands a few seconds after the resume, not before it.
 export const GRACE_MS = 45_000;
 
-export function record(agent, event, detail = {}) {
+// `file` is injectable so a test can write somewhere harmless. It matters more here
+// than in most places: this is the file that decides which deaths were real, so a
+// fixture leaking into it corrupts the one measurement it exists to provide.
+export function record(agent, event, detail = {}, file = UPTIME_FILE) {
   try {
-    mkdirSync(dirname(UPTIME_FILE), { recursive: true });
-    appendFileSync(UPTIME_FILE, JSON.stringify({ at: Date.now(), agent, event, ...detail }) + '\n');
+    mkdirSync(dirname(file), { recursive: true });
+    appendFileSync(file, JSON.stringify({ at: Date.now(), agent, event, ...detail }) + '\n');
   } catch { /* never let bookkeeping break a keeper */ }
 }
 
@@ -75,9 +79,91 @@ export function outageAround(agent, at, ledger = readLedger()) {
   return null;
 }
 
+// ------------------------------------------------- did it crash, and when
+
+// A CRASH WRITES NOTHING. That is the hole in everything above: stop() records "I am
+// going away" and a process that dies cannot. So the worst outages — the ones where
+// twenty-one characters stood still until somebody noticed — are exactly the ones the
+// ledger cannot see.
+//
+// The fix is a file that exists only while keepers are running, and is REMOVED on a
+// clean shutdown. Find it with nothing running and the last run crashed. That much is
+// an ordinary lock, and the broker already has one for fleet ownership.
+//
+// What a lock cannot tell you is WHEN. So this one is touched periodically, and the
+// last touch is the estimate: the process was alive at that moment and not at the next
+// beat, which brackets the crash to one interval. Cheap — one small write a minute —
+// and it is the difference between "it crashed sometime today" and "it crashed at
+// 21:47, during which these four deaths happened".
+export const ACTIVE_FILE = process.env.M59_ACTIVE_FILE ||
+  join(HERE, '..', 'substrate', 'keeper-active.json');
+export const BEAT_MS = 30_000;
+
+let beatTimer = null;
+
+export function markRunning(agents = [], meta = {}) {
+  try {
+    mkdirSync(dirname(ACTIVE_FILE), { recursive: true });
+    const write = () => {
+      try {
+        writeFileSync(ACTIVE_FILE, JSON.stringify({
+          pid: process.pid, beat_at: Date.now(), started_at: meta.startedAt ?? Date.now(),
+          agents, ...meta,
+        }));
+      } catch { /* a missed beat only widens the estimate */ }
+    };
+    write();
+    if (beatTimer) clearInterval(beatTimer);
+    beatTimer = setInterval(write, BEAT_MS);
+    beatTimer.unref?.();                       // never hold the process open for this
+  } catch { /* bookkeeping must not break a broker */ }
+}
+
+// Clean shutdown. The absence of this file is the whole signal, so it must be removed
+// on every orderly path — exit, SIGINT, SIGTERM.
+export function markStopped() {
+  if (beatTimer) { clearInterval(beatTimer); beatTimer = null; }
+  try { unlinkSync(ACTIVE_FILE); } catch { /* already gone, which is the same thing */ }
+}
+
+// Called at startup, BEFORE claiming anything. If an active file is present and its pid
+// is not alive, the previous run died without cleaning up, and every agent it was
+// driving was unattended from the last heartbeat until now. Those stops are written into
+// the ledger so the outage is measurable, flagged as an estimate rather than a fact.
+//
+// Returns what it found, or null when the last shutdown was clean.
+export function recoverCrash({ now = Date.now(), activeFile = ACTIVE_FILE,
+                               ledgerFile = UPTIME_FILE } = {}) {
+  let prev;
+  try { prev = JSON.parse(readFileSync(activeFile, 'utf8')); } catch { return null; }
+  if (!prev?.pid) { try { unlinkSync(activeFile); } catch {} return null; }
+  // Still alive? Then this is a second broker starting, which is a different problem and
+  // not ours to adjudicate — the fleet lock handles it. Leave the file alone.
+  //
+  // ANY live pid counts, including our own. recoverCrash runs BEFORE markRunning, so a
+  // file bearing this process's pid can only be a dead predecessor whose pid was reused
+  // — and calling that a crash on the strength of a recycled number would invent an
+  // outage. Missing a rare one is the cheaper error: this file is evidence about which
+  // deaths were real, and a false entry in it is worse than a missing one.
+  try { process.kill(prev.pid, 0); return null; } catch { /* dead: carry on */ }
+  const at = prev.beat_at ?? prev.started_at ?? now;
+  for (const agent of prev.agents || [])
+    record(agent, 'stop', { why: 'the broker crashed — no clean shutdown',
+                            estimated: true, from_heartbeat: at, pid: prev.pid }, ledgerFile);
+  try { unlinkSync(activeFile); } catch { /* fine */ }
+  return { pid: prev.pid, agents: prev.agents || [], last_beat: at, silent_for_ms: now - at };
+}
+
 // ------------------------------------------------------------------- cli
-const asScript = String(process.argv[1] ?? '').replace(/\\/g, '/');
-if (import.meta.url.endsWith(asScript)) {
+
+// RUN THE CLI ONLY WHEN THIS FILE *IS* THE PROGRAM.
+//
+// This compared `import.meta.url.endsWith(argv[1])`, and argv[1] is EMPTY under
+// `node -e` and in some embeddings — where endsWith('') is true of every string. So the
+// module printed its outage report the moment anything imported it, the broker included.
+// Comparing whole URLs has no such edge, and the argv[1] guard keeps it false when there
+// is no script at all.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const ledger = readLedger();
   if (!ledger.length) { console.log('no uptime ledger yet — it starts filling once a keeper stops or starts'); process.exit(0); }
   const agents = [...new Set(ledger.map(e => e.agent))];
@@ -106,3 +192,4 @@ if (import.meta.url.endsWith(asScript)) {
                   `${new Date(o.from).toISOString().slice(11, 19)}${o.open ? '  STILL DOWN' : ''}  ${o.why ?? ''}`);
   }
 }
+
