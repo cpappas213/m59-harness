@@ -1643,7 +1643,7 @@ export class Autopilot {
       at: Date.now(), reason,
       // WHAT IT WAS DOING. The question everyone asks first.
       was: {
-        doing: last?.doing ?? this.doing ?? null,
+        doing: last?.doing ?? this.doing ?? this.lastDoing ?? null,
         mode: this.mode, hunting: this.policy.hunt, purpose: this.policy.purpose ?? null,
         strategy: this.policy.strategy,
         in_safe_spot: last?.holding ?? false,
@@ -1971,6 +1971,15 @@ export class Autopilot {
   spend(ms) {
     const k = this.doing || 'stalled';
     this.time[k] = (this.time[k] || 0) + ms / 1000;
+    // WHAT THE PASS TURNED OUT TO BE, kept after the reset.
+    //
+    // `doing` is set part-way through a pass and cleared here at the end of it, so
+    // anything reading it at the START of a pass — which is where the post-mortem frame
+    // is written — sees null, always. Nine frames of a live character all said "doing:
+    // null" while it was plainly farming, and the unit tests missed it because they set
+    // the field by hand. This is the pass that just finished, which is the honest answer
+    // to "what was it doing" for a frame taken before the next one decides anything.
+    this.lastDoing = k;
     this.doing = null;
   }
 
@@ -2073,7 +2082,7 @@ export class Autopilot {
                         col: c.self?.col ?? null, row: c.self?.row ?? null,
                         health: v.health?.value ?? null, max: v.health?.max ?? null,
                         vigor: v.vigor?.value ?? null,
-                        doing: this.doing ?? null,
+                        doing: this.doing ?? this.lastDoing ?? null,
                         holding: this.hold ? { col: this.hold.col, row: this.hold.row,
                                                proven: this.holdWorks?.() ?? null } : false,
                         // Ages rather than timestamps: a post-mortem is read by someone

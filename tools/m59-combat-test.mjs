@@ -324,6 +324,22 @@ console.log('\nthe post-mortem');
   const live = k2.postMortem('still alive');
   ok('it works on a living character, so the recorder is testable',
      live.reason === 'still alive' && live.text.length === 0);
+
+  // FOUND LIVE, NOT HERE. spend() clears `doing` at the END of each pass and the frame
+  // is written at the START of the next one, so `doing` was structurally always null --
+  // nine frames of a farming character all said null. These tests missed it because
+  // they set the field by hand, which is the mistake worth leaving a guard against.
+  const k3 = new Autopilot({ name: 't9', world: { room: {} },
+                             client: { events: [], me: { name: 'Scooter' } } }, {});
+  k3.recent5 = []; k3.journal = [];
+  k3.doing = 'fighting';
+  k3.spend(1000);
+  ok('spend() still clears doing, as the time accounting needs', k3.doing === null);
+  ok('but what the pass was is remembered', k3.lastDoing === 'fighting');
+  ok('so a frame taken after the reset still knows',
+     k3.postMortem('still alive').was.doing === 'fighting');
+  k3.doing = null; k3.spend(1000);
+  ok('a pass that decided nothing is "stalled", not null', k3.lastDoing === 'stalled');
   ok('and degrades to nulls rather than throwing on an empty history',
      live.where === null && live.vitals.health_per_second === null);
 }
