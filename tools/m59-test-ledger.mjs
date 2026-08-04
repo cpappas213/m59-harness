@@ -23,3 +23,15 @@ if (!process.env.M59_LEDGER_DIR) {
   process.env.M59_LEDGER_DIR = dir;
   process.on('exit', () => { try { rmSync(dir, { recursive: true, force: true }); } catch {} });
 }
+
+// THE UPTIME LEDGER NEEDS THE SAME PROTECTION, and for a sharper reason: it is the file
+// that says which deaths happened with nobody driving, so anything false in it corrupts
+// the one measurement that separates "the strategy killed this character" from "we
+// restarted the broker". A test that constructs an Autopilot calls start() and stop(),
+// and both write — twenty-four rows of a fixture called `test`, with a room number of
+// 999, landed in the live fleet's ledger the first time this was wired up.
+if (!process.env.M59_UPTIME_FILE) {
+  const dir = mkdtempSync(join(tmpdir(), 'm59-test-uptime-'));
+  process.env.M59_UPTIME_FILE = join(dir, 'keeper-uptime.jsonl');
+  process.on('exit', () => { try { rmSync(dir, { recursive: true, force: true }); } catch {} });
+}

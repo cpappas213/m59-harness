@@ -5939,17 +5939,54 @@ async function supplyBetween(a) {
                  `${Array.isArray(a.what) ? 'those ids' : (a.what || 'reagents')}`,
                  carrying: (g.inventory || []).map(nameOf) };
 
-      // Get them into one room. Whoever walks, walks to the other.
+      // GET THEM INTO ONE ROOM, AND ACTUALLY GET THERE.
+      //
+      // This called travel() once and gave up on the first refusal, which is why the
+      // tool advertised a delivery and behaved as an in-room handover. Two things were
+      // missing, and both cost real deliveries today — the reagent bridging, the money
+      // drop and the bread run all failed here rather than at the trade.
+      //
+      //   THE KEEPERS WERE STILL DRIVING. A keeper walks its character back to its
+      //   hunting ground every pass, so travel() and the keeper fought for the same
+      //   body and neither won. Zoot was steered across four rooms in twenty-five
+      //   attempts and never arrived. Both ends are held still here and restored
+      //   afterwards, whatever happens.
+      //
+      //   TRAVEL IS RESUMABLE AND WAS TREATED AS ATOMIC. A multi-hop route routinely
+      //   fails part-way — a boundary with no standable square, a position that has not
+      //   settled after a crossing — and the next call continues from wherever it
+      //   actually reached. One attempt is a coin flip; several are a journey.
       const who = a.who_travels || 'from';
-      const groom = gs.world?.room?.num, rroom = rs.world?.room?.num;
-      if (groom !== rroom && who !== 'neither') {
-        const [mover, dest] = who === 'to' ? [rs, groom] : [gs, rroom];
-        if (dest == null) return { supplied: false, reason: 'cannot see which room the other one is in' };
-        const t = await mover.travel(dest, { maxHops: 14 }).catch(e => ({ arrived: false, reason: e.message }));
-        if (!t.arrived)
-          return { supplied: false, reason: `${who === 'to' ? r.me?.name : g.me?.name} could not get there: ${t.reason}`,
-                   note: 'the newbie zone is not connected to the rest of the map — the museum portal is one-way' };
-      }
+      // start() takes no arguments — it resumes whatever mode and policy the keeper
+      // already holds — so nothing needs saving beyond "this one was running".
+      const restore = [];
+      const holdStill = (sess) => {
+        const p = autopilotIfAny(sess.name);
+        if (!p?.running) return;
+        p.stop();
+        restore.push(sess);
+      };
+      try {
+        if (who !== 'neither' && (gs.world?.room?.num !== rs.world?.room?.num)) {
+          holdStill(gs); holdStill(rs);
+          const mover = who === 'to' ? rs : gs;
+          const other = who === 'to' ? gs : rs;
+          let arrived = false, why = null;
+          for (let i = 0; i < 6 && !arrived; i++) {
+            // Re-read the destination each time: the other one may itself have moved,
+            // and chasing where it WAS is how this used to end up in the wrong room.
+            const dest = other.world?.room?.num;
+            if (dest == null) { why = 'cannot see which room the other one is in'; break; }
+            if (mover.world?.room?.num === dest) { arrived = true; break; }
+            const t = await mover.travel(dest, { maxHops: 20 }).catch(e => ({ arrived: false, reason: e.message }));
+            if (t.arrived) arrived = true; else why = t.reason;
+          }
+          if (!arrived)
+            return { supplied: false,
+                     reason: `${who === 'to' ? r.me?.name : g.me?.name} could not get there: ${why}`,
+                     attempts: 6,
+                     note: 'travel is resumable, so this tried repeatedly and still did not arrive' };
+        }
 
       // The receiver has to be visible to the giver for the offer to resolve.
       const them = [...g.room.objects.values()]
@@ -5984,8 +6021,18 @@ async function supplyBetween(a) {
         handed_over: got,
         not_received: handed.filter(n => !got.includes(n)),
         receiver_carrying: now.length, was_carrying: before,
+        travelled: who !== 'neither' ? who : null,
         note: got.length
           ? 'confirmed in the receiver\'s inventory, not merely offered'
           : 'the trade did not complete — nothing moved',
       };
+      } finally {
+        // PUT THE KEEPERS BACK, on every path out — the returns above, and any throw.
+        // A keeper left stopped is a character that quietly stops earning, and the
+        // errand-runner is the last thing anyone thinks to check. Two were found
+        // stopped this afternoon for exactly this reason, one of them for half an hour.
+        for (const sess of restore) {
+          try { autopilotIfAny(sess.name)?.start(); } catch { /* every one of them gets a go */ }
+        }
+      }
 }

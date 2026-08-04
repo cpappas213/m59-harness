@@ -26,6 +26,7 @@ import {
 } from './m59-skills.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
 import { isFood } from './m59-items.mjs';
+import { outages, outageAround } from './m59-uptime.mjs';
 import { RoomGeometry } from './m59-roo.mjs';
 import { roomCap, karmaSafe } from './m59-spawns.mjs';
 import { OF } from './m59-parse.mjs';
@@ -943,6 +944,42 @@ console.log('\nwhen to leave a room, and when to stand and fight tired');
      leaves(1.0, 0.4, 180) === true);
   ok('and once above that floor it stays', leaves(1.0, 0.95, 180) === false);
   ok('unknown vitals do not trigger a flee', leaves(null, null, 0) === false);
+}
+
+
+// WAS ANYTHING DRIVING WHEN IT DIED?
+//
+// A keeper is the only thing that makes a character act. Without one it stands exactly
+// where it was, in whatever room it was in, while everything already swinging at it
+// carries on -- so a stopped keeper is not a pause, it is a character held still in a
+// fight. A broker restart stops all twenty-one at once, which is why deaths arrive in
+// waves, and every one of those was being charged to the hunting strategy.
+console.log('\nmarking the deaths that happened with nobody driving');
+{
+  const led = [
+    { at: 1000, agent: 't1', event: 'stop', why: 'restart' },
+    { at: 5000, agent: 't1', event: 'start' },
+    { at: 9000, agent: 't2', event: 'stop' },
+  ];
+  const o1 = outages('t1', led, 20000);
+  ok('a closed outage is found', o1.length === 1 && o1[0].ms === 4000, JSON.stringify(o1));
+  ok('and it carries why it went down', o1[0].why === 'restart');
+  const o2 = outages('t2', led, 20000);
+  ok('a keeper that never came back is still an outage', o2[0].open === true,
+     JSON.stringify(o2));
+  ok('measured up to now', o2[0].ms === 11000);
+  ok('an agent with no events has none', outages('t9', led, 20000).length === 0);
+
+  ok('a death inside the window is marked',
+     outageAround('t1', 3000, led)?.died_ms_into_outage === 2000);
+  ok('a death before it is not', outageAround('t1', 500, led) === null);
+  // The grace window: a character standing still under attack for minutes is usually
+  // past saving when the keeper returns, so the death lands just after the resume.
+  ok('a death shortly AFTER the resume still belongs to the outage',
+     outageAround('t1', 5000 + 20000, led)?.after_resume === 20000);
+  ok('but not long after', outageAround('t1', 5000 + 300000, led) === null);
+  ok('another agent is never blamed for this one\'s outage',
+     outageAround('t9', 3000, led) === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

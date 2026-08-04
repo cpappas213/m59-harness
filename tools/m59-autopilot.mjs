@@ -28,6 +28,7 @@ import { findPath } from './m59-map.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
 import { inboxIfAny } from './m59-inbox.mjs';
 import { recordEvent } from './m59-ledger.mjs';
+import * as uptime from './m59-uptime.mjs';
 import * as party from './m59-party.mjs';
 import { mayShareSpot } from './m59-party.mjs';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
@@ -2770,6 +2771,11 @@ export class Autopilot {
     }
     if (this.running) return this.status();
     this.running = true; this.stopping = false; this.startedAt = Date.now();
+    // WRITTEN OUTSIDE THE KEEPER, because a keeper that is gone cannot record that it is
+    // gone. Without this there is no way to tell a death the strategy caused from one
+    // that happened while nothing was driving — and a broker restart stops all twenty-one
+    // at once, which is exactly why deaths arrive in waves. See m59-uptime.mjs.
+    uptime.record(this.s.name, 'start', { mode: this.mode, hunt: this.policy?.hunt ?? null });
     // A fresh start is a new job: whatever room was worth hunting under the last
     // orders is not evidence about these ones, and may not even be reachable now.
     this.homeRoom = null;
@@ -2797,11 +2803,15 @@ export class Autopilot {
     return this.status();
   }
 
-  stop() {
+  stop(why = null) {
     this.stopping = true;
     // Everything learned about which squares hold, before this keeper goes away.
     this.book.save();
-    this.note('stopping');
+    // The character is about to be left standing exactly where it is, in whatever room
+    // it is in, while everything already swinging at it carries on. That is a fact about
+    // the world, not about this keeper, so it goes in the ledger that outlives it.
+    uptime.record(this.s.name, 'stop', { why, room: this.s.world?.room?.num ?? null });
+    this.note('stopping', why ? { why } : undefined);
     return this.status();
   }
 
@@ -3138,8 +3148,15 @@ export class Autopilot {
         // A couple of seconds is worth it once per death. If it never comes, the record
         // says so rather than falling back silently.
         const bcast = await this.awaitDeathBroadcast().catch(() => null);
+        // WAS ANYTHING DRIVING WHEN THIS HAPPENED? A character whose keeper stopped
+        // stands still in whatever fight it was in; attributing that to a hunting
+        // decision charges the strategy for an operator restart. Marked, not excluded —
+        // it is still a real death, it just should not be read as evidence about how the
+        // fleet fights.
+        const unattended = uptime.outageAround(this.s.name, Date.now());
         const pm = { ...this.postMortem('died'), summary: this.lastDeath,
-                     killed_by_broadcast: bcast };
+                     killed_by_broadcast: bcast,
+                     during_keeper_outage: unattended };
         if (bcast) {
           // The authoritative answer wins, and what was nearby is kept beside it — the
           // crowd is still the right answer to "how outnumbered were we".
@@ -3151,6 +3168,12 @@ export class Autopilot {
           this.lastDeath.killed_by_is_a_guess = true;
           this.lastDeath.note_killer = 'no death broadcast arrived within the wait, so ' +
             'killed_by is only what was standing nearby — right about half the time';
+        }
+        if (unattended) {
+          this.lastDeath.unattended = true;
+          this.lastDeath.keeper_was_down_for_seconds = Math.round(unattended.ms / 1000);
+          this.lastDeath.note_unattended = 'nothing was driving this character when it died — ' +
+            'do not read this as evidence about the hunting strategy';
         }
         const file = this.writePostMortem(pm);
         this.lastDeath.post_mortem = file;
