@@ -1,9 +1,15 @@
 ---
 description: Everything about one character — vitals, pack, safe spot, and its recent log
-argument-hint: <character name>
+argument-hint: <character name> [fleet]
 ---
 
 Full detail on **$1**, pulled live from the broker.
+
+**Which fleet it is in.** Character names are only unique within a server, so the same
+name can exist in two fleets and mean two different characters. This is the one the
+broker is holding:
+
+!`node tools/m59-which.mjs --fleet $2 2>&1`
 
 !`node -e "
 const who=process.argv[1]||'';
@@ -36,4 +42,5 @@ for(const e of (ap?.recent||[]).slice(-12))console.log('  '+e.what+' — '+JSON.
 Hero page with the full sheet, inventory and compendium links:
 **http://127.0.0.1:8902/hero/$1**
 
-Summarise what stands out. Do not change anything unless I ask.
+Summarise what stands out, naming the fleet it is about. Do not change anything unless
+I ask.

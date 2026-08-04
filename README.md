@@ -140,6 +140,7 @@ Offline, no server needed:
 ```bash
 node tools/m59-safespot-test.mjs      # 91 tests — safe squares, errand pairing
 node tools/m59-chat-test.mjs          # 102 tests — sanitiser and leak detection
+node tools/m59-escape-test.mjs        # 29 tests — leaving and fighting from a sitting start
 ```
 
 Against a live server, with test accounts:

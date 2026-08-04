@@ -22,6 +22,20 @@ Ten to fifteen minutes, mostly compiling. Every step is idempotent. Individually
 | 3 | `node tools/setup.mjs broker` — MCP broker on 8901, dashboard 8902 |
 | 4 | `node tools/setup.mjs fleet 10` — creates ten characters |
 
+## Which fleet — check this before you touch anything
+
+A fleet is a named roster, one per server, and passing the wrong one operates on the
+wrong fleet quietly. The name resolves `--fleet` → `M59_FLEET` → `substrate/fleet-default`
+(one line, gitignored, what this checkout cares about) → the unnamed
+`substrate/fleet-state.json`. `--fleet -` asks for that unnamed one on purpose.
+
+```bash
+node tools/m59-which.mjs      # fleet, roster, what the broker actually holds
+```
+
+Read-only, and non-zero if the broker is holding a different fleet from the one your next
+command would act on. Every `/m59*` command runs it first.
+
 ## Running the broker as a service
 
 ```bash
@@ -137,7 +151,8 @@ the checkpoints went; do not delete old ones unasked.
 - `M59_ROOT` points at the Meridian 59 source tree.
 - Offline tests, safe any time: `node tools/m59-safespot-test.mjs` (91),
   `node tools/m59-chat-test.mjs` (102) and `node tools/m59-rest-test.mjs` (6) and
-  `node tools/m59-ledger-test.mjs` (15). The rest need a live server.
+  `node tools/m59-ledger-test.mjs` (15) and `node tools/m59-escape-test.mjs` (29).
+  The rest need a live server.
 - Sprites are not committed; `python tools/pull-client-assets.py` decodes them
   from a local client. Do not commit `compendium/assets/img/`.
 - Do not commit what a running fleet writes — `fleet-state.json`, `history/`,

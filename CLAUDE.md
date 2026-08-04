@@ -66,6 +66,30 @@ Properties → Launch Options.
 connection per character. That is expected, and is how `m59-fleet.mjs spec`
 works; use `--proxy` when you do not want it.
 
+## Which fleet — check this before you touch anything
+
+A fleet is a named roster, one per server, and **passing the wrong one operates on the
+wrong fleet quietly**. Nothing errors; you just get a healthy broker holding characters
+nobody is playing. So every fleet tool resolves the name the same way, most explicit
+first:
+
+| | |
+|---|---|
+| `--fleet <name>` | what this invocation said |
+| `M59_FLEET=<name>` | what this shell said |
+| `substrate/fleet-default` | what this checkout cares about — one line, gitignored |
+| nothing | `substrate/fleet-state.json`, as it always was |
+| `--fleet -` | that unnamed fleet, asked for on purpose |
+
+```bash
+node tools/m59-which.mjs            # which fleet, which roster, what the broker holds
+```
+
+Read-only, and it **exits non-zero on a mismatch** — when the broker is holding one fleet
+and your next command would act on another. Every `/m59*` command runs it first for that
+reason. If it reports a mismatch, stop: that is the failure that once took down a live
+46-session broker while every step reported success.
+
 ## Running the broker as a service
 
 ```bash
@@ -205,7 +229,8 @@ start Docker Desktop; do not try to start it yourself unless they ask.
 - Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (91),
   `node tools/m59-chat-test.mjs` (102) and
   `node tools/m59-rest-test.mjs` (6) and
-  `node tools/m59-ledger-test.mjs` (15). The rest need a live server.
+  `node tools/m59-ledger-test.mjs` (15) and
+  `node tools/m59-escape-test.mjs` (29). The rest need a live server.
 - The compendium's sprites are not committed. `python tools/pull-client-assets.py`
   decodes them from a local client. Do not commit `compendium/assets/img/`.
 - Do not commit anything a running fleet writes — `fleet-state.json`,

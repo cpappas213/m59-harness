@@ -1,8 +1,15 @@
 ---
 description: Open the interactive fleet terminal — arrow keys, per-character sheets, and a launch key that actually starts the game
+argument-hint: [fleet]
 ---
 
 Opening the fleet TUI in its own terminal window.
+
+!`node tools/m59-which.mjs --fleet $ARGUMENTS 2>&1`
+
+The window below opens on that fleet. The TUI resolves it the same way every other tool
+does — `--fleet`, then `M59_FLEET`, then `substrate/fleet-default` — so if you want a
+different one, pass its name to this command.
 
 **Why a separate window and not this conversation.** A slash command runs a command and
 puts its output here; it cannot hand you the keyboard. What you want — arrow keys, Enter
@@ -13,7 +20,11 @@ does, so it is the same fleet, live.
 !`node -e "
 const { spawn } = require('child_process');
 const cwd = process.cwd();
-const inner = 'node tools/m59-tui.mjs';
+// The fleet goes THROUGH to the TUI. Without it the new window resolves its own
+// default, which is usually the same answer and is not guaranteed to be — and a TUI
+// showing a roster the broker is not holding is the quietest kind of wrong.
+const fleet = process.argv[1] || '';
+const inner = 'node tools/m59-tui.mjs' + (fleet ? ' --fleet ' + fleet : '');
 // Windows Terminal if it is installed — it handles the alt-screen and colours
 // properly — otherwise a plain PowerShell window, which also works.
 const tryWt = spawn('cmd', ['/c', 'where', 'wt'], { stdio: 'ignore' });
@@ -28,13 +39,13 @@ tryWt.on('close', code => {
     console.log('opened in a PowerShell window');
   }
 });
-" 2>&1`
+" "$ARGUMENTS" 2>&1`
 
 ## What you can do in it
 
 | key | |
 |---|---|
-| `↑` `↓` or `j` `k` | move between the 25 characters |
+| `↑` `↓` or `j` `k` | move between the characters in that fleet |
 | `Enter` | open that character's full sheet — vitals, pack, safe spot, readings, recent log |
 | `L` | **launch the real client logged in as that character**, then inject the agent DLL |
 | `r` | force a refresh |
@@ -46,7 +57,8 @@ the character is playable by hand *and* drivable by the MCP, with no copying any
 
 Two things it will not do for you: the client **must keep window focus** or it ignores
 movement entirely (`HandleKeys` returns early unless `GetFocus()` is the client), and the
-passwords come from `substrate/fleet-state.json`, which is read locally and never sent
+passwords come from **that fleet's own roster** — `substrate/fleets/<fleet>.json`, or
+`substrate/fleet-state.json` for the unnamed one — which is read locally and never sent
 over the network.
 
 If the window says the broker is not answering, the broker is down — `/m59-restart`.

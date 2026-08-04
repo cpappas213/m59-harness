@@ -38,6 +38,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSy
          writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolveFleet } from './m59-fleetpath.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -46,7 +47,10 @@ const WIN = process.platform === 'win32';
 export const STEAM_APPID = '893390';
 export const SHORTCUT_DIR = join(REPO, 'shortcuts');
 
-const STATE_FILE = process.env.M59_STATE_FILE || join(REPO, 'substrate', 'fleet-state.json');
+// Fleet-aware, because a shortcut carries a HOST and a PASSWORD on its command line.
+// Reading the wrong roster does not fail — it writes a working shortcut into the wrong
+// server's account, which is the kind of mistake you find out about from the other end.
+const { stateFile: STATE_FILE, label: FLEET_LABEL } = resolveFleet();
 const ACCOUNTS_FILE = join(REPO, 'substrate', 'fleet-accounts.json');
 
 const c = {
@@ -319,8 +323,10 @@ function explain(res, opts) {
       console.log(c.dim('the client, and so this, is for watching them by hand.'));
       return 0;
     case 'no-roster':
-      console.log(c.warn('no characters on file yet.'));
-      console.log('  node tools/setup.mjs fleet 10     makes some');
+      console.log(c.warn(`no characters on file for fleet "${FLEET_LABEL}".`));
+      console.log(`  ${STATE_FILE}`);
+      console.log('  node tools/setup.mjs fleet 10          makes some');
+      console.log('  node tools/m59-shortcuts.mjs --fleet <name>   a different fleet');
       return 0;
     case 'no-match':
       console.log(c.warn(`nothing in the roster matches: ${opts.only.join(', ')}`));

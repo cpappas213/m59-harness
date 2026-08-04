@@ -225,6 +225,19 @@ export class Autopilot {
       // How far above the character's own level the toughest thing a room can
       // generate is allowed to be. See preyRooms.
       maxThreatOver: 6,
+      // WHERE THIS CHARACTER IS SUPPOSED TO FARM. null means "wherever ranks best".
+      //
+      // Without it a fleet cannot be spread out, and not because anyone moves it back
+      // by hand — the keeper does it. Standing anywhere its prey does not spawn (a
+      // town, an inn, the room it woke up in after dying) the keeper leaves for
+      // preyRooms()[0], and that is the same room for every character hunting the same
+      // thing. Twenty-one characters were placed across six rooms and were back in two
+      // within the hour, one death at a time, each one individually behaving correctly.
+      //
+      // Set this and the keeper goes HERE instead. It still refuses a room that cannot
+      // generate the prey — an assignment is a preference, not a way to make a
+      // character stand in a shop for ever.
+      assignedRoom: null,
       // WHICH FARMING PATTERN THIS CHARACTER IS RUNNING. These exist to be compared
       // against each other — the ledger records the strategy with every sample, so
       // `history` can report health gained per hour by strategy rather than anyone
@@ -300,6 +313,15 @@ export class Autopilot {
     this.lastError = null;
     // What actually happened, so a returning model gets a summary rather than a tail.
     this.tally = { kills: 0, deaths: 0, rests: 0, withdrawals: 0, rooms_moved: 0, looted: {} };
+    // HOW WELL THE ASSIGNMENT IS HOLDING. Read by `status` and by the spread tool.
+    //   effective  — returned_to_assignment / relocations
+    //   consistent — drifted, and drifted_to says WHERE it keeps losing them to
+    //   robust     — failed + why_not, the verbatim reason travel gave up
+    this.placement = { relocations: 0, aimed_at_assignment: 0, returned_to_assignment: 0,
+                       drifted: 0, drifted_to: {}, failed: 0, why_not: [] };
+    // Consecutive failed attempts to reach a room, so a single transient miss does not
+    // get mistaken for the room being unreachable. Cleared the moment one succeeds.
+    this.relocFails = new Map();
     this.emptyPasses = 0;
     this.roamedFrom = null;
     this.roamedRooms = 0;
@@ -1960,6 +1982,21 @@ export class Autopilot {
             idle_passes: this.idlePasses, why: this.stalledWhy }
         : false,
       home_room: this.homeRoom,
+      // WHERE IT WAS PUT, AND WHETHER THAT STUCK. Three numbers, in the order worth
+      // arguing about: did the assignment work, does it work every time, and how does
+      // it fail. `held` null means it has never had to relocate, which is the good
+      // case and must not read as 0%.
+      placement: this.policy.assignedRoom == null && !this.placement.relocations ? null : {
+        assigned_room: this.policy.assignedRoom,
+        standing_where_assigned: this.policy.assignedRoom != null
+          ? this.s.world?.room?.num === this.policy.assignedRoom : null,
+        held: this.placement.relocations
+          ? Math.round(100 * this.placement.returned_to_assignment / this.placement.relocations) + '%'
+          : null,
+        ...this.placement,
+        drifted_to: Object.entries(this.placement.drifted_to)
+          .map(([r, n]) => `${r}${n > 1 ? ` x${n}` : ''}`),
+      },
       // WHERE WE ARE STANDING AND WHETHER IT WORKS. Read this before deciding
       // anything about a fight: `works` true means the character cannot be hit unless
       // it swings first, which makes breaking off free, makes resting to full
@@ -2676,14 +2713,38 @@ export class Autopilot {
                                : 'nothing is generated here at all — it is not a hunting ground' });
             this.doing = 'travelling';
             await this.leaveHold('travelling to a room that generates our prey');
+            // THE THREE THINGS WE WANT TO KNOW ABOUT AN ASSIGNMENT, recorded where a
+            // human and an agent can both read them later: does it do what we hoped
+            // (did we end up where we were assigned), does it do it every time
+            // (drifts vs holds), and how does it fail (why_not, kept verbatim).
+            const mine = this.policy.assignedRoom;
+            const p = this.placement;
+            p.relocations++;
+            if (mine != null) p.aimed_at_assignment += (target.room === mine ? 1 : 0);
             const r0 = await s.travel(target.room, { maxHops: 14 })
                              .catch(e => ({ arrived: false, reason: e.message }));
             if (r0.arrived) {
               this.homeRoom = target.room;
               this.emptyPasses = 0;
+              this.relocFails.delete(target.room);   // it works; forget the near misses
+              if (mine != null) {
+                if (target.room === mine) p.returned_to_assignment++;
+                else { p.drifted++; p.drifted_to[target.room] = (p.drifted_to[target.room] || 0) + 1; }
+              }
               this.progress('moved to a room that generates the prey');
             } else {
-              this.unreachable.add(target.room);
+              p.failed++;
+              if (p.why_not.length < 8) p.why_not.push({ room: target.room, why: r0.reason || 'travel did not arrive' });
+              // ONE MISS IS NOT A PROOF OF UNREACHABILITY, and treating it as one is
+              // how a spread fleet quietly re-collapses: the first transient failure
+              // blacklists the ASSIGNED room, so the keeper never tries it again and
+              // goes back to the top-ranked room for ever. Both failures seen in
+              // practice were transient — a crowded `go` square ("stood on the exit
+              // square and nothing happened"), and a route the planner picked through
+              // an edge with no floor, which succeeds from a different starting room.
+              const n = (this.relocFails.get(target.room) ?? 0) + 1;
+              this.relocFails.set(target.room, n);
+              if (n >= 3) this.unreachable.add(target.room);
               this.noProgress('cannot reach anywhere that generates ' + this.policy.hunt);
             }
             return;
@@ -3465,8 +3526,18 @@ export class Autopilot {
     if (!spawns) return [];
     const level = this.s.client?.vitals?.()?.health?.max ?? 0;
     const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
-    return huntingGrounds(spawns, want, { maxDanger: ceiling, limit: 8 })
+    const rooms = huntingGrounds(spawns, want, { maxDanger: ceiling, limit: 8 })
       .filter(r => !r.rejected && r.room !== room?.num && !this.unreachable.has(r.room));
+    // AN ASSIGNMENT OUTRANKS THE SPAWN TABLE. Every caller takes [0], so putting the
+    // assigned room at the front is the whole of "go back where you were put" — and
+    // it stays subject to the same filters above, so an assignment to somewhere that
+    // cannot generate the prey, or that we have proven unreachable, is ignored rather
+    // than obeyed into a corner.
+    const mine = this.policy.assignedRoom;
+    if (mine == null || mine === room?.num) return rooms;
+    const i = rooms.findIndex(r => r.room === mine);
+    if (i > 0) rooms.unshift(rooms.splice(i, 1)[0]);
+    return rooms;
   }
 
   async roam(room) {

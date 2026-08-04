@@ -274,7 +274,12 @@ async function stopBroker(port) {
 
   // On Windows SIGTERM does not run the broker's exit handler, so the lock it
   // took over this checkout's fleet is never released. We know we killed it.
-  const lock = join(REPO, 'substrate', 'fleet-state.json.lock');
+  //
+  // WHICH lock comes from the broker's own /health, not from what this process
+  // resolved: the broker is the only thing that knows which roster it actually took,
+  // and a fleet-blind guess at fleet-state.json.lock left every named fleet's lock
+  // behind — the next start then refuses itself over a claim from a dead pid.
+  const lock = (who.state ? who.state : join(REPO, 'substrate', 'fleet-state.json')) + '.lock';
   let gone = false;
   try { process.kill(pid, 0); } catch { gone = true; }
   if (gone && existsSync(lock)) {

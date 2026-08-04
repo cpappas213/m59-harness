@@ -163,11 +163,11 @@ disengages at 35% health and says so, because dying drops everything you carry.
 | `merchants` | who sells, buys or teaches what, and where — with each buying rule as source |
 | `spells` | what you know, what each costs, and when you cannot cast it — why |
 | `cast` | cast by name, refusing up front rather than spending a doomed attempt |
-| `fight` | a whole engagement in one call: find, arm, approach, face, swing, disengage, loot |
+| `fight` | a whole engagement in one call: find, arm, approach, face, swing, disengage, loot. Stands up if the swings come back refused |
 | `rest_up` | sit until health and vigor come back, watching the numbers since resting is silent |
 | `equip_best` | wield the best weapon you carry |
 | `sell_all` | quote and sell everything a merchant will take, keeping money and weapons |
-| `escape_underworld` | walk onto a portal, optionally waiting for a named city |
+| `escape_underworld` | stand up, then walk onto a portal, optionally waiting for a named city |
 | `autopilot` | a background keeper: rests, withdraws, escapes death, optionally farms |
 | `abilities` | **how good you are** at each skill and spell, 0-100 — the only progress signal |
 | `bank` | deposit, withdraw, balance. A bank balance is the only thing that survives dying |

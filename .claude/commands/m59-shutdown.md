@@ -1,9 +1,14 @@
 ---
 description: Checkpoint the world and shut the fleet and server down safely
+argument-hint: [label for the checkpoint]
 ---
 
 Stop everything without losing the session. Arguments: `$ARGUMENTS` (an optional
 label for the checkpoint, e.g. "before the raid").
+
+**What is running, and which fleet is about to be stopped:**
+
+!`node tools/m59-which.mjs 2>&1`
 
 ## Do this
 
@@ -12,6 +17,12 @@ node tools/m59-shutdown.mjs --label "$ARGUMENTS"
 ```
 
 Drop `--label` if no arguments were given.
+
+**There is no `--fleet` here and that is correct.** A broker holds exactly one fleet, and
+this stops *the broker that is running* — found by asking `/health` which pid it is, not
+by matching a process name. So it stops whatever is up, whichever fleet that is, and the
+lock it releases is the one that broker actually took. Report the fleet named above so
+it is on the record which one went down.
 
 **Never use a bare `docker stop` for a deliberate shutdown.** blakserv installs
 no SIGTERM handler and `[Auto] SavePeriod` defaults to 180 minutes, so stopping

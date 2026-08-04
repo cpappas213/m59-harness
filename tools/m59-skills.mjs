@@ -96,6 +96,20 @@ export const brokenWeaponText = (t) => WEAPON_SHATTERED.test(t || '') || WEAPON_
 // pack. Without it every pass re-picks the same dead sword — it still scores highest.
 export const brokenSet = (c) => (c._brokenWeapons ??= new Set());
 
+// A SWING THAT WAS REFUSED, AND THE ONE COMBAT FAILURE THE SERVER ACTUALLY ANNOUNCES.
+//
+// UserAttack (user.kod:4679) checks PFLAG_NO_FIGHT before it works out a stroke, and
+// answers with this line instead of swinging. Resting sets that flag alongside
+// PFLAG_NO_MOVE (player.kod:1162), so a character that sat down and never got back up
+// swings at nothing for as long as anything keeps asking it to — and the combat lines
+// read as a fight going badly rather than as a fight not happening.
+//
+// Worth knowing which way round the two refusals work: a MOVE from a resting player is
+// bounced silently (user.kod:2988), an ATTACK is refused out loud. So movement has to be
+// pre-empted by standing up first, and attacking can simply be believed.
+export const CANNOT_SWING = /unable to lift your weapon/i;   // user.kod:119, user_no_fight
+export const cannotSwingText = (t) => CANNOT_SWING.test(t || '');
+
 // WHICH PROFICIENCY A WEAPON TRAINS. From viProficiency_Needed on each weapon class
 // rather than from the skill names, because the two do not line up by spelling: every
 // sword in the game routes to SKID_PROFICIENCY_SWORD (451) including the gold, mystic,
@@ -651,6 +665,31 @@ export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAUL
   };
 }
 
+// A CHARACTER THAT SAT DOWN AND WAS NOT STOOD BACK UP CAN DO NEITHER OF THE TWO THINGS
+// IT MOST NEEDS TO DO.
+//
+// Resting sets PFLAG_NO_MOVE and PFLAG_NO_FIGHT together (player.kod:1162,
+// ResetPlayerFlagList), and only standing up or logging off clears resting — not death,
+// not being attacked, not changing room. So the state outlives whatever caused it: a
+// character killed mid-rest wakes in the Underworld still sitting, and a keeper that
+// rested in a safe spot and lost its stand goes on being unable to swing.
+//
+// The two refusals behave differently, which is why they need different handling:
+//
+//   move    bounced SILENTLY. user.kod:2988 puts you back on the square you are already
+//           on and returns, so it looks like walls, not posture — pre-empt it.
+//   attack  refused OUT LOUD, "unable to lift your weapon" (user.kod:4679) — believe it
+//           and recover. See CANNOT_SWING above.
+//
+// Standing when already standing costs nothing: UC_STAND is StopResting, which returns
+// immediately when there is no rest timer. Resting is silent in both directions, so there
+// is no posture to read and nothing to be gained by asking first. Just stand.
+export async function standUp(s) {
+  const c = s.need();
+  await s.pacer.submit('rest', () => c.stand());
+  await sleep(300);
+}
+
 // ---------------------------------------------------------------- finding
 
 // Resolve a creature by name against what is actually in the room, preferring things
@@ -791,7 +830,7 @@ export async function fight(s, {
                note: 'the geometry may not connect, or something is in the way' };
   }
 
-  let killed = false, disengaged = null, roundsFought = 0, drifted = null;
+  let killed = false, disengaged = null, roundsFought = 0, drifted = null, stoodUp = false;
   const combatLines = [];
   for (let r = 0; r < rounds; r++) {
     if (!c.room.objects.has(foe.id)) { killed = true; break; }
@@ -809,6 +848,32 @@ export async function fight(s, {
     const res = await s.attackRounds(foe.id, swingsPerRound);
     roundsFought++;
     combatLines.push(...res.messages);
+
+    // WE ARE STILL SITTING DOWN, AND THE SERVER JUST SAID SO.
+    //
+    // "You find yourself unable to lift your weapon." is PFLAG_NO_FIGHT, which resting
+    // sets (player.kod:1162). Nothing clears resting but standing or logging off, so a
+    // rest that was cut short, or a safe spot the keeper sat down in and never got back
+    // up from, turns every swing from here on into that line — a fight that reads like
+    // bad luck and is actually a posture. Stand and take the round again.
+    //
+    // Standing is not a cure for the rest of that flag's causes. Hold, Dazzle, Blind and
+    // a DM freeze set it too, and for those the honest answer is to stop and name them,
+    // not to spend eleven more rounds being refused.
+    if (res.messages.some(cannotSwingText)) {
+      if (stoodUp)
+        return { fought: false, could_not_swing: true, stood_up: true,
+                 target: foeName, foe_id: foe.id, rounds: roundsFought,
+                 reason: 'every swing was refused: "unable to lift your weapon"',
+                 combat: combatLines.slice(-8), log,
+                 note: 'standing up did not clear it, so this is not resting. The same flag is set by ' +
+                       'Hold, Dazzle, Blind and a DM freeze — wait for the enchantment to lapse. More ' +
+                       'swings now cost packets and do nothing.' };
+      stoodUp = true;
+      await standUp(s);
+      say('stood up', { because: 'every swing was refused — we were sitting down', round: roundsFought });
+      continue;
+    }
 
     // IT BROKE MID-FIGHT, which is the ordinary way a weapon leaves service and was
     // previously invisible. ReqWeaponAttack unequips the weapon itself (weapon.kod:513)
@@ -863,6 +928,9 @@ export async function fight(s, {
   const out = {
     fought: true, target: foeName, killed, rounds: roundsFought,
     health: { before: before.health, after: after.health },
+    // Worth saying out loud: it means a round went nowhere, and it means whatever sat
+    // this character down is not doing so again by itself.
+    ...(stoodUp ? { stood_up: 'the first round was refused — we were resting' } : {}),
     combat: combatLines.slice(-10),
     // Pass this back as preferId next time. A wounded creature we walk away from is
     // both credit we have already earned and a monster that will heal if left, so
@@ -933,13 +1001,22 @@ export const readRipDestination = text => RIP_DESTINATIONS.find(d => d.match.tes
 export async function escapeUnderworld(s, { city = null, maxSeconds = 180 } = {}) {
   const c = s.need();
   const portals = () => [...c.room.objects.values()].filter(o => isTeleporter(o.flags));
+  // Which room we are in, read from the client rather than from an event: c.room.id and
+  // roomNameRsc are both set by the room packet the teleport sends, so this answers "did
+  // that work" even when the event that announced it went past while we were walking.
+  const whereAmI = () => ({ id: c.room.id, name: c.roomNameRsc ? c.rsc.get(c.roomNameRsc) : null });
+
+  // Before anything is measured, and before a single step is taken: a character killed
+  // mid-rest wakes up here still sitting, and a resting character's moves are bounced in
+  // silence, so every portal in the pentagram would read as unlit. See standUp.
+  await standUp(s);
 
   await s.pacer.submit('read', () => c.roomContents());
   await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 });
   const here = s.world?.room;
   const found = portals();
   if (!found.length)
-    return { left: false, reason: 'no teleporter in this room', room: here?.name };
+    return { left: false, stood_up: true, reason: 'no teleporter in this room', room: here?.name };
 
   // The shifting one describes a destination; the fixed ones do not.
   const rip = found.find(o => /rip in space/i.test(c.rsc.get(o.nameRsc)));
@@ -951,7 +1028,9 @@ export async function escapeUnderworld(s, { city = null, maxSeconds = 180 } = {}
     const spot = s.world.approachSquare(rip.col, rip.row);
     if (spot && spot.steps > 0) {
       const walk = await s.walkTo(spot.col, spot.row, { maxSteps: Math.max(30, spot.steps + 10) });
-      if (!walk.arrived) return { left: false, reason: 'could not get next to the shifting portal', walk };
+      if (!walk.arrived)
+        return { left: false, stood_up: true, reason: 'could not get next to the shifting portal', walk,
+                 note: 'we stood up first, so this is not resting — something is in the way' };
     }
     const seen = [];
     const t0 = Date.now();
@@ -964,17 +1043,20 @@ export async function escapeUnderworld(s, { city = null, maxSeconds = 180 } = {}
       if (dest) seen.push(dest);
       if (dest && dest.toLowerCase().includes(String(city).toLowerCase())) {
         const before = c.evSeq;
+        const wasIn = c.room.id;
         await s.pacer.submit('move', () => c.moveToSquare(rip.col, rip.row), 1050);
         const arr = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 5000 });
         const entered = arr.events.find(e => e.kind === 'room-entered');
-        return entered
-          ? { left: true, arrived_in: entered.roomName, wanted: city, saw: seen }
-          : { left: false, reason: 'stepped on it as it read right, but nothing happened — it may have swapped first',
+        const now = whereAmI();
+        return (entered || now.id !== wasIn)
+          ? { left: true, stood_up: true, arrived_in: entered?.roomName ?? now.name, wanted: city, saw: seen }
+          : { left: false, stood_up: true,
+              reason: 'stepped on it as it read right, but nothing happened — it may have swapped first',
               saw: seen, note: 'try again; the window is 5-10 seconds and unknown which' };
       }
       await sleep(1200);
     }
-    return { left: false, reason: `never saw ${city} in ${maxSeconds}s`, saw: seen,
+    return { left: false, stood_up: true, reason: `never saw ${city} in ${maxSeconds}s`, saw: seen,
              note: 'the rip picks from five inns and never repeats twice running, so it is luck plus patience' };
   }
 
@@ -987,16 +1069,30 @@ export async function escapeUnderworld(s, { city = null, maxSeconds = 180 } = {}
   const tried = [];
   for (const { o } of reachable) {
     const name = c.rsc.get(o.nameRsc);
-    const walk = await s.walkTo(o.col, o.row, { maxSteps: 80 });
+    // Both markers go up BEFORE the walk. Stepping onto a live portal is itself the
+    // last step of the walk, so the room packet can arrive while walkTo is still in
+    // its loop — and a cursor taken afterwards looks past the very event it is for.
     const before = c.evSeq;
-    if (!walk.arrived) { tried.push({ name, why: walk.reason || 'could not reach it' }); continue; }
-    const arr = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 3000 });
+    const wasIn = c.room.id;
+    const walk = await s.walkTo(o.col, o.row, { maxSteps: 80 });
+    const arr = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: walk.arrived ? 3000 : 500 });
     const entered = arr.events.find(e => e.kind === 'room-entered');
-    if (entered) return { left: true, arrived_in: entered.roomName, via: name, tried };
-    tried.push({ name, why: 'stood on it and nothing happened — probably unlit; its brazier needs activating' });
+    const now = whereAmI();
+    // A walk that "failed" because it left the room is the walk that worked.
+    if (entered || now.id !== wasIn)
+      return { left: true, stood_up: true, arrived_in: entered?.roomName ?? now.name, via: name, tried };
+    // Only blame the brazier if we actually got onto the square. Not arriving is a
+    // different fault with a different fix, and reporting it as an unlit portal sends
+    // the caller hunting for something to activate that was never the problem.
+    tried.push({ name, why: walk.arrived
+      ? 'stood on it and nothing happened — probably unlit; its brazier needs activating'
+      : `never got onto its square (${walk.reason || walk.note || 'the walk did not arrive'})` });
   }
-  return { left: false, reason: 'none of the teleporters here worked', tried,
-           note: 'the pentagram portals are dead until their brazier is lit — look for objects with "activate" and try those' };
+  return { left: false, stood_up: true, reason: 'none of the teleporters here worked', tried,
+           note: tried.some(t => /never got onto/.test(t.why))
+             ? 'at least one was never reached, so this is not evidence that the portals are dead — ' +
+               'we stood up before walking, so it is not resting either; check the route'
+             : 'the pentagram portals are dead until their brazier is lit — look for objects with "activate" and try those' };
 }
 
 // ---------------------------------------------------------------- commerce

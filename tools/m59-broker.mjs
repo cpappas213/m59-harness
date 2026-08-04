@@ -218,13 +218,19 @@ const RECORD_KEEP = Number(process.env.M59_RECORD_KEEP || 15);                  
 // yesterday's passwords against today's server. Twenty failed logins look exactly
 // like a server that is refusing connections.
 //
-// So each fleet gets its own file, and the file *is* the fleet's identity. Naming
-// one selects it; naming none keeps the original path, so an existing checkout that
-// has never heard of fleets behaves exactly as it did.
+// So each fleet gets its own file, and the file *is* the fleet's identity.
 //
 //   node tools/m59-broker.mjs --fleet prod        substrate/fleets/prod.json
 //   M59_FLEET=prod node tools/m59-broker.mjs      the same
-//   node tools/m59-broker.mjs                     substrate/fleet-state.json
+//   node tools/m59-broker.mjs                     substrate/fleet-default, if this
+//                                                 checkout records one; otherwise
+//                                                 substrate/fleet-state.json
+//   node tools/m59-broker.mjs --fleet -           substrate/fleet-state.json, always
+//
+// Naming none used to mean fleet-state.json unconditionally, and on a machine that has
+// moved on to a named fleet that is a trap: it comes up healthy, holding a roster for a
+// server that may not be up, and answers every question about a fleet nobody is
+// playing. m59-fleetpath.mjs has the full order and why the default lives in a file.
 //
 // The lock is derived from this path, so two brokers on two fleets no longer
 // contend — which is the point. Two brokers on the SAME fleet still cannot, and
@@ -911,6 +917,11 @@ class Session {
     this.fine = false;                  // fine-movement mode — see walkFine
     this.recorder = new Recorder(name); // flight recorder; never surfaced in replies
     this.job = null;                    // one background action — see startJob
+    // Every movement operation captures this generation when it starts. Bumping it
+    // invalidates walks already in progress without poisoning later, independent
+    // orders. This is deliberately session-local: one character has one body.
+    this.movementGeneration = 0;
+    this.cancelledMovementTokens = new Set();
   }
 
   get live() { return this.client && this.client.state === 'game'; }
@@ -924,11 +935,46 @@ class Session {
   // result. One job at a time per session — the character has one body.
   startJob(kind, label, fn) {
     if (this.job && !this.job.done) throw new Error(`${this.name} is busy: ${this.job.label}`);
-    const job = { kind, label, startedAt: Date.now(), done: false };
+    const generation = this.movementGeneration;
+    const job = { kind, label, startedAt: Date.now(), done: false, generation };
     this.job = job;
-    fn().then(r => { job.result = r; }, e => { job.error = e.message; })
+    fn(generation).then(r => { job.result = r; }, e => { job.error = e.message; })
         .finally(() => { job.done = true; job.finishedAt = Date.now(); });
     return job;
+  }
+
+  movementWasCancelled(generation, controlToken) {
+    return generation !== this.movementGeneration ||
+      (!!controlToken && this.cancelledMovementTokens.has(controlToken));
+  }
+
+  cancelledMovement(extra = {}) {
+    return { arrived: false, left: false, cancelled: true,
+             reason: 'movement cancelled by a newer command', ...extra };
+  }
+
+  cancelMovement(controlToken) {
+    const job = this.job && !this.job.done ? this.job : null;
+    this.movementGeneration++;
+    if (controlToken) {
+      this.cancelledMovementTokens.add(controlToken);
+      // Tokens are short-lived command leases, not history. Keep enough to cover
+      // stale local requests without letting a long-running broker grow forever.
+      if (this.cancelledMovementTokens.size > 100) {
+        this.cancelledMovementTokens.delete(this.cancelledMovementTokens.values().next().value);
+      }
+    }
+    if (job) {
+      job.cancelRequestedAt = Date.now();
+      job.cancelled = true;
+    }
+    return {
+      cancelled: true,
+      interrupted: job ? { kind: job.kind, label: job.label } : null,
+      note: job
+        ? 'the active movement will stop after its current paced server step'
+        : 'any in-flight foreground walk will stop after its current paced server step',
+    };
   }
 
   jobReport() {
@@ -936,8 +982,11 @@ class Session {
     if (!j) return undefined;
     const secs = Math.round(((j.finishedAt || Date.now()) - j.startedAt) / 1000);
     return j.done
-      ? { last_action: j.label, took_s: secs, ...(j.error ? { failed: j.error } : { ok: true }) }
-      : { busy: j.label, running_for_s: secs };
+      ? { last_action: j.label, took_s: secs,
+          ...(j.error ? { failed: j.error }
+            : j.result?.cancelled ? { cancelled: true }
+            : { ok: true }) }
+      : { busy: j.label, running_for_s: secs, ...(j.cancelRequestedAt ? { stopping: true } : {}) };
   }
 
   async join({ account, password, character, host = HOST, port = PORT }) {
@@ -1248,7 +1297,13 @@ class Session {
   // Walk to a fine coordinate without consulting the square grid at all.
   // `stride` is how far to reach per request; a short stride hugs geometry more
   // closely but costs a second per step, since the move rate is one per second.
-  async walkFine(destX, destY, { maxSteps = 120, stride = 48, arriveWithin = 40 } = {}) {
+  async walkFine(destX, destY, {
+    maxSteps = 120,
+    stride = 48,
+    arriveWithin = 40,
+    movementGeneration = this.movementGeneration,
+    controlToken,
+  } = {}) {
     const c = this.need();
     const startRoom = c.room.id;
     let me = c.self;
@@ -1261,6 +1316,8 @@ class Session {
     const FAN = [0, 0.35, -0.35, 0.75, -0.75, 1.2, -1.2, 1.7, -1.7];
 
     for (let i = 0; i < maxSteps; i++) {
+      if (this.movementWasCancelled(movementGeneration, controlToken))
+        return this.cancelledMovement({ steps: i, log });
       me = c.self;
       if (!me) return { arrived: false, reason: 'lost track of own position', log };
       const dx = destX - me.x, dy = destY - me.y;
@@ -1274,6 +1331,8 @@ class Session {
       let progressed = false;
 
       for (const off of FAN) {
+        if (this.movementWasCancelled(movementGeneration, controlToken))
+          return this.cancelledMovement({ steps: i, log });
         const a = base + off;
         const r = await this.stepFine(me.x + Math.cos(a) * reach, me.y + Math.sin(a) * reach);
         if (r.left_room || (c.room.id !== startRoom)) {
@@ -1310,7 +1369,12 @@ class Session {
   //
   // With no geometry it degrades to sign-stepping, so the broker still works against
   // a world it has no map for — just worse.
-  async walkTo(col, row, { maxSteps = 60, hardCap = 400 } = {}) {
+  async walkTo(col, row, {
+    maxSteps = 60,
+    hardCap = 400,
+    movementGeneration = this.movementGeneration,
+    controlToken,
+  } = {}) {
     const c = this.need();
     const geo = this.world.geometry;
     const me0 = c.self;
@@ -1321,6 +1385,8 @@ class Session {
     if (!geo) {
       const steps = [];
       for (let i = 0; i < maxSteps; i++) {
+        if (this.movementWasCancelled(movementGeneration, controlToken))
+          return this.cancelledMovement({ steps: steps.length });
         const me = c.self;
         if (!me || (me.col === col && me.row === row)) break;
         const r = await this.step(me.col + Math.sign(col - me.col), me.row + Math.sign(row - me.row));
@@ -1339,6 +1405,7 @@ class Session {
     // solid ground and carry on — but it has to be done deliberately, because from
     // here the pathfinder has nothing to say.
     if (!geo.walkable(me0.row, me0.col)) {
+      if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
       const spot = geo.nearestWalkable(me0.row, me0.col);
       if (!spot) return { arrived: false, reason: 'standing off the floor with no walkable square anywhere near',
                           position: { col: me0.col, row: me0.row } };
@@ -1362,6 +1429,8 @@ class Session {
     let queue = plan.steps.slice();
     let taken = 0, replans = 0;
     while (queue.length && taken < maxSteps) {
+      if (this.movementWasCancelled(movementGeneration, controlToken))
+        return this.cancelledMovement({ steps: taken, replans });
       const next = queue.shift();
       const r = await this.step(next.col, next.row);
       taken++;
@@ -1392,8 +1461,9 @@ class Session {
   // produces no reply at all:
   //   an edge exit -> walk to the boundary square, then one more step outward
   //   a `go` exit  -> stand on EXACTLY the exit square, then BP_REQ_GO
-  async leaveVia(exit) {
+  async leaveVia(exit, { movementGeneration = this.movementGeneration, controlToken } = {}) {
     const c = this.need();
+    if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
 
     // Budget every walk by the ROUTE length, never by a fixed cap. Outdoor rooms here
     // are up to 80x80, so a boundary square can be well over a hundred steps away —
@@ -1402,7 +1472,8 @@ class Session {
     const budget = e => Math.max(40, (e.steps_away ?? 0) + 20);
 
     if (exit.kind === 'go') {
-      let walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row, { maxSteps: budget(exit) });
+      let walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
+                                   { maxSteps: budget(exit), movementGeneration, controlToken });
 
       // COARSE "UNREACHABLE" IS NOT THE SAME AS IMPOSSIBLE.
       //
@@ -1423,7 +1494,7 @@ class Session {
         const half = KOD_FINENESS >> 1;
         const fine = await this.walkFine(exit.stand_on.col * KOD_FINENESS + half,
                                          exit.stand_on.row * KOD_FINENESS + half,
-                                         { maxSteps: budget(exit) }).catch(() => null);
+                                         { maxSteps: budget(exit), movementGeneration, controlToken }).catch(() => null);
         if (fine?.arrived) walk = { ...fine, via: 'fine movement after coarse pathing failed' };
       }
       let leaned = false;
@@ -1448,14 +1519,17 @@ class Session {
         const spot = this.world.approachSquare(exit.stand_on.col, exit.stand_on.row);
         if (!spot) return { left: false, stage: 'walk', ...walk };
         if (spot.steps > 0) {
-          const near = await this.walkTo(spot.col, spot.row, { maxSteps: Math.max(40, spot.steps + 20) });
+          const near = await this.walkTo(spot.col, spot.row,
+                                         { maxSteps: Math.max(40, spot.steps + 20), movementGeneration, controlToken });
           if (!near.arrived) return { left: false, stage: 'walk', ...near };
         }
+        if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
         await this.pacer.submit('move',
           () => c.moveToSquare(exit.stand_on.col, exit.stand_on.row), MOVE_INTERVAL_MS);
         leaned = true;
       }
 
+      if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
       const before = c.evSeq;
       await this.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
       // Wait for the ROOM CHANGE specifically. A door announces itself first —
@@ -1502,7 +1576,7 @@ class Session {
         const half = KOD_FINENESS >> 1;
         const fine = await this.walkFine(target.col * KOD_FINENESS + half,
                                          target.row * KOD_FINENESS + half,
-                                         { maxSteps: 220, stride: 40 });
+                                         { maxSteps: 220, stride: 40, movementGeneration, controlToken });
         if (fine.left_room)
           return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
                    note: 'crossed the boundary while walking to it in fine coordinates' };
@@ -1512,13 +1586,15 @@ class Session {
                          'reach one either' };
         exit = { ...exit, stand_on: target };
       }
-      const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row, { maxSteps: budget(exit) });
+      const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
+                                     { maxSteps: budget(exit), movementGeneration, controlToken });
       if (!walk.arrived && !(c.self && c.self.col === exit.stand_on.col && c.self.row === exit.stand_on.row))
         return { left: false, stage: 'walk', ...walk };
       // One more step OUTWARD, past the grid. Nothing else triggers
       // Room.StandardLeaveDir.
       const out = { north: [0, -1], south: [0, 1], west: [-1, 0], east: [1, 0] }[exit.direction];
       if (!out) return { left: false, reason: 'unknown edge direction ' + exit.direction };
+      if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
       const before = c.evSeq;
       await this.pacer.submit('move',
         () => c.moveToSquare(exit.stand_on.col + out[0], exit.stand_on.row + out[1]), MOVE_INTERVAL_MS);
@@ -1548,7 +1624,8 @@ class Session {
         return { left: false, reason: 'no reachable square inside the trigger region',
                  note: 'the region is ' + exit.trigger + ' — it may be walled off from here' };
       const before = c.evSeq;
-      const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row, { maxSteps: budget(exit) });
+      const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
+                                     { maxSteps: budget(exit), movementGeneration, controlToken });
       const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 });
       const entered = ev.events.find(e => e.kind === 'room-entered');
       if (entered) return { left: true, arrived_in: entered.roomName, via: 'region trigger' };
@@ -1560,7 +1637,8 @@ class Session {
       // Nothing to send: Portal.SomethingMoved fires on arrival at its square and
       // teleports whatever is standing there. So walking IS the action.
       const before = c.evSeq;
-      const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row, { maxSteps: budget(exit) });
+      const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
+                                     { maxSteps: budget(exit), movementGeneration, controlToken });
       const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 });
       const entered = ev.events.find(e => e.kind === 'room-entered');
       if (!entered)
@@ -1577,10 +1655,11 @@ class Session {
   // it and refuses, while (9,6) one square north opens. Which is which is not in
   // the protocol, so the only honest thing is to try them in a sensible order and
   // report what each said.
-  async leaveViaAny(candidates) {
+  async leaveViaAny(candidates, { movementGeneration = this.movementGeneration, controlToken } = {}) {
     const tried = [];
     for (const exit of orderExits(candidates)) {
-      const r = await this.leaveVia(exit);
+      if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement({ tried });
+      const r = await this.leaveVia(exit, { movementGeneration, controlToken });
       if (r.left) return { ...r, used_exit: exit, ...(tried.length ? { tried } : {}) };
       tried.push({ stand_on: exit.stand_on, why: r.reason || r.note || 'no reason reported' });
     }
@@ -1607,6 +1686,11 @@ class Session {
       messages.push(...ev.events.filter(e => e.text).map(e => e.text));
       if (ev.events.some(e => e.kind === 'vanished' && e.id === targetId)) break;
       if (!c.room.objects.has(c.selfId)) break;      // we died
+      // A refused swing is refused for the same reason for the whole round — nothing
+      // inside a round clears PFLAG_NO_FIGHT — so the other three are three more
+      // identical refusals bought at a packet each. Stop and let the caller act on it;
+      // `fight` stands up and takes the round again, which is the usual cure.
+      if (messages.some(skills.cannotSwingText)) break;
     }
     // Health after the exchange, since deciding whether to keep fighting depends on
     // it and the stat only arrives when it changes.
@@ -1723,9 +1807,15 @@ class Session {
   // hop rather than trusting the whole route up front matters because a conditional
   // edge exit's destination depends on where along the boundary we crossed, so the
   // room we actually land in is not always the one the plan named.
-  async travel(toRoomNum, { maxHops = 25 } = {}) {
+  async travel(toRoomNum, {
+    maxHops = 25,
+    movementGeneration = this.movementGeneration,
+    controlToken,
+  } = {}) {
     const log = [];
     for (let i = 0; i < maxHops; i++) {
+      if (this.movementWasCancelled(movementGeneration, controlToken))
+        return this.cancelledMovement({ log });
       const here = this.world.room;
       if (!here) return { arrived: false, log, reason: 'current room is not in the graph' };
       if (here.num === toRoomNum)
@@ -1744,7 +1834,7 @@ class Session {
       if (!exit)
         return { arrived: false, log, reason: 'cannot find the exit to ' + nextHop.to_name + ' from here' };
 
-      const r = await this.leaveViaAny(candidates);
+      const r = await this.leaveViaAny(candidates, { movementGeneration, controlToken });
       // Never log an empty reason: a hop that fails without saying why is exactly the
       // silent failure this whole broker exists to avoid, so surface whatever stage
       // it got to.
@@ -1763,6 +1853,8 @@ class Session {
 
       // Arriving brings a fresh BP_PLAYER, and with it the identity the world model
       // needs; give the room contents a moment to land as well.
+      if (this.movementWasCancelled(movementGeneration, controlToken))
+        return this.cancelledMovement({ log });
       await this.pacer.submit('read', () => this.client.roomContents());
       await this.client.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 });
     }
@@ -1921,6 +2013,7 @@ const TOOLS = [
       agent: { type: 'string' },
       to: { type: ['string', 'number'], description: 'room name or number' },
       max_hops: { type: 'number' },
+      control_token: { type: 'string', description: 'optional owner token that can invalidate stale movement' },
       background: { type: 'boolean', description: 'return at once and walk in the background; ' +
         'watch for it under `busy` in status/fleet, and the outcome under `last_action`' },
     }, required: ['agent', 'to'] },
@@ -1933,14 +2026,28 @@ const TOOLS = [
       const where = { num: dest, name: worldMap.rooms[dest].name };
       if (a.background) {
         s.startJob('travel', `walk to ${where.name}`,
-                   () => s.travel(dest, { maxHops: num(a.max_hops, 25) }));
+                   movementGeneration => s.travel(dest, {
+                     maxHops: num(a.max_hops, 25), movementGeneration,
+                     controlToken: a.control_token,
+                   }));
         const hops = s.world.route(dest)?.length ?? null;
         return { started: true, destination: where, hops,
                  note: 'walking now; poll `fleet` or `status` — do not re-issue while busy' };
       }
-      const r = await s.travel(dest, { maxHops: num(a.max_hops, 25) });
+      const r = await s.travel(dest, { maxHops: num(a.max_hops, 25), controlToken: a.control_token });
       return { destination: { num: dest, name: worldMap.rooms[dest].name }, ...r, now: arrivalReport(s) };
     },
+  },
+  {
+    name: 'cancel_movement',
+    description: 'Immediately release one character from a walk or background travel. The current ' +
+      'paced server step is allowed to finish, then the old movement stops. This does not disable ' +
+      'later independent orders and does not log the character out.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      control_token: { type: 'string', description: 'also reject a late stale movement carrying this token' },
+    }, required: ['agent'] },
+    run: (a) => session(a.agent).cancelMovement(a.control_token),
   },
   {
     name: 'go_through',
@@ -1949,6 +2056,8 @@ const TOOLS = [
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       to: { type: ['string', 'number'], description: 'destination room name or number' },
+      col: { type: 'number', description: 'optional exact exit column selected on a map' },
+      row: { type: 'number', description: 'optional exact exit row selected on a map' },
       direction: { type: 'string', enum: ['north', 'south', 'east', 'west'] },
       portal: { type: ['boolean', 'number'], description: 'use a portal object — true for the nearest, or its id. Where it leads is not knowable in advance.' } },
       required: ['agent'] },
@@ -1960,6 +2069,11 @@ const TOOLS = [
       if (a.to !== undefined && worldMap) {
         const dest = resolveRoom(worldMap, a.to);
         candidates = exits.filter(e => e.to === dest);
+      }
+      if (candidates.length && Number.isInteger(a.col) && Number.isInteger(a.row)) {
+        const exact = candidates.filter(e =>
+          e.stand_on?.col === Number(a.col) && e.stand_on?.row === Number(a.row));
+        if (exact.length) candidates = exact;
       }
       if (!candidates.length && a.direction) candidates = exits.filter(e => e.direction === a.direction);
       if (!candidates.length && a.portal)
@@ -2082,6 +2196,7 @@ const TOOLS = [
     schema: { type: 'object', properties: {
       agent: { type: 'string' }, col: { type: 'number' }, row: { type: 'number' },
       max_steps: { type: 'number' },
+      control_token: { type: 'string', description: 'optional owner token that can invalidate stale movement' },
       fine: { type: 'boolean',
               description: 'ignore the square grid for this one call and walk in fine coordinates' },
       stride: { type: 'number', description: 'fine units to reach per step, default 48 of 64' },
@@ -2089,10 +2204,13 @@ const TOOLS = [
     run: (a) => {
       const s = session(a.agent);
       const fine = a.fine ?? s.fine;
-      if (!fine) return s.walkTo(num(a.col), num(a.row), { maxSteps: num(a.max_steps, 30) });
+      if (!fine) return s.walkTo(num(a.col), num(a.row), {
+        maxSteps: num(a.max_steps, 30), controlToken: a.control_token,
+      });
       const half = KOD_FINENESS >> 1;
       return s.walkFine(num(a.col) * KOD_FINENESS + half, num(a.row) * KOD_FINENESS + half,
-                        { maxSteps: num(a.max_steps, 120), stride: num(a.stride, 48) });
+                        { maxSteps: num(a.max_steps, 120), stride: num(a.stride, 48),
+                          controlToken: a.control_token });
     },
   },
   {
@@ -2220,7 +2338,15 @@ const TOOLS = [
       }
       await s.pacer.submit('read', () => c.stats(1));
       await c.waitFor({ kinds: ['stat'], timeoutMs: 1500 });
-      return { target: t.id, swings: log, vitals: c.vitals() };
+      // The one combat refusal the server announces, and the one an agent reads straight
+      // past: it looks like a miss and it is not a swing at all. Say what to do about it.
+      const refused = log.some(e => e.messages?.some(skills.cannotSwingText));
+      return { target: t.id, swings: log, vitals: c.vitals(),
+               ...(refused ? { could_not_swing: true,
+                               note: 'the swings were refused, not missed. Usually you are still sitting ' +
+                                     'down — send `rest` with stand:true and swing again. Hold, Dazzle, ' +
+                                     'Blind and a DM freeze say the same thing and standing will not help ' +
+                                     'those. `fight` handles this on its own.' } : {}) };
     },
   },
   {
@@ -2555,6 +2681,9 @@ const TOOLS = [
       'between every round, break off if you drop below the threshold, and pick up the drops if it dies.\n' +
       'This is the tool to use unless you specifically want to control the fight yourself. It reports ' +
       'every stage, so you can see what it did and do it differently next time.\n' +
+      'If the swings come back refused — "unable to lift your weapon" — it stands you up and takes the ' +
+      'round again, because resting blocks fighting and nothing clears resting by itself. If standing ' +
+      'does not fix it, it stops and says so rather than swinging at nothing for twelve rounds.\n' +
       'It will NOT fight to the death: it disengages at 35% health by default and says so. Lower ' +
       'disengage_at only if you mean it — dying drops everything you carry.',
     schema: { type: 'object', properties: {
@@ -2611,6 +2740,8 @@ const TOOLS = [
       'Familiars" is Tos).\n' +
       'Pass a city to wait by the shifting portal for that destination and step on at the right moment. ' +
       'Pass nothing to take whichever portal works.\n' +
+      'It stands you up first. Resting sets NO_MOVE and nothing clears it when you die, so a character ' +
+      'killed while resting wakes here still sitting, walks nowhere, and reads every portal as dead.\n' +
       'THIS IS FOR GETTING OUT OF THE UNDERWORLD AFTER DYING. IT IS NOT A WAY TO LEAVE ANYWHERE ELSE. ' +
       'Dying is never a travel mechanism and never a solution to being stuck: it costs a point of ' +
       'maximum health permanently (player.kod:8247) and drops everything you carry on a corpse. In ' +
@@ -2679,6 +2810,13 @@ const TOOLS = [
         description: 'drop junk and weapons the server has refused as broken, default true. A ' +
                      'broken weapon is NOT renamed, so it otherwise outranks the working one for ever' },
       roam: { type: 'boolean', description: 'when the room is cleared, move to a neighbouring one instead of waiting for respawns. Off by default because it changes where the character is.' },
+      assigned_room: { type: ['number', 'null'],
+        description: 'WHERE THIS CHARACTER FARMS. Without it the keeper sends every character ' +
+          'hunting the same creature to the same top-ranked room, so a fleet spread across six ' +
+          'rooms collapses back into one or two — not by anyone moving it, but one death at a ' +
+          'time, as each character wakes in a town and walks to the best room it knows. Set this ' +
+          'and it goes here instead. Still refused if the room cannot generate the prey. ' +
+          'null clears it. `spread` sets these for a whole fleet at once' },
       roam_limit: { type: 'number', description: 'how many rooms it may wander before stopping, default 6' },
       strategy: { type: 'string', enum: ['baseline', 'wellfed', 'fieldrest', 'trader', 'coop'],
         description: 'which farming pattern to run. These exist to be compared against each other: ' +
@@ -2725,6 +2863,8 @@ const TOOLS = [
           ? a.weapon_priority.map(String) : null;
       if (a.drop_junk !== undefined) p.policy.dropJunk = !!a.drop_junk;
       if (a.roam !== undefined) p.policy.roam = !!a.roam;
+      if (a.assigned_room !== undefined)
+        p.policy.assignedRoom = a.assigned_room == null ? null : Number(a.assigned_room);
       if (a.roam_limit !== undefined) p.policy.roamLimit = Number(a.roam_limit);
       if (a.strategy !== undefined) {
         if (!STRATEGIES[a.strategy])
@@ -4078,6 +4218,147 @@ const TOOLS = [
         rejected: rows.filter(r => r.rejected),
         note: ok.length ? undefined
           : 'nothing generates that; check the name, or it may be summoned rather than spawned',
+      };
+    },
+  },
+  {
+    name: 'spread',
+    description:
+      'DEAL THE FLEET OUT ACROSS THE ROOMS THAT ACTUALLY GENERATE ITS PREY, and make the assignment ' +
+      'stick.\n' +
+      'A fleet left alone collapses into one or two rooms. Not because anyone moves it: standing ' +
+      'anywhere its prey does not spawn — a town, an inn, wherever it woke up after dying — a keeper ' +
+      'leaves for the top-ranked room for its creature, and that is the SAME room for every character ' +
+      'hunting the same thing. Twenty-one characters placed across six rooms were back in two within ' +
+      'the hour, one death at a time. Moving them by hand fixes it until the next death.\n' +
+      'This computes an allocation and writes it into each keeper as assignedRoom, which is what the ' +
+      'keeper then travels back to. Rooms are ranked by PAYING capacity — population cap times the ' +
+      'prey\'s share of the table — because a room whose other half is prey at or below your level is ' +
+      'that much smaller: a level-25 character gains nothing from a level-25 baby spider, and the cap ' +
+      'is shared between them.\n' +
+      'Plans only unless apply is true. It does NOT walk anyone: assignments take effect as each ' +
+      'keeper next needs to relocate, which is exactly when moving is free. Pass travel to send them ' +
+      'now instead.\n' +
+      'Read `placement` in `status` afterwards for whether it held.',
+    schema: { type: 'object', properties: {
+      max_per_room: { type: 'number', description: 'default 4' },
+      apply: { type: 'boolean', description: 'write the assignments (default false — plan only)' },
+      travel: { type: 'boolean', description: 'also send everyone to their room now, in the background' },
+      agents: { type: 'array', items: { type: 'string' }, description: 'only these (default: every farming keeper)' },
+    } },
+    run: async (a) => {
+      const spawns = loadSpawns(SPAWN_FILE);
+      if (!spawns) throw new Error('no spawn index — build it with: node tools/m59-spawns.mjs');
+      const perRoom = Math.max(1, num(a.max_per_room, 4));
+      const only = a.agents?.length ? new Set(a.agents) : null;
+
+      // Who is farming what, and how tough they are. Level IS max health.
+      const crew = [];
+      for (const [name, s] of sessions) {
+        if (only && !only.has(name)) continue;
+        if (!s.client || s.client.state !== 'game') continue;
+        const p = autopilotIfAny(name);
+        if (!p || p.mode !== 'farm' || !p.policy.hunt) continue;
+        crew.push({ agent: name, character: s.client.me?.name ?? null, hunt: p.policy.hunt,
+                    level: s.client.vitals()?.health?.max ?? 0, at: s.world?.room?.num ?? null, p });
+      }
+      if (!crew.length) return { assigned: [], note: 'no farming keepers to place' };
+
+      // The prey's share of its room's table — the same ranking huntingGrounds uses,
+      // recomputed here because we need the NUMBER, not the order.
+      const payingSlots = (roomNum, creature) => {
+        const here = spawns.rooms[roomNum] || [];
+        const total = here.reduce((n, x) => n + (x.chance ?? 0), 0) || 100;
+        const mine = here.filter(x => (x.creature || '').toLowerCase().includes(String(creature).toLowerCase()));
+        const chance = mine.reduce((n, x) => n + (x.chance ?? 0), 0);
+        const cap = Math.max(...here.map(x => x.cap ?? 0), 0);
+        return +(cap * (chance / total)).toFixed(2);
+      };
+
+      const out = [], byRoom = {};
+      // ONE OCCUPANCY COUNT PER ROOM, SHARED ACROSS PREY GROUPS. A room can generate
+      // more than one creature — the Tos gate is 70% giant rat and 30% centipede — so
+      // counting per group let the rat hunters and the centipede hunters each fill it
+      // to the cap independently and put five characters in a room limited to four.
+      // The cap is about how many bodies are competing for one spawn table, and the
+      // table does not care what each of them came for.
+      const taken = {};
+      for (const hunt of [...new Set(crew.map(c => c.hunt))]) {
+        const group = crew.filter(c => c.hunt === hunt);
+        // One ceiling for the group, the strictest, so nobody is sent somewhere the
+        // weakest of them could not survive.
+        const ceiling = Math.min(...group.map(c => c.level + (c.p.policy.maxThreatOver ?? 6)));
+        const rooms = huntingGrounds(spawns, hunt, { maxDanger: ceiling, limit: 24 })
+          .filter(r => !r.rejected)
+          .map(r => ({ room: r.room, room_name: r.room_name, slots: payingSlots(r.room, hunt) }))
+          .filter(r => r.slots > 0)
+          .sort((x, y) => y.slots - x.slots);
+        if (!rooms.length) {
+          for (const c of group) out.push({ ...c, p: undefined, room: null, why: `nothing safe generates ${hunt} below level ${ceiling}` });
+          continue;
+        }
+        // Keep a character where it already stands when that room is in the set and
+        // has space — travel is the expensive part and every hop is a chance to die.
+        const has = r => taken[r.room] ?? 0;
+        const place = (c) => {
+          const here = rooms.find(r => r.room === c.at && has(r) < perRoom);
+          if (here) { taken[here.room] = has(here) + 1; return here; }
+          const open = rooms.filter(r => has(r) < perRoom);
+          // CONSOLIDATE BEFORE SPREADING. Ranked purely on prey-per-character it opens
+          // a fresh room for every spare body, because an empty room always has the
+          // best ratio — which put one character alone in Barloque and another alone in
+          // Ilerian Woods, each a long walk through the rooms that have been killing
+          // them. Only open a new room once the ones the fleet already occupies are
+          // full: fewer rooms is fewer journeys, and the journeys are what kills.
+          const inUse = open.filter(r => has(r) > 0 || group.some(g => g.at === r.room));
+          const best = (inUse.length ? inUse : open)
+            // Fewest characters per PAYING slot wins, so the big rooms take more bodies
+            // and the thin ones are not overloaded just because they rank.
+            .sort((x, y) => (y.slots / (has(y) + 1)) - (x.slots / (has(x) + 1)))[0];
+          if (!best) return null;
+          taken[best.room] = has(best) + 1;
+          return best;
+        };
+        // Place the characters already standing somewhere valid FIRST, so they claim
+        // the room they are in before a wanderer takes the last slot and forces them
+        // to walk. Ordering is otherwise by agent name, so the same fleet in the same
+        // state always produces the same plan — a plan you cannot reproduce is one you
+        // cannot review.
+        const settled = c => (rooms.some(r => r.room === c.at) ? 0 : 1);
+        for (const c of group.sort((x, y) => settled(x) - settled(y) || x.agent.localeCompare(y.agent))) {
+          const r = place(c);
+          out.push({ agent: c.agent, character: c.character, hunt, was_at: c.at,
+                     room: r?.room ?? null, room_name: r?.room_name ?? null,
+                     slots: r?.slots ?? null, moves: r ? r.room !== c.at : null,
+                     why: r ? undefined : `every room for ${hunt} is already at ${perRoom}` });
+          if (r) (byRoom[`${r.room} ${r.room_name}`] ||= []).push(c.character || c.agent);
+        }
+      }
+
+      if (a.apply) {
+        for (const o of out) {
+          if (o.room == null) continue;
+          const p = autopilotIfAny(o.agent);
+          if (!p) continue;
+          p.policy.assignedRoom = o.room;
+          rememberAutopilot(o.agent, { mode: p.mode, policy: { ...p.policy } });
+          if (a.travel && o.moves) {
+            const s = session(o.agent);
+            try { s.startJob('travel', `walk to ${o.room_name}`, () => s.travel(o.room, { maxHops: 20 })); }
+            catch { /* already busy — the assignment alone will carry it there */ }
+          }
+        }
+      }
+
+      return {
+        applied: !!a.apply, travelling: !!(a.apply && a.travel),
+        max_per_room: perRoom,
+        rooms: Object.fromEntries(Object.entries(byRoom).map(([k, v]) => [k, v.length + ': ' + v.join(', ')])),
+        assigned: out,
+        unplaced: out.filter(o => o.room == null),
+        note: a.apply
+          ? 'assignments written. They bite when a keeper next has to relocate; `travel` sends them now'
+          : 'plan only — nothing was changed. Call again with apply:true',
       };
     },
   },

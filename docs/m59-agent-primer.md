@@ -292,7 +292,17 @@ Use `walk_to`; it routes around walls. Use the picture to decide *where* to go.
 
 ## Combat
 
-`Player.TryAttack` (`player.kod:3960`) checks, in order. Knowing the order matters
+Before any of the checks below, `UserAttack` (`user.kod:4663`) asks whether you can
+lift a weapon at all — `PFLAG_NO_FIGHT`, refused with
+`"You find yourself unable to lift your weapon."` **Resting sets that flag**
+(`player.kod:1162`), together with `PFLAG_NO_MOVE`, and nothing clears resting except
+standing up or logging off. So a rest that was interrupted, or a safe spot you sat down
+in and never got back up from, turns every swing into that line — and the combat log
+reads like a fight going badly rather than like a fight not happening. `fight` stands
+you up and takes the round again when it sees it. Hold, Dazzle, Blind and a DM freeze
+set the same flag and standing will not clear those.
+
+`Player.TryAttack` (`player.kod:3960`) then checks, in order. Knowing the order matters
 because the first failing check is the only one you hear about.
 
 1. **Not yourself.** Refused with a message.
@@ -832,6 +842,16 @@ So getting where you want is a timing problem: `look_at` the rip repeatedly, and
 it reads as your destination, walk onto it before the next swap. You have between 5
 and 10 seconds, unknown which — and walking there is a second per square, so **stand
 adjacent first and check from there**, not from across the room.
+
+**Stand up before you try any of this.** Resting sets `PFLAG_NO_MOVE`
+(`ResetPlayerFlagList`, `player.kod:1162`), and a move request from a player carrying
+that flag is not refused with a message — `user.kod:2988` puts you back on the square
+you are already on and returns. Nothing clears resting on death; only logging off does
+(`UserLogoffHook`, `player.kod:1913`). So a character killed *while resting* wakes up
+here still sitting down, walks nowhere, never lands on a portal, and every portal in
+the pentagram looks unlit. `escape_underworld` sends `stand` first for exactly this
+reason, and standing when already standing costs nothing — `UC_STAND` is `StopResting`,
+which returns immediately when there is no rest timer.
 
 An agent that ignores portals and dies is stuck in the Underworld permanently.
 

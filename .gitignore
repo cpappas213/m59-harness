@@ -25,6 +25,10 @@ node_modules/
 # Which process m59-service.mjs last started, per fleet. Runtime state, and wrong the
 # moment it is read on any other machine.
 /substrate/*.pid
+# Which fleet THIS checkout means when nothing says otherwise (see m59-fleetpath.mjs).
+# No secret in it — one name — but it is one machine's answer, and committing it would
+# point a stranger's tools at a roster they do not have.
+/substrate/fleet-default
 /commissions/
 
 # The account passwords for a fleet made by tools/m59-makefleet.mjs. This is the
