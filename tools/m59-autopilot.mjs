@@ -22,7 +22,7 @@
 
 import * as skills from './m59-skills.mjs';
 import { OF, affordances } from './m59-parse.mjs';
-import { loadSpawns, huntingGrounds, roomThreats, goalYield } from './m59-spawns.mjs';
+import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe } from './m59-spawns.mjs';
 import { findPath } from './m59-map.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
 import { inboxIfAny } from './m59-inbox.mjs';
@@ -188,6 +188,14 @@ export class Autopilot {
       // its 90% sword for ever, because ranking by proficiency is a feedback loop that
       // only ever rewards what you are already good at.
       weaponPriority: null,
+      // KILL WHAT WE DO NOT WANT, TO KEEP THE ROOM PRODUCING WHAT WE DO. The spawn cap
+      // is a room-wide total, so a creature we step over is a slot our prey cannot use.
+      // Off makes the keeper ignore weak creatures and slowly suffocate its own hunting
+      // ground, which is what it did.
+      clearWeak: true,
+      // The karma school this character is protecting: 'good', 'evil', 'neutral', or
+      // null for none. Only ever used to REFUSE a kill — it never picks prey.
+      karma: null,
       // Drop junk, and weapons the server has told us are broken. A broken weapon is
       // NOT renamed (weapon.kod:788 changes only the icon), so it keeps out-scoring the
       // working one in the pack and cannot be recognised except by having been refused.
@@ -1592,6 +1600,67 @@ export class Autopilot {
     return this.stalledSince ? `stuck: ${this.stalledWhy}` : 'waiting';
   }
 
+  // THE ROOM HAS FILLED UP WITH THINGS WE DECLINED TO KILL.
+  //
+  // The cap is a room-wide TOTAL (monsroom.kod:242) and the generator is gated on it
+  // before it rolls the table at all, so ignoring a creature does not leave more room
+  // for the one you want — it leaves less. A fleet hunting centipedes and stepping over
+  // baby spiders ends up in a room of baby spiders and then a room of nothing.
+  //
+  // AND LEAVING DOES NOT FIX IT. This is the part that reads backwards: LastUserLeft
+  // (monsroom.kod:353) starts the 3-minute reload timer ONLY when piMonster_count = 0,
+  // and otherwise just deletes the generation timer. The comment says why — "to prevent
+  // endless exp boosting" — the game is deliberately stopping you from resetting a room
+  // by walking out of it. A room abandoned while full stays full, with the generator
+  // switched off, for as long as nobody kills anything in it.
+  //
+  // So clearing is not an optimisation, it is the only mechanism. Leaving is what you do
+  // when you CANNOT clear, and it should be understood as giving the room up rather than
+  // as resetting it.
+  capBlockers(room) {
+    const c = this.s.client;
+    const spawns = loadSpawns(SPAWN_FILE);
+    const cap = roomCap(spawns, room?.num);
+    if (!cap || !c?.room) return null;
+    const mons = [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER));
+    const present = mons.length;
+    const status = { cap, present, full: present >= cap, clearable: [], blocked: [] };
+    if (!status.full) return status;
+
+    const want = String(this.policy.hunt || '').toLowerCase();
+    const level = c.vitals?.()?.health?.max ?? 0;
+    const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
+    const seen = new Set();
+    for (const o of mons) {
+      const name = c.rsc.get(o.nameRsc) || '';
+      const key = name.toLowerCase();
+      if (!name || seen.has(key)) continue;
+      seen.add(key);
+      if (want && key.includes(want)) continue;          // our prey is not a blocker
+      const info = Object.values(spawns.creatures ?? {})
+        .find(x => x.name.toLowerCase() === key);
+      const lvl = info?.level ?? null;
+      const count = mons.filter(m => (c.rsc.get(m.nameRsc) || '').toLowerCase() === key).length;
+      const row = { name, level: lvl, karma: info?.karma ?? null, count };
+      // The two exceptions, and they are genuinely different. Karma is a decision the
+      // owner made about what this character is; danger is a fact about the room.
+      if (!karmaSafe(info?.karma, this.policy.karma)) {
+        status.blocked.push({ ...row, why: `killing it moves karma the wrong way for a ` +
+                                            `${this.policy.karma} character (its karma is ${info?.karma})` });
+      } else if (ceiling != null && lvl != null && lvl > ceiling) {
+        status.blocked.push({ ...row, why: `level ${lvl} is above the safety band of ${ceiling}` });
+      } else {
+        status.clearable.push(row);
+      }
+    }
+    // Most numerous first: the point is to free slots, and eight of one thing is where
+    // the slots are.
+    status.clearable.sort((a, b) => b.count - a.count);
+    status.blocked.sort((a, b) => b.count - a.count);
+    return status;
+  }
+
   // ------------------------------------------------------------------ post-mortem
   //
   // WHAT WAS HAPPENING WHEN IT DIED, written down while it is still true.
@@ -2600,7 +2669,40 @@ export class Autopilot {
         if (freed.ok) this.progress('made room in bags'); else this.noProgress('bags full and could not make room');
         return;
       }
-      const found = skills.findCreature(s, this.policy.hunt);
+      let found = skills.findCreature(s, this.policy.hunt);
+      this.clearing = null;
+
+      // NOTHING TO HUNT — BUT IS THE ROOM EMPTY, OR IS IT FULL OF THE WRONG THING?
+      // Those look identical from here and call for opposite moves. See capBlockers().
+      if (!found.length && this.policy.clearWeak !== false) {
+        const capped = this.capBlockers(room);
+        if (capped?.full && capped.clearable.length) {
+          const target = capped.clearable[0];
+          this.clearing = target.name;
+          found = skills.findCreature(s, target.name);
+          if (found.length)
+            this.note('clearing the room so it can spawn again', {
+              killing: target.name, of_them: target.count,
+              room: room?.name, at_cap: `${capped.present}/${capped.cap}`,
+              hunting: this.policy.hunt,
+              why: 'the cap is a room-wide total, so what we decline to kill is what ' +
+                   'stops our prey appearing. Leaving would not reset it.' });
+        } else if (capped?.full && capped.blocked.length) {
+          // Cannot clear it, so the room is finished for us — and it will still be
+          // finished when we come back, because an abandoned full room keeps its
+          // generator switched off. Go, and prefer somewhere else next time.
+          this.note('this room is capped by things we will not fight', {
+            room: room?.name, at_cap: `${capped.present}/${capped.cap}`,
+            blocked_by: capped.blocked.map(b => `${b.count}x ${b.name} — ${b.why}`),
+            why: 'the generator is gated on the room total, so nothing new spawns while ' +
+                 'these are alive. Leaving does NOT reset it (monsroom.kod:353 only ' +
+                 'reloads a room left with zero monsters) — this is giving it up.' });
+          this.cappedRooms = (this.cappedRooms ?? new Set()).add(room?.num);
+          if (this.policy.roam) { await this.roam(room); return; }
+          this.noProgress('room capped by creatures we will not fight');
+        }
+      }
+
       if (!found.length) {
         this.emptyPasses++;
         // Monsters do come back, so an empty room is not a dead end — but standing in
@@ -2764,10 +2866,13 @@ export class Autopilot {
       const adjacent = here ? [...c.room.objects.values()].filter(o =>
         o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER) &&
         Math.hypot(o.col - here.col, o.row - here.row) <= REACH) : [];
-      const want = String(this.policy.hunt || '').toLowerCase();
+      const want = String(this.clearing || this.policy.hunt || '').toLowerCase();
       const bystander = adjacent.find(o =>
         !(c.rsc.get(o.nameRsc) || '').toLowerCase().includes(want));
-      const engageName = bystander ? c.rsc.get(bystander.nameRsc) : this.policy.hunt;
+      // `clearing` is a target for THIS PASS only — a creature we are killing to free
+      // the room's cap, not a change of orders. policy.hunt is never rewritten by it.
+      const engageName = bystander ? c.rsc.get(bystander.nameRsc)
+                                   : (this.clearing || this.policy.hunt);
       if (bystander)
         this.note('hitting back', { at: engageName, instead_of: this.policy.hunt,
                                     why: 'it is adjacent and attacking; ignoring it is how these characters die' });

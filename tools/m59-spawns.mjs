@@ -306,6 +306,42 @@ export function preyFor(spawns, level, { want = null, over = 6, limit = 6 } = {}
           'keeper must be set to withdraw early' }));
 }
 
+// THE ROOM'S TOTAL MONSTER CAP, and it is a TOTAL — not a per-creature one.
+//
+// monsroom.kod:242 IsMonsterCountBelowMax gates the WHOLE generator on
+// `piMonster_count < piMonster_count_max`, and only then rolls the weighted table to
+// decide which creature. So the room does not keep a quota per species: whatever is
+// standing in it occupies the same pool.
+//
+// The consequence is the one nobody plans for. A fleet that hunts centipedes and ignores
+// baby spiders does not get a room of centipedes — it gets a room of baby spiders, and
+// then a room of nothing, because the spiders it declined to kill fill the cap and the
+// generator stops rolling at all. Found live: East Merchant Way, cap 10, eight baby
+// spiders and two centipedes, with five characters in it hunting centipedes.
+export function roomCap(spawns, roomNum) {
+  const list = spawns?.rooms?.[roomNum];
+  if (!list?.length) return null;
+  for (const e of list) if (e.cap != null) return e.cap;
+  return null;
+}
+
+// WOULD KILLING THIS MOVE OUR KARMA THE WRONG WAY?
+//
+// A kill is an act worth the NEGATIVE of the victim's karma, so killing something
+// positive pushes you evil and killing something negative pushes you good. `want` is
+// the school being protected, and it reads backwards for exactly that reason.
+//
+// Unknown karma is NOT treated as forbidden. A prohibition invented from missing data
+// would quietly stop a character clearing a room, and the failure would look like
+// idleness rather than like a rule.
+export function karmaSafe(creatureKarma, want) {
+  if (!want || creatureKarma == null) return true;
+  if (want === 'evil') return creatureKarma > 0;
+  if (want === 'good') return creatureKarma < 0;
+  if (want === 'neutral') return creatureKarma === 0;
+  return true;
+}
+
 // What is in a room, worst first. The other half of the same question.
 export function roomThreats(spawns, roomNum) {
   const list = spawns?.rooms?.[roomNum];

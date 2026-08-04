@@ -24,6 +24,8 @@ import {
 } from './m59-skills.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
 import { RoomGeometry } from './m59-roo.mjs';
+import { roomCap, karmaSafe } from './m59-spawns.mjs';
+import { OF } from './m59-parse.mjs';
 import { nearestSafeSpot } from './m59-safespots.mjs';
 
 let pass = 0, fail = 0;
@@ -342,6 +344,88 @@ console.log('\nthe post-mortem');
   ok('a pass that decided nothing is "stalled", not null', k3.lastDoing === 'stalled');
   ok('and degrades to nulls rather than throwing on an empty history',
      live.where === null && live.vitals.health_per_second === null);
+}
+
+console.log('\nthe room that filled up with what nobody would kill');
+{
+  // East Merchant Way as found live: cap 10, and ten monsters in it — eight baby
+  // spiders nobody wanted and two centipedes everybody did.
+  // The REAL flag bits, imported rather than guessed. I first wrote these as 0x200/0x400
+  // from memory; they are 0x08 and 0x04, and a fixture with invented bits would have
+  // passed while testing nothing.
+  const OF_ATTACKABLE = OF.ATTACKABLE, OF_PLAYER = OF.PLAYER;
+  const spawns = {
+    creatures: {
+      centipede:   { name: 'centipede', cls: 'Centipede', level: 30, karma: 15, sites: [] },
+      babyspider:  { name: 'baby spider', cls: 'BabySpider', level: 25, karma: -10, sites: [] },
+      thrasher:    { name: 'thrasher', cls: 'Thrasher', level: 150, karma: -75, sites: [] },
+    },
+    rooms: { 554: [{ creature: 'centipede', cls: 'Centipede', level: 30, chance: 35, cap: 10, huntable: true },
+                   { creature: 'baby spider', cls: 'BabySpider', level: 25, chance: 65, cap: 10, huntable: true }] },
+    danger: {},
+  };
+  ok('roomCap reads the room-wide total', roomCap(spawns, 554) === 10);
+  ok('and null for a room with no generator', roomCap(spawns, 999) === null);
+
+  // A keeper standing in a full room. Objects are id -> {nameRsc, flags}.
+  const mk = (counts, policy = {}) => {
+    const objs = new Map();
+    let id = 100;
+    for (const [name, n] of Object.entries(counts))
+      for (let i = 0; i < n; i++) objs.set(++id, { id, nameRsc: name, flags: OF_ATTACKABLE });
+    objs.set(1, { id: 1, nameRsc: 'Beaker', flags: OF_ATTACKABLE | OF_PLAYER });   // a fleetmate
+    const k = new Autopilot({ name: 't6', world: { room: { num: 554 } },
+      client: { selfId: 9, room: { objects: objs }, rsc: { get: r => r },
+                vitals: () => ({ health: { value: 25, max: 25 } }) } }, {});
+    Object.assign(k.policy, { hunt: 'centipede', maxThreatOver: 6 }, policy);
+    return k;
+  };
+
+  const full = mk({ 'baby spider': 8, centipede: 2 });
+  const st = full.capBlockers({ num: 554 });
+  ok('the room reads as full', st.full === true && st.present === 10, JSON.stringify(st));
+  ok('fleetmates do not count toward the cap', st.present === 10);
+  ok('our own prey is not counted as a blocker',
+     !st.clearable.some(b => b.name === 'centipede') && !st.blocked.some(b => b.name === 'centipede'));
+  ok('the baby spiders are clearable', st.clearable[0]?.name === 'baby spider');
+  ok('and it knows how many there are', st.clearable[0].count === 8);
+
+  const notFull = mk({ 'baby spider': 3, centipede: 2 });
+  ok('a room below cap is not full and offers nothing to clear',
+     notFull.capBlockers({ num: 554 }).full === false);
+
+  // EXCEPTION 1 — karma. A kill is worth the NEGATIVE of the victim's karma.
+  ok('killing negative-karma pushes you good, so an evil character refuses',
+     karmaSafe(-10, 'evil') === false);
+  ok('and a good character is happy to', karmaSafe(-10, 'good') === true);
+  ok('positive-karma is the mirror', karmaSafe(15, 'evil') === true && karmaSafe(15, 'good') === false);
+  ok('a neutral character only takes karma-0 prey',
+     karmaSafe(0, 'neutral') === true && karmaSafe(-10, 'neutral') === false);
+  ok('no school means no prohibition', karmaSafe(-10, null) === true);
+  ok('UNKNOWN karma is not a prohibition — that would stall a character silently',
+     karmaSafe(null, 'good') === true);
+  const good = mk({ 'baby spider': 8, centipede: 2 }, { karma: 'evil' });
+  const gst = good.capBlockers({ num: 554 });
+  ok('an evil character will not clear baby spiders',
+     gst.clearable.length === 0 && gst.blocked[0]?.name === 'baby spider', JSON.stringify(gst));
+  ok('and says which exception it was', /karma/.test(gst.blocked[0].why));
+
+  // EXCEPTION 2 — too dangerous.
+  const scary = mk({ thrasher: 10 });
+  const sst = scary.capBlockers({ num: 554 });
+  ok('a level-150 blocker is not cleared by a level-25 character',
+     sst.clearable.length === 0 && sst.blocked[0]?.name === 'thrasher');
+  ok('and says it was the safety band, not karma',
+     /safety band/.test(sst.blocked[0].why), sst.blocked[0].why);
+
+  // Most numerous first: the point is freeing slots.
+  // Ten, because nine would not be full and the whole block would silently test nothing.
+  const mixed = mk({ 'baby spider': 2, thrasher: 1, rat: 7 }, { hunt: 'centipede' });
+  const mst = mixed.capBlockers({ num: 554 });
+  ok('the commonest clearable comes first', mst.clearable[0].name === 'rat',
+     JSON.stringify(mst.clearable.map(x => `${x.count}x ${x.name}`)));
+  ok('an unknown creature is still clearable — no level means no band to exceed',
+     mst.clearable.some(x => x.name === 'rat'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
