@@ -18,24 +18,24 @@
 </header>
 <main>
 <p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › thrasher</p>
-<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/res0001a_g1.png" alt="thrasher" width="162" height="230"></div><div class="heroText"><h1>thrasher</h1><p class="lede">The powerful smell of rotted flesh and embalming herbs assault your nostrils. This shambling horror in front of you seems like it was crafted in madness, and birthed in nightmares. Various limbs, none of them matching, sprout from this monster in disarray, and in its eye a strange malignance glows. Run for your life.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Evil</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">0</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">-75</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">thrasher</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>teotixleoc</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
-                = 3 × 25 + 60 × 0
-                = 75
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/res0001a_g1.png" alt="thrasher" width="162" height="230"></div><div class="heroText"><h1>thrasher</h1><p class="lede">The powerful smell of rotted flesh and embalming herbs assault your nostrils. This shambling horror in front of you seems like it was crafted in madness, and birthed in nightmares. Various limbs, none of them matching, sprout from this monster in disarray, and in its eye a strange malignance glows. Run for your life.</p><div class="tags"><span class="tag ">Level 150</span><span class="tag ">Difficulty 7</span><span class="tag ">Evil</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">150</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">7</div></div><div class="fact"><div class="lbl">Health</div><div class="val">135–225</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">8–19</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">-75</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">fast</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">thrasher</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>teotixleoc</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 150 + 60 × 7
+                = 870
 
-health          = Fuzzy(level) = 19–31
-damage per hit  = Fuzzy(level / random(10,15))  = 1–3
-dodge           = difficulty × 10 = 0</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
+health          = Fuzzy(level × 120/100) = 135–225
+damage per hit  = Fuzzy(level / random(10,15))  = 8–19
+dodge           = difficulty × 10 = 70</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
 <thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
-<tbody><tr><td class="">Its chance to hit you</td><td class="num ">10%</td></tr>
-<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
-<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
-<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.2</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">81%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">38%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">10</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">10.9</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
 offence 605. Those are the same on every page in this bestiary, so the percentages
 are directly comparable between creatures. Armour is not included — see
 <a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>bludgeon</strong> damage. Armour resists by type, so what you wear against this creature matters more than
 how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
-       = bound(1 + 25/55 + random(0, 0/3), $, 6)
-       = 1 item
+       = bound(1 + 150/55 + random(0, 7/3), $, 6)
+       = 3–5 items
 each roll:  iRnd = random(0, 100); walk the table accumulating weights;
             the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/thrasht.kod:11</p><div class="tablewrap"><table class="data">
 <thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
@@ -50,7 +50,7 @@ each roll:  iRnd = random(0, 100); walk the table accumulating weights;
 <tr><td class="" data-sort="Money"><a href="../items/money.html">shilling</a></td><td class="num " data-sort="3.96">4.0%</td><td class="">151–451 shillings</td><td class=""><code>thrasht.kod:39</code></td></tr>
 <tr><td class="" data-sort="BerserkerRing"><a href="../items/berserkerring.html">Berserker Ring</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>thrasht.kod:40</code></td></tr>
 <tr><td class="" data-sort="MysticSword"><a href="../items/mysticsword.html">mystic sword</a></td><td class="num " data-sort="3.96">4.0%</td><td class=""></td><td class=""><code>thrasht.kod:41</code></td></tr></tbody></table></div><div class="formula">shillings = 1 + (MoneyFactor × 2 × bound(random(level/2, 3×level/2), 1, ∞)) / 100
-          = 151–451 at level 25     % MoneyFactor = 100</div>
+          = 151–451 at level 150     % MoneyFactor = 100</div>
 <p class="cite">kod/object/passive/trestype.kod:302</p><div class="note">Before the table is consulted at all, a player who lands the kill has a
 <strong>6 in 400</strong> chance of getting an item-attributed — that is,
 enchanted — item instead, generated at difficulty seed 6.

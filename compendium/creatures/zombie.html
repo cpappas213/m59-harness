@@ -18,22 +18,50 @@
 </header>
 <main>
 <p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Bestiary</a> › zombie</p>
-<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/zombie_g1.png" alt="zombie" width="55" height="169"></div><div class="heroText"><h1>zombie</h1><p class="lede">Unfettered evil has brought the dead back to life in the form of this zombie. Rotten flesh, white and pulpy, clings to soft bone. Its watery eyes stare out, unseeing.</p><div class="tags"><span class="tag ">Level 25</span><span class="tag ">Difficulty 4</span><span class="tag ">Evil</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">25</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">4</div></div><div class="fact"><div class="lbl">Health</div><div class="val">19–31</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">1–3</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">-45</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">very_slow</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">none</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>ixleoc</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
-                = 3 × 25 + 60 × 4
-                = 315
+<div class="hero"><div class="portrait"><img class="icon" src="../assets/img/zombie_g1.png" alt="zombie" width="55" height="169"></div><div class="heroText"><h1>zombie</h1><p class="lede">Unfettered evil has brought the dead back to life in the form of this zombie. Rotten flesh, white and pulpy, clings to soft bone. Its watery eyes stare out, unseeing.</p><div class="tags"><span class="tag ">Level 55</span><span class="tag ">Difficulty 4</span><span class="tag ">Evil</span></div></div></div><div class="facts"><div class="fact"><div class="lbl">Level</div><div class="val">55</div></div><div class="fact"><div class="lbl">Difficulty</div><div class="val">4</div></div><div class="fact"><div class="lbl">Health</div><div class="val">50–83</div></div><div class="fact"><div class="lbl">Damage per hit</div><div class="val">3–6</div></div><div class="fact"><div class="lbl">Karma</div><div class="val">-45</div></div><div class="fact"><div class="lbl">Speed</div><div class="val sm">very_slow</div></div><div class="fact"><div class="lbl">Treasure</div><div class="val sm">zombie</div></div><div class="fact"><div class="lbl">Faction</div><div class="val sm">neutral</div></div></div><p>Known to the Koc'atan as <em>ixleoc</em>.</p><h2>Fighting it</h2><div class="formula">offence = defence = 3 × level + 60 × difficulty
+                = 3 × 55 + 60 × 4
+                = 405
 
-health          = Fuzzy(level) = 19–31
-damage per hit  = Fuzzy(level / random(10,15))  = 1–3
+health          = Fuzzy(level × 120/100) = 50–83
+damage per hit  = Fuzzy(level / random(10,15))  = 3–6
 dodge           = difficulty × 10 = 40</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:1433 <code class="k">GetOffense</code> · :1455 <code class="k">GetDefense</code> · :1488 <code class="k">GetDamage</code> · :4079 <code class="k">GetMaxHitPoints</code> · :4263 <code class="k">Fuzzy</code></p><div class="tablewrap"><table class="data">
 <thead><tr><th class="">Against the reference character</th><th class="num "></th></tr></thead>
-<tbody><tr><td class="">Its chance to hit you</td><td class="num ">29%</td></tr>
-<tr><td class="">Your chance to hit it</td><td class="num ">95%</td></tr>
-<tr><td class="">Swings it needs to kill you</td><td class="num ">65</td></tr>
-<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">0.6</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
+<tbody><tr><td class="">Its chance to hit you</td><td class="num ">38%</td></tr>
+<tr><td class="">Your chance to hit it</td><td class="num ">82%</td></tr>
+<tr><td class="">Swings it needs to kill you</td><td class="num ">29</td></tr>
+<tr><td class="">Expected damage to you per swing it takes</td><td class="num ">1.7</td></tr></tbody></table></div><p>The reference character is a mid-game character — 130 max health, dodge 50, parry 40, agility 40, stroke 50, proficiency 50, aim 40, giving defence 585 and
 offence 605. Those are the same on every page in this bestiary, so the percentages
 are directly comparable between creatures. Armour is not included — see
 <a href="../guides/armor.html">Armour</a> for what it subtracts.</p><p>It attacks with <strong>slash</strong> damage. Armour resists by type, so what you wear against this creature matters more than
-how much you wear.</p><h2>Where to find it</h2>
+how much you wear.</p><h2>What it drops</h2><div class="formula">rolls  = bound(1 + level/55 + random(0, difficulty/3), $, 6)
+       = bound(1 + 55/55 + random(0, 4/3), $, 6)
+       = 2–3 items
+each roll:  iRnd = random(0, 100); walk the table accumulating weights;
+            the first row whose running total reaches iRnd is what you get</div><p class="cite">kod/object/active/holder/nomoveon/battler/monster.kod:4964, :4973 · kod/object/passive/trestype.kod:284 <code class="k">GenerateTreasure</code> · kod/object/passive/trestype/zombiet.kod:11</p><div class="tablewrap"><table class="data">
+<thead><tr><th class="sortable" data-col="0">Item</th><th class="num sortable" data-col="1">Chance per roll</th><th class="sortable" data-col="2">Quantity</th><th class="sortable" data-col="3">Declared at</th></tr></thead>
+<tbody><tr><td class="" data-sort="RedMushroom"><a href="../items/redmushroom.html">red mushroom</a></td><td class="num " data-sort="26.733">26.7%</td><td class=""></td><td class=""><code>zombiet.kod:32</code></td></tr>
+<tr><td class="" data-sort="Waterskin"><a href="../items/waterskin.html">water skin</a></td><td class="num " data-sort="13.861">13.9%</td><td class=""></td><td class=""><code>zombiet.kod:33</code></td></tr>
+<tr><td class="" data-sort="Flask"><a href="../items/flask.html">flask</a></td><td class="num " data-sort="9.901">9.9%</td><td class=""></td><td class=""><code>zombiet.kod:34</code></td></tr>
+<tr><td class="" data-sort="Arsenic"><a href="../items/arsenic.html">flask</a></td><td class="num " data-sort="7.921">7.9%</td><td class=""></td><td class=""><code>zombiet.kod:35</code></td></tr>
+<tr><td class="" data-sort="Money"><a href="../items/money.html">shilling</a></td><td class="num " data-sort="7.921">7.9%</td><td class="">55–165 shillings</td><td class=""><code>zombiet.kod:36</code></td></tr>
+<tr><td class="" data-sort="PurpleMushroom"><a href="../items/purplemushroom.html">purple mushroom</a></td><td class="num " data-sort="5.941">5.9%</td><td class=""></td><td class=""><code>zombiet.kod:37</code></td></tr>
+<tr><td class="" data-sort="Sapphire"><a href="../items/sapphire.html">sapphire</a></td><td class="num " data-sort="5.941">5.9%</td><td class=""></td><td class=""><code>zombiet.kod:38</code></td></tr>
+<tr><td class="" data-sort="Bread"><a href="../items/bread.html">loaf of bread</a></td><td class="num " data-sort="5.941">5.9%</td><td class=""></td><td class=""><code>zombiet.kod:39</code></td></tr>
+<tr><td class="" data-sort="Emerald"><a href="../items/emerald.html">emerald</a></td><td class="num " data-sort="5.941">5.9%</td><td class=""></td><td class=""><code>zombiet.kod:40</code></td></tr>
+<tr><td class="" data-sort="ShadowAmulet"><a href="../items/shadowamulet.html">Amulet of Shadows</a></td><td class="num " data-sort="4.95">5.0%</td><td class=""></td><td class=""><code>zombiet.kod:41</code></td></tr>
+<tr><td class="" data-sort="BlueMushroom"><a href="../items/bluemushroom.html">blue mushroom</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>zombiet.kod:42</code></td></tr>
+<tr><td class="" data-sort="GoldShield"><a href="../items/goldshield.html">gold round shield</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>zombiet.kod:43</code></td></tr>
+<tr><td class="" data-sort="ChainArmor"><a href="../items/chainarmor.html">chain armor</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>zombiet.kod:44</code></td></tr>
+<tr><td class="" data-sort="Axe"><a href="../items/axe.html">axe</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>zombiet.kod:45</code></td></tr>
+<tr><td class="" data-sort="Hammer"><a href="../items/hammer.html">hammer</a></td><td class="num " data-sort="0.99">1.0%</td><td class=""></td><td class=""><code>zombiet.kod:46</code></td></tr></tbody></table></div><div class="formula">shillings = 1 + (MoneyFactor × 2 × bound(random(level/2, 3×level/2), 1, ∞)) / 100
+          = 55–165 at level 55     % MoneyFactor = 100</div>
+<p class="cite">kod/object/passive/trestype.kod:302</p><div class="note">Before the table is consulted at all, a player who lands the kill has a
+<strong>2 in 400</strong> chance of getting an item-attributed — that is,
+enchanted — item instead, generated at difficulty seed 2.
+<span class="cite">kod/object/passive/trestype/zombiet.kod:26</span></div><div class="note">Two rolls happen before either of those on every kill: a
+<strong>20%</strong> check for a game token, and a <strong>3%</strong> check for a newbie signet
+ring if the killer qualifies. Nothing drops at all from an illusion or a summoned creature.
+<span class="cite">kod/object/passive/trestype.kod:228, :246 · monster.kod:4944</span></div><h2>Where to find it</h2>
 <p>5 places in the world put this creature into play.
 <em>Share</em> is its weight in that room's spawn table — how often the generator picks it over
 everything else there.</p><div class="tablewrap"><table class="data">

@@ -71,10 +71,44 @@ export function inherited(db, c, varName, bag = 'classvars') {
   return null;
 }
 
+// THE SAME WALK, BUT LOOKING IN BOTH BAGS AT EACH STEP.
+//
+// A kod class may declare the same variable in either block, and which one it picks is
+// the author's habit rather than a rule: 64 monsters declare viLevel under `classvars:`
+// and nine declare it under `properties:`. Searching one bag across the whole chain
+// silently answers with an ANCESTOR'S value rather than the class's own, which is not a
+// missing lookup — it is a confident wrong number.
+//
+// That is exactly what happened. `Monster` sets viLevel = 25 (monster.kod:228) as the
+// default, so every one of those nine came back as a level-25 creature. The thrasher is
+// level 150. The bestiary rendered it as 25 and then derived its health, offence and
+// damage from 25, so the page understated a lethal monster by a factor of six and showed
+// its own `viLevel 55`/`150` row directly underneath, disagreeing with itself.
+//
+// The bag argument still means what it said for callers that pass one explicitly —
+// extract-treasure.mjs genuinely wants `properties` and nothing else. This is for the
+// callers that just want the value, whichever block the author happened to use.
+export function inheritedAny(db, c, varName, bags = ['classvars', 'properties']) {
+  if (!c) return null;
+  const want = varName.toLowerCase();
+  for (const step of c.chain) {
+    const k = cls(db, step);
+    if (!k) continue;
+    // Both bags at THIS step before moving up: a class's own declaration must beat an
+    // ancestor's in either direction, which is the whole point.
+    for (const bag of bags) {
+      for (const [key, v] of Object.entries(k[bag] ?? {})) {
+        if (key.toLowerCase() === want) return { name: key, ...v, from: k.name, file: k.file, bag };
+      }
+    }
+  }
+  return null;
+}
+
 // Numeric value of a classvar, resolved through inheritance.  `null` when the
 // class sets it to `$` (kod's nil) or when it is not a number.
 export function ivar(db, c, varName) {
-  const v = inherited(db, c, varName);
+  const v = inheritedAny(db, c, varName);
   if (!v) return null;
   if (v.expr === '$') return null;
   return v.value ?? null;
