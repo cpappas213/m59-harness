@@ -3173,10 +3173,31 @@ export class Autopilot {
     if (!this.armed()) {
       const ok = await this.armSelf().catch(() => false);
       if (ok && this.armed()) { this.progress('armed itself'); return; }
-      // Not enough mana to conjure one yet. Sit down somewhere safe and come back to it:
-      // resting is what restores mana, and there is nothing else worth doing unarmed.
+      // Not enough mana to conjure one yet. SIT DOWN — and do not let settle() decide
+      // whether that happens.
+      //
+      // Rowlf spent twenty minutes and 1078 passes stuck on exactly this. settle()
+      // answered "nowhere clear to rest here" three times and gave up, so the character
+      // stayed on its feet, where mana regenerates slowly enough that it climbed 1 to 14
+      // in twenty minutes — and needed 15. It then failed the roll (half cost) and began
+      // the climb again. settle() is choosing a good square with elbow room, which is
+      // the right question when picking a spot to fight from and the wrong one here:
+      // sitting anywhere in a room nothing spawns in beats standing in the best square
+      // of one.
       this.doing = 'recovering';
-      await this.settle('no weapon, resting for the mana to make one').catch(() => {});
+      // settle() returns {settled}, not a boolean — reading it as one would make this
+      // fallback dead code, which is exactly the kind of silent no-op this branch exists
+      // to stop happening.
+      const sat = await this.settle('no weapon, resting for the mana to make one')
+                            .catch(() => ({ settled: false }));
+      if (!sat?.settled && this.sanctuary()) {
+        await s.pacer.submit('rest', () => c.rest()).catch(() => {});
+        this.note('sitting down anywhere to regain mana', {
+          mana: c.vitals?.()?.mana?.value ?? null, needs: 15,
+          why: 'settle() found nowhere it liked, and standing up regenerates mana far too ' +
+               'slowly to ever reach the 15 this needs — sitting is what matters, not where',
+        });
+      }
       this.noProgress(`unarmed — ${c.vitals?.()?.mana?.value ?? 0} mana, needs 15 to make one`);
       return;
     }
