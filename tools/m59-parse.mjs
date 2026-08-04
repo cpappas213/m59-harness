@@ -255,10 +255,33 @@ export function parseCreate(body) {
   return done(r, { object: extractRoomObject(r) });
 }
 
-// BP_REMOVE (218) — HandleRemove, server.c:751.
-export function parseRemove(body) {
+// A payload that is one object id and nothing else. Three opcodes have this shape —
+// BP_REMOVE (218, HandleRemove server.c:751), BP_USE (203) and BP_UNUSE (204,
+// HandleUse/HandleUnuse server.c:1002/1015) — and all three refuse a payload that is
+// not exactly SIZE_ID, so the exactness check is the whole validation.
+export function parseObjectId(body) {
   const r = new Reader(body);
   return done(r, { id: objId(r.u32()) });
+}
+export const parseRemove = parseObjectId;
+
+// BP_USE_LIST (205) — HandleUseList, server.c:969.
+//
+// THE ONLY AUTHORITATIVE ANSWER TO "WHAT AM I WEARING". It is the server's own
+// plUsing list (user.kod:2643, ToCliUseList) sent whole: a count, then one id each.
+// Everything else an agent could use to guess — the name it asked to wield, the
+// absence of a refusal, the overlays on its own sprite — is inference. This is the
+// record itself.
+//
+// It costs nothing to keep current, because BP_REQ_INVENTORY replies with BOTH
+// ToCliInventory AND ToCliUseList (user.kod:955-957). Every inventory read the
+// harness already makes, including the keepalive's, carries this behind it.
+export function parseUseList(body) {
+  const r = new Reader(body);
+  const count = r.u16();
+  const ids = [];
+  for (let i = 0; i < count; i++) ids.push(objId(r.u32()));
+  return done(r, { count, ids });
 }
 
 // BP_MOVE (200) — HandleMove, server.c:684. The high bit of speed is a

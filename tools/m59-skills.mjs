@@ -171,6 +171,19 @@ export function weaponRanking(c, { priority = null } = {}) {
   return rows.sort((a, b) => (b.ability ?? -1) - (a.ability ?? -1) || b.base - a.base);
 }
 
+// THE SERVER'S OWN LIST OF WHAT IS EQUIPPED, or null if this client does not keep one.
+// Nothing below is allowed to infer the answer when this returns null — it says so
+// instead. See M59Client.equipment().
+export const equippedNow = (c) => (c?.using instanceof Set ? c.using : null);
+
+// The refusal you get for wielding something you are already wielding. Re-`use` is not
+// a toggle and not a no-op: TryUseItem runs CheckPosition, which counts the item
+// against its own slot (player.kod:3235), finds no room, and answers this
+// (player.kod:131). The old code sent it every single fight and read the refusal as
+// success, because the only text it checked for was the broken-weapon one.
+export const HANDS_FULL = /hands are too full/i;
+export const handsFullText = (t) => HANDS_FULL.test(t || '');
+
 export async function equipBest(s, { priority = null, maxTries = 4 } = {}) {
   const c = s.need();
   await s.pacer.submit('read', () => c.requestInventory());
@@ -183,25 +196,55 @@ export async function equipBest(s, { priority = null, maxTries = 4 } = {}) {
              note: 'nothing wieldable in the pack — you will fight with your fists, which ' +
                    'works but badly. Junk and weapons known to be broken are excluded.' };
 
+  // ALREADY HOLDING THE RIGHT THING. `fight` calls this before every engagement, so
+  // without the check the common case is a request spent on being told no — out of a
+  // budget of five a second, in the second before a fight starts.
+  const held = equippedNow(c);
+  if (held?.has(ranked[0].o.id))
+    return { wielding: ranked[0].name, id: ranked[0].o.id, verified: true,
+             already_wielded: true, skill: ranked[0].skill, ability: ranked[0].ability,
+             by: 'it was already in the server\'s use list — no request sent',
+             considered: ranked.map(x => x.name) };
+
   // TRY, THEN CHECK. The previous version sent `use` and reported the name it had picked
   // without ever reading the reply, so a shattered weapon was reported as wielded for as
   // long as the character carried it. That is the whole of the "it never re-equips" bug:
   // nothing was wrong with the choosing, and nothing ever noticed the refusal.
+  //
+  // "Checked" now means the server put the id in plUsing and said so on BP_USE — not
+  // merely that it did not complain. Those came apart in both directions: a refusal
+  // with no text at all still read as success, and a hands-full refusal read as success
+  // too because it is not the broken message.
   const rejected = [];
   for (const cand of ranked.slice(0, maxTries)) {
     const before = c.evSeq;
     await s.pacer.submit('use', () => c.use(cand.o.id));
-    const ev = await c.waitFor({ since: before, timeoutMs: 3000 });
+    // Wait for whichever comes first: the use-list moving, or the server saying why not.
+    const ev = await c.waitFor({ since: before, kinds: ['equipment', 'message'], timeoutMs: 3000 });
     const texts = ev.events.filter(e => e.text).map(e => e.text);
     if (texts.some(brokenWeaponText)) {
       broken.add(cand.o.id);
       rejected.push({ name: cand.name, id: cand.o.id, why: 'the server says it is broken' });
       continue;
     }
+    const now = equippedNow(c);
+    if (now && !now.has(cand.o.id)) {
+      rejected.push({ name: cand.name, id: cand.o.id,
+                      why: texts.find(handsFullText)
+                        ? 'refused: hands too full — something else is in the way, and it was ' +
+                          'not this weapon (we checked the use list first)'
+                        : texts[0] || 'the server never added it to the use list, and said nothing' });
+      continue;
+    }
     return {
-      wielding: cand.name, id: cand.o.id, verified: true,
+      wielding: cand.name, id: cand.o.id,
+      verified: !!now,
       skill: cand.skill, ability: cand.ability,
       ...(priority ? { by: 'the priority list given' } : { by: 'proficiency, then weapon class' }),
+      ...(now ? { confirmed_by: 'the server\'s use list (BP_USE)',
+                  equipped: [...now] }
+              : { note: 'NOT verified — this client keeps no use list, so all that is known ' +
+                        'is that the server did not refuse out loud.' }),
       ...(rejected.length ? { rejected } : {}),
       considered: ranked.map(x => x.name),
       messages: texts,
@@ -209,8 +252,9 @@ export async function equipBest(s, { priority = null, maxTries = 4 } = {}) {
   }
   return { wielding: null, verified: false, rejected,
            considered: ranked.map(x => x.name),
-           note: `every candidate was refused as broken (${rejected.length}). Fighting bare-handed; ` +
-                 'these should be dropped — see junkAndBroken().' };
+           note: `every candidate was refused (${rejected.length}) — see \`rejected\` for which ` +
+                 'were broken and which were blocked. Fighting bare-handed; the broken ones ' +
+                 'should be dropped, see junkAndBroken().' };
 }
 
 // What is in the pack that should not be: junk, and weapons the server has refused.
@@ -1104,12 +1148,17 @@ export async function sellAll(s, { merchant, keep = [], minPrice = 1 } = {}) {
   await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
 
   const keepRe = new RegExp([...keep, 'shilling', 'coin'].join('|'), 'i');
-  const wielded = new Set();      // anything we are using is worth keeping by default
+  // ANYTHING WE ARE WEARING IS NOT FOR SALE. This set used to be constructed empty and
+  // never filled, so the guard below was decorative: the armour on your back and the
+  // ring on your finger were as sellable as a rat pelt, protected only by whether their
+  // names happened to match `keep`. It is the server's use list now, so it is right by
+  // construction rather than by a name pattern somebody has to maintain.
+  const wielded = equippedNow(c) ?? new Set();
   const items = c.inventory
     .map(o => ({ o, name: c.rsc.get(o.nameRsc) }))
     .filter(x => !keepRe.test(x.name) && !wielded.has(x.o.id) && weaponScore(x.name) === 0);
 
-  if (!items.length) return { sold: [], note: 'nothing to sell that is not money or a weapon you are carrying' };
+  if (!items.length) return { sold: [], note: 'nothing to sell that is not money, equipment you are wearing, or a weapon you are carrying' };
 
   const sold = [], refused = [];
   let total = 0;

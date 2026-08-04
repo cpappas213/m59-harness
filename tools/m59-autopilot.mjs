@@ -76,11 +76,22 @@ const vigorPct = v => {
 // the bar a character cannot finish what it starts: it swings, runs dry, breaks off,
 // and recovers slower than it would have if it had simply waited.
 //
-// Seventy is chosen to be REACHABLE WITHOUT FOOD. Resting alone stops at the rest
-// threshold of 80, so a floor of 70 can always be met by sitting down; a floor of 100
-// could not, and would strand every character that has no food — which is currently
-// twenty of twenty-five.
-const MIN_FIGHT_VIGOR = 70;
+// Seventy WAS chosen to be reachable without food, and that turned out to be the wrong
+// thing to optimise. Resting alone stops at 80 of 200, so a floor of 70 meant every
+// character fought permanently exhausted — not occasionally, by accident, but as the
+// designed steady state — and then recovered slowly between fights because vigor is
+// what sets the regeneration rate. The floor was reachable; it was also useless.
+//
+// So the floor is now set by what a character needs to FIGHT WELL, and the food supply
+// is expected to meet it. That is not a free choice — everything above 80 has to be
+// eaten — which is exactly why the larder and the vigor floor are one problem.
+const MIN_FIGHT_VIGOR = 100;      // never start a fight below this while there is food
+const WANT_FIGHT_VIGOR = 140;     // what every pattern aims to set out at
+// THE ESCAPE HATCH, and the reason a hard floor of 100 does not deadlock the fleet.
+// With an empty larder the floor is unreachable by any action the keeper can take, and
+// holding out for it idles the character for ever — so an empty larder drops it to what
+// resting alone can actually deliver. This is a SUPPLY failure and is counted as one.
+const STARVED_FIGHT_VIGOR = 70;
 
 export const MODES = ['survive', 'farm', 'idle'];
 
@@ -106,7 +117,8 @@ export const STRATEGIES = {
 
   // Control. Rest when hurt, fight from whatever vigor resting gives you.
   baseline: {
-    fightAboveVigor: MIN_FIGHT_VIGOR, eatBeforeFighting: false, restInTown: true, sellLoot: false,
+    vigorFloor: WANT_FIGHT_VIGOR, vigorCeiling: 200,
+    eatBeforeFighting: true, restInTown: true, sellLoot: false,
     why: 'the obvious loop, and the thing every other pattern has to beat',
   },
   // Eat up to the stomach limit before going back out. Costs food; buys a faster
@@ -116,20 +128,21 @@ export const STRATEGIES = {
   // at the top of the band with an empty enough stomach to keep eating while
   // fighting, so the fighting stretch lasts as long as the food does.
   wellfed: {
-    vigorFloor: 120, vigorCeiling: 200,
+    vigorFloor: WANT_FIGHT_VIGOR, vigorCeiling: 200,
     eatBeforeFighting: true, restInTown: true, sellLoot: true,
     why: 'vigor sets the regeneration rate, so being well fed should mean both ' +
          'shorter recovery and more survivable fights — at the cost of food',
   },
   // Never walk back to town. Withdraw within the hunting area and rest there.
   fieldrest: {
-    fightAboveVigor: MIN_FIGHT_VIGOR, eatBeforeFighting: false, restInTown: false, sellLoot: false,
+    vigorFloor: WANT_FIGHT_VIGOR, vigorCeiling: 200,
+    eatBeforeFighting: true, restInTown: false, sellLoot: false,
     why: 'a town trip is several minutes of walking each way at one square a second; ' +
          'this trades safety and shopping for never paying that',
   },
   // The full economic loop: haul loot back, sell it, spend it on food, stay fed.
   trader: {
-    vigorFloor: 100, vigorCeiling: 180,
+    vigorFloor: WANT_FIGHT_VIGOR, vigorCeiling: 200,
     eatBeforeFighting: true, restInTown: true, sellLoot: true,
     maxCarry: 40,
     why: 'tests whether the money loop pays for itself — reagents and drops fund the ' +
@@ -138,7 +151,7 @@ export const STRATEGIES = {
   // Cooperative: heal each other, and hand herbs to the Shal'ille casters who need
   // them rather than selling into an NPC spread.
   coop: {
-    vigorFloor: 100, vigorCeiling: 180,
+    vigorFloor: WANT_FIGHT_VIGOR, vigorCeiling: 200,
     eatBeforeFighting: true, restInTown: true, sellLoot: false,
     medic: true, share: true,
     why: 'an NPC buys low and sells high; two players trading a herb for a loaf both ' +
@@ -322,6 +335,11 @@ export class Autopilot {
     // Consecutive failed attempts to reach a room, so a single transient miss does not
     // get mistaken for the room being unreachable. Cleared the moment one succeeds.
     this.relocFails = new Map();
+    // WHAT VIGOR THE FIGHTS ACTUALLY START AT — the number the floor exists to move,
+    // reported rather than assumed. `below_want` is the one to read: a floor nobody
+    // reaches is a wish, and the commonest reason to miss it is an empty larder.
+    this.vigor = { engagements: 0, total_at_engage: 0, lowest_at_engage: null,
+                   below_want: 0, waited: 0, starved_passes: 0, cooked: 0, cook_failed: 0 };
     this.emptyPasses = 0;
     this.roamedFrom = null;
     this.roamedRooms = 0;
@@ -434,13 +452,69 @@ export class Autopilot {
   // character oscillate across one number, which is the thrashing this replaces.
   //
   // Returns true if the caller should NOT start a fight this pass.
-  async provision(plan, v) {
+  // THE ONE PLACE THAT DECIDES HOW TIRED IS TOO TIRED, because there used to be two
+  // and they disagreed. provision() climbed to vigorFloor while the fight gate let the
+  // character swing at fightAboveVigor, so `wellfed` ate its way to 120 and then
+  // engaged at 70 anyway, and the whole strategy comparison was measuring nothing.
+  fightFloor(plan = STRATEGIES[this.policy.strategy] || {}) {
     const p = this.policy;
     // fightAboveVigor was the old single knob; it still works, as the floor.
-    // Never below the hard floor, whatever a strategy asks for. The variants that
-    // tested lower thresholds are settled: fighting tired loses to waiting.
-    const floor = Math.max(MIN_FIGHT_VIGOR,
+    const want = Math.max(MIN_FIGHT_VIGOR,
       p.vigorFloor ?? plan.vigorFloor ?? p.fightAboveVigor ?? plan.fightAboveVigor ?? 0);
+    // An empty larder puts the floor out of reach — resting stops at 80 — so holding
+    // out for it would idle the character for ever. Fall back to what resting can
+    // deliver, and COUNT it: this is the food supply failing, not a fighting decision,
+    // and it should show up as a supply number rather than as a quiet slowdown.
+    if (!skills.larderOf(this.s.client).length) {
+      this.vigor.starved_passes++;
+      return Math.min(want, STARVED_FIGHT_VIGOR);
+    }
+    return want;
+  }
+
+  // What `create food` eats: 2 ElderBerry and 2 Herbs, from OUR pack, and it refuses
+  // SILENTLY without them — so the count has to be checked before casting rather than
+  // inferred from a failure.
+  reagentCount() {
+    const c = this.s.client;
+    const n = (re) => (c?.inventory || [])
+      .filter(o => re.test(c.rsc.get(o.nameRsc) || ''))
+      .reduce((t, o) => t + (o.amount || 1), 0);
+    return { elderberry: n(/elder\s?berry/i), herbs: n(/^herbs?$/i) };
+  }
+
+  // COOK. Returns true if we cast and something appeared, meaning the pass was spent.
+  async cookSomething() {
+    const s = this.s, c = s.client;
+    const r = this.reagentCount();
+    if (r.elderberry < 2 || r.herbs < 2) return false;
+    // c.spells is empty until asked for — reading it cold is the phantom "the spell
+    // did not encode" bug.
+    await s.pacer.submit('read', () => c.requestSpells()).catch(() => {});
+    await new Promise(x => setTimeout(x, 400));
+    const spell = (c.spells || []).find(sp => (c.rsc.get(sp.nameRsc) || '').toLowerCase() === 'create food');
+    if (!spell) return false;
+    const had = new Set((c.inventory || []).map(o => o.id));
+    await s.pacer.submit('cast', () => c.cast(spell.id, []), 1050);
+    await c.waitFor({ kinds: ['message', 'inventory'], timeoutMs: 4000 }).catch(() => {});
+    await new Promise(x => setTimeout(x, 1000));
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    const made = (c.inventory || []).filter(o => !had.has(o.id));
+    this.vigor.cooked += made.length ? 1 : 0;
+    if (!made.length) {
+      this.vigor.cook_failed++;
+      this.note('create food produced nothing', { had: r, mana: c.vitals?.()?.mana,
+        why: 'it refuses silently; the usual cause is the reagents having been spent or sold' });
+      return false;
+    }
+    this.note('made our own food', { made: made.map(o => c.rsc.get(o.nameRsc)), from: r });
+    this.progress('cooked');
+    return true;
+  }
+
+  async provision(plan, v) {
+    const p = this.policy;
+    const floor = this.fightFloor(plan);
     const ceiling = p.vigorCeiling ?? plan.vigorCeiling ?? 0;
     if (!floor && !ceiling) return false;              // baseline/fieldrest: unchanged
 
@@ -450,13 +524,21 @@ export class Autopilot {
     const best = larder[0]?.food ?? null;
 
     if (!best) {
-      // Out of food is a supply problem, not something the keeper can fix. Say it
-      // once and carry on fighting at whatever vigor resting gives — refusing to
-      // fight would just idle the character forever.
+      // MAKE SOME, IF WE CAN. Out of food used to be treated as purely a supply
+      // problem, which was true of a fleet that could not cast — and false of this
+      // one, where every character knows `create food` and spends all day picking up
+      // the two things it consumes. A cast is cheaper than a merchant, cheaper than
+      // asking another character, and available in the field where the alternative
+      // is a walk back through the rooms that keep killing them.
+      if (await this.cookSomething()) return true;   // spend this pass eating instead
+      // Genuinely nothing to eat and nothing to make it from. Say it once and carry
+      // on fighting at whatever vigor resting gives — refusing to fight would idle
+      // the character for ever. fightFloor() has already dropped to the starved floor.
       if (!this.warnedNoFood) {
         this.warnedNoFood = true;
         this.note('no food to raise vigor with', {
-          vigor, floor, ceiling,
+          vigor, floor, ceiling, reagents: this.reagentCount(),
+          why: 'the larder is empty and there are not 2 elderberry + 2 herbs to cast with',
           hint: 'inky cap mushrooms give the most vigor per unit of stomach (50/25)' });
       }
       this.climbing = false;
@@ -1982,6 +2064,24 @@ export class Autopilot {
             idle_passes: this.idlePasses, why: this.stalledWhy }
         : false,
       home_room: this.homeRoom,
+      // WHAT VIGOR IT IS ACTUALLY FIGHTING AT. Vigor sets how fast health comes back
+      // between fights, so a character that engages tired stays tired. `below_want`
+      // over `engagements` is the honest score; `starved_passes` says the reason is
+      // an empty pack rather than a bad threshold.
+      vigor: this.vigor.engagements || this.vigor.waited ? {
+        floor_now: this.fightFloor(), want: WANT_FIGHT_VIGOR,
+        engagements: this.vigor.engagements,
+        average_at_engage: this.vigor.engagements
+          ? Math.round(this.vigor.total_at_engage / this.vigor.engagements) : null,
+        lowest_at_engage: this.vigor.lowest_at_engage,
+        started_below_want: this.vigor.engagements
+          ? Math.round(100 * this.vigor.below_want / this.vigor.engagements) + '%' : null,
+        waited_for_vigor: this.vigor.waited,
+        starved_passes: this.vigor.starved_passes,
+        // Self-provisioning: how often it fed itself rather than needing a supply run.
+        cooked: this.vigor.cooked, cook_failed: this.vigor.cook_failed,
+        reagents: this.reagentCount(),
+      } : null,
       // WHERE IT WAS PUT, AND WHETHER THAT STUCK. Three numbers, in the order worth
       // arguing about: did the assignment work, does it work every time, and how does
       // it fail. `held` null means it has never had to relocate, which is the good
@@ -2890,8 +2990,9 @@ export class Autopilot {
       // character that has to leave the room to recover has to walk back afterwards
       // through everything it just walked past.
       const vigorNow = vigorOf(v);
-      const vigorFloor = Math.max(MIN_FIGHT_VIGOR, this.policy.fightAboveVigor ?? 0);
+      const vigorFloor = this.fightFloor();
       if (vigorNow != null && vigorNow < vigorFloor) {
+        this.vigor.waited++;
         this.doing = 'recovering';
         // A wall first, if one is going and we do not already have it — resting with
         // something adjacent is only safe behind one.
@@ -2990,6 +3091,16 @@ export class Autopilot {
       if (this.maybeTestSpot(adjacent)) return;
 
       this.doing = 'fighting';
+      // The measurement the vigor floor exists for: not what we intended to set out
+      // at, but what we actually swung at.
+      const vAt = vigorOf(this.s.client?.vitals?.() ?? {});
+      if (vAt != null) {
+        const V = this.vigor;
+        V.engagements++;
+        V.total_at_engage += vAt;
+        V.lowest_at_engage = V.lowest_at_engage == null ? vAt : Math.min(V.lowest_at_engage, vAt);
+        if (vAt < WANT_FIGHT_VIGOR) V.below_want++;
+      }
       const holding = !!this.hold;
       const f = await skills.fight(s, { target: engageName,
                                         preferId: bystander ? bystander.id : this.foeId,

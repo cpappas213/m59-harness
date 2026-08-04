@@ -4363,6 +4363,76 @@ const TOOLS = [
     },
   },
   {
+    name: 'quartermaster',
+    description:
+      'EVEN OUT THE SPELL REAGENTS ACROSS CHARACTERS WHO ARE ALREADY STANDING TOGETHER.\n' +
+      'Every character in this fleet knows `create food`, which consumes 2 ElderBerry and 2 Herbs ' +
+      'from its own pack and REFUSES SILENTLY without them — so a character with no reagents cannot ' +
+      'feed itself, cannot get vigor above the 80 that resting alone gives, and therefore fights ' +
+      'permanently tired while another character in the same room carries sixty herbs.\n' +
+      'It only pairs characters in the SAME ROOM. Reagents are not worth a cross-map walk through ' +
+      'the rooms that keep killing them, and the fleet is spread deliberately; this is the trade ' +
+      'that costs nothing. Run it after `spread`, or on any schedule — it is a no-op when everyone ' +
+      'has enough.\n' +
+      'Plans only unless apply is true.',
+    schema: { type: 'object', properties: {
+      want: { type: 'number', description: 'reagents of EACH kind a character should hold, default 6 — three castings' },
+      apply: { type: 'boolean', description: 'actually move them (default false — plan only)' },
+    } },
+    run: async (a) => {
+      const want = Math.max(2, num(a.want, 6));
+      const held = [];
+      for (const [name, s] of sessions) {
+        const c = s.client;
+        if (!c || c.state !== 'game') continue;
+        const n = re => (c.inventory || []).filter(o => re.test(c.rsc.get(o.nameRsc) || ''))
+                                           .reduce((t, o) => t + (o.amount || 1), 0);
+        held.push({ agent: name, character: c.me?.name ?? null, room: s.world?.room?.num ?? null,
+                    elderberry: n(/elder\s*berry/i), herbs: n(/^herbs?$/i) });
+      }
+      const moves = [];
+      for (const room of [...new Set(held.map(h => h.room).filter(r => r != null))]) {
+        const here = held.filter(h => h.room === room);
+        for (const kind of ['elderberry', 'herbs']) {
+          // Sort so the neediest is served by the richest, and stop as soon as the
+          // richest has nothing to spare — a donor is not allowed to make itself needy.
+          const needy = here.filter(h => h[kind] < want).sort((x, y) => x[kind] - y[kind]);
+          for (const n of needy) {
+            const donor = here.filter(h => h !== n && h[kind] - want >= 2)
+                              .sort((x, y) => y[kind] - x[kind])[0];
+            if (!donor) break;
+            const give = Math.min(donor[kind] - want, want - n[kind]);
+            if (give < 2) continue;
+            moves.push({ room, kind, from: donor.agent, from_name: donor.character,
+                         to: n.agent, to_name: n.character, amount: give });
+            donor[kind] -= give; n[kind] += give;
+          }
+        }
+      }
+      const done = [];
+      if (a.apply) {
+        for (const m of moves) {
+          // who_travels 'neither' — they are already in one room, and making anybody
+          // walk is exactly the cost this tool exists to avoid.
+          const r = await supplyBetween({ from: m.from, to: m.to, what: 'reagents',
+                                          amount: m.amount, who_travels: 'neither' })
+                          .catch(e => ({ supplied: false, reason: e.message }));
+          done.push({ ...m, supplied: !!r.supplied, why: r.supplied ? undefined : r.reason });
+        }
+      }
+      const short = held.filter(h => h.elderberry < 2 || h.herbs < 2);
+      return {
+        applied: !!a.apply, want_each: want,
+        moves: a.apply ? done : moves,
+        still_cannot_cast: short.map(h => `${h.character}@${h.room} (eb ${h.elderberry}, hb ${h.herbs})`),
+        note: moves.length
+          ? (a.apply ? 'moved; a character can now cast create food for itself'
+                     : 'plan only — call again with apply:true')
+          : 'nothing to do: nobody is short who shares a room with anybody who has spare',
+      };
+    },
+  },
+  {
     name: 'post_mortem',
     description:
       'WHAT WAS HAPPENING WHEN A CHARACTER DIED. One record per death, written at the moment ' +

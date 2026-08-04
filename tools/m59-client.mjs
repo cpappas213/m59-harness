@@ -29,6 +29,7 @@ import {
   parseChangeResource, parsePlayer, parseBuyList, parseStringMessage, parseSaid,
   parseLook, parseStat, parseStatGroup, parseSpells, parseSkills,
   parseOffer, parseOfferItems, parseInventoryAdd, encodeIdList, describeObject,
+  parseUseList, parseObjectId, affordances,
 } from './m59-parse.mjs';
 
 export { OF, KOD_FINENESS };
@@ -106,6 +107,20 @@ const SIZE_ID = 4, SIZE_LIST_LEN = 2, SIZE_STRING_LEN = 2, SIZE_AMOUNT = 4;
 // kod/include/blakston.khd
 const SAY_NAME = { 1:'say', 2:'yell', 3:'broadcast', 4:'group', 5:'resource',
                    6:'emote', 7:'message', 8:'group-one', 9:'dm', 10:'guild' };
+
+// WHICH OF THOSE IS A PERSON TALKING. The chat stream carries these and nothing else.
+//
+// The two left out are the ones where the server is speaking through an object rather
+// than a player relaying words: SAY_RESOURCE (5) is a canned resource string and
+// SAY_MESSAGE (7) is prose. Both arrive on the same opcode as speech and read like it,
+// which is exactly why they have to be excluded by number here — the untrusted-input
+// banner on the chat tools means "a player wrote this", and it stops meaning anything
+// the moment server narration is filed under it.
+//
+// SAY_DM (9) stays in. An admin talking to you is a person talking to you, and a
+// transcript that silently drops the one channel that can order a character about
+// would be missing the most important line in it.
+const IS_SPEECH = new Set([1, 2, 3, 4, 6, 8, 9, 10]);
 
 const u32 = n => { const b = Buffer.alloc(4); b.writeUInt32LE(n >>> 0, 0); return b; };
 const u16b = n => { const b = Buffer.alloc(2); b.writeUInt16LE(n & 0xffff, 0); return b; };
@@ -210,6 +225,24 @@ export class M59Client {
     this.evSeq = 0;
     this.waiters = [];
     this.parseErrors = [];                          // desync reports, never silent
+
+    // WHAT IS EQUIPPED, as the server has it. `using` is the server's own plUsing
+    // list, replaced whole by BP_USE_LIST and moved item-by-item by BP_USE and
+    // BP_UNUSE — never written by us on the strength of a request we sent. See
+    // equipment() for why that distinction is the entire point.
+    this.using = new Set();
+    this.usingAt = null;         // when the server last confirmed the set, changed or not
+    this.usingChangedAt = null;  // when it last actually differed
+
+    // CHAT IS ITS OWN STREAM. Player speech shares nothing but a socket with combat
+    // text, and the two arrive at wildly different rates: a single fight writes more
+    // lines than a character hears in an hour. Keeping them in one 500-entry ring
+    // means a sentence someone said is gone before anybody polls for it, evicted by
+    // our own swings. So speech gets its own ring and its own sequence, and nothing
+    // the world does to us can push it out.
+    this.chat = [];
+    this.maxChat = 300;
+    this.chatSeq = 0;
   }
 
   // Every perceived change lands here. MCP is request/response, so an agent can
@@ -228,6 +261,30 @@ export class M59Client {
   // Everything that happened after `since`. An agent's read loop is
   // `since = last.seq` — no event is seen twice and none is dropped.
   eventsSince(since = 0) { return this.events.filter(e => e.seq > since); }
+
+  // SPEECH, kept apart. Called only for the SAY_ types a person can actually produce
+  // — see the BP_SAID handler for which those are and why the other two are not.
+  //
+  // It still emits into the main stream as well, because `waitFor({kinds:'said'})` is
+  // how every existing caller blocks on a reply and that must keep working. The ring
+  // here is the durable copy: the event stream is a window on the last few seconds of
+  // a busy world, and this is the transcript.
+  noteChat(entry) {
+    const line = { seq: ++this.chatSeq, at: Date.now(), ...entry };
+    this.chat.push(line);
+    if (this.chat.length > this.maxChat) this.chat.splice(0, this.chat.length - this.maxChat);
+    this.onChat?.(line);
+    return line;
+  }
+
+  // The chat equivalent of eventsSince, with its own independent sequence. A caller
+  // polling chat and a caller polling events do not share a cursor and must not.
+  chatSince(since = 0, { channels = null, includeSelf = true } = {}) {
+    const want = channels && new Set([].concat(channels));
+    return this.chat.filter(l => l.seq > since
+      && (!want || want.has(l.channel))
+      && (includeSelf || !l.self));
+  }
 
   // The long poll. Resolves as soon as anything matching arrives, or at timeout
   // with whatever accumulated. Returning empty on timeout rather than throwing is
@@ -264,6 +321,85 @@ export class M59Client {
     this.parseErrors.push({ what, why, at: Date.now() });
     this.log(`PARSE ${what}: ${why}`);
     return false;
+  }
+
+  // WHAT IS CURRENTLY EQUIPPED. The server's answer, not ours.
+  //
+  // Every other route to this question in the harness was a guess, and each one was
+  // wrong in a way that took a while to notice:
+  //
+  //   * "the weapon equipBest last picked" — it reported the name it had chosen
+  //     without reading the reply, so a refusal left it naming a weapon the
+  //     character was not holding, for as long as it carried the thing.
+  //   * "the last `use` we sent did not come back broken" — the server refuses a
+  //     re-`use` of something already wielded with "your hands are too full"
+  //     (player.kod:131), which is not the broken message, so the guess said yes.
+  //   * "it is in the inventory" — the inventory is the pack. Wielding is a
+  //     different list entirely.
+  //
+  // `fresh_ms` is here so a caller can tell "nothing is equipped" from "nobody has
+  // asked yet". Those are not the same answer and must never render the same. The
+  // set starts empty and stays empty until the server says otherwise, so `known` is
+  // false until the first BP_USE_LIST lands.
+  equipment() {
+    const byId = new Map((this.inventory || []).map(o => [o.id, o]));
+    const items = [...this.using].map(id => {
+      const o = byId.get(id);
+      return {
+        id,
+        name: o ? this.rsc.get(o.nameRsc) : null,
+        ...(o ? { can: affordances(o.flags) } : {
+          // In `using` but not in the pack. Worth surfacing rather than hiding: it is
+          // what a stale inventory looks like, and it is also what a cursed item that
+          // equipped itself looks like before the next inventory read.
+          note: 'the server says this is equipped but it is not in our copy of the ' +
+                'pack — re-read the inventory',
+        }),
+      };
+    }).sort((a, b) => (a.name || '').localeCompare(b.name || '') || a.id - b.id);
+
+    return {
+      known: this.usingAt !== null,
+      equipped: items,
+      count: items.length,
+      fresh_ms: this.usingAt === null ? null : Date.now() - this.usingAt,
+      changed_ms: this.usingChangedAt === null ? null : Date.now() - this.usingChangedAt,
+      source: 'BP_USE_LIST/BP_USE/BP_UNUSE — the server\'s own plUsing list',
+      ...(this.usingAt === null ? {
+        note: 'NOT YET KNOWN. Nothing is being claimed here: no use-list has arrived. ' +
+              'Any inventory request brings one (user.kod:955), and the keepalive makes ' +
+              'one every 20s anyway.',
+      } : {}),
+    };
+  }
+
+  // Take the server's word for the equipped set and say what moved.
+  //
+  // `usingAt` advances on every confirmation, changed or not, because "the server told
+  // us this 200ms ago" is the freshness answer and it is true even when the answer is
+  // the same one. `usingChangedAt` and the event advance only on a real difference.
+  noteUsing(next, how, id = null) {
+    const before = this.using;
+    const added = [...next].filter(x => !before.has(x));
+    const removed = [...before].filter(x => !next.has(x));
+    this.using = next;
+    this.usingAt = Date.now();
+    if (!added.length && !removed.length) return null;
+
+    this.usingChangedAt = this.usingAt;
+    const nameOf = (oid) => {
+      const o = (this.inventory || []).find(x => x.id === oid);
+      return o ? this.rsc.get(o.nameRsc) : null;
+    };
+    const ev = this.emit('equipment', {
+      how, ...(id === null ? {} : { id }),
+      added: added.map(x => ({ id: x, name: nameOf(x) })),
+      removed: removed.map(x => ({ id: x, name: nameOf(x) })),
+      equipped: [...next].map(x => ({ id: x, name: nameOf(x) })),
+    });
+    this.log(`EQUIP ${how}${added.length ? ' +' + added.map(nameOf).join(',') : ''}` +
+             `${removed.length ? ' -' + removed.map(nameOf).join(',') : ''}`);
+    return ev;
   }
 
   // What an agent sees. Sorted so repeated looks read the same way.
@@ -856,6 +992,35 @@ export class M59Client {
         break;
       }
 
+      // EQUIPMENT, straight from the server's plUsing list. See equipment().
+      //
+      // The snapshot arrives unbidden behind every inventory request — including the
+      // keepalive's, twenty seconds apart — so this state stays current with no
+      // traffic of its own. That is also why the event fires only on a CHANGE: a
+      // snapshot identical to what we already knew is not news, and emitting it would
+      // put a heartbeat in the stream every twenty seconds, which is exactly the junk
+      // the INVENTORY case above goes out of its way to avoid.
+      case BP.USE_LIST: {
+        const res = parseUseList(body);
+        if (!this.check('USE_LIST', res)) break;
+        this.noteUsing(new Set(res.ids), 'snapshot');
+        break;
+      }
+
+      // One item started or stopped being used. kod sends these from the same two
+      // lines that write plUsing (player.kod:3425, 3543), so they cannot disagree
+      // with the snapshot — but they arrive the moment it happens rather than at the
+      // next inventory read, which is what makes verifying a wield possible at all.
+      case BP.USE:
+      case BP.UNUSE: {
+        const res = parseObjectId(body);
+        if (!this.check(op === BP.USE ? 'USE' : 'UNUSE', res)) break;
+        const next = new Set(this.using);
+        if (op === BP.USE) next.add(res.id); else next.delete(res.id);
+        this.noteUsing(next, op === BP.USE ? 'used' : 'unused', res.id);
+        break;
+      }
+
       // ONE object, no count prefix — HandleInventoryAdd extracts a single object and
       // then requires the payload to be exactly consumed.
       case BP.INVENTORY_ADD: {
@@ -1051,9 +1216,23 @@ export class M59Client {
         this.onSaid?.(said);
         this.log(`SAID [${said.type}] ${said.name}: ${said.text}`);
         this.emit('said', said);
+        // Speech goes to the chat ring as well. Not everything on this opcode is
+        // speech: SAY_RESOURCE (5) and SAY_MESSAGE (7) are the server narrating
+        // through a character — a shopkeeper's canned line, a sign — and putting
+        // those in the transcript is how the untrusted-input boundary gets blurred.
+        // See IS_SPEECH for the list and blakston.khd:2179 for the constants.
+        if (IS_SPEECH.has(res.sayType)) {
+          this.noteChat({
+            channel: said.type, speaker: said.speaker, name: said.name, text: said.text,
+            self: this.selfId != null && said.speaker === this.selfId,
+          });
+        }
         break;
       }
 
+      // System prose: combat, refusals, the server telling you what just happened to
+      // you. Deliberately NOT chat — nobody said it, and it is the high-rate stream
+      // that the separate chat ring exists to be safe from.
       case BP.MESSAGE:
       case BP.SYS_MESSAGE: {
         const res = parseStringMessage(body, this.lookup);
