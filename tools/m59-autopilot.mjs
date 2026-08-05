@@ -5088,9 +5088,24 @@ export class Autopilot {
     }
     const purse = (c.inventory || []).filter(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))
                                      .reduce((t, o) => t + (o.amount || 1), 0);
-    const floor = this.policy.walkingMoney ?? 400;
+    // THE WALKING FLOAT MUST NOT STARVE THE CHARACTER IT PROTECTS.
+    //
+    // This refused outright below the float, so a character holding 300 shillings bought
+    // no reagents at all — when sixty of them is three casts of create food, and create
+    // food is the only route to vigor for a character nowhere near a shop. The fleet
+    // declined 894 casts in one day for want of reagents, against 58 for want of mana.
+    //
+    // The float exists so a character can pay its way home. Reagents are 10 or so each
+    // and weigh nothing, so when it is hungry the reserve drops to what a trip home
+    // actually costs and the rest is spendable. A character that cannot eat cannot earn,
+    // and the float it was guarding buys nothing at all if it dies holding it.
+    const hungryNow = (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
+    const fullFloor = this.policy.walkingMoney ?? 400;
+    const floor = hungryNow ? Math.min(fullFloor, this.policy.hungryFloor ?? 100) : fullFloor;
     if (purse <= floor) {
-      this.declinedPurchase('purse is down to the walking float', { purse, float: floor, need });
+      this.declinedPurchase('purse is down to the walking float', { purse, float: floor,
+        ...(floor !== fullFloor ? { relaxed_from: fullFloor, why: 'hungry — reagents outrank the float' } : {}),
+        need });
       return [];
     }
 
@@ -5117,7 +5132,7 @@ export class Autopilot {
     // isFood comes from the Food class tree (m59-items.mjs), not a word list: guessing by
     // name would miss "Inky-cap mushroom" and "goblet of ale" and would wrongly include
     // the mushrooms that are reagents.
-    const hungry = (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
+    const hungry = hungryNow;
 
     // RANK FOOD BY VIGOR PER SHILLING, and stop once the gap is closed.
     //
