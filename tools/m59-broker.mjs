@@ -6123,15 +6123,31 @@ async function supplyBetween(a) {
         if (who !== 'neither' && apart) {
           const mover = who === 'to' ? rs : gs;
           const other = who === 'to' ? gs : rs;
-          let arrived = false, why = null;
+          // ARRIVAL IS SEEING THEM, NOT MATCHING A ROOM NUMBER.
+          //
+          // This treated "our room number equals theirs" as arrival and broke out of the
+          // loop without moving. Both characters are being driven around by the
+          // supervisor, so those two readings flicker into agreement all the time —
+          // Clifford reported arrival while it was in 584 and Waldorf in 586, and the
+          // handover then failed with the two of them rooms apart and no travel ever
+          // attempted. A room number is a stale scalar; the recipient being in our own
+          // room contents is the thing the offer actually needs.
+          const canSeeThem = async () => {
+            await gs.pacer.submit('read', () => g.roomContents());
+            await g.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 }).catch(() => {});
+            const want = (r.me?.name || '').toLowerCase();
+            return [...g.room.objects.values()]
+              .some(o => (o.flags & OF.PLAYER) && (g.rsc.get(o.nameRsc) || '').toLowerCase() === want);
+          };
+          let arrived = await canSeeThem(), why = null;
           for (let i = 0; i < 6 && !arrived; i++) {
             // Re-read the destination each time: the other one may itself have moved,
             // and chasing where it WAS is how this used to end up in the wrong room.
             const dest = other.world?.room?.num;
             if (dest == null) { why = 'cannot see which room the other one is in'; break; }
-            if (mover.world?.room?.num === dest) { arrived = true; break; }
             const t = await mover.travel(dest, { maxHops: 20 }).catch(e => ({ arrived: false, reason: e.message }));
-            if (t.arrived) arrived = true; else why = t.reason;
+            why = t.arrived ? null : t.reason;
+            arrived = await canSeeThem();
           }
           if (!arrived)
             return { supplied: false,
@@ -6140,10 +6156,26 @@ async function supplyBetween(a) {
                      note: 'travel is resumable, so this tried repeatedly and still did not arrive' };
         }
 
-      // The receiver has to be visible to the giver for the offer to resolve.
+      // The receiver has to be visible to the giver for the offer to resolve — and the
+      // giver's picture of the room may be minutes old.
+      //
+      // BP_ROOM_CONTENTS is what fills this map, and nothing had asked for it since
+      // before the walk. So the handover looked for the recipient in a snapshot taken
+      // somewhere else and reported "X is not in the room with Y" while the two were
+      // standing together. It is the same failure as the room-number comparison above,
+      // one step later: acting on a stale reading rather than asking.
+      await gs.pacer.submit('read', () => g.roomContents());
+      await g.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 }).catch(() => {});
+
+      const wanted = (r.me?.name || '').toLowerCase();
       const them = [...g.room.objects.values()]
-        .find(o => (o.flags & OF.PLAYER) && (g.rsc.get(o.nameRsc) || '') === (r.me?.name || ''));
-      if (!them) return { supplied: false, reason: `${r.me?.name} is not in the room with ${g.me?.name}` };
+        .find(o => (o.flags & OF.PLAYER) && (g.rsc.get(o.nameRsc) || '').toLowerCase() === wanted);
+      if (!them)
+        return { supplied: false,
+                 reason: `${r.me?.name} is not in the room with ${g.me?.name}`,
+                 giver_in: gs.world?.room?.num ?? null, receiver_in: rs.world?.room?.num ?? null,
+                 players_the_giver_can_see: [...g.room.objects.values()]
+                   .filter(o => o.flags & OF.PLAYER).map(o => g.rsc.get(o.nameRsc)).slice(0, 6) };
 
       // A HALF-FINISHED TRADE HOLDS THE GOODS. Clearing both sides first is cheap and
       // stops one failed delivery from eating the larder for every delivery after it.
