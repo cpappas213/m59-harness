@@ -422,9 +422,57 @@ export async function wearBest(s, { slots = ARMOUR_SLOTS } = {}) {
   const have = armourOf(c);
   const worn = [], skipped = [], rejected = [];
 
+  // BARE IS AN OPTION, AND IT SCORES ZERO.
+  //
+  // This wore the best thing in each slot without ever asking whether it beat wearing
+  // nothing, and for body armour that is a real question: scale is -100 defence for 4
+  // absorb, which on this weighting is -60, and plate is -140. Kermit was walking around
+  // at defense_total -95 — a hundred points easier to hit than bare skin — because
+  // scale armor was the best armour it owned and "best" was the only test.
+  //
+  // On a scale where a monster's whole attack rating is about 210 (3*level + 60*difficulty)
+  // a hundred points of defence is enormous, and absorption cannot pay for it: it takes
+  // a few points off each blow that lands, while defence decides how many land at all.
+  //
+  // Something already worn gets the same test, because armour is picked up mid-session
+  // and a character that put plate on before this rule existed is still wearing it.
+  const stripped = [];
+  const wornInSlot = (slot) => {
+    const using = equippedNow(c);
+    if (!using) return null;
+    for (const o of c.inventory || []) {
+      if (!using.has(o.id)) continue;
+      const name = c.rsc.get(o.nameRsc) || '';
+      const kind = armourKind(name);
+      if (kind?.slot === slot) return { o, name, kind, score: armourScore(kind) };
+    }
+    return null;
+  };
+
   for (const slot of slots) {
     const best = have[slot]?.[0];
+    const onNow = wornInSlot(slot);
+
+    // Wearing something that is worse than nothing: take it off, whether or not the
+    // pack holds a replacement.
+    if (onNow && onNow.score < 0 && !(best && best.score > onNow.score && best.score > 0)) {
+      await s.pacer.submit('use', () => c.unuse(onNow.o.id));
+      await c.waitFor({ kinds: ['equipment'], timeoutMs: 3000 }).catch(() => {});
+      const after = equippedNow(c);
+      stripped.push({ slot, name: onNow.name, defense: onNow.kind.defense,
+                      absorb: onNow.kind.absorb, score: onNow.score,
+                      off: after ? !after.has(onNow.o.id) : null,
+                      why: `scores ${onNow.score} against 0 for bare skin — ${onNow.kind.defense} ` +
+                           'defence is not bought back by absorption' });
+      continue;
+    }
+
     if (!best) { skipped.push({ slot, why: 'nothing of this kind in the pack' }); continue; }
+    if (best.score <= 0) {
+      skipped.push({ slot, name: best.name, score: best.score,
+                     why: 'the best in the pack is no better than bare skin, so it stays off' });
+      continue;
+    }
     // Already wearing it: the use list is the authority, and re-using is refused
     // rather than ignored, so this check saves a request AND a false failure.
     const using = equippedNow(c);
@@ -451,7 +499,8 @@ export async function wearBest(s, { slots = ARMOUR_SLOTS } = {}) {
 
   const total = worn.reduce((t, w) => t + (w.defense ?? 0), 0);
   return {
-    worn, ...(skipped.length ? { skipped } : {}), ...(rejected.length ? { rejected } : {}),
+    worn, ...(stripped.length ? { stripped } : {}),
+    ...(skipped.length ? { skipped } : {}), ...(rejected.length ? { rejected } : {}),
     defense_total: total,
     confirmed_by: equippedNow(c) ? 'the server\'s use list (BP_USE)' : null,
     ...(equippedNow(c) ? {} : {
