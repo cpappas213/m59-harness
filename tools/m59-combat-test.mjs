@@ -1115,5 +1115,33 @@ console.log('\nbounding the wait for a partner');
   ok('nor does one we cannot locate at all', decide(640, null, 535) === 'engage alone');
 }
 
+
+// A FLOOR YOU CAN NEVER REACH IS NOT A FLOOR, IT IS A STOP.
+//
+// fightAboveVigor is 180 on graduated pairs and vigor only passes 80 by EATING, so a
+// character with no food sits permanently below its own floor: refuses every fight,
+// flees every room, earns nothing, never buys the food. Animal ran that loop 150 times
+// for zero kills, at full health throughout.
+console.log('\nan unreachable vigor floor stops applying');
+{
+  const REST_CAP = 0.4;                       // 80 of 200 — all resting can deliver
+  const tooTired = (vigor, fightAboveVigor, larder) => {
+    const floor = fightAboveVigor / 200;
+    const reachable = larder > 0 || floor <= REST_CAP;
+    return reachable && vigor / 200 < floor;
+  };
+  ok('with food, a 180 floor still applies', tooTired(80, 180, 3) === true);
+  ok('and is satisfied once vigor is up', tooTired(190, 180, 3) === false);
+  // The loop-breaker: no food means 180 is unreachable, so it stops gating.
+  ok('with an EMPTY larder a 180 floor is ignored', tooTired(80, 180, 0) === false);
+  ok('so a starving character fights tired instead of fleeing for ever',
+     tooTired(78, 180, 0) === false);
+  // A floor within reach of resting still applies even with no food -- that one is real.
+  ok('a floor at or below the resting cap still applies without food',
+     tooTired(40, 80, 0) === true);
+  ok('and is met once rested to the cap', tooTired(80, 80, 0) === false);
+  ok('no floor at all is never too tired', tooTired(10, 0, 0) === false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

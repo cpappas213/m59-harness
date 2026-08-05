@@ -1633,6 +1633,7 @@ export class Autopilot {
   async townTripIfCornered() {
     const s = this.s, c = s.client;
     if ((this.fledInARow || 0) <= 2) return false;
+    if (this.noTownUntil && Date.now() < this.noTownUntil) return false;   // searched recently
     const v = c?.vitals?.();
     const vig = v?.vigor?.value ?? 0;
     const fed = skills.larderOf(c).length > 0;
@@ -1656,11 +1657,16 @@ export class Autopilot {
       if (!best || hops < best.hops) best = { room, hops };
     }
     if (!best) {
+      // DO NOT FORGET THAT WE ARE CORNERED. The first version reset the counter here,
+      // so a character with no town within three hops re-decided from zero every third
+      // flee and could never escalate — it just fled for ever, which is precisely what
+      // this was written to stop. The count is kept and only the SEARCH is rate-limited.
+      this.noTownUntil = Date.now() + 120_000;
       this.note('cornered but no town within reach', {
         fled_in_a_row: this.fledInARow, vigor: vig, has_food: fed,
         why: 'nothing unhuntable within three hops — carrying on in the wilderness ' +
-             'because the alternative is a long walk through worse' });
-      this.fledInARow = 0;                    // do not re-decide this every pass
+             'because the alternative is a long walk through worse, but still counting ' +
+             'the flees, because this is not a state to sit in' });
       return false;
     }
     this.doing = 'travelling';
@@ -3642,7 +3648,21 @@ export class Autopilot {
     // deadlock the branch was written for, kept intact. Most of the fleet runs
     // fightAboveVigor at 0 and will simply fight on, tired, which is the point.
     const healthHurt = hp !== null && hp < restAt;
-    const tooTiredToFight = vig !== null && vig < ((this.policy.fightAboveVigor ?? 0) / 200);
+    // A FLOOR YOU CAN NEVER REACH IS NOT A FLOOR, IT IS A STOP.
+    //
+    // fightAboveVigor is 180 on graduated pairs, and vigor only passes 80 by EATING.
+    // A character with no food is therefore permanently below its own floor: it refuses
+    // every fight, flees every room, earns nothing, and so never buys the food that
+    // would raise the vigor. Animal ran that loop 150 times for zero kills, at full
+    // health the whole way.
+    //
+    // So the floor only applies while it is achievable. With an empty larder, the honest
+    // ceiling is what resting can deliver, and a tired character fighting badly beats a
+    // rested one fighting nothing.
+    const larder = skills.larderOf(c).length;
+    const floor = (this.policy.fightAboveVigor ?? 0) / 200;
+    const reachable = larder > 0 || floor <= REST_VIGOR_CAP;
+    const tooTiredToFight = reachable && vig !== null && vig < floor;
     if ((healthHurt || tooTiredToFight) && combatZone && !sheltered && !testing && !this.hold) {
       this.doing = 'travelling';
       const ways = (s.world?.exits() || []).filter(e => e.to != null && e.reachable !== false);
