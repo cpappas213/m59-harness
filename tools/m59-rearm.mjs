@@ -37,6 +37,19 @@ const PORT = Number(arg('port', 8901));
 const RPC = `http://127.0.0.1:${PORT}/`;
 const GO = !!arg('go', false);
 const ONLY = arg('agents', null);
+// WHAT TO MOVE. The fleet hoards every resource the same way — whoever killed the thing
+// keeps it — so weapons and reagents are the same errand with a different filter.
+//
+// Reagents matter for the same reason weapons do and are missed for the same reason:
+// `create food` consumes 2 elderberry and 2 herbs and REFUSES SILENTLY without them, so a
+// character with none cannot get past the resting cap of 80 and fights permanently tired.
+// The `quartermaster` tool already evens them out, but only between characters standing
+// in the SAME ROOM — and with the fleet spread that left sixteen characters on 0/0 while
+// Fozzie carried sixty elderberry at full vigor. The walk is worth it now: 80 vigor is a
+// six-fold death rate and produces nothing to justify it.
+const WHAT = String(arg('what', 'weapons'));
+const REAGENT = /elder\s*berry|elderberry|herbs?/i;
+const WANT_REAGENTS = Number(arg('want', 6));
 
 let id = 0;
 // Long by default: `supply` walks a character across rooms and that is minutes, not
@@ -62,6 +75,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const skills = await import('./m59-skills.mjs');
 
+// Spend the donor's stock, and retire a stack only when what is left cannot cover
+// another delivery. Shifting the whole stack after one handover let a donor holding
+// sixty elderberry supply exactly one character.
+function drawDown(donor, carried) {
+  for (const sp of carried) {
+    const amount = sp.give ?? 1;
+    if (sp.remaining != null) {
+      sp.remaining -= amount;
+      if (sp.remaining >= amount) continue;
+    }
+    const i = donor.spare.indexOf(sp);
+    if (i >= 0) donor.spare.splice(i, 1);
+  }
+}
+
 async function main() {
   const f = await call('fleet', {}, 120_000);
   const rows = (f.fleet || []).filter(r => r.character);
@@ -75,20 +103,53 @@ async function main() {
   const packs = new Map();
   for (const r of rows) {
     const inv = await call('inventory', { agent: r.agent }, 60_000).catch(() => ({ items: [] }));
-    const weapons = (inv.items || []).filter(i => skills.weaponScore(i.name) > 0)
-                                     .sort((a, b) => skills.weaponScore(b.name) - skills.weaponScore(a.name));
-    packs.set(r.agent, weapons);
+    packs.set(r.agent, inv.items || []);
   }
 
-  const unarmed = rows.filter(r => !r.wielding && (packs.get(r.agent) || []).length === 0)
-                      .filter(r => !only || only.includes(r.agent));
-  // A donor keeps the one it is using plus one in reserve — a fleet that strips its
-  // fighters bare to arm the idle has not gained anything.
-  const donors = rows.map(r => ({ r, spare: (packs.get(r.agent) || []).slice(r.wielding ? 1 : 2) }))
-                     .filter(d => d.spare.length > 0);
+  const isReagents = /^reagent/i.test(WHAT);
+  const countOf = (items, re) => items.filter(i => re.test(i.name)).reduce((t, i) => t + (i.amount || 1), 0);
 
-  console.log(`${unarmed.length} unarmed with an empty pack; ` +
-              `${donors.reduce((t, d) => t + d.spare.length, 0)} spare weapon(s) across ${donors.length} character(s)`);
+  let unarmed, donors, noun;
+  if (isReagents) {
+    noun = 'reagent';
+    // A character needs BOTH kinds; short of either it cannot cast at all. Rank the
+    // needy by who has least, so the first walk buys the most.
+    unarmed = rows.map(r => ({ ...r, eb: countOf(packs.get(r.agent) || [], /elder/i),
+                                     hb: countOf(packs.get(r.agent) || [], /herbs?/i) }))
+                  .filter(r => Math.min(r.eb, r.hb) < 2 && (r.eb + r.hb) < WANT_REAGENTS * 2)
+                  .filter(r => !only || only.includes(r.agent))
+                  .sort((a, b) => (a.eb + a.hb) - (b.eb + b.hb));
+    // A donor keeps enough for its own three castings before it gives any away.
+    donors = rows.map(r => {
+      const items = packs.get(r.agent) || [];
+      const spare = [];
+      // `remaining` rather than one entry per kind. A donor holding sixty elderberry can
+      // supply ten characters, but shifting the whole stack away after the first handover
+      // let it supply exactly one — and the dry run, which never shifts, cheerfully
+      // planned nine deliveries from a donor that could make one.
+      for (const re of [/elder/i, /herbs?/i]) {
+        const held = items.filter(i => re.test(i.name));
+        const total = countOf(items, re);
+        if (total > WANT_REAGENTS && held[0])
+          spare.push({ ...held[0], give: WANT_REAGENTS, remaining: total - WANT_REAGENTS });
+      }
+      return { r, spare };
+    }).filter(d => d.spare.length > 0);
+  } else {
+    noun = 'weapon';
+    for (const [k, items] of packs)
+      packs.set(k, items.filter(i => skills.weaponScore(i.name) > 0)
+                        .sort((a, b) => skills.weaponScore(b.name) - skills.weaponScore(a.name)));
+    unarmed = rows.filter(r => !r.wielding && (packs.get(r.agent) || []).length === 0)
+                  .filter(r => !only || only.includes(r.agent));
+    // A donor keeps the one it is using plus one in reserve — a fleet that strips its
+    // fighters bare to arm the idle has not gained anything.
+    donors = rows.map(r => ({ r, spare: (packs.get(r.agent) || []).slice(r.wielding ? 1 : 2) }))
+                 .filter(d => d.spare.length > 0);
+  }
+
+  console.log(`${unarmed.length} short of ${noun}s; ` +
+              `${donors.reduce((t, d) => t + d.spare.length, 0)} spare ${noun} stack(s) across ${donors.length} character(s)`);
   if (!unarmed.length) return;
 
   for (const need of unarmed) {
@@ -103,16 +164,32 @@ async function main() {
     routed.sort((a, b) => a.hops - b.hops);
     const pick = routed[0];
     if (!pick) { console.log(`  ${need.character}: no donor can reach it`); continue; }
-    const give = pick.d.spare[0];
+    // BOTH KINDS IN ONE WALK. `create food` consumes 2 elderberry AND 2 herbs and refuses
+    // silently short of either, so delivering elderberry alone buys the recipient nothing
+    // and costs the donor the same trip. supply() takes a list; use it.
+    const carry = isReagents
+      ? pick.d.spare.filter(sp => {
+          const short = /elder/i.test(sp.name) ? (need.eb ?? 0) : (need.hb ?? 0);
+          return short < WANT_REAGENTS;
+        })
+      : [pick.d.spare[0]];
+    if (!carry.length) { console.log(`  ${need.character}: donor has nothing it is short of`); continue; }
+    const give = carry[0];
+    const amount = give.give ?? 1;
     if (!GO) {
-      console.log(`  ${need.character} <- ${pick.d.r.character} (${pick.hops} hops): ${give.name}`);
+      console.log(`  ${need.character} <- ${pick.d.r.character} (${pick.hops} hops): ` +
+                  carry.map(sp => `${(sp.give ?? 1) > 1 ? (sp.give ?? 1) + ' x ' : ''}${sp.name}`).join(' + '));
+      // Draw it down here too. A plan that does not spend its own stock is not a plan —
+      // it listed nine deliveries from a donor that could make one.
+      drawDown(pick.d, carry);
       continue;
     }
     // supply() holds BOTH keepers for the whole exchange and restores them itself. Do not
     // stop them here as well: the errand that does the walking owns that invariant, and
     // two owners is how a character ends up unattended.
     const r = await call('supply', { from: pick.d.r.agent, to: need.agent,
-                                     what: [{ id: give.id, amount: 1 }], who_travels: 'from' })
+                                     what: carry.map(sp => ({ id: sp.id, amount: sp.give ?? 1 })),
+                                     who_travels: 'from' })
                     .catch(e => ({ supplied: false, reason: e.message }));
     if (!r?.supplied) {
       // A FAILED HANDOVER IS NOT THE SAME AS A CHARACTER STILL EMPTY-HANDED. Its own
@@ -127,7 +204,12 @@ async function main() {
                                : ' (still empty-handed)'));
       continue;
     }
-    pick.d.spare.shift();
+    drawDown(pick.d, carry);
+    if (isReagents) {
+      console.log(`  ${need.character} <- ${pick.d.r.character} (${pick.hops} hops): ` +
+                  carry.map(sp => `${sp.give ?? 1} x ${sp.name}`).join(' + '));
+      continue;
+    }
     // ASK AGAIN BEFORE CALLING IT UNVERIFIED.
     //
     // A single read 1.5s after the handover said "wielding null (UNVERIFIED)" for a
