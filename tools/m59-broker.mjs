@@ -6051,7 +6051,18 @@ async function supplyBetween(a) {
       const nameOf = o => g.rsc.get(o.nameRsc) || '';
       let items;
       if (Array.isArray(a.what)) {
-        items = (g.inventory || []).filter(o => a.what.includes(o.id));
+        // Entries may be a bare id — meaning the WHOLE stack — or {id, amount} for part
+        // of one. The distinction is not cosmetic: lending a character the price of a
+        // meal and emptying its purse are different acts, and without this the second
+        // was the only one on offer. Waldorf lent Rizzo its entire 1,311 and was left
+        // with nothing and no food, which is the problem moved rather than solved.
+        const want = new Map(a.what.map(w => typeof w === 'object' && w
+          ? [Number(w.id), Number(w.amount)] : [Number(w), null]));
+        items = (g.inventory || []).filter(o => want.has(o.id)).map(o => {
+          const cap = want.get(o.id);
+          if (cap == null || !(o.amount > 0)) return o;
+          return { ...o, amount: Math.max(1, Math.min(o.amount, cap)) };
+        });
       } else if (a.what === 'all') {
         items = [...(g.inventory || [])];
       } else if (a.what === 'food') {

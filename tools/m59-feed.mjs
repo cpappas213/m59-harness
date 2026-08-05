@@ -97,6 +97,45 @@ async function foodShopsFor(agent) {
   return priced.sort((a, b) => a.hops - b.hops).map(p => p.room);
 }
 
+// FIND SOMEONE WHO CAN LEND IT THE PRICE OF A MEAL.
+//
+// Selling only works for a character that still has something to sell, and the ones that
+// need this most have been stripped by repeated deaths — Gonzo, Rizzo and Lew were
+// carrying nothing but their weapon. The fleet is not poor, though: three characters were
+// holding 3,259 shillings between them while ten had none. It is a distribution problem.
+//
+// Nearest by ROUTE, not by room number, because the donor has to walk it. supply() holds
+// both keepers, travels, and verifies the money arrived in the receiver's pack.
+async function fundFrom(row, need) {
+  const f = await call('fleet', {}).catch(() => null);
+  if (!f) return null;
+  const donors = [];
+  for (const c of f.fleet || []) {
+    if (c.agent === row.agent) continue;
+    const inv = await call('inventory', { agent: c.agent }).catch(() => ({ items: [] }));
+    const sh = (inv.items || []).find(i => /shilling/i.test(i.name));
+    // Leave the donor enough to keep itself fed — it is earning, and stripping it bare
+    // just moves the problem.
+    if ((sh?.amount || 0) >= need + 400) donors.push({ agent: c.agent, name: c.character, id: sh.id, sh: sh.amount, room: c.room_num });
+  }
+  if (!donors.length) return null;
+  const routed = [];
+  for (const d of donors) {
+    if (d.room === row.room_num) { routed.push({ ...d, hops: 0 }); continue; }
+    const m = await call('map', { agent: d.agent, to: row.room_num }).catch(() => null);
+    if (m?.route?.found) routed.push({ ...d, hops: m.route.hops.length });
+  }
+  if (!routed.length) return null;
+  routed.sort((a, b) => a.hops - b.hops);
+  const d = routed[0];
+  // Lend the price of several meals, not the whole purse. The donor is earning and
+  // needs to keep eating; taking everything just moves the destitution along the line.
+  const r = await call('supply', { from: d.agent, to: row.agent,
+                                   what: [{ id: d.id, amount: need }], who_travels: 'from' })
+                  .catch(e => ({ supplied: false, reason: e.message }));
+  return r?.supplied ? `${d.name} (${d.hops} hops, ${need}sh of ${d.sh})` : null;
+}
+
 async function feed(row) {
   const who = row.character || row.agent;
   const was = await call('autopilot', { agent: row.agent, action: 'status' }).catch(() => null);
@@ -138,7 +177,18 @@ async function feed(row) {
       await sleep(800);
       inv = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
     }
-    const purse = purseOf(inv);
+    let purse = purseOf(inv);
+    // Still broke after selling everything it had? Then it had nothing, and no amount of
+    // shopping fixes that. Borrow from whoever is nearest and can spare it.
+    let lender = null;
+    if (purse < 60) {
+      lender = await fundFrom(row, 600);
+      if (lender) {
+        await sleep(1000);
+        inv = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
+        purse = purseOf(inv);
+      }
+    }
 
     // A FAILED SHOP CALL IS NOT AN EMPTY SHOP, and reporting it as one sent me looking
     // at the wrong thing: room 103 plainly sells bread at 108 and apples at 45, and the
@@ -165,8 +215,9 @@ async function feed(row) {
       return `${who}: at the counter with ${purse}sh and the cheapest food is ${menu[0].cost}sh — ` +
              'it has nothing left to sell. Selling cannot fund a character that has already ' +
              'lost everything; this one needs a hand-out';
-    return `${who}: purse ${before}->${purse}, bought ${bought.length ? bought.join(', ') : 'NOTHING'} ` +
-           `(${spent}sh) — now carrying ${foodIn(after)} meal(s)`;
+    return `${who}: purse ${before}->${purse}${lender ? ` (funded by ${lender})` : ''}, ` +
+           `bought ${bought.length ? bought.join(', ') : 'NOTHING'} (${spent}sh) — ` +
+           `now carrying ${foodIn(after)} meal(s)`;
   } finally {
     // The invariant. An errand may never leave a character unattended, whatever went
     // wrong — this file exists partly because three other errands did exactly that.
