@@ -4371,6 +4371,39 @@ const TOOLS = [
     },
   },
   {
+    name: 'rescue',
+    description:
+      'ASK THE SERVER TO MOVE A CHARACTER THAT CANNOT MOVE ITSELF. UC_REQ_RESCUE sends ' +
+      'AdminGotoSafety (user.kod:1941), which teleports the character somewhere it can walk ' +
+      'out of. This is for GEOMETRY, not for danger. Rooms exist whose only unlocked exit is a ' +
+      'square the character cannot step onto: Cibilo Creek Inn lists one exit at (1,3), its two ' +
+      'other doors are locked, and a character at (2,3) has every direction in its can_step list ' +
+      'except west. Four characters sat in two taverns that way, each correctly reporting ' +
+      '"nothing to hunt here" and correctly failing to leave. ' +
+      'CAUTION: in the character OWN HOMEROOM the server answers UC_SEND_QUIT instead and the ' +
+      'client is disconnected (user.kod:1932-1939) — the rejoin loop puts it back, but that is a ' +
+      'logout, so this refuses unless even_at_home is set.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      even_at_home: { type: 'boolean', description: 'proceed even though it may disconnect instead' },
+    }, required: ['agent'] },
+    run: async (a) => {
+      const s = session(a.agent), c = s.need();
+      const was = s.world?.room?.num ?? null;
+      const before = c.evSeq;
+      await s.pacer.submit('move', () => c.requestRescue(), MOVE_INTERVAL_MS);
+      const ev = await c.waitFor({ since: before, kinds: ['room-entered', 'message'], timeoutMs: 6000 })
+                        .catch(() => ({ events: [] }));
+      const entered = (ev.events || []).find(e => e.kind === 'room-entered');
+      const now = s.world?.room?.num ?? null;
+      return { asked: true, was_in: was, now_in: now, moved: now !== was || !!entered,
+               arrived_in: entered?.roomName ?? null,
+               messages: (ev.events || []).filter(e => e.text).map(e => e.text).slice(0, 4),
+               ...(now === was ? { note: 'the room did not change — either the server declined or ' +
+                                         'this character was already somewhere it counts as safe' } : {}) };
+    },
+  },
+  {
     name: 'recording',
     description:
       'THE FLIGHT RECORDER — for debugging, not for playing. Every session writes every perceived ' +
