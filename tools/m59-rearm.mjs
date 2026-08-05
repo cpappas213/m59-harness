@@ -172,7 +172,7 @@ async function main() {
           const short = /elder/i.test(sp.name) ? (need.eb ?? 0) : (need.hb ?? 0);
           return short < WANT_REAGENTS;
         })
-      : [pick.d.spare[0]];
+      : [pick.d.spare[0]].filter(Boolean);
     if (!carry.length) { console.log(`  ${need.character}: donor has nothing it is short of`); continue; }
     const give = carry[0];
     const amount = give.give ?? 1;
@@ -183,6 +183,27 @@ async function main() {
       // it listed nine deliveries from a donor that could make one.
       drawDown(pick.d, carry);
       continue;
+    }
+    // RE-READ THE DONOR BEFORE HANDING ANYTHING OVER.
+    //
+    // The plan is built from one scan of every pack, and by the time a walk finishes the
+    // world has moved: object ids are renumbered by a `save game`, and a character that
+    // dies drops its whole pack. Fozzie was planned as the donor for six deliveries,
+    // died somewhere in the middle, and every remaining handover came back "carrying
+    // nothing matching those ids" — six walks spent on a pack that no longer existed.
+    const fresh = await call('inventory', { agent: pick.d.r.agent }, 60_000).catch(() => null);
+    if (fresh) {
+      const byName = new Map();
+      for (const i of fresh.items || []) if (!byName.has(i.name)) byName.set(i.name, i);
+      const still = carry.map(sp => { const now = byName.get(sp.name); return now ? { ...sp, id: now.id } : null; })
+                         .filter(Boolean);
+      if (!still.length) {
+        console.log(`  ${need.character} <- ${pick.d.r.character}: donor no longer has it ` +
+                    '(pack changed since the plan — most likely it died)');
+        pick.d.spare.length = 0;
+        continue;
+      }
+      carry.length = 0; carry.push(...still);
     }
     // supply() holds BOTH keepers for the whole exchange and restores them itself. Do not
     // stop them here as well: the errand that does the walking owns that invariant, and
@@ -195,13 +216,15 @@ async function main() {
       // A FAILED HANDOVER IS NOT THE SAME AS A CHARACTER STILL EMPTY-HANDED. Its own
       // keeper may have conjured one meanwhile, and saying "FAILED" about a character
       // that is now armed reads as a problem to chase. Ask the server before deciding.
-      const eq = await call('equipment', { agent: need.agent }, 60_000).catch(() => null);
+      // Only ask this in weapons mode — "its keeper armed it" is meaningless about a
+      // reagent delivery, and it printed there anyway, which reads as success.
+      const eq = isReagents ? null : await call('equipment', { agent: need.agent }, 60_000).catch(() => null);
       const armedAnyway = eq?.wielding ?? null;
       console.log(`  ${need.character} <- ${pick.d.r.character}: handover failed — ` +
                   `${String(r?.reason || 'no reason given').slice(0, 90)}` +
                   (armedAnyway ? ` (but it is wielding ${JSON.stringify(armedAnyway)} now — its keeper ` +
                                  'armed it, so this is not an unarmed character)'
-                               : ' (still empty-handed)'));
+                               : isReagents ? '' : ' (still empty-handed)'));
       continue;
     }
     drawDown(pick.d, carry);
