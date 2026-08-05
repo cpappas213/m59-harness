@@ -5108,8 +5108,24 @@ const TOOLS = [
         const roomsFor = (c) => {
           const ceil = c.level + (c.p.policy.maxThreatOver ?? 6);
           if (!roomsCache.has(ceil)) {
+            // A ROOM YOU CANNOT WALK TO IS NOT A HUNTING GROUND.
+            //
+            // huntingGrounds filters on danger and on whether the prey pays; it says
+            // nothing about whether the character can get there. The Mausoleum offers
+            // eight mummy rooms and NOTHING in this world routes to it — I moved five
+            // characters onto mummies on the strength of that count, and they spent hours
+            // logging "could not get back to the assigned room — no route from 150 to
+            // 1016 in the graph" while standing in Cor Noth with nothing to hunt.
+            //
+            // The route is asked once per room per danger tier and cached with it, so the
+            // cost is a handful of lookups per spread rather than per character.
             roomsCache.set(ceil, huntingGrounds(spawns, hunt, { maxDanger: ceil, limit: 24 })
               .filter(r => !r.rejected)
+              .filter(r => {
+                // world.route(roomNum) is the same call the `map` tool answers with.
+                try { return !!c.p?.s?.world?.route?.(r.room)?.found; }
+                catch { return true; }        // no router here: do not silently drop the room
+              })
               .map(r => ({ room: r.room, room_name: r.room_name, slots: payingSlots(r.room, hunt) }))
               .filter(r => r.slots > 0)
               .sort((x, y) => y.slots - x.slots));
