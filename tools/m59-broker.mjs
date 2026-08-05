@@ -1816,8 +1816,34 @@ class Session {
       // Verified against a live server: the move is refused as a move, and the very
       // next REQ_GO answers "You open the door and walk through."
       if (!walk.arrived) {
-        const spot = this.world.approachSquare(exit.stand_on.col, exit.stand_on.row);
-        if (!spot) return { left: false, stage: 'walk', ...walk };
+        let spot = this.world.approachSquare(exit.stand_on.col, exit.stand_on.row);
+        // WHERE WE ARE STANDING CAN BE THE WHOLE PROBLEM.
+        //
+        // approachSquare answers from the square we occupy, and some squares simply have
+        // no path to the doorway even though the room does. Cibilo Creek Inn is the case:
+        // a character at (2,3) has every direction in can_step except the one the exit is
+        // in, and both walk_to and go_through fail on it — while a character at (5,5) in
+        // the same room walks out on the first try. Four characters sat in two taverns on
+        // squares like that, reporting the room unleavable, and it was only ever the spot.
+        //
+        // So before giving up, step somewhere else and ask again. Anywhere reachable will
+        // do; the middle of the room is the likeliest to see the door.
+        if (!spot) {
+          const rows = this.world?.room?.size?.rows ?? 0, cols = this.world?.room?.size?.cols ?? 0;
+          for (const [c2, r2] of [[Math.floor(cols / 2), Math.floor(rows / 2)],
+                                  [Math.floor(cols / 3), Math.floor(rows / 2)],
+                                  [Math.floor(cols / 2), Math.floor(rows / 3)]]) {
+            if (!(c2 > 0 && r2 > 0)) continue;
+            const step = await this.walkTo(c2, r2, { maxSteps: 30, movementGeneration, controlToken })
+                                   .catch(() => ({ arrived: false }));
+            if (!step.arrived) continue;
+            spot = this.world.approachSquare(exit.stand_on.col, exit.stand_on.row);
+            if (spot) break;
+          }
+        }
+        if (!spot) return { left: false, stage: 'walk', ...walk,
+                            note: 'no path to the doorway from here, and moving elsewhere in the ' +
+                                  'room did not find one either' };
         if (spot.steps > 0) {
           const near = await this.walkTo(spot.col, spot.row,
                                          { maxSteps: Math.max(40, spot.steps + 20), movementGeneration, controlToken });
