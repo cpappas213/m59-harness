@@ -215,9 +215,25 @@ async function main() {
     // supply() holds BOTH keepers for the whole exchange and restores them itself. Do not
     // stop them here as well: the errand that does the walking owns that invariant, and
     // two owners is how a character ends up unattended.
+    // THE ONE WHO NEEDS IT DOES THE WALKING.
+    //
+    // This sent the DONOR, and that is backwards twice over. The donor is the character
+    // with something worth keeping, and walking it out of wherever it was safe is how the
+    // fleet lost its capital: Robin walked with 70 elderberry and died, Lew with 42 and
+    // 152 herbs and died, and each time the whole stock hit the floor along with the plan
+    // built around it. The recipient has nothing to lose by walking — that is what makes
+    // it the recipient.
+    //
+    // It also gives the walk a stationary destination. A donor chasing a keeper-driven
+    // recipient is chasing a moving target, which is most of why these failed; a
+    // recipient walking to a character holding a safe spot is walking to a fixed point.
+    //
+    // First run with the direction reversed: three transfers, three successes, after an
+    // unbroken run of failures the other way. Waldorf went 80 to 108 vigor and Clifford
+    // 80 to 118, and the donor kept its spot and 14 elderberry.
     const r = await call('supply', { from: pick.d.r.agent, to: need.agent,
                                      what: carry.map(sp => ({ id: sp.id, amount: sp.give ?? 1 })),
-                                     who_travels: 'from' })
+                                     who_travels: 'to' })
                     .catch(e => ({ supplied: false, reason: e.message }));
     if (!r?.supplied) {
       // A FAILED HANDOVER IS NOT THE SAME AS A CHARACTER STILL EMPTY-HANDED. Its own

@@ -144,8 +144,10 @@ async function fundFrom(row, need) {
   const d = routed[0];
   // Lend the price of several meals, not the whole purse. The donor is earning and
   // needs to keep eating; taking everything just moves the destitution along the line.
+  // The borrower walks, not the lender — see the note in m59-rearm.mjs. A lender walked
+  // out of a safe spot is a lender that dies carrying the fleet's money.
   const r = await call('supply', { from: d.agent, to: row.agent,
-                                   what: [{ id: d.id, amount: need }], who_travels: 'from' })
+                                   what: [{ id: d.id, amount: need }], who_travels: 'to' })
                   .catch(e => ({ supplied: false, reason: e.message }));
   return r?.supplied ? `${d.name} (${d.hops} hops, ${need}sh of ${d.sh})` : null;
 }
