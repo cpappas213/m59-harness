@@ -2213,6 +2213,13 @@ class Session {
 }
 
 const session = name => {
+  // A MISSING AGENT IS NOT AN AGENT. This created a Session for whatever it was handed,
+  // so any tool called without one registered a phantom keyed `undefined` — never in
+  // game, never doing anything, and counted. The fleet board then reported 22 agents
+  // against a roster of 21 and "19/22 keepers running", which is exactly the kind of
+  // quiet miscount that makes a healthy fleet look broken and a broken one look fine.
+  // JSON.stringify drops the undefined agent field, so the row arrives headless too.
+  if (name == null || name === '') throw new Error('no agent named — every fleet tool takes an `agent`');
   if (!sessions.has(name)) sessions.set(name, new Session(name));
   return sessions.get(name);
 };
