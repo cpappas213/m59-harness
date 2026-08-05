@@ -4105,9 +4105,41 @@ export class Autopilot {
 
       if (!found.length) {
         this.emptyPasses++;
-        // Monsters do come back, so an empty room is not a dead end — but standing in
-        // one for an hour is not work either. Wait a few passes, then move on if the
-        // owner allowed it.
+        // A ROOM THAT SPAWNS NOTHING IS NOT AN EMPTY ROOM, AND WAITING IN IT IS NOT WORK.
+        //
+        // "They respawn eventually" is true of a hunting ground between spawns and false
+        // of a tavern. This branch could not tell them apart, so a character that drifted
+        // into an inn after a death or a shop trip stood there for the rest of the
+        // session logging "nothing to hunt here" — perfectly accurately — and roam:false
+        // meant it never left.
+        //
+        // Fourteen of twenty-one were doing exactly that: Kermit and Floyd in Cibilo
+        // Creek Inn, Statler in The Limping Toad, Janice in Marion, Pepe and Camilla in
+        // Barloque. Three characters were producing every kill the fleet made.
+        //
+        // sanctuary() already answers "does anything huntable spawn here". When the
+        // answer is no, leaving is not roaming — it is going to work — so it does not
+        // wait on the roam permission, which exists to stop characters wandering off
+        // productive ground.
+        const barren = this.sanctuary(room);
+        if (barren && this.emptyPasses >= 2) {
+          // policy.assignedRoom is where `spread` put us; homeRoom is where we last
+          // settled. `this.assignedRoom` does not exist — reading it would have made this
+          // whole branch quietly do nothing, which is the failure mode this fix is about.
+          const home = this.policy.assignedRoom ?? this.homeRoom;
+          if (home != null && home !== room?.num) {
+            this.note('this room spawns nothing at all — going back to work', {
+              room: room?.name, room_num: room?.num, going_to: home,
+              why: 'a tavern has no spawn table, so waiting for a respawn here waits for ' +
+                   'something that cannot happen. This is not roaming; roam guards against ' +
+                   'leaving GOOD ground, and this is not that.' });
+            this.doing = 'travelling';
+            const moved = await this.s.travel(home, { maxHops: 20 })
+                                  .catch(e => ({ arrived: false, reason: e.message }));
+            if (moved.arrived) { this.emptyPasses = 0; this.progress('left a room that spawns nothing'); return; }
+            this.note('could not get back to the assigned room', { going_to: home, why: moved.reason });
+          }
+        }
         if (this.policy.roam && this.emptyPasses >= this.policy.roamAfterEmptyPasses) {
           await this.roam(room);
         } else {
