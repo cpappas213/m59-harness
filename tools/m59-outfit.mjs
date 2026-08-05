@@ -99,6 +99,7 @@ async function outfit(row) {
     // Where to shop. An explicit room wins; otherwise ask which merchants sell what we
     // lack and take the fewest hops, which is the same question gear-buying always is.
     let shopRoom = AT;
+    let candidates = AT != null ? [AT] : [];
     if (shopRoom == null) {
       const seen = new Map();
       for (const what of ['armor', 'shield', 'mace']) {
@@ -112,26 +113,44 @@ async function outfit(row) {
       }
       priced.sort((a, b) => a.hops - b.hops);
       if (!priced.length) return `${who}: no smith reachable`;
-      shopRoom = priced[0].room;
+      candidates = priced.map(p => p.room);
+      shopRoom = candidates[0];
     }
 
     // TRAVEL IS FLAKY IN THE MIDDLE AND RESUMABLE, so retry rather than give up: a
     // multi-hop route fails part-way with "start is outside the room grid" when the
     // character's position has not settled after an edge crossing, and the next
     // attempt continues from wherever it actually got to.
-    let arrived = false, lastWhy = null;
-    for (let i = 0; i < 3 && !arrived; i++) {
-      const t = await call('travel', { agent: row.agent, to: shopRoom, max_hops: 20 })
-                      .catch(e => ({ arrived: false, why: e.message }));
-      if (t.arrived) { arrived = true; break; }
-      const stuck = (t.log || []).filter(h => !h.ok).slice(-1)[0];
-      lastWhy = stuck ? `${stuck.from} -> ${stuck.to}: ${stuck.also_tried?.[0]?.why ?? 'refused'}`
-                      : (t.why || 'travel refused');
-      const st = await call('status', { agent: row.agent, brief: true }).catch(() => null);
-      if (st?.where?.num === shopRoom) { arrived = true; break; }
-      await sleep(1500);
+    // AND IF THAT SHOP CANNOT BE REACHED, TRY THE NEXT ONE.
+    //
+    // Picking the nearest smith and giving up on it is how the supervisor spent cycle
+    // after cycle walking characters to Marion and failing at the same refused exit:
+    //
+    //   Bunsen: could not reach room 201 — Marion -> Ye Olde Slasher Salesman:
+    //           You are unable to go anywhere.
+    //
+    // Every ninety seconds, for both members of a pair, with nothing learned between
+    // attempts. Nearest is a preference and not a requirement — a shop three rooms
+    // further away that can actually be entered is strictly better than one next door
+    // that refuses, and `priced` is already sorted, so the next candidate is free.
+    let arrived = false, lastWhy = null, tried = [];
+    for (const room of (candidates.length ? candidates : [shopRoom]).slice(0, 3)) {
+      shopRoom = room;
+      for (let i = 0; i < 3 && !arrived; i++) {
+        const t = await call('travel', { agent: row.agent, to: shopRoom, max_hops: 20 })
+                        .catch(e => ({ arrived: false, why: e.message }));
+        if (t.arrived) { arrived = true; break; }
+        const stuck = (t.log || []).filter(h => !h.ok).slice(-1)[0];
+        lastWhy = stuck ? `${stuck.from} -> ${stuck.to}: ${stuck.also_tried?.[0]?.why ?? 'refused'}`
+                        : (t.why || 'travel refused');
+        const st = await call('status', { agent: row.agent, brief: true }).catch(() => null);
+        if (st?.where?.num === shopRoom) { arrived = true; break; }
+        await sleep(1500);
+      }
+      if (arrived) break;
+      tried.push(`${room} (${lastWhy})`);
     }
-    if (!arrived) return `${who}: could not reach room ${shopRoom} — ${lastWhy}`;
+    if (!arrived) return `${who}: could not reach any smith — tried ${tried.join('; ')}`;
     log.push(`at ${shopRoom}`);
 
     // FUND IT. The purse first, then the bank we are standing next to, then a partner.
