@@ -34,6 +34,7 @@ import { openSync, readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSyn
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fleetName } from './m59-fleetpath.mjs';
+import * as uptime from './m59-uptime.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -202,6 +203,18 @@ async function cmdStop({ quiet = false } = {}) {
   }
   const n = found.health.sessions?.length ?? 0;
   if (!quiet) console.log(`stopping pid ${found.pid} ("${LABEL}", ${n} session(s))`);
+  // SAY IT WAS DELIBERATE BEFORE KILLING IT.
+  //
+  // taskkill /F gives the broker no chance to run markStopped(), so the active-lock file
+  // outlives it and the next boot reads a live lock with a dead pid — which is the exact
+  // signature of a crash. Thirteen "crashes" were recorded in five hours on that basis
+  // and every one of them was a restart somebody asked for, three of them mine.
+  //
+  // The outage itself is real and stays in the ledger: the keepers genuinely are down
+  // between the kill and the resume, which is what death attribution needs. What was
+  // wrong was the cause, and a cause of "crashed" sends the next person hunting a
+  // stability bug that does not exist.
+  uptime.markStopped();
   killPid(found.pid);
   for (let i = 0; i < 20; i++) {
     if (!alive(found.pid) && !(await health())) {
