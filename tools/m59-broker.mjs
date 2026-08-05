@@ -4296,9 +4296,24 @@ const TOOLS = [
       on: { type: 'boolean', description: 'true to protect innocents, false to allow striking them' },
     }, required: ['agent', 'on'] },
     run: async (a) => {
+      // A MISSING ARGUMENT MUST NOT BECOME THE DANGEROUS ONE.
+      //
+      // `on` is declared required and nothing enforced it, so `!!a.on` turned an omitted
+      // argument into false — and false here means "this character may now strike other
+      // players". On a shared server with real people on it, forgetting a parameter is
+      // not an acceptable way to arrive at that. I did exactly this to Waldorf while
+      // trying to READ its threat list, and the server duly announced "your safety is
+      // now OFF" to a character standing in the Underworld.
+      //
+      // The schema cannot save us here because it is advisory; the check has to be in
+      // the code that acts.
+      if (typeof a.on !== 'boolean')
+        throw new Error('safety needs `on` as an explicit true or false — there is no way to read ' +
+                        'the flag without setting it, and defaulting a missing value to false would ' +
+                        'let a character attack other players by omission');
       const s = session(a.agent), c = s.need();
       const before = c.evSeq;
-      await s.pacer.submit('safety', () => c.safety(!!a.on));
+      await s.pacer.submit('safety', () => c.safety(a.on));
       const { events } = await c.waitFor({ since: before, timeoutMs: 3000 });
       const said = events.filter(e => e.text).map(e => String(e.text));
       return { requested: !!a.on, server_said: said,
