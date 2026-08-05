@@ -411,7 +411,21 @@ export class Autopilot {
       // dropped on a corpse the moment anything killed them. Two thousand is roughly
       // where a player stops what they are doing and walks to Jasper or Tos.
       // Set 0 or null to keep the old behaviour — bank only if you happen to walk past one.
-      bankAbove: 2000,
+      // BANK EARLY, BECAUSE DYING IS NOT RARE HERE.
+      //
+      // Everything carried drops where you die and a bank balance does not. Across 30
+      // hours and 21 characters this fleet died 259 times — 0.41 deaths per character per
+      // hour, a death every two and a half hours — so money held for an hour has roughly
+      // a 41% chance of being dropped.
+      //
+      // At 2000 almost nothing was ever banked: a character carrying 1,900 shillings kept
+      // carrying them and lost the lot at the next death, and the journal line for it was
+      // a cheerful "carrying, but under the banking threshold". Expected loss on 1,000
+      // carried is about 410 an hour, against one trip to a town — which is a sanctuary,
+      // so the trip itself is the safest walking the fleet does.
+      //
+      // 800 is twice the walking float, so a character still keeps enough to shop with.
+      bankAbove: 800,
       ...policy,
     };
     // What we believe is in the stomach. Nothing reports it, so it is modelled from
