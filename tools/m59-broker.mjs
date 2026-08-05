@@ -5050,7 +5050,8 @@ const TOOLS = [
         // to walk. Ordering is otherwise by agent name, so the same fleet in the same
         // state always produces the same plan — a plan you cannot reproduce is one you
         // cannot review.
-        const settled = c => (rooms.some(r => r.room === c.at) ? 0 : 1);
+        // Against the character's OWN room list, now that each has one.
+        const settled = c => (roomsFor(c).some(r => r.room === c.at) ? 0 : 1);
         for (const c of group.sort((x, y) => settled(x) - settled(y) || x.agent.localeCompare(y.agent))) {
           const r = place(c);
           out.push({ agent: c.agent, character: c.character, hunt, was_at: c.at,
