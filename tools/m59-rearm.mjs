@@ -106,6 +106,17 @@ async function main() {
     packs.set(r.agent, inv.items || []);
   }
 
+  // A CHARACTER IN THE UNDERWORLD IS DEAD AND CANNOT BE ROUTED.
+  //
+  // Room 1 is where the dead wake up, and nothing routes out of it — the way out is a
+  // portal rather than an edge, so the pathfinder answers "no route from 1 to 575" and
+  // the errand spends a whole sequence of walk attempts learning that. Camilla cost one
+  // exactly that way. It will be back in the world under its own keeper within a minute
+  // or two, so skip it and let a later pass catch it. A donor in there has already
+  // dropped everything it was carrying, so it is no use either.
+  const UNDERWORLD = 1;
+  const inTheWorld = r => (r.room_num ?? r.r?.room_num) !== UNDERWORLD;
+
   const isReagents = /^reagent/i.test(WHAT);
   const countOf = (items, re) => items.filter(i => re.test(i.name)).reduce((t, i) => t + (i.amount || 1), 0);
 
@@ -114,13 +125,13 @@ async function main() {
     noun = 'reagent';
     // A character needs BOTH kinds; short of either it cannot cast at all. Rank the
     // needy by who has least, so the first walk buys the most.
-    unarmed = rows.map(r => ({ ...r, eb: countOf(packs.get(r.agent) || [], /elder/i),
+    unarmed = rows.filter(inTheWorld).map(r => ({ ...r, eb: countOf(packs.get(r.agent) || [], /elder/i),
                                      hb: countOf(packs.get(r.agent) || [], /herbs?/i) }))
                   .filter(r => Math.min(r.eb, r.hb) < 2 && (r.eb + r.hb) < WANT_REAGENTS * 2)
                   .filter(r => !only || only.includes(r.agent))
                   .sort((a, b) => (a.eb + a.hb) - (b.eb + b.hb));
     // A donor keeps enough for its own three castings before it gives any away.
-    donors = rows.map(r => {
+    donors = rows.filter(inTheWorld).map(r => {
       const items = packs.get(r.agent) || [];
       const spare = [];
       // `remaining` rather than one entry per kind. A donor holding sixty elderberry can
@@ -147,11 +158,11 @@ async function main() {
     // tool skipped it because the pack was not empty. The server's use list is the only
     // authority on what is actually held, and a spare mace is cheap insurance against
     // being wrong.
-    unarmed = rows.filter(r => !r.wielding)
+    unarmed = rows.filter(r => !r.wielding).filter(inTheWorld)
                   .filter(r => !only || only.includes(r.agent));
     // A donor keeps the one it is using plus one in reserve — a fleet that strips its
     // fighters bare to arm the idle has not gained anything.
-    donors = rows.map(r => ({ r, spare: (packs.get(r.agent) || []).slice(r.wielding ? 1 : 2) }))
+    donors = rows.filter(inTheWorld).map(r => ({ r, spare: (packs.get(r.agent) || []).slice(r.wielding ? 1 : 2) }))
                  .filter(d => d.spare.length > 0);
   }
 
