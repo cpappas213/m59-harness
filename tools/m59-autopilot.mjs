@@ -68,6 +68,13 @@ const CROWD_RADIUS = 4;
 // more is asking to sit until the timeout expires. The rest comes from food.
 const REST_VIGOR_CAP = 0.4;
 
+// Where to eat to when no strategy names a target. Resting stops awarding vigor at 80 of
+// 200 (REST_VIGOR_CAP), and the death rate falls roughly thirtyfold once a character is
+// clear of it — 101.8 deaths per thousand observations at or below 85, against 4.4 from
+// 86 to 120. So the default is "get off the cap", not "fill the bar": it is the cheap
+// part of the curve, and the stomach only admits 100 filling at a time anyway.
+const EAT_TO_AT_LEAST = 120;
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pct = v => (v && v.max ? v.value / v.max : null);
 
@@ -781,8 +788,25 @@ export class Autopilot {
   async provision(plan, v) {
     const p = this.policy;
     const floor = this.fightFloor(plan);
-    const ceiling = p.vigorCeiling ?? plan.vigorCeiling ?? 0;
-    if (!floor && !ceiling) return false;              // baseline/fieldrest: unchanged
+    // EATING IS NOT A STRATEGY OPTION.
+    //
+    // This returned before it ever looked at the larder unless the policy named a fight
+    // floor or a vigor ceiling — so `fightAboveVigor: 0`, which means "no minimum vigor
+    // required to fight", silently also meant "never eat". Twelve of twenty-one
+    // characters were running exactly that and had not eaten in hours; ten of them sat
+    // at 78-80, which is the resting cap, with the fleet's food and reagents idle.
+    //
+    // What that costs is now measured rather than assumed. Across 6,800 armed
+    // observations a character at or below 85 vigor died at 101.8 per thousand against
+    // 4.4 in the 86-120 band — and carrying food changed nothing (94.7 without, 133.3
+    // with), because carrying is not eating. The single cheapest thing any character can
+    // do for its survival is swallow what is already in its pack.
+    //
+    // So when nothing sets a target, eat to just clear of the cap rather than not at all.
+    // A named floor or ceiling still wins; this only fills the silence.
+    const ceiling = p.vigorCeiling ?? plan.vigorCeiling
+                 ?? (floor ? 0 : (p.eatToAtLeast ?? EAT_TO_AT_LEAST));
+    if (!floor && !ceiling) return false;              // only if someone set it to zero on purpose
 
     const s = this.s;
     const vigor = v.vigor?.value ?? 0;
@@ -813,7 +837,9 @@ export class Autopilot {
     this.warnedNoFood = false;
 
     // Hysteresis: fall through the floor to start climbing, reach the ceiling to stop.
-    if (vigor < floor) this.climbing = true;
+    // With no floor set there is nothing to fall through, so the latch also trips on the
+    // ceiling — otherwise the implicit target above would be computed and never used.
+    if (vigor < floor || (!floor && vigor < ceiling)) this.climbing = true;
 
     if (this.climbing) {
       this.doing = 'recovering';
