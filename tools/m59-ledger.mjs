@@ -139,10 +139,29 @@ export function recordSample(rows = []) {
       // been resting in rather than the field it died in.
       if (now.death_sig && now.death_sig !== was.death_sig) {
         const d = r.last_death || {};
+        // CARRY `how` ALONGSIDE `killed_by`, because a null killer is not one fact.
+        //
+        // Three of the broadcast forms name nobody — "murdered in cold blood" (a player
+        // did it, and is deliberately not named), "slain by his own folly", and "met an
+        // untimely end" (the room: lava, a fall, a trap) — and so does the case where no
+        // broadcast arrived at all. All four arrived here as killed_by: null and became
+        // indistinguishable the moment they were written down.
+        //
+        // It cost a real answer. Clifford died inside The Bhrama & Falcon, a town shop,
+        // with a health trail of 29/29 four samples running and then dead — which is not
+        // a monster wearing it down, and on a shared server the obvious question is
+        // whether another player killed it. The record could not say.
         recordEvent(name, 'died', {
           died_in: d.died_in ?? now.room, level: d.level ?? now.level,
           health_trail: d.health_trail, last_health: d.last_health, last_vigor: d.last_vigor,
           killed_by: d.killed_by ? d.killed_by.join(', ') : null,
+          how_died: d.how_died ?? null,
+          death_broadcast: d.death_broadcast ?? null,
+          // What was standing nearby, kept beside the authoritative answer rather than
+          // instead of it — it is still the right answer to "how outnumbered were we".
+          was_nearby: d.was_nearby ? d.was_nearby.join(', ') : null,
+          killer_is_a_guess: d.killed_by_is_a_guess ?? false,
+          unattended: d.unattended ?? false,
           hunting: d.hunting, strategy: d.strategy, flee_threshold: d.flee_threshold,
         });
       } else if (now.room !== was.room && /Underworld/i.test(now.room || '') &&
