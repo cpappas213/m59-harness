@@ -234,10 +234,23 @@ async function feed(row) {
       // is how this reported "103: nobody here trades" about The Bhrama & Falcon while
       // Meidei was standing in it offering bread, meat pie and cheese, and sent the
       // character away from the one shop that was going to work.
+      // AND CHECK THE LOOK IS ABOUT THE ROOM WE ARE STANDING IN.
+      //
+      // This is the whole reason the fleet could never buy anything. `look` answers from
+      // a room picture that lags the character, so it happily names a merchant from a
+      // room already left — and `Buy` (monster.kod:3690) rejects a buyer whose owner is
+      // not the seller's room with a Debug() line and a silent FALSE. No message, no
+      // purchase, nothing to diagnose from.
+      //
+      // Proved by holding a keeper and checking the rooms agree before trading: Waldorf
+      // sold a mushroom for 32 and then BOUGHT, purse 154 -> 84, at the same counter that
+      // had been silently refusing the fleet for its entire recorded history.
       let here = null;
-      for (let look = 0; look < 3 && !here; look++) {
+      for (let look = 0; look < 4 && !here; look++) {
         if (look) await sleep(1500);
+        const whoWhere = await call('status', { agent: row.agent, brief: true }).catch(() => null);
         const seen = await call('look', { agent: row.agent }).catch(() => ({ objects: [] }));
+        if (seen.room?.num == null || seen.room.num !== whoWhere?.where?.num) continue;
         here = (seen.objects || []).find(o => (o.can || []).includes('buy'));
       }
       if (!here) { tried.push(room); why.push(`${room}: nobody here trades (asked three times)`); continue; }
