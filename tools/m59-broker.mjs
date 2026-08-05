@@ -1929,7 +1929,29 @@ class Session {
       const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 });
       const entered = ev.events.find(e => e.kind === 'room-entered');
       if (entered) return { left: true, arrived_in: entered.roomName, via: 'region trigger' };
-      return { left: false, reason: 'reached the square but the room did not move us',
+
+      // IF STANDING THERE DID NOT MOVE US, ASK TO GO.
+      //
+      // A region is supposed to fire on arrival, and when it does not there is nothing to
+      // distinguish "walked to the wrong square" from "this is really a door the map has
+      // filed as a region". Sending `go` settles it for the cost of one request: on a
+      // genuine region nothing is listening and nothing happens, and on a mis-filed door
+      // it is exactly the command that was missing.
+      //
+      // Rizzo could not leave Marion for seven straight attempts on a route the planner
+      // said was seven hops — "reached the square but the room did not move us", every
+      // time — while holding the fleet's money and needing a shop. Two other characters
+      // failed the same way against all four food shops in the same run.
+      const beforeGo = c.evSeq;
+      await this.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
+      const ev2 = await c.waitFor({ since: beforeGo, kinds: ['room-entered'], timeoutMs: 4000 });
+      const entered2 = ev2.events.find(e => e.kind === 'room-entered');
+      if (entered2)
+        return { left: true, arrived_in: entered2.roomName, via: 'region trigger, after asking to go',
+                 note: 'standing in the trigger did nothing; `go` moved us, so this exit behaves ' +
+                       'like a door rather than a region' };
+
+      return { left: false, reason: 'reached the square but the room did not move us, and `go` did not either',
                walk, note: 'the trigger is ' + exit.trigger + '; the walk may have stopped short' };
     }
 
