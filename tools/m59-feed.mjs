@@ -44,6 +44,9 @@ const ONLY = arg('agents', null);
 const WANT = Number(arg('want', 6));
 // Below this a character is worth a trip. Above it, resting and the odd loaf keep up.
 const HUNGRY_BELOW = Number(arg('below', 150));
+// How many times to re-ask travel for one shop. Four was the observed cost of a five-hop
+// walk; eight leaves room for a worse one without walking for ever.
+const TRAVEL_TRIES = Number(arg('travel-tries', 8));
 
 let id = 0;
 async function call(name, args = {}) {
@@ -159,14 +162,33 @@ async function feed(row) {
     const shops = await foodShopsFor(row.agent);
     if (!shops.length) return `${who}: no reachable food shop`;
 
+    // TRAVEL IS RESUMABLE, SO KEEP ASKING — AND JUDGE IT ON WHETHER THE ROOM CHANGED.
+    //
+    // Three attempts per shop across three shops sounds like nine chances and is not: a
+    // walk that stops halfway has made progress, and starting again on a different shop
+    // throws that progress away. Clifford took FOUR attempts to reach room 103, moving
+    // 552 -> 544 -> 554 -> 574 -> 574 -> 103, and every one of the first three returned
+    // arrived:false while getting closer. On three tries it would have been abandoned as
+    // unreachable, which is exactly what "could not reach a food shop (tried 52, 151,
+    // 103)" meant after an hour of trying.
+    //
+    // Rooms are not adjacent in the way the map suggests — an edge you can route through
+    // is not an edge you can necessarily step through from the square the router picked
+    // — so a failed hop is normal and the honest test is movement, not success. Give up
+    // on a shop only when two attempts running leave the character in the same room.
+    const whereNow = async () => {
+      const st = await call('status', { agent: row.agent, brief: true }).catch(() => null);
+      return st?.where?.num ?? null;
+    };
     let arrived = false, tried = [];
     for (const room of shops.slice(0, 3)) {
-      for (let i = 0; i < 3 && !arrived; i++) {
+      let stuck = 0, was = await whereNow();
+      for (let i = 0; i < TRAVEL_TRIES && !arrived && stuck < 2; i++) {
         const t = await call('travel', { agent: row.agent, to: room, max_hops: 20 })
                         .catch(e => ({ arrived: false, why: e.message }));
-        if (t.arrived) { arrived = room; break; }
-        const st = await call('status', { agent: row.agent, brief: true }).catch(() => null);
-        if (st?.where?.num === room) { arrived = room; break; }
+        const now = await whereNow();
+        if (t.arrived || now === room) { arrived = room; break; }
+        if (now === was) stuck++; else { stuck = 0; was = now; }
         await sleep(1200);
       }
       if (arrived) break;
