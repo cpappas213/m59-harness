@@ -166,7 +166,15 @@ async function buyWeaponFor(row) {
     return `${row.character}: bought a ${pick.name} for ${purse0 - purse1}sh at room ${cand.room} — ` +
            `now wielding ${JSON.stringify(eq?.wielding ?? null)}${eq?.verified ? ' (verified)' : ''}`;
   }
-  return `${row.character}: could not reach a smith that had a weapon it could afford`;
+  // SAY WHICH IT WAS. "Could not reach a smith that had a weapon it could afford" covers
+  // three different failures — no route, a walk that fell short, and a price out of reach
+  // — and reading it as the last one sent me looking at weapon prices for a pass. It is
+  // the walk: smiths are seven hops out where food shops are one to five, and only one
+  // smith is routable from most of the fleet's ground at all.
+  return `${row.character}: never got to a smith. ${priced.length} routable ` +
+         `(${priced.slice(0, 3).map(p => `${p.room} at ${p.hops} hops`).join(', ')}), ` +
+         'and the walk did not finish. This is a distance problem, not a price one — ' +
+         'weapon base values inherit the Item default of 10 and every smith stocks a mace.';
 }
 
 async function main() {
