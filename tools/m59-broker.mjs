@@ -701,7 +701,7 @@ function claimPilot(agent, pid, { character = null } = {}) {
   const objectId = s?.client?.selfId ?? null;
   const keeper = autopilotIfAny(agent);
   const keeperWasRunning = !!keeper?.running;
-  if (keeper?.running) keeper.stop();
+  if (keeper?.running) keeper.stop('a person took the controls — deliberate');
   piloted.set(agent, { pid, since: Date.now(), objectId,
                        character: character ?? s?.client?.me?.name ?? null, keeperWasRunning });
   console.error(`[pilot] ${agent} claimed by pid ${pid}` +
@@ -3292,6 +3292,8 @@ const TOOLS = [
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       action: { type: 'string', enum: ['start', 'stop', 'status', 'list'] },
+      why: { type: 'string', description: 'on stop: why, for the uptime ledger — a deliberate hold ' +
+                                          'must be distinguishable from a keeper that dropped' },
       mode: { type: 'string', enum: ['survive', 'farm', 'idle'] },
       hunt: { type: 'string', description: 'creature name for farm mode — required, never guessed' },
       rest_below: { type: 'number', description: 'rest when a vital drops under this fraction, default 0.7' },
@@ -3368,7 +3370,12 @@ const TOOLS = [
       s.need();
       const p = autopilotFor(s);
       if (a.action === 'status') return p.status({ full: !!a.full_journal });
-      if (a.action === 'stop') return p.stop();
+      // SAY WHY IT STOPPED. The uptime ledger already records a reason and nothing ever
+      // supplied one, so every stop looked identical — and death attribution could not
+      // tell a keeper that CRASHED from one an errand was deliberately holding while it
+      // walked the character somewhere. Both read as "nothing was driving this", which
+      // is true and useless: one is a fault to chase, the other is the operator working.
+      if (a.action === 'stop') return p.stop(a.why ?? 'asked to stop, no reason given');
       if (a.mode) {
         if (!MODES.includes(a.mode)) throw new Error(`mode must be one of ${MODES.join(', ')}`);
         p.mode = a.mode;
@@ -6156,7 +6163,8 @@ async function supplyBetween(a) {
       const holdStill = (sess) => {
         const p = autopilotIfAny(sess.name);
         if (!p?.running) return;
-        p.stop();
+        // Named, so the outage this creates is not later read as a keeper fault.
+        p.stop('held for a supply exchange — deliberate, this errand owns it');
         restore.push(sess);
       };
       try {

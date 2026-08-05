@@ -70,6 +70,17 @@ export function outages(agent, ledger = readLedger(), now = Date.now()) {
 
 // Was this character unattended when it died? Returns the outage it fell in, or null.
 // Also catches deaths just AFTER a resume, for the reason in GRACE_MS.
+// Was this outage somebody's decision, or a fault? A stop that named a reason was asked
+// for; one that did not is either a crash or a keeper that fell over quietly. The
+// distinction is the whole point of the ledger — an errand walking a character with its
+// keeper held is the operator working, and charging its deaths to "nothing was driving"
+// mixes the two things this exists to separate. Twenty-five minutes of one agent's
+// downtime last night was a supply errand doing its job.
+const DELIBERATE = /deliberate|held for|took the controls/i;
+export function wasDeliberate(outage) {
+  return !!outage && DELIBERATE.test(String(outage.why || ''));
+}
+
 export function outageAround(agent, at, ledger = readLedger()) {
   for (const o of outages(agent, ledger)) {
     if (at >= o.from && at <= o.to + GRACE_MS)
@@ -171,7 +182,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const dir = join(HERE, '..', 'substrate', 'postmortems');
     const fs = await import('node:fs');
     const files = existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith('.json')) : [];
-    let marked = 0, total = 0;
+    let marked = 0, total = 0, heldInstead = 0;
     // ONLY JUDGE THE DEATHS THIS LEDGER COULD HAVE SEEN.
     //
     // The first version counted every postmortem on disk and reported "0 of 264
@@ -186,13 +197,22 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       if (d.at < ledgerBegan) { tooOld++; continue; }
       total++;
       const o = outageAround(d.agent, d.at, ledger);
-      if (o) { marked++;
-        console.log(`* ${d.character} ${new Date(d.at).toISOString().slice(11, 19)} — ` +
+      if (o) {
+        // A HELD KEEPER IS NOT A DROPPED ONE. An errand walking the character with its
+        // keeper deliberately stopped is the operator working, and counting those against
+        // the hunting strategy is the same mistake as counting them for it.
+        const held = wasDeliberate(o);
+        if (held) heldInstead++; else marked++;
+        console.log(`${held ? '·' : '*'} ${d.character} ${new Date(d.at).toISOString().slice(11, 19)} — ` +
           `${Math.round(o.died_ms_into_outage / 1000)}s into an outage of ${Math.round(o.ms / 1000)}s` +
-          (o.after_resume ? ` (${Math.round(o.after_resume / 1000)}s after the keeper came back)` : '')); }
+          (o.after_resume ? ` (${Math.round(o.after_resume / 1000)}s after the keeper came back)` : '') +
+          (held ? `  [deliberate: ${String(o.why).slice(0, 40)}]` : '')); }
     }
     console.log(`\n${marked} of ${total} judgeable deaths happened with nothing driving ` +
       `the character${total ? ` (${(100 * marked / total).toFixed(0)}%)` : ''}`);
+    if (heldInstead)
+      console.log(`${heldInstead} more died while a keeper was DELIBERATELY held — an errand was ` +
+        'driving that character. Those are the operator, not the strategy, and not a fault.');
     console.log(`the ledger starts at ${new Date(ledgerBegan).toISOString().slice(0, 19)}Z; ` +
       `${tooOld} earlier death(s) cannot be judged and are excluded.`);
     if (total < 20)
