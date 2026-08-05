@@ -311,13 +311,34 @@ async function feed(row) {
     const short = Math.max(0, (row.vigor_target ?? 180) - (row.vigor ?? 0));
     const target = Math.max(short, WANT * 10);
 
-    let spent = 0, gained = 0, bought = [];
+    // COUNT WHAT THE PURSE LOST, NOT WHAT WE MEANT TO BUY.
+    //
+    // This incremented spent/gained/bought on every request whether or not the purchase
+    // happened, so the errand reported "bought apple x7, water skin x2 (351sh, +76
+    // vigor)" about a character that still had every shilling and no food. Rowlf's meat
+    // pie was the same. Two characters were walked to a shop, funded by a lender that
+    // gave up its own reserve to do it, and came away with nothing while the log said
+    // otherwise — which is worse than failing, because nobody goes back for them.
+    //
+    // The purse is the receipt. If it did not fall, the purchase did not happen; stop
+    // rather than spend the rest of the loop making the same request forty times.
+    const purseNow = async () => purseOf((await call('inventory', { agent: row.agent })
+                                            .catch(() => ({ items: [] }))).items || []);
+    let spent = 0, gained = 0, bought = [], refused = null;
+    let held = await purseNow();
     for (let n = 0; n < 40 && gained < target; n++) {
-      const pick = menu.find(i => i.cost <= purse - spent);
+      const pick = menu.find(i => i.cost <= held);
       if (!pick) break;
       await call('shop', { agent: row.agent, seller: seller.id, buy_ids: [pick.id] }).catch(() => null);
-      spent += pick.cost; gained += pick.vigor; bought.push(pick.name);
-      await sleep(600);
+      await sleep(700);
+      const after = await purseNow();
+      if (after >= held) {
+        refused = `the counter took nothing for a ${pick.name} at ${pick.cost}sh — ` +
+                  `purse stayed at ${held}. Nothing was bought.`;
+        break;
+      }
+      spent += held - after; gained += pick.vigor; bought.push(pick.name);
+      held = after;
     }
     const after = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
     if (!bought.length && purse < (menu[0]?.cost ?? 0))
@@ -328,6 +349,8 @@ async function feed(row) {
       const c = bought.filter(x => x === n).length;
       return c > 1 ? `${n} x${c}` : n;
     }).join(', ');
+    if (refused && !bought.length)
+      return `${who}: purse ${before}->${purse}${lender ? ` (funded by ${lender})` : ''} — ${refused}`;
     return `${who}: purse ${before}->${purse}${lender ? ` (funded by ${lender})` : ''}, ` +
            `bought ${bought.length ? tally : 'NOTHING'} (${spent}sh, +${gained} vigor` +
            `${gained < target ? ` of ${target} wanted` : ''}) — ` +
