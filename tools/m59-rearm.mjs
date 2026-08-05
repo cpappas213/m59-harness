@@ -140,7 +140,14 @@ async function main() {
     for (const [k, items] of packs)
       packs.set(k, items.filter(i => skills.weaponScore(i.name) > 0)
                         .sort((a, b) => skills.weaponScore(b.name) - skills.weaponScore(a.name)));
-    unarmed = rows.filter(r => !r.wielding && (packs.get(r.agent) || []).length === 0)
+    // NOT WIELDING IS THE TEST. A pack with weapons in it does not make a character
+    // armed: brokenness lives on the server (piHits <= 0) and the name never changes, so
+    // a pack can be full of maces that every wield attempt refuses. Kermit was carrying
+    // one and fighting bare-handed — "You can't use the mace--it's broken" — and this
+    // tool skipped it because the pack was not empty. The server's use list is the only
+    // authority on what is actually held, and a spare mace is cheap insurance against
+    // being wrong.
+    unarmed = rows.filter(r => !r.wielding)
                   .filter(r => !only || only.includes(r.agent));
     // A donor keeps the one it is using plus one in reserve — a fleet that strips its
     // fighters bare to arm the idle has not gained anything.
