@@ -74,6 +74,16 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
       name: disp,
       level: m.viLevel != null ? Number(m.viLevel) : null,
       karma: m.viKarma != null ? Number(m.viKarma) : null,
+      // DIFFICULTY, WHICH IS WHAT ACTUALLY DECIDES HOW HARD A THING HITS YOU.
+      //
+      // It was read out of monsters.json and thrown away, so everything downstream
+      // ranked prey by LEVEL — and level is close to the opposite of danger here. A
+      // fungus beast is level 50 difficulty 1; a baby spider is level 25 difficulty 4.
+      // GetAttackAbility is 3*viLevel + 60*viDifficulty (monster.kod), so the fungus
+      // beast rates 210 against the baby spider's 315 and a centipede's 390: the
+      // level-50 creature is the SAFER fight by a wide margin, and a band that sorts on
+      // level will not offer it while happily offering the things that kill us.
+      difficulty: m.viDifficulty != null ? Number(m.viDifficulty) : null,
     });
   }
 
@@ -83,7 +93,7 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
   const missingRooms = new Set();
 
   for (const [cls, entries] of Object.entries(raw.byMonster || {})) {
-    const meta = info.get(cls.toLowerCase()) || { name: cls, level: null, karma: null };
+    const meta = info.get(cls.toLowerCase()) || { name: cls, level: null, karma: null, difficulty: null };
     const sites = [];
     for (const e of entries) {
       const room = byCls.get(String(e.room).toLowerCase());
@@ -93,6 +103,8 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
                      chance: e.chance, cap: e.cap, count: e.count, cite: e.cite };
       sites.push(site);
       (rooms[room.num] ||= []).push({ creature: meta.name, cls, level: meta.level,
+                                      difficulty: meta.difficulty,
+                                      attack_rating: attackRating(meta),
                                       karma: meta.karma, chance: e.chance, cap: e.cap,
                                       // `generator` means the room keeps making these.
                                       // `create` means one was placed at construction —
@@ -102,6 +114,8 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
                                       how: e.how, huntable: e.how === 'generator' });
     }
     creatures[meta.name.toLowerCase()] = { name: meta.name, cls, level: meta.level,
+                                           difficulty: meta.difficulty,
+                                           attack_rating: attackRating(meta),
                                            karma: meta.karma, sites,
                                            ...(loot.has(cls.toLowerCase())
                                                  ? { loot: loot.get(cls.toLowerCase()) } : {}) };
@@ -167,10 +181,48 @@ export function huntingGrounds(spawns, want, { maxDanger = null, limit = 12 } = 
       // What the ceiling is actually for is the thing you did NOT choose to fight:
       // the level-35 larva sharing a room with the rats, the level-50 spider next to
       // the ants. So exclude the quarry and judge the rest.
-      const others = here.filter(x => x.cls !== c.cls);
+      const _others = here.filter(x => x.cls !== c.cls);
+      // JUDGE THE NEIGHBOURS BY WHAT THEY HIT WITH, NOT BY THEIR LEVEL.
+      //
+      // Level is close to the opposite of danger here. GetAttackAbility is
+      // 3*viLevel + 60*viDifficulty (monster.kod), so difficulty dominates at sixty per
+      // point against three: a fungus beast is level 50 difficulty 1 and rates 210,
+      // while a baby spider is level 25 difficulty 4 and rates 315 and a centipede
+      // level 30 difficulty 5 rates 390. Damage per blow does scale with level —
+      // Fuzzy(viLevel/Random(10,15)) — but difficulty decides how often a blow lands
+      // at all, and that is what kills.
+      //
+      // Judging on level alone rejected rooms for containing the second-safest creature
+      // in the game. "something OTHER than your prey here is level 50, above your limit
+      // of 32" was a fungus beast, and rooms were thrown out for it while rooms full of
+      // centipedes passed. Nine characters were left unplaceable, wandered instead of
+      // hunting, and every creature on the death list — ant, spider, centipede, slime,
+      // baby spider — is a difficulty-4-or-worse one.
+      //
+      // The ceiling is expressed in levels, so compare like with like: convert it to a
+      // rating with the same formula at difficulty 1, which is what a caller passing
+      // "level 32" has always meant to say — that much of a threat, no more.
+      // The level test stays as it is, and a room it rejects gets ONE second chance: if
+      // everything objectionable in it hits no harder than a fungus beast, keep it.
+      //
+      // Written this way on purpose. A threshold expressed directly in ratings would need
+      // calibrating against how much punishment each level can take, and I do not have
+      // that; guessing it low leaves the fleet unplaceable and guessing it high walks it
+      // into centipedes. This can only ADD rooms the old rule threw away, never remove
+      // one it allowed, so the worst case is the behaviour we already had.
+      //
+      // FORGIVING_RATING is the fungus beast: level 50, difficulty 1, rating 210, and the
+      // creature this fleet demonstrably farms without dying to it. Anything at or under
+      // that is not what is killing us — every creature on the death list (ant 360,
+      // spider 390, centipede 390, slime 345, baby spider 315) is well above it.
+      const others = _others;
       const worstOther = others.reduce((m, x) => Math.max(m, x.level ?? 0), 0);
       const d = spawns.danger[s.room] || {};
-      const tooHot = maxDanger != null && worstOther > maxDanger;
+      const overLevel = maxDanger != null && worstOther > maxDanger;
+      // Unknown difficulty means unknown danger, and unknown is not forgiven.
+      const ratings = others.map(x => attackRating(x));
+      const allGentle = ratings.length > 0 && ratings.every(r => r != null && r <= FORGIVING_RATING);
+      const tooHot = overLevel && !allGentle;
       rows.push({
         room: s.room, room_name: s.room_name,
         creature: c.name, level: c.level, karma: c.karma,
@@ -181,6 +233,10 @@ export function huntingGrounds(spawns, want, { maxDanger = null, limit = 12 } = 
                        .map(x => `${x.creature} ${x.level}${x.chance ? ` @${x.chance}%` : ''}`),
         ...(tooHot ? { rejected: `something OTHER than your prey here is level ${worstOther}, ` +
                                  `above your limit of ${maxDanger}` } : {}),
+        ...(overLevel && allGentle
+              ? { allowed_anyway: `level ${worstOther} is over the ${maxDanger} limit, but nothing ` +
+                                  `here hits harder than ${Math.max(...ratings)} — a fungus beast ` +
+                                  `rates 210 and a centipede 390` } : {}),
       });
     }
   }
@@ -318,6 +374,24 @@ export function preyFor(spawns, level, { want = null, over = 6, limit = 6 } = {}
 // then a room of nothing, because the spiders it declined to kill fill the cap and the
 // generator stops rolling at all. Found live: East Merchant Way, cap 10, eight baby
 // spiders and two centipedes, with five characters in it hunting centipedes.
+// HOW HARD IT HITS, from the game's own formula rather than from its level.
+//
+//   GetAttackAbility = 3 * viLevel + 60 * viDifficulty     (monster.kod)
+//
+// Damage per blow is Fuzzy(viLevel / Random(10,15)) and depends on level alone, so level
+// still says how much a landed blow costs. Difficulty says how OFTEN one lands, and it
+// dominates: sixty per point against three. Null when the kod does not declare a
+// difficulty — say so rather than assuming the safe value, because assuming safety is how
+// a fleet walks into a centipede.
+// The fungus beast: level 50, difficulty 1, rating 210 — the creature this fleet farms
+// without dying to it. Used as "gentle enough to share a room with".
+export const FORGIVING_RATING = 210;
+
+export function attackRating(m) {
+  if (!m || m.level == null || m.difficulty == null) return null;
+  return 3 * Number(m.level) + 60 * Number(m.difficulty);
+}
+
 export function roomCap(spawns, roomNum) {
   const list = spawns?.rooms?.[roomNum];
   if (!list?.length) return null;
