@@ -115,12 +115,31 @@ async function main() {
                                      what: [{ id: give.id, amount: 1 }], who_travels: 'from' })
                     .catch(e => ({ supplied: false, reason: e.message }));
     if (!r?.supplied) {
-      console.log(`  ${need.character} <- ${pick.d.r.character}: FAILED — ${String(r?.reason || 'no reason given').slice(0, 90)}`);
+      // A FAILED HANDOVER IS NOT THE SAME AS A CHARACTER STILL EMPTY-HANDED. Its own
+      // keeper may have conjured one meanwhile, and saying "FAILED" about a character
+      // that is now armed reads as a problem to chase. Ask the server before deciding.
+      const eq = await call('equipment', { agent: need.agent }, 60_000).catch(() => null);
+      const armedAnyway = eq?.wielding ?? null;
+      console.log(`  ${need.character} <- ${pick.d.r.character}: handover failed — ` +
+                  `${String(r?.reason || 'no reason given').slice(0, 90)}` +
+                  (armedAnyway ? ` (but it is wielding ${JSON.stringify(armedAnyway)} now — its keeper ` +
+                                 'armed it, so this is not an unarmed character)'
+                               : ' (still empty-handed)'));
       continue;
     }
     pick.d.spare.shift();
-    await sleep(1500);
-    const eq = await call('equip_best', { agent: need.agent }, 90_000).catch(() => null);
+    // ASK AGAIN BEFORE CALLING IT UNVERIFIED.
+    //
+    // A single read 1.5s after the handover said "wielding null (UNVERIFIED)" for a
+    // character that was, in fact, holding the mace — BP_USE arrives when it arrives, and
+    // the equip request itself has to land first. Reporting an unverified failure that
+    // actually worked is worse than reporting nothing: it sends the next pass chasing a
+    // problem that is not there.
+    let eq = null;
+    for (let i = 0; i < 3 && !eq?.wielding; i++) {
+      await sleep(2000);
+      eq = await call('equip_best', { agent: need.agent }, 90_000).catch(() => null);
+    }
     console.log(`  ${need.character} <- ${pick.d.r.character} (${pick.hops} hops): ${give.name} — ` +
                 `now wielding ${JSON.stringify(eq?.wielding ?? null)}` +
                 `${eq?.verified ? ' (verified against the server use list)' : ' (UNVERIFIED)'}`);
