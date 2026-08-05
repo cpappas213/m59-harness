@@ -162,10 +162,22 @@ async function fundFrom(row, need) {
   const d = routed[0];
   // Lend the price of several meals, not the whole purse. The donor is earning and
   // needs to keep eating; taking everything just moves the destitution along the line.
-  // The borrower walks, not the lender — see the note in m59-rearm.mjs. A lender walked
-  // out of a safe spot is a lender that dies carrying the fleet's money.
+  // HERE THE LENDER WALKS, AND THAT IS THE OPPOSITE OF THE RULE IN m59-rearm.mjs.
+  //
+  // Both rules are right for their own errand. A reagent transfer sends the RECIPIENT,
+  // because the donor is usually holding a safe spot and walking it out is how the fleet
+  // loses its capital. A shop trip is the reverse: the borrower is STANDING AT A COUNTER
+  // it just walked to, and the merchant it is about to buy from is in that room. Send the
+  // borrower away to collect the loan and it comes back — or rather does not — to a buy
+  // aimed at a seller in a room it has left, and Buy (monster.kod:3690) refuses a distant
+  // buyer with a silent FALSE.
+  //
+  // That is why the fleet still could not buy after both the quantity fix and the
+  // room-agreement check: the errand was walking the character off the spot it had just
+  // verified. Three characters in a row, each funded, each reporting "the server said
+  // NOTHING AT ALL" from a shop they were no longer in.
   const r = await call('supply', { from: d.agent, to: row.agent,
-                                   what: [{ id: d.id, amount: d.canLend }], who_travels: 'to' })
+                                   what: [{ id: d.id, amount: d.canLend }], who_travels: 'from' })
                   .catch(e => ({ supplied: false, reason: e.message }));
   return r?.supplied
     ? `${d.name} (${d.hops} hops, ${d.canLend}sh of ${d.sh}` +
