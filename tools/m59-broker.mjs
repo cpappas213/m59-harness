@@ -6188,7 +6188,15 @@ async function supplyBetween(a) {
 
       // offer -> counter with NOTHING (that is how a gift is accepted, and it is what
       // grants the giver permission to accept) -> giver accepts.
-      await gs.pacer.submit('trade', () => g.offer(them.id, items.map(o => o.id)));
+      // OFFER THE WHOLE STACK, NOT ONE OF IT.
+      //
+      // Mapping to bare ids throws the quantity away, and the server reads "is there a
+      // quantity here" from the tag nibble alone — so a bare id means ONE. Clifford
+      // handed Waldorf a single shilling out of 1647 and the transfer reported complete,
+      // because it was: one shilling is what was offered. encodeIdList has taken
+      // {id, amount} all along.
+      const offered = items.map(o => (o.amount ?? 1) > 1 ? { id: o.id, amount: o.amount } : o.id);
+      await gs.pacer.submit('trade', () => g.offer(them.id, offered));
       const sawIt = await r.waitFor({ kinds: ['offered-to-us'], timeoutMs: 6000 }).catch(() => ({ events: [] }));
       if (!sawIt.events?.length) {
         await gs.pacer.submit('trade', () => g.cancelOffer()).catch(() => {});
@@ -6209,6 +6217,7 @@ async function supplyBetween(a) {
         supplied: got.length > 0,
         from: g.me?.name, to: r.me?.name,
         handed_over: got,
+        amounts: items.map(o => ({ name: nameOf(o), amount: o.amount ?? 1 })),
         not_received: handed.filter(n => !got.includes(n)),
         receiver_carrying: now.length, was_carrying: before,
         travelled: who !== 'neither' ? who : null,
