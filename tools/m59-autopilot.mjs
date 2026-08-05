@@ -431,7 +431,14 @@ export class Autopilot {
       // only to keepers created afterwards — I changed this to 800, restarted, and found
       // every keeper still reporting "carrying, but under the banking threshold ...
       // banks_at: 2000". Use the autopilot tool's `bank_above` to move the live ones.
-      bankAbove: 800,
+      // Lowered again to 500 after Rowlf — the fleet's best character, ten levels gained
+      // in a session — was found at 8 of 30 health carrying 731 shillings, which was 46%
+      // of everything the fleet owned. At 800 it would not bank, and one bad fight would
+      // have put nearly half the fleet's money on the floor of a monster room.
+      //
+      // The threshold is not really about the amount. It is about how much of the fleet's
+      // total is riding on one character that can die in the next eight seconds.
+      bankAbove: 500,
       ...policy,
     };
     // What we believe is in the stomach. Nothing reports it, so it is modelled from
