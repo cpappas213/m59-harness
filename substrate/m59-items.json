@@ -1,5 +1,5 @@
 {
- "builtAt": "2026-08-05T02:31:57.324Z",
+ "builtAt": "2026-08-05T02:52:29.099Z",
  "source": "compendium/data/koddb.json",
  "defaults": {
   "weight": 10,
@@ -11,7 +11,8 @@
   "item_classes": 217,
   "distinct_names": 212,
   "used_defaults": 0,
-  "foods": 21
+  "foods": 21,
+  "weapons": 21
  },
  "items": {
   "alchemical formula": {
@@ -2502,6 +2503,92 @@
    "cls": "Waterskin",
    "nutrition": 3,
    "filling": 6
+  }
+ },
+ "weapons": {
+  "axe": {
+   "name": "axe",
+   "cls": "Axe"
+  },
+  "black dagger": {
+   "name": "black dagger",
+   "cls": "BlackDagger"
+  },
+  "gold sword": {
+   "name": "gold sword",
+   "cls": "GoldSword"
+  },
+  "hammer": {
+   "name": "hammer",
+   "cls": "Hammer"
+  },
+  "sword of the hunt": {
+   "name": "Sword of the Hunt",
+   "cls": "HunterSword"
+  },
+  "long sword": {
+   "name": "long sword",
+   "cls": "LongSword"
+  },
+  "mace": {
+   "name": "mace",
+   "cls": "Mace"
+  },
+  "mystic sword": {
+   "name": "mystic sword",
+   "cls": "MysticSword"
+  },
+  "nerudite sword": {
+   "name": "nerudite sword",
+   "cls": "NeruditeSword"
+  },
+  "battle bow": {
+   "name": "battle bow",
+   "cls": "BattleBow"
+  },
+  "longbow": {
+   "name": "longbow",
+   "cls": "Longbow"
+  },
+  "magic bow": {
+   "name": "magic bow",
+   "cls": "MagicBow"
+  },
+  "nerudite bow": {
+   "name": "nerudite bow",
+   "cls": "NeruditeBow"
+  },
+  "practice bow": {
+   "name": "practice bow",
+   "cls": "PracticeBow"
+  },
+  "bow": {
+   "name": "bow",
+   "cls": "Bow"
+  },
+  "crossbow": {
+   "name": "crossbow",
+   "cls": "Crossbow"
+  },
+  "sword of riija": {
+   "name": "sword of Riija",
+   "cls": "RiijaSword"
+  },
+  "scimitar": {
+   "name": "scimitar",
+   "cls": "Scimitar"
+  },
+  "short sword": {
+   "name": "short sword",
+   "cls": "ShortSword"
+  },
+  "spiritual hammer": {
+   "name": "spiritual hammer",
+   "cls": "SpiritualHammer"
+  },
+  "dark blade of roq": {
+   "name": "Dark Blade of Roq",
+   "cls": "UniqueWeapon"
   }
  }
 }

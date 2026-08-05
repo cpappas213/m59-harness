@@ -21,7 +21,7 @@ import { OF, isTeleporter, describeObject } from './m59-parse.mjs';
 // The Underworld's exits, and which city is nearest to any room. As a namespace,
 // because escapeUnderworld re-exports most of it and a bare import would shadow.
 import * as UW from './m59-underworld.mjs';
-import { weighPack } from './m59-items.mjs';
+import { weighPack, isWeaponName } from './m59-items.mjs';
 
 // Health fractions. Chosen from what the game does rather than taste: a monster that
 // can take you from half to nothing in one exchange is common, and the server's
@@ -63,6 +63,14 @@ const WEAPON_WORDS = [
 export const weaponScore = name => {
   if (isJunk(name)) return 0;
   for (const [re, n] of WEAPON_WORDS) if (re.test(name)) return n;
+  // A REAL WEAPON MUST NEVER SCORE ZERO, because zero is what a helmet scores and it
+  // means "punch things instead". The list above wanted "war hammer" and the server says
+  // "hammer", so a hammer was indistinguishable from a hat: Clifford carried one all
+  // session, fought with its fists, and equip_best reported nothing wieldable in the
+  // pack while holding it. Falling through to the class tree costs one lookup and makes
+  // the failure impossible rather than unlikely — the word list still does the ranking,
+  // which is the part it is actually good at.
+  if (isWeaponName(name)) return 1;
   return 0;
 };
 

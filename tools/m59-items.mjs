@@ -166,15 +166,34 @@ export function buildItemTable(koddbFile = KODDB) {
     };
   }
 
+  // EVERY WEAPON'S NAME, so that no real one can score zero.
+  //
+  // weaponScore ranks on a word list, which is fine for ordering and wrong as a
+  // membership test: it wanted "war hammer" and the server says "hammer", so a hammer
+  // scored zero — the same answer as a helmet. Clifford carried one for an entire
+  // session and punched monsters, and equip_best reported "nothing wieldable in the
+  // pack" while holding it. Three of the game's twenty-one named weapons were invisible
+  // this way: hammer, spiritual hammer, and the Dark Blade of Roq.
+  //
+  // The word list keeps the ordering, because which weapon is BETTER is a judgement the
+  // class tree does not carry. This only decides what counts as one at all.
+  const weapons = {};
+  for (const cls of Object.values(classes)) {
+    if (!(cls.chain || []).some(x => String(x).toLowerCase() === 'weapon')) continue;
+    const name = displayName(cls);
+    if (name) weapons[name.toLowerCase()] = { name, cls: cls.name };
+  }
+
   return {
     builtAt: null,                              // stamped by the caller; see build()
     source: 'compendium/data/koddb.json',
     defaults: { weight: DEFAULT_WEIGHT, bulk: DEFAULT_BULK, from: 'item.kod:66-67' },
     capacity_formula: '1700 + might * 20, for weight AND bulk (player.kod:10456, :10461)',
     counts: { item_classes: considered, distinct_names: byName.size, used_defaults: defaulted,
-              foods: Object.keys(food).length },
+              foods: Object.keys(food).length, weapons: Object.keys(weapons).length },
     items: Object.fromEntries([...byName.entries()].sort()),
     food,
+    weapons,
   };
 }
 
@@ -265,6 +284,14 @@ export function foodValue(name, file = ITEMS_FILE) {
 // So this is how many of a food a character can actually get through in one sitting —
 // buying more than this is buying it for later, which is fine, but reporting it as
 // vigor now is not.
+// Is this the name of a real weapon class? Membership only — weaponScore still decides
+// which of two is better. Taken from the Weapon chain rather than guessed at.
+export function isWeaponName(name, file = ITEMS_FILE) {
+  const t = loadItems(file);
+  if (!t?.weapons) return false;
+  return !!t.weapons[String(name || '').trim().toLowerCase()];
+}
+
 export const STOMACH_MAX = 100;
 export function servingsAtOnce(name, file = ITEMS_FILE) {
   const f = foodValue(name, file);
