@@ -378,12 +378,31 @@ async function outfitPair(a, b) {
   const { spawn } = await import('node:child_process');
   const script = new URL('./m59-outfit.mjs', import.meta.url).pathname
                    .replace(/^\/([A-Za-z]:)/, '$1');
-  await new Promise(res => {
-    const p = spawn(process.execPath, [script, '--agents', `${a.agent},${b.agent}`,
-                                       '--port', String(PORT)], { stdio: 'inherit' });
-    p.on('exit', res);
-    setTimeout(() => { try { p.kill(); } catch {} res(); }, 8 * 60 * 1000);
-  });
+  try {
+    await new Promise(res => {
+      const p = spawn(process.execPath, [script, '--agents', `${a.agent},${b.agent}`,
+                                         '--port', String(PORT)], { stdio: 'inherit' });
+      p.on('exit', res);
+      setTimeout(() => { try { p.kill(); } catch {} res(); }, 8 * 60 * 1000);
+    });
+  } finally {
+    // THE ERRAND STOPS THE KEEPERS AND THE KILL STOPS THE ERRAND.
+    //
+    // m59-outfit.mjs restores the keepers in a finally of its own, which is correct and
+    // does not survive the timeout above: p.kill() is a hard kill and finally blocks do
+    // not run through one. Robin and Clifford were found stopped in Marion for exactly
+    // this — their travel to the smith kept being refused ("You are unable to go
+    // anywhere"), the process ran past eight minutes, was killed, and its restore never
+    // happened.
+    //
+    // Same invariant as deploy(): whoever this errand may have stopped is running again
+    // before we return. Checked rather than assumed, because start on an already-running
+    // keeper is free and the alternative is a character standing in a town for ever.
+    for (const who of [a, b]) {
+      const ok = await ensureKeeper(who.agent, who.hunting || fallbackHunt(who.level));
+      if (!ok) console.log(`   ${who.character}: COULD NOT RESTART ITS KEEPER after outfitting`);
+    }
+  }
 }
 
 // ONLY WHEN RUN, NEVER WHEN IMPORTED.
