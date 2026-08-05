@@ -329,12 +329,22 @@ async function feed(row) {
     for (let n = 0; n < 40 && gained < target; n++) {
       const pick = menu.find(i => i.cost <= held);
       if (!pick) break;
-      await call('shop', { agent: row.agent, seller: seller.id, buy_ids: [pick.id] }).catch(() => null);
+      // KEEP WHAT THE SERVER SAID. `shop` returns the messages it sent in reply to the
+      // buy, and nothing has ever read them — which is why "the counter took nothing" was
+      // as far as any diagnosis got. There are ZERO successful purchases in the entire
+      // recorded history of this fleet, so whatever it is saying, it has been saying it
+      // for days into a void.
+      const res = await call('shop', { agent: row.agent, seller: seller.id, buy_ids: [pick.id] })
+                        .catch(e => ({ messages: [`the request itself failed: ${e.message}`] }));
       await sleep(700);
       const after = await purseNow();
       if (after >= held) {
+        const said = (res?.messages || []).filter(Boolean);
         refused = `the counter took nothing for a ${pick.name} at ${pick.cost}sh — ` +
-                  `purse stayed at ${held}. Nothing was bought.`;
+                  `purse stayed at ${held}. ` +
+                  (said.length ? `The server said: ${said.slice(0, 3).map(t => JSON.stringify(t)).join(' | ')}`
+                               : 'The server said NOTHING AT ALL, which is its own answer — ' +
+                                 'the request is not reaching a merchant that considers itself asked.');
         break;
       }
       spent += held - after; gained += pick.vigor; bought.push(pick.name);
