@@ -180,25 +180,44 @@ async function feed(row) {
       const st = await call('status', { agent: row.agent, brief: true }).catch(() => null);
       return st?.where?.num ?? null;
     };
-    let arrived = false, tried = [];
-    for (const room of shops.slice(0, 3)) {
-      let stuck = 0, was = await whereNow();
-      for (let i = 0; i < TRAVEL_TRIES && !arrived && stuck < 2; i++) {
+    // AN EMPTY COUNTER IS A REASON TO WALK ON, NOT A REASON TO STOP.
+    //
+    // `merchants` answers what a shop SELLS; stock is a live thing that runs out and is
+    // restocked on the server's own schedule. So the catalogue can send a character five
+    // hops to The Bhrama & Falcon and have it arrive at a counter holding nothing —
+    // which happened to Sweetums at room 103 (0 items) and Gonzo at 202 (5 items, none
+    // of them food) in the same run. Both walked, both gave up, both came home hungry.
+    //
+    // The shop candidates are already ranked by route, so the next one is the next
+    // cheapest thing to try. Arriving at an empty counter now costs the walk, not the
+    // errand.
+    let arrived = false, tried = [], seller = null, why = [];
+    for (const room of shops.slice(0, 4)) {
+      let got = false, stuck = 0, was = await whereNow();
+      for (let i = 0; i < TRAVEL_TRIES && !got && stuck < 2; i++) {
         const t = await call('travel', { agent: row.agent, to: room, max_hops: 20 })
                         .catch(e => ({ arrived: false, why: e.message }));
         const now = await whereNow();
-        if (t.arrived || now === room) { arrived = room; break; }
+        if (t.arrived || now === room) { got = true; break; }
         if (now === was) stuck++; else { stuck = 0; was = now; }
         await sleep(1200);
       }
-      if (arrived) break;
-      tried.push(room);
-    }
-    if (!arrived) return `${who}: could not reach a food shop (tried ${tried.join(', ')})`;
+      if (!got) { tried.push(room); why.push(`${room}: could not get there`); continue; }
 
-    const look = await call('look', { agent: row.agent }).catch(() => ({ objects: [] }));
-    const seller = (look.objects || []).find(o => (o.can || []).includes('buy'));
-    if (!seller) return `${who}: reached room ${arrived} but nobody here trades`;
+      const look = await call('look', { agent: row.agent }).catch(() => ({ objects: [] }));
+      const here = (look.objects || []).find(o => (o.can || []).includes('buy'));
+      if (!here) { tried.push(room); why.push(`${room}: nobody here trades`); continue; }
+      // Ask what is ON THE SHELF, not what the catalogue believes.
+      const peek = await call('shop', { agent: row.agent, seller: here.id }).catch(() => null);
+      const stocked = (peek?.items || []).some(i => isFood(i.name) && (i.cost ?? 0) > 0);
+      if (!stocked) {
+        tried.push(room);
+        why.push(`${room}: counter has ${(peek?.items || []).length} item(s), no food on the shelf`);
+        continue;
+      }
+      arrived = room; seller = here; break;
+    }
+    if (!arrived) return `${who}: no food to be had — ${why.join('; ')}`;
 
     // FUND IT FROM THE PACK. This is the whole trick: the character is broke because it
     // cannot fight, and it is carrying loot it cannot eat. One counter solves both.
