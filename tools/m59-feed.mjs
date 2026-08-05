@@ -116,6 +116,8 @@ async function foodShopsFor(agent) {
 // Nearest by ROUTE, not by room number, because the donor has to walk it. supply() holds
 // both keepers, travels, and verifies the money arrived in the receiver's pack.
 const DONOR_RESERVE = Number(arg('donor-reserve', 200));
+// The price of one apple. Below this a loan cannot buy anything, so it is not worth a walk.
+const MIN_WORTH_LENDING = Number(arg('min-loan', 60));
 async function fundFrom(row, need) {
   const f = await call('fleet', {}).catch(() => null);
   if (!f) return null;
@@ -130,7 +132,22 @@ async function fundFrom(row, need) {
     // character stayed destitute while the fleet sat on 4,473 shillings. A donor at high
     // vigor with loot in its pack can rebuild a small reserve; a character at zero and
     // vigor 80 cannot rebuild anything.
-    if ((sh?.amount || 0) >= need + DONOR_RESERVE) donors.push({ agent: c.agent, name: c.character, id: sh.id, sh: sh.amount, room: c.room_num });
+    // LEND WHAT THERE IS, NOT ONLY THE FULL AMOUNT.
+    //
+    // This required a donor holding the whole loan plus the reserve, and refused
+    // otherwise. The fleet is now poor enough that nothing qualifies: total wealth is
+    // about 910 shillings across twenty-one characters, the richest holds 416, and a
+    // 500-shilling ask therefore found nobody. Four characters walked to a counter, stood
+    // there with nothing, and came home hungry — which is the worst of both, the walk
+    // spent and no food bought.
+    //
+    // An apple is 45 shillings and ten vigor. Half a loan buys half the vigor, and half
+    // the vigor is the difference between the resting cap and clear of it. So take the
+    // best offer available above the price of a single meal.
+    const spare = (sh?.amount || 0) - DONOR_RESERVE;
+    if (spare >= MIN_WORTH_LENDING)
+      donors.push({ agent: c.agent, name: c.character, id: sh.id, sh: sh.amount,
+                    canLend: Math.min(need, spare), room: c.room_num });
   }
   if (!donors.length) return null;
   const routed = [];
@@ -140,16 +157,20 @@ async function fundFrom(row, need) {
     if (m?.route?.found) routed.push({ ...d, hops: m.route.hops.length });
   }
   if (!routed.length) return null;
-  routed.sort((a, b) => a.hops - b.hops);
+  // Nearest first, but prefer one that can cover the whole ask when the walk is similar.
+  routed.sort((a, b) => a.hops - b.hops || b.canLend - a.canLend);
   const d = routed[0];
   // Lend the price of several meals, not the whole purse. The donor is earning and
   // needs to keep eating; taking everything just moves the destitution along the line.
   // The borrower walks, not the lender — see the note in m59-rearm.mjs. A lender walked
   // out of a safe spot is a lender that dies carrying the fleet's money.
   const r = await call('supply', { from: d.agent, to: row.agent,
-                                   what: [{ id: d.id, amount: need }], who_travels: 'to' })
+                                   what: [{ id: d.id, amount: d.canLend }], who_travels: 'to' })
                   .catch(e => ({ supplied: false, reason: e.message }));
-  return r?.supplied ? `${d.name} (${d.hops} hops, ${need}sh of ${d.sh})` : null;
+  return r?.supplied
+    ? `${d.name} (${d.hops} hops, ${d.canLend}sh of ${d.sh}` +
+      `${d.canLend < need ? `, all it could spare — ${need} was wanted` : ''})`
+    : null;
 }
 
 async function feed(row) {
