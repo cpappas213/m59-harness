@@ -5448,7 +5448,17 @@ const TOOLS = [
               .reduce((t, o) => t + (o.amount || 1), 0);
             return { elderberry: n(/elder\s*berry|elderberry/i), herbs: n(/herb/i) };
           })(),
-          autopilot: st ? { mode: st.mode, running: st.running, kills: st.did?.kills ?? 0 } : null,
+          // `hunt` IS ON THIS ROW BECAUSE ITS ABSENCE WAS A TRAP.
+          //
+          // The activity string says "hunting: mummy" in prose and this block did not
+          // carry the field, so anyone restarting a keeper from a fleet row wrote
+          // `hunt: row.autopilot?.hunt || 'giant rat'` — undefined, then the fallback —
+          // and silently reset the prey assignment. I did that to this fleet repeatedly
+          // over a session, wiping the diversification each time and blaming the external
+          // supervisor for it. Omitting `hunt` on a start preserves what the keeper
+          // already holds; the way to avoid needing to know that is to publish the value.
+          autopilot: st ? { mode: st.mode, running: st.running, kills: st.did?.kills ?? 0,
+                            hunt: st.policy?.hunt ?? null } : null,
           // Which farming pattern this one is running, so the ledger can compare them.
           strategy: st?.policy?.strategy ?? null,
           // WHO IT FIGHTS ALONGSIDE, and whether that is currently mutual. A pairing is
