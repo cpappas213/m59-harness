@@ -48,6 +48,8 @@ const ONLY = arg('agents', null);
 // Fozzie carried sixty elderberry at full vigor. The walk is worth it now: 80 vigor is a
 // six-fold death rate and produces nothing to justify it.
 const WHAT = String(arg('what', 'weapons'));
+// Buy a weapon when the fleet has none spare. Off unless asked, because it spends money.
+const BUY = !!arg('buy', false);
 const REAGENT = /elder\s*berry|elderberry|herbs?/i;
 const WANT_REAGENTS = Number(arg('want', 6));
 
@@ -88,6 +90,83 @@ function drawDown(donor, carried) {
     const i = donor.spare.indexOf(sp);
     if (i >= 0) donor.spare.splice(i, 1);
   }
+}
+
+// BUY ONE, WHEN THE FLEET HAS NONE TO LEND.
+//
+// Conjured weapons expire — IA_MADE, spellPower*2 minutes — and looted maces stopped
+// keeping up: the fleet reached zero spare weapons with three characters unarmed and
+// two of them short of the 15 mana to conjure. Lending cannot solve a shortage.
+//
+// This is the feed tool's shop sequence, which is the only one known to work: walk with
+// retries, require status and look to AGREE on the room, re-find the merchant immediately
+// before buying, and judge the purchase by the purse rather than by the request.
+async function buyWeaponFor(row) {
+  const purseOf = items => (items || []).filter(i => /shilling/i.test(i.name))
+                                        .reduce((t, i) => t + (i.amount || 1), 0);
+  const inv0 = await call('inventory', { agent: row.agent }, 60_000).catch(() => ({ items: [] }));
+  const purse0 = purseOf(inv0.items);
+  if (purse0 < 100) return `${row.character}: only ${purse0}sh — a weapon costs more than that`;
+
+  const seen = new Map();
+  for (const what of ['mace', 'short sword', 'sword']) {
+    const m = await call('merchants', { agent: row.agent, sells: what }, 60_000).catch(() => ({ matches: [] }));
+    for (const x of m.matches || []) if (x.room != null) seen.set(x.room, x);
+  }
+  const priced = [];
+  for (const room of seen.keys()) {
+    const rt = await call('map', { agent: row.agent, to: room }, 60_000).catch(() => null);
+    if (rt?.route?.found) priced.push({ room, hops: rt.route.hops.length });
+  }
+  priced.sort((a, b) => a.hops - b.hops);
+  if (!priced.length) return `${row.character}: no reachable smith`;
+
+  const where = async () => {
+    const st = await call('status', { agent: row.agent, brief: true }, 60_000).catch(() => null);
+    return st?.where?.num ?? null;
+  };
+  for (const cand of priced.slice(0, 3)) {
+    let at = await where(), stuck = 0;
+    for (let i = 0; i < 8 && at !== cand.room && stuck < 2; i++) {
+      await call('travel', { agent: row.agent, to: cand.room, max_hops: 20 }).catch(() => ({}));
+      const now = await where();
+      if (now === cand.room) { at = now; break; }
+      if (now === at) stuck++; else { stuck = 0; at = now; }
+      await sleep(1200);
+    }
+    if (at !== cand.room) continue;
+
+    let smith = null;
+    for (let look = 0; look < 4 && !smith; look++) {
+      if (look) await sleep(1500);
+      const here = await where();
+      const seenRoom = await call('look', { agent: row.agent }, 60_000).catch(() => ({ objects: [] }));
+      if (seenRoom.room?.num !== here) continue;
+      smith = (seenRoom.objects || []).find(o => (o.can || []).includes('buy'));
+    }
+    if (!smith) continue;
+
+    const shop = await call('shop', { agent: row.agent, seller: smith.id }, 60_000).catch(() => null);
+    const menu = (shop?.items || []).filter(i => skills.weaponScore(i.name) > 0 && (i.cost ?? 0) > 0)
+                                    .sort((a, b) => skills.weaponScore(b.name) - skills.weaponScore(a.name)
+                                                 || a.cost - b.cost);
+    const pick = menu.find(i => i.cost <= purse0);
+    if (!pick) continue;
+    await call('shop', { agent: row.agent, seller: smith.id, buy_ids: [pick.id] }).catch(() => null);
+    await sleep(1500);
+    const inv1 = await call('inventory', { agent: row.agent }, 60_000).catch(() => ({ items: [] }));
+    const purse1 = purseOf(inv1.items);
+    if (purse1 >= purse0)
+      return `${row.character}: the smith at ${cand.room} took nothing for a ${pick.name} at ${pick.cost}sh`;
+    let eq = null;
+    for (let i = 0; i < 3 && !eq?.wielding; i++) {
+      await sleep(1800);
+      eq = await call('equip_best', { agent: row.agent }, 60_000).catch(() => null);
+    }
+    return `${row.character}: bought a ${pick.name} for ${purse0 - purse1}sh at room ${cand.room} — ` +
+           `now wielding ${JSON.stringify(eq?.wielding ?? null)}${eq?.verified ? ' (verified)' : ''}`;
+  }
+  return `${row.character}: could not reach a smith that had a weapon it could afford`;
 }
 
 async function main() {
@@ -181,7 +260,13 @@ async function main() {
     }
     routed.sort((a, b) => a.hops - b.hops);
     const pick = routed[0];
-    if (!pick) { console.log(`  ${need.character}: no donor can reach it`); continue; }
+    if (!pick) {
+      // Nobody has one to give. Buy it — the fleet has money and the shops work now.
+      if (BUY && !isReagents && GO) { console.log('  ' + await buyWeaponFor(need)); continue; }
+      console.log(`  ${need.character}: no donor can reach it` +
+                  (isReagents ? '' : ' (pass --buy to purchase one instead)'));
+      continue;
+    }
     // BOTH KINDS IN ONE WALK. `create food` consumes 2 elderberry AND 2 herbs and refuses
     // silently short of either, so delivering elderberry alone buys the recipient nothing
     // and costs the donor the same trip. supply() takes a list; use it.
