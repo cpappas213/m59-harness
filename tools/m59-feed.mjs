@@ -227,9 +227,20 @@ async function feed(row) {
       }
       if (!got) { tried.push(room); why.push(`${room}: could not get there`); continue; }
 
-      const look = await call('look', { agent: row.agent }).catch(() => ({ objects: [] }));
-      const here = (look.objects || []).find(o => (o.can || []).includes('buy'));
-      if (!here) { tried.push(room); why.push(`${room}: nobody here trades`); continue; }
+      // ASK TWICE BEFORE DECIDING A SHOP IS EMPTY OF PEOPLE.
+      //
+      // Room contents arrive after the move, not with it, so a `look` taken the instant a
+      // walk finishes can answer about the room just left — or about nothing at all. That
+      // is how this reported "103: nobody here trades" about The Bhrama & Falcon while
+      // Meidei was standing in it offering bread, meat pie and cheese, and sent the
+      // character away from the one shop that was going to work.
+      let here = null;
+      for (let look = 0; look < 3 && !here; look++) {
+        if (look) await sleep(1500);
+        const seen = await call('look', { agent: row.agent }).catch(() => ({ objects: [] }));
+        here = (seen.objects || []).find(o => (o.can || []).includes('buy'));
+      }
+      if (!here) { tried.push(room); why.push(`${room}: nobody here trades (asked three times)`); continue; }
       // Ask what is ON THE SHELF, not what the catalogue believes.
       const peek = await call('shop', { agent: row.agent, seller: here.id }).catch(() => null);
       const stocked = (peek?.items || []).some(i => isFood(i.name) && (i.cost ?? 0) > 0);
