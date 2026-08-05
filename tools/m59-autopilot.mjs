@@ -3592,17 +3592,36 @@ export class Autopilot {
     // It was `hurt` on VIGOR, not health, which is the state a keeper is in most of the
     // time. Take the spot as a side effect and let the pass carry on — the rest gate
     // below already refuses to rest in the open, which was the actual requirement.
-    if (hurt && combatZone && !sheltered && !testing && this.policy.useSafeSpots && !this.hold
+    // AN EMPTY SPAWN ROOM IS NOT AN EMPTY ROOM — IT IS A ROOM BETWEEN SPAWNS.
+    //
+    // This asked for a wall only when something hostile was ALREADY standing there, so a
+    // character that sat down during the gap between spawns rested in the open with
+    // nothing to fetch it a wall. That is how Waldorf died, and its own journal reads the
+    // sequence out: "hit while resting in the open — there was no wall at our back; this
+    // is the case the safe spot exists for", then a reconnect to shed aggro, then "could
+    // not reach the safe spot", then dead. The resting came first and the damage second.
+    //
+    // Across characters at or below the resting cap, resting ran 529 deaths per thousand
+    // observations against 7.5 for holding a proven safe spot — the same act of sitting
+    // still, differing only in whether a wall was at their back.
+    //
+    // sanctuary() is the existing test for "nothing huntable spawns here". This only
+    // widens WHEN A WALL IS FETCHED; the rest gate below is untouched, so nothing that
+    // could rest before is forbidden from resting now — it just sits down behind
+    // something first.
+    const spawnsHere = !this.sanctuary();
+    if (hurt && (combatZone || spawnsHere) && !sheltered && !testing && this.policy.useSafeSpots && !this.hold
         && (!this.wallTriedAt || Date.now() - this.wallTriedAt > 30_000)) {
       this.wallTriedAt = Date.now();
       const got = await this.takeSafeSpot(
-        'hurt in a room with monsters in it — a wall before a rest', near[0] ?? hostiles[0] ?? null)
+        'hurt in a room that spawns monsters — a wall before a rest', near[0] ?? hostiles[0] ?? null)
         .catch(() => false);
       this.note('will not rest in the open here', {
         health: hp === null ? null : Math.round(hp * 100) + '%',
         monsters_in_room: hostiles.length, adjacent: near.length, got_a_wall: !!got,
-        why: 'resting is sitting still and not looking; doing it where something can reach us is ' +
-             'how a rest becomes a death' });
+        room_spawns: spawnsHere, nothing_visible_yet: hostiles.length === 0 || undefined,
+        why: 'resting is sitting still and not looking. Doing it where something can reach us is ' +
+             'how a rest becomes a death, and an empty room that spawns is a room between spawns' });
     }
     // VIGOR TO SPARE MEANS WALK, DO NOT WAIT.
     //
