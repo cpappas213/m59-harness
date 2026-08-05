@@ -6106,7 +6106,21 @@ async function supplyBetween(a) {
         //
         // Held for the whole exchange, restored in the finally below.
         holdStill(gs); holdStill(rs);
-        if (who !== 'neither' && (gs.world?.room?.num !== rs.world?.room?.num)) {
+        // TWO UNKNOWNS ARE NOT THE SAME ROOM.
+        //
+        // This compared the two room numbers directly, and `undefined !== undefined` is
+        // FALSE — so whenever either side's room could not be read, the walk was skipped
+        // on the grounds that they were already together, and the handover then failed
+        // with "X is not in the room with Y" having never taken a step. Clifford stood
+        // one hop from Waldorf and reported that, with no travel attempt in the log at
+        // all, which is what gave it away.
+        //
+        // Unknown means travel: walking to where we think they are is recoverable, and
+        // deciding they are next to us on the strength of two nulls is not.
+        const myRoom = gs.world?.room?.num ?? null;
+        const theirRoom = rs.world?.room?.num ?? null;
+        const apart = myRoom == null || theirRoom == null || myRoom !== theirRoom;
+        if (who !== 'neither' && apart) {
           const mover = who === 'to' ? rs : gs;
           const other = who === 'to' ? gs : rs;
           let arrived = false, why = null;
