@@ -226,7 +226,8 @@ async function feed(row) {
     // The shop candidates are already ranked by route, so the next one is the next
     // cheapest thing to try. Arriving at an empty counter now costs the walk, not the
     // errand.
-    let arrived = false, tried = [], seller = null, why = [];
+    let arrived = false, tried = [], why = [];
+    let seller = null;
     for (const room of shops.slice(0, 4)) {
       let got = false, stuck = 0, was = await whereNow();
       for (let i = 0; i < TRAVEL_TRIES && !got && stuck < 2; i++) {
@@ -312,6 +313,30 @@ async function feed(row) {
     // A FAILED SHOP CALL IS NOT AN EMPTY SHOP, and reporting it as one sent me looking
     // at the wrong thing: room 103 plainly sells bread at 108 and apples at 45, and the
     // message said it sold no food.
+    // FIND THE MERCHANT AGAIN, IMMEDIATELY BEFORE BUYING.
+    //
+    // `seller` was found when the character arrived, and everything since — selling,
+    // borrowing, walking to a lender — has had time to move it or to move us. Buy
+    // (monster.kod:3690) refuses a buyer who is not in the merchant's room and says
+    // nothing about it, so a seller id that has gone stale looks exactly like a shop that
+    // will not trade.
+    //
+    // The one purchase that has ever worked in this fleet did a SELL first and the sell
+    // succeeded — which is positive proof of standing in the room, not an inference from
+    // a cached picture. This is the cheap version of that proof: ask again, now.
+    for (let again = 0; again < 3; again++) {
+      const whoWhere = await call('status', { agent: row.agent, brief: true }).catch(() => null);
+      const seen = await call('look', { agent: row.agent }).catch(() => ({ objects: [] }));
+      if (seen.room?.num != null && seen.room.num === whoWhere?.where?.num) {
+        const still = (seen.objects || []).find(o => (o.can || []).includes('buy'));
+        if (still) { seller = still; break; }
+      }
+      if (again === 2)
+        return `${who}: reached ${arrived} but the merchant is not in the room any more — ` +
+               'nothing to buy from';
+      await sleep(1500);
+    }
+
     let shop = null, shopErr = null;
     try { shop = await call('shop', { agent: row.agent, seller: seller.id }); }
     catch (e) { shopErr = e.message; }
