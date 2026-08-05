@@ -138,7 +138,19 @@ export function recordSample(rows = []) {
       // inferring from a five-minute sample, which reported the inn a character had
       // been resting in rather than the field it died in.
       if (now.death_sig && now.death_sig !== was.death_sig) {
+        // WRITE WHAT IS KNOWN, NOT A ROW OF `undefined`.
+        //
+        // The death signature changes the moment the keeper notices, and last_death is
+        // filled in a beat later — it waits for the death broadcast on purpose. Sampling
+        // in that gap wrote every field as undefined: no room, no vigor, no killer, not
+        // even a note saying so. Two of nine deaths in one window looked like that, and
+        // an undefined room is indistinguishable in the record from a death nobody
+        // watched.
+        //
+        // The sample always knows where the character is and what level it is, so say
+        // that much and mark the rest as not-yet-known rather than as nothing.
         const d = r.last_death || {};
+        const thin = !d.died_in && d.last_health == null;
         // CARRY `how` ALONGSIDE `killed_by`, because a null killer is not one fact.
         //
         // Three of the broadcast forms name nobody — "murdered in cold blood" (a player
@@ -163,6 +175,10 @@ export function recordSample(rows = []) {
           killer_is_a_guess: d.killed_by_is_a_guess ?? false,
           unattended: d.unattended ?? false,
           hunting: d.hunting, strategy: d.strategy, flee_threshold: d.flee_threshold,
+          ...(thin ? { detail_missing: true,
+                       note: 'the keeper had not finished reconstructing this death when the ' +
+                             'sample caught it — room and level come from the sampler, the ' +
+                             'rest was not known yet' } : {}),
         });
       } else if (now.room !== was.room && /Underworld/i.test(now.room || '') &&
                  !/Underworld/i.test(was.room || '')) {
