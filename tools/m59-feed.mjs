@@ -30,6 +30,10 @@
 // throw — the same invariant deploy() and outfitPair() needed, learned the same way,
 // which is by finding characters standing in towns with nothing driving them.
 import { readFileSync } from 'node:fs';
+// foodValue knows what a name is actually worth — and, just as importantly, that plain,
+// blue, red and purple mushrooms are not food. isFood agrees; the fleet's pack contents
+// did not.
+import { foodValue as items_foodValue } from './m59-items.mjs';
 
 const arg = (n, d = null) => {
   const i = process.argv.indexOf('--' + n);
@@ -444,11 +448,54 @@ for (let i = 0; i < 3 && !f; i++) {
 }
 if (!f) { console.error('could not read the fleet'); process.exit(1); }
 const only = ONLY && ONLY !== true ? String(ONLY).split(',').map(s => s.trim()) : null;
-const rows = (f.fleet || [])
-  .filter(r => r.in_game !== false)
-  .filter(r => (only ? only.includes(r.agent) : (r.vigor ?? 200) < HUNGRY_BELOW && !r.has_food));
 
-console.log(`${rows.length} character(s) below ${HUNGRY_BELOW} vigor with no food${DRY ? ' (dry run)' : ''}`);
+// "HAS FOOD" IS A BOOLEAN, AND THE QUESTION IS A QUANTITY.
+//
+// This selected on `!r.has_food`, which is true the moment a character picks up one
+// edible mushroom — five nutrition, against a resting cap of 80 and a target of 200. Nine
+// characters sat at exactly 80 for hours holding token food and were skipped by every
+// feed run: Floyd's entire larder was three edible mushrooms (15 vigor all told), and
+// Janice carried thirty-four blue, red and purple mushrooms, which are not food at all.
+// A run over the whole fleet considered two characters and reported success.
+//
+// So ask what the pack is WORTH. Carrying is not eating, and carrying a trifle is not
+// being fed.
+const CARRIED_VIGOR_FLOOR = Number(arg('carrying_under', 40));
+
+async function carriedFoodVigor(agent) {
+  const inv = await call('inventory', { agent }).catch(() => null);
+  const items = inv?.inventory || inv?.items || [];
+  let total = 0;
+  for (const o of items) {
+    const v = items_foodValue(String(o.name || ''));
+    if (v?.nutrition > 0) total += v.nutrition * (o.amount > 0 ? o.amount : 1);
+  }
+  return total;
+}
+
+const candidates = (f.fleet || [])
+  .filter(r => r.in_game !== false)
+  .filter(r => (only ? only.includes(r.agent) : (r.vigor ?? 200) < HUNGRY_BELOW));
+
+// SAY WHAT IS HAPPENING WHILE IT HAPPENS. Weighing a pack is a round trip per character,
+// so this stage costs one call each before it can decide anything — and printing only the
+// verdict at the end made a working run indistinguishable from a hung one for minutes.
+// The old filter was free (a field on the fleet row) and printed its count immediately;
+// this is the price of asking a better question, and it should be visible rather than
+// silent.
+console.log(`weighing the pack of ${candidates.length} character(s) under ${HUNGRY_BELOW} vigor…`);
+const rows = [];
+for (const r of candidates) {
+  if (only) { rows.push(r); continue; }
+  const worth = await carriedFoodVigor(r.agent);
+  const short = worth < CARRIED_VIGOR_FLOOR;
+  console.log(`  ${String(r.character).padEnd(9)} vigor ${String(r.vigor).padStart(3)} — pack holds ` +
+              `${String(worth).padStart(3)} vigor of food${short ? '  <- feeding' : '  (enough)'}`);
+  if (short) rows.push({ ...r, carried_food_vigor: worth });
+}
+
+console.log(`${rows.length} of ${candidates.length} carrying under ${CARRIED_VIGOR_FLOOR} ` +
+            `vigor of food${DRY ? ' (dry run)' : ''}`);
 for (const row of rows) {
   try { console.log('  ' + await feed(row)); }
   catch (e) { console.log(`  ${row.character || row.agent}: ${e.message}`); }
