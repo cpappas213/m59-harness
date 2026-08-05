@@ -2783,8 +2783,22 @@ const TOOLS = [
       if (!shop) return { seller: t.id, items: [],
                           note: timedOut ? 'no reply' : events.map(e => e.text).filter(Boolean).join('; ') };
       if (!a.buy_ids?.length) return { seller: shop.sellerId, items: shop.items };
+      // A BUY NEEDS A QUANTITY, AND A BARE ID DOES NOT CARRY ONE.
+      //
+      // encodeIdList writes a bare id as four plain bytes with no tag nibble, so the
+      // server's number_list arrives EMPTY — and UserBuyItems (user.kod:5804) hands that
+      // straight to the merchant's Buy, which has no quantity to pair with the item.
+      // Nothing is bought and nothing is said: the kod's only complaint is a Debug() line
+      // that never reaches the player.
+      //
+      // That is why this fleet has ZERO successful purchases in its entire recorded
+      // history while selling worked fine — sell takes no quantity. The trade path was
+      // fixed for the same reason earlier; the shop path was not.
+      const wanted = a.buy_ids.map(id => (typeof id === 'object' && id)
+        ? { id: Number(id.id), amount: Math.max(1, Number(id.amount) || 1) }
+        : { id: Number(id), amount: 1 });
       const before = c.evSeq;
-      await s.pacer.submit('buy', () => c.buyItems(shop.sellerId, a.buy_ids));
+      await s.pacer.submit('buy', () => c.buyItems(shop.sellerId, wanted));
       const after = await c.waitFor({ since: before, timeoutMs: 4000 });
       return { seller: shop.sellerId, bought: a.buy_ids,
                messages: after.events.filter(e => e.text).map(e => e.text),
