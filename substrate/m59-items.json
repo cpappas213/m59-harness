@@ -1,5 +1,5 @@
 {
- "builtAt": "2026-08-04T19:38:49.242Z",
+ "builtAt": "2026-08-05T02:31:57.324Z",
  "source": "compendium/data/koddb.json",
  "defaults": {
   "weight": 10,
@@ -2379,87 +2379,129 @@
  "food": {
   "apple": {
    "name": "apple",
-   "cls": "Apple"
+   "cls": "Apple",
+   "nutrition": 10,
+   "filling": 24
   },
   "loaf of bread": {
    "name": "loaf of bread",
-   "cls": "Bread"
+   "cls": "Bread",
+   "nutrition": 20,
+   "filling": 40
   },
   "frenzy food": {
    "name": "Frenzy Food",
-   "cls": "ChaosFood"
+   "cls": "ChaosFood",
+   "nutrition": 200,
+   "filling": 0
   },
   "wheel of cheese": {
    "name": "wheel of cheese",
-   "cls": "Cheese"
+   "cls": "Cheese",
+   "nutrition": 30,
+   "filling": 40
   },
   "drumstick": {
    "name": "drumstick",
-   "cls": "Drumstick"
+   "cls": "Drumstick",
+   "nutrition": 9,
+   "filling": 30
   },
   "fortune cookie": {
    "name": "fortune cookie",
-   "cls": "FortuneCookie"
+   "cls": "FortuneCookie",
+   "nutrition": 1,
+   "filling": 2
   },
   "goblet of ale": {
    "name": "goblet of ale",
-   "cls": "Goblet"
+   "cls": "Goblet",
+   "nutrition": 3,
+   "filling": 10
   },
   "mug of brew": {
    "name": "mug of brew",
-   "cls": "StoutGoblet"
+   "cls": "StoutGoblet",
+   "nutrition": 3,
+   "filling": 10
   },
   "goblet of wine": {
    "name": "goblet of wine",
-   "cls": "wineGoblet"
+   "cls": "wineGoblet",
+   "nutrition": 6,
+   "filling": 8
   },
   "bunch of grapes": {
    "name": "bunch of grapes",
-   "cls": "Grapes"
+   "cls": "Grapes",
+   "nutrition": 7,
+   "filling": 16
   },
   "inky-cap mushroom": {
    "name": "Inky-cap mushroom",
-   "cls": "InkyCap"
+   "cls": "InkyCap",
+   "nutrition": 50,
+   "filling": 25
   },
   "mug of pekonch": {
    "name": "mug of Pekonch",
-   "cls": "KocatanMug"
+   "cls": "KocatanMug",
+   "nutrition": 3,
+   "filling": 10
   },
   "meat pie": {
    "name": "meat pie",
-   "cls": "Meatpie"
+   "cls": "Meatpie",
+   "nutrition": 30,
+   "filling": 50
   },
   "chocolate mint": {
    "name": "chocolate mint",
-   "cls": "Mint"
+   "cls": "Mint",
+   "nutrition": 5,
+   "filling": 5
   },
   "mug of stout": {
    "name": "mug of stout",
-   "cls": "Mug"
+   "cls": "Mug",
+   "nutrition": 6,
+   "filling": 8
   },
   "slice of pork": {
    "name": "slice of pork",
-   "cls": "Pork"
+   "cls": "Pork",
+   "nutrition": 9,
+   "filling": 20
   },
   "edible mushroom": {
    "name": "edible mushroom",
-   "cls": "Snack"
+   "cls": "Snack",
+   "nutrition": 5,
+   "filling": 15
   },
   "bowl of soup": {
    "name": "bowl of soup",
-   "cls": "Soup"
+   "cls": "Soup",
+   "nutrition": 9,
+   "filling": 20
   },
   "spider eye": {
    "name": "spider eye",
-   "cls": "Spideye"
+   "cls": "Spideye",
+   "nutrition": 9,
+   "filling": 20
   },
   "turkey leg": {
    "name": "turkey leg",
-   "cls": "TurkeyLeg"
+   "cls": "TurkeyLeg",
+   "nutrition": 15,
+   "filling": 20
   },
   "water skin": {
    "name": "water skin",
-   "cls": "Waterskin"
+   "cls": "Waterskin",
+   "nutrition": 3,
+   "filling": 6
   }
  }
 }

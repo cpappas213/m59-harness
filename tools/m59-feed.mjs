@@ -66,7 +66,9 @@ const ITEMS = (() => {
                                      .pathname.replace(/^\/([A-Za-z]:)/, '$1'), 'utf8'));
   } catch { return null; }
 })();
-const isFood = (n) => !!ITEMS?.food?.[String(n || '').trim().toLowerCase()];
+const foodValue = (n) => ITEMS?.food?.[String(n || '').trim().toLowerCase()] || null;
+const isFood = (n) => !!foodValue(n);
+const vigorOf = (n) => foodValue(n)?.nutrition ?? 0;
 
 // Never sell these. Money, gems (worth more than the trip), reagents the creation
 // spells need, and anything being worn — sell_all's own keep list covers equipment, but
@@ -78,6 +80,10 @@ const purseOf = items => (items || []).filter(i => /shilling/i.test(i.name))
                                       .reduce((t, i) => t + (i.amount || 1), 0);
 const foodIn = items => (items || []).filter(i => isFood(i.name))
                                      .reduce((t, i) => t + (i.amount || 1), 0);
+// What the pack is worth in vigor, which is the number that actually matters. Six water
+// skins and six wheels of cheese are both "6 meals" and are 18 vigor against 180.
+const vigorIn = items => (items || []).filter(i => isFood(i.name))
+                                      .reduce((t, i) => t + vigorOf(i.name) * (i.amount || 1), 0);
 
 // Rooms with someone who sells food, nearest first. Asked per character because
 // "nearest" is a property of where it is standing.
@@ -197,17 +203,32 @@ async function feed(row) {
     try { shop = await call('shop', { agent: row.agent, seller: seller.id }); }
     catch (e) { shopErr = e.message; }
     if (!shop) return `${who}: could not open the shop at ${arrived} — ${shopErr ?? 'no reply'}`;
+    // BUY VIGOR, NOT ITEMS. viNutrition is vigor one-for-one (player.kod:1277), and it
+    // ranges from 3 for a water skin to 30 for a cheese. Sorting on price and taking the
+    // cheapest — which is what this did — always chose the water skin, so a character
+    // sent to close a 100-vigor gap came back with six of them and eighteen vigor, and
+    // the errand reported success. Rank on vigor per shilling; money is the constraint,
+    // not the stomach, because food keeps in the pack and the stomach drains in a
+    // quarter of an hour (FOOD_USE_RATE 12).
     const menu = (shop.items || []).filter(i => isFood(i.name) && (i.cost ?? 0) > 0)
-                                   .sort((a, b) => a.cost - b.cost);
+                                   .map(i => ({ ...i, vigor: vigorOf(i.name) }))
+                                   .filter(i => i.vigor > 0)
+                                   .sort((a, b) => (b.vigor / b.cost) - (a.vigor / a.cost)
+                                                || b.vigor - a.vigor);
     if (!menu.length)
       return `${who}: room ${arrived} stocks ${(shop.items || []).length} item(s), none of them food`;
 
-    let spent = 0, bought = [];
-    for (let n = 0; n < WANT; n++) {
+    // How much vigor this character is actually short. WANT survives as a floor for the
+    // case where the board did not say.
+    const short = Math.max(0, (row.vigor_target ?? 180) - (row.vigor ?? 0));
+    const target = Math.max(short, WANT * 10);
+
+    let spent = 0, gained = 0, bought = [];
+    for (let n = 0; n < 40 && gained < target; n++) {
       const pick = menu.find(i => i.cost <= purse - spent);
       if (!pick) break;
       await call('shop', { agent: row.agent, seller: seller.id, buy_ids: [pick.id] }).catch(() => null);
-      spent += pick.cost; bought.push(pick.name);
+      spent += pick.cost; gained += pick.vigor; bought.push(pick.name);
       await sleep(600);
     }
     const after = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
@@ -215,9 +236,14 @@ async function feed(row) {
       return `${who}: at the counter with ${purse}sh and the cheapest food is ${menu[0].cost}sh — ` +
              'it has nothing left to sell. Selling cannot fund a character that has already ' +
              'lost everything; this one needs a hand-out';
+    const tally = [...new Set(bought)].map(n => {
+      const c = bought.filter(x => x === n).length;
+      return c > 1 ? `${n} x${c}` : n;
+    }).join(', ');
     return `${who}: purse ${before}->${purse}${lender ? ` (funded by ${lender})` : ''}, ` +
-           `bought ${bought.length ? bought.join(', ') : 'NOTHING'} (${spent}sh) — ` +
-           `now carrying ${foodIn(after)} meal(s)`;
+           `bought ${bought.length ? tally : 'NOTHING'} (${spent}sh, +${gained} vigor` +
+           `${gained < target ? ` of ${target} wanted` : ''}) — ` +
+           `pack now holds ${vigorIn(after)} vigor in ${foodIn(after)} item(s)`;
   } finally {
     // The invariant. An errand may never leave a character unattended, whatever went
     // wrong — this file exists partly because three other errands did exactly that.

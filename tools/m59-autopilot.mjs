@@ -22,7 +22,7 @@
 
 import * as skills from './m59-skills.mjs';
 import { OF, affordances } from './m59-parse.mjs';
-import { isFood } from './m59-items.mjs';
+import { isFood, foodValue } from './m59-items.mjs';
 import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe } from './m59-spawns.mjs';
 import { findPath } from './m59-map.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
@@ -5118,13 +5118,51 @@ export class Autopilot {
     // name would miss "Inky-cap mushroom" and "goblet of ale" and would wrongly include
     // the mushrooms that are reagents.
     const hungry = (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
-    const wanted = (shop.items || []).filter(it => {
-      const cost = it.cost ?? 0;
-      if (cost <= 0 || cost > purse - floor) return false;
+
+    // RANK FOOD BY VIGOR PER SHILLING, and stop once the gap is closed.
+    //
+    // viNutrition is vigor one-for-one (player.kod:1277-1278) and spans an order of
+    // magnitude: a water skin is 3, a wheel of cheese 30. This took one of everything in
+    // whatever order the shop listed it, and checked each price against the purse it
+    // walked in with rather than what was left — so it could both overspend and come away
+    // with a handful of water skins when a single cheese was the same trip.
+    const budget = purse - floor;
+    let spend = 0;
+    const affordable = it => (it.cost ?? 0) > 0 && (it.cost ?? 0) <= budget - spend;
+
+    const reagents = (shop.items || []).filter(it => {
       const k = skills.shareKind(it.name);
-      if (k && need[k] > 0) return true;
-      return hungry && isFood(it.name);
+      return k && need[k] > 0 && affordable(it);
     });
+    for (const it of reagents) spend += it.cost;
+
+    // What eating everything already in the pack would be worth, so a character with a
+    // cheese in hand does not buy another.
+    // c.inventory is an ARRAY, not a method, and vitals().vigor is {value, scale_max} —
+    // both were wrong on the first go, and the vigor one is the dangerous shape: an
+    // object in arithmetic is NaN, NaN > 0 is false, and the fleet would have quietly
+    // stopped buying food altogether while every reading still said it was shopping.
+    const carried = (c.inventory || []).reduce(
+      (t, i) => t + (foodValue(i.name)?.nutrition ?? 0) * (i.amount || 1), 0);
+    const vg = c.vitals?.()?.vigor;
+    const vigorNow = vg?.value ?? null;
+    const vigorMax = vg?.scale_max ?? 200;
+    let gap = hungry && vigorNow !== null
+      ? Math.max(0, ((this.policy.vigorWant ?? 0.9) * vigorMax) - vigorNow - carried)
+      : 0;
+
+    const food = [];
+    if (gap > 0) {
+      const menu = (shop.items || []).filter(it => isFood(it.name) && (foodValue(it.name)?.nutrition ?? 0) > 0)
+        .map(it => ({ it, vigor: foodValue(it.name).nutrition }))
+        .sort((a, b) => (b.vigor / b.it.cost) - (a.vigor / a.it.cost) || b.vigor - a.vigor);
+      for (let pass = 0; pass < 20 && gap > 0; pass++) {
+        const pick = menu.find(m => affordable(m.it));
+        if (!pick) break;
+        food.push(pick.it); spend += pick.it.cost; gap -= pick.vigor;
+      }
+    }
+    const wanted = [...reagents, ...food];
     if (!wanted.length) {
       // WHICH of the two it was matters, and both look like "bought nothing" from the
       // outside: a merchant that stocks no reagents at all is a routing problem, while

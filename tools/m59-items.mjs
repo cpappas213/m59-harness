@@ -122,11 +122,48 @@ export function buildItemTable(koddbFile = KODDB) {
   //
   // Anything descending from Food is food. Guessing by name would have missed "Inky-cap
   // mushroom" and "goblet of ale" and included the mushrooms that are reagents.
+  //
+  // HOW MUCH each food is worth, which turns out to be the whole question.
+  //
+  // viNutrition converts one-for-one into vigor: eating sends AddExertion(-10000 *
+  // nutrition), and vigor moves by exertion/10000 (player.kod:1277-1278). viFilling is
+  // what it costs to eat, against a stomach bounded at 100 that drains at FOOD_USE_RATE
+  // 12 per 100 ticks — about 7 a minute, so a full stomach clears in a quarter of an hour.
+  //
+  // Without these numbers the fleet ranked food by price and bought the cheapest, which
+  // is a water skin: THREE vigor. A character needing to climb from the resting cap of
+  // 80 to 180 would need thirty-four of them, and m59-feed.mjs bought six, reported
+  // success, and moved Rizzo by eighteen. A cheese is thirty for forty filling — the
+  // same trip, one item.
+  //
+  // Not in koddb's classvars, which carries only the vr* resource vars; these are
+  // integer properties. The Food base's own 10/50 does not survive extraction either,
+  // so the chain is walked and the kod's defaults stand in at the end, cited rather
+  // than guessed.
+  const FOOD_DEFAULT = { nutrition: 10, filling: 50, from: 'food.kod:32-33' };
+  const byClassName = new Map(Object.values(classes).map(c => [c.name, c]));
+  const propOf = (cls, key) => {
+    for (let c = cls, guard = 0; c && guard < 24; guard++) {
+      const v = c.properties?.[key]?.value;
+      if (typeof v === 'number') return v;
+      c = byClassName.get(c.parent);
+    }
+    return null;
+  };
+
   const food = {};
   for (const cls of Object.values(classes)) {
     if (!(cls.chain || []).some(x => String(x).toLowerCase() === 'food')) continue;
     const name = displayName(cls);
-    if (name) food[name.toLowerCase()] = { name, cls: cls.name };
+    if (!name) continue;
+    const nutrition = propOf(cls, 'viNutrition');
+    const filling = propOf(cls, 'viFilling');
+    food[name.toLowerCase()] = {
+      name, cls: cls.name,
+      nutrition: nutrition ?? FOOD_DEFAULT.nutrition,
+      filling: filling ?? FOOD_DEFAULT.filling,
+      ...(nutrition == null || filling == null ? { assumed: FOOD_DEFAULT.from } : {}),
+    };
   }
 
   return {
@@ -212,7 +249,25 @@ if (import.meta.url === `file://${process.argv[1]}` ||
 // Answered from the Food class tree, not from a word list. Unknown names are NOT food:
 // buying something that turns out to be scenery wastes money the fleet does not have.
 export function isFood(name, file = ITEMS_FILE) {
+  return !!foodValue(name, file);
+}
+
+// What eating this is worth: {nutrition, filling}, where nutrition IS the vigor gained.
+// Null for anything that is not food. Rank a shop's stock on `nutrition` — the fleet's
+// constraint is the stomach and the walk to the shop, not the shillings.
+export function foodValue(name, file = ITEMS_FILE) {
   const t = loadItems(file);
-  if (!t?.food) return false;
-  return !!t.food[String(name || '').trim().toLowerCase()];
+  if (!t?.food) return null;
+  return t.food[String(name || '').trim().toLowerCase()] || null;
+}
+
+// The stomach admits 100 and drains ~7.2 a minute (FOOD_USE_RATE 12, player.kod:51,1347).
+// So this is how many of a food a character can actually get through in one sitting —
+// buying more than this is buying it for later, which is fine, but reporting it as
+// vigor now is not.
+export const STOMACH_MAX = 100;
+export function servingsAtOnce(name, file = ITEMS_FILE) {
+  const f = foodValue(name, file);
+  if (!f) return 0;
+  return Math.max(1, Math.floor(STOMACH_MAX / Math.max(1, f.filling)));
 }
