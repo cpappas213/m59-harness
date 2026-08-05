@@ -4428,7 +4428,18 @@ export class Autopilot {
         const blowsWeCanTake = myMax != null && perBlow != null ? myMax / perBlow : null;
         const canFightOpen =
           hpFrac !== null && hpFrac >= (this.policy.openFightHealth ?? 0.9) &&
-          vigNow !== null && vigNow >= vigorBarFor(this.threat().names, this.policy) &&
+          // WHAT WE INTEND TO FIGHT, not what happens to be standing next to us.
+          //
+          // This asked threat().names — creatures inside the crowd radius right now — and
+          // at the moment the room decision is taken that list is normally EMPTY, so the
+          // bar fell back to the strict 130 every time and the relaxation never fired
+          // once. Thirteen "REFUSING TO FIGHT HERE" entries and zero "fighting anyway"
+          // across the whole fleet.
+          //
+          // The question being asked is whether to fight our PREY without a wall, so the
+          // prey is what should set the bar; anything else in the room that is worse
+          // still has to get past blowsWeCanTake and the room's own danger filter.
+          vigNow !== null && vigNow >= vigorBarFor([this.policy.hunt, ...this.threat().names], this.policy) &&
           blowsWeCanTake !== null && blowsWeCanTake >= (this.policy.openFightBlows ?? 7);
         if (denied !== false && !this.hold && canFightOpen) {
           if (this.warnedOpenFight !== room.num) {
