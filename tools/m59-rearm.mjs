@@ -271,8 +271,15 @@ async function main() {
     if (!pick) {
       // Nobody has one to give. Buy it — the fleet has money and the shops work now.
       if (BUY && !isReagents && GO) { console.log('  ' + await buyWeaponFor(need)); continue; }
+      // SAY WHICH FLAG IS ACTUALLY MISSING. This told me to pass --buy while I was
+      // passing --buy: the purchase needs --go as well, and the advice was a constant
+      // string that could not know what had been asked for. An instruction that is
+      // wrong about the command you just ran costs more than no instruction.
       console.log(`  ${need.character}: no donor can reach it` +
-                  (isReagents ? '' : ' (pass --buy to purchase one instead)'));
+                  (isReagents ? ''
+                   : BUY && !GO ? ' (--buy is set but this is a dry run — add --go to purchase)'
+                   : !BUY ? ' (pass --buy --go to purchase one instead)'
+                   : ''));
       continue;
     }
     // BOTH KINDS IN ONE WALK. `create food` consumes 2 elderberry AND 2 herbs and refuses
