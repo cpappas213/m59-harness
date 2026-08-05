@@ -4988,25 +4988,48 @@ const TOOLS = [
       const taken = {};
       for (const hunt of [...new Set(crew.map(c => c.hunt))]) {
         const group = crew.filter(c => c.hunt === hunt);
-        // One ceiling for the group, the strictest, so nobody is sent somewhere the
-        // weakest of them could not survive.
-        const ceiling = Math.min(...group.map(c => c.level + (c.p.policy.maxThreatOver ?? 6)));
-        const rooms = huntingGrounds(spawns, hunt, { maxDanger: ceiling, limit: 24 })
-          .filter(r => !r.rejected)
-          .map(r => ({ room: r.room, room_name: r.room_name, slots: payingSlots(r.room, hunt) }))
-          .filter(r => r.slots > 0)
-          .sort((x, y) => y.slots - x.slots);
-        if (!rooms.length) {
-          for (const c of group) out.push({ ...c, p: undefined, room: null, why: `nothing safe generates ${hunt} below level ${ceiling}` });
-          continue;
-        }
+        // A CEILING PER CHARACTER, NOT ONE FOR THE GROUP.
+        //
+        // This took the strictest ceiling across everyone hunting the same thing, on the
+        // reasoning that nobody should be sent where the weakest of them could not
+        // survive. But they are placed INDIVIDUALLY and they do not travel together, so
+        // the weakest member simply barred the rest: one level-23 character hunting
+        // fungus beast set the ceiling to 29, no room generates a level-50 fungus beast
+        // under that, and all NINE of them — including a level-35 — were left with no
+        // assigned room at all. That is what "nothing safe generates fungus beast below
+        // level 29" meant, and with nowhere to be they wandered: the fleet spent 91% of
+        // its time travelling and 3% fighting.
+        //
+        // Each character now gets the ceiling its own level and policy earn. The weak one
+        // is still refused the room; it just stops refusing it on everyone else's behalf.
+        const roomsCache = new Map();
+        const roomsFor = (c) => {
+          const ceil = c.level + (c.p.policy.maxThreatOver ?? 6);
+          if (!roomsCache.has(ceil)) {
+            roomsCache.set(ceil, huntingGrounds(spawns, hunt, { maxDanger: ceil, limit: 24 })
+              .filter(r => !r.rejected)
+              .map(r => ({ room: r.room, room_name: r.room_name, slots: payingSlots(r.room, hunt) }))
+              .filter(r => r.slots > 0)
+              .sort((x, y) => y.slots - x.slots));
+          }
+          return roomsCache.get(ceil);
+        };
+        const ceilingOf = (c) => c.level + (c.p.policy.maxThreatOver ?? 6);
         // Keep a character where it already stands when that room is in the set and
         // has space — travel is the expensive part and every hop is a chance to die.
         const has = r => taken[r.room] ?? 0;
+        // DO NOT PUT MORE BODIES IN A ROOM THAN IT HAS PREY FOR. `slots` is the room's
+        // paying capacity, and a flat four per room put four characters on a table worth
+        // three: each reported "nothing to hunt here" every pass while standing in a
+        // legitimate spawn room. Two hunters to a slot is the most that leaves anything
+        // for either of them.
+        const limitFor = r => Math.max(1, Math.min(perRoom, Math.round((r.slots ?? perRoom) / 2)));
         const place = (c) => {
-          const here = rooms.find(r => r.room === c.at && has(r) < perRoom);
+          const rooms = roomsFor(c);
+          if (!rooms.length) return null;
+          const here = rooms.find(r => r.room === c.at && has(r) < limitFor(r));
           if (here) { taken[here.room] = has(here) + 1; return here; }
-          const open = rooms.filter(r => has(r) < perRoom);
+          const open = rooms.filter(r => has(r) < limitFor(r));
           // CONSOLIDATE BEFORE SPREADING. Ranked purely on prey-per-character it opens
           // a fresh room for every spare body, because an empty room always has the
           // best ratio — which put one character alone in Barloque and another alone in
@@ -5033,7 +5056,9 @@ const TOOLS = [
           out.push({ agent: c.agent, character: c.character, hunt, was_at: c.at,
                      room: r?.room ?? null, room_name: r?.room_name ?? null,
                      slots: r?.slots ?? null, moves: r ? r.room !== c.at : null,
-                     why: r ? undefined : `every room for ${hunt} is already at ${perRoom}` });
+                     why: r ? undefined
+                            : roomsFor(c).length ? `every room for ${hunt} is already full`
+                            : `nothing safe generates ${hunt} below level ${ceilingOf(c)}` });
           if (r) (byRoom[`${r.room} ${r.room_name}`] ||= []).push(c.character || c.agent);
         }
       }
