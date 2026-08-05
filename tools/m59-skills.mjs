@@ -341,25 +341,40 @@ export async function equipBest(s, { priority = null, maxTries = 4 } = {}) {
 // that — but the weight is named rather than hidden so it can be argued with.
 const ABSORB_IS_WORTH = 10;
 
+// MATCH WHAT THE SERVER SAYS, NOT WHAT THE CLASS IS CALLED.
+//
+// This table was written from the kod FILE names, so five of its sixteen patterns
+// matched nothing that ever arrives on the wire. The class is GuildShield and the
+// server says "herald shield"; MetalShield says "small round shield"; GoldShield says
+// "gold round shield"; Robe says "robes", which `\brobe\b` cannot match because the
+// boundary fails on the s. Kermit and Janice each carried a small round shield for a
+// whole session while wear_best answered "nothing of this kind in the pack".
+//
+// Worse, the two helmets had their numbers swapped. simphelm.kod is displayed as "helm"
+// and is defence 20; helm.kod is displayed as "magic spirit helmet" and is defence 25.
+// The old `\bhelm\b` scored 25 for the weaker of the two, and nothing matched the
+// stronger one at all.
+//
+// Every name below is the vrName string read out of the cited file rather than inferred
+// from the class, which is the same mistake WEAPON_PROFICIENCY was built on and the same
+// one that made a hammer score zero.
 export const ARMOUR = [
-  // slot, and the two numbers, from the class definitions in
-  // kod/object/item/passitem/defmod/{armor,shield,helmet}/*.kod
-  { re: /leather armor|leather armour/i, slot: 'armour', defense: 50,   absorb: 0, spell: 0 },
-  { re: /\brobe\b/i,                     slot: 'armour', defense: 20,   absorb: 0, spell: 10 },
-  { re: /chain (armor|armour|mail)/i,    slot: 'armour', defense: -50,  absorb: 2, spell: -15 },
-  { re: /scale (armor|armour)/i,         slot: 'armour', defense: -100, absorb: 4, spell: -20 },
-  { re: /nerudite (armor|armour)/i,      slot: 'armour', defense: -150, absorb: 5, spell: -20 },
-  { re: /plate (armor|armour)/i,         slot: 'armour', defense: -200, absorb: 6, spell: -30 },
-  { re: /guild shield/i,                 slot: 'shield', defense: 20,   absorb: 2, spell: 0 },
-  { re: /orc shield/i,                   slot: 'shield', defense: 20,   absorb: 2, spell: 0 },
-  { re: /soldier'?s? shield/i,           slot: 'shield', defense: 20,   absorb: 2, spell: 0 },
-  { re: /knight'?s? shield/i,            slot: 'shield', defense: 15,   absorb: 2, spell: 0 },
-  { re: /gold shield/i,                  slot: 'shield', defense: 10,   absorb: 1, spell: 0 },
-  { re: /metal shield/i,                 slot: 'shield', defense: 5,    absorb: 1, spell: 0 },
-  { re: /\bhelm\b/i,                     slot: 'helm',   defense: 25,   absorb: 1, spell: -5 },
-  { re: /simple helm/i,                  slot: 'helm',   defense: 20,   absorb: 1, spell: -5 },
-  { re: /ivy circlet/i,                  slot: 'helm',   defense: 10,   absorb: 0, spell: 0 },
-  { re: /circlet/i,                      slot: 'helm',   defense: 5,    absorb: 0, spell: 0 },
+  { re: /leather armor|leather armour/i, slot: 'armour', defense: 50,   absorb: 0, spell: 0 },   // armor/leather.kod
+  { re: /\brobes?\b/i,                   slot: 'armour', defense: 20,   absorb: 0, spell: 10 },  // armor/robe.kod:22 "robes"
+  { re: /chain (armor|armour|mail)/i,    slot: 'armour', defense: -50,  absorb: 2, spell: -15 }, // armor/chain.kod
+  { re: /scale (armor|armour)/i,         slot: 'armour', defense: -100, absorb: 4, spell: -20 }, // armor/scale.kod
+  { re: /nerudite (armor|armour)/i,      slot: 'armour', defense: -150, absorb: 5, spell: -20 }, // armor/neruarmr.kod
+  { re: /plate (armor|armour)/i,         slot: 'armour', defense: -200, absorb: 6, spell: -30 }, // armor/plate.kod
+  { re: /herald shield/i,                slot: 'shield', defense: 20,   absorb: 2, spell: 0 },   // shield/guilshld.kod:21,115
+  { re: /orc shield/i,                   slot: 'shield', defense: 20,   absorb: 2, spell: 0 },   // shield/orcshld.kod
+  { re: /soldier'?s? shield/i,           slot: 'shield', defense: 20,   absorb: 2, spell: 0 },   // shield/soldshld.kod
+  { re: /knight'?s? shield/i,            slot: 'shield', defense: 15,   absorb: 2, spell: 0 },   // shield/knhtshld.kod
+  { re: /gold round shield/i,            slot: 'shield', defense: 10,   absorb: 1, spell: 0 },   // shield/goldshld.kod:19
+  { re: /small round shield/i,           slot: 'shield', defense: 5,    absorb: 1, spell: 0 },   // shield/metlshld.kod:19,47
+  { re: /magic spirit helmet/i,          slot: 'helm',   defense: 25,   absorb: 1, spell: -5 },  // helmet/helm.kod:19,49
+  { re: /\bhelm\b/i,                     slot: 'helm',   defense: 20,   absorb: 1, spell: -5 },  // helmet/simphelm.kod:19,45
+  { re: /ivy circlet/i,                  slot: 'helm',   defense: 10,   absorb: 0, spell: 0 },   // helmet/ivycircl.kod
+  { re: /circlet/i,                      slot: 'helm',   defense: 5,    absorb: 0, spell: 0 },   // helmet/circlet.kod
 ];
 
 export const ARMOUR_SLOTS = ['armour', 'shield', 'helm'];
