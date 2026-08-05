@@ -6157,8 +6157,22 @@ async function supplyBetween(a) {
             return [...g.room.objects.values()]
               .some(o => (o.flags & OF.PLAYER) && (g.rsc.get(o.nameRsc) || '').toLowerCase() === want);
           };
+          // JUDGE THE WALK ON WHETHER THE ROOM CHANGED, not on how many tries are left.
+          //
+          // A fixed six is both too few and too many. Rooms are not adjacent the way the
+          // route suggests — an edge you can route through is not necessarily one you can
+          // step through from the square the router picked — so a walk that returns
+          // arrived:false has usually still moved, and the next attempt carries on from
+          // there. One character took FOUR attempts for a five-hop trip and each of the
+          // first three "failed". But a walk that is genuinely blocked repeats the same
+          // room for ever, and spending six turns proving it wastes the minutes the
+          // errand needed for somebody else.
+          //
+          // So: keep going while the room keeps changing, stop after three attempts that
+          // do not move. This is the same rule m59-feed.mjs uses to reach a shop.
           let arrived = await canSeeThem(), why = null;
-          for (let i = 0; i < 6 && !arrived; i++) {
+          let stuck = 0, wasIn = mover.world?.room?.num ?? null;
+          for (let i = 0; i < 12 && !arrived && stuck < 3; i++) {
             // Re-read the destination each time: the other one may itself have moved,
             // and chasing where it WAS is how this used to end up in the wrong room.
             const dest = other.world?.room?.num;
@@ -6166,12 +6180,14 @@ async function supplyBetween(a) {
             const t = await mover.travel(dest, { maxHops: 20 }).catch(e => ({ arrived: false, reason: e.message }));
             why = t.arrived ? null : t.reason;
             arrived = await canSeeThem();
+            const nowIn = mover.world?.room?.num ?? null;
+            if (nowIn === wasIn) stuck++; else { stuck = 0; wasIn = nowIn; }
           }
           if (!arrived)
             return { supplied: false,
                      reason: `${who === 'to' ? r.me?.name : g.me?.name} could not get there: ${why}`,
-                     attempts: 6,
-                     note: 'travel is resumable, so this tried repeatedly and still did not arrive' };
+                     note: 'travel is resumable, so this kept going while the room kept ' +
+                           'changing and stopped after three attempts that did not move' };
         }
 
       // The receiver has to be visible to the giver for the offer to resolve — and the
