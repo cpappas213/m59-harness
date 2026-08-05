@@ -193,7 +193,64 @@ async function cmdStart() {
   return 1;
 }
 
-async function cmdStop({ quiet = false } = {}) {
+// IS AN ERRAND MID-FLIGHT?
+//
+// The errand tools (m59-feed, m59-rearm, m59-outfit) walk characters across the map with
+// their keepers held, and every step is an HTTP call to this broker. Stopping it mid-walk
+// kills the errand with `fetch failed` and leaves whatever it was carrying undelivered —
+// four separate reagent and food runs were lost that way in one session, each one several
+// minutes of walking, and every time it was me restarting to deploy something.
+//
+// Matched on the SCRIPT PATH under this checkout, not on the bare name: more than one
+// clone of this tooling can be running, and a stranger's errand is none of our business.
+function errandsRunning() {
+  if (process.platform !== 'win32') return [];
+  // WMIC IS GONE. The first version asked wmic, which Windows 11 no longer ships, so
+  // spawnSync returned ENOENT, this returned an empty list, and the guard reported
+  // "nothing running" while an errand was plainly mid-walk. A check that cannot fail
+  // loudly is worse than no check at all, because it gets trusted.
+  const ps = "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' } | " +
+             "ForEach-Object { $_.ProcessId.ToString() + '|' + $_.CommandLine }";
+  const r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps],
+                      { encoding: 'utf8' });
+  if (r.error || r.status !== 0 || !r.stdout) return [];
+  // MATCHED ON THE SCRIPT NAME, AND DELIBERATELY NOT ON THE PATH.
+  //
+  // Matching the absolute path under this checkout is the more precise thing to want, and
+  // it does not work: these are launched as `node tools/m59-feed.mjs`, so the command line
+  // holds a RELATIVE path and the prefix never matched. The supervisor outside this
+  // repository uses forward slashes in an absolute one, so even normalising separators
+  // would not cover it.
+  //
+  // So this matches the tool name and accepts that another clone's errand would also stop
+  // a restart here. That is the safe direction to be wrong in: the cost of a false
+  // positive is typing --force, and the cost of a false negative is a killed errand and
+  // several minutes of walking thrown away.
+  const out = [];
+  for (const line of r.stdout.split(String.fromCharCode(10))) {
+    const low = line.toLowerCase();
+    // One-shot errands only. m59-supervise.mjs runs continuously and is built to survive
+    // a broker restart — it restarts stalled keepers afterwards — so counting it would
+    // refuse every restart for ever, which is a guard that has to be disabled to work.
+    const m = /m59-(feed|rearm|outfit)[.]mjs/.exec(low);
+    if (!m) continue;
+    const pid = Number((line.split('|')[0] || '').trim());
+    out.push({ pid: Number.isFinite(pid) ? pid : null, tool: 'm59-' + m[1] + '.mjs' });
+  }
+  return out;
+}
+
+const FORCE = process.argv.includes('--force');
+
+async function cmdStop({ quiet = false, force = false } = {}) {
+  const busy = force ? [] : errandsRunning();
+  if (busy.length) {
+    console.error(c.bad(`${busy.length} errand(s) are mid-flight and talking to this broker:`));
+    for (const b of busy) console.error(`    ${b.tool}${b.pid ? ` (pid ${b.pid})` : ''}`);
+    console.error('  Stopping now kills them with "fetch failed" and leaves what they were');
+    console.error('  carrying undelivered, with their walk wasted. Wait, or pass --force.');
+    return 1;
+  }
   const found = await findBroker();
   if (found.foreign) { console.error(c.bad(found.why)); return 1; }
   if (!found.running) {
@@ -295,8 +352,15 @@ const cmd = argv.find(a => !a.startsWith('-')) || 'status';
 let code = 0;
 switch (cmd) {
   case 'start':   code = await cmdStart(); break;
-  case 'stop':    code = await cmdStop(); break;
-  case 'restart': await cmdStop({ quiet: false }); code = await cmdStart(); break;
+  case 'stop':    code = await cmdStop({ force: FORCE }); break;
+  case 'restart': {
+    // A refused stop must abort the restart. Falling through to cmdStart() would find the
+    // broker still up, print "already up", and exit 0 — reporting success for a restart
+    // that did not happen.
+    const st = await cmdStop({ quiet: false, force: FORCE });
+    code = st === 0 ? await cmdStart() : st;
+    break;
+  }
   case 'status':  code = await cmdStatus(); break;
   case 'logs':    code = cmdLogs(); break;
   default:
