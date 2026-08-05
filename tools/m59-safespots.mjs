@@ -256,9 +256,70 @@ export function safeSpots(geo, { limit = 8, mustReach = null, los = 0 } = {}) {
 // grid that governs MONSTERS (see RoomGeometry.LOS — the stock server puts them on the
 // coarse grid). Null means the caller cannot say, and then this reverts to the old
 // behaviour rather than refusing every square.
+// WHAT A SAFE WALL ACTUALLY IS, AND WHY THE DISC METRICS ARE NOT IT.
+//
+// `attackers_avoided` and `free_shots` are transcriptions of the server's reach and
+// sight tests, and both are correct about what they compute. Neither is what a player
+// means by a safe wall, and the book says so once the evidence is cleaned:
+//
+//   attackers_avoided   r = 0.294, and NOT monotone — the 20-24 band holds 19.7% of the
+//                       time against 39.1% for 15-19. The threshold sat in a trough.
+//   free_shots          r = 0.241
+//   blocked neighbours  r = 0.251
+//   back_cover          r = 0.291, and back_cover >= 5 holds 89.7% of the time
+//
+// Four weak predictors in the same band, and the strongest single rule in the whole set
+// is the one closest to the plain description: get a run of wall behind you.
+//
+// The old numbers looked far better than that (84.7% for avoided >= 20) because they
+// were measured against a ledger where 27% of the failures were phantoms written by
+// restBroken() with nothing adjacent — see the note there. Those phantoms are all open
+// floor, so they inflated every metric that rewards enclosure.
+//
+// So the filter is now the requirement a person would state: A WALL YOU CAN PUT YOUR
+// BACK TO. Ranked by how much of it there is, with the disc score kept as a tie-break
+// rather than a gate, because it is weakly informative and free to compute.
+//
+// `rule` selects between them. 'disc' is the previous behaviour, kept because it is the
+// thing this is being measured against and a claim nobody can re-run is not a finding.
+export const SPOT_RULES = ['wall', 'disc'];
+
+// TEST THE CORNERS FIRST, BECAUSE THE CLIFF IS NOT A SLOPE.
+//
+// back_cover is scored linearly above, which spreads the difference between a flat wall
+// and a corner over six points — and that is not the shape of the evidence. On the
+// cleaned ledger:
+//
+//   back_cover 0      23.5% held   (n=17)
+//   back_cover 1-2    20.0% held   (n=60)
+//   back_cover 3-4    38.6% held   (n=456)
+//   back_cover 5-6    88.9% held   (n=27)
+//   back_cover 7-8   100.0% held   (n=2)
+//
+// Everything from 0 to 4 is a coin-flip at best. At 5 it more than doubles. That is a
+// step, so it is priced as one.
+//
+// SIZED TO OUTRANK ONE HOLD, DELIBERATELY. The proof bonus gives a square that has held
+// once 21 points, which under the linear score alone means an untested corner (15) loses
+// to a once-held flat wall (9 + 21 = 30) every time — so the 88.9% band never gets
+// explored anywhere a mediocre square has already been proven, which is nearly
+// everywhere. That is the wrong bet on our own numbers: an untested corner at 88.9%
+// prior beats a flat wall measured at 38.6%. At 24 the ordering comes out:
+//
+//   untested corner            15 + 24 = 39
+//   once-held flat wall         9 + 21 = 30      -> the corner is tried first
+//   five-times-held flat wall   9 + 25 = 34      -> still the corner
+//   VERIFIED flat wall          9 + 60 = 69      -> a person's judgement still wins
+//   once-held corner           39 + 21 = 60      -> and proof still compounds
+//
+// So this changes which HYPOTHESIS is tested next and never overrules a human. It costs
+// a walk when it is wrong, which is the cheap direction — see discredited().
+const CORNER = 5;
+const CORNER_BONUS = 24;
 export function nearestSafeSpot(geo, from, {
   within = 12, minAvoided = 20, reach = null, book = null, room = null, toward = null,
   quarryReach = null, stats = null, los = 0,
+  rule = 'wall', minBackCover = 1, fromFightWeight = 0.3,
 } = {}) {
   if (!geo || !from) return null;
   // EVERY QUALIFYING SQUARE, NOT THE TOP FEW HUNDRED BY SCORE.
@@ -309,7 +370,15 @@ export function nearestSafeSpot(geo, from, {
     if (d > within) continue;
     // A proven square is allowed to be less defensible on paper than the cutoff: it
     // has passed the only test that counts.
-    if (s.attackers_avoided < minAvoided && !(seen && seen.held > 0)) continue;
+    //
+    // 'wall' asks only for a wall to stand against, which is a far wider net: room 544
+    // goes from 113 candidates to about 1300. That is the point — the disc rule was
+    // rejecting most of the room on a number that does not predict holding, and a wider
+    // net with an honest ranking beats a narrow one built on a trough.
+    const gate = rule === 'disc'
+      ? s.attackers_avoided >= minAvoided
+      : s.back_cover >= minBackCover;
+    if (!gate && !(seen && seen.held > 0)) continue;
     // A square nothing can walk to is not a safe spot, it is a balcony. Checked before
     // the reachability test because a cliff passes that easily — being unreachable is
     // precisely what makes it score well.
@@ -327,11 +396,20 @@ export function nearestSafeSpot(geo, from, {
     // square that merely held — holding is our own measurement, marking is somebody's
     // judgement made from inside the game.
     const proof = (seen?.verified ? 60 : 0) + (seen?.held ? 20 + Math.min(10, seen.held) : 0);
-    // Distance from the fight counts twice over: it is walked once to fetch and once
-    // to come back, and every step of it is taken in the open with the monster
-    // already awake. Weighted more heavily than distance from us for that reason.
+    // Distance from the fight is a TIE-BREAK, not a filter.
+    //
+    // This was 1.2 a square, which is heavier than it sounds: at that weight a wall
+    // eight squares further from the quarry loses to open floor beside it, and the
+    // question of whether the fight can happen there is already answered — properly —
+    // by quarryReach above. Any reachable spot in the zone is good enough, so long as
+    // the monster can follow us to it, and that is the check that says so.
     const fromFight = toward ? Math.max(Math.abs(s.col - toward.col), Math.abs(s.row - toward.row)) : 0;
-    const value = s.score + proof - (p.steps ?? d) * 0.5 - fromFight * 1.2;
+    // RANK ON THE THING THAT PREDICTS HOLDING. `score` is the disc composite; under the
+    // wall rule the back arc leads and the disc score stays as a weak tie-break, at
+    // roughly the ratio their correlations earn.
+    const defensibility = rule === 'disc' ? s.score
+      : s.back_cover * 3 + s.score * 0.25 + (s.back_cover >= CORNER ? CORNER_BONUS : 0);
+    const value = defensibility + proof - (p.steps ?? d) * 0.5 - fromFight * fromFightWeight;
     if (!best || value > best.value)
       best = { ...s, steps_away: p.steps ?? d, value, from_fight: toward ? fromFight : null,
                // Proven means held AND never failed. Discredited squares are already

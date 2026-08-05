@@ -751,12 +751,37 @@ console.log('\nthe room that filled up with what nobody would kill');
 
   // Most numerous first: the point is freeing slots.
   // Ten, because nine would not be full and the whole block would silently test nothing.
-  const mixed = mk({ 'baby spider': 2, thrasher: 1, rat: 7 }, { hunt: 'centipede' });
+  // `rat` is not in the spawn table; `baby spider` is. The ordering test therefore has to
+  // use something KNOWN, or it is really a test about unknown handling wearing a hat.
+  const mixed = mk({ 'baby spider': 7, thrasher: 1, centipede: 2 }, { hunt: 'mummy' });
   const mst = mixed.capBlockers({ num: 554 });
-  ok('the commonest clearable comes first', mst.clearable[0].name === 'rat',
+  ok('the commonest clearable comes first', mst.clearable[0].name === 'baby spider',
      JSON.stringify(mst.clearable.map(x => `${x.count}x ${x.name}`)));
-  ok('an unknown creature is still clearable — no level means no band to exceed',
-     mst.clearable.some(x => x.name === 'rat'));
+
+  // AN UNKNOWN CREATURE IS REFUSED, NOT CLEARED. This reverses the old rule, which was
+  // "no level means no band to exceed" and therefore treated anything unrecognised as
+  // safe to pick a fight with.
+  //
+  // What that cost: Robin, level 27 with a safety band of 33, stood in the Main gate to
+  // the city of Tos at 7/7 cap and elected to clear THREE "soldier of the Duke's army"
+  // to free spawn slots. The spawn table has 120 creatures and no row for that name, so
+  // the level test was skipped and the soldiers were filed as clearable. The Duke's
+  // soldiers account for 155 kills in that room's death record and appear in deaths that
+  // happened inside squares the safe-spot detector had approved.
+  //
+  // The stall this rule was guarding against is the cheaper failure: a room given up is
+  // recoverable, a level-27 character starting a fight with three level-50 soldiers is
+  // not. Every creature the fleet actually hunts — giant rat, baby spider, centipede,
+  // fungus beast, slime, groundworm, mummy, even rebel soldier — IS in the table, so
+  // failing closed costs almost nothing and only bites on genuinely unrecognised things.
+  const unknown = mk({ 'baby spider': 2, rat: 8 }, { hunt: 'mummy' });
+  const ust = unknown.capBlockers({ num: 554 });
+  ok('an unknown creature is REFUSED, not cleared — absence of data is not permission',
+     !ust.clearable.some(x => x.name === 'rat') && ust.blocked.some(x => x.name === 'rat'),
+     JSON.stringify({ clearable: ust.clearable.map(x => x.name), blocked: ust.blocked.map(x => x.name) }));
+  ok('and says it was the missing row, not the safety band',
+     /nothing is known about it/.test(ust.blocked.find(x => x.name === 'rat')?.why ?? ''),
+     ust.blocked.find(x => x.name === 'rat')?.why);
 }
 
 

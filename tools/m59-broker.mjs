@@ -3353,7 +3353,7 @@ const TOOLS = [
       'Call with action=status to read the journal. It will not fight anything you did not name.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
-      action: { type: 'string', enum: ['start', 'stop', 'status', 'list'] },
+      action: { type: 'string', enum: ['start', 'stop', 'status', 'list', 'park', 'unpark'] },
       why: { type: 'string', description: 'on stop: why, for the uptime ledger — a deliberate hold ' +
                                           'must be distinguishable from a keeper that dropped' },
       mode: { type: 'string', enum: ['survive', 'farm', 'idle'] },
@@ -3438,6 +3438,13 @@ const TOOLS = [
       // walked the character somewhere. Both read as "nothing was driving this", which
       // is true and useless: one is a fault to chase, the other is the operator working.
       if (a.action === 'stop') return p.stop(a.why ?? 'asked to stop, no reason given');
+      // PARK IS NOT STOP, AND THE DIFFERENCE IS THE WHOLE POINT. A stopped keeper is a
+      // character held still in whatever was happening to it; a parked one is awake,
+      // still defends itself, still flees, and is deliberately getting behind a wall so
+      // that the stop — when it comes — lands somewhere survivable. See park() and
+      // tools/m59-update.mjs, which is what drives this.
+      if (a.action === 'park') return p.park(a.why ?? 'a fleet update is waiting for us');
+      if (a.action === 'unpark') return p.unpark(a.why ?? 'the update finished');
       if (a.mode) {
         if (!MODES.includes(a.mode)) throw new Error(`mode must be one of ${MODES.join(', ')}`);
         p.mode = a.mode;
@@ -5537,6 +5544,12 @@ const TOOLS = [
           // What it is up to, in the words a person would use. `time` says which
           // bucket the seconds landed in; this says what is happening.
           activity: ap ? ap.activity() : 'no keeper',
+          // PUBLISHED ON THE ROW so that waiting for the fleet to park is ONE call
+          // rather than one per character. m59-update.mjs polls this every few seconds
+          // across twenty-one characters, and twenty-one `autopilot status` calls a
+          // tick would be a self-inflicted load spike during the one window we most
+          // want the fleet quiet. Null when nothing is parking, which is nearly always.
+          parked: ap ? ap.parkStatus() : null,
           // The safe-spot thesis is a survival claim, so it has to be scored as one.
           // Deaths while standing in a square we believed in are the number that
           // falsifies it, and they are worth separating from deaths in the open.
@@ -6251,8 +6264,22 @@ async function supplyBetween(a) {
       } else if (a.what === 'food') {
         items = skills.larderOf(g).map(x => x.o);
       } else {
+        // `amount` IS A QUANTITY OF REAGENTS, NOT A NUMBER OF PACK ENTRIES.
+        //
+        // This was `.slice(0, per)`, which caps how many inventory ENTRIES are taken —
+        // and reagents stack, so elderberry is one entry however many it holds. Asking
+        // for 10 handed over the whole stack: the almoner planned "Sweetums -> Zoot, 10
+        // of each" and delivered 46 elderberry and 118 herbs, everything Sweetums had.
+        // The next character in the same run got "carrying nothing matching reagents"
+        // and the nine after that got "nobody left with a share to give" — one donor
+        // could feed exactly one caster per pass, which is why 11 characters could not
+        // cast create food while the fleet held reagents in abundance.
+        //
+        // The {id, amount} partial-stack form a few lines above is the mechanism that
+        // already exists for this; the reagent path simply was not using it.
         const per = num(a.amount, 2);
-        const take = re => (g.inventory || []).filter(o => re.test(nameOf(o))).slice(0, per);
+        const take = re => (g.inventory || []).filter(o => re.test(nameOf(o)))
+          .map(o => (o.amount > 0 ? { ...o, amount: Math.max(1, Math.min(o.amount, per)) } : o));
         items = [...take(/elder\s*berry/i), ...take(/herb/i)];
       }
       if (!items.length)

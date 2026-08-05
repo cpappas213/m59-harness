@@ -141,6 +141,12 @@ const vigorOf = v => (v?.vigor?.value ?? null);
 // about elderberry, and being over-stocked on herbs costs weight and nothing else.
 const REAGENT_TARGET = 20;
 
+// What `create food` costs to cast — viMana on the Kraanan spell, the same number the
+// broker's `spells` tool reports out of the kod source. Reagents alone never made a cast
+// affordable, and treating them as the only precondition is what put the fleet in the
+// state where reagents were delivered to characters too tired to spend them.
+const CREATE_FOOD_MANA = 10;
+
 const vigorPct = v => {
   const g = v?.vigor;
   if (!g || g.value == null) return null;
@@ -717,7 +723,23 @@ export class Autopilot {
     if (!spell)
       return this.declinedCast('create food', 'the character does not have the spell',
         { note: 'an unknown spell and an unlearned one are both simply absent from plSpells' });
+    // MANA IS THE CONSTRAINT, NOT THE REAGENTS. Checked BEFORE the cast, because a cast
+    // that cannot afford itself is refused silently and looks exactly like every other
+    // silent refusal.
+    //
+    // `create food` costs 10 mana (viMana, Kraanan school — the same number the `spells`
+    // tool reports from the kod source). This function checked reagents and never mana,
+    // and then the failure note blamed "the reagents having been spent or sold" — so the
+    // record actively pointed away from the cause. Of twelve failures on the live fleet,
+    // eleven were cast under 10 mana: Pepe at 2, 2, 2 and 3, Lew at 6, 7, 7 and 8,
+    // Fozzie at 8 and 9 — while Lew was carrying 16 elderberry and 8 herbs and Zoot 30
+    // and 102. Reagents were never short; the fleet had been delivering them to
+    // characters that could not afford to use them.
     const manaBefore = c.vitals?.()?.mana?.value ?? null;
+    if (manaBefore !== null && manaBefore < CREATE_FOOD_MANA)
+      return this.declinedCast('create food', 'not enough mana',
+        { mana: manaBefore, needs: CREATE_FOOD_MANA, have_reagents: r,
+          note: 'mana comes back by resting; the reagents are already in the pack' });
     const had = new Set((c.inventory || []).map(o => o.id));
     await s.pacer.submit('cast', () => c.cast(spell.id, []), 1050);
     await c.waitFor({ kinds: ['message', 'inventory'], timeoutMs: 4000 }).catch(() => {});
@@ -730,7 +752,11 @@ export class Autopilot {
       this.recordCast('create food', { ok: false, why, reagents_before: r,
         mana_before: manaBefore, mana_after: c.vitals?.()?.mana?.value ?? null });
       this.note('create food produced nothing', { had: r, mana: c.vitals?.()?.mana,
-        why: 'it refuses silently; the usual cause is the reagents having been spent or sold' });
+        mana_before: manaBefore, needs_mana: CREATE_FOOD_MANA,
+        why: 'it refuses silently. Mana is checked before we get here, so reaching this ' +
+             'means the cast was affordable and still made nothing — reagents spent or ' +
+             'sold between the count and the cast, or the food merged into a stack we ' +
+             'already carried and so shows up as no new object id' });
       return false;
     }
     this.recordCast('create food', { ok: true, why, reagents_before: r,
@@ -1377,11 +1403,16 @@ export class Autopilot {
     const within = Math.max(geo.rows ?? 0, geo.cols ?? 0) || 64;
     const spotStats = {};
     const spot = nearestSafeSpot(geo, me, {
-      // minAvoided is on the 0..28 scale of the real reach disc, not the old 0..8 ring,
-      // and 20 is where the book says the hold rate jumps from ~35% to ~85% — see
-      // nearestSafeSpot. `los` has to be the same setting quarryReach uses, or the two
-      // disagree about the same monster.
-      within, minAvoided: 20, book: this.book, room: room.num, quarryReach, los,
+      // WHAT MAKES A SQUARE A CANDIDATE. `wall` asks for a wall to stand against and
+      // ranks by how much of it there is; `disc` is the old attackers_avoided >= 20
+      // gate, kept so the two can be compared rather than swapped on faith. See
+      // SPOT_RULES — the disc threshold turned out to sit in a trough in the book, and
+      // most of the evidence that put it there was written by a bug in restBroken.
+      //
+      // `los` has to be the same setting quarryReach uses, or the two disagree about
+      // the same monster.
+      within, rule: this.policy.spotRule ?? 'wall', minAvoided: 20,
+      book: this.book, room: room.num, quarryReach, los,
       stats: spotStats,
       toward: quarry ? { col: quarry.col, row: quarry.row } : null,
       // Skip squares another keeper is already standing on, and squares nothing can be
@@ -2209,6 +2240,53 @@ export class Autopilot {
   // `doing` is the time-accounting bucket and is too coarse to read — "recovering"
   // covers eating, resting and waiting out a digestion clock. This is the one-line
   // answer to "what is it up to?", which is the question a fleet page is for.
+  // PARK: FINISH WHAT YOU ARE DOING, GET BEHIND A WALL, AND STOP.
+  //
+  // A broker restart stops all twenty-one keepers at once, and a stopped keeper is not
+  // a paused character — it is a character held still in whatever fight it was in while
+  // everything already swinging at it carries on. That is why deaths arrive in waves
+  // after a restart, and it is the whole reason m59-uptime.mjs exists.
+  //
+  // Parking is the fix, and the only part of it that matters is WHEN it takes effect:
+  // not mid-swing, not mid-route, but at the next point the keeper would have chosen a
+  // new action anyway. So the check sits in pass() exactly where the mode dispatch does
+  // — past death, danger and rest — and everything above it still runs. A parked
+  // character that is attacked still defends itself, still flees, still escapes the
+  // Underworld. It simply stops picking new fights.
+  //
+  // `ready` is the handshake. The orchestrator waits for every keeper to raise it before
+  // it restarts anything, so the outage lands on a fleet that is standing behind walls
+  // rather than one that is mid-pull.
+  park(why = 'a fleet update is waiting for us') {
+    if (!this.parking) {
+      this.parking = { why, at: Date.now(), ready: false, tries: 0, since: null };
+      this.note('parking for a fleet update', {
+        why, what_happens: 'this pass finishes, then the keeper takes a wall and holds it. ' +
+          'It will not start another fight. Danger, flight and death handling are unaffected' });
+    }
+    return this.parkStatus();
+  }
+
+  unpark(why = 'the update finished') {
+    if (this.parking) this.note('unparked', { why });
+    this.parking = null;
+    return this.parkStatus();
+  }
+
+  parkStatus() {
+    if (!this.parking) return null;
+    return { parked: true, ready: !!this.parking.ready, why: this.parking.why,
+             waiting_for_s: Math.round((Date.now() - this.parking.at) / 1000),
+             holding: this.hold ? { col: this.hold.col, row: this.hold.row,
+                                    proven: this.holdWorks() } : null };
+  }
+
+  // How long we will keep trying for a wall before reporting ready without one. A
+  // character that cannot find a wall must not hold the whole fleet's update hostage —
+  // and standing still in the open is still strictly better than being stopped mid-fight
+  // there, because a parked keeper is awake and a stopped one is not.
+  static PARK_GRACE_MS = 90_000;
+
   activity() {
     if (!this.running) return 'stopped';
     // A keeper whose session died keeps looping and keeps reporting whatever it was
@@ -2216,6 +2294,10 @@ export class Autopilot {
     // board as sixteen of them holding walls. The loop is running; the character is
     // not there.
     if (!this.s?.live) return 'NOT IN GAME';
+    if (this.parking)
+      return this.parking.ready
+        ? (this.hold ? 'parked behind a wall, ready for the update' : 'parked in the open, ready for the update')
+        : 'parking — getting behind a wall before the update';
     if (this.frozenUntil && Date.now() < this.frozenUntil) return 'playing dead';
     if (this.hold) {
       const proven = this.holdWorks() ? 'proven' : 'untested';
@@ -2307,13 +2389,39 @@ export class Autopilot {
       const row = { name, level: lvl, karma: info?.karma ?? null, count };
       // The two exceptions, and they are genuinely different. Karma is a decision the
       // owner made about what this character is; danger is a fact about the room.
+      // A CREATURE WE HAVE NEVER HEARD OF IS DANGEROUS, NOT SAFE.
+      //
+      // `lvl` is null whenever the spawn table has no row for the name, and the level
+      // test was written as `lvl != null && lvl > ceiling` — so an unknown creature
+      // skipped the test and fell straight through to clearable. The table holds 120
+      // creatures and exactly one faction soldier ("rebel soldier", level 50); there is
+      // no row for "soldier of the Duke's army", so a level-27 character with a safety
+      // band of 33 looked at three of them and decided to clear the room.
+      //
+      // That is the same shape as every other silent default in this tree: the absence
+      // of information read as permission. Faction soldiers are the worst possible thing
+      // to guess about — the Duke's soldiers alone account for 155 kills in the Tos
+      // death record and appear in deaths that happened inside APPROVED safe squares.
+      //
+      // Judge on attack_rating where we have it, because level is not danger
+      // (GetAttackAbility = 3*viLevel + 60*viDifficulty), and fall back to level only
+      // when the rating is missing. Unknown is refused either way.
+      const rating = info?.attack_rating ?? null;
       if (!karmaSafe(info?.karma, this.policy.karma)) {
         status.blocked.push({ ...row, why: `killing it moves karma the wrong way for a ` +
                                             `${this.policy.karma} character (its karma is ${info?.karma})` });
+      } else if (!info) {
+        status.blocked.push({ ...row, rating: null,
+          why: 'nothing is known about it — the spawn table has no row for this name, and ' +
+               'an unrecognised creature is refused rather than assumed harmless' });
+      } else if (rating != null && rating > GENTLE_RATING && lvl != null && lvl > ceiling) {
+        status.blocked.push({ ...row, rating,
+          why: `attack rating ${rating} is above the forgiving band of ${GENTLE_RATING} ` +
+               `and level ${lvl} is above the safety band of ${ceiling}` });
       } else if (ceiling != null && lvl != null && lvl > ceiling) {
-        status.blocked.push({ ...row, why: `level ${lvl} is above the safety band of ${ceiling}` });
+        status.blocked.push({ ...row, rating, why: `level ${lvl} is above the safety band of ${ceiling}` });
       } else {
-        status.clearable.push(row);
+        status.clearable.push({ ...row, rating });
       }
     }
     // Most numerous first: the point is to free slots, and eight of one thing is where
@@ -2760,6 +2868,8 @@ export class Autopilot {
   status({ full = false } = {}) {
     return {
       running: this.running, mode: this.mode, policy: this.policy,
+      // Null unless a fleet update is waiting on this character. See park().
+      parked: this.parkStatus(),
       // What it is up to, in the words someone watching would use. Belongs here rather
       // than only on the fleet snapshot: anything reading a keeper's status — the
       // terminal board, another agent — wants the sentence, not the time buckets.
@@ -3992,6 +4102,61 @@ export class Autopilot {
       return;
     }
 
+    // PARKED. This is the point the keeper would otherwise choose a new action — the
+    // errand, the roam, the fight — and it is past death, danger and rest, so a parked
+    // character has already handled anything that was happening to it. See park().
+    //
+    // Deliberately ABOVE the errand branch: an errand is a multi-minute walk across the
+    // world, which is the worst possible thing to be half-way through when the broker
+    // goes down. A character that is already on one finishes nothing and stands still;
+    // the errand is still in `this.errand` and the keeper on the far side of the restart
+    // picks it up from the roster.
+    if (this.parking) {
+      const p = this.parking;
+      // Somewhere hostile? Get a wall. `takeSafeSpot` is the same call the rest gate
+      // uses, so a parked character ends up in exactly the state resting requires.
+      //
+      // `hostiles` is the whole room, not `near` — the same distinction the rest gate
+      // makes and for the same reason: a room with four monsters in it and none beside
+      // us right now is not a place to sit out an outage. And a room that merely SPAWNS
+      // counts too, because an empty spawn room is a room between spawns.
+      const wantWall = this.policy.useSafeSpots && !this.hold &&
+                       (hostiles.length > 0 || !this.sanctuary());
+      if (wantWall && !p.ready) {
+        p.tries++;
+        await this.takeSafeSpot('parking for a fleet update — a wall before the outage',
+                                hostiles[0] ?? null).catch(() => false);
+      }
+      // READY WHEN WE ARE BEHIND SOMETHING, or when we have spent long enough failing to
+      // find one that holding up the fleet costs more than the wall is worth. Reporting
+      // ready without a wall is honest rather than convenient: parkStatus() carries
+      // `holding: null` and the orchestrator prints it, so the operator sees which
+      // characters are about to take the outage standing in the open.
+      const graceUp = Date.now() - p.at > Autopilot.PARK_GRACE_MS;
+      if (!p.ready && (this.hold || !wantWall || graceUp)) {
+        p.ready = true; p.since = Date.now();
+        this.note('parked and ready for the update', {
+          holding: this.hold ? { col: this.hold.col, row: this.hold.row, proven: this.holdWorks() } : null,
+          attempts: p.tries,
+          why: this.hold ? 'behind a wall, taking no new fights until the update is done'
+             : !wantWall ? 'nothing here spawns or threatens, so a wall buys nothing'
+             : 'could not find a wall in ' + Math.round(Autopilot.PARK_GRACE_MS / 1000) + 's — ' +
+               'reporting ready rather than holding the whole fleet up, and saying so' });
+      }
+      // Rest while we wait, but only where resting is legal — the same rule the rest
+      // gate applies, and for the same reason. Free health for the far side of the
+      // restart when it is safe, and nothing at all when it is not.
+      if (this.holdWorks() || !hostiles.length) {
+        const hp = pct(this.s.client?.vitals?.health);
+        if (hp !== null && hp < 0.95) {
+          this.doing = 'recovering';
+          await skills.restUntil(this.s, { health: 0.99, vigor: REST_VIGOR_CAP, maxSeconds: 20 })
+                      .catch(() => {});
+        }
+      }
+      return;
+    }
+
     // An errand outranks farming and is outranked by everything above it: we are past
     // the death, danger and rest branches, so a runner in trouble has already dealt
     // with the trouble.
@@ -4442,8 +4607,23 @@ export class Autopilot {
           vigNow !== null && vigNow >= vigorBarFor([this.policy.hunt, ...this.threat().names], this.policy) &&
           blowsWeCanTake !== null && blowsWeCanTake >= (this.policy.openFightBlows ?? 7);
         if (denied !== false && !this.hold && canFightOpen) {
-          if (this.warnedOpenFight !== room.num) {
-            this.warnedOpenFight = room.num;
+          // ONE FLAG PER BRANCH, BECAUSE THE TRANSITION IS THE INTERESTING EVENT.
+          //
+          // Both branches shared `warnedOpenFight` and both SET it before logging, so a
+          // character that refused a room once could never log fighting in it: the
+          // refusal wrote the room number, and every later pass — including every pass
+          // where the relaxation fired — found the flag already equal and said nothing.
+          // "Fighting anyway" could only ever appear if the very first evaluation in a
+          // room passed the gate, which for a fleet that starts tired is close to never.
+          //
+          // This cost two rounds of chasing a gate that was working. The counter sat at
+          // 0 across both while kills broadened from three characters to seven and
+          // fighting time went 2% to 7% — the behaviour had changed and the instrument
+          // could not show it. A shared one-shot flag across two mutually exclusive
+          // branches does not report a state, it reports whichever state was seen first.
+          if (this.warnedFightingOpen !== room.num) {
+            this.warnedFightingOpen = room.num;
+            this.warnedOpenFight = null;   // so flipping back reports the change
             this.note('no safe wall here, but fighting anyway', {
               room: room.name, room_num: room.num, why_no_spot: denied,
               health_pct: Math.round(hpFrac * 100), vigor: vigNow,
@@ -4458,6 +4638,7 @@ export class Autopilot {
           this.emptyPasses++;
           if (this.warnedOpenFight !== room.num) {
             this.warnedOpenFight = room.num;
+            this.warnedFightingOpen = null;   // so flipping back reports the change
             this.note('REFUSING TO FIGHT HERE — no safe wall in this room', {
               room: room.name, room_num: room.num, why_no_spot: denied,
               prey_level: worth.level ?? null, my_level: worth.my_level ?? null,
@@ -4942,8 +5123,37 @@ export class Autopilot {
   // Only after both is resting allowed again, and by then it is a different square.
   async restBroken(room, near) {
     this.tally.rests_broken = (this.tally.rests_broken || 0) + 1;
+    // A BROKEN REST WITH NOTHING NEXT TO US IS NOT EVIDENCE ABOUT THE SQUARE.
+    //
+    // observe() has always refused this reading — `nothing was in swing range, a quiet
+    // window with nothing to be quiet about` — and it refuses it for BOTH verdicts,
+    // because a window with no attacker in it says nothing either way. This path never
+    // had the guard, and it is the path that fires in a town: a character crosses Tos,
+    // sits down, the rest is interrupted by something that is not a monster, and the
+    // paving stone it happened to stop on is condemned for ever.
+    //
+    // It wrote 130 of the book's 474 failures that way — 27% of all the evidence we had
+    // — and 116 of those are in five rooms with nothing hostile in them at all: 58 in
+    // The Streets of Tos, 17 in the Sparkling Stone Shop, 15 in South Barloque, 14 in
+    // Familiars, 12 in Marion. Every recorded square in all five is a phantom, written
+    // ten seconds apart along a walking route.
+    //
+    // Worse than the count is the SHAPE: those squares are open floor, so they poisoned
+    // every comparison of one selection rule against another in exactly the direction
+    // that flatters "prefer a wall". A metric graded against them scores well for the
+    // wrong reason.
+    //
+    // The rest is still broken, and everything below still runs. All this refuses to do
+    // is blame the square when nothing was there to blame it for.
+    if (this.hold && !near.length) {
+      this.note('rest broken with nothing in reach — not counted against this square', {
+        where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
+        why: 'a rest can be interrupted by things that are not an attack, and a window ' +
+             'with no attacker in it is not a reading. See observe(), which has always ' +
+             'refused the same window' });
+    }
     // Evidence first, while we still know which square failed.
-    if (this.hold) {
+    if (this.hold && near.length) {
       this.book.failed(this.hold.room, {
         col: this.hold.col, row: this.hold.row, damage: 1, attackers: near.length });
       this.book.save();
@@ -4955,10 +5165,13 @@ export class Autopilot {
         caveat: 'found by the rest rather than by observe(), so it is one reading like any ' +
                 'other: it demotes the square, and a second stops it being recommended' });
       this.releaseHold('we were hit while resting in it');
-    } else {
+    } else if (!this.hold) {
       this.note('hit while resting in the open', { room: room?.num, attackers: near.length,
         why: 'there was no wall at our back; this is the case the safe spot exists for' });
     }
+    // The third case — holding a spot, rest broken, nothing in reach — is noted above and
+    // deliberately falls through without releasing the hold. There is no evidence against
+    // the square, so giving it up would throw away a working wall over a hunger tick.
 
     // Shed the aggro before walking anywhere.
     let dropped = false;

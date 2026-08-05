@@ -228,11 +228,46 @@ async function travelTo(agent, room, { tries = 3, hops = 20 } = {}) {
 // running again by the time we return, on every path out including a throw. Checked
 // rather than assumed, because "start" on an already-running keeper is a no-op and
 // costs nothing, while the alternative costs a character.
+// A RESTART MUST NOT BE A POLICY RESET.
+//
+// Both restart paths here used to send {agent, action, mode, hunt} and nothing else, so
+// every field the operator had set — assigned_room, roam, partner, bank_above — was
+// silently dropped and the keeper came back with defaults. Two characters were moved off
+// "Main gate to the city of Tos" (117 of 361 fleet deaths) with assigned_room and
+// roam:false, and both were back in that room inside the hour with assigned_room reading
+// "(none)". Nothing errored; the correction simply evaporated.
+//
+// A stalled character is restarted every 90s, which is exactly the character whose policy
+// was most deliberately chosen. So carry the whole policy across and let the caller's
+// arguments win only where it actually has an opinion.
+// THE POLICY IS camelCase AND THE ARGUMENTS ARE snake_case, so this has to be a mapping
+// and not a list of names. The first version was a list, which silently preserved exactly
+// the three keys that are spelled the same in both — roam, partner, strategy — and
+// dropped assignedRoom, bankAbove, restBelow and the rest. It looked like it worked:
+// the restart reported `kept {"roam":false,"partner":"t7"}` and that is a true statement
+// about the two fields it managed to carry.
+//
+// policy key (what `autopilot status` returns) -> argument name (what `start` accepts)
+const KEEP_ACROSS_RESTART = {
+  assignedRoom: 'assigned_room', roam: 'roam', roamLimit: 'roam_limit',
+  partner: 'partner', bankAbove: 'bank_above', restBelow: 'rest_below',
+  fleeBelow: 'flee_below', maxCarry: 'max_carry', weaponPriority: 'weapon_priority',
+  dropJunk: 'drop_junk', strategy: 'strategy',
+};
+
+function carriedPolicy(st) {
+  const p = st?.policy || {};
+  const out = {};
+  for (const [key, arg] of Object.entries(KEEP_ACROSS_RESTART))
+    if (p[key] !== undefined && p[key] !== null) out[arg] = p[key];
+  return out;
+}
+
 async function ensureKeeper(agent, hunt) {
   try {
     const st = await call('autopilot', { agent, action: 'status' }).catch(() => null);
     if (st?.running) return true;
-    await call('autopilot', { agent, action: 'start', mode: 'farm', hunt });
+    await call('autopilot', { agent, action: 'start', mode: 'farm', ...carriedPolicy(st), hunt });
     return true;
   } catch { return false; }
 }
@@ -299,6 +334,29 @@ async function round(n) {
   const rows = (f.fleet || []).filter(r => r.in_game !== false);
   const hist = {};
   for (const r of rows) if (r.level) hist[r.level] = (hist[r.level] || 0) + 1;
+  // STAND DOWN WHILE THE FLEET IS PARKING.
+  //
+  // A parked keeper is running and deliberately doing nothing, which is exactly what
+  // this supervisor is built to notice and fix. Left alone it would read the idle
+  // passes as a stall, restart the keeper — clearing the parking flag with it — and
+  // send the character back to work in the minute before the broker goes down. That is
+  // the same shape as the refusal loop below: every line of it would look like the
+  // supervisor working.
+  //
+  // Deploying is worse than restarting. It stops keepers and walks pairs across the
+  // world, so an update that arrived mid-deploy would take the outage with two
+  // characters somewhere between towns and no keeper on either.
+  //
+  // So: one parked character stands the whole round down. The update is measured in
+  // minutes and this runs every ninety seconds, so nothing is lost by waiting.
+  const parking = rows.filter(r => r.parked);
+  if (parking.length) {
+    const ready = parking.filter(r => r.parked.ready).length;
+    console.log(`   standing down: ${parking.length} character(s) are parking for a fleet update ` +
+                `(${ready} ready) — not restarting or deploying anyone until it is done`);
+    return rows;
+  }
+
   const ready = rows.filter(r => (r.level ?? 0) >= GRADUATE_AT);
   console.log(`${stamp()} [${n}] ${rows.length} in game  ready=${ready.length} (>=${GRADUATE_AT}hp)  ` +
               `stalled=${f.stalled_count ?? '?'}  ${JSON.stringify(hist)}`);
@@ -326,7 +384,12 @@ async function round(n) {
     if (DRY) { console.log(`   would restart ${r.character}: ${why}`); continue; }
     const persistent = typeof r.stalled === 'object' && (r.stalled.idle_passes ?? 0) >= 8;
     if (!persistent && !/no keeper|keeper stopped/.test(String(r.stalled))) continue;
+    // Same reason as ensureKeeper: the stall restart is the one that fires every 90s, so
+    // it is the one most likely to erase a deliberate placement. Read the policy back
+    // and carry it, rather than rebuilding the keeper from defaults.
+    const cur = await call('autopilot', { agent: r.agent, action: 'status' }).catch(() => null);
     await call('autopilot', { agent: r.agent, action: 'start', mode: 'farm',
+                              ...carriedPolicy(cur),
                               // Its own hunt first; only fall back when we genuinely do
                               // not know, and then by level rather than to a constant.
                               hunt: r.hunting || fallbackHunt(r.level) }).catch(() => {});

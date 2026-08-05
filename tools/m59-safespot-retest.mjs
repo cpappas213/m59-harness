@@ -35,6 +35,28 @@ const arg = (n) => process.argv.includes('--' + n);
 const argVal = (n) => { const i = process.argv.indexOf('--' + n); return i < 0 ? null : process.argv[i + 1]; };
 const DRY = arg('dry-run');
 const ONLY_UNHELD = arg('only-unheld');
+// DELETE THE PHANTOMS, RATHER THAN PARDONING THEM.
+//
+//   node tools/m59-safespot-retest.mjs --phantoms --dry-run
+//
+// A pardon (above) says "this failure was measured badly". These were not measured at
+// all. restBroken() used to condemn whatever square a character was standing on when a
+// rest was interrupted, without checking that anything was next to it — so a character
+// crossing a town, sitting down, and being interrupted by something that is not an
+// attack wrote a failure against a paving stone. 130 of the book's 474 failures were
+// written that way, 116 of them in five rooms with nothing hostile in them.
+//
+// The signature is exact and cannot collide with a real reading, because observe() and
+// the death path both refuse to record with nothing adjacent: attackers zero AND the
+// damage equal to the failure count, which is restBroken's hardcoded `damage: 1` per
+// call. A genuine failure has a measured loss and something that did the losing.
+//
+// These are DELETED rather than zeroed. A pardoned square is a real square whose
+// verdict was withdrawn and which is worth re-testing; a phantom is a square nobody
+// ever tested, and leaving a record behind implies a visit that did not happen.
+const PHANTOMS = arg('phantoms');
+const isPhantom = r => (r.failed || 0) >= 1 && (r.most_attackers || 0) === 0 &&
+                       (r.damage_taken || 0) === (r.failed || 0);
 
 // THE BETTER DISCRIMINATOR, FOUND LATER: WHEN the failure was recorded.
 //
@@ -71,6 +93,50 @@ const rooms = book.rooms || {};
 
 let cleared = 0, kept = 0, squares = 0, alsoHeld = 0;
 const perRoom = {};
+
+if (PHANTOMS) {
+  let gone = 0, heldToo = 0, emptied = [];
+  for (const [room, spots] of Object.entries(rooms)) {
+    for (const [k, rec] of Object.entries(spots)) {
+      squares++;
+      if (!isPhantom(rec)) continue;
+      // A square that ALSO held is a real square with a phantom failure on top. Strip
+      // the failure and keep the square; deleting it would throw away a proven wall.
+      if ((rec.held || 0) > 0) {
+        heldToo++;
+        if (!DRY) { rec.failed = 0; rec.damage_taken = 0; }
+      } else {
+        gone++;
+        if (!DRY) delete spots[k];
+      }
+      perRoom[room] = (perRoom[room] || 0) + 1;
+    }
+    // A ROOM WITH NO RECORDS IS NOT A ROOM WE KNOW ABOUT. Deleting the phantoms leaves
+    // six empty room objects behind, and save() serialises them, so every count of "how
+    // many rooms does the book cover" reads 27 when 21 rooms have anything in them at
+    // all. Functionally inert — recall() hands back an empty Map, which behaves exactly
+    // like an unknown room — but it is a number in a ledger that is wrong, and this
+    // ledger has already cost us enough by being believed.
+    if (!Object.keys(spots).length) { emptied.push(room); if (!DRY) delete rooms[room]; }
+  }
+  console.log(`${squares} squares in the book across ${Object.keys(rooms).length} rooms`);
+  console.log(`${gone} phantom record(s) ${DRY ? 'would be' : ''} deleted, ` +
+              `${heldToo} phantom failure(s) stripped from squares that had also held`);
+  for (const [room, n] of Object.entries(perRoom).sort((a, b) => b[1] - a[1]))
+    console.log(`  room ${String(room).padStart(5)}: ${n}`);
+  if (emptied.length)
+    console.log(`  rooms left with no records at all: ${emptied.join(', ')} — every square ` +
+                'they held was a phantom, so the book never really knew anything about them');
+  if (DRY) { console.log('\ndry run — nothing written'); process.exit(0); }
+  const bak = FILE.replace(/\.json$/, '.before-phantom-purge.json');
+  copyFileSync(FILE, bak);
+  writeFileSync(FILE, JSON.stringify(book, null, 0));
+  console.log(`\nwritten. backup: ${bak}`);
+  console.log('The broker holds this book in memory — restart it so the change takes effect:');
+  console.log('  node tools/m59-service.mjs restart --fleet prod');
+  process.exit(0);
+}
+
 for (const [room, spots] of Object.entries(rooms)) {
   for (const rec of Object.values(spots)) {
     squares++;
