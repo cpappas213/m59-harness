@@ -98,10 +98,20 @@ export const isJunk = (name) => JUNK_NAMES.includes(String(name || '').trim().to
 //
 // What IS visible is what the server says, and it says three different things:
 export const WEAPON_SHATTERED = /shatters into pieces/i;          // it broke just now, mid-fight
-export const WEAPON_IS_BROKEN = /is broken; you can'?t use it/i;  // we tried to wield a dead one
+export const WEAPON_IS_BROKEN = /is broken; you can'?t use it/i;  // weapon.kod:84
+// THE ONE THE SERVER ACTUALLY SENDS WHEN YOU TRY TO WIELD ONE.
+//
+// There are two messages for this and only the first was known. weapon.kod:84 is
+// "%s%s is broken; you can't use it!"; player.kod:127 is "You can't use %s%s--it's
+// broken." — and the second is the one on the PLAYER's use path, which is the path a
+// wield actually takes. Nothing matched it, so a refusal was never recorded as
+// brokenness: the weapon stayed in the candidate list, equipBest offered it again next
+// pass, and the character retried the same dead mace for ever while reporting itself
+// unarmed. Zoot accumulated four of them and fought bare-handed with a full pack.
+export const WEAPON_USE_BROKEN = /can'?t use .*--it'?s broken/i;  // player.kod:127
 export const WEAPON_CONDITION = /shattered by a powerful blow/i;  // seen when examining it
 export const brokenWeaponText = (t) => WEAPON_SHATTERED.test(t || '') || WEAPON_IS_BROKEN.test(t || '')
-                                    || WEAPON_CONDITION.test(t || '');
+                                    || WEAPON_USE_BROKEN.test(t || '') || WEAPON_CONDITION.test(t || '');
 
 // Learned, per client, because it cannot be read. A weapon enters this set the moment
 // the server refuses it or announces it shattering, and leaves only when it leaves the
@@ -273,11 +283,30 @@ export async function equipBest(s, { priority = null, maxTries = 4 } = {}) {
     }
     const now = equippedNow(c);
     if (now && !now.has(cand.o.id)) {
+      // A COMBAT MESSAGE IS NOT A REFUSAL.
+      //
+      // This took texts[0] — the first thing the server said in the wait window — as the
+      // reason the wield failed. In a fight that window is full of other people's news:
+      // Zoot's failed wield was reported as "The fungus beast nicks you with its attack",
+      // which sent me looking for a wielding rule that does not exist. The wait is three
+      // seconds long and a fight generates a line a second.
+      //
+      // So say only what can be attributed. A refusal is a message ABOUT the attempt —
+      // hands full, broken, cannot use — and anything else is noise that happened to
+      // arrive at the same time. Noise is still worth keeping, under a name that does not
+      // claim it is the reason.
+      const refusal = texts.find(t => handsFullText(t) || /can'?t use|cannot use|not able to use|too heavy|do not have/i.test(t));
       rejected.push({ name: cand.name, id: cand.o.id,
-                      why: texts.find(handsFullText)
+                      why: handsFullText(refusal || '')
                         ? 'refused: hands too full — something else is in the way, and it was ' +
                           'not this weapon (we checked the use list first)'
-                        : texts[0] || 'the server never added it to the use list, and said nothing' });
+                        : refusal
+                        || 'the server never added it to the use list and said nothing about why',
+                      ...(texts.length && !refusal
+                            ? { heard_meanwhile: texts.slice(0, 3),
+                                note: 'those are what the server happened to say in the wait, not ' +
+                                      'the reason — nothing it said was about this attempt' }
+                            : {}) });
       continue;
     }
     return {
