@@ -4243,7 +4243,61 @@ export class Autopilot {
             note: 'the room has candidate squares; getting to one failed, which is about us ' +
                   'and is retried next pass' });
         }
-        if (denied !== false && !this.hold) {
+        // WHEN THE CHARACTER CAN AFFORD AN OPEN FIGHT, TAKE IT.
+        //
+        // Refusing outright turned a risk into a certainty. With this absolute, the fleet
+        // spent 95% of its time travelling and 0% fighting: fifteen of twenty-one walked
+        // between rooms looking for one the detector approved of, scored no kills in
+        // forty-five minutes, and lost four levels to the deaths that happened anyway.
+        // Under-using the world is recoverable, but only if something is being used.
+        //
+        // Where the risk actually lives is now measurable rather than assumed. Across
+        // 6,570 observations and 221 deaths, deaths per thousand observations ran 75.7
+        // below 85 vigor and 12.4 above 160 — a six-fold difference, and vigor is the
+        // variable, not the wall. Vigor sets how fast health returns between exchanges,
+        // so a rested character in the open is in a different fight from a tired one.
+        //
+        // So the wall is still preferred and still taken whenever one is found. It stops
+        // being mandatory only for a character that is close to whole, above the vigor
+        // band where the death rate collapses, and facing prey no higher level than
+        // itself. Anything short of all three, the old refusal stands.
+        // HOW MANY BLOWS CAN WE TAKE, not how the two levels compare.
+        //
+        // holdWorthwhile asks `prey level > our max health`, which is the right test for
+        // whether a kill PAYS — AdvancementCheck uses exactly that — and the wrong one
+        // for whether it is survivable. A fungus beast is level 50 against our 32, so
+        // that test says "wall required" for every one of them, and the fleet walked.
+        //
+        // Damage is Fuzzy(viLevel / Random(10,15)) — about level/12 a blow — and it
+        // depends on the LEVEL alone. Difficulty decides how often the blow lands and how
+        // far it reaches, not how hard it hits. So the number that says whether an open
+        // fight can be broken off is our health divided by that: a fungus beast does
+        // about four to a 32-health character, which is eight exchanges, and eight is a
+        // long time when a withdrawal takes one.
+        const vNow = this.s.client?.vitals?.();
+        const hpFrac = pct(vNow?.health);
+        const vigNow = vNow?.vigor?.value ?? null;
+        const myMax = vNow?.health?.max ?? null;
+        const preyLvl = worth.level ?? null;
+        const perBlow = preyLvl != null ? Math.max(1, preyLvl / 12) : null;
+        const blowsWeCanTake = myMax != null && perBlow != null ? myMax / perBlow : null;
+        const canFightOpen =
+          hpFrac !== null && hpFrac >= (this.policy.openFightHealth ?? 0.9) &&
+          vigNow !== null && vigNow >= (this.policy.openFightVigor ?? 130) &&
+          blowsWeCanTake !== null && blowsWeCanTake >= (this.policy.openFightBlows ?? 7);
+        if (denied !== false && !this.hold && canFightOpen) {
+          if (this.warnedOpenFight !== room.num) {
+            this.warnedOpenFight = room.num;
+            this.note('no safe wall here, but fighting anyway', {
+              room: room.name, room_num: room.num, why_no_spot: denied,
+              health_pct: Math.round(hpFrac * 100), vigor: vigNow,
+              prey_level: preyLvl, my_max_health: myMax,
+              blows_we_can_take: Math.round(blowsWeCanTake * 10) / 10,
+              why: 'whole, well above the vigor band where the death rate collapses, and it ' +
+                   'takes this thing seven or more blows to finish us — the wall is worth ' +
+                   'having and is not worth another twenty minutes of walking to find' });
+          }
+        } else if (denied !== false && !this.hold) {
           this.tally.rooms_denied = this.noWallRooms.size;
           this.emptyPasses++;
           if (this.warnedOpenFight !== room.num) {
