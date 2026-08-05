@@ -75,6 +75,47 @@ const REST_VIGOR_CAP = 0.4;
 // part of the curve, and the stomach only admits 100 filling at a time anyway.
 const EAT_TO_AT_LEAST = 120;
 
+// HOW RESTED YOU HAVE TO BE TO FIGHT WITHOUT A WALL, WHICH DEPENDS ON WHAT YOU ARE FIGHTING.
+//
+// A flat 130 closed a loop the fleet could not get out of. A character with no food sits
+// at the resting cap of 80; at 80 it refuses every wall-less fight; refusing means it
+// leaves the ground it was sent to; wandering means "nothing to hunt here"; no kills
+// means no money; no money means no food; and no food means it is still at 80 tomorrow.
+// Nineteen of twenty-one characters were in that loop, and three were doing all the
+// killing.
+//
+// The way out is to notice that "fighting in the open" is not one risk. A giant rat is
+// the gentlest thing in this world — level 30, difficulty 1, attack rating 150 — and a
+// level-23 character swinging at one from open floor is not the same act as taking on a
+// centipede at 390. Damage still scales with level, so `blowsWeCanTake` stays the hard
+// floor; this only says how much vigor to demand before allowing it at all.
+//
+// Gentle prey (at or under a fungus beast's 210, the same bar the room filter uses) is
+// allowed from the resting cap. Anything harder still wants the full 130.
+// The rating MUST come from the spawn table, which carries the real viDifficulty. My
+// first attempt derived it from level alone as 3*level + 60 — that is the difficulty-1
+// case, so it called a centipede (really 390) and an ant (360) gentle and would have sent
+// characters at the resting cap against them in the open. Level is what a blow costs;
+// difficulty is how often one lands, and only the table knows it.
+//
+// Unknown difficulty means unknown danger, and unknown is NOT gentle.
+const GENTLE_RATING = 210;                 // a fungus beast: level 50, difficulty 1
+function ratingOfCreature(name) {
+  const all = loadSpawns(SPAWN_FILE)?.creatures;
+  const q = String(name || '').toLowerCase();
+  if (!all || !q) return null;
+  const hit = all[q] || Object.values(all).find(v => q.includes(String(v.name).toLowerCase()));
+  return hit?.attack_rating ?? null;
+}
+function vigorBarFor(names, policy) {
+  const full = policy.openFightVigor ?? 130;
+  const list = [].concat(names || []).filter(Boolean);
+  if (!list.length) return full;
+  const rates = list.map(ratingOfCreature);
+  if (rates.some(r => r == null)) return full;              // do not guess in our own favour
+  return Math.max(...rates) <= GENTLE_RATING ? (policy.openFightVigorGentle ?? 78) : full;
+}
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pct = v => (v && v.max ? v.value / v.max : null);
 
@@ -4387,7 +4428,7 @@ export class Autopilot {
         const blowsWeCanTake = myMax != null && perBlow != null ? myMax / perBlow : null;
         const canFightOpen =
           hpFrac !== null && hpFrac >= (this.policy.openFightHealth ?? 0.9) &&
-          vigNow !== null && vigNow >= (this.policy.openFightVigor ?? 130) &&
+          vigNow !== null && vigNow >= vigorBarFor(this.threat().names, this.policy) &&
           blowsWeCanTake !== null && blowsWeCanTake >= (this.policy.openFightBlows ?? 7);
         if (denied !== false && !this.hold && canFightOpen) {
           if (this.warnedOpenFight !== room.num) {
