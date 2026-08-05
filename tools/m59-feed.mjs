@@ -112,6 +112,7 @@ async function foodShopsFor(agent) {
 //
 // Nearest by ROUTE, not by room number, because the donor has to walk it. supply() holds
 // both keepers, travels, and verifies the money arrived in the receiver's pack.
+const DONOR_RESERVE = Number(arg('donor-reserve', 200));
 async function fundFrom(row, need) {
   const f = await call('fleet', {}).catch(() => null);
   if (!f) return null;
@@ -120,9 +121,13 @@ async function fundFrom(row, need) {
     if (c.agent === row.agent) continue;
     const inv = await call('inventory', { agent: c.agent }).catch(() => ({ items: [] }));
     const sh = (inv.items || []).find(i => /shilling/i.test(i.name));
-    // Leave the donor enough to keep itself fed — it is earning, and stripping it bare
-    // just moves the problem.
-    if ((sh?.amount || 0) >= need + 400) donors.push({ agent: c.agent, name: c.character, id: sh.id, sh: sh.amount, room: c.room_num });
+    // Leave the donor something, but do not price the loan out of existence. The reserve
+    // was 400 against a 600 loan, which asks for a donor holding a thousand — the whole
+    // fleet's richest character had 904, so nothing qualified and every destitute
+    // character stayed destitute while the fleet sat on 4,473 shillings. A donor at high
+    // vigor with loot in its pack can rebuild a small reserve; a character at zero and
+    // vigor 80 cannot rebuild anything.
+    if ((sh?.amount || 0) >= need + DONOR_RESERVE) donors.push({ agent: c.agent, name: c.character, id: sh.id, sh: sh.amount, room: c.room_num });
   }
   if (!donors.length) return null;
   const routed = [];
@@ -186,9 +191,17 @@ async function feed(row) {
     let purse = purseOf(inv);
     // Still broke after selling everything it had? Then it had nothing, and no amount of
     // shopping fixes that. Borrow from whoever is nearest and can spare it.
+    //
+    // BORROW WHAT THE GAP COSTS, not a flat sum against a flat trigger. A character
+    // holding 200 shillings did not qualify for help and could buy one cheese, so it
+    // walked to the shop, closed a fifth of its deficit, and was back at the resting cap
+    // an hour later. Cheese runs about 4 shillings a vigor point, which is the rate to
+    // budget against; the shop's own prices decide the rest.
     let lender = null;
-    if (purse < 60) {
-      lender = await fundFrom(row, 600);
+    const gap = Math.max(0, (row.vigor_target ?? 180) - (row.vigor ?? 0));
+    const wantPurse = Math.min(900, Math.max(200, gap * 5));
+    if (purse < wantPurse) {
+      lender = await fundFrom(row, Math.min(900, wantPurse - purse));
       if (lender) {
         await sleep(1000);
         inv = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
