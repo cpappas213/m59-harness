@@ -81,6 +81,18 @@ const pct = v => (v && v.max ? v.value / v.max : null);
 // tired. Morgan sat at 14 vigor on full health "fighting from a proven safe spot",
 // which is thirty seconds of swinging and no way back.
 const vigorOf = v => (v?.vigor?.value ?? null);
+// HOW MANY REAGENTS TO KEEP. Six is three casts of create food, which a character gets
+// through in an hour and then declines every cast until it happens past another shop.
+// The fleet declined 278 casts for want of reagents in three hours, against 21 for mana,
+// while holding eight elderberry across twenty-one characters — and create food is the
+// only route to vigor for anyone not standing in a town.
+//
+// Twenty is ten casts. Elderberry and herbs are 10 weight each, so both targets together
+// are about 400 of a 1700 carry allowance, and the walking float still bounds the spend.
+// Herbs are already abundant (135 fleet-wide against 8 elderberry); the target is really
+// about elderberry, and being over-stocked on herbs costs weight and nothing else.
+const REAGENT_TARGET = 20;
+
 const vigorPct = v => {
   const g = v?.vigor;
   if (!g || g.value == null) return null;
@@ -582,7 +594,7 @@ export class Autopilot {
   declareInterest() {
     const c = this.s.client;
     if (!c) return;
-    const want = this.policy.reagentTarget ?? 6;
+    const want = this.policy.reagentTarget ?? REAGENT_TARGET;
     const r = this.reagentCount();
     const wants = [], spare = new Map();
     for (const [kind, have] of [['elderberry', r.elderberry], ['herb', r.herbs]]) {
@@ -5079,7 +5091,7 @@ export class Autopilot {
   // the money a character needs to get home.
   async restockReagents(seller) {
     const s = this.s, c = s.need();
-    const want = this.policy.reagentTarget ?? 6;
+    const want = this.policy.reagentTarget ?? REAGENT_TARGET;
     const have = this.reagentCount();
     const need = { elderberry: Math.max(0, want - have.elderberry), herb: Math.max(0, want - have.herbs) };
     if (!need.elderberry && !need.herb) {
@@ -5291,7 +5303,7 @@ export class Autopilot {
     // the character who needed it could not eat in the meantime. Bulk breaks ties,
     // because the point of the drop is to make room.
     const r = this.reagentCount();
-    const target = this.policy.reagentTarget ?? 6;
+    const target = this.policy.reagentTarget ?? REAGENT_TARGET;
     const mine = name => {
       const k = skills.shareKind(name);
       if (!k) return false;
