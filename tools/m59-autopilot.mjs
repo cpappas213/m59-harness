@@ -425,6 +425,12 @@ export class Autopilot {
       // so the trip itself is the safest walking the fleet does.
       //
       // 800 is twice the walking float, so a character still keeps enough to shop with.
+      //
+      // CHANGING THIS DOES NOT REACH KEEPERS THAT ALREADY EXIST. Each keeper's policy is
+      // persisted with the roster and restored by resumeFleet, so a new default applies
+      // only to keepers created afterwards — I changed this to 800, restarted, and found
+      // every keeper still reporting "carrying, but under the banking threshold ...
+      // banks_at: 2000". Use the autopilot tool's `bank_above` to move the live ones.
       bankAbove: 800,
       ...policy,
     };
