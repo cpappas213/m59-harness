@@ -411,7 +411,11 @@ async function feed(row) {
     }).join(', ');
     if (refused && !bought.length)
       return `${who}: purse ${before}->${purse}${lender ? ` (funded by ${lender})` : ''} — ${refused}`;
-    return `${who}: purse ${before}->${purse}${lender ? ` (funded by ${lender})` : ''}, ` +
+    // `held` is what is left AFTER the buying loop; `purse` was only ever the figure it
+    // started shopping with. Reporting the latter as the outcome made a successful
+    // purchase read as "purse 500->500", which is the kind of line that has hidden every
+    // other failure in this errand.
+    return `${who}: purse ${before}->${held}${lender ? ` (funded by ${lender})` : ''}, ` +
            `bought ${bought.length ? tally : 'NOTHING'} (${spent}sh, +${gained} vigor` +
            `${gained < target ? ` of ${target} wanted` : ''}) — ` +
            `pack now holds ${vigorIn(after)} vigor in ${foodIn(after)} item(s)`;
