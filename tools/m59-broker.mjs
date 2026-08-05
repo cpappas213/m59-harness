@@ -3854,11 +3854,16 @@ const TOOLS = [
   {
     name: 'act',
     description: 'One-shot object interactions: use (wield/wear), unuse, get (pick up), drop, ' +
-      'activate, or go (take the exit under your feet — doors and stairs need this, walking off the ' +
-      'edge of an outdoor room does not).',
+      'activate, eat (apply food to yourself), or go (take the exit under your feet — doors and ' +
+      'stairs need this, walking off the edge of an outdoor room does not). ' +
+      'EAT IS NOT USE. Food is APPLIED to the eater (food.kod:56 sends ReqEatSomething to the ' +
+      'apply target), so `use` on a loaf silently does nothing at all — no message, no error, no ' +
+      'vigor. That mattered: resting stops awarding vigor at 80 of 200, everything above it has ' +
+      'to be eaten, and a character sitting at 80 with bread in its pack is 30x more likely to ' +
+      'die than one above 85. There was no way to make one eat except to wait for its keeper.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
-      verb: { type: 'string', enum: ['use', 'unuse', 'get', 'drop', 'activate', 'go'] },
+      verb: { type: 'string', enum: ['use', 'unuse', 'get', 'drop', 'activate', 'eat', 'go'] },
       target: { type: ['string', 'number'] } }, required: ['agent', 'verb'] },
     run: async (a) => {
       const s = session(a.agent), c = s.need();
@@ -3868,7 +3873,9 @@ const TOOLS = [
       } else {
         const t = resolveTarget(s, a.target);
         const fn = { use: () => c.use(t.id), unuse: () => c.unuse(t.id), get: () => c.get(t.id),
-                     drop: () => c.drop([t.id]), activate: () => c.activate(t.id) }[a.verb];
+                     drop: () => c.drop([t.id]), activate: () => c.activate(t.id),
+                     // onto ourselves — that is what eating IS on the wire
+                     eat: () => c.apply(t.id, c.selfId) }[a.verb];
         if (!fn) throw new Error(`unknown verb "${a.verb}"`);
         await s.pacer.submit(a.verb, fn);
       }
