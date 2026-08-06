@@ -55,6 +55,8 @@ const STOP_AFTER_EMPTY = Number(arg('dry-empties', 3));
 // argues for: armed, near-whole, and not pinned at the resting cap.
 const MIN_HEALTH_PCT = Number(arg('min-health', 0.8));
 const MIN_VIGOR = Number(arg('min-vigor', 100));
+// A pack worth walking back for when nothing notable is named in it.
+const MIN_STACKS = Number(arg('min-stacks', 5));
 
 let id = 0;
 async function call(name, args = {}, ms = 120_000) {
@@ -152,6 +154,26 @@ async function reclaim(site, courier) {
       if (g && !g.raw) took.push(o.name);
       await sleep(400);
     }
+    // GET OUT WITH IT. A courier standing on a death site is standing where somebody just
+    // died, holding more than it arrived with. Going straight back to hunting from there
+    // is how the recovered pack becomes the next drop — and twenty-nine of the last sixty
+    // deaths were characters STALLED in exactly these rooms rather than fighting in them.
+    //
+    // So retreat to the nearest room nothing huntable spawns in before the keeper resumes.
+    // travel picks the route; sanctuary is what makes the destination worth reaching.
+    if (took.length) {
+      const safe = await call('hunting_grounds', { agent: courier.agent, creature: 'inn' }, 60_000)
+                         .catch(() => null);
+      // Prefer the character's own home room — it is an inn by construction and the
+      // routes to it are the ones this character has already walked.
+      const home = courier.home_room ?? courier.assigned_room ?? null;
+      const dest = home ?? (safe?.rooms || [])[0]?.room_num ?? null;
+      if (dest != null) {
+        const r = await call('travel', { agent: courier.agent, to: dest, max_hops: 20 }, 180_000)
+                        .catch(() => ({ arrived: false }));
+        return { ok: true, took, retreated: !!r?.arrived, to: dest };
+      }
+    }
     return { ok: true, took };
   } finally {
     const ok = await call('autopilot', { agent: courier.agent, action: 'revive',
@@ -183,9 +205,28 @@ const deaths = readdirSync(PM_DIR).filter(f => f.endsWith('.json')).map(f => {
              room_num: s.room_num ?? j.where?.num ?? null,
              at_col: s.at_col ?? j.where?.col ?? null,
              at_row: s.at_row ?? j.where?.row ?? null,
-             died_in: s.died_in ?? j.where?.room ?? '' };
+             died_in: s.died_in ?? j.where?.room ?? '',
+             carrying: s.carrying ?? null };
   } catch { return null; }
 }).filter(d => d && d.room_num != null)
+  // ONLY GO BACK FOR A PACK WORTH THE WALK.
+  //
+  // Every site used to qualify, so couriers walked to all of them — including the ones
+  // that held nothing. Of sixty recent deaths, twenty were at the border of the Badlands
+  // and eighteen at the Tos gate, the two rooms this file's own supervisor excludes by
+  // name, and only four of the sixty died fighting. Sending recovery trips into those
+  // rooms for an unknown payoff is how a recovery errand starts costing more than it
+  // returns.
+  //
+  // `carrying` is recorded at death now: stack count and the notable kinds. A site with
+  // no record is SKIPPED rather than guessed at — an unknown payoff does not justify a
+  // walk through ground that kills, and skipping costs only the drops from deaths that
+  // predate the recording.
+  .filter(d => {
+    if (!d.carrying) return false;                       // unknown: not worth the risk
+    if ((d.carrying.notable ?? []).length) return true;  // a weapon or reagent: go
+    return (d.carrying.stacks ?? 0) >= MIN_STACKS;       // or simply a full pack
+  })
   .sort((a, b) => String(b.at).localeCompare(String(a.at)));      // NEWEST FIRST
 if (!deaths.length) { console.error('no death sites on record'); process.exit(1); }
 

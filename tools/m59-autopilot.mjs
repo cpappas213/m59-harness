@@ -4382,6 +4382,25 @@ export class Autopilot {
           // The two questions worth asking of any death.
           fled_in_time: at && at.max ? (at.health / at.max) : null,
           had_flasks: this.hadFlasks ?? null,
+          // WHAT WAS ON THE FLOOR WHEN WE FELL, so something can decide whether the walk
+          // back is worth making. Dying drops the whole inventory, and until now nothing
+          // recorded what that was — so a recovery errand had to treat every death site
+          // as equally promising and walk to all of them. It sent couriers to sites that
+          // held nothing, through the two rooms this fleet dies in most, and the trips
+          // cost more lives than the drops were worth.
+          //
+          // Counted from the last inventory the client saw, because the corpse is already
+          // gone by the time anything asks. Names kept for the notable kinds only — a
+          // weapon or reagent is worth a walk, four mushrooms are not.
+          carrying: (() => {
+            try {
+              const inv = this.s.client?.inventory ?? [];
+              const names = inv.map(o => this.s.client.rsc.get(o.nameRsc) || '');
+              const worth = names.filter(n =>
+                /mace|sword|axe|hammer|bow|armor|armour|shield|helm|elder|herb|shilling|emerald|sapphire|ruby|diamond|flask/i.test(n));
+              return { stacks: inv.length, notable: [...new Set(worth)].slice(0, 8) };
+            } catch { return null; }
+          })(),
           // DID WE DIE SOMEWHERE WE BELIEVED WAS SAFE? The whole safe-spot thesis
           // predicts this should be close to never: a working spot cannot be hit out
           // of unless we swing first, so anything that dies in one is either standing
@@ -6348,6 +6367,19 @@ export class Autopilot {
         tougher.recordKill(this.who(), {
           creature: f.target, room: room?.name ?? null, room_num: room?.num ?? null,
           level: v.health?.max ?? null, rounds: f.rounds, looted, from_safe_spot: !!holding,
+        });
+        // AND INTO THE LONG RECORD, because every in-process count of a kill is wiped
+        // constantly. `tally.kills` and `killTimes` are both fields on this object, and
+        // the supervisor restarts keepers about once a minute — so both really mean
+        // "since the last restart", and the board column asking "is this character
+        // earning RIGHT NOW" was answered from a counter that had been zeroed since the
+        // last kill. Measured: the fleet killed at least 26 things in half an hour while
+        // every kills/30m on the page read 0. countKills() in m59-ledger.mjs counts these
+        // instead, and this is the only thing that survives a keeper.
+        this.ledgerEvent('killed', {
+          creature: f.target, room: room?.name ?? null, room_num: room?.num ?? null,
+          rounds: f.rounds, from_safe_spot: !!holding,
+          looted: looted.length ? looted.join(', ') : undefined,
         });
         // A kill means the wilderness is working again, so the run of flees that would
         // otherwise accumulate over a long healthy session is cleared. Without this a
