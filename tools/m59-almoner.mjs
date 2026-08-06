@@ -1,10 +1,28 @@
 #!/usr/bin/env node
 // MOVE REAGENTS FROM THE RICH TO THE STARVING, THEN TURN THEM INTO VIGOR.
+// AND MOVE SIGNET RINGS DOWNWARD, WHICH IS WORTH TEN TIMES MORE THAN ANY OF IT.
 //
 //   node tools/m59-almoner.mjs --dry-run
 //   node tools/m59-almoner.mjs                    # hand out and set the vigor floor
 //   node tools/m59-almoner.mjs --amount 10        # per reagent kind, default 10
 //   node tools/m59-almoner.mjs --floor 140        # vigor to fight above afterwards
+//   node tools/m59-almoner.mjs --signets-only     # just the rings
+//   node tools/m59-almoner.mjs --no-signets       # just the reagents, as it used to be
+//
+// THE RINGS COME FIRST AND THEY ARE NOT A SIDE ERRAND. A signet ring pays its value TEN
+// TIMES OVER to a character the server considers a newbie, and plain value to everyone
+// else — and "newbie" is not a choice anybody here made: EvaluatePKStatus enables
+// player-killing for you the moment base max health reaches 30 (player.kod:11047). Max
+// health is the level here. So the same ring is worth up to 1500 shillings in the hands
+// of a level-24 character and up to 150 in the hands of a level-31 one, and which of them
+// is holding it is decided by whichever happened to loot it.
+//
+// That is exactly the almoner's job. The fleet's small characters are the ones with no
+// money, no food and no floor under them, and this is the one mechanism in the game that
+// pays them ten times what it pays anyone else. Redistributing rings downward and then
+// sending them to be cashed is the single largest transfer available to this tool — one
+// ring is worth more than every elderberry it will ever move — so it runs FIRST and it
+// runs even on the passes where there is no reagent work to do.
 //
 // WHY THIS IS THE HIGHEST-VALUE ERRAND AVAILABLE. The fleet's food supply is not
 // bought, it is CAST: `create food` turns 2 ElderBerry and 2 Herbs into a meal, and
@@ -74,6 +92,51 @@ for (let i = 0; i < 4 && !f; i++) {
   });
 }
 const live = (f.fleet || []).filter(x => x.in_game !== false);
+
+// ------------------------------------------------------------------ the rings, first
+//
+// Three steps and each is refused cleanly when it has nothing to do, so this costs a
+// single survey call on the passes — most of them — where the fleet is carrying none.
+if (!arg('no-signets', false)) {
+  const survey = await call('signets', { action: 'survey' }).catch(e => ({ __err: e.message }));
+  if (survey.__err) {
+    // A broker predating the signets tool answers "no such tool", and that must not take
+    // the reagent run down with it — this errand has been the fleet's food supply for
+    // months and the rings are the new part.
+    console.log(`signets: ${survey.__err}`);
+  } else if (!survey.rings) {
+    console.log('signet rings: none in the fleet');
+  } else {
+    console.log(`signet rings: ${survey.rings} carried, ${survey.in_the_wrong_hands} in hands that ` +
+                `would be paid a tenth`);
+    for (const cr of survey.carriers)
+      console.log(`  ${cr.character} (${cr.level}, ${cr.paid}) ` +
+                  cr.holding.map(h => `${h.owner} -> ${h.go_to}`).join('; ') +
+                  (cr.committed ? `  [busy: ${cr.committed}]` : ''));
+    if (DRY) console.log('  dry run — no rings moved and nobody dispatched');
+    else {
+      if (survey.in_the_wrong_hands) {
+        const moved = await call('signets', { action: 'redistribute' })
+                            .catch(e => ({ moved: 0, __err: e.message }));
+        console.log(`  redistributed ${moved.moved ?? 0}` +
+                    (moved.__err ? ` (${moved.__err})` : ''));
+        for (const m of moved.moved_detail ?? []) console.log(`    ${m}`);
+        for (const m of moved.failed ?? []) console.log(`    could not: ${m}`);
+      }
+      const sent = await call('signets', { action: 'return' })
+                        .catch(e => ({ dispatched: 0, __err: e.message }));
+      console.log(`  dispatched ${sent.dispatched ?? 0} return errand(s)` +
+                  (sent.__err ? ` (${sent.__err})` : ''));
+      for (const e of sent.errands ?? [])
+        console.log(`    ${e.carrier} -> ${e.to} at ${e.where} (${e.town}), paid ${e.paid}`);
+      for (const s of sent.skipped ?? []) console.log(`    skipped: ${s}`);
+    }
+  }
+  console.log('');
+}
+if (arg('signets-only', false)) process.exit(0);
+
+// ------------------------------------------------------------------ then the reagents
 
 const held = [];
 for (const r of live) {

@@ -257,7 +257,13 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [] } 
            worked", which nobody is asking: it is reset by every keeper restart, so on this
            fleet it largely measures uptime, and a character with forty kills and none since
            breakfast renders identically to one earning steadily. Zero here is the row worth
-           looking at, so it is coloured rather than dimmed. -->
+           looking at, so it is coloured rather than dimmed.
+
+           COUNTED FROM "killed" EVENTS IN THE LEDGER, never from a keeper. This column was
+           itself the bug for a while: the field was rendered here and never written by
+           recordSample, so it was undefined for every character on every render and this
+           red zero was the only thing the page could say — about a fleet that was killing
+           things the whole time. See countKills() in m59-ledger.mjs. -->
       <td class="num ${(r.kills_30m ?? 0) > 0 ? 'good' : 'bad'}">${r.kills_30m ?? 0}</td>
       <td class="room">${roomLink(r.room, r.room_num)}</td>
       <td class="doing">${esc(r.activity ?? '—')}</td>
@@ -295,6 +301,11 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [] } 
   .wrap { max-width: 1100px; margin: 0 auto; }
   h1 { font-size:1.4rem; margin:0 0 .25rem; letter-spacing:-.01em; }
   .sub { color:var(--dim); font-size:.85rem; margin-bottom:1.5rem; }
+  .tabs { display:flex; gap:.25rem; margin:0 0 1.5rem; border-bottom:1px solid var(--line); }
+  .tabs a { padding:.5rem .9rem; text-decoration:none; color:var(--dim); font-size:.9rem;
+            border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tabs a.on { color:var(--fg); border-bottom-color:var(--accent); font-weight:600; }
+  .tabs a:hover { color:var(--fg); }
   .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.75rem; margin-bottom:1.75rem; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:.85rem 1rem; }
   .card .k { color:var(--dim); font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; }
@@ -374,6 +385,11 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [] } 
 <body><div class="wrap">
   <h1>Meridian 59 — ${esc(FLEET_LABEL)} fleet</h1>
   <div class="sub">last ${hours}h · ${sum.samples} samples · refreshes every 60s</div>
+  <nav class="tabs">
+    <a href="/" class="on">Fleet</a>
+    <a href="/deaths">Post mortems</a>
+    <a href="/tougher">Tougher</a>
+  </nav>
 ${offlineBanner}
 ${controls}
 
@@ -420,7 +436,7 @@ ${controls}
         <th>health</th><th>mana</th><th>vigor</th>
         <th class="num">food?</th><th class="num">weapon?</th>
         <th>strategy</th><th class="num">deaths</th><th class="num">kills</th>
-        <th class="num" title="kills in the last 30 minutes — the lifetime count is reset by every keeper restart, so it mostly measures uptime">kills/30m</th><th>where</th>
+        <th class="num" title="kills in the last 30 minutes, counted from the ledger — the column to its left is a high-water mark over the whole window, because a keeper restart zeroes that counter">kills/30m</th><th>where</th>
         <th>doing</th></tr></thead>
       <tbody>${fleetRows || '<tr><td colspan="13" class="dim">nothing recorded yet</td></tr>'}</tbody>
     </table>

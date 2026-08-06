@@ -237,6 +237,17 @@ const vigorOf = v => (v?.vigor?.value ?? null);
 // about elderberry, and being over-stocked on herbs costs weight and nothing else.
 const REAGENT_TARGET = 20;
 
+// WHAT A THING IS WORTH, from viValue_average in the kod — the number a merchant prices
+// around, before markup. Read once at load; a missing file simply makes every pile value
+// zero, which reads as "not worth a walk" and is the safe direction to fail in.
+const ITEM_VALUE = (() => {
+  try {
+    const p = new URL('../substrate/m59-values.json', import.meta.url)
+                .pathname.replace(/^\/([A-Za-z]:)/, '$1');
+    return JSON.parse(readFileSync(p, 'utf8')).values ?? {};
+  } catch { return {}; }
+})();
+
 // What `create food` costs to cast — viMana on the Kraanan spell, the same number the
 // broker's `spells` tool reports out of the kod source. Reagents alone never made a cast
 // affordable, and treating them as the only precondition is what put the fleet in the
@@ -3730,9 +3741,14 @@ export class Autopilot {
       // there for when the summary is surprising.
       did: {
         ...this.tally,
-        // THE NUMBER THAT MEANS SOMETHING RIGHT NOW. `kills` is since this keeper started
-        // and this keeper is restarted constantly, so it mostly measures uptime. This says
-        // whether the character is earning at the moment, which is what a board is for.
+        // THIS KEEPER'S OWN VIEW, AND IT IS NARROWER THAN ITS NAME. `killTimes` starts
+        // empty in the constructor and the supervisor restarts keepers about once a
+        // minute, so this really means "kills since the last restart, capped at 30
+        // minutes" — it is the keeper's opinion of its own run, not a fleet-wide rate.
+        // Anything rendering a kills/30m column must use countKills() in m59-ledger.mjs,
+        // which counts `killed` events off disk and therefore survives a keeper. The
+        // fleet rows do; this stays because a returning model reading `did` wants to
+        // know what THIS keeper has managed since it started.
         kills_30m: this.killsSince(30 * 60_000),
         looted: Object.entries(this.tally.looted).map(([k, n]) => `${k}${n > 1 ? ` x${n}` : ''}`),
         rooms_visited: [...this.visited],
@@ -4395,10 +4411,20 @@ export class Autopilot {
           carrying: (() => {
             try {
               const inv = this.s.client?.inventory ?? [];
-              const names = inv.map(o => this.s.client.rsc.get(o.nameRsc) || '');
-              const worth = names.filter(n =>
+              const names = inv.map(o => ({ name: this.s.client.rsc.get(o.nameRsc) || '',
+                                            amount: o.amount > 0 ? o.amount : 1 }));
+              // WHAT IT IS WORTH, NOT HOW MANY THINGS IT WAS. A stack count cannot tell
+              // four mushrooms from four swords. viValue_average is declared per item
+              // class in the kod — emerald 30, sapphire 60, mace 50, mushroom 10 — so the
+              // pile has an actual number and the walk back can be judged against it.
+              let value = 0;
+              for (const it of names) {
+                if (/shilling/i.test(it.name)) { value += it.amount; continue; }
+                value += (ITEM_VALUE[String(it.name).toLowerCase()] ?? 0) * it.amount;
+              }
+              const worth = names.map(x => x.name).filter(n =>
                 /mace|sword|axe|hammer|bow|armor|armour|shield|helm|elder|herb|shilling|emerald|sapphire|ruby|diamond|flask/i.test(n));
-              return { stacks: inv.length, notable: [...new Set(worth)].slice(0, 8) };
+              return { stacks: inv.length, value, notable: [...new Set(worth)].slice(0, 8) };
             } catch { return null; }
           })(),
           // DID WE DIE SOMEWHERE WE BELIEVED WAS SAFE? The whole safe-spot thesis

@@ -18,8 +18,15 @@ drive. So this launches one. It talks to the same broker on 8901 that everything
 does, so it is the same fleet, live.
 
 **The keys.** `↑↓` or `jk` to move, `⏎` for a character's full sheet, `r` to refresh,
-`q` to quit — and two that do something outside the terminal:
+`q` to quit — and three that do something outside the terminal:
 
+- **`X`** is the **override**. By default the cursor steps straight over any character
+  the fleet is already using for a multi-character operation — a loot run, a signet ring
+  being walked back to its owner, a provisioning cast, a pairing — and greys the row.
+  Those all have another end, and taking one half of one abandons the other half
+  silently. `X` makes them reachable; `X` again, with the cursor on one, **takes it**:
+  cancels the errand, drops the pairing, revives the keeper, and says which of those it
+  did. The footer tells you which of the two the key is about to do.
 - **`L`** launches the real game client logged in as the selected character, with the
   agent DLL injected, and claims it from the keeper so the broker stops driving it.
 - **`C`** opens the **compendium** in your browser with that character loaded into it.
@@ -58,11 +65,20 @@ tryWt.on('close', code => {
 
 | key | |
 |---|---|
-| `↑` `↓` or `j` `k` | move between the characters in that fleet |
+| `↑` `↓` or `j` `k` | move between the characters in that fleet, **skipping the ones on fleet work** |
 | `Enter` | open that character's full sheet — vitals, pack, safe spot, readings, recent log |
+| `X` | **override** — reach the greyed-out ones, and take one back off whatever is holding it |
 | `L` | **launch the real client logged in as that character**, then inject the agent DLL |
 | `r` | force a refresh |
 | `q` / `Esc` | back, then quit |
+
+**Greyed rows are not broken characters.** A dimmed name with a `·` in the gutter is a
+character the fleet is deliberately using: it is walking somewhere, casting for somebody,
+or paired with someone who will not start a fight without it. The header says how many,
+the row says which operation, and the character's sheet says what taking it would cost.
+Every other column on those rows reads as a fault when it is not one — no kills, a
+stalled-looking activity — which is why they are marked rather than left to be
+misdiagnosed. Nothing is hidden: `X` reaches all of them.
 
 `L` is the part a browser cannot do. It starts `Meridian.exe` with `/H /P /U /W /Q`
 already filled in from the roster, waits for it to come up, and runs the injector — so

@@ -24,6 +24,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { ensureServing, openBrowser, importUrl, COMPENDIUM_PORT } from './m59-compendium.mjs';
+import { commitmentOf, stepSelection, firstSelectable, allCommitted } from './m59-commitment.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Which roster this TUI is looking at. Must match the broker it is talking to —
@@ -104,6 +105,13 @@ const S = {
   status: '',
   loading: true,
   lastError: null,
+  // THE OVERRIDE, off by default. While off, characters the fleet is using for something
+  // — a loot run, a signet ring being walked to its owner, a provisioning cast, a pairing
+  // — are greyed and the cursor steps straight over them. That is the safe default: those
+  // operations have another end, and taking one half of one abandons the other half in a
+  // way nothing reports. While on, every row is reachable and X on a held one releases it.
+  override: false,
+  placed: false,         // has the cursor been put somewhere sensible yet?
 };
 
 async function refresh() {
@@ -115,6 +123,10 @@ async function refresh() {
   S.rows = (l.autopilots || []).map(a => ({ ...by.get(a.name), agent: a.name, ap: a }))
     .sort((x, y) => (y.level ?? 0) - (x.level ?? 0));
   if (S.sel >= S.rows.length) S.sel = Math.max(0, S.rows.length - 1);
+  // The first draw should not open on a character you are not allowed to pick. After
+  // that the cursor is the operator's and a refresh must not move it — a board that
+  // re-homes the selection every five seconds is unusable.
+  if (!S.placed && S.rows.length) { S.sel = firstSelectable(S.rows, S); S.placed = true; }
   S.loading = false;
 }
 
@@ -136,13 +148,19 @@ function listView() {
   const walls = S.rows.filter(r => r.ap?.safe_spot?.works).length;
   const dead = S.rows.filter(r => r.in_game === false).length;
   const spotDeaths = S.rows.reduce((n, r) => n + (r.ap?.did?.deaths_in_safe_spot ?? 0), 0);
+  const heldCount = S.rows.filter(r => commitmentOf(r)).length;
 
   L.push(c.bold(c.cyan('  MERIDIAN 59 FLEET')) + '   ' + c.dim([
     `${up}/${S.rows.length} keepers up`,
     walls ? c.green(`${walls} proven walls`) : c.dim('0 proven walls'),
     dead ? c.red(`${dead} NOT IN GAME`) : c.green('all in game'),
     spotDeaths ? c.red(`${spotDeaths} died in a spot`) : c.green('0 spot deaths'),
-  ].join(' · ')));
+    // Said out loud rather than left to be inferred from the colour of some rows. A
+    // person who does not know the skipping exists reads a cursor jumping two rows as a
+    // bug, and the count is the shortest possible explanation of it.
+    heldCount ? (S.override ? c.yellow(`${heldCount} on fleet work — OVERRIDE ON`)
+                            : c.dim(`${heldCount} on fleet work, skipped`)) : '',
+  ].filter(Boolean).join(' · ')));
   L.push('');
   L.push(c.dim('  ' + pad('character', 11) + pad('lvl', 4) + pad('health', 14) +
                pad('mana', 13) + pad('vigor', 14) + pad('w/f', 5) + pad('spot', 7) +
@@ -160,9 +178,15 @@ function listView() {
     // plays, so "no keeper", zero kills and a stalled activity are all correct and none
     // of them are a problem to go and fix.
     const mine = !!r.piloted;
+    // SPOKEN FOR BY THE FLEET, which is a different thing from being played by a person
+    // and must not look like one. A piloted character is where YOU are; a committed one
+    // is somewhere you should not casually go. So one is cyan and marked ◆, and the other
+    // is greyed out and stepped over.
+    const held = commitmentOf(r);
     const k30 = r.kills_30m ?? r.ap?.did?.kills_30m ?? 0;
     const line =
-      pad(mine ? c.cyan(r.character ?? r.agent) : (r.character ?? r.agent), 11) +
+      pad(mine ? c.cyan(r.character ?? r.agent)
+        : held ? c.dim(r.character ?? r.agent) : (r.character ?? r.agent), 11) +
       pad(String(r.level ?? '?'), 4) +
       pad(bar(hp.v, hp.max) + ' ' + c.dim(pad(r.health ?? '—', 7)), 14) +
       pad(bar(mp.v, mp.max, true) + ' ' + c.dim(pad(r.mana ?? '—', 6)), 13) +
@@ -174,16 +198,37 @@ function listView() {
       // exactly like one that is earning. Zero is the interesting value, so it is the one
       // that gets a colour; a piloted character is exempt, because a person playing is
       // not farming and a red nought there is noise.
-      pad(k30 > 0 ? c.green(String(k30)) : (mine ? c.dim('—') : c.red('0')), 7) +
-      (mine ? c.cyan('YOU — ') : '') + c.dim(cut(r.ap?.activity ?? '', mine ? 22 : 28));
-    // Two different marks in one gutter: ▸ is where the cursor is, ◆ is where the person
-    // is. They are independent — you can be scrolled somewhere else entirely — so one
-    // must not hide the other.
-    const gutter = i === S.sel ? c.inv(mine ? '◆ ' : '▸ ') : (mine ? c.cyan('◆ ') : '  ');
+      // A committed character is not farming either, and a red nought against a
+      // character that is deliberately walking a ring across the map is the same noise
+      // the piloted exemption exists to remove.
+      pad(k30 > 0 ? c.green(String(k30)) : (mine || held ? c.dim('—') : c.red('0')), 7) +
+      (mine ? c.cyan('YOU — ') : '') +
+      // THE COMMITMENT REPLACES THE ACTIVITY, because it IS the activity and it is the
+      // half worth reading. A keeper on a loot run reports "inert — a loot run is
+      // driving"; the operation is what the board should say.
+      c.dim(cut((held ? held.label : r.ap?.activity) ?? '', mine ? 22 : 28));
+    // Three different marks in one gutter: ▸ is where the cursor is, ◆ is where the
+    // person is, and · is a character the fleet is using. They are independent — you can
+    // be scrolled somewhere else entirely — so none must hide another. The committed mark
+    // is the faintest because it is the one that means "not here".
+    const gutter = i === S.sel ? c.inv(mine ? '◆ ' : held ? '! ' : '▸ ')
+                 : mine ? c.cyan('◆ ') : held ? c.dim('· ') : '  ';
     L.push(gutter + line);
   }
   L.push('');
-  L.push(c.dim('  ↑↓/jk move · ⏎ open · L launch client · C compendium for the selected · r refresh · q quit'));
+  // WHAT X DOES DEPENDS ON WHERE THE CURSOR IS, so the footer says which of the two it is
+  // about to do rather than describing both and leaving you to work it out. One key with
+  // a stated meaning beats two keys nobody remembers.
+  const cur = S.rows[S.sel];
+  const curHeld = cur ? commitmentOf(cur) : null;
+  const xSays = !S.override
+    ? c.bold(c.yellow('X')) + c.dim(' override (reach the greyed ones)')
+    : curHeld
+      ? c.bold(c.yellow('X')) + c.dim(' TAKE ') + c.yellow(cur.character ?? cur.agent) +
+        c.dim(' off ' + cut(curHeld.label ?? 'fleet work', 24))
+      : c.bold(c.yellow('X')) + c.dim(' leave override');
+  L.push(c.dim('  ↑↓/jk move · ⏎ open · L launch · C compendium · ') + xSays +
+         c.dim(' · r refresh · q quit'));
   if (S.status) L.push('  ' + S.status);
   if (S.lastError) L.push('  ' + c.red(S.lastError));
   return L;
@@ -204,6 +249,15 @@ function heroView() {
          c.dim('resting alone stops at 80'));
   L.push('');
   L.push('  ' + c.dim('doing    ') + (a.activity ?? '—'));
+  // WHY THIS CHARACTER IS NOT YOURS TO TAKE, spelled out on the sheet rather than only
+  // implied by a greyed row on the board. The board has one line and can say what; this
+  // has room to say what it would cost.
+  const held = commitmentOf(r);
+  if (held) {
+    L.push('  ' + c.dim('fleet    ') + c.yellow(held.label ?? held.kind) +
+           (held.since ? c.dim(`  (${Math.round((Date.now() - held.since) / 60000)}m)`) : ''));
+    if (held.detail) L.push('  ' + c.dim('         ') + c.dim(held.detail));
+  }
   L.push('  ' + c.dim('weapon   ') + (r.has_weapon ? c.green('yes') : c.red('NO — punching things')) +
          c.dim('   food  ') + (r.has_food ? c.green('yes') : c.red('NO — vigor capped at 80')));
   L.push('  ' + c.dim('carrying ') + `${r.carrying ?? '?'} / ${a.policy?.maxCarry ?? '?'}`);
@@ -243,7 +297,9 @@ function heroView() {
   L.push(c.bold('  RECENT'));
   for (const e of (a.recent || []).slice(-8)) L.push('   ' + c.dim(cut(e.what, 74)));
   L.push('');
-  L.push(c.dim('  ⏎/q back · ') + c.bold(c.yellow('L')) + c.dim(' LAUNCH the client as this character · r refresh'));
+  L.push(c.dim('  ⏎/q back · ') + c.bold(c.yellow('L')) + c.dim(' LAUNCH the client as this character · ') +
+         (held ? c.bold(c.yellow('X')) + c.dim(' take it off ' + cut(held.label ?? 'fleet work', 22)) + c.dim(' · ') : '') +
+         c.dim('r refresh'));
   if (S.status) L.push('  ' + S.status);
   return L;
 }
@@ -268,6 +324,10 @@ function draw() {
 // handler. Unhandled, that is a silent no-op on a keypress — the one failure mode this
 // key has already had once. Put it on the status line instead.
 const fail = (e) => { S.status = c.red('launch failed: ' + (e?.message ?? e)); draw(); };
+// The same landing pad for the keys that are not a launch. Without one, a throw inside an
+// async key handler is an unhandled rejection and the key looks like it did nothing —
+// which is the exact failure L already had once.
+const oops = (e) => { S.status = c.red('failed: ' + (e?.message ?? e)); draw(); };
 
 async function launch(row) {
   const creds = rosterFor(row.agent);
@@ -359,6 +419,15 @@ async function launch(row) {
   child.on('error', e => { S.status = c.red('could not start powershell: ' + e.message); draw(); });
   S.status = c.green(`launching ${row.character ?? row.agent}…`) + ' ' +
              c.dim('~20s · log: substrate\\m59-launch.log · keep the client focused or it drops movement');
+  // SAY WHAT THIS INTERRUPTS. The pilot claim stops the keeper, which leaves an errand
+  // sitting there to resume when the client closes — that is fine and deliberate. A
+  // PAIRING is not fine: the other half is now waiting in a room for a character that is
+  // in a client window, and it will not start a fight without it. Neither is announced
+  // anywhere else, so it is announced here rather than discovered later.
+  const held = commitmentOf(row);
+  if (held) S.status += ' ' + c.yellow(`· still ${held.label}`) +
+    c.dim(held.kind === 'partner' ? ' — its partner is now waiting on a client window; X releases it'
+                                  : ' — resumes when the client closes; X cancels it');
 
   // TELL THE BROKER TO LOOK. It does not hunt for clients on a timer — scanning costs a
   // process spawn, so it goes quiet once it has seen no client and waits to be told.
@@ -438,22 +507,68 @@ async function compendium(row) {
 
 // ------------------------------------------------------------------ keys
 
+// THE OVERRIDE KEY, and what it does depends on where the cursor is — which is why the
+// footer says which of the two it is about to do.
+//
+//   cursor on a character the fleet is using   TAKE IT. Cancel the errand, drop the
+//                                              pairing, revive the keeper, and say so.
+//   anywhere else                              toggle whether the greyed rows are
+//                                              reachable at all.
+//
+// Taking is one key rather than a confirmation dialog on purpose. The reason to reach for
+// it is that something is going wrong right now — a runner walking into a room it will
+// not survive, a partner that needs its pair back — and a board that asks "are you sure?"
+// during that is a board you stop using. What it does is reversible: dispatch the errand
+// again, or set the partner again. What it interrupts is not.
+async function override(row) {
+  if (!row) { S.override = !S.override; return; }
+  const held = commitmentOf(row);
+  if (!held) { S.override = !S.override; S.status = S.override
+    ? c.yellow('override ON — every character reachable; X on a busy one takes it')
+    : c.dim('override off — characters on fleet work are skipped again'); return; }
+  const who = row.character ?? row.agent;
+  S.status = c.dim(`taking ${who} off ${held.label ?? 'fleet work'}…`);
+  draw();
+  const r = await call('autopilot', { agent: row.agent, action: 'release',
+                                      why: `an operator took ${who} back from the terminal` }, 8000);
+  if (r?.__error) { S.status = c.red(`could not release ${who}: ${r.__error}`); return; }
+  // Say what it actually undid rather than "done". Releasing a pairing and cancelling a
+  // signet run are both "released" and they cost completely different things.
+  S.status = r.released
+    ? c.green(`took ${who} back`) + ' ' + c.dim('· ' + (r.undone?.join(' · ') || 'nothing to undo'))
+    : c.dim(`${who} was not being used for anything`);
+  // The row is free now, so it stops being skipped on its own; keep the override on so
+  // the cursor does not jump away from the character just taken.
+  S.override = true;
+  await refresh();
+}
+
 function onKey(str, key) {
   if (key.ctrl && key.name === 'c') return quit();
   if (S.view === 'list') {
     if (key.name === 'q' || key.name === 'escape') return quit();
-    if (key.name === 'down' || key.name === 'j') S.sel = Math.min(S.rows.length - 1, S.sel + 1);
-    else if (key.name === 'up' || key.name === 'k') S.sel = Math.max(0, S.sel - 1);
+    // ↑↓ STEP OVER THE CHARACTERS THE FLEET IS USING. A step that finds nothing to land
+    // on leaves the cursor where it was, which would look exactly like a dead key — so
+    // that case says why, and names the key that fixes it.
+    if (key.name === 'down' || key.name === 'j' || key.name === 'up' || key.name === 'k') {
+      const delta = (key.name === 'down' || key.name === 'j') ? 1 : -1;
+      const next = stepSelection(S.rows, S.sel, delta, S);
+      if (next === S.sel && !S.override && allCommitted(S.rows))
+        S.status = c.yellow('every character is on fleet work — press X to reach them anyway');
+      S.sel = next;
+    }
     else if (key.name === 'return') {
       S.hero = S.rows[S.sel]; S.view = 'hero'; S.status = '';
       loadHero(S.hero).then(draw);
-    } else if (str === 'L' || str === 'l') launch(S.rows[S.sel]).then(draw, fail);
+    } else if (str === 'X' || str === 'x') override(S.rows[S.sel]).then(draw, oops);
+    else if (str === 'L' || str === 'l') launch(S.rows[S.sel]).then(draw, fail);
     else if (str === 'C' || str === 'c') compendium(S.rows[S.sel]);
     else if (str === 'r') { S.status = c.dim('refreshing…'); refresh().then(draw); }
   } else {
     if (key.name === 'q' || key.name === 'escape' || key.name === 'return') {
       S.view = 'list'; S.detail = null; S.status = '';
-    } else if (str === 'L' || str === 'l') launch(S.hero).then(draw, fail);
+    } else if (str === 'X' || str === 'x') override(S.hero).then(draw, oops);
+    else if (str === 'L' || str === 'l') launch(S.hero).then(draw, fail);
     else if (str === 'C' || str === 'c') compendium(S.hero);
     else if (str === 'r') { refresh().then(() => { S.hero = S.rows.find(r => r.agent === S.hero.agent) ?? S.hero; draw(); }); }
   }

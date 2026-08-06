@@ -22,6 +22,7 @@ import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; se
 import {
   isJunk, JUNK_NAMES, proficiencyFor, weaponRanking, equipBest, junkAndBroken,
   brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit, signetRings, returnSignetRings,
+  signetPayout, signetOwnerOf, SIGNET_OWNERS,
   parseDeathBroadcast, deathBroadcastFor,
 } from './m59-skills.mjs';
 import { Autopilot, bearingIn, DEBUG_STATES } from './m59-autopilot.mjs';
@@ -844,6 +845,74 @@ console.log('\ngiving a signet ring back to whoever is named on it');
   ok('a refusal is not counted as a return', r5.returned.length === 0 && r5.refused.length === 1,
      JSON.stringify(r5));
   ok('proof is the ring LEAVING the pack, not the offer being sent', r5.carrying === 1);
+
+  // WHERE THE RING HAS TO GO, on the ring. I said there was no NPC-location table to
+  // build and that none would help because the owners wander; fifteen of the nineteen
+  // stand in a fixed room, which is the difference between a ring the fleet can be sent
+  // to cash and one it can only hope to bump into.
+  const c6 = build({ owners: { 1: 'Pietro' }, present: [] });
+  const [ring6] = await signetRings(fakeSession(c6));
+  ok('a ring names the town it belongs to', ring6.town === 'Jasper', JSON.stringify(ring6));
+  ok('and the room to walk to', ring6.room === 371 && ring6.routable === true);
+
+  const c7 = build({ owners: { 1: 'Miriana' }, present: [] });
+  const [ring7] = await signetRings(fakeSession(c7));
+  ok('a Wanderer\'s ring has no address', ring7.roams === true && ring7.room === null);
+  ok('and is honestly not routable', ring7.routable === false);
+
+  const c8 = build({ owners: { 1: 'Gonzo' }, present: [] });
+  const [ring8] = await signetRings(fakeSession(c8));
+  ok('an owner that is not one of the nineteen is flagged rather than guessed at',
+     ring8.unknown_owner === true && ring8.routable === false);
+}
+
+
+// WHICH CHARACTER HANDS THE RING BACK IS WORTH A FACTOR OF TEN.
+console.log('\nwho should be holding a signet ring');
+{
+  const small = signetPayout({ level: 24 });
+  ok('a character under 30 max health is paid ten times over', small.multiplier === 10);
+  ok('and is described as the newbie the server thinks it is', small.newbie === true);
+
+  ok('at exactly 30 the server has already enabled player-killing',
+     signetPayout({ level: 30 }).multiplier === 1);
+  ok('and 29 is still the good side of the line',
+     signetPayout({ level: 29 }).multiplier === 10);
+
+  // A GUILD ENABLES PK ON ITS OWN, regardless of size (player.kod:11079). Nothing on the
+  // wire reports guild membership, so this is an input rather than a reading — but a
+  // caller that knows must not be overruled by the level.
+  ok('a guilded character under 30 is paid plain value',
+     signetPayout({ level: 24, guilded: true }).multiplier === 1);
+
+  // AN UNKNOWN LEVEL MUST NOT BE OPTIMISM. A character whose vitals have not arrived
+  // reads as level null, and treating that as "under 30" would send rings to whoever
+  // happened to be least readable.
+  ok('an unknown level is not assumed to be small', signetPayout({}).multiplier === 1);
+  ok('and says so rather than pretending', /cannot tell/.test(signetPayout({}).why));
+
+  // 1500 IS A CEILING, NOT A PRICE. GetValue scales with a condition this class refuses
+  // to show (vbShow_condition = FALSE), so the honest answer is a range.
+  ok('the payout is reported as a range', small.range[0] === 100 && small.range[1] === 1500);
+  ok('and the plain-value range is a tenth of it',
+     signetPayout({ level: 40 }).range[1] === 150);
+
+  // The table itself. Two classes exist in the kod and are created by nothing, so a table
+  // built from the class filter alone would send a character to look for a ghost.
+  ok('Yevitan is in the Royal Bank of Jasper — payout and bank in one room',
+     signetOwnerOf('Yevitan').room === 376);
+  ok('names are matched however they are cased', signetOwnerOf("ran er'HOTH").town === 'Marion');
+  ok('the four Wanderers have no room', signetOwnerOf('Maleval').roams === true);
+  ok('Setag\'lib is declared in the kod and created by nothing, so he is not in the table',
+     signetOwnerOf("Setag'lib") === null);
+  ok('and neither is Jonas D\'Accor', signetOwnerOf("Jonas D'Accor") === null);
+  ok('an unknown name is a miss, not an exception', signetOwnerOf('Kermit') === null);
+  ok('and neither is nothing at all', signetOwnerOf(null) === null);
+  ok('every routable owner has a town, a room and somewhere to say it is',
+     Object.values(SIGNET_OWNERS).every(o => o.roams ? (!o.room && !o.town)
+                                                     : (o.room > 0 && o.town && o.where)));
+  ok('the table covers exactly the five towns signet owners can come from',
+     new Set(Object.values(SIGNET_OWNERS).map(o => o.town).filter(Boolean)).size === 5);
 }
 
 

@@ -58,7 +58,7 @@ import { loadSpawns, huntingGrounds, roomThreats, preyFor, scorePrey, PURPOSES }
 import { safeSpots, safeSpotBook } from './m59-safespots.mjs';
 import { planRuns, planProvisioning } from './m59-lootrun.mjs';
 import { planCharacter, STAT_ORDER, STAT_PRESETS } from './m59-newchar.mjs';
-import { recordSample, recordEvent, summarise as ledgerSummary, readLedger, deathReport, timeReport, spellReport } from './m59-ledger.mjs';
+import { recordSample, recordEvent, summarise as ledgerSummary, readLedger, deathReport, timeReport, spellReport, killsIn } from './m59-ledger.mjs';
 import { renderDashboard } from './m59-dashboard.mjs';
 import { renderDeaths, renderTougher, deathReportJSON } from './m59-deaths-page.mjs';
 import { renderHero, startScript } from './m59-hero-page.mjs';
@@ -6741,6 +6741,10 @@ const TOOLS = [
     } },
     run: async (a) => {
       const rows = [];
+      // Once for the whole fleet, not once per row, and from the ledger rather than from
+      // each keeper — see killsIn(). A keeper's own kills_30m is wiped every time the
+      // supervisor restarts it, which is about once a minute.
+      const recentKills = killsIn();
       for (const [name, s] of sessions) {
         const c = s.client;
         const ap = autopilotIfAny(name);
@@ -6897,13 +6901,16 @@ const TOOLS = [
           autopilot: st ? { mode: st.mode, running: st.running, kills: st.did?.kills ?? 0,
                             // Since the keeper started vs. in the last half hour. The
                             // second is the one that says whether this character is
-                            // working NOW, which is the only thing a board is asked.
-                            kills_30m: st.did?.kills_30m ?? 0,
+                            // working NOW, which is the only thing a board is asked —
+                            // and it does NOT come from the keeper, because the keeper
+                            // is restarted about once a minute and takes its kill times
+                            // with it. It is counted from the ledger's `killed` events.
+                            kills_30m: recentKills.get(c.me?.name) ?? 0,
                             hunt: st.policy?.hunt ?? null } : null,
           // Lifted onto the row itself as well as into `autopilot`, because the fleet
           // board, the dashboard and the terminal all read rows and none of them should
-          // have to know that a kill count lives under the keeper.
-          kills_30m: st?.did?.kills_30m ?? 0,
+          // have to know where a kill count comes from.
+          kills_30m: recentKills.get(c.me?.name) ?? 0,
           // Which farming pattern this one is running, so the ledger can compare them.
           strategy: st?.policy?.strategy ?? null,
           // WHO IT FIGHTS ALONGSIDE, and whether that is currently mutual. A pairing is

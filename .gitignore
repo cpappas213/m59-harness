@@ -42,6 +42,12 @@ node_modules/
 # which is where most of this fleet's deaths happen and where nothing else is looking.
 # One server's characters and their bad afternoons, so not reference data.
 /substrate/hits/
+# One JSON per character: every point of MAXIMUM HEALTH it has earned, and the creature
+# and room that paid for it. Caught from the server's own announcement — "You suddenly
+# feel a little tougher.", player.kod:144 — rather than inferred from a five-minute
+# sample, which is why it can name the kill at all. Rare, precious, never rotated, and
+# still one server's characters rather than reference data.
+/substrate/tougher/
 # One JSON per character: how long each map took to cross, per attempt, with how many exit
 # squares had to be tried. TIME EXPOSED is the travel number worth having — damage on the
 # road is normal in this game and is not a fault — and two minutes inside one room is a

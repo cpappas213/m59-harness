@@ -49,7 +49,7 @@ const ok = (name, cond, extra = '') => {
 };
 
 // Import AFTER the env var is set: the ledger resolves its directory once, at load.
-const { summarise } = await import('./m59-ledger.mjs');
+const { summarise, countKills, killsIn, KILL_WINDOW_MS } = await import('./m59-ledger.mjs');
 // The window has to reach back to T0, which is in the past relative to whenever this
 // runs. Generous rather than clever — the point here is the null handling.
 const WINDOW = { sinceMs: Date.now() - T0 + 3600_000 };
@@ -94,6 +94,75 @@ write([live('Kermit', T0, 24), live('Piggy', T0, 22)]);
   const s = summarise(WINDOW);
   ok('a silent broker leaves offline_since null', s.offline_since === null);
   ok('but last_sample_at exposes the silence', s.last_sample_at === T0, 'got ' + s.last_sample_at);
+}
+
+// KILLS IN THE LAST HALF HOUR, which is a count of the record and not of a counter.
+//
+// The bug being pinned here had two halves and either alone was fatal. recordSample
+// never wrote kills_30m, so the page's `r.kills_30m` was undefined for every character
+// on every render and the template's `?? 0` turned that into a red zero — a fleet
+// killing steadily looked identical to a dead one. And the value that would have been
+// plumbed through is a field on the keeper, which the supervisor restarts about once a
+// minute, so plumbing it would have changed a permanent zero into a near-permanent one.
+//
+// These timestamps are relative to NOW rather than to T0, because the window genuinely
+// is. That is the property under test.
+console.log('\nkills in the last half hour');
+{
+  const now = Date.now();
+  const kill = (character, ago, extra = {}) => ({
+    t: now - ago, type: 'event', character, kind: 'killed',
+    creature: 'giant rat', room: 'Valley of Ileria', room_num: 544, ...extra,
+  });
+
+  // countKills is the one definition — pure, so test it on events directly.
+  const evs = [
+    kill('Sweetums', 60_000), kill('Sweetums', 120_000), kill('Sweetums', 400_000),
+    kill('Beaker', 90_000),
+    kill('Kermit', 40 * 60_000),                       // outside the window
+    { t: now - 30_000, type: 'event', character: 'Beaker', kind: 'stalled' },
+    { t: now - 30_000, type: 'event', kind: 'killed' },  // no character: unattributable
+  ];
+  const counted = countKills(evs, now - KILL_WINDOW_MS);
+  ok('counts a character\'s kills inside the window', counted.get('Sweetums') === 3,
+     'got ' + counted.get('Sweetums'));
+  ok('counts a second character separately', counted.get('Beaker') === 1,
+     'got ' + counted.get('Beaker'));
+  ok('a kill older than the window is not counted', counted.get('Kermit') === undefined);
+  ok('an event of another kind is not a kill', [...counted.values()].reduce((a, b) => a + b, 0) === 4);
+  ok('a kill with no character is dropped rather than filed under undefined',
+     !counted.has(undefined));
+
+  // And through summarise, which is what the board actually renders.
+  write([
+    live('Sweetums', now - 300_000, 22, { kills: 7 }),
+    live('Sweetums', now - 60_000, 22, { kills: 2 }),   // the keeper restarted in between
+    live('Rowlf', now - 60_000, 28, { kills: 0 }),
+    ...evs.filter(e => e.character === 'Sweetums'),
+  ]);
+  {
+    const s = summarise({ sinceMs: 2 * 3600_000 });
+    const sw = s.fleet.find(r => r.character === 'Sweetums');
+    const rw = s.fleet.find(r => r.character === 'Rowlf');
+    ok('the row carries kills_30m at all', sw.kills_30m === 3, 'got ' + sw.kills_30m);
+    // THE REGRESSION. A high-water mark of 7 and three kills in the last half hour are
+    // both true at once, and reading either as the other is what started this.
+    ok('the lifetime column stays a high-water mark across the restart', sw.kills === 7,
+       'got ' + sw.kills);
+    ok('a character that has killed nothing reads zero, not undefined',
+       rw.kills_30m === 0, 'got ' + String(rw.kills_30m));
+  }
+
+  // killsIn reads the same events off disk for callers with no ledger in hand — the
+  // broker's fleet rows. maxAgeMs 0 defeats the memo, which exists for that hot path.
+  {
+    const by = killsIn(KILL_WINDOW_MS, 0);
+    ok('killsIn counts the same kills from disk', by.get('Sweetums') === 3,
+       'got ' + by.get('Sweetums'));
+    ok('killsIn agrees with the row the board renders',
+       by.get('Sweetums') === summarise({ sinceMs: 2 * 3600_000 })
+         .fleet.find(r => r.character === 'Sweetums').kills_30m);
+  }
 }
 
 rmSync(dir, { recursive: true, force: true });

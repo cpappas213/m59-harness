@@ -344,6 +344,85 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   U+00FF, so an em dash goes out as `0x14` and nothing errors. `cleanDescription` folds
   the punctuation people actually type and drops what it cannot fold.
 
+- **A POSTMORTEM KNOWS WHAT KILLED IT AND USUALLY DOES NOT KNOW WHERE.** The two halves of
+  a death have completely different evidence behind them and must never be read the same
+  way. **What** is announced by the server to the whole world — `### X was just killed by a
+  Y.` (`system.kod:49-57`, caught as `killed_by_broadcast`), an observation. **Where** is
+  reconstructed from the keeper's last frame, and a keeper pass can be a single `await`
+  lasting minutes, so the record names the last place anybody looked. Measured over 637
+  deaths: the last frame is more than a minute stale in 203 of them, worst case 17 minutes.
+  That is why the raw data lists inns as places characters died. Nobody died in an inn.
+
+  `m59-postmortems.mjs` refuses to place a death unless an independent observation lands
+  within 30 seconds of the killing blow — a `hits` segment first, because the event stream
+  keeps recording while the keeper is blind, then the last frame. The window is measured,
+  not chosen: 30s keeps 384 of 637 and leaks no inn, 60s starts letting them back in. The
+  253 it cannot place are reported as a count, never as a room.
+
+- **"YOU SUDDENLY FEEL A LITTLE TOUGHER." IS THE ONLY ANNOUNCEMENT OF THE ONLY THING THIS
+  FLEET IS FOR, AND NOTHING WAS LISTENING.** `player_improve_maxhealth` (`player.kod:144`)
+  is sent the instant `GainBaseMaxHealth` fires, inside the killing blow. The ledger
+  instead INFERRED gains by diffing five-minute samples, so two points in one window were
+  one event, a point gained and lost in the same window was no event, and anything during a
+  broker outage never happened. `m59-tougher.mjs` catches the line and attributes it to the
+  kill that paid for it — which the diff could never do.
+
+  **Attribution is symmetric in time and that is not fussiness.** The kill is written down
+  after `fight()` returns; the message is read off the event ring on the next pass. So the
+  kill usually lands a few milliseconds AFTER the announcement it caused. Requiring it to
+  come first filed the fleet's very first real gain — Lew 22→23 in The Queen's Way — as
+  "cause unknown" with the kill sitting in the feed 40ms later.
+
+- **A COUNTER THAT LIVES ON THE KEEPER IS NOT A RATE, BECAUSE THE KEEPER IS RESTARTED
+  ABOUT ONCE A MINUTE.** `Autopilot.tally.kills` and `killTimes` are both fields set to
+  empty in the constructor, and the external supervisor stops and restarts keepers
+  continuously — so both mean "since the last restart" and neither can answer "is this
+  character earning now". The board's `kills/30m` was worse than wrong: `recordSample`
+  never wrote the field at all, so `r.kills_30m` was undefined on every render, `?? 0`
+  made it a number, and the template paints zero in the colour reserved for a broken row.
+  Twenty-one characters that had killed at least 26 things in half an hour rendered as a
+  page of red zeroes, and plumbing the keeper's own figure through would only have
+  changed a permanent zero into a near-permanent one.
+
+  Kills are therefore appended to the ledger as `killed` events at the moment of the
+  kill, and `countKills` in `m59-ledger.mjs` is the **only** definition of the number —
+  the web board and the broker's live rows both count the same events, because a
+  quantity with two homes in this repository has always ended up with two answers.
+  `kills` beside it is still a high-water mark over the whole window (`Math.max`, for
+  exactly the same restart reason), so a row honestly reading `134` and `0` is not a
+  contradiction: the two columns are on different clocks and neither is the other's rate.
+
+- **A SIGNET RING IS WORTH TEN TIMES MORE IN A SMALL CHARACTER'S HANDS, AND THE OWNER
+  USUALLY HAS AN ADDRESS.** Returning one pays its value ten times over to a character
+  that has not enabled player-killing and plain value to one that has (`ringsgnt.kod:94`)
+  — and nobody here enables that deliberately. `EvaluatePKStatus` (`player.kod:11047`)
+  sets it *for* you the moment base max health reaches 30, or you join a guild. Max health
+  is the level here, so **a ring returned by a character under level 30 is worth ten times
+  the same ring returned by anyone else**: up to 1500 shillings against up to 150. Which
+  of them is holding it is decided by whoever happened to loot it, so `signets
+  action=redistribute` moves them down and `action=return` sends them to be cashed.
+
+  Three things about it read backwards. **1500 is a ceiling, not a price** — `GetValue`
+  scales with a condition this class refuses to show (`vbShow_condition = FALSE`), so the
+  real payout is anywhere from 100 to 1500 and cannot be predicted; read the purse
+  afterwards. **The owners mostly do not wander** — I recorded that they did and that an
+  NPC-location table would not help, and that was wrong: `CreateSignetRing`
+  (`library.kod:4245`) draws from nineteen NPCs, fifteen of which stand in a fixed room in
+  Barloque, Cor Noth, Jasper, Marion or Tos. `SIGNET_OWNERS` in `m59-skills.mjs` is that
+  table, and two classes that exist in the kod are deliberately absent from it because
+  nothing ever creates them. **And they expire** — the world holds twenty signets, and a
+  twenty-first deletes the oldest out of whoever is carrying it (`library.kod:4288`), so
+  hoarding one loses it.
+
+- **A CHARACTER CAN BE SPOKEN FOR, AND THE BOARD HAS TO SAY SO.** A loot run, a
+  provisioning cast, a signet errand and a pairing all have another end, and pulling a
+  character out of one abandons that end silently. `m59-commitment.mjs` is the single
+  rule for what counts; the keeper publishes it as `committed` on its status and on the
+  fleet row, and `m59-tui.mjs` greys those rows and steps over them, with `X` to override
+  and take one back. Add a new errand kind and it shows up on the board that day — an
+  unrecognised kind is reported as itself rather than dropped, which is what stops a new
+  operation being invisible to the one thing meant to protect it.
+
 - **Attach to the broker, do not spawn a second one.** `m59-broker.mjs` with no
   arguments serves stdio MCP *and* resumes a fleet. With one already running,
   the second is refused the lock, comes up healthy and **empty**, and answers
@@ -371,9 +450,11 @@ start Docker Desktop; do not try to start it yourself unless they ask.
 - Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (93),
   `node tools/m59-chat-test.mjs` (128) and
   `node tools/m59-rest-test.mjs` (38) and
-  `node tools/m59-ledger-test.mjs` (15) and
+  `node tools/m59-ledger-test.mjs` (25) and
   `node tools/m59-escape-test.mjs` (70) and
-  `node tools/m59-combat-test.mjs` (328) and
+  `node tools/m59-combat-test.mjs` (351) and
+  `node tools/m59-commitment-test.mjs` (49) and
+  `node tools/m59-deaths-test.mjs` (70) and
   `node tools/m59-stream-test.mjs` (54) and
   `node tools/m59-ability-test.mjs` (44) and
   `node tools/m59-compendium-test.mjs` (42) and

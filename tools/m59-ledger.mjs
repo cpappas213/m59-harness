@@ -221,6 +221,56 @@ export function readLedger({ sinceMs = 24 * 3600 * 1000 } = {}) {
   return { samples, events };
 }
 
+// KILLS IN A WINDOW, COUNTED FROM THE RECORD RATHER THAN FROM A COUNTER.
+//
+// The board's kills/30m column was structurally incapable of being anything but zero,
+// in two separate ways, and both are worth writing down because either alone would have
+// been enough to hide a working fleet.
+//
+// The first: the page renders `r.kills_30m` from rows built by summarise() below, and
+// recordSample() never wrote that field. So it was permanently undefined, `?? 0` made it
+// a number, and the template colours zero in the shade reserved for "this row is not
+// working" — every character, every render, for ever.
+//
+// The second, which is why plumbing the field through would NOT have fixed it: the value
+// being plumbed is Autopilot.killsSince(), which filters `this.killTimes`, an array on
+// the keeper. The supervisor restarts keepers about once a minute, and the constructor
+// starts that array empty. So the honest reading of the keeper's kills_30m is "kills
+// since the last restart, capped at 30 minutes" — near-zero on this fleet no matter how
+// well it is doing. Measured while investigating: at least 26 kills in half an hour with
+// every column reading 0.
+//
+// Hence `killed` events, appended by the keeper at the moment of the kill, and this as
+// the ONLY definition of the number. Both the web board (via summarise) and the broker's
+// live rows count the same events, so the page and the terminal cannot disagree — which
+// is the failure this repository keeps rediscovering whenever a quantity has two homes.
+//
+// It is still a floor rather than a total for anything killed before this code shipped:
+// there are no `killed` events in the older history, and nothing can invent them.
+export const KILL_WINDOW_MS = 30 * 60 * 1000;
+
+export function countKills(events = [], from = 0) {
+  const by = new Map();
+  for (const e of events)
+    if (e.kind === 'killed' && e.character && e.t >= from)
+      by.set(e.character, (by.get(e.character) || 0) + 1);
+  return by;
+}
+
+// For callers that are not already holding the ledger — the broker's fleet row builder,
+// which runs on every tool call. readLedger parses whole day files, so the answer is
+// memoised for a few seconds: this is a thirty-minute window, and a five-second-old
+// count of it is not a lie worth re-reading a megabyte to avoid. `maxAgeMs` is how stale
+// an answer the caller will accept; a test passes 0 and gets the file.
+let killCache = { at: 0, ms: 0, by: new Map() };
+export function killsIn(ms = KILL_WINDOW_MS, maxAgeMs = 5000) {
+  const now = Date.now();
+  if (killCache.ms === ms && now - killCache.at < maxAgeMs) return killCache.by;
+  const { events } = readLedger({ sinceMs: ms });
+  killCache = { at: now, ms, by: countKills(events, now - ms) };
+  return killCache.by;
+}
+
 // THE DEATH POST-MORTEM. Not a dump of records — the point is the pattern.
 //
 // A death costs a point of maximum health outright, which is the exact thing being
@@ -443,6 +493,9 @@ export function timeReport({ sinceMs = 24 * 3600 * 1000 } = {}) {
 // Per character: where it started, where it got to, and what happened on the way.
 export function summarise({ sinceMs = 24 * 3600 * 1000 } = {}) {
   const { samples, events } = readLedger({ sinceMs });
+  // Counted here rather than fetched, because this function is already holding the
+  // events killsIn() would have re-read the day files for.
+  const recentKills = countKills(events, Date.now() - KILL_WINDOW_MS);
   const by = new Map();
   for (const s of samples) {
     const e = by.get(s.character) || {
@@ -524,6 +577,11 @@ export function summarise({ sinceMs = 24 * 3600 * 1000 } = {}) {
     gained: (e.level_last ?? 0) - (e.level_first ?? 0),
     peak: e.level_peak,
     kills: e.kills_last,
+    // The two kill columns are on different clocks and neither is the other's rate.
+    // `kills` is a high-water mark over the whole window, taken with Math.max above
+    // because a keeper restart zeroes the counter; this one is a count of what was
+    // actually recorded in the last half hour. A row can honestly show 134 and 0.
+    kills_30m: recentKills.get(e.character) ?? 0,
     deaths: e.events?.died || 0,
     stalls: e.events?.stalled || 0,
     left_newbie_zone: !!e.events?.left_the_newbie_zone,

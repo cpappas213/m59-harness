@@ -56,7 +56,11 @@ const STOP_AFTER_EMPTY = Number(arg('dry-empties', 3));
 const MIN_HEALTH_PCT = Number(arg('min-health', 0.8));
 const MIN_VIGOR = Number(arg('min-vigor', 100));
 // A pack worth walking back for when nothing notable is named in it.
-const MIN_STACKS = Number(arg('min-stacks', 5));
+// What a dropped pile has to be worth before anyone walks back for it, in shillings at
+// viValue_average. 1000 is roughly a mace and a handful of gems — enough that the trip
+// pays for itself even if it costs a rest, and far above the four-mushroom piles that had
+// couriers crossing the Badlands for nothing.
+const MIN_VALUE = Number(arg('min-value', 1000));
 
 let id = 0;
 async function call(name, args = {}, ms = 120_000) {
@@ -222,11 +226,18 @@ const deaths = readdirSync(PM_DIR).filter(f => f.endsWith('.json')).map(f => {
   // no record is SKIPPED rather than guessed at — an unknown payoff does not justify a
   // walk through ground that kills, and skipping costs only the drops from deaths that
   // predate the recording.
-  .filter(d => {
-    if (!d.carrying) return false;                       // unknown: not worth the risk
-    if ((d.carrying.notable ?? []).length) return true;  // a weapon or reagent: go
-    return (d.carrying.stacks ?? 0) >= MIN_STACKS;       // or simply a full pack
-  })
+  // SIGNIFICANT MEANS A NUMBER, AND THE NUMBER IS SELL VALUE.
+  //
+  // A stack count cannot tell four mushrooms from four swords. viValue_average is declared
+  // per item class in the kod — mushroom 10, emerald 30, mace 50, sapphire 60, and a
+  // riijasword 5000 — so a dropped pile has an actual worth and the walk can be judged
+  // against it rather than against how many things happened to be in the pack.
+  //
+  // Shillings count at face. Anything the value table does not know counts as zero, which
+  // means an unrecognised pile reads as not-worth-the-walk — the safe direction to fail
+  // in, given a trip to the border of the Badlands is what the last unfiltered version
+  // was buying with those lives.
+  .filter(d => d.carrying && (d.carrying.value ?? 0) >= MIN_VALUE)
   .sort((a, b) => String(b.at).localeCompare(String(a.at)));      // NEWEST FIRST
 if (!deaths.length) { console.error('no death sites on record'); process.exit(1); }
 
