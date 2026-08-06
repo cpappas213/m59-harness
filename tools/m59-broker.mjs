@@ -2516,10 +2516,34 @@ class Session {
       // Where the server thinks we are, before asking it to let us out. If prediction
       // drifted, lean again from the position we are ACTUALLY on — the first lean was
       // aimed from a square we may never have reached.
-      const at = await this.confirmPosition();
+      let at = await this.confirmPosition();
       if (at && (Math.abs(at.col - exit.stand_on.col) > 1 || Math.abs(at.row - exit.stand_on.row) > 1)) {
         await this.pacer.submit('move',
           () => c.moveToSquare(exit.stand_on.col, exit.stand_on.row), MOVE_INTERVAL_MS);
+        leaned = true;
+        at = await this.confirmPosition();
+      }
+
+      // THE LAST SQUARE IS THE ONE THE GRID CANNOT SEE, AND IT IS THE ONLY ONE THAT
+      // COUNTS. `UserGo` passes the server's own piRow/piCol and `SomethingTryGo`
+      // (room.kod:2777) matches them against plExits with `=`. Not a radius, not a
+      // facing cone — that exact square or nothing.
+      //
+      // And the way IN is not the way OUT. Measured in the Brownestone Inn with the
+      // operator standing in it: the door from North Barloque delivers you to (12,16),
+      // the door back out is at (12,17), and row 17 is walkable floor that the coarse
+      // grid marks unreachable from every square touching it. So a character walks in,
+      // lands one square short of the way home, and the router refuses to try before
+      // sending a single packet. Camilla sat there failing 29 crossings in five minutes.
+      //
+      // Fine movement crosses it in ONE step, because it asks the server rather than
+      // the grid — which is the same asymmetry `stepFine` was written for. So when the
+      // square-based approach has left us anywhere but the exit square, fall through to
+      // it rather than issuing a `go` that cannot possibly be accepted.
+      if (at && (at.col !== exit.stand_on.col || at.row !== exit.stand_on.row)) {
+        const half = KOD_FINENESS >> 1;
+        await this.stepFine(exit.stand_on.col * KOD_FINENESS + half,
+                            exit.stand_on.row * KOD_FINENESS + half).catch(() => null);
         leaned = true;
       }
       const before = c.evSeq;
@@ -4174,7 +4198,7 @@ const TOOLS = [
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       action: { type: 'string',
-                enum: ['start', 'stop', 'inert', 'revive', 'status', 'list', 'park', 'unpark'] },
+                enum: ['start', 'stop', 'inert', 'revive', 'status', 'list', 'park', 'unpark', 'release'] },
       why: { type: 'string', description: 'on stop/inert: why, for the uptime ledger — a deliberate ' +
                                           'hold must be distinguishable from a keeper that dropped' },
       hard: { type: 'boolean', description: 'on stop: END the keeper rather than making it inert. ' +
@@ -4278,6 +4302,14 @@ const TOOLS = [
       // tools/m59-update.mjs, which is what drives this.
       if (a.action === 'park') return p.park(a.why ?? 'a fleet update is waiting for us');
       if (a.action === 'unpark') return p.unpark(a.why ?? 'the update finished');
+      // TAKE THIS CHARACTER BACK OFF WHATEVER THE FLEET IS USING IT FOR. The override key
+      // on the terminal board is the caller, and it is an emergency key — cancel the
+      // errand, drop the pairing, revive an inert keeper, and say which of those it did.
+      // Deliberately blunt: the point of an override is that it works when the tidy path
+      // does not. It does NOT reach into the other end of a pairing; that keeper handles
+      // a vanished partner already, exactly as it does for one that logs out.
+      if (a.action === 'release')
+        return p.releaseCommitment(a.why ?? 'an operator took this character back');
       if (a.mode) {
         if (!MODES.includes(a.mode)) throw new Error(`mode must be one of ${MODES.join(', ')}`);
         p.mode = a.mode;
@@ -5740,6 +5772,198 @@ const TOOLS = [
     },
   },
   {
+    name: 'signets',
+    description:
+      'THE ONE QUEST IN THIS GAME THAT PAYS THE FLEET\'S SMALLEST CHARACTERS TEN TIMES WHAT IT PAYS ' +
+      'ITS LARGEST, AND WHICH CHARACTER HOLDS THE RING IS ENTIRELY UP TO US.\n' +
+      'A signet ring drops off monsters and looks like loot. It is not: it belongs to a named NPC, and ' +
+      'handing it back pays the ring\'s value TEN TIMES OVER to a character that has not enabled ' +
+      'player-killing, and its plain value to one that has (ringsgnt.kod:94). Nobody here enables that ' +
+      'deliberately — the server does it for you the moment base max health reaches 30, or you join a ' +
+      'guild (player.kod:11047). Max health is the level here, so: A RING RETURNED BY A CHARACTER UNDER ' +
+      'LEVEL 30 IS WORTH TEN TIMES THE SAME RING RETURNED BY ANYONE ELSE. Up to 1500 shillings against ' +
+      'up to 150 — which for a character that has never had a hundred is the difference between it ' +
+      'having a floor under it and not.\n' +
+      'AND THE DESTINATION IS KNOWN. Fifteen of the nineteen possible owners stand in a fixed room in ' +
+      'Barloque, Cor Noth, Jasper, Marion or Tos; four are Wanderers with no address and are handled by ' +
+      'the keeper asking wherever it happens to be. So a ring usually names a town.\n' +
+      'action=survey reads every ring the fleet is carrying, who it belongs to, where that is, and what ' +
+      'it would pay in the hands it is in now versus the best hands available. Changes nothing.\n' +
+      'action=redistribute walks rings DOWN to the smallest characters that can still be paid ten ' +
+      'times over, using `supply`, and prefers to group a town\'s rings onto one carrier.\n' +
+      'action=return dispatches a keeper errand per carrier: travel to the owner\'s room, hand it back, ' +
+      'BANK THE PROCEEDS — a four-figure purse on the fleet\'s most fragile character is exactly what ' +
+      'death takes. action=cancel drops one.\n' +
+      'RINGS EXPIRE. The world holds at most twenty; a twenty-first deletes the oldest out of whoever ' +
+      'is carrying it (library.kod:4288). Hoarding one loses it.',
+    schema: { type: 'object', properties: {
+      action: { type: 'string', enum: ['survey', 'redistribute', 'return', 'cancel'] },
+      agent: { type: 'string', description: 'for cancel, or to act on one carrier only' },
+      newbie_level: { type: 'number',
+        description: 'the max health at or above which the ten-times payout stops, default 30. This ' +
+                     'is PKILL_ENABLE_HP and there is no reason to change it except to test' },
+      max_dispatch: { type: 'number', description: 'how many return errands to send at once, default 4' },
+    }, required: ['action'] },
+    run: async (a) => {
+      const NEWBIE = num(a.newbie_level, skills.SIGNET_NEWBIE_LEVEL);
+      // READ THE RINGS OFF EVERY CHARACTER, once, and reuse it for all four actions.
+      //
+      // The first look at a ring costs a round trip and the answer is cached on the
+      // client for ever after, so a survey is expensive exactly once per ring and free
+      // thereafter. Done in parallel across sessions because each character's pacer
+      // serialises its own requests anyway.
+      const carriers = [];
+      await Promise.all([...sessions].map(async ([name, s]) => {
+        if (!s.client || s.client.state !== 'game') return;
+        const rings = await skills.signetRings(s).catch(() => []);
+        if (!rings.length) return;
+        const level = s.client.vitals()?.health?.max ?? null;
+        carriers.push({
+          agent: name, character: s.client.me?.name ?? null, level,
+          room: s.world?.room?.num ?? null,
+          pay: skills.signetPayout({ level }),
+          committed: autopilotIfAny(name)?.commitment() ?? null,
+          rings,
+        });
+      }));
+
+      // Who SHOULD be holding them: in game, still paid ten times over, and smallest
+      // first — a ring is worth the same to any character under the line, so it goes to
+      // the one that needs the money most and is cheapest to lose nothing by. Characters
+      // the fleet is already using for something else are not candidates; a signet errand
+      // dispatched onto a loot run just cancels one of them. Neither is one a PERSON is
+      // holding: an errand on a piloted character fights whoever is at the keyboard.
+      const eligible = [...sessions]
+        .filter(([n, s]) => s.client?.state === 'game' && !pilotOf(n))
+        .map(([n, s]) => ({ agent: n, character: s.client.me?.name ?? null,
+                            level: s.client.vitals()?.health?.max ?? null,
+                            room: s.world?.room?.num ?? null,
+                            committed: autopilotIfAny(n)?.commitment() ?? null }))
+        .filter(r => r.level != null && r.level < NEWBIE)
+        .sort((x, y) => x.level - y.level);
+
+      const total = carriers.reduce((t, cr) => t + cr.rings.length, 0);
+      const misplaced = carriers.filter(cr => !cr.pay.newbie)
+                                .reduce((t, cr) => t + cr.rings.length, 0);
+
+      if (a.action === 'survey') {
+        return {
+          rings: total,
+          carriers: carriers.map(cr => ({
+            agent: cr.agent, character: cr.character, level: cr.level,
+            paid: cr.pay.multiplier + 'x', why: cr.pay.why,
+            committed: cr.committed?.label ?? null,
+            holding: cr.rings.map(r => ({
+              owner: r.owner ?? 'unreadable',
+              go_to: r.routable ? `${r.where} (room ${r.room}, ${r.town})`
+                   : r.roams ? 'nowhere — that owner wanders'
+                   : r.owner ? 'unknown owner — not one of the nineteen' : 'not read yet',
+            })),
+          })),
+          // The number worth acting on. Every ring on a level-30-or-over character is
+          // nine tenths of its value being thrown away by an accident of who looted it.
+          in_the_wrong_hands: misplaced,
+          best_hands: eligible.slice(0, 5).map(r => `${r.character} (${r.level})`),
+          note: !total ? 'the fleet is carrying no signet rings'
+              : misplaced ? `${misplaced} of ${total} are on characters that would be paid one ` +
+                            'tenth — call action=redistribute, then action=return'
+              : 'every ring is already in hands that get the ten-times payout — call action=return',
+        };
+      }
+
+      if (a.action === 'cancel') {
+        const p = a.agent ? autopilotIfAny(a.agent) : null;
+        if (!p) return { cancelled: false, note: 'pass the carrier\'s agent name' };
+        const had = p.errand?.kind === 'signet';
+        if (had) p.errand = null;
+        return { cancelled: had, agent: a.agent,
+                 note: had ? undefined : 'that character was not on a signet errand' };
+      }
+
+      if (a.action === 'redistribute') {
+        if (!eligible.length)
+          return { moved: 0, note: `nobody in the fleet is under ${NEWBIE} max health — every ring ` +
+                                   'pays plain value whoever returns it, so moving them buys nothing' };
+        // WHICH TOWNS EACH CANDIDATE IS ALREADY CARRYING FOR, kept up to date as rings
+        // move. Reading it back off `carriers` each time would be reading the snapshot
+        // taken before this loop started, so every ring in a batch would be grouped
+        // against the same stale answer and they would scatter one per character —
+        // which is the opposite of the point. One journey should clear a town.
+        const townsHeld = new Map(eligible.map(r => [r.agent,
+          new Set((carriers.find(o => o.agent === r.agent)?.rings ?? [])
+            .map(x => x.town).filter(Boolean))]));
+
+        const moved = [], failed = [];
+        for (const cr of carriers) {
+          if (cr.pay.newbie) continue;                       // already in the right hands
+          if (a.agent && cr.agent !== a.agent) continue;
+          for (const ring of cr.rings) {
+            // Prefer a receiver that is already carrying a ring for the same town, so one
+            // errand pays for several handovers. Failing that, the smallest free one.
+            const free = eligible.filter(r => r.agent !== cr.agent && !r.committed);
+            if (!free.length) { failed.push(`${cr.character}: nobody small and free to take it`); continue; }
+            const sameTown = ring.town && free.find(r => townsHeld.get(r.agent)?.has(ring.town));
+            const to = sameTown ?? free[0];
+            const out = await supplyBetween({
+              from: cr.agent, to: to.agent, what: [ring.id], who_travels: 'from',
+            }).catch(e => ({ supplied: false, reason: e.message }));
+            (out.supplied ? moved : failed).push(
+              out.supplied
+                ? `${cr.character} -> ${to.character}: ${ring.owner ?? 'a'} ring` +
+                  (ring.town ? ` (${ring.town})` : '') +
+                  ` — 1x becomes 10x at level ${to.level}`
+                : `${cr.character} -> ${to.character}: ${out.reason}`);
+            if (out.supplied && ring.town) townsHeld.get(to.agent)?.add(ring.town);
+          }
+        }
+        return { moved: moved.length, moved_detail: moved,
+                 failed: failed.length ? failed : undefined,
+                 note: moved.length ? 'call action=return next to send them to the owners'
+                                    : 'nothing moved' };
+      }
+
+      // action=return. ONE ERRAND PER CARRIER, and it is cut for the town rather than for
+      // the ring: returnSignetRings hands back every ring in the pack whose owner is in
+      // the room, so a carrier holding three Jasper rings makes one journey.
+      const cap = num(a.max_dispatch, 4);
+      const sent = [], skipped = [];
+      for (const cr of carriers) {
+        if (sent.length >= cap) { skipped.push(`${cr.character}: dispatch cap of ${cap} reached`); continue; }
+        if (a.agent && cr.agent !== a.agent) continue;
+        const p = autopilotIfAny(cr.agent);
+        if (!p) { skipped.push(`${cr.character}: no keeper`); continue; }
+        if (pilotOf(cr.agent)) { skipped.push(`${cr.character}: somebody is playing this one`); continue; }
+        if (p.errand) { skipped.push(`${cr.character}: already on ${p.errand.kind}`); continue; }
+        const routable = cr.rings.filter(r => r.routable);
+        if (!routable.length) {
+          skipped.push(`${cr.character}: ${cr.rings.length} ring(s), no address — ` +
+                       (cr.rings.some(r => r.roams) ? 'the owner wanders, so the keeper asks wherever it is'
+                                                    : 'owner not read yet'));
+          continue;
+        }
+        // Send it to whichever town it holds most rings for.
+        const byTown = new Map();
+        for (const r of routable) byTown.set(r.town, (byTown.get(r.town) || 0) + 1);
+        const town = [...byTown.entries()].sort((x, y) => y[1] - x[1])[0][0];
+        const pick = routable.find(r => r.town === town);
+        p.errand = { kind: 'signet', owner: pick.owner, town: pick.town, room: pick.room,
+                     where: pick.where, rings: byTown.get(town),
+                     at: Date.now(), expires: Date.now() + 25 * 60 * 1000 };
+        sent.push({ carrier: cr.character, agent: cr.agent, to: pick.owner,
+                    town: pick.town, room: pick.room, where: pick.where,
+                    rings: byTown.get(town), paid: cr.pay.multiplier + 'x' });
+      }
+      return {
+        dispatched: sent.length, errands: sent,
+        skipped: skipped.length ? skipped : undefined,
+        note: sent.length
+          ? 'each will finish what it is doing, walk to the room, hand the ring back and bank the ' +
+            'proceeds — the payout is a purse, and a purse is what death takes'
+          : 'nothing dispatched',
+      };
+    },
+  },
+  {
     name: 'safe_spots',
     description:
       'WHERE TO STAND SO THAT NOTHING CAN HIT YOU. Players call these safe walls, and they are the ' +
@@ -6400,6 +6624,12 @@ const TOOLS = [
           // tick would be a self-inflicted load spike during the one window we most
           // want the fleet quiet. Null when nothing is parking, which is nearly always.
           parked: ap ? ap.parkStatus() : null,
+          // IS THE FLEET ALREADY USING THIS ONE? A loot run, a provisioning cast, a signet
+          // ring being walked across the map, a pairing — all of them have another end,
+          // and pulling a character out of one abandons that end silently. On the row for
+          // the same reason `parked` is: the terminal greys these and steps over them, and
+          // asking per character would be twenty-one calls a tick.
+          committed: ap ? ap.commitment() : null,
           // IS A PERSON HOLDING THIS ONE RIGHT NOW? Published on the row for the same
           // reason `parked` is: the terminal and the fleet page both want to mark it, and
           // asking per character would be twenty-one calls a tick. pilotOf() re-checks
