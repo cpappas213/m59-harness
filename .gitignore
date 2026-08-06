@@ -73,3 +73,12 @@ __pycache__/
 *.pyc
 /substrate/keeper-uptime.jsonl
 /substrate/keeper-active.json
+
+# The running handoff for a live fleet. It names characters and accounts and states the
+# password convention in plain text, and this repository is public. CLAUDE.md has always
+# said this file is gitignored; it was not, and only luck kept it out of a commit.
+/NEXT-STEPS-fleet.md
+# Supervisor and errand logs — machine state, and they quote character names.
+/substrate/supervise-prod.err
+/substrate/supervise-prod.log
+/substrate/supervise.log
