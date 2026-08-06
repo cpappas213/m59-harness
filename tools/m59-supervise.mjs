@@ -432,6 +432,12 @@ async function round(n) {
   // Vigor is the survival variable the death record actually turns on; armour is a
   // second-order effect on a fleet that means to be hit zero times. So the cheap,
   // rate-limited errand goes FIRST, where nothing can starve it.
+  // RECLAIM BEFORE SHOPPING. What the fleet dropped is free and already the right level
+  // for whoever lost it; what a shop sells has to be paid for with money the fleet does
+  // not have. Running this first also means the reagent errand sees the elderberry the
+  // reclaim just picked up, rather than walking to an apothecary to buy what is already
+  // in a pack.
+  await reclaimDrops();
   await spreadReagents(rows);
 
   // 2. GRADUATE EVERYONE WHO IS READY, including those already out there.
@@ -533,6 +539,58 @@ const ALMONER_EVERY_MS = Number(arg('almoner-every', 300)) * 1000;
 const ALMONER_SHARE = Number(arg('almoner-share', 6));
 let almonerAt = 0;
 let almonerBusy = false;
+
+// GO BACK FOR THE PACK BEFORE SOMEBODY ELSE DOES.
+//
+// A death drops the character's whole inventory on the floor. The corpse decays; THE ITEMS
+// DO NOT — they lie there, and any player can take them. Meridian's history includes
+// people looting corpses to ransom the gear back to its owner. So this is a race against
+// the world, and the clock starts the moment somebody dies.
+//
+// Nothing in this repository had ever gone back for one. Across 594 recorded death sites
+// the fleet had recovered nothing, which is why it could report "0 spare weapon stacks
+// across 0 characters" while five maces lay on the floor of West Merchant Way, and why the
+// almoner kept answering "genuinely short" of a recipe that was also lying there. The
+// first real run recovered eleven stacks — five maces, elderberry and herbs — and armed
+// two characters that had been waiting on casting mana for hours.
+//
+// SHORT INTERVAL, ON PURPOSE. Of the six sites that first run tried, the recent ones paid
+// and the two oldest came back empty: the value decays. An hourly sweep would arrive after
+// the world has swept up. This wants to run minutes after a death, which means often.
+//
+// m59-reclaim.mjs picks its own couriers (armed, near-whole, not pinned at the resting
+// cap) and refuses to send anyone if nobody qualifies — the errand that ignored that cost
+// twenty-nine deaths in one pass. It also revives everything it made inert on every exit
+// path including a kill, so the timeout below cannot strand a character the way this file's
+// own outfitPair once did.
+const RECLAIM_EVERY_MS = Number(arg('reclaim-every', 180)) * 1000;
+const RECLAIM_SITES = Number(arg('reclaim-sites', 6));
+let reclaimAt = 0;
+let reclaimBusy = false;
+
+async function reclaimDrops() {
+  if (reclaimBusy || Date.now() - reclaimAt < RECLAIM_EVERY_MS) return;
+  reclaimBusy = true;
+  reclaimAt = Date.now();
+  const { spawn } = await import('node:child_process');
+  const script = new URL('./m59-reclaim.mjs', import.meta.url).pathname
+                   .replace(/^\/([A-Za-z]:)/, '$1');
+  console.log(`   reclaiming drops (m59-reclaim.mjs --sites ${RECLAIM_SITES})`);
+  try {
+    await new Promise(res => {
+      const p = spawn(process.execPath, [script, '--sites', String(RECLAIM_SITES),
+                                         '--port', String(PORT)], { stdio: 'inherit' });
+      p.on('exit', res);
+      // SIGTERM rather than the default kill, so the errand's own signal handler runs and
+      // revives its couriers. That is the whole reason it has one.
+      setTimeout(() => { try { p.kill('SIGTERM'); } catch {} res(); }, 6 * 60 * 1000);
+    });
+  } catch (e) {
+    console.log(`   reclaim threw — ${e.message}`);
+  } finally {
+    reclaimBusy = false;
+  }
+}
 
 async function spreadReagents(rows) {
   const { spawn } = await import('node:child_process');

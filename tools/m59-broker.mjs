@@ -45,6 +45,8 @@ import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mj
 import * as skills from './m59-skills.mjs';
 import * as abilities from './m59-abilities.mjs';
 import * as bankbook from './m59-bank.mjs';
+import * as hitbook from './m59-hits.mjs';
+import * as transits from './m59-transits.mjs';
 import * as descriptions from './m59-describe.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import * as uptime from './m59-uptime.mjs';
@@ -102,11 +104,73 @@ const ATTACK_INTERVAL_MS = 1050;     // IsOkayAttackTime, plus a little
 // past something is walking past it rather than standing beside it.
 const MOVE_INTERVAL_MS = Number(process.env.M59_MOVE_INTERVAL_MS || 250);
 
+// HOW OFTEN THE ROOM MAY BE RE-READ WHILE WALKING. A hard cap, not a target.
+//
+// `step()` used to re-read the whole room after every single square, and that round trip
+// is 1.2-5.6s regardless of how much is in the room. It is why the fleet walked at 0.55
+// squares a second against a person's 4.1 in the same room, and why MOVE_INTERVAL_MS —
+// tuned to 250ms specifically to make walking faster — did nothing at all.
+//
+// Six seconds is chosen to be far longer than a step and far shorter than a crossing: at
+// four squares a second it is one read every ~24 squares instead of one per square, and
+// nothing in a room changes so fast that a six-second-old object map makes a walk wrong.
+const ROOM_RESYNC_MS = Number(process.env.M59_ROOM_RESYNC_MS || 6000);
+
 // user.kod:46. At or below this you are walking; above it you are running, which
 // needs vigor >= 10 and costs exertion quadratically in the speed.
 const WALK_SPEED = 18;
-const RUN_SPEED  = Number(process.env.M59_RUN_SPEED || 24);
+// USER_RUNNING_SPEED, user.kod:47 — what the real client sends when it runs. This was
+// 24, a number from nowhere: above the walking threshold, so it paid the full cheat
+// check, but not what any client emits.
+const RUN_SPEED  = Number(process.env.M59_RUN_SPEED || 36);
 const RUN_VIGOR_FLOOR = 25;          // well clear of the server's threshold of 10
+
+// WHAT RUNNING COSTS, ARITHMETIC RATHER THAN NERVES — because the caution here was
+// expensive and was never priced.
+//
+// user.kod:3020 charges exertion once per second as EXERTION_PER_MOVE * (speed*5/6)^2,
+// with EXERTION_PER_MOVE = 2 (user.kod:26). necroam.kod:518 gives the scale: 20000
+// units is commented "2 vigor points", so 10000 units is one vigor point.
+//
+//   walking, speed 18:  2 * 15^2 =  450/s = 0.045 vigor/s
+//   running, speed 36:  2 * 30^2 = 1800/s = 0.18  vigor/s
+//
+// So a full minute of unbroken sprinting costs about ELEVEN vigor. Dying costs
+// vastly more than that and takes the character out of play besides. The old rule
+// spent vigor only in rooms the spawn index called dangerous, which is precisely
+// backwards: the spawn index describes where we choose to fight, and nearly every
+// travel death is on ground in between. There is no such thing as safe travel here;
+// speed is the safety mechanism. So we run whenever we can afford to, everywhere.
+const VIGOR_UNIT = 10000;                                     // necroam.kod:518
+export const exertionPerSecond = speed => 2 * Math.floor(speed * 5 / 6) ** 2;
+
+// HOW FAST THE REAL CLIENT ACTUALLY MOVES, which is the thing we were never matching.
+//
+// move.c:184 moves 2*MOVEUNITS per MOVE_DELAY when the action is a *FAST one and
+// MOVEUNITS otherwise; MOVEUNITS is FINENESS>>2 = 256 client units and MOVE_DELAY is
+// 100ms (move.c:49,53, draw3d.h:53). So:
+//
+//   running  512 units / 100ms = 5120/s = 5.0 squares/second
+//   walking  256 units / 100ms = 2560/s = 2.5 squares/second
+//
+// and move.c:59 tells the server at most once per MOVE_INTERVAL = 1000ms. That is the
+// shape the speedhack comment describes from the other side — "normal players only
+// send 1 movement packet per second" — and it is one packet covering about five
+// squares, not five packets covering one square each.
+//
+// We were doing the opposite: one square per packet, four packets a second, 4 sq/s at
+// the very best and measured at 1.18. Sending FEWER packets that each cover more
+// ground is both faster and further from the cheat detector, which is a rare
+// direction for a change to go.
+const SQUARES_PER_SECOND = { [WALK_SPEED]: 2.5, [RUN_SPEED]: 5.0 };
+const squaresPerSecond = speed => SQUARES_PER_SECOND[speed] ?? (speed > WALK_SPEED ? 5.0 : 2.5);
+
+// The cap on one hop, and it is a real server rule rather than taste. user.kod:3072
+// logs a suspected teleport and DRAINS VIGOR as a penalty when the squared distance
+// from the position at the last second-boundary reaches 200 with under 3 seconds
+// elapsed — so about 14 squares. One second of running is 5 squares, squared distance
+// 25, comfortably inside it. Eight is the ceiling this uses, which is still only 64.
+const MOVE_HOP_MAX_SQUARES = Number(process.env.M59_MOVE_HOP_MAX || 8);
 
 // ---------------------------------------------------------------- pacing
 
@@ -923,8 +987,12 @@ function claimPilot(agent, pid, { character = null } = {}) {
   const s = sessions.get(agent);
   const objectId = s?.client?.selfId ?? null;
   const keeper = autopilotIfAny(agent);
-  const keeperWasRunning = !!keeper?.running;
-  if (keeper?.running) keeper.stop('a person took the controls — deliberate');
+  // WAS IT DRIVING, not merely alive. `running` stays true while a keeper is inert, so
+  // this has to ask the narrower question or releasing the pilot would hand a character
+  // back to a keeper that an errand is still holding — and put the person's session and
+  // that errand into exactly the fight the hold exists to prevent.
+  const keeperWasRunning = !!keeper?.running && !keeper?.inert;
+  if (keeperWasRunning) keeper.stop('a person took the controls — deliberate');
   piloted.set(agent, { pid, since: Date.now(), objectId,
                        character: character ?? s?.client?.me?.name ?? null, keeperWasRunning });
   console.error(`[pilot] ${agent} claimed by pid ${pid}` +
@@ -1382,6 +1450,123 @@ class Session {
     // has the skills. See m59-abilities.mjs.
     this.book = null;
     this.bookSaveTimer = null;
+    // WHERE THIS CHARACTER GETS HURT, off the event stream rather than off the keeper.
+    //
+    // Health is PUSHED — one BP_STAT per change — so this records at full resolution
+    // through the windows where nothing else is looking: mid-travel, mid-errand, and
+    // while the keeper is inert with something else driving. Those windows are where the
+    // fleet has been dying and are exactly what the post-mortem cannot see. See
+    // m59-hits.mjs.
+    this.hits = null;                   // the book, loaded lazily by character name
+    this.lastHealth = null;             // to tell a hit from a heal
+    this.lastCombatLine = null;         // { at, who } — best-effort attribution
+    this.hitsSaveTimer = null;
+    // HOW LONG EACH MAP TAKES TO CROSS. The other half of the same question and the more
+    // actionable one: damage on the road is normal and not a fault, but two minutes inside
+    // one room is a slow crossing, and slow is something we control. See m59-transits.mjs.
+    this.transits = null;
+    this.transitSaveTimer = null;
+  }
+
+  // The hit record for whoever this session is currently playing. Keyed by CHARACTER and
+  // not by agent, for the same reason the ability book is: the agent name is which slot of
+  // the fleet is driving and gets reassigned.
+  hitBook() {
+    const who = this.client?.me?.name ?? null;
+    if (!who) return null;
+    if (!this.hits || this.hits.character !== who) this.hits = hitbook.loadBook(who);
+    return this.hits;
+  }
+
+  // The transit record for whoever this session is currently playing. Keyed by CHARACTER
+  // for the same reason the others are — the agent name is a fleet slot and gets reused.
+  transitBook() {
+    const who = this.client?.me?.name ?? null;
+    if (!who) return null;
+    if (!this.transits || this.transits.character !== who) this.transits = transits.loadBook(who);
+    return this.transits;
+  }
+
+  // ONE MAP, CROSSED ONCE. Called from travel()'s hop loop — see m59-transits.mjs.
+  noteTransit(entry) {
+    const book = this.transitBook();
+    if (!book) return;
+    try {
+      transits.record(book, { at: Date.now(), ...entry });
+      // On a timer, like the hit book: a journey writes one of these per room and there is
+      // no reason to put the disk in the middle of a walk.
+      if (!this.transitSaveTimer) {
+        this.transitSaveTimer = setTimeout(() => {
+          this.transitSaveTimer = null;
+          try { transits.saveBook(this.transits); } catch { /* never let a write stop play */ }
+        }, 10_000);
+        this.transitSaveTimer.unref?.();
+      }
+    } catch { /* the record is a convenience; never let it interrupt play */ }
+  }
+
+  // WHO IS SWINGING, when the server happens to have said so.
+  //
+  // Damage arrives as a stat packet and names nobody; the prose that names an attacker is
+  // a separate message and there is no id tying the two together. They do arrive close
+  // together, so a combat line within a couple of seconds of a health drop is almost
+  // always about it — and "almost always" is the honest description, which is why this
+  // lands in a `by` LIST on the segment rather than a `killed_by` field that would read as
+  // authoritative. The death broadcast is the authoritative one and the post-mortem
+  // already has it.
+  noteCombatLine(ev) {
+    // "The fungus beast nicks you with its attack." / "The troll hits you."
+    const m = /^(?:The|An?) ([a-z' -]+?) (?:[a-z]+s) you\b/i.exec(ev.text || '');
+    if (m) this.lastCombatLine = { at: ev.at ?? Date.now(), who: m[1].toLowerCase() };
+  }
+
+  // ONE HEALTH READING. Called for every health stat the server sends.
+  //
+  // A DROP IS A HIT AND A RISE IS NOT, and that is the whole of the logic that cannot live
+  // in m59-hits.mjs — it sees one number at a time and has no way to tell regeneration
+  // from damage. Resting, eating and a heal all push health the other way and must never
+  // become segments.
+  //
+  // A LOGIN IS NOT A HIT EITHER. `lastHealth` is cleared on join, so the first reading
+  // after a login establishes the baseline rather than being compared against whatever the
+  // character had before it died.
+  noteHealth(ev) {
+    const now = ev.at ?? Date.now();
+    const value = ev.value, max = ev.max;
+    if (typeof value !== 'number') return;
+    const before = this.lastHealth;
+    this.lastHealth = value;
+    if (before == null || value >= before) return;      // a heal, or the first reading
+    const book = this.hitBook();
+    if (!book) return;
+    const me = this.client?.self;
+    const keeper = autopilotIfAny(this.name);
+    const line = this.lastCombatLine;
+    try {
+      hitbook.record(book, {
+        at: now,
+        room: this.world?.room?.num ?? null,
+        roomName: this.world?.room?.name ?? null,
+        col: me?.col ?? null, row: me?.row ?? null,
+        // WHAT THE KEEPER THOUGHT IT WAS DOING. `doing` is cleared at the end of each
+        // pass, so `lastDoing` is what a reading taken between passes should report — and
+        // between passes is precisely when travel damage arrives.
+        doing: keeper?.doing ?? keeper?.lastDoing ?? null,
+        health: value, max: max ?? null,
+        lost: before - value,
+        by: line && now - line.at < 2500 ? line.who : null,
+      });
+      // Written on a timer rather than per hit: a character under six attackers takes one
+      // every second or two, and a synchronous write each time would put the disk in the
+      // packet path. Ten seconds is far shorter than any window we would want to explain.
+      if (!this.hitsSaveTimer) {
+        this.hitsSaveTimer = setTimeout(() => {
+          this.hitsSaveTimer = null;
+          try { hitbook.saveBook(this.hits); } catch { /* never let a write stop play */ }
+        }, 10_000);
+        this.hitsSaveTimer.unref?.();
+      }
+    } catch { /* the record is a convenience; never let it interrupt play */ }
   }
 
   get live() { return this.client && this.client.state === 'game'; }
@@ -1558,10 +1743,19 @@ class Session {
     // here rather than polled for: the server sends one BP_STAT the instant an ability
     // moves and never mentions it again, so a poll that arrives later sees the number
     // but not the event, and cannot tell a gain from a value it had all along.
+    // A FRESH LOGIN IS A FRESH BASELINE. Without this the first health reading after a
+    // death would be compared against whatever the character had before it died and
+    // recorded as one enormous hit in whatever room it woke up in.
+    this.lastHealth = null;
+    this.lastCombatLine = null;
     c.onEvent = ev => {
       this.recorder.line('event', ev);
       if (ev.kind === 'ability') this.noteAdvancement(ev);
-      if (ev.kind === 'message' && ev.text) this.noteBanker(ev);
+      if (ev.kind === 'message' && ev.text) { this.noteBanker(ev); this.noteCombatLine(ev); }
+      // OFF THE STREAM, NOT OFF THE KEEPER. This is the one measurement that keeps
+      // working while the keeper is inside a multi-minute travel await or held inert by
+      // an errand — which is where 23 of the last 50 deaths happened. See m59-hits.mjs.
+      if (ev.kind === 'stat' && ev.name === 'health') this.noteHealth(ev);
     };
     if (character) c.wantName = character;
     await c.login(account, password);
@@ -1810,26 +2004,60 @@ class Session {
   // charged as (speed * 5/6)^2, so it is quadratic, and vigor is what sets the
   // health regeneration rate. Burning it in a town buys nothing; burning it crossing
   // a monster field buys the difference between arriving and not.
+  // RUN EVERYWHERE. The previous rule ran only in rooms the spawn index called
+  // dangerous, and walked everywhere else — which sounds prudent and is backwards.
+  //
+  // The spawn index describes where we go to FIGHT. It says nothing about the ground
+  // between, and the ground between is where the fleet dies: 20 deaths at the border
+  // of the Badlands, 17 of the last 23 travel deaths outbound to a hunting ground.
+  // Every one of those was walked at half pace to save a resource that costs 0.18
+  // vigor a second — about eleven for a whole minute of sprinting — while a death
+  // costs the character its equipment, its position and the rest of the hour.
+  //
+  // So the gate is affordability, not location. The floor stays at 25 rather than the
+  // server's 10 so that arriving somewhere still leaves enough vigor to fight.
   moveSpeed() {
     const c = this.client;
-    const room = this.world?.room;
     const vigor = c?.vitals?.()?.vigor?.value ?? 0;
     if (this.walkOnly) return WALK_SPEED;
     if (vigor < RUN_VIGOR_FLOOR) return WALK_SPEED;      // too tired; the server would snap us back
-    // Run where there is something to outrun, walk where there is not. The spawn
-    // index answers that directly and correctly — a room with no generator has
-    // nothing in it worth spending vigor on — which is better than guessing from a
-    // room flag I have not verified. (piRoom_Flags 4096 is set on the Underworld as
-    // well as on open fields, so it is not the outdoors bit it looks like.)
-    if (!room) return WALK_SPEED;
-    const spawns = loadSpawns(SPAWN_FILE);
-    const dangerous = !!(spawns?.rooms?.[room.num]?.length);
-    return dangerous ? RUN_SPEED : WALK_SPEED;
+    return RUN_SPEED;
   }
 
-  async step(col, row) {
+  // ONE SQUARE, AND NOT A ROOM RE-READ TO GO WITH IT.
+  //
+  // This used to end with a full `roomContents()` request and a wait for the reply, ONCE
+  // PER SQUARE. That round trip measures 1.2 to 5.6 seconds — and it measures the same
+  // whether the room holds two objects or fifteen, so it is latency and queueing, not
+  // payload. It was the entire reason the fleet walked at 0.55 squares a second while the
+  // operator, measured in the same room on the same evening, sustained 4.1.
+  //
+  // MOVE_INTERVAL_MS was tuned to 250ms — four squares a second — with a long comment
+  // about how walking at one square a second was costing us characters. It never took
+  // effect. It was never the binding constraint; this was.
+  //
+  // WHY DEAD RECKONING IS SAFE HERE, which is the part that has to be right:
+  //
+  //   * the server does not echo a user's own accepted move. Measured, not assumed: a
+  //     six-square walk produced ONE self `moved` event. So there is no cheap confirmation
+  //     to swap the re-read for — the choice is the re-read or prediction.
+  //   * and there is nothing to confirm. `UserMove` calls `Room.SomethingMoved` directly
+  //     and `ReqSomethingMoved` is BYPASSED for users — room.kod's own comment on that is
+  //     "already been checked by client (HAHA!)". There is no geometry, distance or
+  //     occupancy validation on a user move at all (docs/m59-coordination-research.md,
+  //     user.kod:2941-2971). The one thing that snaps you back is speed above walking pace
+  //     with vigor under the run threshold, and moveSpeed() already guards that.
+  //
+  // So the client is authoritative for its own movement, exactly as the real one is, and
+  // predicting the position is not a guess about the server — it is the same thing the
+  // server is about to do. The resync below is a correction for the things prediction
+  // cannot cover: everything ELSE in the room moving, which is what the object map is for.
+  //
+  // `confirm: true` forces the read anyway, for the one caller that genuinely needs to
+  // know whether a step happened rather than where we now are.
+  async step(col, row, { confirm = false } = {}) {
     const c = this.need();
-    const before = c.self;
+    const before = c.self ? { col: c.self.col, row: c.self.row } : null;
     // Turn to face the destination first. It costs nothing, it is what a player
     // does, and several things in this game care about facing.
     if (before && (before.col !== col || before.row !== row)) {
@@ -1837,14 +2065,40 @@ class Session {
       await this.pacer.submit('turn', () => c.face(deg));
     }
     const speed = this.moveSpeed();
-    await this.pacer.submit('move', () => c.moveToSquare(col, row, speed), MOVE_INTERVAL_MS);
-    await this.pacer.submit('read', () => c.roomContents());
-    await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2000 });
+    // PACE BY DISTANCE, NOT BY PACKET. A hop may now cover several squares, so a fixed
+    // gap between packets would make a five-square hop arrive five times too early —
+    // which is the actual definition of speedhacking, and would be visible as such.
+    //
+    // The gap owed is for the hop just SENT, and `minGapForKind` is applied against the
+    // previous send of this kind, so it is carried on the session rather than computed
+    // here from the current hop. A single square at a run is 200ms; five squares is a
+    // full second. Both are the same 5 squares/second.
+    const gap = this._moveGapMs ?? MOVE_INTERVAL_MS;
+    const dist = before ? Math.max(Math.abs(col - before.col), Math.abs(row - before.row)) : 1;
+    this._moveGapMs = Math.round(1000 * dist / squaresPerSecond(speed));
+    await this.pacer.submit('move', () => c.moveToSquare(col, row, speed), gap);
+    // Predict, the way the real client does.
+    c.predictSelf({ col, row });
+    // AND RESYNC ON A CLOCK, AT MOST. This is the hard cap: whatever else happens, the
+    // room is not re-read more than once every ROOM_RESYNC_MS. Being wrong about the
+    // furniture for a few seconds costs nothing; being wrong about it for a whole journey
+    // would, which is why there is a clock rather than nothing.
+    if (confirm || Date.now() - (this.lastRoomRead ?? 0) >= ROOM_RESYNC_MS) {
+      this.lastRoomRead = Date.now();
+      await this.pacer.submit('read', () => c.roomContents());
+      await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2000 });
+    }
     const after = c.self;
     return {
       moved: !!after && (!before || after.col !== before.col || after.row !== before.row),
       position: after ? { col: after.col, row: after.row } : null,
+      // Still honest without a re-read: crossing a boundary brings a fresh BP_PLAYER and
+      // the client rebuilds the room, so our own id is genuinely absent from the new one
+      // until contents land. That is the answer this wants.
       left_room: !c.room.objects.has(c.selfId),
+      // So a caller can tell a confirmed position from a predicted one rather than having
+      // to know this function's internals.
+      predicted: !confirm && !!after?.predicted,
     };
   }
 
@@ -2002,7 +2256,11 @@ class Session {
       const spot = geo.nearestWalkable(me0.row, me0.col);
       if (!spot) return { arrived: false, reason: 'standing off the floor with no walkable square anywhere near',
                           position: { col: me0.col, row: me0.row } };
-      const r = await this.step(spot.col, spot.row);
+      // CONFIRMED, because this is the one place the ANSWER is the question. Everywhere
+      // else `step` is asked "where am I now" and prediction answers it; here it is asked
+      // "did that work", and a predicted yes would report solid ground under a character
+      // still standing off the floor — from which no route exists at all.
+      const r = await this.step(spot.col, spot.row, { confirm: true });
       if (!r.moved) return { arrived: false, reason: 'could not step back onto solid ground',
                              position: r.position, note: 'the server accepted the move but nothing changed' };
     }
@@ -2029,10 +2287,31 @@ class Session {
     while (queue.length && taken < maxSteps) {
       if (this.movementWasCancelled(movementGeneration, controlToken))
         return this.cancelledMovement({ steps: taken, replans });
-      const next = queue.shift();
+      // ONE PACKET, SEVERAL SQUARES — as long as they are in a STRAIGHT LINE.
+      //
+      // The planned route is a list of adjacent squares, and sending one packet per
+      // square is what made us four times slower than a person while sending four
+      // times as many packets. A real client reports a position about once a second
+      // and the ground it crossed in between is never transmitted at all.
+      //
+      // Collinear only, and that restriction is the whole safety argument: every
+      // square between here and the far end is a square the router already accepted,
+      // so the line we skip along is the line we planned. Coalescing across a TURN
+      // would cut the corner — through whatever the turn was avoiding — which is the
+      // one way this could put a character through a wall on purpose.
+      let next = queue.shift();
+      let hop = 1;
+      const dc0 = Math.sign(next.col - (c.self?.col ?? next.col));
+      const dr0 = Math.sign(next.row - (c.self?.row ?? next.row));
+      while (hop < MOVE_HOP_MAX_SQUARES && queue.length) {
+        const peek = queue[0];
+        if (Math.sign(peek.col - next.col) !== dc0 || Math.sign(peek.row - next.row) !== dr0) break;
+        if (occupied.has(`${peek.row},${peek.col}`)) break;
+        next = queue.shift(); hop++;
+      }
       const was = c.self ? { col: c.self.col, row: c.self.row } : null;
       const r = await this.step(next.col, next.row);
-      taken++;
+      taken += hop;
       if (r.left_room)
         return { arrived: false, left_room: true, steps: taken, note: 'a step crossed the room edge' };
       const now = c.self;
@@ -2528,6 +2807,15 @@ class Session {
     controlToken,
   } = {}) {
     const log = [];
+    // TIME EXPOSED, PER MAP. See m59-transits.mjs for why this is the number worth having
+    // and why "damage taken in transit" is not: there is no safe travel in this game and
+    // there is not meant to be. Every second inside a map is a second something can reach
+    // you, so the crossing time is the part we actually control.
+    //
+    // The clock starts here rather than at the first hop, because "told to travel" to
+    // "out of the first room" is time in the room exactly like any other.
+    const journeyId = `${this.name}-${Date.now().toString(36)}`;
+    let enteredAt = Date.now();
     for (let i = 0; i < maxHops; i++) {
       if (this.movementWasCancelled(movementGeneration, controlToken))
         return this.cancelledMovement({ log });
@@ -2562,6 +2850,10 @@ class Session {
       if (!exit)
         return { arrived: false, log, reason: 'cannot find the exit to ' + nextHop.to_name + ' from here' };
 
+      // Split so the record can say whether the time went on DECIDING or on DOING. Above
+      // this line is routing and exit selection; below it is the walk. If the tail turns
+      // out to be in the gap between them, the fix is in the planner, not the legs.
+      const walkBegan = Date.now();
       const r = await this.leaveViaAny(candidates, { movementGeneration, controlToken });
       // Never log an empty reason: a hop that fails without saying why is exactly the
       // silent failure this whole broker exists to avoid, so surface whatever stage
@@ -2573,10 +2865,26 @@ class Session {
       // Log the square that actually worked, not the one we happened to try first —
       // otherwise a hop that succeeded on the second candidate reports the square
       // that refused.
+      const inRoomMs = Date.now() - enteredAt;
       log.push({ from: here.name, to: nextHop.to_name, via: exit.kind, ok: r.left,
                  stand_on: (r.used_exit ?? exit).stand_on,
+                 // On the hop log too, so a caller reading a travel result sees where the
+                 // time went without having to go to the transit book for it.
+                 ms: inRoomMs,
                  ...(r.tried?.length ? { also_tried: r.tried } : {}),
                  ...(r.left ? {} : { reason: why }) });
+      // RECORDED WHETHER OR NOT IT WORKED, and the failures are the ones worth having:
+      // a hop that spent two minutes being refused by ten exit squares in turn is the
+      // shape this is looking for, and it is invisible in a journey-level timing.
+      this.noteTransit({
+        room: here.num, roomName: here.name, to: nextHop.to, toName: nextHop.to_name,
+        ms: inRoomMs, walkMs: Date.now() - walkBegan, ok: r.left,
+        // The one that worked plus the ones that did not. Above 1 means squares are being
+        // refused, which is the suspicion this exists to confirm or kill.
+        tried: (r.tried?.length ?? 0) + 1,
+        reason: r.left ? null : why,
+        journey: journeyId, hop: i, destination: toRoomNum,
+      });
       if (!r.left) return { arrived: false, log, reason: why };
 
       // Arriving brings a fresh BP_PLAYER, and with it the identity the world model
@@ -2585,6 +2893,11 @@ class Session {
         return this.cancelledMovement({ log });
       await this.pacer.submit('read', () => this.client.roomContents());
       await this.client.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 });
+      // The next room's clock starts once we have actually landed and can see. The settle
+      // above is charged to arriving, not to the room we just left — otherwise every
+      // room's time would carry the previous one's tail and the worst room would always
+      // look like whichever came after the real problem.
+      enteredAt = Date.now();
     }
     return { arrived: false, log, reason: 'gave up after ' + maxHops + ' hops' };
   }
@@ -3801,9 +4114,16 @@ const TOOLS = [
       'Call with action=status to read the journal. It will not fight anything you did not name.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
-      action: { type: 'string', enum: ['start', 'stop', 'status', 'list', 'park', 'unpark'] },
-      why: { type: 'string', description: 'on stop: why, for the uptime ledger — a deliberate hold ' +
-                                          'must be distinguishable from a keeper that dropped' },
+      action: { type: 'string',
+                enum: ['start', 'stop', 'inert', 'revive', 'status', 'list', 'park', 'unpark'] },
+      why: { type: 'string', description: 'on stop/inert: why, for the uptime ledger — a deliberate ' +
+                                          'hold must be distinguishable from a keeper that dropped' },
+      hard: { type: 'boolean', description: 'on stop: END the keeper rather than making it inert. ' +
+                                            'Almost nothing wants this. `stop` now leaves the loop ' +
+                                            'running, watching and recording, and only stops it ' +
+                                            'DRIVING — which is what every caller actually wanted. ' +
+                                            'Use hard:true only when the keeper must not outlive ' +
+                                            'this call, e.g. code is being reloaded under it.' },
       mode: { type: 'string', enum: ['survive', 'farm', 'idle'] },
       hunt: { type: 'string', description: 'creature name for farm mode — required, never guessed' },
       rest_below: { type: 'number', description: 'rest when a vital drops under this fraction, default 0.7' },
@@ -3885,7 +4205,13 @@ const TOOLS = [
       // tell a keeper that CRASHED from one an errand was deliberately holding while it
       // walked the character somewhere. Both read as "nothing was driving this", which
       // is true and useless: one is a fault to chase, the other is the operator working.
-      if (a.action === 'stop') return p.stop(a.why ?? 'asked to stop, no reason given');
+      // AND `stop` NOW MEANS INERT unless somebody asks for the other thing. Every caller
+      // of this — the errands, the supply hold, the pilot claim, the supervisor — wanted
+      // "stop driving", and was getting "stop looking" as well. See Autopilot.goInert.
+      if (a.action === 'stop')
+        return p.stop(a.why ?? 'asked to stop, no reason given', { hard: !!a.hard });
+      if (a.action === 'inert') return p.goInert(a.why ?? 'asked to go inert, no reason given');
+      if (a.action === 'revive') { p.revive(a.why ?? 'asked to revive'); return p.status(); }
       // PARK IS NOT STOP, AND THE DIFFERENCE IS THE WHOLE POINT. A stopped keeper is a
       // character held still in whatever was happening to it; a parked one is awake,
       // still defends itself, still flees, and is deliberately getting behind a wall so
@@ -6049,6 +6375,24 @@ const TOOLS = [
           // the figure is; a balance does not decay, but it also does not update while
           // the character is out in the woods.
           banked: s.bankKnown(),
+          // WHERE IT HAS BEEN GETTING HURT, in the last ten minutes. On the fleet row
+          // because the row is what a person actually reads, and because the number that
+          // matters is comparative: one character losing health while `travelling` is a
+          // bad route, half the fleet doing it is the roads.
+          hurt: (() => {
+            const segs = (s.hits?.segments || []).filter(g => Date.now() - g.last_at < 600_000);
+            if (!segs.length) return null;
+            const lost = segs.reduce((t, g) => t + g.lost, 0);
+            const travelling = segs.filter(g => g.doing === 'travelling')
+                                   .reduce((t, g) => t + g.lost, 0);
+            const worst = segs.reduce((a, g) => (a && a.lost >= g.lost ? a : g), null);
+            return { lost_10m: lost, while_travelling: travelling,
+                     squares: new Set(segs.map(g => `${g.room}:${g.col},${g.row}`)).size,
+                     worst: worst ? { room: worst.room_name ?? worst.room,
+                                      at: `${worst.col},${worst.row}`,
+                                      lost: worst.lost, hits: worst.hits,
+                                      doing: worst.doing } : null };
+          })(),
           // WHAT THIS ONE COULD ACTUALLY CAST, not merely what it knows.
           //
           // `create weapon` needs nothing, but `create food` needs 2 ElderBerry and
@@ -6073,7 +6417,15 @@ const TOOLS = [
           // supervisor for it. Omitting `hunt` on a start preserves what the keeper
           // already holds; the way to avoid needing to know that is to publish the value.
           autopilot: st ? { mode: st.mode, running: st.running, kills: st.did?.kills ?? 0,
+                            // Since the keeper started vs. in the last half hour. The
+                            // second is the one that says whether this character is
+                            // working NOW, which is the only thing a board is asked.
+                            kills_30m: st.did?.kills_30m ?? 0,
                             hunt: st.policy?.hunt ?? null } : null,
+          // Lifted onto the row itself as well as into `autopilot`, because the fleet
+          // board, the dashboard and the terminal all read rows and none of them should
+          // have to know that a kill count lives under the keeper.
+          kills_30m: st?.did?.kills_30m ?? 0,
           // Which farming pattern this one is running, so the ledger can compare them.
           strategy: st?.policy?.strategy ?? null,
           // WHO IT FIGHTS ALONGSIDE, and whether that is currently mutual. A pairing is
@@ -6826,7 +7178,14 @@ async function supplyBetween(a) {
       const holdStill = (sess) => {
         const p = autopilotIfAny(sess.name);
         if (!p?.running) return;
-        // Named, so the outage this creates is not later read as a keeper fault.
+        // ALREADY HELD BY SOMEBODY ELSE — leave it, and do not put it on the restore
+        // list. `running` stays true while a keeper is inert, so without this check a
+        // trade nested inside another errand would revive a keeper it never held, and
+        // hand the character back to a keeper mid-way through someone else's walk.
+        if (p.inert) return;
+        // Named, so the outage this creates is not later read as a keeper fault. It is no
+        // longer an outage at all — the keeper keeps watching — but the name is what the
+        // ledger reads and a deliberate hold must stay distinguishable from a fault.
         p.stop('held for a supply exchange — deliberate, this errand owns it');
         restore.push(sess);
       };

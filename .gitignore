@@ -36,6 +36,17 @@ node_modules/
 # for it, so this is the only copy. One server's characters and the words we put in their
 # mouths, so not reference material; worth backing up if you care about the fleet.
 /substrate/descriptions/
+# One JSON per character: where it was standing each time it took damage, folded into
+# segments by square. Written off the event stream rather than by the keeper, so it keeps
+# recording through a multi-minute travel and through an errand holding the keeper inert —
+# which is where most of this fleet's deaths happen and where nothing else is looking.
+# One server's characters and their bad afternoons, so not reference data.
+/substrate/hits/
+# One JSON per character: how long each map took to cross, per attempt, with how many exit
+# squares had to be tried. TIME EXPOSED is the travel number worth having — damage on the
+# road is normal in this game and is not a fault — and two minutes inside one room is a
+# slow crossing rather than a dangerous map. One server's characters and their journeys.
+/substrate/transits/
 /substrate/*.log
 # Which process m59-service.mjs last started, per fleet. Runtime state, and wrong the
 # moment it is read on any other machine.

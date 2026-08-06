@@ -72,6 +72,52 @@ export const WF = {
 // units per square (FinenessKodToClient shifts left by 4 to convert).
 export const CLIENT_FINENESS = 1024;
 export const LOG_CLIENT_FINENESS = 10;
+export const KOD_FINENESS = 64;                  // drawdefs.h:52
+export const LOG_KOD_FINENESS = 6;
+// drawdefs.h:60 — heights are stored in kod units and shifted into client units by
+// the same 4 bits as fine coordinates. Both directions, because the .roo stores kod
+// and every comparison in move.c is done in client units.
+export const heightKodToClient = h => h << (LOG_CLIENT_FINENESS - LOG_KOD_FINENESS);
+export const heightClientToKod = h => h >> (LOG_CLIENT_FINENESS - LOG_KOD_FINENESS);
+
+// THE CLIMB LIMIT IS NOT IN kod. It is `clientd3d/move.c:55`:
+//
+//   #define MAX_STEP_HEIGHT (HeightKodToClient(24))
+//
+// which is worth saying out loud because the plan that sent me looking expected to
+// find it in kod, and there is nothing there to find. That is not an oversight in the
+// game — it is the same fact as everything else here: `UserMove` does no geometry, so
+// the step limit only ever needed to exist in the collision detector, and the
+// collision detector is the client. We are the client. If we do not enforce 24, then
+// for us it does not exist, and we will walk up cliffs.
+export const MAX_STEP_HEIGHT_KOD = 24;
+export const MAX_STEP_HEIGHT = heightKodToClient(MAX_STEP_HEIGHT_KOD);   // 384 client units
+
+// clientd3d/draw3d.c:80 — how far a wading sector sinks you, indexed by the sector's
+// two depth bits. This matters to movement and not just to drawing: standing in water
+// LOWERS you, so the far side of a wall is easier to step onto out of deep water than
+// off dry land, and move.c subtracts it before the climb test.
+export const SECTOR_DEPTHS = [0, (CLIENT_FINENESS / 5) | 0, (2 * CLIENT_FINENESS / 5) | 0,
+                              (3 * CLIENT_FINENESS / 5) | 0];   // {0, 204, 409, 614}
+export const sectorDepth = flags => flags & 0x03;                // bsp.h:70
+
+// Sector flags, clientd3d/bsp.h:62.
+export const SF = {
+  DEPTH_MASK: 0x00000003,
+  SCROLL_MASK: 0x0000000C,
+  SCROLL_FLOOR: 0x00000080, SCROLL_CEILING: 0x00000100,
+  FLICKER: 0x00000200,
+  SLOPED_FLOOR: 0x00000400, SLOPED_CEILING: 0x00000800,
+  HAS_ANIMATED: 0x00001000,
+};
+
+// THE PLAYER IS A CYLINDER, and both of its dimensions are movement rules.
+// clientd3d/game.c:261. `min_distance` — how close to a wall you may get — is
+// width/2 (move.c:122), so a corner inset for route planning is 248 client units,
+// not zero. The height is what decides whether you fit UNDER something.
+export const PLAYER_WIDTH = 31 * KOD_FINENESS / 4;   // 496 client units
+export const PLAYER_RADIUS = PLAYER_WIDTH / 2;       // 248 — move.c:122
+export const PLAYER_HEIGHT = 3 * CLIENT_FINENESS / 4; // 768 — game.c:262
 
 // blakserv/roomdata.c:31. Row grows SOUTH, col grows EAST — the same convention
 // Room.SomethingMoved uses when it decides which edge you crossed.
@@ -96,8 +142,27 @@ export const DEFAULT_ROO_DIRS = [
 ];
 
 export class RoomGeometry {
-  constructor({ file, version, rows, cols, grid, flags, monsterGrid, walls, sidedefs, clientSize }) {
-    Object.assign(this, { file, version, rows, cols, grid, flags, monsterGrid, walls, sidedefs, clientSize });
+  constructor({ file, version, rows, cols, grid, flags, monsterGrid, walls, sidedefs, sectors, clientSize }) {
+    Object.assign(this, { file, version, rows, cols, grid, flags, monsterGrid, walls, sidedefs, sectors, clientSize });
+  }
+
+  // The relief, as a spread rather than a per-square lookup — a per-square answer needs
+  // the BSP leaf a point falls in, which is task "BSP nodes" and not yet built. This is
+  // enough to tell a flat room from a stepped one and to prove the parse is sane.
+  get heightSummary() {
+    if (!this.sectors?.length) return null;
+    const f = this.sectors.map(s => s.floorHeight), c = this.sectors.map(s => s.ceilingHeight);
+    return {
+      sectors: this.sectors.length,
+      floorMin: Math.min(...f), floorMax: Math.max(...f),
+      ceilingMin: Math.min(...c), ceilingMax: Math.max(...c),
+      sloped: this.sectors.filter(s => s.slopedFloor || s.slopedCeiling).length,
+      wading: this.sectors.filter(s => s.depth > 0).length,
+      // The interesting number: walls whose lower step is real but climbable, i.e.
+      // stairs. A room with none of these is flat and the Z check cannot change it.
+      steps: (this.walls || []).filter(w => w.z1 > w.z0 && (w.z1 - w.z0) <= MAX_STEP_HEIGHT).length,
+      cliffs: (this.walls || []).filter(w => (w.z1 - w.z0) > MAX_STEP_HEIGHT).length,
+    };
   }
 
   // Which grid to trust. monster_grid is the newer, stricter geometry — kod picks
@@ -486,6 +551,159 @@ function readCoord(buf, p, version) {
   return version >= 13 ? buf.readFloatLE(p) : buf.readInt32LE(p);
 }
 
+// A SECTOR RECORD IS NOT FIXED-LENGTH, which is the whole reason this needs care.
+// clientd3d/bspload.c LoadSectors (line 736) reads 19 bytes, then a speed byte from
+// version 10, and THEN — inline, still inside the same loop iteration — a 46-byte
+// slope block for the floor if SF_SLOPED_FLOOR is set and another for the ceiling if
+// SF_SLOPED_CEILING is. So sectors cannot be indexed by multiplying; they have to be
+// walked in order, and a parser that assumes a stride silently reads garbage from the
+// first sloped sector onward. Meridian has sloped floors in the outdoor areas, so
+// "it worked on the room I tested" is exactly how that bug would present.
+//
+//   server_id(2) floor_type(2) ceiling_type(2) tx(2) ty(2)
+//   floor_height(2) ceiling_height(2) light(1) flags(4) [speed(1) if v>=10]
+//   [slope(46) if SF_SLOPED_FLOOR] [slope(46) if SF_SLOPED_CEILING]
+//
+// The heights are read into a `WORD` by the client and then shifted left 4. They are
+// genuinely SIGNED — floors below the nominal zero are ordinary — and C's implicit
+// conversion of a WORD into the `int` parameter of HeightKodToClient is what makes
+// that work there. readInt16LE is the same thing said deliberately.
+const SLOPE_BYTES = 4 * 4 + 4 + 4 + 4 + 3 * 6;   // plane a,b,c,d | p0.x p0.y | angle | junk
+
+function readSlope(buf, p, version) {
+  const val = q => version >= 13 ? buf.readFloatLE(q) : buf.readInt32LE(q);
+  // bspload.c LoadSlopeInfo. c === 0 is a vertical plane, which the client rejects and
+  // replaces rather than dividing by zero; do the same so GetFloorHeight cannot NaN.
+  let a = val(p), b = val(p + 4), c = val(p + 8), d = val(p + 12);
+  if (c === 0) { a = 0; b = 0; c = 1024; d = 0; }
+  return { a, b, c, d, x0: val(p + 16), y0: val(p + 20) };
+}
+
+export function parseRooSectors(buf, version, sectorOff) {
+  const sectors = [];
+  if (!(sectorOff > 0 && sectorOff + 2 <= buf.length)) return sectors;
+  let q = sectorOff;
+  const n = buf.readUInt16LE(q); q += 2;
+  const fixed = 19 + (version >= 10 ? 1 : 0);
+  for (let i = 0; i < n; i++) {
+    if (q + fixed > buf.length) break;
+    const flags = buf.readInt32LE(q + 15);
+    const s = {
+      serverId: buf.readInt16LE(q),
+      floorType: buf.readInt16LE(q + 2),
+      ceilingType: buf.readInt16LE(q + 4),
+      tx: buf.readInt16LE(q + 6), ty: buf.readInt16LE(q + 8),
+      // Kept in CLIENT units, because that is the space every comparison happens in.
+      floorHeight: heightKodToClient(buf.readInt16LE(q + 10)),
+      ceilingHeight: heightKodToClient(buf.readInt16LE(q + 12)),
+      light: buf.readUInt8(q + 14),
+      flags,
+      speed: version >= 10 ? buf.readUInt8(q + 19) : 0,
+      depth: SECTOR_DEPTHS[sectorDepth(flags)],
+      slopedFloor: null, slopedCeiling: null,
+    };
+    q += fixed;
+    if (flags & SF.SLOPED_FLOOR) {
+      if (q + SLOPE_BYTES > buf.length) break;
+      s.slopedFloor = readSlope(buf, q, version); q += SLOPE_BYTES;
+    }
+    if (flags & SF.SLOPED_CEILING) {
+      if (q + SLOPE_BYTES > buf.length) break;
+      s.slopedCeiling = readSlope(buf, q, version); q += SLOPE_BYTES;
+    }
+    sectors.push(s);
+  }
+  return sectors;
+}
+
+// bspload.c GetFloorHeight / GetCeilingHeight. A flat sector is its stored height; a
+// sloped one solves its plane for z at that point. Both in client units.
+export function floorHeightAt(x, y, sector) {
+  if (!sector) return 0;
+  const s = sector.slopedFloor;
+  if (!s) return sector.floorHeight;
+  return Math.round((-s.a * x - s.b * y - s.d) / s.c);
+}
+export function ceilingHeightAt(x, y, sector) {
+  if (!sector) return CLIENT_FINENESS;
+  const s = sector.slopedCeiling;
+  if (!s) return sector.ceilingHeight;
+  return Math.round((-s.a * x - s.b * y - s.d) / s.c);
+}
+
+// bspload.c SetWallHeights (line 1324), the non-bowtie path. z0/z1 are the bottom and
+// top of the LOWER wall at endpoint 0 — the step — and z2/z3 the normal/upper split,
+// which is the headroom. zz* are the same four at endpoint 1.
+//
+// Bowties (a wall where which sector is higher SWAPS between its two endpoints) get
+// the same z1/z0 assignment as the normal case in the non-D3D branch, so for a
+// movement check — which only ever asks "how high is the step here" — treating them
+// as normal is faithful. The D3D branch differs only in what it draws.
+export function setWallHeights(wall, sectors) {
+  const S1 = wall.posSector > 0 ? sectors[wall.posSector - 1] : null;
+  const S2 = wall.negSector > 0 ? sectors[wall.negSector - 1] : null;
+  wall.sector1 = S1; wall.sector2 = S2;
+
+  if (!S1 && !S2) {
+    wall.z0 = wall.z1 = wall.zz0 = wall.zz1 = 0;
+    wall.z2 = wall.z3 = wall.zz2 = wall.zz3 = CLIENT_FINENESS;
+    return wall;
+  }
+  const only = S1 || S2;
+  if (!S1 || !S2) {
+    wall.z0 = wall.z1 = floorHeightAt(wall.x0, wall.y0, only);
+    wall.z2 = wall.z3 = ceilingHeightAt(wall.x0, wall.y0, only);
+    wall.zz0 = wall.zz1 = floorHeightAt(wall.x1, wall.y1, only);
+    wall.zz2 = wall.zz3 = ceilingHeightAt(wall.x1, wall.y1, only);
+    return wall;
+  }
+
+  const f1a = floorHeightAt(wall.x0, wall.y0, S1), f2a = floorHeightAt(wall.x0, wall.y0, S2);
+  const f1b = floorHeightAt(wall.x1, wall.y1, S1), f2b = floorHeightAt(wall.x1, wall.y1, S2);
+  if (f1a > f2a) {
+    wall.z1 = f1a; wall.zz1 = (f1b >= f2b) ? f1b : f2b;
+    wall.z0 = f2a; wall.zz0 = (f1b >= f2b) ? f2b : f1b;
+    wall.bowtie = !(f1b >= f2b);
+  } else {
+    wall.z1 = f2a; wall.zz1 = (f2b >= f1b) ? f2b : f1b;
+    wall.z0 = f1a; wall.zz0 = (f2b >= f1b) ? f1b : f2b;
+    wall.bowtie = !(f2b >= f1b);
+  }
+
+  const c1a = ceilingHeightAt(wall.x0, wall.y0, S1), c2a = ceilingHeightAt(wall.x0, wall.y0, S2);
+  const c1b = ceilingHeightAt(wall.x1, wall.y1, S1), c2b = ceilingHeightAt(wall.x1, wall.y1, S2);
+  if (c1a < c2a) { wall.z3 = c2a; wall.zz3 = c2b; wall.z2 = c1a; wall.zz2 = c1b; }
+  else           { wall.z3 = c1a; wall.zz3 = c1b; wall.z2 = c2a; wall.zz2 = c2b; }
+  return wall;
+}
+
+// CAN A PLAYER STANDING AT HEIGHT z CROSS THIS WALL? clientd3d/move.c:551, and it is
+// a three-part AND that must ALL hold before the wall is skipped:
+//
+//   (no below texture OR the step up is within MAX_STEP_HEIGHT)
+//   AND (no above texture OR there is player.height of headroom)
+//   AND the sidedef is WF_PASSABLE
+//
+// The middle and the last are the ones this repository had wrong by omission. We
+// treated `passable` as the whole answer, and it is only the third of three: a wall
+// flagged passable STILL BLOCKS if the step up is too tall or the gap too low. That is
+// precisely how a staircase and a cliff edge are told apart in this format, and
+// without it a route can be planned straight up a wall we would then fail to climb —
+// which reads, from the outside, as the server refusing a legal move.
+//
+// `side` is which side we are coming FROM: move.c picks the sidedef facing us and the
+// sector BEHIND the wall, because the wading depth that matters is the one we are
+// stepping INTO.
+export function canCrossWall(wall, z = 0, side = 'pos', { playerHeight = PLAYER_HEIGHT } = {}) {
+  const sd = side === 'pos' ? wall.posSidedefRec : wall.negSidedefRec;
+  const other = side === 'pos' ? wall.sector2 : wall.sector1;
+  if (!sd) return true;                       // move.c `continue`s on a null sidedef
+  const belowHeight = other ? other.depth : 0;
+  const stepOk = !sd.belowType || (wall.z1 - belowHeight - z) <= MAX_STEP_HEIGHT;
+  const headOk  = !sd.aboveType || (wall.z2 - z) >= playerHeight;
+  return stepOk && headOk && !!(sd.flags & WF.PASSABLE);
+}
+
 export function parseRooWalls(buf, version) {
   const mainOff = buf.readInt32LE(12);
   if (mainOff <= 0 || mainOff >= buf.length) return null;
@@ -538,6 +756,9 @@ export function parseRooWalls(buf, version) {
       walls.push({
         x0, y0, x1, y1,
         posSidedef: posNum, negSidedef: negNum,
+        // Both sidedefs kept, not just the drawing one: a crossing test asks about the
+        // side it is approaching from, and `sd` above is whichever the MAP prefers.
+        posSidedefRec: pos, negSidedefRec: neg,
         flags: sd ? sd.flags : 0,
         drawable: !!sd,
         passable: !!(sd && (sd.flags & WF.PASSABLE)),
@@ -550,11 +771,17 @@ export function parseRooWalls(buf, version) {
     }
   }
 
+  // Sectors last, because the heights they carry are what turns a wall list into a
+  // relief map — and then straight back onto the walls, which is where every
+  // movement check reads them from.
+  const sectors = parseRooSectors(buf, version, sectorOff);
+  for (const w of walls) setWallHeights(w, sectors);
+
   return {
     width, height,
     cols: width >> LOG_CLIENT_FINENESS, rows: height >> LOG_CLIENT_FINENESS,
     offsets: { nodeOff, wallOff, sidedefOff, sectorOff },
-    sidedefs, walls,
+    sidedefs, walls, sectors,
   };
 }
 
@@ -599,6 +826,7 @@ export function parseRoo(buf, file = '') {
   return new RoomGeometry({ file, version, rows, cols, grid, flags, monsterGrid,
                             walls: client ? client.walls : null,
                             sidedefs: client ? client.sidedefs : null,
+                            sectors: client ? client.sectors : null,
                             clientSize: client ? { width: client.width, height: client.height,
                                                    rows: client.rows, cols: client.cols } : null });
 }

@@ -162,11 +162,23 @@ function whoDropsItem(q) {
   return hits.sort((a, b) => (b.per_roll_percent ?? 0) - (a.per_roll_percent ?? 0));
 }
 
+// A SELLS ENTRY IS {id, cls, quantity} — THERE IS NO `name` ON IT.
+//
+// This matched against s.name, which is undefined on every row, so `sells elderberry`
+// answered "no merchant sells anything matching that" for an item sold in seven shops —
+// and I reported to the operator that buying reagents was impossible and the fleet could
+// only farm them. The broker's live `merchants` tool resolves the class to a display name
+// and had the right answer the whole time.
+//
+// Exactly the failure this tool was written to prevent, committed in the tool itself:
+// a field that does not exist, an empty result, and an empty result read as an answer.
+// Match on `cls`, which is what the file actually stores, and fall back to a string entry.
 function merchantsFor(q, side) {
   const n = norm(q);
   const out = [];
+  const label = (s) => (typeof s === 'string' ? s : (s?.cls ?? s?.name ?? ''));
   for (const m of DATASETS.merchants.rows()) {
-    const sells = (m.sells ?? []).filter(s => norm(typeof s === 'string' ? s : s?.name).includes(n));
+    const sells = (m.sells ?? []).filter(s => norm(label(s)).includes(n));
     if (side === 'sells' && sells.length) out.push({ ...m, matched: sells });
     if (side === 'buys') {
       // buys_anything is the honest answer for most of them; buying_rule is the text.
@@ -284,7 +296,7 @@ const CMDS = {
       if (!show({ item: q, merchants: hits })) return;
       for (const m of hits.slice(0, LIMIT))
         console.log(`  room ${String(m.room).padStart(5)}  ${String(m.cls ?? '').padEnd(22)} markup ${m.markup ?? '?'}` +
-                    `  sells: ${m.matched.map(x => (typeof x === 'string' ? x : x?.name)).join(', ')}`);
+                    `  sells: ${m.matched.map(x => (typeof x === 'string' ? x : (x?.cls ?? x?.name))).join(', ')}`);
     },
   },
   buys: {

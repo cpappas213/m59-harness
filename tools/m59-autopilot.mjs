@@ -80,6 +80,18 @@ const REST_VIGOR_CAP = 0.4;
 // rest of the session.
 const RECOVER_MAX_MS = 12 * 60_000;
 
+// HOW LONG A KEEPER STAYS INERT WITHOUT ANYBODY SAYING SO AGAIN.
+//
+// Every caller that holds a keeper pairs the hold with a revive, and the pairing is the
+// bug: `m59-outfit.mjs` has died between the two and left a character standing, and the
+// supervisor's own log carries the line `COULD NOT RESTART ITS KEEPER — it is standing
+// unattended` for exactly that. Inert is a better state to be abandoned in than stopped —
+// it is still recording — but it is not a state to be abandoned in for ever.
+//
+// Fifteen minutes is longer than any errand here: the slowest is a cross-town outfit run
+// at three or four. An errand still going at fifteen has already failed.
+const INERT_MAX_MS = 15 * 60_000;
+
 // Where to eat to when no strategy names a target. Resting stops awarding vigor at 80 of
 // 200 (REST_VIGOR_CAP), and the death rate falls roughly thirtyfold once a character is
 // clear of it — 101.8 deaths per thousand observations at or below 85, against 4.4 from
@@ -576,12 +588,25 @@ export class Autopilot {
     this.climbing = false;
     this.running = false;
     this.stopping = false;
+    // NOT ACTING IS NOT THE SAME AS NOT LOOKING. See goInert().
+    this.inert = null;
     this.journal = [];
     this.passes = 0;
     this.startedAt = null;
     this.lastError = null;
     // What actually happened, so a returning model gets a summary rather than a tail.
     this.tally = { kills: 0, deaths: 0, rests: 0, withdrawals: 0, rooms_moved: 0, looted: {} };
+    // WHEN each kill happened, not just how many there have been.
+    //
+    // A running total answers "has this character ever worked", and that is not the
+    // question anyone asks of a fleet board. A character with 40 kills and none in the
+    // last hour looks identical to one earning steadily, and the difference is the entire
+    // point of watching. It is also reset by every keeper restart, so on a fleet whose
+    // keepers get restarted constantly the total mostly measures uptime.
+    //
+    // Timestamps cost nothing and answer the real question. Bounded because a good session
+    // is a few hundred, and nothing here looks further back than an hour.
+    this.killTimes = [];
     // EVERY CAST, AND EVERY CAST IT DECIDED AGAINST.
     //
     // The keeper's self-supply decisions are the ones hardest to check from outside,
@@ -2588,6 +2613,15 @@ export class Autopilot {
   // there, because a parked keeper is awake and a stopped one is not.
   static PARK_GRACE_MS = 90_000;
 
+  // How many kills inside the last `ms`. Survives a keeper restart no better than the
+  // total does — the array lives on the keeper — but the WINDOW is what saves it: a
+  // restart five minutes ago and an idle hour both read as a low number, and both mean
+  // "this character is not earning right now", which is the same answer.
+  killsSince(ms) {
+    const from = Date.now() - ms;
+    return (this.killTimes || []).filter(t => t >= from).length;
+  }
+
   activity() {
     if (!this.running) return 'stopped';
     // A keeper whose session died keeps looping and keeps reporting whatever it was
@@ -2595,6 +2629,10 @@ export class Autopilot {
     // board as sixteen of them holding walls. The loop is running; the character is
     // not there.
     if (!this.s?.live) return 'NOT IN GAME';
+    // BEFORE ANYTHING ELSE IT WOULD OTHERWISE CLAIM TO BE DOING. An inert keeper still
+    // holds a safe spot, a mode and a hunt, and reporting any of those on the board would
+    // say a character is working when something else is walking it across the world.
+    if (this.inert) return `inert — ${this.inert.why || 'something else is driving'}`;
     if (this.parking)
       return this.parking.ready
         ? (this.hold ? 'parked behind a wall, ready for the update' : 'parked in the open, ready for the update')
@@ -3062,9 +3100,25 @@ export class Autopilot {
       frames,
       decisions: (this.journal || []).slice(-14),
       text: this.recentText(30),
+      // WHERE THE DAMAGE ACTUALLY LANDED, which the three above cannot say.
+      //
+      // Frames are one per pass and a pass can be a multi-minute travel await, so the
+      // record of a travelling death is a before and an after with the death in the gap.
+      // These come off the event stream instead — health is pushed, one packet per change
+      // — so they keep arriving through exactly that gap, and through an errand holding
+      // the keeper inert. The last twenty segments are about the last few minutes of
+      // trouble, which is longer than any fight that kills one of these characters.
+      //
+      // Read them against `frames`: a death whose frames say "inn, full health" and whose
+      // hits say "nine squares of room 562 while travelling" is not a mystery, it is a
+      // journey nobody was watching.
+      hits: (this.s.hits?.segments || []).slice(-20),
       note: 'frames are one keeper pass each, oldest first. `text` is what the server ' +
-            'sent, `decisions` is what the keeper chose. Read them side by side against ' +
-            'the timestamps — the interesting moment is usually where they disagree.',
+            'sent, `decisions` is what the keeper chose, `hits` is where damage landed ' +
+            'and comes off the event stream rather than the keeper — so it is the only ' +
+            'one of the four that keeps recording during a travel or an errand. Read ' +
+            'them side by side against the timestamps — the interesting moment is ' +
+            'usually where they disagree.',
     };
   }
 
@@ -3540,6 +3594,10 @@ export class Autopilot {
       running: this.running, mode: this.mode, policy: this.policy,
       // Null unless a fleet update is waiting on this character. See park().
       parked: this.parkStatus(),
+      // Null unless something else is driving this character. `running: true` with
+      // `inert` set is the normal shape of an errand in progress — the loop is watching
+      // and recording, and it is not the thing moving the character.
+      inert: this.inertStatus(),
       // What it is up to, in the words someone watching would use. Belongs here rather
       // than only on the fleet snapshot: anything reading a keeper's status — the
       // terminal board, another agent — wants the sentence, not the time buckets.
@@ -3550,6 +3608,10 @@ export class Autopilot {
       // there for when the summary is surprising.
       did: {
         ...this.tally,
+        // THE NUMBER THAT MEANS SOMETHING RIGHT NOW. `kills` is since this keeper started
+        // and this keeper is restarted constantly, so it mostly measures uptime. This says
+        // whether the character is earning at the moment, which is what a board is for.
+        kills_30m: this.killsSince(30 * 60_000),
         looted: Object.entries(this.tally.looted).map(([k, n]) => `${k}${n > 1 ? ` x${n}` : ''}`),
         rooms_visited: [...this.visited],
       },
@@ -3711,7 +3773,75 @@ export class Autopilot {
   //
   // Cancelling the pending stop is the whole fix; loop() re-checks the flag on its way
   // out so a cancellation lands even at the last moment.
+  // INERT: STILL WATCHING, JUST NOT ACTING.
+  //
+  // Almost every "stop the keeper" in this repository does not want the keeper gone. It
+  // wants the keeper to stop DRIVING, because something else is about to — an errand
+  // walking the character to a smith, a supply trade, a person taking the controls. Only
+  // one thing may drive a character at a time, and that is the whole requirement.
+  //
+  // Stopping is a very expensive way to get it. A stopped keeper writes no frames, runs
+  // no observe(), records no death and files no post-mortem — so the character keeps
+  // playing and the instruments go dark, which is precisely when we most want them. It is
+  // why the post-mortem carries `during_keeper_outage` at all: deaths kept happening in
+  // exactly the windows we had chosen to stop looking. Three of the last fourteen death
+  // records died inside one, one of them 794 seconds in, and the field exists because
+  // there was nothing else to say about them.
+  //
+  // Inert is the same non-interference with the instruments left on. The loop keeps
+  // running, so noteWhere, declareInterest, the partner register, observe(), recordFrame()
+  // and the death record all keep working; everything from the first branch that would
+  // MOVE, SWING, SPEAK, TRADE or CAST is skipped.
+  //
+  // THE ONE EXEMPTION IS DEATH, and it is not a compromise. A character in the Underworld
+  // has no exits, cannot be observed and cannot be recorded — a corpse produces no
+  // telemetry at all — so escaping is what makes the rest of this state worth having.
+  // Whatever errand was driving has already failed by then; its travel calls are the
+  // thing reporting so.
+  //
+  // AND IT HAS A DEADLINE, because an errand that crashes between goInert and revive
+  // would otherwise leave a character watching itself for the rest of the session. Every
+  // caller here restores explicitly; the deadline is for the ones that do not get to.
+  goInert(why = null, { maxMs = INERT_MAX_MS } = {}) {
+    if (this.inert) return this.inertStatus();
+    this.inert = { why, at: Date.now(), maxMs };
+    // Everything learned about which squares hold, in case the process goes away while
+    // we are in this state. Same reason stop() does it.
+    this.book.save();
+    // The ledger gets it too, so a death in this window is attributable. Deliberately a
+    // DIFFERENT event from 'stop': the whole point is that this outage is not one.
+    uptime.record(this.s.name, 'inert', { why, room: this.s.world?.room?.num ?? null });
+    this.note('going inert', {
+      why, what_happens: 'the keeper keeps looking and keeps recording — frames, ' +
+        'observations, the death record — and stops moving, swinging, speaking and trading. ' +
+        'Something else is driving now',
+      until: 'revive(), start(), or ' + Math.round(maxMs / 60_000) + ' minutes, whichever is first' });
+    return this.inertStatus();
+  }
+
+  revive(why = null) {
+    if (!this.inert) return null;
+    const held = Date.now() - this.inert.at;
+    uptime.record(this.s.name, 'revive', { why, held_ms: held });
+    this.inert = null;
+    this.note('no longer inert', { why, was_inert_for_s: Math.round(held / 1000) });
+    return null;
+  }
+
+  inertStatus() {
+    if (!this.inert) return null;
+    return { inert: true, why: this.inert.why,
+             for_s: Math.round((Date.now() - this.inert.at) / 1000),
+             gives_up_after_s: Math.round(this.inert.maxMs / 1000) };
+  }
+
   start() {
+    // A start on an inert keeper is a revive. Every caller that held one already pairs
+    // its hold with a `start`, so this is what makes the change invisible to them.
+    if (this.inert) {
+      this.revive('started again');
+      if (this.running) { this.note('started', { mode: this.mode, hunt: this.policy.hunt }); return this.status(); }
+    }
     if (this.running && this.stopping) {
       this.stopping = false;
       this.note('start cancelled a stop that had not taken effect yet', {
@@ -3752,8 +3882,23 @@ export class Autopilot {
     return this.status();
   }
 
-  stop(why = null) {
+  // STOPPING NOW MEANS GOING INERT, and a real stop has to be asked for.
+  //
+  // Every caller of this wanted the same thing — stop driving, something else is about to
+  // — and none of them wanted the instruments switched off, which is what they were
+  // getting. So the default is the one that keeps looking, and `hard` is for the case
+  // where the keeper genuinely has to end: the object is being discarded, or the process
+  // is going away and the loop must not outlive it.
+  //
+  // The distinction is worth keeping rather than deleting the hard path: an inert keeper
+  // is still a running loop holding a session, and dropAutopilot must be able to get rid
+  // of one. See goInert for why everything else should not.
+  stop(why = null, { hard = false } = {}) {
+    if (!hard) { this.goInert(why); return this.status(); }
     this.stopping = true;
+    // A hard stop leaves nothing behind to revive, so clear this rather than letting a
+    // later start() see a stale hold and report a revive that did not happen.
+    this.inert = null;
     // Everything learned about which squares hold, before this keeper goes away.
     this.book.save();
     // The character is about to be left standing exactly where it is, in whatever room
@@ -4135,6 +4280,39 @@ export class Autopilot {
         this.note('could not escape — will keep trying', { why: e.reason, tried: e.tried });
       }
       return;
+    }
+
+    // ============================ INERT STOPS HERE ============================
+    //
+    // Everything above this line is looking: where we are, what we need, what our partner
+    // should know, the observation, the frame, and — if it came to it — the death record
+    // and the walk out of the Underworld. Everything below is DOING, and while something
+    // else is driving this character we must not.
+    //
+    // Placed here rather than at the top of the pass because that is the whole point of
+    // the state. A keeper stopped for an errand went blind, and the deaths that happened
+    // in those windows are the ones nothing can explain afterwards.
+    if (this.inert) {
+      // The deadline. An errand that crashed between the hold and the restore would
+      // otherwise leave a character watching itself until the next broker restart.
+      if (Date.now() - this.inert.at > this.inert.maxMs) {
+        const held = Math.round((Date.now() - this.inert.at) / 1000);
+        const why = this.inert.why;
+        this.revive('nobody came back for it');
+        this.note('reviving myself — nobody came back', {
+          was_inert_for_s: held, was_held_for: why,
+          why: 'whatever took the controls has not given them back inside the deadline, and ' +
+               'an unattended character is worse than a contested one. If that errand is ' +
+               'still running it will now report being fought for control, which is the ' +
+               'symptom worth seeing' });
+        // Fall through and act on this pass: the character has been standing still long
+        // enough already.
+      } else {
+        // NOT A STALL. The supervisor restarts keepers that report no progress, and an
+        // inert keeper is doing exactly what it was asked to do.
+        this.progress('inert — something else is driving');
+        return;
+      }
     }
 
     // Just came back from the dead. Everything carried dropped where we fell, so
@@ -5857,6 +6035,8 @@ export class Autopilot {
       const looted = (f.looted || []).map(x => x.name + (x.amount ? ` x${x.amount}` : ''));
       if (f.killed) {
         this.tally.kills++;
+        this.killTimes.push(Date.now());
+        if (this.killTimes.length > 500) this.killTimes.shift();
         // A kill means the wilderness is working again, so the run of flees that would
         // otherwise accumulate over a long healthy session is cleared. Without this a
         // character that fled three times an hour ago gets marched to town mid-fight.
@@ -7144,7 +7324,10 @@ export function autopilotFor(session) {
 }
 export function dropAutopilot(name) {
   const p = pilots.get(name);
-  if (p) p.stop();
+  // HARD, because the object is being thrown away. An inert keeper is a running loop
+  // holding a session; leaving one behind here would keep a discarded autopilot alive and
+  // recording against a character nobody is tracking any more.
+  if (p) p.stop('the keeper is being discarded', { hard: true });
   pilots.delete(name);
 }
 export const autopilotIfAny = (name) => pilots.get(name) || null;

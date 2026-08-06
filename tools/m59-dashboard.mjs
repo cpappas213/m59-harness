@@ -253,6 +253,12 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [] } 
       <td>${esc(r.strategy ?? '—')}</td>
       <td class="num ${r.deaths ? 'bad' : 'dim'}">${r.deaths}</td>
       <td class="num dim">${r.kills ?? 0}</td>
+      <!-- KILLS IN THE LAST HALF HOUR. The lifetime count answers "has this character ever
+           worked", which nobody is asking: it is reset by every keeper restart, so on this
+           fleet it largely measures uptime, and a character with forty kills and none since
+           breakfast renders identically to one earning steadily. Zero here is the row worth
+           looking at, so it is coloured rather than dimmed. -->
+      <td class="num ${(r.kills_30m ?? 0) > 0 ? 'good' : 'bad'}">${r.kills_30m ?? 0}</td>
       <td class="room">${roomLink(r.room, r.room_num)}</td>
       <td class="doing">${esc(r.activity ?? '—')}</td>
     </tr>`;
@@ -413,7 +419,8 @@ ${controls}
       <thead><tr><th>character</th><th class="num">level</th><th class="num">gained</th>
         <th>health</th><th>mana</th><th>vigor</th>
         <th class="num">food?</th><th class="num">weapon?</th>
-        <th>strategy</th><th class="num">deaths</th><th class="num">kills</th><th>where</th>
+        <th>strategy</th><th class="num">deaths</th><th class="num">kills</th>
+        <th class="num" title="kills in the last 30 minutes — the lifetime count is reset by every keeper restart, so it mostly measures uptime">kills/30m</th><th>where</th>
         <th>doing</th></tr></thead>
       <tbody>${fleetRows || '<tr><td colspan="13" class="dim">nothing recorded yet</td></tr>'}</tbody>
     </table>

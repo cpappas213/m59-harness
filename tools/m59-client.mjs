@@ -427,6 +427,33 @@ export class M59Client {
 
   get self() { return this.selfId ? this.room.objects.get(this.selfId) : undefined; }
 
+  // CLIENT-SIDE PREDICTION OF OUR OWN POSITION, which is what the real client does and
+  // what this game's server expects it to do.
+  //
+  // `UserMove` calls `Room.SomethingMoved` directly and `ReqSomethingMoved` is BYPASSED for
+  // users — room.kod's comment on that line is "already been checked by client (HAHA!)".
+  // There is no geometry, distance or occupancy validation on a user move. So a move we
+  // sent is a move that happened, and asking the server where we are afterwards is asking
+  // it to repeat what we just told it.
+  //
+  // It is not free of risk and the risk is named rather than hidden: nothing here is
+  // confirmation, and a caller that genuinely needs to know whether a step HAPPENED —
+  // rather than where we now are — must ask for a real read. `predicted` is set so the
+  // difference is visible to anything that cares, and cleared the moment the server says
+  // anything about this object, which BP_MOVE and BP_ROOM_CONTENTS both do.
+  predictSelf({ col, row, x, y } = {}) {
+    const me = this.self;
+    if (!me) return null;
+    const half = KOD_FINENESS >> 1;
+    Object.assign(me, {
+      col, row,
+      x: x ?? (col * KOD_FINENESS + half),
+      y: y ?? (row * KOD_FINENESS + half),
+      predicted: true,
+    });
+    return me;
+  }
+
   // Stats are identified by their (group, slot) position, not by name — their
   // `name_res` resolves to a bitmap filename. Index by both the slot pair and the
   // name STAT_NAMES gives it, so an agent can ask for "health".
@@ -1053,11 +1080,34 @@ export class M59Client {
         const res = parseMove(body);
         if (!this.check('MOVE', res)) break;
         const o = this.room.objects.get(res.id);
-        if (o) Object.assign(o, { x: res.x, y: res.y, col: res.col, row: res.row });
+        // Anything the SERVER says about this object supersedes a prediction, so the flag
+        // is cleared here rather than left to rot — a stale `predicted: true` on a
+        // confirmed position would make every later reader distrust a good reading.
+        if (o) Object.assign(o, { x: res.x, y: res.y, col: res.col, row: res.row, predicted: false });
         // Our own moves confirm what the server accepted, which is the only
         // trustworthy position — dead reckoning drifts and illegal moves are
         // simply refused with no reply.
-        if (res.id === this.selfId) this.emit('moved', { col: res.col, row: res.row });
+        if (res.id === this.selfId) { this.emit('moved', { col: res.col, row: res.row }); break; }
+        // SOMEBODY ELSE MOVED, and until now nothing could see it.
+        //
+        // The room map was being updated from these packets and the fact of the move was
+        // then thrown away, so a character standing in a room could tell you where another
+        // player IS but never that they had gone anywhere — which makes it impossible to
+        // measure anyone's movement but our own. That is the whole basis of a baseline:
+        // to know whether 285 seconds to cross a map is the map or is us, somebody has to
+        // watch a person do it. See m59-watch.mjs.
+        //
+        // PLAYERS ONLY. Every monster in a room emits one of these several times a second,
+        // and the event ring is 500 entries shared with combat — publishing them all would
+        // evict everything else in a busy room within seconds. A player move is rare and
+        // is the one worth having.
+        //
+        // The payload deliberately has no `kind` field: emit() spreads data over the event,
+        // so a field of that name would replace the event's own and every listener waiting
+        // on 'player-moved' would starve while the emit itself looked fine.
+        if (o && (o.flags & OF.PLAYER))
+          this.emit('player-moved', { id: res.id, who: this.rsc.get(o.nameRsc) ?? null,
+                                      col: res.col, row: res.row, x: res.x, y: res.y });
         break;
       }
 

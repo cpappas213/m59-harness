@@ -368,9 +368,9 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/<name>.mjs`. Only the chat responder needs `npm install`.
 - `M59_ROOT` points at the Meridian 59 source tree. The compendium's citations
   and the Python analysis scripts both read it.
-- Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (91),
+- Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (93),
   `node tools/m59-chat-test.mjs` (128) and
-  `node tools/m59-rest-test.mjs` (15) and
+  `node tools/m59-rest-test.mjs` (38) and
   `node tools/m59-ledger-test.mjs` (15) and
   `node tools/m59-escape-test.mjs` (70) and
   `node tools/m59-combat-test.mjs` (328) and
@@ -382,7 +382,10 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-localclient-test.mjs` (55) and
   `node tools/m59-bank-test.mjs` (52) and
   `node tools/m59-describe-test.mjs` (52) and
-  `node tools/m59-party-test.mjs` (57). The rest need a live server —
+  `node tools/m59-party-test.mjs` (57) and
+  `node tools/m59-hits-test.mjs` (41) and
+  `node tools/m59-roo-test.mjs` (42, of which 9 skip without a copy of the game's
+  `resource/rooms`). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on
   8899 and fail with `ECONNREFUSED` without one, which is not a regression.
 - **Do not `import` `m59-broker.mjs` to check it.** Importing runs it: it tries to

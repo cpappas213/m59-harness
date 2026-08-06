@@ -322,20 +322,35 @@ console.log('\n--- stopping is not instant, and starting has to know that ---');
   p.policy.idleMs = 10;
   p.start();
   ok('starts', p.running);
-  p.stop();
-  ok('a stop is only a request at first', p.running && p.stopping,
+  // THE ORDINARY STOP NO LONGER HAS THIS RACE, because it no longer ends the loop: it
+  // makes the keeper inert, which takes effect on the flag rather than at a pass
+  // boundary. That is the point of it — see Autopilot.goInert — and it is worth pinning
+  // that the instant path really is instant.
+  p.stop('held for an errand');
+  ok('the ordinary stop takes effect immediately', p.running && !!p.inert,
+     'nothing has to wait for the pass to end, because the loop is not ending');
+  p.start();
+  ok('and a start hands the controls straight back', p.running && !p.inert);
+
+  // THE HARD STOP STILL HAS IT, and always will: ending a loop means waiting for the
+  // pass it is inside, and a walk is longer than a pass. This is the sequence that
+  // stranded three characters — stop, walk, start — where the start landed while the old
+  // loop was still winding down, returned "already going", and was then switched off by
+  // the very loop it had declined to replace.
+  p.stop('code is being reloaded', { hard: true });
+  ok('a hard stop is only a request at first', p.running && p.stopping,
      'the loop is still mid-pass; it has not noticed yet');
   p.start();
-  ok('a start cancels a stop that has not landed', p.running && !p.stopping);
+  ok('a start cancels a hard stop that has not landed', p.running && !p.stopping);
   ok('and says so in the journal',
      p.journal.some(e => /start cancelled a stop/.test(e.what)));
 
   await new Promise(r => setTimeout(r, 150));   // let several passes go by
   ok('it is still running afterwards', p.running,
      'the winding-down loop must not switch off the keeper that replaced its orders');
-  p.stop();
+  p.stop('really stopping now', { hard: true });
   await new Promise(r => setTimeout(r, 150));
-  ok('and an uncancelled stop still stops it', !p.running);
+  ok('and an uncancelled hard stop still stops it', !p.running);
 }
 
 console.log('\n--- friendly bots are not a monster swarm ---');

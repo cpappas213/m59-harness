@@ -145,7 +145,8 @@ function listView() {
   ].join(' · ')));
   L.push('');
   L.push(c.dim('  ' + pad('character', 11) + pad('lvl', 4) + pad('health', 14) +
-               pad('mana', 13) + pad('vigor', 14) + pad('w/f', 5) + pad('spot', 7) + 'doing'));
+               pad('mana', 13) + pad('vigor', 14) + pad('w/f', 5) + pad('spot', 7) +
+               pad('k/30m', 7) + 'doing'));
 
   for (let i = 0; i < S.rows.length; i++) {
     const r = S.rows[i];
@@ -159,6 +160,7 @@ function listView() {
     // plays, so "no keeper", zero kills and a stalled activity are all correct and none
     // of them are a problem to go and fix.
     const mine = !!r.piloted;
+    const k30 = r.kills_30m ?? r.ap?.did?.kills_30m ?? 0;
     const line =
       pad(mine ? c.cyan(r.character ?? r.agent) : (r.character ?? r.agent), 11) +
       pad(String(r.level ?? '?'), 4) +
@@ -166,7 +168,14 @@ function listView() {
       pad(bar(mp.v, mp.max, true) + ' ' + c.dim(pad(r.mana ?? '—', 6)), 13) +
       pad(bar(vg.v, vg.max) + ' ' + c.dim(pad(String(vg.v ?? '—'), 7)), 14) +
       pad(wf, 5) + pad(spot, 7) +
-      (mine ? c.cyan('YOU — ') : '') + c.dim(cut(r.ap?.activity ?? '', mine ? 28 : 34));
+      // KILLS IN THE LAST HALF HOUR, not since the keeper started. The lifetime count is
+      // reset by every restart and this fleet's keepers get restarted constantly, so it
+      // largely measures uptime — a character with forty kills and none this hour looks
+      // exactly like one that is earning. Zero is the interesting value, so it is the one
+      // that gets a colour; a piloted character is exempt, because a person playing is
+      // not farming and a red nought there is noise.
+      pad(k30 > 0 ? c.green(String(k30)) : (mine ? c.dim('—') : c.red('0')), 7) +
+      (mine ? c.cyan('YOU — ') : '') + c.dim(cut(r.ap?.activity ?? '', mine ? 22 : 28));
     // Two different marks in one gutter: ▸ is where the cursor is, ◆ is where the person
     // is. They are independent — you can be scrolled somewhere else entirely — so one
     // must not hide the other.
