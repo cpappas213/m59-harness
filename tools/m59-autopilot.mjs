@@ -68,6 +68,18 @@ const CROWD_RADIUS = 4;
 // more is asking to sit until the timeout expires. The rest comes from food.
 const REST_VIGOR_CAP = 0.4;
 
+// HOW LONG A POST-DEATH RECOVERY IS ALLOWED TO TAKE before the character goes back out
+// anyway. recovered() waits on health, mana AND vigor, and each of the three is a way to
+// wait for something that is not arriving — a health point that never lands, a mana bar
+// held down by something chipping at us in a room we believed was safe.
+//
+// Twelve minutes is well clear of a real recovery. A character that walks to a corner of
+// an inn and sits reaches full health and the 80 vigor resting can give in about two, and
+// a full mana bar from empty in five or six. Anything past that is not recovering, it is
+// stuck — and a stuck character should show up as a stall, not vanish into an inn for the
+// rest of the session.
+const RECOVER_MAX_MS = 12 * 60_000;
+
 // Where to eat to when no strategy names a target. Resting stops awarding vigor at 80 of
 // 200 (REST_VIGOR_CAP), and the death rate falls roughly thirtyfold once a character is
 // clear of it — 101.8 deaths per thousand observations at or below 85, against 4.4 from
@@ -145,6 +157,14 @@ export const DEBUG_STATES = {
 // (character, condition) so one noisy character cannot mask another's first report, and
 // what it suppresses is COUNTED and stated in the next tell rather than dropped, because
 // "the 40th time in five minutes" is itself the finding.
+// THE MASTER SWITCH, AND IT IS OFF.
+//
+// Opt-in rather than opt-out because the cost of being wrong is asymmetric: forgetting to
+// turn it off means the fleet talks to a live shared server all day, and forgetting to
+// turn it on means one debugging session prints a "debug tells are off" reason and you
+// set the variable. Any value other than empty/0/false enables it.
+const DEBUG_TELLS_ON = !['', '0', 'false', 'no', 'off']
+  .includes(String(process.env.M59_DEBUG_TELLS ?? '').toLowerCase());
 const DEBUG_TELL_COOLDOWN_MS = Number(process.env.M59_DEBUG_TELL_MS || 5 * 60_000);
 const tellCooldown = new Map();     // "character|state" -> last sent at
 const tellSuppressed = new Map();   // "character|state" -> how many since then
@@ -1179,6 +1199,32 @@ export class Autopilot {
       skills.weaponScore(o.name ?? c.rsc?.get?.(o.nameRsc) ?? '') > 0);
   }
 
+  // THE SAME QUESTION, FAILING THE OTHER WAY.
+  //
+  // armed() treats "cannot answer" as armed, and that is right where it is used: a
+  // failed read must not stop a character mid-fight. It is exactly wrong for deciding
+  // whether to WALK OUT OF AN INN, and that difference killed characters.
+  //
+  // `known` is false until the first BP_USE_LIST lands, which is precisely the window
+  // just after a login — and a resume logs in twenty-one characters at once. So on the
+  // pass right after a restart, every character answers "armed" on no evidence at all,
+  // the farm branch reads that as permission, and marches an empty-handed character out
+  // of the sanctuary it woke up in. Zoot did it with ten mana and no weapon: pass 0
+  // "started", pass 2 "this room spawns nothing at all — going back to work", and dead
+  // in the Yonder Inn's back yard four minutes later without one unarmed note in the
+  // journal, because nothing ever asked a question this could answer no to.
+  //
+  // Leaving safety is the one decision that should need POSITIVE EVIDENCE. Waiting a
+  // pass for the use list costs a second; being wrong costs the character everything it
+  // was carrying.
+  armedForSure() {
+    const c = this.s.client;
+    const eq = c?.equipment?.();
+    if (!eq || eq.known === false) return false;       // no evidence is not a weapon
+    return (eq.equipped || []).some(o =>
+      skills.weaponScore(o.name ?? c.rsc?.get?.(o.nameRsc) ?? '') > 0);
+  }
+
   // WHOLE ENOUGH TO GO BACK OUT, asked only after a death.
   //
   // Health to nearly full, and vigor to what RESTING CAN ACTUALLY DELIVER — not to
@@ -1192,16 +1238,54 @@ export class Autopilot {
   // sits at 28/29 for a long time, and the last point is not worth blocking on.
   // Deliberately the same pair of numbers as the sanctuary check at the top of rest().
   //
-  // Mana is not required. It regenerates on its own, nothing here needs it to swing,
-  // and a caster that wants it will sit down again of its own accord.
+  // MANA IS REQUIRED NOW, AND IT WAS THE MISSING THIRD. This used to say mana was not
+  // needed because nothing needs it to swing. That is true and it is beside the point:
+  // `create weapon` costs 15, it is the only route to a weapon for a character that
+  // just lost everything it owned, and a character that leaves the inn at 10 mana
+  // cannot cast it and cannot get back above 10 anywhere else — mana barely moves while
+  // something is hitting you.
+  //
+  // That is the loop this closes. Zoot, Rizzo and Animal were all released by the old
+  // bar — full health, vigor at the cap, ten-odd mana, no weapon — walked to a hunting
+  // ground they could not fight in, and died there. Unlike vigor, mana genuinely does
+  // refill on its own while sitting, so waiting for it is a wait that ends.
+  //
+  // Vigor stays at what RESTING CAN ACTUALLY DELIVER — not full. Everything above
+  // REST_VIGOR_CAP (80 of 200) has to be eaten, so demanding more would demand a number
+  // sitting down can never reach and the character would rest in an inn for ever. That
+  // trap is why this is worth saying twice: getting it wrong does not error, it
+  // silently retires the character. The shortfall above 80 is a food problem and
+  // provision()/cookSomething() are what answer it.
+  //
+  // AND A DEADLINE, for the same reason. Three vitals means three ways to wait for
+  // something that is not coming — a mana bar that will not fill because the character
+  // is being nibbled, a health point that never lands. RECOVER_MAX_MS is long enough
+  // that a genuine recovery always finishes inside it and short enough that a stuck one
+  // is a stall rather than a retirement.
   recovered() {
     const v = this.s.client?.vitals?.();
     const hp = pct(v?.health);
     if (hp === null) return false;                     // cannot tell — keep resting
+    const done = (why) => { this.recoverUntilWhole = false; this.recoverSince = null;
+                            if (why) this.note('going back out before fully recovered', why);
+                            return true; };
+    // The deadline is checked FIRST, so a character that cannot reach the bar leaves
+    // rather than sitting for ever — and says which vital it gave up on.
+    const since = this.recoverSince ?? null;
+    if (since && Date.now() - since > RECOVER_MAX_MS)
+      return done({ waited_s: Math.round((Date.now() - since) / 1000),
+                    health: v?.health?.pct ?? null, mana: v?.mana?.pct ?? null,
+                    vigor: vigorOf(v),
+                    why: 'recovering has a deadline: three vitals is three ways to wait for ' +
+                         'something that is not coming, and a character parked in an inn for ever ' +
+                         'is a character retired by accident' });
     if (hp < 0.95) return false;
     if ((vigorPct(v) ?? 1) < REST_VIGOR_CAP) return false;
-    this.recoverUntilWhole = false;
-    return true;
+    // A zero or unreadable mana ceiling is not a shortfall — it is a character that has
+    // no bar to fill, and blocking on it would be the retirement this guards against.
+    const mp = pct(v?.mana);
+    if (mp !== null && mp < 0.95) return false;
+    return done(null);
   }
 
   // The experiment, run once per pass, for free, out of readings we already take.
@@ -1708,6 +1792,108 @@ export class Autopilot {
     return !here.some(x => x.huntable);
   }
 
+  // WHAT HAS TO BE TRUE BEFORE A CHARACTER WALKS OUT OF SAFETY.
+  //
+  // THIS IS THE COMMONEST DEATH IN THE FLEET AND IT IS NOT CLOSE. Of the last fifty
+  // deaths, twenty-three happened with the keeper mid-travel and blind; of those,
+  // SEVENTEEN WERE OUTBOUND TO A HUNTING GROUND and only four were escapes. Eleven of
+  // them set off on the line "this room cannot produce our prey — leaving now". The
+  // shape is always the same: a character standing perfectly safely in an inn, which the
+  // keeper marches to room 586 or 562 because an inn spawns nothing, and which arrives
+  // hurt, unarmed, or both, into eight-plus monsters.
+  //
+  // Neither departure branch asked anything about the character before setting off. They
+  // asked about the ROOM — does this room make what we hunt — which is a fine question
+  // and the wrong one to leave on.
+  //
+  // Three conditions, and each one has a body count:
+  //
+  //   ARMED, ON EVIDENCE. armedForSure() rather than armed(), because `known` is false
+  //   for the first pass after a login and a resume logs in twenty-one characters at
+  //   once. See armedForSure for why the optimistic answer is right everywhere else and
+  //   catastrophic here.
+  //
+  //   WHOLE. Health, mana AND vigor — the same bar recovered() uses, for the same
+  //   reasons, and mana is in it because `create weapon` costs 15 and a character that
+  //   leaves at ten cannot arm itself anywhere it is going.
+  //
+  //   AND A DEADLINE ON BOTH, because a rule that can never be satisfied is a character
+  //   retired into an inn, and this fleet has retired characters that way before. After
+  //   RECOVER_MAX_MS it goes anyway and says which condition it gave up on — a stall a
+  //   human can read beats a character quietly parked for the rest of the session.
+  //
+  // When it says no it does not merely refuse: it SITS THE CHARACTER DOWN IN A CORNER
+  // and rests, which is the thing that makes the answer become yes. The caller's only
+  // job is to stop.
+  async readyToLeaveSanctuary(going_to = null) {
+    // Only ever a gate on leaving somewhere SAFE. A character standing in a monster room
+    // must never be held there by this — that would be the same bug pointing the other
+    // way, and it is the worse direction.
+    if (!this.sanctuary()) return true;
+
+    const v = this.s.client?.vitals?.();
+    const hp = pct(v?.health), mp = pct(v?.mana), vig = vigorPct(v);
+    const armed = this.armedForSure();
+    // A null reading is "no such bar", not "empty" — blocking on one would be the
+    // retirement this is careful about everywhere else.
+    const whole = (hp ?? 0) >= 0.95 && (mp ?? 1) >= 0.95 && (vig ?? 1) >= REST_VIGOR_CAP;
+    if (armed && whole) {
+      this.sanctuaryHoldSince = null;
+      this.sanctuaryHoldNoted = false;
+      return true;
+    }
+
+    const blocked = [
+      !armed ? 'no weapon in the use list' : null,
+      (hp ?? 1) < 0.95 ? 'health' : null,
+      (mp ?? 1) < 0.95 ? 'mana' : null,
+      (vig ?? 1) < REST_VIGOR_CAP ? 'vigor' : null,
+    ].filter(Boolean);
+
+    this.sanctuaryHoldSince ??= Date.now();
+    const held = Date.now() - this.sanctuaryHoldSince;
+    if (held > RECOVER_MAX_MS) {
+      this.note('going out anyway — waited long enough', {
+        waited_s: Math.round(held / 1000), still_short: blocked, going_to,
+        health: v?.health?.pct ?? null, mana: v?.mana?.pct ?? null, vigor: vigorOf(v),
+        why: 'a condition that cannot be met is a character retired into an inn by ' +
+             'accident. Twelve minutes is far longer than any real recovery takes, so ' +
+             'this is a stall worth seeing rather than a wait worth continuing' });
+      this.sanctuaryHoldSince = null;
+      this.sanctuaryHoldNoted = false;
+      return true;
+    }
+
+    // Once per hold, not once per pass: the pass is about a second long and this branch
+    // can hold a character for minutes.
+    if (!this.sanctuaryHoldNoted) {
+      this.sanctuaryHoldNoted = true;
+      this.note('not leaving safety yet', {
+        room: this.s.world?.room?.name ?? null, going_to, short_of: blocked,
+        health: v?.health?.pct ?? null, mana: v?.mana?.pct ?? null, vigor: vigorOf(v),
+        armed_for_sure: armed,
+        why: 'seventeen of the last twenty-three travel deaths were outbound to a hunting ' +
+             'ground, most of them straight out of an inn. Nothing in here can hurt us and ' +
+             'nothing out there gets easier by arriving early' });
+    }
+
+    this.doing = 'recovering';
+    // Sit in a corner and fill the bars. hibernate() settles first, which is what arms
+    // the health timer — a character that walked in and stopped regenerates nothing.
+    await this.hibernate('waiting to be whole and armed before going back out')
+              .catch(() => false);
+    // THEN ARM, because the resting is what pays for it: armSelf() wields from the pack
+    // and falls back to conjuring, and the conjure is the case that was failing for want
+    // of the 15 mana this branch has just been sitting for.
+    if (!this.armedForSure()) await this.armSelf().catch(() => false);
+    // PROGRESS, NOT A STALL. The supervisor restarts keepers that report no progress, and
+    // it was doing exactly that to characters sitting for mana — `restarted Animal:
+    // {"why":"unarmed — 10 mana, needs 15 to make one"}` — which threw away the sit and
+    // started the climb again. Recovering on purpose is the keeper working.
+    this.progress('resting in safety until whole and armed');
+    return false;
+  }
+
   // A CLEAR PATCH OF FLOOR TO SIT ON.
   //
   // Bots do not merely share an inn, they stack: they all arrive by the same route
@@ -1727,6 +1913,28 @@ export class Autopilot {
     const others = [...c.room.objects.values()].filter(o => o.id !== c.selfId);
     const gap = (col, row) => others.length
       ? Math.min(...others.map(o => Math.hypot(o.col - col, o.row - row))) : 99;
+    // SIT IN A CORNER, AND IN THE EMPTIEST ONE THERE IS.
+    //
+    // It is what a person does — you take the corner table, not the middle of the floor —
+    // and here it is also the only free tactical improvement available while sitting. A
+    // corner has two of its four approaches walled off, so anything that wants to reach
+    // the character has half as many squares to do it from; the same asymmetry the safe
+    // spot book is built on, bought for nothing because we are sitting still anyway.
+    //
+    // walkable() reads out-of-bounds as false, so the edge of the grid counts as wall,
+    // which is right: the far side of a room boundary is not floor you can be attacked
+    // across.
+    //
+    // A PERPENDICULAR PAIR IS A CORNER; TWO OPPOSITE WALLS ARE A CORRIDOR. Scoring
+    // "blocked neighbours" alone would rank the middle of a passage equal to a corner and
+    // it is not — a corridor is open at both ends and things come down it.
+    const corner = (col, row) => {
+      const n = !geo.walkable(row - 1, col), s2 = !geo.walkable(row + 1, col);
+      const w = !geo.walkable(row, col - 1), e = !geo.walkable(row, col + 1);
+      if ((n && e) || (e && s2) || (s2 && w) || (w && n)) return 2;   // a corner
+      if (n || s2 || w || e) return 1;                                // a wall at the back
+      return 0;                                                       // open floor
+    };
     // TWO ANSWERS, BECAUSE THE GRID LIES ABOUT INNS.
     //
     // The movement grid is one byte per square, and a room full of furniture and
@@ -1751,8 +1959,16 @@ export class Autopilot {
         const p = s.world.reach(col, row);
         // Elbow room first, then closeness — but cap the value of space, because the
         // far corner of an inn is no safer than a clear table and costs the walk.
-        const value = Math.min(space, 6) * 2 - (p?.steps ?? d) * 0.3;
-        const cand = { col, row, steps: p?.steps ?? d, clearance: +space.toFixed(1), value };
+        //
+        // The corner bonus is weighted to be worth about three squares of elbow room, so
+        // it decides between two comparable squares without ever sending a character the
+        // length of an inn for a corner it does not need. Space still counts inside that,
+        // which is what "the open corner if there is one" means: an empty corner beats a
+        // corner with somebody already sitting in it, and both beat the middle of the room.
+        const nook = corner(col, row);
+        const value = Math.min(space, 6) * 2 + nook * 3 - (p?.steps ?? d) * 0.3;
+        const cand = { col, row, steps: p?.steps ?? d, clearance: +space.toFixed(1), value,
+                       seat: nook === 2 ? 'corner' : nook === 1 ? 'against a wall' : 'open floor' };
         if (p?.reachable) { if (!best || value > best.value) best = cand; }
         else if (!byFine || value > byFine.value) byFine = { ...cand, viaFine: true };
       }
@@ -1811,6 +2027,7 @@ export class Autopilot {
     else this.settleTries = tries + 1;
     this.note(w.arrived ? 'found a quiet corner to rest in' : 'could not reach the quiet corner', {
       room: room.name, why, to: { col: spot.col, row: spot.row },
+      seat: spot.seat ?? null,
       nearest_other_character: spot.clearance, steps: spot.steps, reason: w.reason,
       routed: w.fine ? 'in fine coordinates — the square grid called this room disconnected'
                      : 'through the movement grid',
@@ -1829,19 +2046,16 @@ export class Autopilot {
   // FED AND RESTED CHARACTERS ARE EXEMPT. Above 140 vigor with food in the pack, the
   // fleeing is tactical — a bad room, a bad crowd — and hauling it to town would throw
   // away a working session for nothing.
-  async townTripIfCornered() {
-    const s = this.s, c = s.client;
-    if ((this.fledInARow || 0) <= 2) return false;
-    if (this.noTownUntil && Date.now() < this.noTownUntil) return false;   // searched recently
-    const v = c?.vitals?.();
-    const vig = v?.vigor?.value ?? 0;
-    const fed = skills.larderOf(c).length > 0;
-    if (vig > 140 && fed) { this.fledInARow = 0; return false; }
-    if (this.sanctuary()) { this.fledInARow = 0; return false; }   // already somewhere safe
-
-    // The nearest room nothing is generated in, by hops. Sanctuary is the right test
-    // rather than a list of town names: an inn qualifies, so does a bank, a shop and a
-    // stretch of road, and "tavern" is not a flag on anything.
+  // THE NEAREST ROOM NOTHING IS GENERATED IN, by hops.
+  //
+  // Sanctuary is the right test rather than a list of town names: an inn qualifies, so
+  // does a bank, a shop and a stretch of road, and "tavern" is not a flag on anything.
+  //
+  // Extracted from townTripIfCornered because the post-death recovery asks the identical
+  // question — where is the nearest place I can sit down safely — and a second copy of
+  // this would be a second place for the hop limit to drift.
+  nearestSanctuary({ maxHops = 3 } = {}) {
+    const s = this.s;
     const here = s.world?.room?.num;
     const spawns = loadSpawns(SPAWN_FILE)?.rooms || {};
     const safeRooms = Object.keys(spawns)
@@ -1852,9 +2066,23 @@ export class Autopilot {
       const r = s.world?.route?.(room);
       if (!r?.found) continue;
       const hops = r.hops.length;
-      if (hops > 3) continue;                 // further than that is its own expedition
+      if (hops > maxHops) continue;           // further than that is its own expedition
       if (!best || hops < best.hops) best = { room, hops };
     }
+    return best;
+  }
+
+  async townTripIfCornered() {
+    const s = this.s, c = s.client;
+    if ((this.fledInARow || 0) <= 2) return false;
+    if (this.noTownUntil && Date.now() < this.noTownUntil) return false;   // searched recently
+    const v = c?.vitals?.();
+    const vig = v?.vigor?.value ?? 0;
+    const fed = skills.larderOf(c).length > 0;
+    if (vig > 140 && fed) { this.fledInARow = 0; return false; }
+    if (this.sanctuary()) { this.fledInARow = 0; return false; }   // already somewhere safe
+
+    const best = this.nearestSanctuary({ maxHops: 3 });
     if (!best) {
       // DO NOT FORGET THAT WE ARE CORNERED. The first version reset the counter here,
       // so a character with no town within three hops re-decided from zero every third
@@ -1887,24 +2115,35 @@ export class Autopilot {
   // Vigor is what a character actually leaves an inn with, and resting is the only way
   // to raise it without food — so idling on your feet is throwing away the one thing
   // idle time is good for.
-  async hibernate(why) {
+  // MANA IS THE THIRD BAR AND IT IS THE ONE THAT MATTERS MOST AFTER A DEATH.
+  //
+  // This used to leave when health and vigor were back, which released characters at ten
+  // mana — below the 15 `create weapon` needs, and with everything they owned lying on the
+  // floor of the room that killed them, that spell is the whole plan. They walked out
+  // bare-handed and died again. Mana genuinely does refill by sitting, unlike vigor, so
+  // waiting for it is a wait that ends.
+  async hibernate(why, { mana = 0.95 } = {}) {
     const s = this.s;
     if (!this.sanctuary()) return false;
     await this.settle(why);
     const v = s.client?.vitals?.();
-    const vig = vigorPct(v), hp = pct(v?.health);
-    if ((vig ?? 1) >= REST_VIGOR_CAP && (hp ?? 1) >= 0.95) return false;
+    const vig = vigorPct(v), hp = pct(v?.health), mp = pct(v?.mana);
+    // A missing mana reading means no bar to fill, not a shortfall to wait on.
+    if ((vig ?? 1) >= REST_VIGOR_CAP && (hp ?? 1) >= 0.95 && (mp ?? 1) >= mana) return false;
     this.doing = 'recovering';
     const r = await skills.restUntil(s, {
       health: 0.98,
       // Resting stops at 80 of 200 — RestTimer will not take vigor past its threshold,
       // so asking for more is asking to sit until the timeout. Everything above this
       // has to be eaten, which is a supply problem and not something to wait out.
-      vigor: REST_VIGOR_CAP, maxSeconds: 120 });
+      vigor: REST_VIGOR_CAP, mana,
+      // Longer than the old 120s because mana is the slowest of the three and this is now
+      // waiting on it. Still bounded, and the caller's own deadline bounds the repeats.
+      maxSeconds: 180 });
     this.tally.rests++;
     this.note('resting up', {
       why, seconds: r.seconds, health: r.vitals?.health, vigor: r.vitals?.vigor,
-      reached: r.reached_target,
+      mana: r.vitals?.mana, reached: r.reached_target,
       note: 'vigor tops out around 80 of 200 on rest alone; past that it has to come from food' });
     this.progress('resting up between jobs');
     return true;
@@ -3053,6 +3292,23 @@ export class Autopilot {
   // spawned that client and can see the pid. No pilot means no tell — this must never
   // pick a name and message a stranger on a shared server.
   async tellPilot(d) {
+    // OFF UNLESS SOMEBODY ASKS FOR IT, AND ASKING IS PER-SESSION.
+    //
+    // This speaks in-game, on a live server shared with other players, from twenty-one
+    // characters at once. Even rate-limited to one tell per character per condition per
+    // five minutes, three conditions across twenty-one characters is a steady trickle of
+    // chatter that a person standing nearby sees, that costs mana, and that — per the
+    // note below about UserSayGroup — is an ACTION, so it wakes the room's AIs.
+    //
+    // A debugging instrument should not be the fleet's default voice. It stays available
+    // for the case it was built for (stand next to a character and have it explain
+    // itself) but has to be turned on deliberately:
+    //
+    //   M59_DEBUG_TELLS=1 node tools/m59-broker.mjs ...
+    //
+    // Checked here rather than at the two call sites so there is one switch and no way to
+    // add a third caller that misses it.
+    if (!DEBUG_TELLS_ON) return { sent: false, why: 'debug tells are off (set M59_DEBUG_TELLS=1)' };
     const p = pilotedNow();
     if (!p || !p.character) return { sent: false, why: 'nobody is piloting a character' };
     if (p.agent === this.s.name) return { sent: false, why: 'that is this character' };
@@ -3863,6 +4119,11 @@ export class Autopilot {
         // has to outlive the pass that noticed it. Cleared in recovered() once health,
         // mana and vigor are all back as far as their own mechanisms can carry them.
         this.recoverUntilWhole = true;
+        // When the clock started, so recovered() can give up on it. Stamped here rather
+        // than on the first resting pass: the walk to an inn is part of the recovery and
+        // a character that spends ten minutes failing to find one has not been recovering
+        // slowly, it has been stuck, and that is what the deadline is for.
+        this.recoverSince = Date.now();
         this.progress('escaped the underworld');
         this.note('escaped the underworld', {
           to: e.arrived_in, via: e.via, city: e.city ?? null,
@@ -3885,6 +4146,51 @@ export class Autopilot {
       this.needsRecovery = false;
       await this.askForHelp();
       return;
+    }
+
+    // AND THEN SIT DOWN SOMEWHERE SAFE UNTIL WHOLE. THIS IS THE POINT OF THE FLAG.
+    //
+    // recoverUntilWhole was already set here and already refused fights and raised the
+    // resting bar — but nothing ever put the character in a chair. It relied on the
+    // ordinary rest branch further down, and that branch is satisfied by health and
+    // vigor, so a character at full health, 80 vigor and ten mana was "not hurt", never
+    // rested, and dropped through to the farm branch, which walked it out of the inn.
+    // Zoot, Rizzo and Animal each did exactly that within the last half hour.
+    //
+    // So make it explicit and put it AHEAD of everything else: while recovering, the job
+    // is to be somewhere nothing spawns, sitting in a corner, until health, mana and
+    // vigor are all back — and then to be holding a weapon before anything else happens.
+    // hibernate() waits on all three now; recovered() clears the flag and has its own
+    // deadline, so this cannot become a character parked for ever.
+    if (this.recoverUntilWhole && !this.recovered()) {
+      if (this.sanctuary()) {
+        await this.hibernate('recovering after a death — health, mana and vigor')
+                  .catch(() => false);
+        // Everything we owned is on the floor where we died, so this is usually a
+        // conjure, and the conjure is why the mana in hibernate's bar is there.
+        if (!this.armedForSure()) await this.armSelf().catch(() => false);
+        this.progress('recovering after a death');
+        return;
+      }
+      // Not somewhere safe yet. Walk to the nearest room that spawns nothing rather than
+      // recovering where we stand — resting in the open is how a rest becomes a death,
+      // and that is doubly true for a character that has just lost its weapon.
+      const safe = this.nearestSanctuary({ maxHops: 3 });
+      if (safe) {
+        this.doing = 'travelling';
+        this.note('going somewhere safe to recover', {
+          to_room: safe.room, hops: safe.hops,
+          health: v?.health?.pct ?? null, mana: v?.mana?.pct ?? null, vigor: vigorOf(v),
+          why: 'just came back from the dead with nothing on us. Resting in a room that ' +
+               'spawns is the thing that turns a recovery into the next death' });
+        const t = await this.travel(safe.room, { maxHops: 6 })
+                        .catch(e => ({ arrived: false, reason: e.message }));
+        if (t.arrived) { this.progress('reached somewhere safe to recover'); return; }
+        this.note('could not reach somewhere safe', { to_room: safe.room, why: t.reason });
+      }
+      // No sanctuary in reach. Fall through — the danger and rest branches below are the
+      // right handlers for "hurt in a bad room with nowhere to go", and holding the
+      // character here would only add a way to do nothing.
     }
 
     // NO WEAPON: FIX IT BEFORE ANYTHING ELSE, and never walk out to hunt without one.
@@ -3912,6 +4218,35 @@ export class Autopilot {
       // sitting anywhere in a room nothing spawns in beats standing in the best square
       // of one.
       this.doing = 'recovering';
+      // AN UNARMED CHARACTER IN A SPAWN ROOM CANNOT WAIT WHERE IT IS STANDING.
+      //
+      // Everything below sits down and waits for the 15 mana, which is right — but the
+      // sit-anywhere fallback is gated on sanctuary(), so a character stuck in a room
+      // that generates monsters got neither: settle() refuses because there is no clear
+      // floor, the fallback declines because the room spawns, and the pass ends with it
+      // still standing there. Mana regenerates barely at all on its feet while something
+      // is hitting it, so it never reaches 15 and never conjures.
+      //
+      // That is the state the whole fleet reached: Kermit at 12 mana, Rizzo at 12, Animal
+      // at 4, all three "hunting fungus beast" bare-handed in the Valley, with no spare
+      // weapon anywhere, no shillings, and nothing able to sell them one. Four routes to a
+      // weapon and all four shut.
+      //
+      // So walk out first. townTripIfCornered already knows how to find the nearest room
+      // nothing huntable spawns in and hibernate there, which is exactly the errand — a
+      // character with nothing in its hands has no business in a monster room, and the
+      // walk is the cheapest of the four routes because it needs no money, no donor and
+      // no meeting.
+      if (!this.sanctuary()) {
+        const went = await this.townTripIfCornered().catch(() => false);
+        this.note('unarmed and in a room that spawns — leaving to regain mana', {
+          mana: this.s.client?.vitals?.()?.mana?.value ?? null,
+          needs: 15, went_to_town: !!went,
+          why: 'create weapon needs 15 mana and mana barely moves while standing in a ' +
+               'fight. Sitting somewhere nothing spawns is the only way this character ' +
+               'gets armed again when it has no weapon, no money and no donor' });
+        if (went) return;
+      }
       // settle() returns {settled}, not a boolean — reading it as one would make this
       // fallback dead code, which is exactly the kind of silent no-op this branch exists
       // to stop happening.
@@ -3922,9 +4257,15 @@ export class Autopilot {
         //
         // The pass is about a second long, so the first version of this re-sent REST
         // every second. Rowlf spent hundreds of passes "sitting down anywhere to regain
-        // mana" while its mana crawled from 2 to 4 — an interrupted rest restores
-        // nothing, and a rest re-issued every second is an interrupted rest. It also
-        // wrote the same journal line hundreds of times, which buries everything else.
+        // mana" while its mana crawled from 2 to 4, and wrote the same journal line
+        // hundreds of times, which buries everything else.
+        //
+        // WHAT A REST ACTUALLY NEEDS is PFLAG_MOVED_SINCE_ENTRY — set by having moved
+        // since arriving in the room. A character that walked in and stopped regenerates
+        // nothing however long it sits, which is why settle() walks to its square rather
+        // than resting where it lands. Re-sending REST every second is noise rather than
+        // harm; the reason to stop doing it is that it hides whether the rest is working
+        // at all, which is the question that matters and is checked below.
         //
         // So sit when we are not already sitting, and say so once. Standing up for any
         // reason clears the flag, because the next thing to do is sit again.
@@ -3932,11 +4273,48 @@ export class Autopilot {
         if (!this.sittingFor || now - this.sittingFor > 60_000) {
           await s.pacer.submit('rest', () => c.rest()).catch(() => {});
           this.sittingFor = now;
+          // Baseline, so the next pass can answer the only question that matters about a
+          // rest: is it paying? See restWatch below.
+          this.restWatch = { at: now, mana: c.vitals?.()?.mana?.value ?? null };
           this.note('sitting down anywhere to regain mana', {
             mana: c.vitals?.()?.mana?.value ?? null, needs: 15,
             why: 'settle() found nowhere it liked, and standing regenerates mana far too ' +
                  'slowly to ever reach the 15 this needs — sitting is what matters, not where',
           });
+        }
+        // CHECK THAT THE REST IS ACTUALLY PAYING, rather than assuming it.
+        //
+        // Resting is only awarded while PFLAG_MOVED_SINCE_ENTRY is set — a character that
+        // walked into a room and stopped regenerates nothing, however long it sits, and
+        // nothing in its own journal would ever say so. "Sitting down to regain mana" is
+        // a report of an INTENTION; the number moving is the report of an effect, and the
+        // two came apart for twenty-nine consecutive rest attempts once already.
+        //
+        // So take a reading a few seconds after sitting and compare. If it has not moved,
+        // say that plainly — the cure is to move and sit again, which is what standing up
+        // and re-entering this branch does.
+        if (this.restWatch && now - this.restWatch.at > 8_000) {
+          const manaNow = c.vitals?.()?.mana?.value ?? null;
+          const gained = manaNow != null && this.restWatch.mana != null
+            ? manaNow - this.restWatch.mana : null;
+          if (gained !== null && gained <= 0 && !this.restNotPayingAt) {
+            this.restNotPayingAt = now;
+            this.note('resting is not restoring anything', {
+              mana: manaNow, was: this.restWatch.mana,
+              seconds: Math.round((now - this.restWatch.at) / 1000),
+              why: 'a rest only pays while PFLAG_MOVED_SINCE_ENTRY is set, which having ' +
+                   'moved since arriving is what sets. Sitting where we landed without ' +
+                   'having walked buys nothing and looks identical to resting',
+              doing: 'standing and re-seating so the flag is set again' });
+            this.sittingFor = null;          // let the next pass sit again, after a step
+            // skills.nudge(s), NOT c.nudge() — nudge is a skill helper and the client has
+            // no such method, so `c.nudge?.()` would have been an optional call on
+            // undefined: silent, inert, and indistinguishable from working.
+            await skills.nudge(s).catch(() => {});
+          } else if (gained > 0) {
+            this.restNotPayingAt = null;     // it is paying; stop watching this window
+          }
+          this.restWatch = { at: now, mana: manaNow };
         }
       }
       this.noProgress(`unarmed — ${c.vitals?.()?.mana?.value ?? 0} mana, needs 15 to make one`);
@@ -3999,10 +4377,39 @@ export class Autopilot {
       ? Math.round((v.health?.max ?? 0) * (this.policy.doomedInSpotBelow ?? 0.35))
       : worstHit * 2;
     const doomed = hp !== null && near.length && v.health?.value != null &&
-                   v.health.value <= doomedAt && !sheltered;
+                   v.health.value <= doomedAt;
+    // PLAY DEAD ONLY WHERE STANDING STILL IS ALREADY SAFE. FLEE EVERYWHERE ELSE.
+    //
+    // This was gated on `!sheltered` — it froze precisely when the character was NOT
+    // behind a wall, which is the case where freezing helps least and costs most. A
+    // freeze keeps the monsters off by not acting, and the same flag keeps HealthTimer
+    // off with it, so the character comes back with the same health it went down with,
+    // still standing in the open, still surrounded. That is why playDead needs its own
+    // "refusing to freeze again — it is not helping" guard: the tactic was being used in
+    // the one place it cannot work.
+    //
+    // In a safe spot it is a different move entirely. Nothing can reach the square, so
+    // the character can turn in place — which sets PFLAG_MOVED_SINCE_ENTRY without giving
+    // up the square — and heal back to full while the room mills about outside its reach.
+    //
+    // Out in the open with something adjacent, there is no version of standing still that
+    // ends well. The only thing that changes the situation is distance: run for the
+    // nearest town, become combat-ready, come back. townTripIfCornered already knows how
+    // to find it.
     if (doomed && this.policy.panicLogoff !== false) {
-      if (await this.playDead('at ' + v.health.value + ' health with ' + near.length +
-                              ' adjacent; a single hit can take ' + worstHit)) return;
+      if (sheltered) {
+        if (await this.playDead('at ' + v.health.value + ' health with ' + near.length +
+                                ' adjacent, behind a wall that holds')) return;
+      } else {
+        this.note('hurt in the open — running for a town rather than playing dead', {
+          health: v.health.value, adjacent: near.length, worst_single_hit: worstHit,
+          why: 'a freeze recovers no health and leaves us exactly where we were, in reach ' +
+               'of everything that put us here. Only distance changes this fight' });
+        this.doing = 'travelling';
+        if (await this.townTripIfCornered().catch(() => false)) return;
+        // Could not reach one. Fall through to the withdraw/rest branches below rather
+        // than freezing, which is the thing we just decided does not work here.
+      }
     }
 
     // WITHDRAWING IS FOR THE OPEN FLOOR. Walking away is the only thing a plain
@@ -4604,6 +5011,10 @@ export class Autopilot {
           const known = this.preyRooms(room);
           if (known.length) {
             const target = known[0];
+            // NOT WHILE HURT OR EMPTY-HANDED. Eleven of the last fifty deaths set off on
+            // this exact line. The room is still the wrong room; that is not a reason to
+            // arrive at the right one in no state to be there.
+            if (!await this.readyToLeaveSanctuary(target.room_name)) return;
             this.note('this room cannot produce our prey — leaving now', {
               room: room.name, hunting: this.policy.hunt,
               generates: here.map(x => x.creature),
@@ -4710,6 +5121,37 @@ export class Autopilot {
       }
 
       if (!found.length) {
+        // HOLDING A WALL IN A ROOM THAT SPAWNS IS WORK. WAITING IS THE JOB.
+        //
+        // An empty pass means "nothing of ours is visible RIGHT NOW", and in a spawning
+        // room that is the normal state between a kill and the next wanderer. Monsters
+        // take their time crossing a big outdoor room, and the whole value of a safe spot
+        // is that waiting there costs nothing — nothing can reach the square, so patience
+        // is free and the alternative is walking around in the open looking for a fight.
+        //
+        // Counting those passes the same as fruitless ones is what makes a character give
+        // up a proven square and roam, which is both worse ground and the state most of
+        // the death record happens in ("travelling" and "recovering" are 21% and 35% of
+        // deaths; "fighting" is 17%). A spot that took a walk and a probe to find should
+        // not be abandoned because the room was quiet for eight seconds.
+        //
+        // So while we are holding a working spot in a room that generates our prey, an
+        // empty pass is not counted at all. Everything that ends a vigil for a real
+        // reason still fires: being hit in the spot releases it, the room going capped is
+        // handled above, hunger and health run on their own clocks.
+        const waitingInASpot = !!this.hold && this.holdWorks() && !this.sanctuary(room);
+        if (waitingInASpot) {
+          if (!this.waitedInSpotAt || Date.now() - this.waitedInSpotAt > 60_000) {
+            this.waitedInSpotAt = Date.now();
+            this.note('holding the spot and waiting for something to come to us', {
+              room: room?.name, spot: { col: this.hold.col, row: this.hold.row },
+              proven: this.hold.proven,
+              why: 'nothing in reach this pass, but this room spawns and the square holds. ' +
+                   'Waiting behind a wall costs nothing; wandering to find a fight is how ' +
+                   'characters end up dying while travelling' });
+          }
+          return;
+        }
         this.emptyPasses++;
         // A ROOM THAT SPAWNS NOTHING IS NOT AN EMPTY ROOM, AND WAITING IN IT IS NOT WORK.
         //
@@ -4734,6 +5176,12 @@ export class Autopilot {
           // whole branch quietly do nothing, which is the failure mode this fix is about.
           const home = this.policy.assignedRoom ?? this.homeRoom;
           if (home != null && home !== room?.num) {
+            // The other door out of an inn, and it killed Zoot, Piggy and Rizzo inside
+            // twenty minutes: all three woke up in a tavern after a death, took this
+            // branch on pass 2, and never got to the unarmed check further down because
+            // they were already walking. Going back to work is right; going back to work
+            // hurt and bare-handed is what the last twenty minutes of records are.
+            if (!await this.readyToLeaveSanctuary(home)) return;
             this.note('this room spawns nothing at all — going back to work', {
               room: room?.name, room_num: room?.num, going_to: home,
               why: 'a tavern has no spawn table, so waiting for a respawn here waits for ' +

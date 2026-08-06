@@ -1162,7 +1162,13 @@ export async function returnToSpot(s, spot, { maxSteps = 20, tolerance = 12 } = 
 // never covered took him from 17 health to 3. Every one of those reads saw the
 // number falling and none of them was allowed to care. Three seconds of that is a
 // bad break; a minute of it is nearly a death.
+// `mana` defaults to 0 — no requirement — so every existing caller is unchanged. It is
+// there for the one case that needs it: a character recovering after a death, whose only
+// route back to a weapon is `create weapon` at 15 mana. Health and vigor can both be full
+// while that character is still unable to arm itself, and sitting is the only place mana
+// comes back at any speed.
 export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAULT_REST_UNTIL,
+                                     mana = 0,
                                      maxSeconds = 120, abortOnDamage = true } = {}) {
   const c = s.need();
   const read = async () => {
@@ -1172,7 +1178,8 @@ export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAUL
   };
   let v = await read();
   const started = { ...v };
-  const done = () => (vitalFrac(v, 'health') ?? 1) >= health && (vitalFrac(v, 'vigor') ?? 1) >= vigor;
+  const done = () => (vitalFrac(v, 'health') ?? 1) >= health && (vitalFrac(v, 'vigor') ?? 1) >= vigor
+                  && (vitalFrac(v, 'mana') ?? 1) >= mana;
   if (done()) return { rested: false, note: 'already recovered', vitals: v };
 
   await s.pacer.submit('rest', () => c.rest());
@@ -1199,7 +1206,12 @@ export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAUL
     if (done()) break;
     // A room can prevent resting, and standing back up is silent too. If nothing has
     // moved for three checks, say so rather than sitting for the full timeout.
-    const now = (vitalFrac(v, 'health') ?? 0) + (vitalFrac(v, 'vigor') ?? 0);
+    // MANA COUNTS TOWARD "SOMETHING IS STILL MOVING" WHEN IT IS BEING WAITED ON. Without
+    // it, a character sitting for mana alone — health and vigor already at their
+    // ceilings, which is exactly the post-death case — reads as stalled after three
+    // checks and stands up nine seconds in, every time.
+    const now = (vitalFrac(v, 'health') ?? 0) + (vitalFrac(v, 'vigor') ?? 0)
+              + (mana > 0 ? (vitalFrac(v, 'mana') ?? 0) : 0);
     if (Math.abs(now - last) < 0.001) { if (++stalled >= 3) break; } else stalled = 0;
     last = now;
   }

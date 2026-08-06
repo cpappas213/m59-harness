@@ -381,6 +381,30 @@ async function round(n) {
                   '(a refusal, not a stall — it relocates itself)');
       continue;
     }
+    // WAITING FOR MANA IS THE PLAN, AND RESTARTING IT IS WHY IT NEVER FINISHES.
+    //
+    // An unarmed character with no weapon to borrow, no money and no donor has exactly
+    // one route left: sit somewhere safe until it has the 15 mana `create weapon` needs.
+    // The keeper does that deliberately — "sitting down anywhere to regain mana" — and
+    // sitting still with no kills looks precisely like a stall from out here.
+    //
+    // So this restarted it, every 90 seconds, and the mana barely climbed: Sweetums sat
+    // at 4 of 18, Animal at 11, Zoot at 13, all three reporting "sitting down anywhere to
+    // regain mana" and "STALLED" over and over while the supervisor logged a successful
+    // restart each time. Three characters bare-handed in a loop that looked like both of
+    // us working.
+    //
+    // The restart costs the PROGRESS SO FAR, not the mechanism: what a rest needs is
+    // PFLAG_MOVED_SINCE_ENTRY, which is set by having moved since arriving. Churning the
+    // keeper keeps re-deciding rather than waiting, and a character that is re-deciding
+    // is not accumulating.
+    //
+    // The keeper arms itself and moves on the moment it reaches 15. Leave it be.
+    if (/needs \d+ to make one|resting for the mana|regain mana|unarmed —/i.test(reason)) {
+      console.log(`   leaving ${r.character} alone: ${reason.slice(0, 70)} ` +
+                  '(waiting for casting mana — churning the keeper restarts the decision, not the wait)');
+      continue;
+    }
     if (DRY) { console.log(`   would restart ${r.character}: ${why}`); continue; }
     const persistent = typeof r.stalled === 'object' && (r.stalled.idle_passes ?? 0) >= 8;
     if (!persistent && !/no keeper|keeper stopped/.test(String(r.stalled))) continue;
@@ -586,7 +610,48 @@ async function outfitPair(a, b) {
 // URL nor comparable to import.meta.url without it.
 const { pathToFileURL } = await import('node:url');
 const isEntryPoint = !!process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+// ONE SUPERVISOR, OR NONE OF THIS IS SEQUENTIAL.
+//
+// The loop below cannot overlap itself — round() is awaited before the sleep, so `--every`
+// is a gap BETWEEN rounds rather than a cadence, and a round that runs an hour simply
+// delays the next one. What that does not survive is a second PROCESS.
+//
+// Two supervisors do not merely duplicate work, they fight: both re-pair the same
+// characters from the same pool, both spawn m59-outfit against the same agents, and both
+// call ensureKeeper on keepers the other has just stopped for an errand. The almoner guard
+// is a module variable, so a second process has its own and neither can see the other's.
+// This fleet has had its supervisor restarted by hand many times today, and a stop that
+// silently failed would have left exactly that.
+//
+// The broker guards its fleet the same way and for the same reason. A pid file, checked
+// against a live process rather than merely present, because a crashed supervisor must not
+// lock the next one out for ever.
 if (isEntryPoint) {
+  const { writeFileSync, readFileSync, existsSync, unlinkSync } = await import('node:fs');
+  // Keyed by PORT, not by fleet name: this file has no fleet of its own, it supervises
+  // whichever broker answers on that port, and two supervisors on one port are the
+  // collision that matters.
+  const LOCK = new URL(`../substrate/supervise-${PORT}.pid`, import.meta.url)
+                 .pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  if (existsSync(LOCK)) {
+    const held = Number(String(readFileSync(LOCK, 'utf8')).trim());
+    if (held && held !== process.pid && alive(held)) {
+      console.error(`another supervisor is already running as pid ${held} (${LOCK}).`);
+      console.error('Two of them re-pair the same characters and fight over the same errands.');
+      console.error('Stop that one first — by pid, never by name.');
+      process.exit(1);
+    }
+    // Stale: the holder is gone. Say so rather than silently taking over, because a
+    // supervisor that died mid-round may have left keepers stopped behind it.
+    if (held) console.error(`[lock] pid ${held} is gone — taking over ${LOCK}`);
+  }
+  writeFileSync(LOCK, String(process.pid));
+  const dropLock = () => { try { if (existsSync(LOCK) &&
+    Number(String(readFileSync(LOCK, 'utf8')).trim()) === process.pid) unlinkSync(LOCK); } catch {} };
+  process.on('exit', dropLock);
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { dropLock(); process.exit(0); });
+
   for (let n = 0; ; n++) {
     try { await round(n); }
     catch (e) {

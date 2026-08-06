@@ -75,6 +75,12 @@ async function call(name, args = {}, timeoutMs = 600_000) {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// What `create weapon` costs — viMana on the Kraanan spell, the number the broker's
+// `spells` tool reports out of the kod source and the one the server quotes back when it
+// refuses ("create weapon costs 15 mana, you have 13"). Named rather than inlined because
+// the supervisor prints the same threshold and the two must not drift.
+const CREATE_WEAPON_MANA = Number(arg('conjure-mana', 15));
+
 const skills = await import('./m59-skills.mjs');
 
 // Spend the donor's stock, and retire a stack only when what is left cannot cover
@@ -125,18 +131,33 @@ function drawDown(donor, carried) {
 // first; a walk is a fallback rather than the plan.
 const WEAPON_BUDGET = Number(arg('weapon-budget', 250));
 
-async function poolMoneyTo(row, want = WEAPON_BUDGET) {
-  const purseOf = items => (items || []).filter(i => /shilling/i.test(i.name))
-                                        .reduce((t, i) => t + (i.amount || 1), 0);
+// ONE SCAN OF THE PURSES, NOT ONE PER CHARACTER.
+//
+// This read every fleet inventory inside the per-character path, so three unarmed
+// characters meant sixty inventory calls and a run that took over an hour — long enough
+// to still be going when the next supervisor round started, which is the overlap this
+// tool should not be creating. The purses do not change materially between two
+// characters in the same run, and the ids are re-read before the handover anyway.
+let purseScan = null;
+async function scanPurses() {
+  if (purseScan) return purseScan;
   const f = await call('fleet', {}, 120_000).catch(() => null);
-  const rows = (f?.fleet || []).filter(r => r.character && r.agent !== row.agent);
-  const holders = [];
+  const rows = (f?.fleet || []).filter(r => r.character);
+  const held = [];
   for (const r of rows) {
     const inv = await call('inventory', { agent: r.agent }, 60_000).catch(() => null);
     const sh = (inv?.items || []).find(o => /shilling/i.test(o.name));
-    const amount = sh?.amount ?? 0;
-    if (sh && amount >= want) holders.push({ r, sh, amount, sameRoom: r.room_num === row.room_num });
+    if (sh) held.push({ r, sh, amount: sh.amount ?? 0 });
   }
+  purseScan = held;
+  return held;
+}
+
+async function poolMoneyTo(row, want = WEAPON_BUDGET) {
+  const held = await scanPurses();
+  const holders = held
+    .filter(h => h.r.agent !== row.agent && h.amount >= want)
+    .map(h => ({ ...h, sameRoom: h.r.room_num === row.room_num }));
   // Same room first, then by who has most — a bigger purse is likelier to still have it
   // by the time the walk finishes.
   holders.sort((a, b) => (b.sameRoom - a.sameRoom) || (b.amount - a.amount));
@@ -319,6 +340,49 @@ async function main() {
   if (!unarmed.length) return;
 
   for (const need of unarmed) {
+    // CONJURE FIRST. IT IS THE ONLY ROUTE THAT DOES NOT INVOLVE WALKING.
+    //
+    // This tool used to try a donor handover, then a purchase, and only reach `create
+    // weapon` by accident when a keeper happened to cast one. That ordering is backwards
+    // on every axis that matters here:
+    //
+    //   * a handover needs two characters in one room, and "kept ending up somewhere
+    //     other than the planned square" is the single commonest failure in this fleet —
+    //     it cost Piggy two consecutive passes and Janice one, all bare-handed meanwhile
+    //   * a purchase needs money the character usually does not have, and a walk to a
+    //     smith, which fails the same way
+    //   * the spell needs 15 mana, no reagents, no money, and nobody to meet
+    //
+    // Most of the fleet knows it. The weapon it makes is temporary (IA_MADE, duration
+    // spellPower*2 minutes) and that is a real cost — but an armed character now beats a
+    // possibly-armed character after a walk that usually fails, and the keeper re-casts.
+    //
+    // Only the mana check gates it. Refusals are reported rather than swallowed, because
+    // "10 mana, needs 15" is the actionable sentence and the supervisor already prints it.
+    if (!isReagents) {
+      const st = await call('status', { agent: need.agent }, 60_000).catch(() => null);
+      const mana = st?.vitals?.mana?.value ?? null;
+      if (mana != null && mana >= CREATE_WEAPON_MANA) {
+        const c = await call('cast', { agent: need.agent, spell: 'create weapon' }, 60_000)
+                        .catch(e => ({ cast: false, reason: e.message }));
+        // THE CAST RESULT IS NOT THE ANSWER — the use list is. `create weapon` has
+        // reported "FAILED its roll" while the character ended up holding a mace: BP_USE
+        // arrives after the reply. Ask the server what is in its hands.
+        await sleep(1500);
+        const eq = await call('equipment', { agent: need.agent }, 60_000).catch(() => null);
+        const wielding = eq?.wielding ?? (eq?.equipped?.[0]?.name ?? null);
+        if (wielding) {
+          console.log(`  ${need.character}: conjured a weapon — now wielding ${JSON.stringify(wielding)}` +
+                      `${c?.mana_spent != null ? ` (${c.mana_spent} mana)` : ''}`);
+          continue;
+        }
+        console.log(`  ${need.character}: create weapon did not take` +
+                    `${c?.reason ? ` — ${String(c.reason).slice(0, 60)}` : ''} — falling back to a donor`);
+      } else if (mana != null) {
+        console.log(`  ${need.character}: ${mana} mana, needs ${CREATE_WEAPON_MANA} to conjure one — ` +
+                    'trying a donor instead');
+      }
+    }
     // Nearest by ROUTE, because the donor has to walk it — room numbers are not distance.
     const routed = [];
     for (const d of donors) {

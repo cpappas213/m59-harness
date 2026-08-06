@@ -114,5 +114,174 @@ const ok = (name, cond, extra = '') => {
      blind.recovered() === false);
 }
 
+// MANA IS THE THIRD BAR, AND IT IS WHY CHARACTERS DIED TWICE IN A ROW.
+//
+// Everything a character owns is on the floor of the room that killed it, so the only
+// route back to a weapon is `create weapon` at 15 mana. recovered() used to release at
+// full health and 80 vigor, which is a state a character reaches with ten mana — below
+// the spell, unable to arm itself anywhere it was being sent. Zoot, Rizzo and Animal
+// were all let out that way and all died again inside four minutes.
+{
+  const { Autopilot } = await import('./m59-autopilot.mjs');
+  const keeper = (health, maxHealth, vigor, mana = null, manaMax = 20) => {
+    const k = Object.create(Autopilot.prototype);
+    k.recoverUntilWhole = true;
+    k.note = () => {};
+    k.s = { client: { vitals: () => ({
+      health: { value: health, max: maxHealth },
+      vigor:  { value: vigor, scale_max: 200 },
+      ...(mana === null ? {} : { mana: { value: mana, max: manaMax } }),
+    }) } };
+    return k;
+  };
+
+  ok('whole on health and vigor but empty of mana is NOT recovered',
+     keeper(28, 28, 80, 2).recovered() === false);
+  ok('ten of twenty mana is still short of a create weapon',
+     keeper(28, 28, 80, 10).recovered() === false);
+  ok('a full mana bar with the other two back IS recovered',
+     keeper(28, 28, 80, 20).recovered() === true);
+  ok('19 of 20 counts, so the last mana point does not block for ever',
+     keeper(28, 28, 80, 19).recovered() === true);
+  // A character with no mana bar at all must not be held for one it cannot fill: that
+  // is the same silent retirement the vigor cap exists to avoid.
+  ok('no mana reading at all is not a shortfall',
+     keeper(28, 28, 80, null).recovered() === true);
+
+  // THE DEADLINE. Three vitals is three ways to wait for something that is not coming.
+  const stuck = keeper(28, 28, 80, 2);
+  stuck.recoverSince = Date.now() - 13 * 60_000;
+  ok('after the deadline it goes out anyway rather than parking for ever',
+     stuck.recovered() === true);
+  ok('and clears the flag when it does', stuck.recoverUntilWhole === false);
+  const waiting = keeper(28, 28, 80, 2);
+  waiting.recoverSince = Date.now() - 60_000;
+  ok('but a minute in it is still recovering', waiting.recovered() === false);
+}
+
+// LEAVING SAFETY NEEDS POSITIVE EVIDENCE OF A WEAPON.
+//
+// `known` is false until the first BP_USE_LIST lands — which is the pass right after a
+// login, and a resume logs in twenty-one characters at once. armed() answers "yes" there
+// on no evidence, which is right mid-fight and fatal at an inn door.
+{
+  const { Autopilot } = await import('./m59-autopilot.mjs');
+  const keeper = (eq) => {
+    const k = Object.create(Autopilot.prototype);
+    k.s = { client: { equipment: () => eq, rsc: { get: () => null } } };
+    return k;
+  };
+  const unknown = { known: false, equipped: [] };
+  const emptyHanded = { known: true, equipped: [] };
+  const holdingMace = { known: true, equipped: [{ id: 1, name: 'mace' }] };
+  const holdingBread = { known: true, equipped: [{ id: 1, name: 'bread' }] };
+
+  ok('armed() still says yes on an unread use list — it must not stop a fight',
+     keeper(unknown).armed() === true);
+  ok('armedForSure() says no on the same reading',
+     keeper(unknown).armedForSure() === false);
+  ok('both say no to a confirmed empty hand',
+     keeper(emptyHanded).armed() === false && keeper(emptyHanded).armedForSure() === false);
+  ok('both say yes to a mace',
+     keeper(holdingMace).armed() === true && keeper(holdingMace).armedForSure() === true);
+  ok('a loaf of bread is not a weapon',
+     keeper(holdingBread).armedForSure() === false);
+}
+
+// SIT IN A CORNER, AND IN THE EMPTIEST ONE THERE IS.
+//
+// Two of the four approaches to a corner are wall, so anything that wants to reach a
+// character sitting in one has half as many squares to do it from. It costs nothing —
+// the character is sitting still either way — and it is what a person does in a tavern.
+{
+  const { Autopilot } = await import('./m59-autopilot.mjs');
+  // A ten-by-ten grid with floor in the box rows 2..8, cols 2..8. (2,2), (2,8), (8,2)
+  // and (8,8) are corners; the middle of an edge is a wall; the centre is open floor.
+  const room = (others = []) => {
+    const k = Object.create(Autopilot.prototype);
+    const geo = {
+      rows: 10, cols: 10,
+      walkable: (row, col) => row >= 2 && row <= 8 && col >= 2 && col <= 8,
+    };
+    const me = { id: 0, col: 5, row: 5 };
+    const objects = new Map([[0, me], ...others.map((o, i) => [i + 1, { id: i + 1, ...o }])]);
+    k.s = {
+      client: { selfId: 0, self: me, room: { objects } },
+      world: {
+        geometry: geo,
+        // Chebyshev steps, everything reachable — the grid is not what is under test.
+        reach: (col, r) => ({ reachable: true,
+                              steps: Math.max(Math.abs(col - me.col), Math.abs(r - me.row)) }),
+      },
+    };
+    return k;
+  };
+
+  const empty = room().restingSquare();
+  ok('an empty room seats the character in a corner', empty?.seat === 'corner',
+     JSON.stringify(empty));
+  ok('and not in the middle of the floor it was standing on',
+     !(empty?.col === 5 && empty?.row === 5), JSON.stringify(empty));
+  ok('the corner it picks is one of the four real ones',
+     [2, 8].includes(empty?.col) && [2, 8].includes(empty?.row), JSON.stringify(empty));
+
+  // AN OCCUPIED CORNER IS NOT AN OPEN ONE. Every character here is attackable and they
+  // stack, so a corner with a fleetmate already in it is the crowd the clearance rule
+  // exists to avoid — take another corner, not that one.
+  const taken = room([{ col: 2, row: 2 }]).restingSquare();
+  ok('a corner with somebody already in it is not chosen',
+     !(taken?.col === 2 && taken?.row === 2), JSON.stringify(taken));
+  ok('it takes a different corner rather than giving up on corners',
+     taken?.seat === 'corner', JSON.stringify(taken));
+
+  // All four corners occupied: it must still seat the character somewhere rather than
+  // returning nothing, because "nowhere clear to rest" is what leaves it on its feet.
+  const crowded = room([{ col: 2, row: 2 }, { col: 2, row: 8 },
+                        { col: 8, row: 2 }, { col: 8, row: 8 }]).restingSquare();
+  ok('with every corner taken it still finds a seat', !!crowded, JSON.stringify(crowded));
+  ok('and says honestly that it is not a corner',
+     crowded && crowded.seat !== 'corner', JSON.stringify(crowded));
+}
+
+// restUntil has to be able to WAIT for mana, and must not read "only mana is moving"
+// as a stall — health and vigor are already at their ceilings in the case that needs it.
+{
+  let i = 0;
+  const seq = [4, 8, 12, 16, 20];
+  const s = {
+    need: () => ({
+      vitals: () => ({ health: { value: 20, max: 20 },
+                       vigor:  { value: 200, max: 200, scale_max: 200 },
+                       mana:   { value: seq[Math.min(i, seq.length - 1)], max: 20 } }),
+      stats: async () => { i++; },
+      waitFor: async () => {}, rest: async () => {}, stand: async () => {},
+    }),
+    pacer: { submit: async (_k, f) => f() },
+  };
+  const r = await restUntil(s, { health: 0.95, vigor: 0.95, mana: 0.95, maxSeconds: 60 });
+  ok('sits for mana even with health and vigor already full', r.reached_target === true,
+     JSON.stringify({ reached: r.reached_target, mana: r.vitals?.mana }));
+  ok('and does not call a climbing mana bar a stall', !/nothing recovered/.test(r.note || ''),
+     r.note);
+}
+
+// The default is unchanged: a caller that says nothing about mana must not start
+// waiting for it. Every existing call site depends on this.
+{
+  const s = {
+    need: () => ({
+      vitals: () => ({ health: { value: 20, max: 20 },
+                       vigor:  { value: 200, max: 200, scale_max: 200 },
+                       mana:   { value: 1, max: 20 } }),
+      stats: async () => {}, waitFor: async () => {},
+      rest: async () => {}, stand: async () => {},
+    }),
+    pacer: { submit: async (_k, f) => f() },
+  };
+  const r = await restUntil(s, { health: 0.95, vigor: 0.95, maxSeconds: 60 });
+  ok('an empty mana bar does not hold a rest that never asked for mana',
+     r.rested === false && /already recovered/.test(r.note || ''), JSON.stringify(r));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
