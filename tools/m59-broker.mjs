@@ -2045,6 +2045,33 @@ class Session {
     await this.pacer.submit('rest', () => c.stand());
   }
 
+  // AND CONFIRM WHERE THE SERVER THINKS WE ARE, ONCE, BEFORE CROSSING OUT.
+  //
+  // `Room.SomethingTryGo` matches the exit against `piRow`/`piCol` — the SERVER's
+  // position, not ours — and its refusal is the same "You are unable to go anywhere."
+  // that a seated character gets. Two causes, one message, opposite fixes.
+  //
+  // Walking is dead-reckoned now, deliberately: the server does not echo a mover's own
+  // accepted move, so predicting is the only alternative to a 1.2-5.6s round trip per
+  // square. That trade is right in the middle of a room and wrong at its edge — cant-go
+  // went from 36% to 52% of all crossings when the resync cap shipped, because a
+  // predicted square we never actually reached looks exactly like an exit that does not
+  // work.
+  //
+  // So: one read per HOP, not one per square. That is a single round trip against a
+  // whole room crossing, which keeps essentially all of the speed and removes the
+  // entire class of failure. It also makes a retry meaningful — `approachSquare` is
+  // computed from where we are, so re-planning from a predicted position returns the
+  // identical answer forever, which is what a character stuck in a doorway loop is
+  // actually doing.
+  async confirmPosition() {
+    const c = this.need();
+    this.lastRoomRead = Date.now();
+    await this.pacer.submit('read', () => c.roomContents());
+    await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2000 });
+    return c.self ? { col: c.self.col, row: c.self.row } : null;
+  }
+
   // ONE SQUARE, AND NOT A ROOM RE-READ TO GO WITH IT.
   //
   // This used to end with a full `roomContents()` request and a wait for the reply, ONCE
@@ -2486,6 +2513,15 @@ class Session {
       }
 
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
+      // Where the server thinks we are, before asking it to let us out. If prediction
+      // drifted, lean again from the position we are ACTUALLY on — the first lean was
+      // aimed from a square we may never have reached.
+      const at = await this.confirmPosition();
+      if (at && (Math.abs(at.col - exit.stand_on.col) > 1 || Math.abs(at.row - exit.stand_on.row) > 1)) {
+        await this.pacer.submit('move',
+          () => c.moveToSquare(exit.stand_on.col, exit.stand_on.row), MOVE_INTERVAL_MS);
+        leaned = true;
+      }
       const before = c.evSeq;
       await this.standBeforeGo();
       await this.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
