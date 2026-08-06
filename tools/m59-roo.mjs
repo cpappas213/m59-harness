@@ -337,12 +337,39 @@ export class RoomGeometry {
     if (!this.inBounds(fromRow, fromCol)) return { found: false, reason: 'start is outside the room grid' };
     if (!this.inBounds(toRow, toCol)) return { found: false, reason: 'goal is outside the room grid' };
     if (!this.walkable(toRow, toCol)) return { found: false, reason: 'goal square has no floor' };
-    // Say WHICH end is the problem. "no route" when the caller is standing on solid
-    // rock is a true statement that sends them looking in the wrong place.
-    if (!this.walkable(fromRow, fromCol))
-      return { found: false, reason: 'you are standing on a square the geometry says has no floor — nothing is reachable from here until you step onto solid ground',
-               stuck: true, nearest_floor: this.nearestWalkable(fromRow, fromCol) };
     if (fromRow === toRow && fromCol === toCol) return { found: true, steps: [] };
+
+    // STANDING ON A SQUARE IS PROOF THAT IT IS STANDABLE, whatever the grid says.
+    //
+    // This used to refuse outright — `stuck: true`, "nothing is reachable from here
+    // until you step onto solid ground" — and it was self-inflicted bad news. The
+    // character IS there. The server put it there and is perfectly happy about it. The
+    // only thing claiming otherwise is a one-byte-per-square projection we have now
+    // caught being wrong three separate ways in one afternoon: a doorway strip in the
+    // Brownestone Inn, half a square edge in the Limping Toad, and this.
+    //
+    // And it does not even need the grid to be wrong. Our position can simply be a
+    // moment stale — moves are dead-reckoned and the server is the authority — so a
+    // character mid-step reads as standing in a wall, which is the same thing a person
+    // sees when the client lags behind the server and the door will not open for a
+    // second.
+    //
+    // Either way the refusal is the worst available answer: it is returned BEFORE any
+    // packet is sent, so a character that could simply have walked is told it is
+    // trapped. It accounted for the first of the seven refusals on every failed edge
+    // crossing, and it is emitted by us, about us, on no evidence.
+    //
+    // So: start from the nearest square the grid does believe in and prepend the step
+    // to it. Fine movement covers that first hop — the server judges it, not the grid.
+    let start = { row: fromRow, col: fromCol }, lead = null;
+    if (!this.walkable(fromRow, fromCol)) {
+      const near = this.nearestWalkable(fromRow, fromCol);
+      if (!near) return { found: false, reason: 'no floor anywhere near the starting square', stuck: true };
+      start = near;
+      lead = { row: near.row, col: near.col, dir: null, recovered: true };
+      if (near.row === toRow && near.col === toCol) return { found: true, steps: [lead] };
+    }
+    fromRow = start.row; fromCol = start.col;
 
     const key = (r, c) => (r - 1) * this.cols + (c - 1);
     const h = (r, c) => {
@@ -399,7 +426,10 @@ export class RoomGeometry {
           rr = prev.row; cc = prev.col; at = key(rr, cc);
         }
         steps.reverse();
-        return { found: true, steps, expanded };
+        // `lead` is the recovery step onto believable floor, when we started somewhere
+        // the grid does not think exists. It is first because it happened first.
+        return { found: true, steps: lead ? [lead, ...steps] : steps, expanded,
+                 ...(lead ? { recovered_from: { row: start.row, col: start.col } } : {}) };
       }
       for (const n of this.neighbors(cur.r, cur.c, { fine })) {
         const nk = key(n.row, n.col);

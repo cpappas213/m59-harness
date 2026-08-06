@@ -241,6 +241,49 @@ console.log('\nrouting treats monsters as cost, not as wall');
   })());
 }
 
+// ------------------------------------------------------- standing in a "wall"
+//
+// The router used to refuse to plan at all when the square it was STANDING ON read as
+// no-floor, and return `stuck: true` with a sentence telling the caller it was trapped.
+// That answer is emitted before a single packet goes out, on no evidence but a
+// one-byte-per-square projection we have caught being wrong three ways in an
+// afternoon — and it does not even need the grid to be wrong, because a dead-reckoned
+// position that is one step stale reads exactly the same. It was the first of the seven
+// refusals on every failed edge crossing.
+//
+// Standing somewhere is proof it is standable. So: recover onto the nearest square the
+// grid believes in, and say so, rather than refusing.
+console.log('\nstanding where the grid says there is no floor');
+{
+  const rows = 21, cols = 21;
+  const flags = Buffer.alloc(rows * cols, 1);
+  flags[(11 - 1) * cols + (11 - 1)] = 0;            // the square we are standing on
+  const g = new RoomGeometry({ file: 'synthetic', version: 13, rows, cols,
+    grid: Buffer.alloc(rows * cols, 0xff), flags, monsterGrid: null,
+    walls: [], sidedefs: [], sectors: [], clientSize: null });
+
+  const p = g.path(11, 11, 11, 20);
+  ok('it plans a route instead of declaring itself trapped', p.found, p.reason || `${p.steps.length} steps`);
+  ok('...and does not report stuck', !p.stuck);
+  ok('the first step recovers onto believable floor',
+     p.steps[0]?.recovered === true && g.walkable(p.steps[0].row, p.steps[0].col),
+     JSON.stringify(p.steps[0]));
+  ok('it still ends at the goal', p.steps.at(-1).row === 11 && p.steps.at(-1).col === 20);
+  ok('it says where it recovered from', !!p.recovered_from);
+  // A start with genuinely nothing around it is still a refusal — that one is real.
+  const empty = new RoomGeometry({ file: 'synthetic', version: 13, rows, cols,
+    grid: Buffer.alloc(rows * cols, 0xff), flags: Buffer.alloc(rows * cols, 0),
+    monsterGrid: null, walls: [], sidedefs: [], sectors: [], clientSize: null });
+  ok('a room with no floor at all is still refused', !empty.path(11, 11, 11, 20).found);
+  // And the normal case must not have grown a phantom first step.
+  const plain = new RoomGeometry({ file: 'synthetic', version: 13, rows, cols,
+    grid: Buffer.alloc(rows * cols, 0xff), flags: Buffer.alloc(rows * cols, 1),
+    monsterGrid: null, walls: [], sidedefs: [], sectors: [], clientSize: null });
+  const q = plain.path(11, 11, 11, 20);
+  ok('a normal route is unchanged', q.found && !q.recovered_from && q.steps.length === 9,
+     `${q.steps.length} steps`);
+}
+
 // ------------------------------------------------------- against the real tree
 //
 // Everything above runs anywhere. This part needs the game's own room files, so it
