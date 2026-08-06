@@ -47,7 +47,7 @@ import * as abilities from './m59-abilities.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
-         POSTMORTEM_DIR } from './m59-autopilot.mjs';
+         POSTMORTEM_DIR, setPilotLookup } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
 import { loadSpawns, huntingGrounds, roomThreats, preyFor, scorePrey, PURPOSES } from './m59-spawns.mjs';
@@ -333,6 +333,19 @@ function listen(name, s) {
         // Speech from a character the operator is currently playing is direction, not
         // conversation. Returns true when it consumed the message.
         operatorInstruction: (said) => routeOperatorInstruction(name, said),
+        // IS THIS SPEAKER THE PERSON AT THE CONTROLS? Same test as operatorInstruction
+        // uses, exposed as a predicate so the small-talk table can gate an answer on it
+        // without consuming the message. Bound to a live local pid, not to a name.
+        isOperator: (speakerId) => !!pilotedSpeaker(speakerId),
+        // The keeper's current debug state as lines of prose, or null when it is not in
+        // one of the three states being chased.
+        debugReport: () => { const k = autopilotIfAny(name); return k?.debug ? k.debugLines() : null; },
+        // IS THIS CHARACTER PLAYING DEAD? Speech is an action while the entry grace
+        // period is unspent (user.kod:4052 and 4171 both wake the room on it), so a
+        // frozen character must not answer anybody — not the operator, and not a stranger
+        // saying hello. See channelFor.
+        keeperFrozen: () => { const k = autopilotIfAny(name);
+          return !!(k?.frozenUntil && Date.now() < k.frozenUntil); },
       },
     });
     ch.reattach();
@@ -695,6 +708,27 @@ function pilotedSpeaker(objectId) {
   }
   return null;
 }
+
+// WHO IS AT THE CONTROLS, for the keepers.
+//
+// The keepers cannot import this file — importing m59-broker.mjs RUNS it, taking the
+// fleet lock and starting rejoin timers — so the answer is pushed down instead. This is
+// the whole of what the debug-tell feature is allowed to know about recipients: it may
+// message the character a client on THIS MACHINE is currently holding, and nobody else.
+// No configured name, no guessing from the online roster, and therefore no way for it to
+// message a stranger on a shared server.
+//
+// pilotOf() re-checks the pid, so a client that was closed stops being an answer without
+// anything having to notice.
+setPilotLookup(() => {
+  for (const agent of [...piloted.keys()]) {
+    const p = pilotOf(agent);
+    if (!p) continue;
+    const name = p.character ?? sessions.get(agent)?.client?.me?.name ?? null;
+    if (name) return { agent, character: name, objectId: p.objectId ?? null, since: p.since };
+  }
+  return null;
+});
 
 function claimPilot(agent, pid, { character = null } = {}) {
   const s = sessions.get(agent);
@@ -5550,6 +5584,13 @@ const TOOLS = [
           // tick would be a self-inflicted load spike during the one window we most
           // want the fleet quiet. Null when nothing is parking, which is nearly always.
           parked: ap ? ap.parkStatus() : null,
+          // IS A PERSON HOLDING THIS ONE RIGHT NOW? Published on the row for the same
+          // reason `parked` is: the terminal and the fleet page both want to mark it, and
+          // asking per character would be twenty-one calls a tick. pilotOf() re-checks
+          // the pid, so a closed client stops being an answer without anyone polling.
+          // Null for every character nobody is playing, which is nearly all of them.
+          piloted: (() => { const p = pilotOf(name);
+            return p ? { since: p.since, pid: p.pid } : null; })(),
           // The safe-spot thesis is a survival claim, so it has to be scored as one.
           // Deaths while standing in a square we believed in are the number that
           // falsifies it, and they are worth separating from deaths in the open.
@@ -5891,7 +5932,14 @@ function serveHttp(port) {
       const hours = Number(new URL(req.url, 'http://x').searchParams.get('hours')) || 24;
       try {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-        return res.end(renderDashboard({ hours }));
+        // Live, not from the ledger: a pilot claim taken since the last five-minute
+        // sample would not be in it, and that is exactly when you are looking.
+        const holding = [...piloted.keys()]
+          .map(a => pilotOf(a))
+          .filter(Boolean)
+          .map(p => p.character)
+          .filter(Boolean);
+        return res.end(renderDashboard({ hours, piloted: holding }));
       } catch (e) {
         res.writeHead(500, { 'content-type': 'text/plain' });
         return res.end('dashboard failed: ' + e.message);

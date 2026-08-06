@@ -119,6 +119,67 @@ function vigorBarFor(names, policy) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pct = v => (v && v.max ? v.value / v.max : null);
 
+// ------------------------------------------------------- debugging from inside the game
+//
+// THREE STATES WE DO NOT YET UNDERSTAND, reported to whoever is standing next to the
+// character rather than to a terminal nobody is reading.
+//
+// These are the three that survived the last round of fixes without being explained:
+// they are common (across 403 attended deaths: 46%, 29% and 14% of them), each one is
+// individually a correct-looking refusal, and the sum of them is a character quietly
+// doing nothing until something eats it. The one thing they have in common is that the
+// journal line does not carry enough to tell what the character could actually SEE.
+//
+// So: flag the state, keep the full detail on the keeper, and — only when a human has a
+// client open on one of the fleet's own characters — send it as a tell. Standing next to
+// the thing while it explains itself is a different debugging instrument from reading a
+// post-mortem afterwards, which is the whole point.
+export const DEBUG_STATES = {
+  'every defensible square here is out of the fight\'s reach': 'no defensible square',
+  'could not reach the safe spot': 'could not reach safe spot',
+  'frozen': 'play-dead freeze',
+};
+// FIVE MINUTES PER CHARACTER PER CONDITION. Measured across 425 post-mortem journals the
+// three states fire 2.12 times per character-minute, which across 21 characters is about
+// 2,675 tells an hour at one mana each — unreadable, and expensive. The cooldown is per
+// (character, condition) so one noisy character cannot mask another's first report, and
+// what it suppresses is COUNTED and stated in the next tell rather than dropped, because
+// "the 40th time in five minutes" is itself the finding.
+const DEBUG_TELL_COOLDOWN_MS = Number(process.env.M59_DEBUG_TELL_MS || 5 * 60_000);
+const tellCooldown = new Map();     // "character|state" -> last sent at
+const tellSuppressed = new Map();   // "character|state" -> how many since then
+
+// WHO IS AT THE CONTROLS, if anyone.
+//
+// Registered by the broker rather than imported from it, because the pilot claim is
+// bound to a local process id and that is broker state — and because importing
+// m59-broker.mjs RUNS it (it takes the fleet lock and starts rejoin timers), which is
+// the trap CLAUDE.md warns about. The keeper only needs the answer.
+//
+// Null until the broker sets it. A headless run, a test, or a broker with nobody piloting
+// all give the same answer, and the same behaviour: say nothing to nobody.
+let pilotLookup = () => null;
+export function setPilotLookup(fn) {
+  pilotLookup = typeof fn === 'function' ? fn : (() => null);
+}
+export function pilotedNow() { try { return pilotLookup(); } catch { return null; } }
+
+// WHERE IN THE ROOM, IN WORDS. A tell that says "col 16, row 11" is a tell you have to go
+// and look up; standing in the room you want "far north-west". Rows count from the north
+// (LEAVE.NORTH aims at row 1) and columns from the west (LEAVE.WEST aims at col 1) —
+// taken from the boundary candidates in World.exits(), not assumed.
+export function bearingIn(row, col, rows, cols) {
+  if (!rows || !cols || row == null || col == null) return null;
+  const band = (v, n) => (v <= n / 3 ? 0 : v <= (2 * n) / 3 ? 1 : 2);
+  const ns = ['north', '', 'south'][band(row, rows)];
+  const ew = ['west', '', 'east'][band(col, cols)];
+  const edge = row <= 2 || col <= 2 || row >= rows - 1 || col >= cols - 1;
+  if (!ns && !ew) return 'the middle of the map';
+  const where = [ns, ew].filter(Boolean).join('-');
+  return (ns && ew) ? `the ${where} corner${edge ? ' (hard against the edge)' : ''}`
+                    : `the ${where} side${edge ? ' (hard against the edge)' : ''}`;
+}
+
 // VIGOR IS NOT SHAPED LIKE THE OTHER TWO, and reading it as though it were has been
 // quietly disabling every vigor decision in this file.
 //
@@ -2451,6 +2512,62 @@ export class Autopilot {
     return status;
   }
 
+  // IS THIS THING TOO DANGEROUS TO SWING AT — asked of ONE creature, by name.
+  //
+  // capBlockers answers this for a whole room and only when the room is at cap, so the
+  // judgement it makes was unreachable from anywhere else. That gap is what killed
+  // Waldorf. `capBlockers` correctly refused four soldiers of the Princess' army as
+  // unrecognised, logged the refusal, and 1.3 seconds later the retaliation branch below
+  // picked one of the same four as a `bystander` and engaged it, because that branch
+  // consulted nothing. Level 27, 27/27 health, dead in thirteen seconds.
+  //
+  // Faction soldiers were present at 241 of the 403 attended deaths on disk. Commit
+  // 7a4705c ("Absence of information is not permission") fixed the clearing half of this
+  // and left the retaliating half open; this is the same rule, extracted so both halves
+  // ask one question.
+  //
+  // Returns null when the creature is fine to fight, or a reason when it is not. Karma is
+  // deliberately NOT consulted here: karma is a choice about what to hunt, and something
+  // already swinging at us is not a choice.
+  refuseEngagement(name) {
+    const key = String(name || '').toLowerCase();
+    if (!key) return null;
+    const spawns = loadSpawns(SPAWN_FILE);
+    const info = Object.values(spawns.creatures ?? {})
+      .find(x => String(x.name).toLowerCase() === key);
+    const level = this.s.client?.vitals?.()?.health?.max ?? 0;
+    const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
+    const lvl = info?.level ?? null, rating = info?.attack_rating ?? null;
+    if (!info)
+      return { name, level: null, rating: null,
+               why: 'nothing is known about it — the spawn table has no row for this name, and ' +
+                    'an unrecognised creature is refused rather than assumed harmless' };
+
+    // GENTLE BY RATING IS FAIR GAME WHATEVER ITS LEVEL, and this is deliberately NOT the
+    // same test capBlockers makes.
+    //
+    // capBlockers falls through to a level-only refusal, which reads a fungus beast —
+    // level 50, difficulty 1, attack rating 210 — as more dangerous than a centipede at
+    // level 30 and rating 390. CLAUDE.md is explicit that this is backwards: level is
+    // what a blow costs, difficulty is how often one lands, and the level-50 creature is
+    // the SAFER fight. There it is survivable, because a refusal only means "do not go
+    // out of your way to clear it".
+    //
+    // Here it is not survivable, because the alternative to hitting back is turning your
+    // back on something already swinging. Walking away from a gentle attacker costs free
+    // hits and gains nothing. So retaliation judges on the RATING, which is the number
+    // that actually describes danger, and refuses only what is genuinely above the band.
+    if (rating != null && rating <= GENTLE_RATING) return null;
+    if (ceiling != null && lvl != null && lvl > ceiling)
+      return { name, level: lvl, rating,
+               why: rating != null
+                 ? `attack rating ${rating} is above the forgiving band of ${GENTLE_RATING} ` +
+                   `and level ${lvl} is above the safety band of ${ceiling}`
+                 : `level ${lvl} is above the safety band of ${ceiling} and the table has no ` +
+                   `attack rating to judge it more kindly by` };
+    return null;
+  }
+
   // ------------------------------------------------------------------ post-mortem
   //
   // WHAT WAS HAPPENING WHEN IT DIED, written down while it is still true.
@@ -2702,11 +2819,158 @@ export class Autopilot {
     } else if (this.stalledSince) this.stalledWhy = why;
   }
 
+  // A DETAIL FIELD MUST NOT BE ABLE TO EAT THE RECORD'S OWN KEYS.
+  //
+  // This was `{ at: Date.now(), pass, what, ...detail }` — spread LAST — which is the
+  // same shape CLAUDE.md documents for `emit(kind, data)` and for `recordEvent`, and it
+  // failed the same way. `note('hitting back', { at: engageName, ... })` overwrote the
+  // timestamp with "soldier of the Princess' army", so the one journal line that
+  // explains why Waldorf picked a fight with four guards is the one line that cannot be
+  // placed in time. The write succeeded; the record lied.
+  //
+  // Reserved keys are therefore applied AFTER the spread, so a colliding detail field is
+  // inert rather than silent. It is preserved under `detail_<key>` rather than dropped,
+  // because a caller that passed it meant something by it — see `detail_at` on the
+  // retaliation note, which is the creature's name.
   note(what, detail = {}) {
-    const e = { at: Date.now(), pass: this.passes, what, ...detail };
+    const e = { ...detail };
+    for (const k of ['at', 'pass', 'what'])
+      if (k in e) { e[`detail_${k}`] = e[k]; delete e[k]; }
+    e.at = Date.now(); e.pass = this.passes; e.what = what;
     this.journal.push(e);
     if (this.journal.length > 200) this.journal.splice(0, this.journal.length - 200);
+    if (what in DEBUG_STATES) this.flagDebug(what, e);
     return e;
+  }
+
+  // ------------------------------------------------------------------ debugging states
+  //
+  // Note it as usual, then keep the whole thing where the chat interface can find it and
+  // push it to whoever has a client open. Called from note() rather than from the three
+  // sites, so a state cannot be flagged in one place and forgotten in another.
+  flagDebug(what, entry) {
+    const c = this.s.client, me = c?.self;
+    const room = this.s.world?.room, geo = this.s.world?.geometry;
+    const v = c?.vitals?.() ?? {};
+    this.debug = {
+      what, label: DEBUG_STATES[what], at: Date.now(), pass: this.passes,
+      room: room?.name ?? null, room_num: room?.num ?? null,
+      col: me?.col ?? null, row: me?.row ?? null,
+      grid: geo ? { rows: geo.rows, cols: geo.cols } : null,
+      bearing: geo && me ? bearingIn(me.row, me.col, geo.rows, geo.cols) : null,
+      on_floor: geo && me ? geo.walkable(me.row, me.col) : null,
+      doing: this.doing ?? null, mode: this.mode, hunting: this.policy.hunt ?? null,
+      health: v.health?.value ?? null, health_max: v.health?.max ?? null,
+      vigor: vigorOf(v), rest_ceiling: REST_VIGOR_CAP * skills.VIGOR_MAX,
+      holding: this.hold ? { col: this.hold.col, row: this.hold.row, proven: this.hold.proven } : null,
+      monsters: c?.room ? [...c.room.objects.values()].filter(o =>
+        o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER)).length : null,
+      detail: entry,
+    };
+    this.debugSeen = this.debugSeen || {};
+    this.debugSeen[what] = (this.debugSeen[what] || 0) + 1;
+    this.tellPilot(this.debug).catch(() => {});   // never let a tell break a pass
+  }
+
+  // The full state as lines of prose, which is what both the tell and the in-game answer
+  // want. Everything the journal entry carries is here — the entry is spread last so a
+  // state-specific field (`considered`, `unreachable`, `spot`, `left_s`) is never lost.
+  debugLines(d = this.debug) {
+    if (!d) return ['nothing flagged — I am not in one of the three states being chased.'];
+    const at = d.col != null ? `col ${d.col}/${d.grid?.cols ?? '?'}, row ${d.row}/${d.grid?.rows ?? '?'}` : 'position unknown';
+    const lines = [
+      `[${d.label}] ${d.room ?? 'unknown room'} (${d.room_num ?? '?'})`,
+      `at ${d.bearing ?? 'somewhere'} — ${at}${d.on_floor === false ? ' — STANDING OFF THE FLOOR' : ''}`,
+      `doing: ${d.doing ?? '?'} | mode ${d.mode} | hunting ${d.hunting ?? 'nothing'}`,
+      `hp ${d.health ?? '?'}/${d.health_max ?? '?'} | vigor ${d.vigor ?? '?'} (rest cap ${d.rest_ceiling})`,
+      `monsters here: ${d.monsters ?? '?'} | holding: ${d.holding ? `${d.holding.col},${d.holding.row}` : 'no spot'}`,
+      `seen ${this.debugSeen?.[d.what] ?? 1}x this run`,
+    ];
+    // Whatever the specific state recorded, minus the keys already spoken above.
+    const skip = new Set(['at', 'pass', 'what', 'why', 'note', 'hint']);
+    const extra = Object.entries(d.detail || {})
+      .filter(([k, v]) => !skip.has(k) && v != null && typeof v !== 'object')
+      .map(([k, v]) => `${k}=${v}`);
+    if (extra.length) lines.push(extra.join(' '));
+    if (d.detail?.why) lines.push(`why: ${d.detail.why}`);
+    return lines;
+  }
+
+  // SEND IT TO WHOEVER IS ACTUALLY HOLDING A CHARACTER, and to nobody otherwise.
+  //
+  // The recipient is not configured and cannot be: it is whichever of the fleet's own
+  // characters a desktop client is currently piloting, which the broker knows because IT
+  // spawned that client and can see the pid. No pilot means no tell — this must never
+  // pick a name and message a stranger on a shared server.
+  async tellPilot(d) {
+    const p = pilotedNow();
+    if (!p || !p.character) return { sent: false, why: 'nobody is piloting a character' };
+    if (p.agent === this.s.name) return { sent: false, why: 'that is this character' };
+    const key = `${this.s.name}|${d.what}`;
+
+    // NEVER SPEAK WHILE PLAYING DEAD. This is a backstop, not the mechanism.
+    //
+    // Settled from the server rather than guessed at. A tell runs UserSayGroup, which
+    // begins:
+    //
+    //   % User took an action!  Wake any AIs in the room to the user's presence!
+    //   if NOT (piFlags & PFLAG_MOVED_SINCE_ENTRY)
+    //   { Send(self,@NotifyMonstersOfPresence); }        user.kod:4171
+    //
+    // UserSay carries the identical guard at user.kod:4052. So speech IS an action in the
+    // one state where that matters: between the reconnect and the unfreeze the flag is
+    // clear, and a single tell hands back the grace period the freeze exists to buy — on
+    // a character that is, by definition, too hurt to survive the room noticing it.
+    //
+    // The freeze report is therefore sent from playDead() BEFORE the reconnect, where the
+    // flag is still set from all the walking and swinging and the wake branch does not
+    // run. That is both free and earlier. Anything still trying to speak in here is a
+    // caller that has not been through that path, and it is refused rather than trusted.
+    if (this.frozenUntil && Date.now() < this.frozenUntil) {
+      tellSuppressed.set(key, (tellSuppressed.get(key) ?? 0) + 1);
+      return { sent: false, why: 'playing dead — a tell would wake the room (user.kod:4171)' };
+    }
+
+    const last = tellCooldown.get(key) ?? 0;
+    const since = Date.now() - last;
+    if (since < DEBUG_TELL_COOLDOWN_MS) {
+      const q = tellSuppressed.get(key) ?? 0;
+      tellSuppressed.set(key, q + 1);
+      return { sent: false, why: `cooled down, ${Math.round((DEBUG_TELL_COOLDOWN_MS - since) / 1000)}s left` };
+    }
+    const c = this.s.client;
+    if (!c || !this.s.live) return { sent: false, why: 'not in game' };
+
+    // Resolve the recipient by NAME through the online roster, the same way the `say`
+    // tool does. Object ids are reissued by `save game`, so a stored id can silently
+    // address the wrong thing; a name that is not logged on simply finds nobody.
+    let id = null;
+    try {
+      await this.s.pacer.submit('read', () => c.players());
+      await c.waitFor({ kinds: ['who'], timeoutMs: 3000 });
+      const want = String(p.character).toLowerCase();
+      id = [...c.playersOnline.values()].find(x => x.name && x.name.toLowerCase() === want)?.id ?? null;
+    } catch { /* fall through to "not found" */ }
+    if (id == null) return { sent: false, why: `${p.character} is not in the online roster` };
+
+    const suppressed = tellSuppressed.get(key) ?? 0;
+    tellSuppressed.set(key, 0);
+    tellCooldown.set(key, Date.now());
+    const head = `${this.s.name}: ${d.label}` +
+                 (suppressed ? ` (+${suppressed} more in the last ${Math.round(DEBUG_TELL_COOLDOWN_MS / 60000)}m)` : '');
+    // One tell per line rather than one long one: the server truncates a long say, and a
+    // truncated tell would drop exactly the tail detail this exists to deliver. Capped,
+    // and the cap is stated rather than silent.
+    const lines = [head, ...this.debugLines(d).slice(1)];
+    const MAX = 6;
+    const send = lines.slice(0, MAX);
+    if (lines.length > MAX) send.push(`(+${lines.length - MAX} more lines — ask me "debug" in game)`);
+    for (const line of send) {
+      try {
+        await this.s.pacer.submit('say', () => c.sayGroup([id], line.slice(0, 200)));
+      } catch { break; }        // out of mana, or the pilot logged off mid-send
+    }
+    return { sent: true, to: p.character, lines: send.length };
   }
 
   // Into the LONG record, keyed by character name, so it survives the keeper.
@@ -4749,12 +5013,38 @@ export class Autopilot {
       const want = String(this.clearing || this.policy.hunt || '').toLowerCase();
       const bystander = adjacent.find(o =>
         !(c.rsc.get(o.nameRsc) || '').toLowerCase().includes(want));
+
+      // HITTING BACK IS STILL A CHOICE, AND IT IS NOT ALWAYS THE RIGHT ONE.
+      //
+      // "Refusing to hit back is not a strategy" is true of a baby spider chewing on a
+      // Qor student, which is the case this branch was written for. It is not true of
+      // four soldiers of the Princess' army, and the branch could not tell them apart
+      // because it asked nothing about what it was swinging at.
+      //
+      // So the same question capBlockers asks before CLEARING a room is now asked before
+      // RETALIATING in one. A refused attacker is not ignored — ignoring it really is how
+      // these characters die — it is escaped from: withdraw, which retreats to a wall
+      // where the health timer can run, and failing that leaves the room. Standing and
+      // trading blows with something outside our band is the one option removed.
+      const refused = bystander ? this.refuseEngagement(c.rsc.get(bystander.nameRsc)) : null;
+      if (refused) {
+        this.note('will not trade blows with this', {
+          creature: refused.name, level: refused.level, rating: refused.rating,
+          adjacent: adjacent.length, why: refused.why,
+          instead: 'withdrawing to a wall, or out of the room — hitting back at something ' +
+                   'outside our safety band is how a level-27 character dies at full health' });
+        this.tally.refused_retaliation = (this.tally.refused_retaliation || 0) + 1;
+        await this.withdraw(adjacent).catch(() => {});
+        this.progress('withdrew from something outside the safety band');
+        return;
+      }
+
       // `clearing` is a target for THIS PASS only — a creature we are killing to free
       // the room's cap, not a change of orders. policy.hunt is never rewritten by it.
       let engageName = bystander ? c.rsc.get(bystander.nameRsc)
                                  : (this.clearing || this.policy.hunt);
       if (bystander)
-        this.note('hitting back', { at: engageName, instead_of: this.policy.hunt,
+        this.note('hitting back', { target: engageName, instead_of: this.policy.hunt,
                                     why: 'it is adjacent and attacking; ignoring it is how these characters die' });
 
       // SWING AT WHAT MY PARTNER IS SWINGING AT.
@@ -4777,7 +5067,7 @@ export class Autopilot {
           engageName = c.rsc.get(seen.nameRsc) || engageName;
           if (this.foeId !== seen.id)
             this.note('joining my partner\'s fight', {
-              at: engageName, partner: agreed.from,
+              target: engageName, partner: agreed.from,
               why: 'both of us have to land a hit on the same creature for both of us to ' +
                    'advance from it — a kill only scores for a character that damaged it' });
         }
@@ -5399,6 +5689,44 @@ export class Autopilot {
       }
     } else this.freezesWithoutGain = 0;
     this.frozeAt = nowHp;
+
+    // TELL THE PILOT NOW, BEFORE THE RECONNECT — this is the only free moment there is.
+    //
+    // Speaking is not unconditionally an action. UserSayGroup, the handler behind a tell,
+    // opens with:
+    //
+    //   % User took an action!  Wake any AIs in the room to the user's presence!
+    //   if NOT (piFlags & PFLAG_MOVED_SINCE_ENTRY)
+    //   { Send(self,@NotifyMonstersOfPresence); }        user.kod:4171
+    //
+    // The wake is GATED on the grace-period flag being clear. Right here the character
+    // has been walking and swinging for minutes, so the flag is already set and the
+    // branch does not run: the tell costs a point of mana and nothing else.
+    //
+    // Two lines further down, reconnect() re-enters the world and CLEARS that flag, and
+    // from then until the unfreeze every word is a wake-up call to the whole room. So
+    // "during the freeze" is precisely the window where a tell would kill the character
+    // it is reporting on — and this, the moment the decision is taken, is both free and
+    // the earliest the news can possibly travel. The character then sits still for ninety
+    // seconds, which is time enough to walk over and watch it.
+    this.debug = {
+      what: 'frozen', label: DEBUG_STATES['frozen'], at: Date.now(), pass: this.passes,
+      room: this.s.world?.room?.name ?? null, room_num: this.s.world?.room?.num ?? null,
+      col: s.client?.self?.col ?? null, row: s.client?.self?.row ?? null,
+      grid: this.s.world?.geometry ? { rows: this.s.world.geometry.rows, cols: this.s.world.geometry.cols } : null,
+      bearing: this.s.world?.geometry && s.client?.self
+        ? bearingIn(s.client.self.row, s.client.self.col,
+                    this.s.world.geometry.rows, this.s.world.geometry.cols) : null,
+      doing: 'about to play dead', mode: this.mode, hunting: this.policy.hunt ?? null,
+      health: nowHp, health_max: s.client?.vitals?.()?.health?.max ?? null,
+      vigor: vigorOf(s.client?.vitals?.() ?? {}), rest_ceiling: REST_VIGOR_CAP * skills.VIGOR_MAX,
+      monsters: s.client?.room ? [...s.client.room.objects.values()].filter(o =>
+        o.id !== s.client.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER)).length : null,
+      detail: { why, freeze_s: Math.round((this.policy.freezeMs ?? 90_000) / 1000),
+                froze_at: this.frozeAt, times: this.freezesWithoutGain ?? 0,
+                note: 'sent BEFORE the logoff — during the freeze a tell would wake the room' },
+    };
+    await this.tellPilot(this.debug).catch(() => {});
     // Keep our own copy: rejoin() renumbers everything, and observe() will not have
     // run again by the time we need to know where we were standing.
     const spot = this.hold ? { ...this.hold } : null;

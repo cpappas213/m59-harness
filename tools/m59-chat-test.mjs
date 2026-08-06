@@ -411,5 +411,65 @@ section('registry');
   ok('one inbox per agent name', a === b);
 }
 
+// --------------------------------------------------- the debug answer, and who gets it
+//
+// Asking a character in-game what is wrong is a debugging instrument for the three states
+// that keep killing the fleet. It is also a description of how the fleet works — room,
+// position, health, what the keeper decided and why — so it is gated on the SPEAKER being
+// the person at the controls, which is a live local pid rather than a name off the wire.
+//
+// The failure that matters here is not "the operator got no answer". It is "a stranger on
+// a shared server got one", so that is what is pinned hardest.
+{
+  section('debug answers only the operator');
+  const rule = matchSmallTalk('debug');
+  eq('debug matches its own intent', rule?.intent, 'debug');
+  eq('so does "what\'s wrong"', matchSmallTalk("what's wrong")?.intent, 'debug');
+  eq('and "why are you stuck"', matchSmallTalk('why are you stuck')?.intent, 'debug');
+
+  const report = ['[no defensible square] The Queen\'s Way (603)', 'at the north-west corner'];
+  ok('a stranger gets nothing back, so the rule declines and falls through',
+     rule.reply({ isOperator: false, debugReport: report }) === null);
+  ok('a stranger is refused even when nothing is flagged',
+     rule.reply({ isOperator: false, debugReport: null }) === null);
+
+  const answered = rule.reply({ isOperator: true, debugReport: report });
+  ok('the operator gets the lines', Array.isArray(answered) && answered.length === 2);
+  ok('and they are the report itself', answered[0] === report[0]);
+  ok('the operator asking with nothing flagged is told so, not given a dump',
+     typeof rule.reply({ isOperator: true, debugReport: null }) === 'string');
+
+  // Ordinary small talk must not have become operator-only by accident.
+  eq('greetings still work for everyone',
+     matchSmallTalk('hello')?.reply({ speakerName: 'Lew' }), 'Hello, Lew.');
+}
+
+// ------------------------------------------------- a character playing dead says nothing
+//
+// UserSay and UserSayGroup both open with
+//   if NOT (piFlags & PFLAG_MOVED_SINCE_ENTRY) { Send(self,@NotifyMonstersOfPresence); }
+// (user.kod:4052 and 4171), so speech ends the entry grace period. A frozen character is
+// spending that period sitting still because it is too hurt to survive being noticed —
+// which means a courteous reply to a passing "hi" was a way to kill it.
+{
+  section('playing dead outranks being polite');
+  const ch = Object.create(Chatter.prototype);
+  const item = { channel: 'group', speaker: 77 };
+
+  const frozen = ch.channelFor(item, { frozen: true, mana: 50, speakerInRoom: true });
+  eq('a frozen character has no channel at all', frozen.kind, null);
+  ok('and says why', /wake the room/.test(frozen.why ?? ''), frozen.why);
+
+  const awake = ch.channelFor(item, { frozen: false, mana: 50, speakerInRoom: true });
+  eq('an unfrozen one answers normally', awake.kind, 'tell');
+
+  // The refusal must not depend on who is asking: the operator's own tell would wake the
+  // room exactly as a stranger's does.
+  eq('not even for the operator', ch.channelFor(item, { frozen: true, mana: 50, isOperator: true }).kind, null);
+  // And it must outrank the say fallback, which is the path a no-mana character takes.
+  eq('nor by falling back to speech in the room',
+     ch.channelFor(item, { frozen: true, mana: 0, speakerInRoom: true }).kind, null);
+}
+
 console.log(`\n${failed ? 'FAILED' : 'ok'} — ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

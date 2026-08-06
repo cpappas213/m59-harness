@@ -24,7 +24,7 @@ import {
   brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit, signetRings, returnSignetRings,
   parseDeathBroadcast, deathBroadcastFor,
 } from './m59-skills.mjs';
-import { Autopilot } from './m59-autopilot.mjs';
+import { Autopilot, bearingIn, DEBUG_STATES } from './m59-autopilot.mjs';
 import { isFood } from './m59-items.mjs';
 import { outages, outageAround, recoverCrash, readLedger, ACTIVE_FILE } from './m59-uptime.mjs';
 import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs';
@@ -1166,6 +1166,111 @@ console.log('\nan unreachable vigor floor stops applying');
      tooTired(40, 80, 0) === true);
   ok('and is met once rested to the cap', tooTired(80, 80, 0) === false);
   ok('no floor at all is never too tired', tooTired(10, 0, 0) === false);
+}
+
+// ------------------------------------- hitting back at something outside the safety band
+//
+// Waldorf, level 27, 27/27 health, died in thirteen seconds to four soldiers of the
+// Princess' army. capBlockers had refused them as unrecognised 1.3 seconds earlier and
+// said so in the journal; the retaliation branch then engaged one anyway, because it
+// asked nothing about what it was swinging at. Commit 7a4705c fixed the clearing half of
+// this and left the retaliating half open.
+{
+  console.log('\nrefusing to trade blows with the unrecognised');
+  const mk = (policy = {}) => {
+    const k = new Autopilot({ name: 't2', world: { room: { num: 603 } },
+      client: { selfId: 9, room: { objects: new Map() }, rsc: { get: r => r },
+                vitals: () => ({ health: { value: 27, max: 27 } }) } }, {});
+    Object.assign(k.policy, { hunt: 'giant rat', maxThreatOver: 6 }, policy);
+    return k;
+  };
+  const k = mk();
+
+  const soldier = k.refuseEngagement("soldier of the Princess' army");
+  ok('an unrecognised creature is refused', !!soldier);
+  ok('and says the spawn table has no row for it',
+     /no row for this name/.test(soldier?.why ?? ''), soldier?.why);
+  ok('the same refusal capBlockers makes, from one place',
+     k.refuseEngagement("soldier of the Duke's army") !== null);
+
+  // The rule must not become "refuse everything", which would be the other failure —
+  // ignoring what is chewing on you is how the Qor characters died.
+  ok('a giant rat is still fair game', k.refuseEngagement('giant rat') === null);
+  ok('an empty name is not a refusal', k.refuseEngagement('') === null);
+
+  // RETALIATION JUDGES ON RATING, NOT LEVEL, and that is on purpose — see the comment on
+  // refuseEngagement. A fungus beast is level 50 against this character's band of 33, and
+  // capBlockers refuses it on that alone; but its attack rating is 210 against a
+  // centipede's 390 at level 30, and CLAUDE.md is explicit that the level-50 creature is
+  // the safer fight. Turning your back on a gentle attacker costs free hits and gains
+  // nothing, so it is hit back at.
+  ok('a fungus beast is gentle by rating despite its level',
+     k.refuseEngagement('fungus beast') === null);
+  // An ant is level 40 at rating 360 — over this character's band of 33 on both counts,
+  // and the case the rating rule must NOT wave through.
+  ok('an ant is neither gentle nor within the band, and is refused',
+     k.refuseEngagement('ant') !== null);
+  ok('and the refusal names the rating, not just the level',
+     /attack rating 360/.test(k.refuseEngagement('ant')?.why ?? ''),
+     k.refuseEngagement('ant')?.why);
+  ok('a centipede at level 30 is inside a band of 33',
+     k.refuseEngagement('centipede') === null);
+  ok('a character with a wide enough band is allowed the ant',
+     mk({ maxThreatOver: 200 }).refuseEngagement('ant') === null);
+}
+
+// ---------------------------------------------- a detail field must not eat the record
+//
+// note() spread `detail` LAST, so note('hitting back', { at: engageName }) overwrote the
+// timestamp with "soldier of the Princess' army" — the one line explaining the death was
+// the one line that could not be placed in time. Same shape as the emit(kind, data) and
+// recordEvent bugs CLAUDE.md documents.
+{
+  console.log('\nnote() keeps its own keys');
+  const k = new Autopilot({ name: 't2', world: {}, client: null }, {});
+  k.passes = 42;
+  const e = k.note('hitting back', { at: "soldier of the Princess' army", target: 'x' });
+  ok('the timestamp survives a colliding detail key', typeof e.at === 'number' && e.at > 0);
+  ok('the pass number survives too', e.pass === 42);
+  ok('and `what` is what was asked for', e.what === 'hitting back');
+  ok('the colliding value is preserved, not dropped',
+     e.detail_at === "soldier of the Princess' army");
+  ok('ordinary detail is untouched', e.target === 'x');
+  const e2 = k.note('plain', { why: 'because' });
+  ok('a non-colliding note is unchanged', e2.why === 'because' && e2.what === 'plain');
+
+  // A CHARACTER BETWEEN SESSIONS HAS NO CLIENT, and note() now branches into flagDebug
+  // for three of its callers. That is reached from the ordinary keeper pass, so a throw
+  // here is a throw in the pass — the same shape as the null dereference that took out
+  // the whole fleet listing and left Clifford hunting bare-handed.
+  const bare = new Autopilot({ name: 't3', world: {}, client: null }, {});
+  let threw = null;
+  try { bare.note('could not reach the safe spot', { spot: { col: 8, row: 56 } }); }
+  catch (err) { threw = err; }
+  ok('flagging a debug state with no client does not throw', threw === null, String(threw));
+  ok('and it still recorded the state', bare.debug?.what === 'could not reach the safe spot');
+  ok('with the detail intact', bare.debug?.detail?.spot?.col === 8);
+  ok('and lines that can be spoken', Array.isArray(bare.debugLines()) && bare.debugLines().length > 0);
+  ok('every debug state has a short label',
+     Object.values(DEBUG_STATES).every(v => typeof v === 'string' && v.length > 0));
+}
+
+// ------------------------------------------------------ saying where you are, in words
+//
+// A tell that reads "col 16, row 11" is one you have to go and look up. Rows count from
+// the north (LEAVE.NORTH aims at row 1) and columns from the west, taken from the
+// boundary candidates in World.exits() rather than assumed.
+{
+  console.log('\nbearings');
+  ok('north-west corner', /north-west corner/.test(bearingIn(5, 5, 60, 60) ?? ''));
+  ok('south-east corner', /south-east corner/.test(bearingIn(55, 55, 60, 60) ?? ''));
+  ok('the middle is the middle', bearingIn(30, 30, 60, 60) === 'the middle of the map');
+  ok('a north side with a middling column', /north side/.test(bearingIn(5, 30, 60, 60) ?? ''));
+  ok('hard against the edge is called out',
+     /hard against the edge/.test(bearingIn(1, 1, 60, 60) ?? ''));
+  ok('Robin and Statler died in the south-west of room 108',
+     /south-west/.test(bearingIn(58, 2, 71, 50) ?? ''), bearingIn(58, 2, 71, 50));
+  ok('no geometry means no bearing', bearingIn(5, 5, null, null) === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

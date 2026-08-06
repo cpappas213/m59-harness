@@ -38,6 +38,31 @@ const pct = v => (v && v.max ? v.value / v.max : null);
 // Order matters: the first match wins, so the specific patterns come before the loose
 // ones. `bot` is first because "hey, are you a bot?" starts with a greeting.
 export const SMALL_TALK = [
+  // ASK IT WHAT IS WRONG, STANDING NEXT TO IT.
+  //
+  // The three states this answers for — no defensible square, could not reach the safe
+  // spot, the play-dead freeze — are the ones that survived a round of fixes without
+  // being explained, and the reason is that a journal line does not carry what the
+  // character could SEE. Being in the room with it and asking is a different instrument
+  // from reading a post-mortem afterwards.
+  //
+  // FIRST in the table, because "debug" would otherwise be swallowed by nothing in
+  // particular and because a question from the operator outranks small talk.
+  //
+  // GATED ON isOperator, which is a live local pid rather than a name: this answer states
+  // room, position, health, what the keeper is doing and why it refused, and that is a
+  // map of how the fleet works. A stranger on a shared server asking "debug" gets the
+  // ordinary escalation path, which is the same answer they got before this existed.
+  {
+    intent: 'debug',
+    re: /^\s*(debug|status|diag|what'?s wrong|why are you stuck|wtf)\b/i,
+    reply: (ctx) => {
+      if (!ctx.isOperator) return null;          // not for strangers; falls through
+      if (!ctx.debugReport) return `Nothing flagged — I'm not in one of the three states being chased.`;
+      return ctx.debugReport;                    // an array: one line per send
+
+    },
+  },
   {
     intent: 'identity',
     // `what are you` must not swallow `what are you doing` — the activity rule below
@@ -245,6 +270,14 @@ export class Chatter {
       dead: /underworld/i.test(view?.room?.name ?? (c ? c.rsc.get(c.roomNameRsc) : '') ?? ''),
       fighting: hostileNear,
       autopilot: (() => { try { return this.hooks.autopilotStatus?.() ?? null; } catch { return null; } })(),
+      // WHO IS ASKING, and it decides whether the debug answer is available at all. True
+      // only for a speaker whose client this machine spawned and whose pid is still
+      // alive — the same local fact operatorInstruction trusts, never a name off the
+      // wire. A stranger asking "debug" gets the ordinary escalation path.
+      isOperator: (() => { try { return !!this.hooks.isOperator?.(item.speaker); } catch { return false; } })(),
+      // Playing dead. Every reply is refused while this is true — see channelFor.
+      frozen: (() => { try { return !!this.hooks.keeperFrozen?.(); } catch { return false; } })(),
+      debugReport: (() => { try { return this.hooks.debugReport?.() ?? null; } catch { return null; } })(),
       view,
     };
   }
@@ -252,6 +285,18 @@ export class Chatter {
   // Which channel to answer on. Never `broadcast`: a reply that reaches the whole server
   // is never the right answer to one person, and it costs a share of max mana besides.
   channelFor(item, ctx) {
+    // PLAYING DEAD OUTRANKS BEING POLITE.
+    //
+    // A frozen character is one that logged off and back on to buy the entry grace
+    // period, and it is spending that period sitting perfectly still because it is too
+    // hurt to survive the room noticing it. Speech ends the period: UserSay and
+    // UserSayGroup both open with `if NOT (piFlags & PFLAG_MOVED_SINCE_ENTRY)
+    // { Send(self,@NotifyMonstersOfPresence); }` (user.kod:4052, 4171).
+    //
+    // So a stranger saying "hi" to a character playing dead would, before this, get a
+    // courteous "*is catching its breath*" back and kill it. Silence here is not
+    // rudeness, it is the whole point of the state.
+    if (ctx.frozen) return { kind: null, why: 'playing dead — speaking would wake the room' };
     if (item.channel === 'group' || item.channel === 'group-one') {
       // A tell costs one mana per recipient and is refused outright below that
       // (player.kod), and the refusal arrives as prose rather than as an error — so a
@@ -353,12 +398,22 @@ export class Chatter {
       return;
     }
 
-    if (hit && budget.ok && channel.kind) {
-      const spoken = await this.send(hit.reply(ctx), channel);
+    // A RULE MAY DECLINE. `reply` returning null means "this rule matched the words but
+    // not the asker" — the debug rule does exactly that for anyone who is not at the
+    // controls — and a declined rule has to fall through to the ordinary ack-and-escalate
+    // path rather than sending the word "null" to a stranger.
+    const prepared = hit && budget.ok && channel.kind ? hit.reply(ctx) : null;
+    if (prepared) {
+      // An array is several lines, sent one at a time. The server truncates a long say,
+      // and for the debug answer the tail is the part worth having.
+      const lines = [].concat(prepared).filter(Boolean);
+      let spoken = null;
+      for (const line of lines) spoken = await this.send(line, channel);
       this.inbox.noteReply(item.speaker);
       this.inbox.resolve(id, 'answered', { tier: 0, reply: spoken, note: `small talk: ${hit.intent}` });
       this.did.answered++;
-      this.note('answered', hit.intent, { to: item.speaker_name, said: item.text, reply: spoken });
+      this.note('answered', hit.intent, { to: item.speaker_name, said: item.text,
+                                          reply: lines.length > 1 ? `${lines.length} lines` : spoken });
       return;
     }
 

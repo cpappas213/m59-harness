@@ -144,7 +144,11 @@ party.resetParties();
 
 {
   ok('leather is recognised', armourKind('leather armor')?.slot === 'armour');
-  ok('a shield is recognised', armourKind('metal shield')?.slot === 'shield');
+  // Again the server's name, not the class file's — metlshld.kod is "small round shield".
+  ok('a shield is recognised', armourKind('small round shield')?.slot === 'shield');
+  ok('and so is every other real shield in the game',
+     ['gold round shield', 'herald shield', "knight's shield", 'orc shield', "soldier's shield"]
+       .every(n => armourKind(n)?.slot === 'shield'));
   ok('a weapon is not armour', armourKind('a rusty dagger') === null);
 
   // "simple helm" must not be read as the plain "helm", which is a better item.
@@ -160,12 +164,21 @@ party.resetParties();
 
   const c = {
     inventory: [{ id: 1, nameRsc: 1 }, { id: 2, nameRsc: 2 }, { id: 3, nameRsc: 3 }, { id: 4, nameRsc: 4 }],
-    rsc: { get: r => ({ 1: 'plate armor', 2: 'leather armor', 3: 'metal shield', 4: 'a mace' }[r]) },
+    // THE NAME THE SERVER SENDS, NOT THE NAME OF THE CLASS FILE. This said "metal
+    // shield", which is metlshld.kod — the class. Its shield_name_rsc is "small round
+    // shield", and that is the only string an agent ever sees, because every name arrives
+    // through c.rsc.get(nameRsc). So the test was asserting against a string the server
+    // cannot produce, and had been failing on `have.shield[0]` being undefined.
+    //
+    // The ARMOUR table itself was right and covers all six real shields — gold round,
+    // herald, knight's, small round, orc and soldier's — which is why this was a broken
+    // test rather than a fleet walking around without shields.
+    rsc: { get: r => ({ 1: 'plate armor', 2: 'leather armor', 3: 'small round shield', 4: 'a mace' }[r]) },
     using: new Set(),
   };
   const have = armourOf(c);
   ok('the pack ranks leather first', have.armour[0].name === 'leather armor');
-  ok('the shield is filed as a shield', have.shield[0].name === 'metal shield');
+  ok('the shield is filed as a shield', have.shield[0].name === 'small round shield');
   ok('the mace is not filed as armour',
      ARMOUR_SLOTS.every(s => !have[s].some(x => /mace/.test(x.name))));
 }

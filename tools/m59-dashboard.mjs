@@ -147,7 +147,14 @@ const ago = (t) => {
   return (s / 3600).toFixed(1) + 'h ago';
 };
 
-export function renderDashboard({ hours = 24, localhost = false } = {}) {
+// `piloted` is the list of character names a desktop client is holding RIGHT NOW, passed
+// in rather than read here. The page renders the ledger and the ledger is sampled every
+// five minutes, so a pilot claim taken thirty seconds ago would not be in it — and "which
+// one am I actually playing" is a question that is useless if it is five minutes stale.
+// Passing it keeps the page's read-only property intact: it is a list of names, not a
+// route to a session.
+export function renderDashboard({ hours = 24, localhost = false, piloted = [] } = {}) {
+  const nowPiloted = new Set([].concat(piloted).filter(Boolean).map(n => String(n).toLowerCase()));
   const sinceMs = hours * 3600 * 1000;
   const sum = summarise({ sinceMs });
   const { events } = readLedger({ sinceMs });
@@ -228,9 +235,14 @@ export function renderDashboard({ hours = 24, localhost = false } = {}) {
 
   const fleetRows = sum.fleet.map(r => {
     const hp = pair(r.health), mp = pair(r.mana), vg = pair(r.vigor);
+    // AT THE CONTROLS. The keeper is stopped while a person holds a character, so this
+    // row's numbers are about someone playing rather than something farming — which is
+    // the one case where "stalled" and "no kills" mean nothing is wrong.
+    const mine = nowPiloted.has(String(r.character ?? '').toLowerCase());
     return `
-    <tr>
-      <td class="name"><a class="hero" href="/hero/${encodeURIComponent(r.character ?? '')}">${esc(r.character)}</a></td>
+    <tr${mine ? ' class="piloted"' : ''}>
+      <td class="name"><a class="hero" href="/hero/${encodeURIComponent(r.character ?? '')}">${esc(r.character)}</a>${
+        mine ? '<span class="pilot-badge" title="a client on the broker machine is holding this character">you</span>' : ''}</td>
       <td class="num strong">${r.level ?? '—'}</td>
       <td class="num ${r.gained_on_strategy > 0 ? 'good' : 'dim'}">${r.gained_on_strategy > 0 ? '+' + r.gained_on_strategy : r.gained_on_strategy}</td>
       <td class="vital">${bar(hp.value, hp.max, 'hp')}<span class="vnum">${esc(r.health ?? '—')}</span></td>
@@ -300,6 +312,14 @@ export function renderDashboard({ hours = 24, localhost = false } = {}) {
   .room-link:hover { color:var(--accent); border-bottom-color:var(--accent); }
   a.hero { color:inherit; text-decoration:none; border-bottom:1px solid var(--line); }
   a.hero:hover { color:var(--accent); border-bottom-color:var(--accent); }
+  /* THE ONE A PERSON IS HOLDING. A left rule and a wash rather than a colour swap, so it
+     still reads at a glance on a phone in daylight and does not collide with the good/bad
+     colouring the vitals already use. */
+  tbody tr.piloted td { background:color-mix(in srgb, var(--accent) 12%, transparent); }
+  tbody tr.piloted td:first-child { box-shadow:inset 3px 0 0 var(--accent); }
+  .pilot-badge { margin-left:.5em; padding:.05em .4em; border-radius:3px; font-size:.72em;
+                 font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+                 background:var(--accent); color:#000; vertical-align:middle; }
   .doing { color:var(--dim); max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   /* Fixed-width blocks, coloured per square. The width never varies with the value —
      the COLOUR carries it — so the column stays scannable and the orange frontier

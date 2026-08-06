@@ -154,15 +154,24 @@ function listView() {
       ? (r.ap.safe_spot.works ? c.green('WALL ') : c.yellow('test '))
       : c.dim('  -  ');
     const wf = (r.has_weapon ? c.green('w') : c.red('w')) + (r.has_food ? c.green('f') : c.red('f'));
+    // THE ONE A CLIENT IS HOLDING. Worth marking because everything else on this row
+    // reads as a fault when it is true: the keeper is deliberately stopped while a person
+    // plays, so "no keeper", zero kills and a stalled activity are all correct and none
+    // of them are a problem to go and fix.
+    const mine = !!r.piloted;
     const line =
-      pad(r.character ?? r.agent, 11) +
+      pad(mine ? c.cyan(r.character ?? r.agent) : (r.character ?? r.agent), 11) +
       pad(String(r.level ?? '?'), 4) +
       pad(bar(hp.v, hp.max) + ' ' + c.dim(pad(r.health ?? '—', 7)), 14) +
       pad(bar(mp.v, mp.max, true) + ' ' + c.dim(pad(r.mana ?? '—', 6)), 13) +
       pad(bar(vg.v, vg.max) + ' ' + c.dim(pad(String(vg.v ?? '—'), 7)), 14) +
       pad(wf, 5) + pad(spot, 7) +
-      c.dim(cut(r.ap?.activity ?? '', 34));
-    L.push((i === S.sel ? c.inv('▸ ') : '  ') + line);
+      (mine ? c.cyan('YOU — ') : '') + c.dim(cut(r.ap?.activity ?? '', mine ? 28 : 34));
+    // Two different marks in one gutter: ▸ is where the cursor is, ◆ is where the person
+    // is. They are independent — you can be scrolled somewhere else entirely — so one
+    // must not hide the other.
+    const gutter = i === S.sel ? c.inv(mine ? '◆ ' : '▸ ') : (mine ? c.cyan('◆ ') : '  ');
+    L.push(gutter + line);
   }
   L.push('');
   L.push(c.dim('  ↑↓/jk move · ⏎ open · L launch client · C compendium for the selected · r refresh · q quit'));
