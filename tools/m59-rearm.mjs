@@ -359,6 +359,20 @@ async function main() {
                   (armedAnyway ? ` (but it is wielding ${JSON.stringify(armedAnyway)} now — its keeper ` +
                                  'armed it, so this is not an unarmed character)'
                                : isReagents ? '' : ' (still empty-handed)'));
+      // A FAILED HANDOVER IS A REASON TO BUY, NOT A REASON TO STOP.
+      //
+      // --buy was only ever consulted when NO donor could be found. A donor that is
+      // found and then cannot complete the handover left the character exactly as
+      // unarmed as having no donor at all, and the tool reported "still empty-handed"
+      // and moved on with the money to fix it sitting in the character's own purse.
+      //
+      // Piggy hit this twice in consecutive passes — "kept ending up somewhere other
+      // than the planned square", which is the ordinary movement failure in these rooms
+      // rather than anything exceptional — and hunted fungus beasts bare-handed in
+      // between. Janice hit it the pass before.
+      if (!armedAnyway && BUY && !isReagents && GO) {
+        console.log('  ' + await buyWeaponFor(need));
+      }
       continue;
     }
     drawDown(pick.d, carry);
