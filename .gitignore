@@ -93,3 +93,16 @@ __pycache__/
 /substrate/supervise-prod.err
 /substrate/supervise-prod.log
 /substrate/supervise.log
+
+# Supervisor single-instance lock — machine state, one per broker port.
+/substrate/supervise-*.pid
+
+# THE CHECKPOINT SERIES, not the checkpoint.
+#
+# substrate/sheets/<Character>.json IS committed, deliberately: it is a character export
+# for a server we do not run and cannot snapshot (see m59-sheet.mjs), and a backup that
+# exists only on the machine that made it is the failure this tool was written to fix.
+# Twenty-one small files that change slowly are worth their place in the history.
+#
+# The timestamped series underneath is not — `--checkpoint` writes 21 more every run.
+/substrate/sheets/checkpoints/

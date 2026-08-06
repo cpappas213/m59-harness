@@ -1,0 +1,408 @@
+{
+ "_format": {
+  "what": "One Meridian 59 character, as completely as a client can observe itself.",
+  "version": 1,
+  "not_a_savegame": "This is NOT byte-compatible with the server savegame and cannot be. SaveGame (blakserv/savegame.c:97) writes a whole-VM binary image — classes, resources, system node, every object, list nodes, timers, users. A client sees a thin projection of one object out of that graph. The parts it cannot see would have to be invented, and an invented save corrupts a world rather than restoring one.",
+  "reading_it": {
+   "ability": "Skill and spell numbers are the server's ability value, 0-100ish, as pushed on BP_STAT. Higher is better. `best_ever` is the highest this repository has ever seen it, across sessions.",
+   "attributes": "Fixed at character creation and never move. They cap what can be learned; stamina additionally sets the maximum-health ceiling at 101 + stamina.",
+   "vigor": "OUT OF 200, not out of a max field. It reports {value, scale_max, rest_threshold}. Resting alone stops awarding it at 80; everything above that has to be eaten. Reading it like health is a mistake this repository has made more than once.",
+   "level": "A character's LEVEL is its maximum health. There is no separate field.",
+   "equipment": "What is WORN is plUsing and is the server's own word. What is CARRIED is the inventory and is a different list."
+  },
+  "provenance": "Every block says where it came from. `live` means the broker answered for a character in game at capture time; `remembered` means it came from substrate/abilities, which survives the session."
+ },
+ "character": "Pepe",
+ "agent": "t2",
+ "captured_at": 1786001382985,
+ "captured_at_iso": "2026-08-06T07:29:42.985Z",
+ "in_game_at_capture": true,
+ "identity": {
+  "object_id": 4475,
+  "karma": {
+   "value": 20,
+   "min": -100,
+   "max": 100
+  },
+  "room": {
+   "id": 1386,
+   "name": "Valley of Ileria"
+  },
+  "position": {
+   "col": 78,
+   "row": 63,
+   "facing_degrees": 0
+  }
+ },
+ "level": 28,
+ "attributes": {
+  "might": 35,
+  "intellect": 30,
+  "stamina": 50,
+  "agility": 35,
+  "mysticism": 30,
+  "aim": 20,
+  "note": "fixed at creation; never change. These are what m59-mirror.mjs replays.",
+  "health_ceiling": 151,
+  "total": 200,
+  "detail": {
+   "might": {
+    "value": 35,
+    "display_scale": 50,
+    "hard_cap": 70
+   },
+   "intellect": {
+    "value": 30,
+    "display_scale": 50,
+    "hard_cap": 70
+   },
+   "stamina": {
+    "value": 50,
+    "display_scale": 50,
+    "hard_cap": 70
+   },
+   "agility": {
+    "value": 35,
+    "display_scale": 50,
+    "hard_cap": 70
+   },
+   "mysticism": {
+    "value": 30,
+    "display_scale": 50,
+    "hard_cap": 70
+   },
+   "aim": {
+    "value": 20,
+    "display_scale": 50,
+    "hard_cap": 70
+   }
+  }
+ },
+ "vitals": {
+  "health": {
+   "value": 15,
+   "max": 28,
+   "pct": 54
+  },
+  "mana": {
+   "value": 17,
+   "max": 21,
+   "pct": 81
+  },
+  "vigor": {
+   "value": 74,
+   "scale_max": 200,
+   "rest_threshold": 80,
+   "pct": 37,
+   "rested": false,
+   "note": "vigor is out of 200; rest_threshold is the point the game counts as rested, not a maximum"
+  },
+  "health_pct": 54,
+  "mana_pct": 81
+ },
+ "skills": [
+  {
+   "name": "mace fighting",
+   "ability": 23,
+   "id": 3740,
+   "best_ever": 24,
+   "first_seen": 1785818899413,
+   "last_read": 1786001389325,
+   "source": "live"
+  },
+  {
+   "name": "slash",
+   "ability": 18,
+   "id": 3735,
+   "best_ever": 20,
+   "first_seen": 1785818899413,
+   "last_read": 1786001389325,
+   "source": "live"
+  }
+ ],
+ "spells": [
+  {
+   "name": "create food",
+   "ability": 20,
+   "id": 3621,
+   "school": "Kraanan",
+   "targets": 0,
+   "best_ever": 21,
+   "first_seen": 1785818899413,
+   "last_read": 1786001389325,
+   "source": "live"
+  },
+  {
+   "name": "create weapon",
+   "ability": 18,
+   "id": 3614,
+   "school": "Kraanan",
+   "targets": 0,
+   "best_ever": 23,
+   "first_seen": 1785818899413,
+   "last_read": 1786001389325,
+   "source": "live"
+  },
+  {
+   "name": "zap",
+   "ability": 10,
+   "id": 3580,
+   "school": "Faren",
+   "targets": 0,
+   "best_ever": 15,
+   "first_seen": 1785818899413,
+   "last_read": 1786001389325,
+   "source": "live"
+  },
+  {
+   "name": "blink",
+   "ability": 6,
+   "id": 3591,
+   "school": "Riija",
+   "targets": 0,
+   "best_ever": 15,
+   "first_seen": 1785818899413,
+   "last_read": 1786001389325,
+   "source": "live"
+  },
+  {
+   "name": "relay",
+   "ability": 5,
+   "id": 3708,
+   "school": "Kraanan",
+   "targets": 1,
+   "best_ever": 17,
+   "first_seen": 1785818899413,
+   "last_read": 1786001389325,
+   "source": "live"
+  }
+ ],
+ "skill_count": 2,
+ "spell_count": 5,
+ "equipment": {
+  "worn": [
+   {
+    "id": 8755,
+    "name": "mace",
+    "can": [
+     "get",
+     "look"
+    ]
+   }
+  ],
+  "wielding": [
+   "mace"
+  ],
+  "source": "BP_USE_LIST/BP_USE/BP_UNUSE — the server's own plUsing list",
+  "known": true
+ },
+ "inventory": [
+  {
+   "name": "mace",
+   "amount": 1,
+   "can": [
+    "get",
+    "look"
+   ]
+  },
+  {
+   "name": "herb",
+   "amount": 4,
+   "can": [
+    "get",
+    "look"
+   ]
+  },
+  {
+   "name": "elderberry",
+   "amount": 4,
+   "can": [
+    "get",
+    "look"
+   ]
+  },
+  {
+   "name": "apple",
+   "amount": 1,
+   "can": [
+    "get",
+    "look"
+   ]
+  }
+ ],
+ "advancement": {
+  "since_first_seen": "2026-08-04T04:48:19.413Z",
+  "changes_on_record": 120,
+  "recent": [
+   {
+    "kind": "spell",
+    "name": "create food",
+    "from": 16,
+    "to": 17,
+    "by": 1,
+    "at": 1785992439819,
+    "why": "advanced",
+    "pushed": true
+   },
+   {
+    "kind": "spell",
+    "name": "create food",
+    "from": 17,
+    "to": 18,
+    "by": 1,
+    "at": 1785992771987,
+    "why": "advanced",
+    "pushed": true
+   },
+   {
+    "kind": "spell",
+    "name": "create food",
+    "from": 18,
+    "to": 19,
+    "by": 1,
+    "at": 1785992901898,
+    "why": "advanced",
+    "pushed": true
+   },
+   {
+    "kind": "spell",
+    "name": "create weapon",
+    "from": 18,
+    "to": 19,
+    "by": 1,
+    "at": 1785993067288,
+    "why": "advanced",
+    "pushed": true
+   },
+   {
+    "kind": "spell",
+    "name": "create food",
+    "from": 19,
+    "to": 20,
+    "by": 1,
+    "at": 1785993358063,
+    "why": "advanced",
+    "pushed": true
+   },
+   {
+    "kind": "spell",
+    "name": "create weapon",
+    "from": 19,
+    "to": 18,
+    "by": -1,
+    "at": 1785997273222,
+    "why": "advanced",
+    "pushed": true
+   },
+   {
+    "kind": "skill",
+    "name": "slash",
+    "from": 20,
+    "to": 19,
+    "by": -1,
+    "at": 1785997273222,
+    "why": "advanced",
+    "pushed": true
+   },
+   {
+    "kind": "spell",
+    "name": "create food",
+    "from": 20,
+    "to": 19,
+    "by": -1,
+    "at": 1785997880820,
+    "why": "advanced",
+    "pushed": true
+   },
+   {
+    "kind": "spell",
+    "name": "blink",
+    "from": 7,
+    "to": 6,
+    "by": -1,
+    "at": 1785997880820,
+    "why": "advanced",
+    "pushed": true
+   },
+   {
+    "kind": "skill",
+    "name": "slash",
+    "from": 19,
+    "to": 18,
+    "by": -1,
+    "at": 1785997880821,
+    "why": "advanced",
+    "pushed": true
+   },
+   {
+    "kind": "skill",
+    "name": "mace fighting",
+    "from": 24,
+    "to": 23,
+    "by": -1,
+    "at": 1785997880821,
+    "why": "advanced",
+    "pushed": true
+   },
+   {
+    "kind": "spell",
+    "name": "create food",
+    "from": 19,
+    "to": 20,
+    "by": 1,
+    "at": 1786001273660,
+    "why": "advanced",
+    "pushed": true
+   }
+  ],
+  "atrophied": [
+   {
+    "name": "mace fighting",
+    "now": 23,
+    "peaked_at": 24
+   },
+   {
+    "name": "slash",
+    "now": 18,
+    "peaked_at": 20
+   },
+   {
+    "name": "create weapon",
+    "now": 18,
+    "peaked_at": 23
+   },
+   {
+    "name": "create food",
+    "now": 20,
+    "peaked_at": 21
+   },
+   {
+    "name": "relay",
+    "now": 5,
+    "peaked_at": 17
+   },
+   {
+    "name": "blink",
+    "now": 6,
+    "peaked_at": 15
+   },
+   {
+    "name": "zap",
+    "now": 10,
+    "peaked_at": 15
+   }
+  ]
+ },
+ "freshness": {
+  "from": "the cache",
+  "age_ms": {
+   "skills": 1114202,
+   "spells": 120642
+  },
+  "known": {
+   "skills": true,
+   "spells": true
+  },
+  "note": "not re-read: the server pushes every ability change as it happens (BP_STAT group 3/4), so this is current unless the character was logged out. Pass refresh:true to force."
+ }
+}
