@@ -87,6 +87,44 @@ const VALLEY = [
   { room: 562, name: 'The sandy shores of the Great Ocean', hunt: 'fungus beast', share: 50, cap: 6 },
 ];
 
+// WHERE THE UNGRADUATED GO, AND WHY THEY NEEDED ANYWHERE AT ALL.
+//
+// VALLEY covers level 30 and up. Under that, characters got a hunt target — giant rat,
+// correctly, since a level-30 rat still pays them — and NO ROOM, so they roamed to find
+// one. That is the whole of the Badlands story: every character that died at the border
+// of the Badlands was under 30 (Pepe 20, Clifford 28 and 27, Scooter 29, Kermit 29),
+// nominally hunting giant rats, in a room that generates NONE — only troll at attack
+// rating 750 and groundworm at 600.
+//
+// Measured over all history: a successful crossing of that room takes a median of 15.8
+// seconds and the median DEATH there had been standing in it for 208. Nobody dies
+// passing through. They die arriving, finding no rats, and staying.
+//
+// So these are rooms that actually contain the prey, chosen on what ELSE lives there —
+// which is the number that kills, not the target's:
+//
+//   575 The King's Way        rat 150, worst neighbour baby spider 315, cap 7
+//   567 Off the beaten path   rat 150, worst neighbour groundworm larva 285, cap 9
+//
+// 567's worst resident is 285, exactly the same as Valley of Ileria, which the
+// graduated pairs already survive. 575 is ONE HOP from Cor Noth (150), which has no
+// generators at all — so a retreat is short, and retreats are now real.
+//
+// Deliberately NOT included: 586 Main gate to the city of Tos (centipede 390, and 117
+// of 361 fleet deaths historically), 603 The Queen's Way (a Keep Guard whose rating we
+// do not know, and faction soldiers are exactly what refuseEngagement was written for),
+// and the sewers (lupogg 855).
+//
+// ROAM MUST BE FALSE HERE, more than in the valley. Both of these rooms are paired with
+// a twin that carries the same name and none of the prey: 576 The King's Way is
+// centipede 390 and FROGMAN 510, and 566 Off the beaten path is centipede 390. A
+// character that wanders one room over is in a worse fight than the one it left, with
+// nothing there worth the trip.
+const LOWLANDS = [
+  { room: 575, name: "The King's Way",      hunt: 'giant rat', share: 50, cap: 7 },
+  { room: 567, name: 'Off the beaten path', hunt: 'giant rat', share: 60, cap: 9 },
+];
+
 // The orders a graduated pair runs. Everything here is a deliberate departure from the
 // low-level loop, and each one is load-bearing:
 const VALLEY_ORDERS = {
@@ -178,9 +216,26 @@ export function assignRooms(pairs, rooms = VALLEY) {
   return pairs.map((p, i) => ({ pair: p, ...rooms[i % rooms.length] }));
 }
 
-async function orders(agent, room, hunt, partner) {
+// The low-level equivalent of VALLEY_ORDERS. Same shape, three deliberate differences:
+// a lower fight_above_vigor because these characters cannot reach 180 reliably without
+// the food chain a graduated pair has; a slightly earlier flee, because 25 max health
+// gives no room to be wrong; and use_safe_spots on, because the wall is worth more to
+// something this fragile than to anything else in the fleet.
+const LOWLAND_ORDERS = {
+  mode: 'farm',
+  strategy: 'wellfed',
+  fight_above_vigor: 140,
+  rest_below: 0.8,
+  flee_below: 0.45,
+  max_carry: 40,
+  roam: false,                  // see LOWLANDS — the twin room next door is a worse fight
+  use_safe_spots: true,
+  hold_resume_above: 0.9,
+};
+
+async function orders(agent, room, hunt, partner, base = VALLEY_ORDERS) {
   return call('autopilot', {
-    agent, action: 'start', ...VALLEY_ORDERS,
+    agent, action: 'start', ...base,
     hunt, assigned_room: room, partner,
   });
 }
@@ -272,7 +327,7 @@ async function ensureKeeper(agent, hunt) {
   } catch { return false; }
 }
 
-async function deploy(a, b, room, name, hunt) {
+async function deploy(a, b, room, name, hunt, base = VALLEY_ORDERS) {
   const out = [];
   for (const [me, mate] of [[a, b], [b, a]]) {
    try {
@@ -308,7 +363,7 @@ async function deploy(a, b, room, name, hunt) {
     // minutes. The stops had no matching starts, which is exactly what that ledger is
     // for. Falling back to "farm where you stand" is worse than the intended orders and
     // enormously better than nothing.
-    const gave = await orders(me.agent, room, hunt, mate.agent)
+    const gave = await orders(me.agent, room, hunt, mate.agent, base)
                          .then(() => true)
                          .catch(e => { out.push(`${me.character}: ${e.message}`); return false; });
     if (!gave) {
@@ -455,6 +510,34 @@ async function round(n) {
   // Characters already standing in their assigned room with the right partner are
   // skipped below, so this costs nothing for the ones that are already right.
   const alreadyThere = new Set(VALLEY.map(v => v.room));
+
+  // THE UNGRADUATED GET A ROOM TOO, and until now they did not.
+  //
+  // This is the half of the plan that was missing. Everything above decides where a
+  // character goes once it reaches 30; under that, a character got a prey name and was
+  // left to find it, which meant roaming, which meant the border of the Badlands. See
+  // LOWLANDS for the arithmetic. Same machinery as the graduates — pair, assign, deploy
+  // — with the low-level room table and the low-level orders.
+  const young = rows.filter(r => (r.level ?? 0) < GRADUATE_AT && r.in_game !== false);
+  if (young.length >= 2) {
+    const settledLow = new Set(LOWLANDS.map(v => v.room));
+    const { pairs: lowPairs, odd: lowOdd } = pairUp(young);
+    if (lowOdd) console.log(`   ${lowOdd.character} is the odd low-level one this round`);
+    for (const p of assignRooms(lowPairs, LOWLANDS)) {
+      const [a, b] = p.pair;
+      const settled = (x, y) => x.room_num === p.room && x.partner === y.agent;
+      if (settled(a, b) && settled(b, a)) continue;
+      if (DRY) { console.log(`   would send ${a.character} + ${b.character} -> ${p.name} (${p.room})`); continue; }
+      console.log(`   outfitting ${a.character} + ${b.character} (low)`);
+      await outfitPair(a, b).catch(() => {});
+      for (const line of await deploy(a, b, p.room, p.name, p.hunt, LOWLAND_ORDERS))
+        console.log('   ' + line);
+    }
+    // Not `alreadyThere` — that set is the valley's, and adding these to it would make
+    // a low-level character in the King's Way read as an unaccounted graduate.
+    void settledLow;
+  }
+
   if (!ready.length) { console.log('   nobody is ready to graduate yet'); return rows; }
 
   const { pairs, odd } = pairUp(ready);
