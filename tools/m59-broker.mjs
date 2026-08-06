@@ -2642,7 +2642,13 @@ class Session {
       // the grid — which is the same asymmetry `stepFine` was written for. So when the
       // square-based approach has left us anywhere but the exit square, fall through to
       // it rather than issuing a `go` that cannot possibly be accepted.
-      if (at && (at.col !== exit.stand_on.col || at.row !== exit.stand_on.row)) {
+      // AN UNKNOWN POSITION IS NOT A CORRECT ONE. `at` is null when the confirming read
+      // timed out, and both corrections below were guarded on `at` being truthy — so a
+      // failed read skipped them BOTH and sent `go` blind, then reported the result as
+      // "stood on the exit square and nothing happened", which is a claim we had no
+      // evidence for. Treat unknown like wrong: step onto the square in fine units and
+      // let the server judge it, which is what stepFine is for.
+      if (!at || at.col !== exit.stand_on.col || at.row !== exit.stand_on.row) {
         const half = KOD_FINENESS >> 1;
         await this.stepFine(exit.stand_on.col * KOD_FINENESS + half,
                             exit.stand_on.row * KOD_FINENESS + half).catch(() => null);
@@ -2669,7 +2675,9 @@ class Session {
                  reason: messages.length ? messages.join('; ')
                        : leaned ? `leaned into (${exit.stand_on.col},${exit.stand_on.row}) from beside ` +
                                   'it and the server did not open a door there'
-                       : 'stood on the exit square and nothing happened' }),
+                       : 'sent go and the server answered nothing at all — no room change ' +
+                         'and no refusal, which is not a door problem but a lost packet ' +
+                         'or a reply that did not arrive inside 4s' }),
                messages };
     }
 
