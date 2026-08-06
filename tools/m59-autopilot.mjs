@@ -7475,6 +7475,31 @@ export class Autopilot {
     const s = this.s, c = s.client;
     const here = s.world?.room?.num ?? null;
     const inns = Object.entries(CITY_INNS).map(([city, v]) => ({ city, ...v }));
+
+    // A WORKING SAFE SPOT IS ALREADY SAFETY, AND RUNNING FROM ONE IS THE WORST MOVE
+    // AVAILABLE. This guard lived inside withdraw(), and swapping callers over to this
+    // function quietly dropped it — which would have taken characters off proven walls
+    // and marched them across a monster field at the health that made them flee.
+    //
+    // The asymmetry is the whole safe-spot thesis. `Player.TargetWithinSightAndRange`
+    // never calls LineOfSight while `Monster.CanReach` does (player.kod:4115 against
+    // monster.kod:1782), so on the right square nothing can land a blow unless we swing
+    // first. Standing still there stops the damage immediately and for free, and it is
+    // the one place the offline/online rotation can be used to shed whatever has piled
+    // up. Distance solves being hurt EVERYWHERE ELSE; here it is what starts it.
+    //
+    // Deliberately checks holdWorks() and not merely hold: a square we believe in but
+    // have never been attacked on is not evidence, and the whole point of this branch
+    // is that something is attacking us right now.
+    if (this.hold && this.holdWorks()) {
+      this.note('staying behind the wall instead of running', {
+        spot: { col: this.hold.col, row: this.hold.row }, ...why,
+        why: 'this square has held under attack, so nothing here can land a blow unless we ' +
+             'swing — leaving it would trade the only thing keeping us alive for distance ' +
+             'we do not need' });
+      return { arrived: true, held_spot: true };
+    }
+
     // Already in one? Then we are safe and this is a no-op worth saying out loud.
     if (here != null && inns.some(i => i.inn === here)) {
       this.note('already in a sanctuary', { room: here, ...why });
