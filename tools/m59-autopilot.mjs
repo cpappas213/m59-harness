@@ -6053,11 +6053,32 @@ export class Autopilot {
         this.note('will not trade blows with this', {
           creature: refused.name, level: refused.level, rating: refused.rating,
           adjacent: adjacent.length, why: refused.why,
-          instead: 'withdrawing to a wall, or out of the room — hitting back at something ' +
-                   'outside our safety band is how a level-27 character dies at full health' });
+          instead: 'leaving the room entirely — hitting back at something outside our ' +
+                   'safety band is how a level-27 character dies at full health, and so is ' +
+                   'stepping four squares away from it' });
         this.tally.refused_retaliation = (this.tally.refused_retaliation || 0) + 1;
-        await this.withdraw(adjacent).catch(() => {});
-        this.progress('withdrew from something outside the safety band');
+        // WALKING A FEW SQUARES FROM A TROLL IS NOT ESCAPING A TROLL.
+        //
+        // This called withdraw(), which retreats to a wall a few squares off. Against
+        // something inside our band that is right — the wall is the whole advantage.
+        // Against something OUTSIDE it, which is exactly the case this branch has just
+        // identified, it is not a retreat at all: GetVisionDistance is 4 + difficulty/2
+        // (monster.kod:1676), so a troll at difficulty 8 sees eight squares and a
+        // groundworm at 5 sees six. There is no square in the room that is out of range.
+        //
+        // The border of the Badlands is what this costs. Measured over all history: a
+        // successful crossing takes a median of 15.8 seconds, and the median DEATH
+        // there had been in the room 208 seconds — thirteen times longer. The fastest
+        // of 24 was 32 seconds, still twice a crossing, and not one died faster than a
+        // median crossing. Nobody dies passing through; they die refusing, shuffling
+        // four squares, being followed, and refusing again. 51 of 52 of them were
+        // nominally hunting giant rats, in a room that generates none — only trolls at
+        // attack rating 750 and groundworms at 600.
+        await this.retreatToSafety({
+          because: 'refused to fight ' + refused.name + ' (rating ' + refused.rating + ')',
+          adjacent: adjacent.length,
+        });
+        this.progress('left the room rather than trade blows with something out of band');
         return;
       }
 
