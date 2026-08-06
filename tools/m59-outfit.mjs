@@ -106,13 +106,45 @@ async function outfit(row) {
         const m = await call('merchants', { agent: row.agent, sells: what }).catch(() => ({ matches: [] }));
         for (const x of m.matches || []) if (x.room != null) seen.set(x.room, x);
       }
+      // A WANDERING MERCHANT IS NOT A DESTINATION.
+      //
+      // The index records where a merchant was SEEN, which is the right thing for the
+      // stationary ones — every other NPC in this game stays put — and completely wrong
+      // for the six the game files keep under `monster/towns/wanderer/`: DarkWizard,
+      // Heretic, HunterGhost, Izzio, JealousGeneral and Minstrel, each declared `is
+      // Wanderer`.
+      //
+      // Izzio is the one that matters, because he is the only wanderer that sells gear —
+      // leather armour, a metal shield, a long sword — and he circulates between Lake of
+      // Jala's Song, the Main Gate of Barloque, the King's Way, the Temple of Shal'ille
+      // and West Merchant Way through Ilerian Woods. He was last seen at 593, so that is
+      // where the errand went, and the log filled with "nobody here sells anything (room
+      // 593)" — a true statement about an empty gate, walked to on purpose.
+      //
+      // So wanderers are dropped from the RANKING. They are not dropped from use: the
+      // arrival check looks for anything carrying OF_BUYABLE, so if Izzio happens to be
+      // standing in the room we reached, we trade with him and are glad of it. He is
+      // opportunity, not an address.
+      const WANDERERS = new Set(['DarkWizard', 'Heretic', 'HunterGhost',
+                                 'Izzio', 'JealousGeneral', 'Minstrel']);
+      const isWanderer = x => WANDERERS.has(String(x?.merchant ?? x?.cls ?? x?.class ?? ''));
+      const settled = [...seen.values()].filter(x => !isWanderer(x));
+      const roaming = [...seen.values()].filter(isWanderer);
+
       const priced = [];
-      for (const m of seen.values()) {
+      for (const m of settled) {
         const rt = await call('map', { agent: row.agent, to: m.room }).catch(() => null);
         if (rt?.route?.found) priced.push({ room: m.room, hops: rt.route.hops.length });
       }
       priced.sort((a, b) => a.hops - b.hops);
-      if (!priced.length) return `${who}: no smith reachable`;
+      if (!priced.length) {
+        // Nothing stationary is routable. Say whether a wanderer was the only thing on
+        // offer, because "no smith reachable" reads as a map problem and this is not one.
+        return roaming.length
+          ? `${who}: no STATIONARY smith reachable — the only sellers indexed are wanderers ` +
+            `(${roaming.map(r => r.merchant ?? r.cls).join(', ')}), which cannot be walked to`
+          : `${who}: no smith reachable`;
+      }
       candidates = priced.map(p => p.room);
       shopRoom = candidates[0];
     }
