@@ -447,7 +447,7 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/<name>.mjs`. Only the chat responder needs `npm install`.
 - `M59_ROOT` points at the Meridian 59 source tree. The compendium's citations
   and the Python analysis scripts both read it.
-- Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (93),
+- Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (103),
   `node tools/m59-chat-test.mjs` (128) and
   `node tools/m59-rest-test.mjs` (38) and
   `node tools/m59-ledger-test.mjs` (25) and
@@ -495,6 +495,26 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   range, lets you hit what stands there and take nothing back. `free_shots` in
   `m59-safespots.mjs` counts exactly those. Only lich and revenant ignore walls
   (`AI_FIGHT_THROUGH_WALLS`).
+
+  **And a blow already in the air is not the wall's fault.** Being hit is resolved on the
+  server and reaches us as a packet; our arrival travels the other way. So a blow resolved
+  while we were still a square short can land after we have reported standing on the spot,
+  and the reading blames the square. A failure is **permanent** (`discredited()`), so one
+  such reading retires a good square for ever and nothing about it looks wrong afterwards.
+  `SETTLE_GRACE_MS` (250ms, `m59-autopilot.mjs`) discards any window that opens before we
+  have been settled that long, measured from the LATER of "stopped moving" and "claimed
+  the square". Both clocks, because the walked-in path was already covered by accident —
+  `takeSafeSpot` stamps `movedAt` on arrival, so the first window is thrown out for "we
+  moved" — while `steps_away === 0`, claiming a square we were already standing on, walks
+  nowhere, stamps nothing, and opened a countable window the instant the hold was taken.
+
+  The window is **discarded, not forgiven**: the same packet delay that hides a hit until
+  later is what would make the square look quiet now, so a reading we will not trust for
+  damage is not one we may trust for proof. And the grace is deliberately narrower than
+  the round trip can be, because the asymmetry runs the other way — being wrong about a
+  bad square costs a character, being wrong about a good one costs a walk to the next
+  corner. `settled_ms`/`min_settled_ms` are recorded on every real failure so the width
+  can be argued from the record rather than from intuition; widen it only against those.
 
 - **A creature's LEVEL is not how dangerous it is.** Level sets hit points and what
   the kill pays; what it hits you *with* is `viDifficulty`, via

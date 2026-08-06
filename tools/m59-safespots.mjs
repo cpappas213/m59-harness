@@ -558,11 +558,23 @@ export class SafeSpotBook {
 
   // We stood here under attack and were hit anyway. The spot does not work, or does
   // not work from the angle we were standing at.
-  failed(room, { col, row, damage = 0, attackers = 0 }) {
+  failed(room, { col, row, damage = 0, attackers = 0, settledMs = null }) {
     const rec = this.touch(room, col, row);
     rec.failed++;
     rec.damage_taken = (rec.damage_taken || 0) + damage;
     rec.most_attackers = Math.max(rec.most_attackers || 0, attackers);
+    // HOW SETTLED WE WERE WHEN THE WINDOW THAT CONDEMNED THIS SQUARE OPENED.
+    //
+    // A failure is permanent, so the one way this book can be quietly wrong is by
+    // blaming a square for a blow that was resolved before we reached it and only
+    // arrived afterwards. SETTLE_GRACE_MS in m59-autopilot.mjs is what stops that, and
+    // this is the evidence for whether it is wide enough: the tightest margin any real
+    // failure was recorded at. If that number sits just above the grace, the grace is
+    // too narrow and squares are still being retired by packet timing.
+    if (settledMs != null && Number.isFinite(settledMs)) {
+      rec.settled_ms = Math.max(0, Math.round(settledMs));
+      rec.min_settled_ms = Math.min(rec.min_settled_ms ?? Infinity, rec.settled_ms);
+    }
     rec.at = Date.now();
     this.dirty = true;
     return rec;

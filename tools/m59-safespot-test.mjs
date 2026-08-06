@@ -91,9 +91,22 @@ const look = (p, msAgo = 0) => {
 // Stand somewhere, having walked there. The walk matters: nothing counts as evidence
 // until the character has acted, because until then the server is holding the
 // monsters back and the quiet is the grace period rather than the wall.
-const holdAt = (p, col, row, extra = {}) => {
-  p.movedAt = Date.now() - 1;
-  p.hold = { room: 999, col, row, takenAt: Date.now(), quietMs: 0, damageWhileIdle: 0,
+//
+// SETTLED A MOMENT AGO, NOT THIS INSTANT, because that is what the real loop does and
+// the difference is load-bearing. observe() runs at the top of a pass and the square is
+// claimed later in the same pass, so the first baseline reading is taken a pass — about
+// a second — after settling. A fixture that settles at the same instant as the baseline
+// is asking the keeper to judge a window that opens 0ms after arrival, which it now
+// correctly refuses to do (SETTLE_GRACE_MS in m59-autopilot.mjs).
+//
+// The two clocks are separate on purpose. Walking in stamps both; claiming a square we
+// were already standing on (`steps_away === 0`) stamps only the second, and that is the
+// case the grace exists for — so a test asks for "moved here ages ago, claimed it just
+// now" with `{ settledMsAgo: 5000, takenMsAgo: 0 }`.
+const holdAt = (p, col, row, { settledMsAgo = 1000, takenMsAgo = settledMsAgo, ...extra } = {}) => {
+  p.movedAt = Date.now() - settledMsAgo;
+  p.hold = { room: 999, col, row, takenAt: Date.now() - takenMsAgo,
+             quietMs: 0, damageWhileIdle: 0,
              failures: 0, mostAttackers: 0, proven: false, ...extra };
   return p.hold;
 };
@@ -142,6 +155,77 @@ console.log('\n--- disproving a spot that does not ---');
   look(p, 8000);
   ok('two failures discredit the square in the book',
      p.book.discredited(p.book.get(999, 7, 7)), JSON.stringify(p.book.get(999, 7, 7)));
+}
+
+// A FAILURE IS PERMANENT, SO THE PACKET THAT ARRIVES LATE MUST NOT CAUSE ONE.
+//
+// Being hit is resolved on the server and travels to us; our arrival travels the other
+// way. A blow resolved while we were still a square short can therefore land after we
+// have reported standing on the spot, and blame the wall for something that was already
+// in the air. The walked-in path was covered by accident — takeSafeSpot stamps movedAt on
+// arrival, so the first window is thrown out for "we moved" — but claiming a square we
+// were ALREADY standing on walks nowhere, stamps nothing, and opened a countable window
+// the instant the hold was taken.
+console.log('\n--- a blow already in the air is not the wall\'s fault ---');
+{
+  const w = world({ col: 11, row: 11 });
+  const p = keeper(w);
+  w.addMonster(1, 0, 0, MONSTER);
+  // Walked here long ago as part of the fight; claimed the square this instant. No walk
+  // means no movement stamp, so the "we moved in this window" discard does not apply.
+  holdAt(p, 11, 11, { settledMsAgo: 5000, takenMsAgo: 0 });
+  look(p);
+  w.hurt(4);                       // the approach's damage, arriving now
+  look(p, 120);
+  ok('a hit inside the settle grace does not discredit the square',
+     !p.book.discredited(p.book.get(999, 11, 11)),
+     `book says ${JSON.stringify(p.book.get(999, 11, 11))}`);
+  ok('and does not touch the book at all', p.book.get(999, 11, 11) === null,
+     'a discarded reading must leave no trace, or the record grows entries nothing concluded');
+  ok('we are still standing in it', p.hold !== null,
+     'releasing the hold on an untrusted reading throws away a square we never judged');
+  const last = p.trials[p.trials.length - 1];
+  ok('the reading is recorded as discarded rather than silently dropped',
+     last && last.counted === false && /grace/.test(last.verdict || ''),
+     JSON.stringify(last));
+  ok('and carries how settled we were, so the grace can be argued from data',
+     last && last.settled_ms != null && last.settled_ms < 250, JSON.stringify(last?.settled_ms));
+}
+
+// THE GRACE MUST NOT BECOME A HOLE. It buys one window, not immunity.
+console.log('\n--- and once settled, a hit still condemns the square ---');
+{
+  const w = world({ col: 12, row: 12 });
+  const p = keeper(w);
+  w.addMonster(1, 0, 0, MONSTER);
+  holdAt(p, 12, 12, { settledMsAgo: 5000, takenMsAgo: 0, proven: true });
+  look(p);                         // baseline taken the instant the square was claimed
+  look(p, 900);                    // a quiet window, discarded by the grace
+  w.hurt(4);                       // now a real hit, well clear of the grace
+  look(p, 900);
+  ok('a hit after the grace still disproves the spot', !p.holdWorks(),
+     `book says ${JSON.stringify(p.book.get(999, 12, 12))}`);
+  ok('and is written to the book', (p.book.get(999, 12, 12)?.failed ?? 0) === 1,
+     JSON.stringify(p.book.get(999, 12, 12)));
+  ok('with the settled margin recorded on the entry',
+     (p.book.get(999, 12, 12)?.min_settled_ms ?? -1) >= 250,
+     JSON.stringify(p.book.get(999, 12, 12)));
+}
+
+// The same delay that hides a hit until later is what makes the square look quiet now,
+// so a window we will not read for damage is not one we may read for proof either.
+console.log('\n--- quiet inside the grace proves nothing either ---');
+{
+  const w = world({ col: 13, row: 13 });
+  const p = keeper(w);
+  w.addMonster(1, 0, 0, MONSTER);
+  holdAt(p, 13, 13, { settledMsAgo: 5000, takenMsAgo: 0 });
+  look(p);
+  look(p, 200);                    // quiet, but inside the grace
+  ok('quiet inside the grace does not accumulate toward proof', p.hold.quietMs === 0,
+     'quietMs ' + p.hold.quietMs);
+  ok('and the square is not written up as holding', p.book.get(999, 13, 13) === null,
+     JSON.stringify(p.book.get(999, 13, 13)));
 }
 
 console.log('\n--- damage we asked for proves nothing ---');

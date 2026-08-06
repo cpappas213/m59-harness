@@ -50,6 +50,34 @@ export const POSTMORTEM_DIR = process.env.M59_POSTMORTEM_DIR ||
 // before we believe it works. Two passes' worth: one quiet reading is also what you
 // get from a monster that happened to be walking away.
 const PROOF_MS = 12_000;
+// AND HOW LONG AFTER SETTLING ON THE SQUARE BEFORE DAMAGE IS THE SQUARE'S FAULT.
+//
+// Being hit is resolved on the server and arrives here as a packet. Our arrival is also
+// a packet, travelling the other way. So a blow the server resolved while we were still
+// a square short can land in our lap after we have reported standing on the spot — and
+// the reading blames the wall for a hit that was already in the air before we reached it.
+// A failure is PERMANENT (see discredited() in m59-safespots.mjs), so one such reading
+// retires a good square for ever, and nothing about it looks wrong afterwards.
+//
+// The walked-in path was already covered by accident: takeSafeSpot stamps movedAt on
+// arrival, so the whole first window is thrown out for "we moved in this window", which
+// at a 1s pass cadence tolerates about a second of skew. The hole was the OTHER path —
+// `steps_away === 0`, taking a hold on a square we are already standing on, which walks
+// nowhere and therefore stamps no movement. There the first window could open the
+// instant the hold was taken, with the approach's damage still arriving.
+//
+// So the clock is the later of "we stopped moving" and "we claimed the square", and a
+// window that opens inside this grace is discarded rather than counted either way.
+// Discarded, not merely forgiven, because a window whose damage we do not trust is a
+// window whose quiet we do not trust either — the same packet delay that hides a hit
+// until later is what would make the square look quiet now.
+//
+// 250ms rather than the fuller half-second the round trip can take, deliberately. The
+// asymmetry that governs this whole file runs the other way: being wrong about a bad
+// square costs a character, being wrong about a good one costs a walk to the next
+// corner. Widen it only against `settled_ms` on real failures, which is recorded for
+// exactly that argument.
+const SETTLE_GRACE_MS = 250;
 // How far a swing carries, and how far away something still counts as part of a swarm.
 //
 // THREE, NOT 1.5. Reach is `SquaredDistanceTo <= GetAttackRange^2` on square
@@ -1372,6 +1400,13 @@ export class Autopilot {
     const stillness = prev ? (this.swungAt < prev.at && this.movedAt < prev.at) : false;
     const company = (prev?.adjacentIds || []).length;
     const lost = prev && health != null && prev.health != null ? prev.health - health : null;
+    // HOW LONG WE HAD BEEN STANDING STILL ON THIS SQUARE WHEN THIS WINDOW OPENED — see
+    // SETTLE_GRACE_MS. The later of the two clocks, because either one being recent
+    // means damage from before we settled can still be arriving: `movedAt` covers
+    // walking in, `hold.takenAt` covers claiming a square we were already on.
+    const settledAt = Math.max(this.movedAt, this.hold?.takenAt ?? 0);
+    const settledMs = prev ? prev.at - settledAt : 0;
+    const settled = settledMs >= SETTLE_GRACE_MS;
 
     // The reading, whatever became of it. `verdict` is the thing to argue with; the
     // fields above it are what the argument is about. A discard is recorded exactly as
@@ -1385,6 +1420,10 @@ export class Autopilot {
       adjacent_at_start: company, adjacent_now: adjacentIds.length,
       swung_in_window: prev ? this.swungAt >= prev.at : null,
       moved_in_window: prev ? this.movedAt >= prev.at : null,
+      // How settled we were when this window opened. On a counted failure this is the
+      // number that says whether SETTLE_GRACE_MS is wide enough; without it the question
+      // can only be argued from intuition, which is how the square gets retired twice.
+      settled_ms: prev ? Math.max(0, settledMs) : null,
       monsters_awake: awake,
       verdict: null, counted: false,
     };
@@ -1407,9 +1446,12 @@ export class Autopilot {
     else if (!stillness) settle(this.swungAt >= prev.at ? 'we swung in this window — damage would be retaliation'
                                                         : 'we moved in this window — we were not standing here throughout');
     else if (company === 0) settle('nothing was in swing range — a quiet window with nothing to be quiet about');
+    else if (!settled) settle(`only ${Math.max(0, settledMs)}ms settled on this square when the window ` +
+                              `opened, under the ${SETTLE_GRACE_MS}ms grace — a blow resolved before we ` +
+                              'got here can still be arriving, and it is not this square\'s fault');
 
     if (this.hold && awake && prev && health != null && prev.health != null) {
-      if (stillness && company > 0) {
+      if (stillness && company > 0 && settled) {
         this.hold.mostAttackers = Math.max(this.hold.mostAttackers, company);
         if (lost > 0) {
           // It does not work. Say so loudly, forget the proof, and write it down so
@@ -1421,11 +1463,13 @@ export class Autopilot {
           const wasProven = this.hold.proven;
           this.hold.proven = false;
           this.book.failed(this.hold.room, {
-            col: this.hold.col, row: this.hold.row, damage: lost, attackers: company });
+            col: this.hold.col, row: this.hold.row, damage: lost, attackers: company,
+            settledMs });
           this.book.save();
           this.note('THIS IS NOT A SAFE SPOT', {
             where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
             lost_health: lost, attackers: company, was_proven: wasProven,
+            settled_ms: Math.max(0, settledMs),
             why: 'we were hit while standing still and not swinging, which is the one thing ' +
                  'that cannot happen in a working spot',
             caveat: 'poison and archers look the same from here, so this reading can be wrong — ' +
