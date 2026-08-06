@@ -396,6 +396,20 @@ async function round(n) {
     console.log(`   restarted ${r.character}: ${why}`);
   }
 
+  // FOOD BEFORE ARMOUR, AND BEFORE THE EARLY RETURNS.
+  //
+  // This was at the bottom of the round and fired exactly never, for two reasons that
+  // both look like nothing in the source. The graduation step returns early when nobody
+  // is ready, skipping everything after it; and when somebody IS ready the round walks
+  // the pairs one at a time through outfitPair, which allows eight minutes each — so the
+  // first round of the day was still outfitting its fifth pair an hour in, and the call
+  // at the end had not been reached once.
+  //
+  // Vigor is the survival variable the death record actually turns on; armour is a
+  // second-order effect on a fleet that means to be hit zero times. So the cheap,
+  // rate-limited errand goes FIRST, where nothing can starve it.
+  await spreadReagents(rows);
+
   // 2. GRADUATE EVERYONE WHO IS READY, including those already out there.
   //
   // The pool is every character at or over the threshold, not just the ones still in
@@ -469,6 +483,64 @@ async function reconcilePartners() {
              (ok ? '' : ' — BUT THE RESTART FAILED'));
   }
   return out;
+}
+
+// FOOD IS THE ONE THING NOTHING OWNED.
+//
+// The supervisor pairs, graduates and outfits; the keeper casts create food when it
+// already holds 2 elderberry, 2 herbs and 10 mana. Nobody got reagents to the characters
+// that had none, so that job fell to whoever was watching — and when nobody was, the
+// fleet slid back to the resting cap of 80 within the hour, every hour.
+//
+// It is not a supply problem and never was. The fleet was measured holding 646 elderberry
+// and 1287 herbs — hundreds of castings — while twelve of twenty-one characters could not
+// cast at all. It is a DISTRIBUTION problem, and it regenerates continuously as reagents
+// are spent, characters die and drop their packs, and rejoined characters come back with
+// nothing. A one-off fix is worth about forty minutes. Run by hand it took eight or nine
+// passes in a day and drifted back between every one of them.
+//
+// Shelled out for the same reason outfitPair is: m59-almoner.mjs already knows who can
+// cast, who can spare a share, how to bridge the two, and that a share is a quantity
+// rather than a whole stack.
+const ALMONER_EVERY_MS = Number(arg('almoner-every', 300)) * 1000;
+// A share small enough to reach several characters rather than filling one. Measured: at
+// 10 a donor served three per pass, at 6 it served four to five, and elderberry is the
+// scarce half of the recipe.
+const ALMONER_SHARE = Number(arg('almoner-share', 6));
+let almonerAt = 0;
+let almonerBusy = false;
+
+async function spreadReagents(rows) {
+  const { spawn } = await import('node:child_process');
+  // NOT EVERY ROUND. A round is 90s and a delivery is a walk of minutes, so firing one
+  // per round would stack processes that fight each other for the same donors.
+  if (almonerBusy || Date.now() - almonerAt < ALMONER_EVERY_MS) return;
+  almonerBusy = true;
+  almonerAt = Date.now();
+  const script = new URL('./m59-almoner.mjs', import.meta.url).pathname
+                   .replace(/^\/([A-Za-z]:)/, '$1');
+  console.log(`   spreading reagents (m59-almoner.mjs --amount ${ALMONER_SHARE})`);
+  try {
+    await new Promise(res => {
+      const p = spawn(process.execPath, [script, '--amount', String(ALMONER_SHARE),
+                                         '--port', String(PORT)], { stdio: 'inherit' });
+      p.on('exit', res);
+      setTimeout(() => { try { p.kill(); } catch {} res(); }, 8 * 60 * 1000);
+    });
+  } catch (e) {
+    console.log(`   almoner threw — ${e.message}`);
+  } finally {
+    almonerBusy = false;
+    // THE SAME INVARIANT outfitPair LEARNED THE HARD WAY. supply() holds BOTH keepers for
+    // the length of an exchange and restores them in a finally of its own — which does
+    // not survive the hard kill above. Anything this errand may have stopped is running
+    // again before we return, checked rather than assumed.
+    for (const r of rows || []) {
+      if (!r?.agent) continue;
+      const ok = await ensureKeeper(r.agent, r.hunting || fallbackHunt(r.level));
+      if (!ok) console.log(`   ${r.character}: COULD NOT RESTART ITS KEEPER after the almoner`);
+    }
+  }
 }
 
 // Shell out to the outfitter rather than reimplementing it: it already knows about
