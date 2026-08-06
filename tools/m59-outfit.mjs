@@ -121,30 +121,34 @@ async function outfit(row) {
       // where the errand went, and the log filled with "nobody here sells anything (room
       // 593)" — a true statement about an empty gate, walked to on purpose.
       //
-      // So wanderers are dropped from the RANKING. They are not dropped from use: the
-      // arrival check looks for anything carrying OF_BUYABLE, so if Izzio happens to be
-      // standing in the room we reached, we trade with him and are glad of it. He is
-      // opportunity, not an address.
+      // So wanderers go LAST rather than being dropped. Walking to where one was last
+      // standing is a coin toss, which is why it must not be the first choice — but it
+      // is not worthless, and for SKILLS there is sometimes no other seller in the game.
+      // A coin toss beats no option at all.
+      //
+      // The per-candidate check below already handles him not being there: reaching a
+      // room and finding nobody who sells is treated exactly like failing to reach it,
+      // and the loop moves on. So a wanderer at the end of the list costs one wasted
+      // trip in the worst case and buys the only source of a skill in the best.
       const WANDERERS = new Set(['DarkWizard', 'Heretic', 'HunterGhost',
                                  'Izzio', 'JealousGeneral', 'Minstrel']);
       const isWanderer = x => WANDERERS.has(String(x?.merchant ?? x?.cls ?? x?.class ?? ''));
-      const settled = [...seen.values()].filter(x => !isWanderer(x));
-      const roaming = [...seen.values()].filter(isWanderer);
 
-      const priced = [];
-      for (const m of settled) {
-        const rt = await call('map', { agent: row.agent, to: m.room }).catch(() => null);
-        if (rt?.route?.found) priced.push({ room: m.room, hops: rt.route.hops.length });
-      }
-      priced.sort((a, b) => a.hops - b.hops);
-      if (!priced.length) {
-        // Nothing stationary is routable. Say whether a wanderer was the only thing on
-        // offer, because "no smith reachable" reads as a map problem and this is not one.
-        return roaming.length
-          ? `${who}: no STATIONARY smith reachable — the only sellers indexed are wanderers ` +
-            `(${roaming.map(r => r.merchant ?? r.cls).join(', ')}), which cannot be walked to`
-          : `${who}: no smith reachable`;
-      }
+      const priceAll = async (list) => {
+        const out = [];
+        for (const m of list) {
+          const rt = await call('map', { agent: row.agent, to: m.room }).catch(() => null);
+          if (rt?.route?.found) out.push({ room: m.room, hops: rt.route.hops.length, roams: isWanderer(m) });
+        }
+        return out.sort((a, b) => a.hops - b.hops);
+      };
+      const settled = await priceAll([...seen.values()].filter(x => !isWanderer(x)));
+      const roaming = await priceAll([...seen.values()].filter(isWanderer));
+      const priced = [...settled, ...roaming];       // stationary first, always
+
+      if (!priced.length) return `${who}: no smith reachable`;
+      if (!settled.length)
+        log.push('no stationary seller reachable — trying a wanderer, which may not be there');
       candidates = priced.map(p => p.room);
       shopRoom = candidates[0];
     }
