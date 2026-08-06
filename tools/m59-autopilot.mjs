@@ -4022,9 +4022,38 @@ export class Autopilot {
         if (n.turned) this.turnedAt = Date.now();
         if (n.moved) this.movedAt = Date.now();
         if (n.moved && this.hold) {
-          // Should be impossible — REQ_TURN carries no coordinates — but a safe spot
-          // we have silently walked off is the one failure worth being loud about.
-          this.releaseHold('a turn moved us off the square');
+          // DRIFTING OFF A PROVEN SQUARE IS A REASON TO WALK BACK, NOT TO GIVE IT UP.
+          //
+          // This released the hold outright, on the reasoning that REQ_TURN carries no
+          // coordinates so a move here "should be impossible". It is not impossible, and
+          // it killed Animal: a proven spot at (23,6) in the Main gate to the city of Tos
+          // that had held for 44 seconds, broken off from correctly at 34% health, then
+          // abandoned on this line with the note "a turn moved us off the square". He
+          // healed in the open instead — 10 health, then 2, then dead, with three
+          // centipedes and two of the Duke's soldiers in the room.
+          //
+          // And the detection cannot support the conclusion it draws. turnInPlace
+          // compares position from before the turn against a read taken after a 300ms
+          // sleep and a room-contents round trip — up to 2.3 seconds of live combat. All
+          // `moved` establishes is that the square changed at some point in that window;
+          // it does not establish that the turn did it.
+          //
+          // Whatever moved us, the right answer at low health is the square we already
+          // know holds. returnToSpot closes to the fine unit, which matters because a
+          // safe spot can sit most of a square off centre. Give it up only if we cannot
+          // get back.
+          const back = await skills.returnToSpot(
+            s, { col: this.hold.col, row: this.hold.row, x: this.hold.x, y: this.hold.y },
+            { maxSteps: 12 }).catch(() => ({ arrived: false }));
+          if (back.arrived) {
+            this.note('drifted off the safe square and walked back', {
+              where: { col: this.hold.col, row: this.hold.row }, off_by: back.off_by ?? null,
+              proven: this.hold.proven, health: hp,
+              why: 'the square is known to hold and we are too hurt to fight in the open; ' +
+                   'returning is cheaper than finding another one' });
+          } else {
+            this.releaseHold(`moved off the square and could not get back: ${back.why || 'unknown'}`);
+          }
         } else if (n.turned) {
           this.note('turned to arm health regeneration', {
             ...n, kept: this.hold ? { col: this.hold.col, row: this.hold.row } : null,

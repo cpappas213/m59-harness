@@ -432,7 +432,43 @@ async function round(n) {
     await outfitPair(a, b);
     for (const line of await deploy(a, b, p.room, p.name, p.hunt)) console.log('   ' + line);
   }
+  for (const line of await reconcilePartners()) console.log('   ' + line);
   return rows;
+}
+
+// A PARTNERSHIP ONE SIDE HAS NOT HEARD ABOUT IS A CHARACTER WAITING FOR EVER.
+//
+// deploy() sets a partner only after the character has ARRIVED — and it has three early
+// exits before that: travel failed, orders failed, or it threw. Every one of them puts
+// the keeper back with plain farm orders and no partner, while the mate, deployed
+// independently, may already be pointing here. Given the walks involved — 40 to 50 steps
+// across rooms holding a dozen hostiles — that half-failure is routine rather than rare.
+//
+// The result is a character that waits for someone who is never coming. It reports
+// "waiting for t19, who is in somewhere unknown" and stalls until an operator clears it
+// by hand; this fleet needed exactly that twice in one session, six pairings the first
+// time and six more the second, and each clearing orphans the other side in turn.
+//
+// The halves cannot fix it between themselves because they are deployed separately, so
+// this is a post-condition on the round: after everyone has been placed, any partner who
+// is not pointed back at is cleared. Cheap — one fleet read — and it converges, because
+// clearing A's partner can orphan B, which the next round then clears.
+async function reconcilePartners() {
+  const out = [];
+  const f = await call('fleet', {}).catch(() => null);
+  const rows = (f?.fleet || []).filter(r => r.character);
+  if (!rows.length) return out;
+  for (const r of rows) {
+    if (!r.partner || r.partner_ok) continue;
+    const st = await call('autopilot', { agent: r.agent, action: 'status' }).catch(() => null);
+    const ok = await call('autopilot', { agent: r.agent, action: 'start', mode: 'farm',
+                                         ...carriedPolicy(st), partner: null,
+                                         hunt: st?.policy?.hunt || undefined })
+                     .then(() => true).catch(() => false);
+    out.push(`${r.character}: cleared a one-sided partnership with ${r.partner}` +
+             (ok ? '' : ' — BUT THE RESTART FAILED'));
+  }
+  return out;
 }
 
 // Shell out to the outfitter rather than reimplementing it: it already knows about
