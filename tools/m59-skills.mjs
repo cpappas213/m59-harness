@@ -116,7 +116,11 @@ export const brokenWeaponText = (t) => WEAPON_SHATTERED.test(t || '') || WEAPON_
 // Learned, per client, because it cannot be read. A weapon enters this set the moment
 // the server refuses it or announces it shattering, and leaves only when it leaves the
 // pack. Without it every pass re-picks the same dead sword — it still scores highest.
-export const brokenSet = (c) => (c._brokenWeapons ??= new Set());
+// Null-safe for the same reason larderOf is: this is reached from the fleet row and from
+// every equip path, and a character between sessions has no client at all. Four exported
+// functions — armourOf, junkAndBroken, weaponRanking and this one — all failed on this
+// single dereference.
+export const brokenSet = (c) => c ? (c._brokenWeapons ??= new Set()) : new Set();
 
 // A SWING THAT WAS REFUSED, AND THE ONE COMBAT FAILURE THE SERVER ACTUALLY ANNOUNCES.
 //
@@ -876,8 +880,21 @@ export class Stomach {
 
 // What is worth eating next, best nutrition per unit of filling first, and whether
 // there is currently room for it. Lets a caller decide to WAIT rather than ask.
+// A CHARACTER WITH NO CLIENT HAS AN EMPTY LARDER, NOT A CRASH.
+//
+// This dereferenced `c.inventory` directly while its sibling weaponsOf has always
+// guarded with `(c.inventory || [])`, and the difference took out the whole fleet
+// listing: `fleet: error: Cannot read properties of null (reading 'inventory')`, which
+// aborted m59-rearm before it armed anybody and left Clifford hunting fungus beasts
+// bare-handed. One character between sessions is enough to do it, because the fleet row
+// builder asks every agent in turn and one throw ends the request.
+//
+// Of the seven callers, three pass `s.client` — which is null for any dropped session,
+// and this fleet drops and rejoins constantly. Answering "nothing to eat" for a
+// character that is not in the world is both true and harmless; throwing is neither.
 export function larderOf(c) {
-  return c.inventory
+  if (!c) return [];
+  return (c.inventory || [])
     .map(o => ({ o, name: c.rsc.get(o.nameRsc) || '', food: foodValue(c.rsc.get(o.nameRsc) || '') }))
     .filter(x => x.food)
     .sort((a, b) => (b.food.nutrition / b.food.filling) - (a.food.nutrition / a.food.filling));
@@ -956,6 +973,10 @@ export const shareKind = (name) => SHAREABLE.find(s => s.re.test(String(name || 
 // empty hand and UserAttack quietly falls back to a punch, so nothing about it reads
 // as broken from the outside.
 export function weaponsOf(c) {
+  // `(c.inventory || [])` guarded a null INVENTORY and not a null CLIENT, which is the
+  // case that actually happens. This sits one line above larderOf in the fleet row, so
+  // either of them could have been the throw that took out the whole listing.
+  if (!c) return [];
   return (c.inventory || [])
     .map(o => ({ o, name: c.rsc.get(o.nameRsc) || '' }))
     .map(x => ({ ...x, score: weaponScore(x.name) }))
@@ -1023,7 +1044,7 @@ export async function eat(s, { maxItems = 4, stomach = null, upToVigor = null,
 }
 
 export const foodInInventory = (c) =>
-  c.inventory.filter(o => foodValue(c.rsc.get(o.nameRsc) || '')).length;
+  !c ? 0 : (c.inventory || []).filter(o => foodValue(c.rsc.get(o.nameRsc) || '')).length;
 
 // Make sure the regeneration timer will actually pay out.
 //
