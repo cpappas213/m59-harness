@@ -60,6 +60,7 @@ import { planRuns, planProvisioning } from './m59-lootrun.mjs';
 import { planCharacter, STAT_ORDER, STAT_PRESETS } from './m59-newchar.mjs';
 import { recordSample, recordEvent, summarise as ledgerSummary, readLedger, deathReport, timeReport, spellReport } from './m59-ledger.mjs';
 import { renderDashboard } from './m59-dashboard.mjs';
+import { renderDeaths, renderTougher, deathReportJSON } from './m59-deaths-page.mjs';
 import { renderHero, startScript } from './m59-hero-page.mjs';
 import { inboxIfAny, dropInbox, sanitizeInbound, unwrapSpeech } from './m59-inbox.mjs';
 import { localClients, soleClientAgent, createClientWatch,
@@ -197,9 +198,24 @@ class Pacer {
   // is the global throttle. Both must be satisfied.
   submit(kind, fn, minGapForKind = 0) {
     return new Promise((resolve, reject) => {
-      this.q.push({ kind, fn, minGapForKind, resolve, reject });
+      this.q.push({ kind, fn, minGapForKind, resolve, reject, queuedAt: Date.now() });
       this.pump();
     });
+  }
+
+  // WHERE THE TIME ACTUALLY GOES, measured rather than reasoned about.
+  //
+  // Three different things all look like "slow" from outside and want opposite fixes:
+  // time spent DELIBERATELY pacing to the client's own speed, time spent QUEUED behind
+  // another packet, and time spent BLOCKED waiting for a reply. Only the last is waste.
+  // Without splitting them, tuning the pacing looks reasonable and does nothing.
+  static budget = new Map();
+  static startedAt = Date.now();
+  static note(kind, phase, ms) {
+    const k = `${kind}.${phase}`;
+    const b = Pacer.budget.get(k) ?? { ms: 0, n: 0 };
+    b.ms += ms; b.n++;
+    Pacer.budget.set(k, b);
   }
 
   get depth() { return this.q.length; }
@@ -215,10 +231,16 @@ class Pacer {
         const lastKind = this.lastByKind.get(job.kind) || 0;
         const waitKind = Math.max(0, lastKind + job.minGapForKind - now);
         const wait = Math.max(waitGlobal, waitKind);
+        // Queued behind other traffic, versus deliberately paced. The first is
+        // contention and the second is the point, and they are not the same problem.
+        Pacer.note(job.kind, 'queued', Math.max(0, now - job.queuedAt));
+        Pacer.note(job.kind, waitKind >= waitGlobal ? 'paced' : 'throttled', wait);
         if (wait > 0) await new Promise(r => setTimeout(r, wait));
         this.lastSent = Date.now();
         this.lastByKind.set(job.kind, this.lastSent);
+        const t0 = Date.now();
         try { job.resolve(await job.fn()); } catch (e) { job.reject(e); }
+        Pacer.note(job.kind, 'send', Date.now() - t0);
       }
     } finally { this.running = false; }
   }
@@ -2114,7 +2136,9 @@ class Session {
     const c = this.need();
     this.lastRoomRead = Date.now();
     await this.pacer.submit('read', () => c.roomContents());
+    const t0 = Date.now();
     await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2000 });
+    Pacer.note('confirm_position', 'blocked', Date.now() - t0);
     return c.self ? { col: c.self.col, row: c.self.row } : null;
   }
 
@@ -2173,14 +2197,32 @@ class Session {
     await this.pacer.submit('move', () => c.moveToSquare(col, row, speed), gap);
     // Predict, the way the real client does.
     c.predictSelf({ col, row });
-    // AND RESYNC ON A CLOCK, AT MOST. This is the hard cap: whatever else happens, the
-    // room is not re-read more than once every ROOM_RESYNC_MS. Being wrong about the
-    // furniture for a few seconds costs nothing; being wrong about it for a whole journey
-    // would, which is why there is a clock rather than nothing.
-    if (confirm || Date.now() - (this.lastRoomRead ?? 0) >= ROOM_RESYNC_MS) {
+    // AND RESYNC ON A CLOCK, AT MOST — BUT DO NOT STAND STILL FOR IT.
+    //
+    // This awaited the reply, and the reply is a 1.2-5.6s round trip. So a walk ran for
+    // six seconds, froze for one to five, ran for six. That is the visible jerk, and it
+    // is the reason a fleet character does not move like a person even when every other
+    // number is right: the pauses are not pacing, they are us waiting.
+    //
+    // Nothing in the next step needs the answer. Position is dead-reckoned and the
+    // server does not echo our own moves, so the re-read is for the OBJECT MAP —
+    // furniture, monsters, loot — and the walker only consults that when it replans.
+    // The reply lands on the event stream and updates the room whenever it arrives,
+    // which is exactly as good a few hundred milliseconds later.
+    //
+    // So it is fired and not awaited. `confirm: true` still blocks, because the one
+    // caller that passes it genuinely needs to know where it ended up — and
+    // confirmPosition(), before crossing out of a room, is the other place we still pay
+    // for the truth on purpose.
+    if (confirm) {
       this.lastRoomRead = Date.now();
       await this.pacer.submit('read', () => c.roomContents());
       await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2000 });
+    } else if (Date.now() - (this.lastRoomRead ?? 0) >= ROOM_RESYNC_MS) {
+      this.lastRoomRead = Date.now();
+      // Not awaited. A failure here is not a movement failure — the walk carries on
+      // with a slightly older object map, which is the state it was already in.
+      this.pacer.submit('read', () => c.roomContents()).catch(() => {});
     }
     const after = c.self;
     return {
@@ -2227,7 +2269,14 @@ class Session {
     const before = p0 ? { x: p0.x, y: p0.y } : null;
     await this.pacer.submit('move', () => c.moveTo(Math.round(x), Math.round(y)), MOVE_INTERVAL_MS);
     await this.pacer.submit('read', () => c.roomContents());
+    // THIS ONE HAS TO BLOCK, and it is the most expensive thing in the file.
+    // stepFine's whole contract is "let the SERVER judge the step" — a refused fine move
+    // and an accepted one are indistinguishable without reading back, and dead reckoning
+    // here does not merely drift, it inverts the result. So it pays a full round trip per
+    // step. That is why fine movement is the fallback and not the default.
+    const tFine = Date.now();
     await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2000 });
+    Pacer.note('step_fine', 'blocked', Date.now() - tFine);
     const p1 = c.self;
     const after = p1 ? { x: p1.x, y: p1.y, col: p1.col, row: p1.row } : null;
     const moved = !!(before && after && (after.x !== before.x || after.y !== before.y));
@@ -2607,7 +2656,9 @@ class Session {
       // BP_PLAYER reports the new room — and waitFor returns on the first match of
       // ANY listed kind. Listening for 'message' too therefore returned the
       // announcement of success and called it a failure, every single time.
+      const tGo = Date.now();
       const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 });
+      Pacer.note('go', 'blocked', Date.now() - tGo);
       const entered = ev.events.find(e => e.kind === 'room-entered');
       const messages = c.eventsSince(before).filter(e => e.text).map(e => e.text);
       return { left: !!entered, arrived_in: entered ? entered.roomName : null,
@@ -2668,7 +2719,9 @@ class Session {
       const before = c.evSeq;
       await this.pacer.submit('move',
         () => c.moveToSquare(exit.stand_on.col + out[0], exit.stand_on.row + out[1]), MOVE_INTERVAL_MS);
+      const tGo = Date.now();
       const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 });
+      Pacer.note('go', 'blocked', Date.now() - tGo);
       const entered = ev.events.find(e => e.kind === 'room-entered');
       if (!entered) {
         // If this was an edge we INFERRED rather than one the room declared, the
@@ -2696,7 +2749,9 @@ class Session {
       const before = c.evSeq;
       const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
                                      { maxSteps: budget(exit), movementGeneration, controlToken });
+      const tGo = Date.now();
       const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 });
+      Pacer.note('go', 'blocked', Date.now() - tGo);
       const entered = ev.events.find(e => e.kind === 'room-entered');
       if (entered) return { left: true, arrived_in: entered.roomName, via: 'region trigger' };
 
@@ -2732,7 +2787,9 @@ class Session {
       const before = c.evSeq;
       const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
                                      { maxSteps: budget(exit), movementGeneration, controlToken });
+      const tGo = Date.now();
       const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 });
+      Pacer.note('go', 'blocked', Date.now() - tGo);
       const entered = ev.events.find(e => e.kind === 'room-entered');
       if (!entered)
         return { left: false, stage: walk.arrived ? 'stood on it' : 'walk', ...walk,
@@ -7326,6 +7383,17 @@ function serveDashboard(port) {
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ ok: true, view: 'dashboard', readonly: true }));
     }
+    // Where the wall-clock went, split into pacing (deliberate), queueing (contention)
+    // and blocking (waiting for a reply — the only part that is waste). Read-only, and
+    // cumulative since the broker started; `?reset=1` zeroes it to time one experiment.
+    if (url.pathname === '/budget') {
+      const rows = [...Pacer.budget.entries()]
+        .map(([k, v]) => ({ bucket: k, ms: v.ms, n: v.n, mean_ms: Math.round(v.ms / v.n) }))
+        .sort((a, b) => b.ms - a.ms);
+      if (url.searchParams.get('reset')) Pacer.budget.clear();
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ uptime_ms: Date.now() - Pacer.startedAt, buckets: rows }, null, 1));
+    }
     // /hero/<name> and /hero/<name>/start.ps1
     if (url.pathname.startsWith('/hero/')) {
       const parts = url.pathname.slice('/hero/'.length).split('/');
@@ -7354,6 +7422,22 @@ function serveDashboard(port) {
       } catch (e) {
         res.writeHead(500, { 'content-type': 'text/plain' });
         return res.end('hero page failed: ' + e.message);
+      }
+    }
+    // THE TWO PAGES ABOUT WHY. The fleet board says how it is going; these say what
+    // killed them and what it took to get tougher. Read-only like everything else here.
+    if (url.pathname === '/deaths/report') {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      return res.end(JSON.stringify(deathReportJSON(url.searchParams.get('file'))));
+    }
+    if (url.pathname === '/deaths' || url.pathname === '/tougher') {
+      try {
+        const hours = Number(url.searchParams.get('hours')) || 168;
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        return res.end(url.pathname === '/deaths' ? renderDeaths({ hours }) : renderTougher({ hours }));
+      } catch (e) {
+        res.writeHead(500, { 'content-type': 'text/plain' });
+        return res.end(`${url.pathname} failed: ` + e.message);
       }
     }
     if (url.pathname !== '/' && !url.pathname.startsWith('/fleet')) {
