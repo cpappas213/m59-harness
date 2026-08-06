@@ -171,7 +171,40 @@ async function outfit(row) {
         continue;
       }
       seller = (seen.objects || []).find(o => (o.can || []).includes('buy'));
-      if (!seller) { tried.push(`${room} (reached it, but nobody there sells)`); continue; }
+      if (!seller) {
+        // SAY WHAT WAS ACTUALLY THERE. "nobody here sells anything" is unfalsifiable
+        // from a log — it cannot be told apart from a bad room read, a merchant that
+        // moved, or an affordance we failed to derive. The contents make it debuggable.
+        const what = (seen.objects || []).map(o => o.name).filter(Boolean).slice(0, 8);
+        tried.push(`${room} (reached it; ${what.length ? 'saw ' + what.join(', ') : 'room read as empty'})`);
+        continue;
+      }
+
+      // WALK TO THE SHOPKEEPER BEFORE TRADING WITH IT.
+      //
+      // Nothing in UserBuy or GetForSale (monster.kod:4818) checks distance, so buying
+      // does not strictly need this — but every NPC in this game is stationary, so
+      // standing next to one costs a couple of seconds and removes a whole class of
+      // "it should have worked" from the log. It is also simply what a player does, and
+      // the offer/trade paths are less forgiving than the buy path.
+      //
+      // Failure here is not fatal: if the walk is refused we are still in the room with
+      // the merchant, which is where the old code traded from anyway.
+      if (seller.col != null && seller.row != null) {
+        const w = await call('walk_to', { agent: row.agent, col: seller.col, row: seller.row })
+                        .catch(e => ({ arrived: false, why: e.message }));
+        // ARRIVING IS THE WRONG TEST HERE. The merchant is STANDING on the square we
+        // aimed at, so the last step is refused and walk_to honestly reports
+        // arrived:false — while we are in fact standing next to it, which is the thing
+        // we wanted. Measure the distance instead of believing the flag, or the log
+        // fills with failures that are successes.
+        const at = w?.position ?? null;
+        const gap = at ? Math.max(Math.abs(at.col - seller.col), Math.abs(at.row - seller.row)) : null;
+        const name = seller.name ?? 'the merchant';
+        log.push(gap != null && gap <= 1 ? `standing with ${name}`
+               : gap != null            ? `${gap} squares from ${name} — trading from here`
+                                        : `could not walk to ${name} (${w?.reason ?? w?.why ?? 'refused'}) — trading from here`);
+      }
       arrived = true;
       break;
     }
