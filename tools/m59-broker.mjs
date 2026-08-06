@@ -2024,6 +2024,27 @@ class Session {
     return RUN_SPEED;
   }
 
+  // STAND UP BEFORE TRYING TO LEAVE THE ROOM.
+  //
+  // `Player.ResetFlags` (player.kod:1162) sets PFLAG_NO_MOVE, PFLAG_NO_FIGHT and
+  // PFLAG_NO_MAGIC together whenever IsResting, and `UserGo` (user.kod:5657) refuses
+  // on that flag with "You are unable to go anywhere." — which is 589 of our 700
+  // failed hops, and reads in the transit log as the map being shut rather than as
+  // the character being sat down.
+  //
+  // Nothing clears resting by itself, and at least one path sits deliberately: the
+  // unarmed branch rests to regain mana and holds it. So the character can be seated
+  // for a minute at a time with every exit attempt failing identically.
+  //
+  // Sent unconditionally rather than guarded on a cached "am I resting" flag, because
+  // that flag is exactly the thing that goes stale — the server never announces the
+  // rest ending, and a wrong `false` costs a whole journey while a redundant stand
+  // costs one packet.
+  async standBeforeGo() {
+    const c = this.need();
+    await this.pacer.submit('rest', () => c.stand());
+  }
+
   // ONE SQUARE, AND NOT A ROOM RE-READ TO GO WITH IT.
   //
   // This used to end with a full `roomContents()` request and a wait for the reply, ONCE
@@ -2466,6 +2487,7 @@ class Session {
 
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
       const before = c.evSeq;
+      await this.standBeforeGo();
       await this.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
       // Wait for the ROOM CHANGE specifically. A door announces itself first —
       // "You open the door and walk through." arrives as a message a beat before
@@ -2578,6 +2600,7 @@ class Session {
       // time — while holding the fleet's money and needing a shop. Two other characters
       // failed the same way against all four food shops in the same run.
       const beforeGo = c.evSeq;
+      await this.standBeforeGo();
       await this.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
       const ev2 = await c.waitFor({ since: beforeGo, kinds: ['room-entered'], timeoutMs: 4000 });
       const entered2 = ev2.events.find(e => e.kind === 'room-entered');
@@ -4719,6 +4742,7 @@ const TOOLS = [
       const s = session(a.agent), c = s.need();
       const before = c.evSeq;
       if (a.verb === 'go') {
+        await s.standBeforeGo();          // PFLAG_NO_MOVE, same as every other `go`
         await s.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
       } else {
         const t = resolveTarget(s, a.target);
