@@ -77,10 +77,26 @@ const foodValue = (n) => ITEMS?.food?.[String(n || '').trim().toLowerCase()] || 
 const isFood = (n) => !!foodValue(n);
 const vigorOf = (n) => foodValue(n)?.nutrition ?? 0;
 
-// Never sell these. Money, gems (worth more than the trip), reagents the creation
-// spells need, and anything being worn — sell_all's own keep list covers equipment, but
-// naming the reagents matters because they are the OTHER route to food.
-const KEEP = ['shilling', 'elderberry', 'herb', 'diamond', 'ruby', 'emerald', 'sapphire',
+// Never sell these. Money, the reagents the creation spells need, and anything being
+// worn — sell_all's own keep list covers equipment, but naming the reagents matters
+// because they are the OTHER route to food.
+//
+// GEMS USED TO BE ON THIS LIST AND ARE NOT ANY MORE. They were held back as "worth more
+// than the trip", which had it backwards: a gem is worth more than the trip precisely
+// because a merchant will pay for it, and holding it back is what stopped that from
+// ever happening. Nothing else in the fleet turns a gem into anything — they are not
+// eaten, not worn, not swung — so the effect was a one-way ratchet. Fozzie was carrying
+// fifty-six sapphires and thirty-six emeralds and could not buy an apple.
+//
+// A gem IS a reagent, and an unremarkable one: emerald is used by twelve spells,
+// sapphire by eight, ruby by seven, diamond by five — against elderberry's fifteen and
+// twelve for herbs. There is no reason to call them out that would not also apply to
+// mushrooms, orc teeth and fairy wings, none of which are named here either. What the
+// fleet actually casts is `create food`, which needs elderberry and herbs, and those
+// two are the ones on the list. Everything else goes to the counter with the rest of
+// the loot, and what a crewmate is short of is held back by sell_all's own interest
+// board rather than by a name typed in here.
+const KEEP = ['shilling', 'elderberry', 'herb',
               'armor', 'armour', 'shield', 'helm', 'mace', 'sword', 'axe', 'hammer'];
 
 const purseOf = items => (items || []).filter(i => /shilling/i.test(i.name))

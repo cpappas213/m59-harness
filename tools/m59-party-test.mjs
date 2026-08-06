@@ -12,13 +12,17 @@
 //   * a square holds a SET of occupants, not one name. With one name the second
 //     partner to claim erased the first, and releasing the second then freed a square
 //     somebody was still standing on.
-//   * partners may share a wall; NOBODY else may. The one-wall-each default exists
-//     because uncoordinated keepers pile onto the same corner.
+//   * partners may share a wall freely, and do not count toward anyone's crowding.
+//     Everyone else spreads: the share cap starts at one and rises only when every wall
+//     in the room is already occupied at the current level, so four walls and eight
+//     characters settle two apiece instead of four getting a wall and four getting the
+//     no-wall path, which is the branch that precedes most of the deaths.
 //   * pairing is exclusive — a character in two parties is in none, because both
 //     partners wait for it and neither gets a second swinger.
 //   * leather outranks plate, which is not what the price says.
 import './m59-test-ledger.mjs';        // FIRST — importing the keeper records to a ledger
-import { claimSpot, releaseSpot, spotTakenByAnother, claimedSpotList } from './m59-autopilot.mjs';
+import { claimSpot, releaseSpot, spotTakenByAnother, claimedSpotList,
+         spotOccupancy, SPOT_SHARE_CAP } from './m59-autopilot.mjs';
 import * as party from './m59-party.mjs';
 import { armourKind, armourScore, armourOf, ARMOUR_SLOTS } from './m59-skills.mjs';
 import { pairUp, assignRooms } from './m59-supervise.mjs';
@@ -82,6 +86,48 @@ party.resetParties();
   ok('claiming a new square releases the old', spotTakenByAnother('y', 586, 25, 23) === null);
   ok('and holds the new one', spotTakenByAnother('y', 586, 30, 30) === 'x');
   releaseSpot('x');
+}
+
+// ------------------------------------------------------------- spreading, not excluding
+//
+// "One wall each" was right about four characters stacked on one square and wrong about
+// what to do with more keepers than walls: four walls and eight characters gave four of
+// them a wall and sent the other four to the no-wall path, which is the branch that
+// precedes most of the deaths. The cap now rises only when it has to, so every wall fills
+// to one before any takes a second.
+party.resetParties();
+{
+  const SQ = [[10, 10], [20, 20], [30, 30], [40, 40]];   // four walls in room 700
+  for (const [c, r] of SQ) claimSpot(`a${c}`, 700, c, r); // four characters, one each
+
+  ok('at cap 1 every wall now reads as taken',
+     SQ.every(([c, r]) => spotTakenByAnother('newcomer', 700, c, r, 1) !== null));
+  ok('so a fifth character finds nothing at cap 1 — which is what triggers the retry',
+     SQ.every(([c, r]) => spotTakenByAnother('newcomer', 700, c, r, 1) !== null));
+  ok('and at cap 2 every one of them is available again',
+     SQ.every(([c, r]) => spotTakenByAnother('newcomer', 700, c, r, 2) === null));
+
+  // Four more arrive and settle two apiece rather than four on one.
+  for (const [c, r] of SQ) claimSpot(`b${c}`, 700, c, r);
+  ok('every wall now holds exactly two',
+     SQ.every(([c, r]) => spotOccupancy('newcomer', 700, c, r) === 2));
+  ok('cap 2 now refuses them all', SQ.every(([c, r]) => spotTakenByAnother('z', 700, c, r, 2) !== null));
+  ok('cap 3 opens them again', SQ.every(([c, r]) => spotTakenByAnother('z', 700, c, r, 3) === null));
+
+  ok('the share cap stops the pile-up this register exists to prevent', SPOT_SHARE_CAP === 3);
+
+  // The default is unchanged, so nothing that has not opted in behaves differently.
+  ok('the default cap is still one', spotTakenByAnother('z', 700, 10, 10) !== null);
+
+  // Partners are still free, and still do not count toward the cap.
+  party.pair('p1', 'p2');
+  claimSpot('p1', 701, 5, 5);
+  ok('a partner joins regardless of the cap', spotTakenByAnother('p2', 701, 5, 5, 1) === null);
+  ok('and does not count as crowding', spotOccupancy('p2', 701, 5, 5) === 0);
+  ok('while a stranger still counts', spotOccupancy('stranger', 701, 5, 5) === 1);
+
+  for (const [c, r] of SQ) { releaseSpot(`a${c}`); releaseSpot(`b${c}`); }
+  releaseSpot('p1');
 }
 
 // ---------------------------------------------------------------- converging

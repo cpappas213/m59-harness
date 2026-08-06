@@ -101,12 +101,73 @@ function drawDown(donor, carried) {
 // This is the feed tool's shop sequence, which is the only one known to work: walk with
 // retries, require status and look to AGREE on the room, re-find the merchant immediately
 // before buying, and judge the purchase by the purse rather than by the request.
+// THE FLEET IS ONE OWNER, SO AN EMPTY PURSE IS A DISTRIBUTION PROBLEM.
+//
+// buyWeaponFor gave up at "only 0sh — a weapon costs more than that" while the fleet was
+// carrying 2,225 shillings: Bunsen 861, Fozzie 471, Pepe 400, Kermit 187, Camilla 171.
+// Three characters stood unarmed in monster rooms because the money was in somebody
+// else's pocket. It is the same failure the almoner exists to fix, in a different
+// currency.
+//
+// NOT A LOAN. There is no reserve, no repayment and no bookkeeping, because there is
+// nothing to book: every purse in this fleet belongs to the same operator. Money moves
+// to whoever needs to spend it.
+//
+// ONLY CARRIED MONEY. The bank stays a one-way sink — keepers deposit above their
+// threshold and nothing here withdraws. Pooling what is in hand is enough to arm
+// somebody, and it leaves the banked balance doing its job of not being on a character
+// that dies.
+//
+// SAME ROOM FIRST, AND USUALLY ONLY. A handover needs the two of them in one place, and
+// walking is precisely what fails in these rooms — "kept ending up somewhere other than
+// the planned square" both ways round, which is how this pass failed by hand. A donor
+// already standing here costs nothing and cannot fail that way, so those are tried
+// first; a walk is a fallback rather than the plan.
+const WEAPON_BUDGET = Number(arg('weapon-budget', 250));
+
+async function poolMoneyTo(row, want = WEAPON_BUDGET) {
+  const purseOf = items => (items || []).filter(i => /shilling/i.test(i.name))
+                                        .reduce((t, i) => t + (i.amount || 1), 0);
+  const f = await call('fleet', {}, 120_000).catch(() => null);
+  const rows = (f?.fleet || []).filter(r => r.character && r.agent !== row.agent);
+  const holders = [];
+  for (const r of rows) {
+    const inv = await call('inventory', { agent: r.agent }, 60_000).catch(() => null);
+    const sh = (inv?.items || []).find(o => /shilling/i.test(o.name));
+    const amount = sh?.amount ?? 0;
+    if (sh && amount >= want) holders.push({ r, sh, amount, sameRoom: r.room_num === row.room_num });
+  }
+  // Same room first, then by who has most — a bigger purse is likelier to still have it
+  // by the time the walk finishes.
+  holders.sort((a, b) => (b.sameRoom - a.sameRoom) || (b.amount - a.amount));
+  for (const h of holders.slice(0, 4)) {
+    for (const who_travels of h.sameRoom ? ['to'] : ['to', 'from']) {
+      const res = await call('supply', { from: h.r.agent, to: row.agent,
+                                         what: [{ id: h.sh.id, amount: want }], who_travels })
+                        .catch(e => ({ supplied: false, reason: e.message }));
+      if (res?.supplied) return { ok: true, from: h.r.character, amount: want, sameRoom: h.sameRoom };
+    }
+  }
+  return { ok: false, holders: holders.length };
+}
+
 async function buyWeaponFor(row) {
   const purseOf = items => (items || []).filter(i => /shilling/i.test(i.name))
                                         .reduce((t, i) => t + (i.amount || 1), 0);
-  const inv0 = await call('inventory', { agent: row.agent }, 60_000).catch(() => ({ items: [] }));
-  const purse0 = purseOf(inv0.items);
-  if (purse0 < 100) return `${row.character}: only ${purse0}sh — a weapon costs more than that`;
+  let inv0 = await call('inventory', { agent: row.agent }, 60_000).catch(() => ({ items: [] }));
+  let purse0 = purseOf(inv0.items);
+  if (purse0 < 100) {
+    const pooled = await poolMoneyTo(row);
+    if (pooled.ok) {
+      inv0 = await call('inventory', { agent: row.agent }, 60_000).catch(() => ({ items: [] }));
+      purse0 = purseOf(inv0.items);
+      console.log(`  ${row.character}: took ${pooled.amount}sh from ${pooled.from}` +
+                  `${pooled.sameRoom ? ' (same room)' : ' (walked)'} — purse now ${purse0}sh`);
+    }
+  }
+  if (purse0 < 100)
+    return `${row.character}: only ${purse0}sh and no fleet-mate could hand over more — ` +
+           'a weapon costs more than that';
 
   const seen = new Map();
   for (const what of ['mace', 'short sword', 'sword']) {

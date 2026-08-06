@@ -618,6 +618,44 @@ export function parseLook(body, lookup) {
   return done(r, { object, flags, fmtId, text, inscription });
 }
 
+// LOOKING AT A PLAYER IS NOT BP_LOOK. It is BP_USERCOMMAND / UC_LOOK_PLAYER (2),
+// and this is not a detail — a client that handles only BP_LOOK gets nothing at all
+// back when it looks at a person, which is indistinguishable from an object that
+// refuses to be examined. `Player.TryLook` (user.kod:4374) diverts to
+// `SendLookPlayer` (user.kod:4328) instead of the base `TryLook`'s `SendLook`, so
+// the whole reply has a different shape:
+//
+//   object, one flags byte, then a formatted message (the DESCRIPTION), then two
+//   plain length-prefixed strings — the extra info and the URL.
+//
+// HandleLookPlayer, module/merintr/merintr.c:1501. The flags byte is not the
+// DF_EDITABLE/DF_INSCRIBED pair BP_LOOK carries: it is 1 when the viewer may EDIT
+// this description — self, or an Admin looking at a player — and 0 otherwise
+// (user.kod:4347). Both trailing strings are written by `AddPacket(0, …)` or by
+// `AddPacket(STRING_RESOURCE, …)`, which commcli.c:92 says "writes actual string,
+// even though it's a resource" — so both are literals on the wire either way.
+//
+// The description itself is a format resource with parameters, exactly like every
+// other piece of server prose: a player who has SET one gets `player_desc_enchanted_none`
+// ("%q", player.kod:321) carrying the text inline, and a player who has not gets
+// whatever the default ShowDesc builds. That is why this is the only way to read a
+// description back, and why it works on yourself — which is precisely what the real
+// client's right-click-your-own-face dialog does.
+export function parseLookPlayer(body, lookup) {
+  const r = new Reader(body);
+  const object = extractObject(r);
+  const editable = r.u8();
+  const fmtId = r.u32();
+  const { text } = formatServerMessage(r, fmtId, lookup);
+  // ExtractString, both of them. A truncated tail is reported rather than thrown:
+  // the description is the part that matters and it has already been read.
+  let extra = null, url = null;
+  try { if (r.left >= 2) extra = r.str(); } catch { /* truncated */ }
+  try { if (r.left >= 2) url = r.str(); } catch { /* truncated */ }
+  return done(r, { object, editable: !!editable, fmtId, text,
+                   extra: extra ? stripCodes(extra) : null, url: url || null });
+}
+
 // BP_STAT (131) / BP_STAT_GROUP (132) — health, mana, vigor and every character
 // number. The handler does NOT live in clientd3d: stats are a UI module, so the
 // authority is module/merintr/merintr.c:ExtractStatistic. Two levels of type tag,

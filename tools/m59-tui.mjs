@@ -255,7 +255,12 @@ function draw() {
 // it. This starts the real client already logged in as the selected character and then
 // injects the agent DLL, so the same character is playable by hand AND drivable by the
 // MCP — which is the thing that was worth five minutes of copy-paste every time.
-function launch(row) {
+// launch() is async, so a throw in it lands on a promise rather than in the key
+// handler. Unhandled, that is a silent no-op on a keypress — the one failure mode this
+// key has already had once. Put it on the status line instead.
+const fail = (e) => { S.status = c.red('launch failed: ' + (e?.message ?? e)); draw(); };
+
+async function launch(row) {
   const creds = rosterFor(row.agent);
   if (!creds) { S.status = c.red('no credentials on file for ' + row.agent); return; }
   const exe = env.M59_CLIENT_EXE ||
@@ -345,6 +350,18 @@ function launch(row) {
   child.on('error', e => { S.status = c.red('could not start powershell: ' + e.message); draw(); });
   S.status = c.green(`launching ${row.character ?? row.agent}…`) + ' ' +
              c.dim('~20s · log: substrate\\m59-launch.log · keep the client focused or it drops movement');
+
+  // TELL THE BROKER TO LOOK. It does not hunt for clients on a timer — scanning costs a
+  // process spawn, so it goes quiet once it has seen no client and waits to be told.
+  // This IS the telling, and without it the character launched here comes up unclaimed:
+  // the operator stands in the room with none of the privileges the launch was for, and
+  // the only sign is that spoken commands are heard and ignored. That exact failure is
+  // why the automatic claim exists at all — see m59-localclient.mjs.
+  const r = await call('pilot', { action: 'rearm', why: `the terminal launched ${row.agent}` }, 4000);
+  if (r?.__error) {
+    S.status += ' ' + c.red('· broker not told to watch (' + r.__error + ') — `pilot claim` by hand');
+    draw();
+  }
 }
 
 // The same path the L key takes, without the terminal:
@@ -358,7 +375,9 @@ const li = argv.indexOf('--launch');
 if (li >= 0) {
   const agent = argv[li + 1];
   if (!agent) { console.error('usage: m59-tui.mjs --launch <agent>'); exit(2); }
-  launch({ agent });
+  // AWAITED, or the process exits before the broker has been told to watch for the
+  // client this just started — and the automatic claim silently never happens.
+  await launch({ agent });
   console.log(S.status.replace(/\x1b\[[0-9;]*m/g, ''));
   exit(0);
 }
@@ -419,13 +438,13 @@ function onKey(str, key) {
     else if (key.name === 'return') {
       S.hero = S.rows[S.sel]; S.view = 'hero'; S.status = '';
       loadHero(S.hero).then(draw);
-    } else if (str === 'L' || str === 'l') launch(S.rows[S.sel]);
+    } else if (str === 'L' || str === 'l') launch(S.rows[S.sel]).then(draw, fail);
     else if (str === 'C' || str === 'c') compendium(S.rows[S.sel]);
     else if (str === 'r') { S.status = c.dim('refreshing…'); refresh().then(draw); }
   } else {
     if (key.name === 'q' || key.name === 'escape' || key.name === 'return') {
       S.view = 'list'; S.detail = null; S.status = '';
-    } else if (str === 'L' || str === 'l') launch(S.hero);
+    } else if (str === 'L' || str === 'l') launch(S.hero).then(draw, fail);
     else if (str === 'C' || str === 'c') compendium(S.hero);
     else if (str === 'r') { refresh().then(() => { S.hero = S.rows.find(r => r.agent === S.hero.agent) ?? S.hero; draw(); }); }
   }

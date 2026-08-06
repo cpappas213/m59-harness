@@ -5,6 +5,14 @@
 //   node tools/m59-update.mjs --dry-run            # park and report, restart nothing
 //   node tools/m59-update.mjs --timeout 300        # seconds to wait for the fleet, default 240
 //   node tools/m59-update.mjs --no-wait            # restart immediately, the old way
+//   node tools/m59-update.mjs --force              # park gently, but restart over a live errand
+//
+// --force PARKS THE FLEET AS USUAL and only overrides the errand guard in m59-service.mjs.
+// It is NOT --no-wait: the characters still get behind walls first. What it gives up is a
+// one-shot errand mid-walk, which dies with `fetch failed` and leaves what it was carrying
+// undelivered. Without this flag the only ways past a running errand were to wait or to pass
+// --no-wait — so anyone in a hurry reached for --no-wait and gave up the parking too, which
+// is the half actually worth keeping.
 //
 // WHY THIS EXISTS.
 //
@@ -55,6 +63,7 @@ const arg = (n, d = null) => {
 const PORT = Number(arg('port', 8901));
 const DRY = !!arg('dry-run', false);
 const NO_WAIT = !!arg('no-wait', false);
+const FORCE = !!arg('force', false);
 const TIMEOUT_MS = Number(arg('timeout', 240)) * 1000;
 const FLEET = arg('fleet', null);
 const RPC = `http://127.0.0.1:${PORT}/`;
@@ -222,7 +231,8 @@ async function unparkFleet() {
   console.log(`\n${stamp()} restarting the broker — this is what loads the new code`);
   // The parking flags live in the broker's memory and die with it, so nothing needs
   // unparking: the keepers on the far side are new objects that were never parked.
-  await run('./m59-service.mjs', ['restart', ...(FLEET ? ['--fleet', FLEET] : [])]);
+  await run('./m59-service.mjs', ['restart', ...(FLEET ? ['--fleet', FLEET] : []),
+                                  ...(FORCE ? ['--force'] : [])]);
 
   if (sup) {
     console.log(`\nA supervisor is running (pid ${sup.join(', ')}) and a broker restart does NOT`);
@@ -232,4 +242,14 @@ async function unparkFleet() {
     console.log('Stop it by pid, not by name — see CLAUDE.md.');
   }
   console.log('\nDone. The fleet page will fill back in over a minute or so as characters rejoin.');
-})().catch(e => { console.error('update failed: ' + e.message); process.exit(1); });
+})().catch(e => {
+  console.error('update failed: ' + e.message);
+  // THE FLEET IS PROBABLY STILL PARKED. Everything that can throw here happens after
+  // parkFleet(), and a parked fleet earns nothing — it stands behind a wall taking no
+  // fights until something unparks it. The timeout path says this; the throw path did
+  // not, so a restart refused by the errand guard left twenty-one characters idle with
+  // the error message giving no hint that anything needed undoing.
+  console.error('\nThe fleet is most likely still parked and earning nothing. Put it back:');
+  console.error('  node tools/m59-update.mjs --unpark' + (FLEET ? ` --fleet ${FLEET}` : ''));
+  process.exit(1);
+});

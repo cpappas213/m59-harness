@@ -27,7 +27,7 @@ import {
   parseRoomContents, parseCreate, parseRemove, parseMove, parseTurn, parseChange,
   parseObjectList, parseObjectContents, parsePlayers, parsePlayerAdd,
   parseChangeResource, parsePlayer, parseBuyList, parseStringMessage, parseSaid,
-  parseLook, parseStat, parseStatGroup, parseSpells, parseSkills,
+  parseLook, parseLookPlayer, parseStat, parseStatGroup, parseSpells, parseSkills,
   parseOffer, parseOfferItems, parseInventoryAdd, encodeIdList, describeObject,
   parseUseList, parseObjectId, affordances, STAT_GROUP,
 } from './m59-parse.mjs';
@@ -68,7 +68,7 @@ export const BP = {
   REQ_PUT: 112, REQ_GET: 113, REQ_GIVE: 114, REQ_TAKE: 115,
   REQ_LOOK: 116, REQ_INVENTORY: 117, REQ_DROP: 118, REQ_HIDE: 119,
   REQ_OFFER: 120, ACCEPT_OFFER: 121, CANCEL_OFFER: 122, REQ_COUNTEROFFER: 123,
-  REQ_BUY: 124, REQ_BUY_ITEMS: 125,
+  REQ_BUY: 124, REQ_BUY_ITEMS: 125, CHANGE_DESCRIPTION: 126,
   // world state
   PLAYER: 130, STAT: 131, STAT_GROUP: 132, STAT_GROUPS: 133,
   ROOM_CONTENTS: 134, OBJECT_CONTENTS: 135, PLAYERS: 136,
@@ -795,6 +795,29 @@ export class M59Client {
   face(degrees)         { this.turn(Math.round(degrees * MAX_ANGLE / 360) & (MAX_ANGLE - 1)); }
 
   look(id)              { this.send(BP.REQ_LOOK, u32(objId(id))); }
+
+  // BP_CHANGE_DESCRIPTION (126) — {4,OBJECT} then {0,STRING}, sprocket.c:71. The object
+  // is WHO is being described, and user.kod:1345 accepts it only when that object is
+  // ourselves, or when an Admin names a player; anything else falls through to the
+  // inscription branch and is refused. So this always addresses selfId, and refuses to
+  // send at all before we have one — object 0 gets `Debug("Tried setting description of
+  // nil object")` server-side and nothing on the wire, which is the sort of silent
+  // success this client exists to avoid.
+  //
+  // The server runs the string through SYS.CleanseString (system.kod:5687 — swear
+  // substitution, nothing else) and stores it in psPlayerDescription, a saved property.
+  //
+  // IT REPLACES THE LOOK TEXT ENTIRELY. Player.ShowDesc (player.kod:1521) sends the
+  // description under the "%q" resource and RETURNS, never reaching the propagate that
+  // builds the default prose — so a character carrying one stops reporting its own
+  // level and guild to anyone who looks. And there is no packet that reads it back: the
+  // only way to see a description is for someone else to BP_REQ_LOOK at you. Whatever
+  // was last sent is the only record, which is why m59-describe.mjs writes it down.
+  setDescription(text) {
+    if (!this.selfId) throw new Error('no object id yet — a description can only be set once in game');
+    this.send(BP.CHANGE_DESCRIPTION, u32(objId(this.selfId)), pstr(String(text)));
+  }
+
   attack(id, info = 1)  { this.send(BP.REQ_ATTACK, u8b(info), u32(objId(id))); }
   use(id)               { this.send(BP.REQ_USE, u32(objId(id))); }
   unuse(id)             { this.send(BP.REQ_UNUSE, u32(objId(id))); }
@@ -1184,6 +1207,31 @@ export class M59Client {
         if (!this.check('LOOK', res)) break;
         this.emit('look', { id: res.object.id, what: describeObject(res.object, this.lookup),
                             description: res.text, inscription: res.inscription });
+        break;
+      }
+
+      // BP_USERCOMMAND ARRIVES AS WELL AS DEPARTS, and this client only ever sent it.
+      // A whole second command space was therefore falling into the default case and
+      // being dropped in silence — including the ONLY reply the server gives when you
+      // look at a person. `look_at` on a character has always timed out and blamed
+      // OF_NOEXAMINE for it, because a packet nobody parses and a packet nobody sends
+      // look exactly alike from the far end.
+      case BP.USERCOMMAND: {
+        const uc = body[0];
+        if (uc === UC.LOOK_PLAYER) {
+          const res = parseLookPlayer(body.subarray(1), this.lookup);
+          if (!this.check('LOOK_PLAYER', res)) break;
+          // Emitted as `look`, deliberately: to everything upstream this is the same
+          // question with the same answer, and the shape of the packet is our problem
+          // rather than the caller's. `editable` says the server would accept a
+          // description change for this object from us — true for ourselves.
+          this.emit('look', { id: res.object.id, what: describeObject(res.object, this.lookup),
+                              description: res.text, inscription: null,
+                              player: true, editable: res.editable,
+                              extra: res.extra, url: res.url });
+        } else {
+          this.log(`unhandled user command ${uc} (${body.length - 1} bytes)`);
+        }
         break;
       }
 

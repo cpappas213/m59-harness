@@ -25,6 +25,17 @@ node_modules/
 # since it was first read. One server's characters, and the history is theirs — the
 # same reason the roster and the post-mortems are not here.
 /substrate/abilities/
+# One JSON per character: what it has in the bank, written down each time a banker
+# states it, because the server never sends the number again. Same reasoning as the
+# abilities above — it is one server's characters and their money, not reference data.
+# Worth backing up if you care about the fleet: it cannot be reconstructed without
+# walking every character to a counter.
+/substrate/banks/
+# One JSON per character: the bio other players see when they look at it, written down
+# at the moment it is sent because NOTHING READS A DESCRIPTION BACK — there is no packet
+# for it, so this is the only copy. One server's characters and the words we put in their
+# mouths, so not reference material; worth backing up if you care about the fleet.
+/substrate/descriptions/
 /substrate/*.log
 # Which process m59-service.mjs last started, per fleet. Runtime state, and wrong the
 # moment it is read on any other machine.

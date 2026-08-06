@@ -44,6 +44,8 @@ import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
 import * as skills from './m59-skills.mjs';
 import * as abilities from './m59-abilities.mjs';
+import * as bankbook from './m59-bank.mjs';
+import * as descriptions from './m59-describe.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
@@ -57,7 +59,9 @@ import { planCharacter, STAT_ORDER, STAT_PRESETS } from './m59-newchar.mjs';
 import { recordSample, recordEvent, summarise as ledgerSummary, readLedger, deathReport, timeReport, spellReport } from './m59-ledger.mjs';
 import { renderDashboard } from './m59-dashboard.mjs';
 import { renderHero, startScript } from './m59-hero-page.mjs';
-import { inboxIfAny, dropInbox } from './m59-inbox.mjs';
+import { inboxIfAny, dropInbox, sanitizeInbound, unwrapSpeech } from './m59-inbox.mjs';
+import { localClients, soleClientAgent, createClientWatch,
+         identifyClients, clientsHoldingRoster } from './m59-localclient.mjs';
 import { chatTools } from './m59-chat-tools.mjs';
 
 const HOST = process.env.M59_HOST || '127.0.0.1';
@@ -279,16 +283,40 @@ const fleetState = new Map();   // agent -> { credentials, autopilot }
 // So: any write that drops agents copies the old file aside first. Growing writes and
 // same-size writes leave the backup alone, which means the backup is always the last
 // state that knew about more characters than the current one does.
+// AN AGENT ONLY LEAVES THIS FILE WHEN SOMEBODY SAYS SO.
+//
+// The roster is the only record of the account passwords, and a save writes whatever
+// `fleetState` currently holds — which during a resume is "everyone processed so far".
+// Anything that saves inside that loop, and several things do (a keeper starting writes
+// its policy back), therefore publishes a TRUNCATED roster to disk for a few seconds.
+// Watched live it goes 13 of 21 and then back to 21, and the only reason that has never
+// cost anything is that nothing died in the window and nobody copied the file out of it.
+//
+// The old guard noticed the shrink, kept a `.prev`, and wrote the smaller file anyway.
+// That is backwards: a roster with fewer names is never the answer unless a `forget`
+// asked for it. So entries on disk that this process has not been told to drop are
+// carried forward, and the shrink stops being possible rather than being reported.
+const forgotten = new Set();            // agents removed on purpose, by forgetAgent
+
 function saveFleetState() {
   try {
     mkdirSync(dirname(STATE_FILE), { recursive: true });
     const next = Object.fromEntries(fleetState);
     try {
       const now = JSON.parse(readFileSync(STATE_FILE, 'utf8'));
-      if (Object.keys(now).length > Object.keys(next).length) {
+      const kept = [];
+      for (const [agent, entry] of Object.entries(now)) {
+        if (agent in next || forgotten.has(agent)) continue;
+        next[agent] = entry;
+        kept.push(agent);
+      }
+      if (kept.length) {
+        // Not an error — it is the ordinary shape of a resume — but say it once so a
+        // genuinely surprising one (an agent that vanished from memory for another
+        // reason) is visible rather than absorbed.
         writeFileSync(STATE_FILE + '.prev', JSON.stringify(now, null, 2));
-        console.error(`[state] roster shrank ${Object.keys(now).length} -> ` +
-                      `${Object.keys(next).length}; previous kept at ${STATE_FILE}.prev`);
+        console.error(`[state] keeping ${kept.length} roster entry(s) this process has not ` +
+                      `loaded yet: ${kept.join(', ')}`);
       }
     } catch { /* no current file, or unreadable — nothing worth preserving */ }
     writeFileSync(STATE_FILE, JSON.stringify(next, null, 2));
@@ -305,7 +333,10 @@ function rememberAutopilot(agent, config) {
   e.autopilot = config;
   saveFleetState();
 }
-function forgetAgent(agent) { fleetState.delete(agent); saveFleetState(); }
+// The ONE way an entry leaves the file. Recorded rather than inferred, because the save
+// now carries forward anything it did not expect to be missing — without this, `forget`
+// would write the entry straight back.
+function forgetAgent(agent) { forgotten.add(agent); fleetState.delete(agent); saveFleetState(); }
 
 // MAKE EVERY CHARACTER LISTEN, from the moment it is in game.
 //
@@ -450,15 +481,45 @@ async function resumeFleet() {
   claimFleet();
   // Alive from here, touched every BEAT_MS. See m59-uptime.mjs.
   uptime.markRunning(names, { fleet: FLEET ?? null, startedAt: Date.now() });
-  console.error(`[state] resuming ${names.length} session(s) from ${STATE_FILE}`);
+
+  // LOOK BEFORE LOGGING ANYBODY IN. A resume logs in every character in the roster, and
+  // Meridian allows one connection each — so if a person is sitting in the world as one
+  // of ours, the very first thing a restart does is throw them out. It happened while
+  // adding this: a restart to load new code bumped the operator off Zoot mid-sentence.
+  //
+  // The auto-claim already knew how to spot a local client, but it runs on the pilot
+  // watch and matches against `sessions`, which at this point is EMPTY — so at the one
+  // moment it would have mattered it could not match anything, and the human was bumped
+  // first and claimed twenty seconds later. This asks the roster instead, and asks before
+  // the loop rather than after it.
+  const held = await heldByLocalClients(saved);
+  console.error(`[state] resuming ${names.length - held.size} of ${names.length} session(s) from ${STATE_FILE}` +
+                (held.size ? `; leaving ${[...held.keys()].join(', ')} alone — being played here` : ''));
   for (const agent of names) {
     const { credentials, autopilot } = saved[agent] || {};
     if (!credentials) continue;
+    // Claimed above. Logging it in is precisely the harm this check exists to prevent,
+    // and the reconciler skips claimed agents too, so it stays out until the client goes.
+    if (held.has(agent)) { fleetState.set(agent, { credentials, autopilot }); continue; }
+    // KNOWING WHO AN AGENT IS MUST NOT DEPEND ON THE LOGIN HAVING WORKED.
+    //
+    // This recorded the credentials only AFTER a successful join, so an agent whose
+    // resume failed — server briefly refusing, character being played, anything — ended
+    // up with no entry at all. The roster on disk had it the whole time; the in-memory
+    // map, which is what every later call consults, did not.
+    //
+    // That is exactly backwards for recovery: the agent with no entry is by definition
+    // the one that needs rejoining, and it is the one `join` could learn nothing about.
+    // Zoot hit this — the roster held his host, the broker had just read it off disk to
+    // try him, the try failed, and a bare `join {agent:"t17"}` still went to 127.0.0.1.
+    //
+    // Set it first. A failed join leaves an agent we know how to reach rather than an
+    // agent we know nothing about.
+    fleetState.set(agent, { credentials, autopilot });
     try {
       const s = session(agent);
       await s.join(credentials);
       listen(agent, s);
-      fleetState.set(agent, { credentials, autopilot });
       let keeper = null;
       if (autopilot) {
         // autopilotFor takes the SESSION, not the agent name — it keys off
@@ -483,6 +544,109 @@ async function resumeFleet() {
     } catch (e) { console.error(`[state] ${agent} did not resume: ${e.message}`); }
   }
   saveFleetState();
+  if (held.size) await confirmHeldOnline(held);
+}
+
+// ---------------------------------------------------- standing down for a person
+//
+// WHO IS ALREADY BEING PLAYED, ASKED OF THE ROSTER RATHER THAN OF THE SESSIONS. At boot
+// there are no sessions yet, so the ordinary auto-claim — which matches against them —
+// cannot answer this, and by the time it can the login has already happened.
+//
+// Claiming rather than merely skipping is deliberate: a claim is the thing the reconciler
+// honours, so one call keeps the character out of the resume AND out of the 45s rejoin
+// sweep that would otherwise put it back thirty seconds later.
+async function heldByLocalClients(saved) {
+  const held = new Map();                              // agent -> { pid, character }
+  let clients = [];
+  try { clients = await identifyClients(); } catch (e) {
+    console.error(`[state] could not check for local clients (${e.message}) — resuming everything`);
+    return held;
+  }
+  if (!clients.length) return held;
+
+  const { held: mine, unknown } = clientsHoldingRoster(
+    clients, (account) => saved[account]?.credentials?.host ?? undefined);
+  for (const u of unknown)
+    console.error(`[state] a Meridian client (pid ${u.pid}) is running but ${u.why} — ` +
+                  'not standing down for it');
+  for (const c of mine) {
+    const character = saved[c.agent]?.credentials?.character ?? null;
+    held.set(c.agent, { pid: c.pid, character });
+    // claimPilot reads the session for an object id and a keeper; there is neither yet,
+    // which is correct — there is nothing to stop and nothing to renumber.
+    claimPilot(c.agent, c.pid, { character });
+    console.error(`[state] ${c.agent}${character ? ` (${character})` : ''} is being played here ` +
+                  `(pid ${c.pid}) — NOT logging it in`);
+  }
+  return held;
+}
+
+// THE SECOND OPINION, AND IT IS NOT OPTIONAL. A command line says what a process was
+// ASKED to do; it does not say the person ever reached the world. A client sitting at the
+// login screen, or one that crashed with its window still open, would otherwise keep a
+// character out of the fleet indefinitely — silently, because standing down looks exactly
+// like working correctly.
+//
+// So another character asks the server: is that name online? The who list is the only
+// authority on that, and it costs one round trip from somebody who is already in game.
+//
+// A character we cannot name yet is the honest gap. Nothing in the roster records the
+// character behind an account until it has logged in once (see the join path, which now
+// writes it back), so on a first-ever boot this can only report that it stood down on the
+// strength of the command line alone.
+async function confirmHeldOnline(held) {
+  const witness = [...sessions.values()].find(s => s.live && !held.has(s.name));
+  if (!witness) {
+    console.error('[state] nobody else is in game to check the who list — the characters above ' +
+                  'stand on their command lines alone');
+    return;
+  }
+  let online = new Set();
+  try {
+    const c = witness.need();
+    await witness.pacer.submit('read', () => c.players());
+    await c.waitFor({ kinds: ['who'], timeoutMs: 5000 });
+    online = new Set([...c.playersOnline.values()].map(p => String(p.name)));
+  } catch (e) {
+    console.error(`[state] could not read the who list (${e.message}) — not second-guessing the ` +
+                  'command lines');
+    return;
+  }
+  for (const [agent, info] of held) {
+    if (!info.character) {
+      console.error(`[state] ${agent} is held by pid ${info.pid}, but nothing on record says which ` +
+                    'character that account is, so the who list cannot confirm it. Standing down anyway.');
+      continue;
+    }
+    if (online.has(info.character)) {
+      console.error(`[state] confirmed by ${witness.name}: ${info.character} is already logged on. ` +
+                    'Leaving it to whoever is playing it.');
+      continue;
+    }
+    // The client is running and the character is NOT in the world. Standing down for it
+    // would strand the character out of the fleet for as long as that process lives.
+    console.error(`[state] ${info.character} (${agent}) is NOT in the who list, though pid ${info.pid} ` +
+                  'is running — a client at the login screen, or one that died with its window open. ' +
+                  'Taking the character back.');
+    releasePilot(agent, 'its client is running but the character is not in the world');
+    // The roster entry, which the resume loop recorded on its way past even for the
+    // agents it skipped — precisely so this path has something to log in with.
+    const { credentials, autopilot } = fleetState.get(agent) || {};
+    if (!credentials) continue;
+    try {
+      const s = session(agent);
+      await s.join(credentials);
+      listen(agent, s);
+      if (autopilot) {
+        const p = autopilotFor(s);
+        p.mode = autopilot.mode || p.mode;
+        Object.assign(p.policy, autopilot.policy || {});
+        p.start();
+      }
+      console.error(`[state] resumed ${agent} (${credentials.character || '?'}) after all`);
+    } catch (e) { console.error(`[state] ${agent} did not resume: ${e.message}`); }
+  }
 }
 
 // ------------------------------------------------------------------ reconnecting
@@ -584,14 +748,31 @@ async function reconcileFleet() {
       // So: if a Meridian client is running locally, claim the character for it. The
       // trust argument is unchanged — a live local process holding the only session the
       // server permits — it just stops requiring somebody to look the pid up by hand.
-      const client = localClientPid();
-      if (client && !piloted.has(agent)) {
-        claimPilot(agent, client, { character: credentials.character ?? null });
+      // MATCH THE CLIENT TO THE CHARACTER, do not assume. This took the first
+      // meridian.exe pid and claimed whichever character happened to be rejoining, which
+      // is right by luck with one client open and hands instruction privileges to a
+      // process playing somebody else with two. The command line says who it is holding.
+      //
+      // SCANNED DIRECTLY, not through the armed watch, and that is the point. This is
+      // not a poll — it fires only when a character has dropped and dropped again
+      // straight after being put back, which is evidence that something else is holding
+      // it. That evidence is worth a process spawn; an idle timer is not. It is also the
+      // only thing that catches a client launched from a Steam shortcut, which never
+      // goes near the terminal and so never arms the watch.
+      const hit = soleClientAgent(await localClients(), (a) => sessions.has(a));
+      // Whatever we do about THIS character, a client is on the machine — so let the
+      // pilot watch start looking again. It will disarm itself once that stops being true.
+      if (hit.agent) clientWatch.arm(`a local client is playing ${hit.agent}`);
+      if (hit.agent === agent && !piloted.has(agent)) {
+        claimPilot(agent, hit.pid, { character: credentials.character ?? null });
         console.error(`[rejoin] ${agent} (${credentials.character || '?'}) is being played by a local ` +
-                      `client (pid ${client}) — claimed for it, keeper stopped, and it will be released ` +
-                      `when that process exits`);
+                      `client (pid ${hit.pid}, /U:${hit.agent}) — claimed for it, keeper stopped, and it ` +
+                      `will be released when that process exits`);
         continue;
       }
+      if (hit.agent && hit.agent !== agent)
+        console.error(`[rejoin] ${agent} keeps dropping and a local client is running, but it is ` +
+                      `playing ${hit.agent} — not claiming ${agent} for it`);
       st.failures++;
       st.nextTryAt = Date.now() + backoffFor(st.failures);
       st.lastJoinAt = null;
@@ -665,27 +846,35 @@ const PILOT_POLL_MS = Number(process.env.M59_PILOT_POLL_MS || 4000);
 
 const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
-// IS THERE A MERIDIAN CLIENT RUNNING ON THIS MACHINE, and what is its pid?
-//
-// Only ever used to answer "the operator is probably the one holding that character",
-// and only when a character has already been taken from us twice in quick succession.
-// It is a convenience, not an authority: the authority is still that the pid is alive
-// and the server permits one connection per character.
-//
-// Windows-only by inspection, and silent everywhere else — a missing answer just means
-// the old back-off behaviour, which is what happened before this existed.
-let clientPidCache = { at: 0, pid: null };
-function localClientPid({ ttlMs = 10_000 } = {}) {
-  if (Date.now() - clientPidCache.at < ttlMs) return clientPidCache.pid;
-  let pid = null;
-  try {
-    const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq meridian.exe', '/FO', 'CSV', '/NH'],
-                             { encoding: 'utf8', timeout: 3000 });
-    const m = /^"[^"]+","(\d+)"/m.exec(out.trim());
-    if (m) pid = Number(m[1]);
-  } catch { /* no tasklist, or none running */ }
-  clientPidCache = { at: Date.now(), pid };
-  return pid;
+// ARMED, NOT PERIODIC. Every process spawn this broker makes on a quiet machine used to
+// come from here. See createClientWatch() for why looking is now an event rather than a
+// timer, and what re-arms it.
+const clientWatch = createClientWatch();
+
+// Claim for the person if a single local client says, on its own command line, which of
+// our characters it is holding. Runs on the pilot watch, so it picks the operator up a
+// few seconds after they launch — provided the watch is armed, which after a launch
+// from the terminal it is.
+async function autoClaimLocalClient() {
+  if (piloted.size) return;                       // somebody is already at the controls
+  const { scanned, clients } = await clientWatch.look();
+  if (!scanned) return;                           // disarmed: nobody has launched anything
+  const hit = soleClientAgent(clients, (a) => sessions.has(a));
+  if (!hit.agent) return;
+  const s = sessions.get(hit.agent);
+  // The client must be pointed at the server this fleet is on. A second checkout playing
+  // the same account elsewhere is not our operator.
+  const want = s?.credentials ?? fleetState.get(hit.agent)?.credentials ?? null;
+  if (want?.host && hit.host && want.host !== hit.host) {
+    console.error(`[pilot] a local client is playing ${hit.agent} against ${hit.host}, not ` +
+                  `${want.host} — not claiming`);
+    return;
+  }
+  const name = s?.client?.me?.name ?? want?.character ?? null;
+  claimPilot(hit.agent, hit.pid, { character: name });
+  console.error(`[pilot] ${hit.agent}${name ? ` (${name})` : ''} is being played here — claimed ` +
+                `automatically from the client command line (pid ${hit.pid}); speech from it now ` +
+                'counts as instruction until that process exits');
 }
 
 // The claim, and the only thing that may promote speech to instruction. A stale entry
@@ -747,6 +936,11 @@ function releasePilot(agent, why = 'released') {
   const p = piloted.get(agent);
   if (!p) return null;
   piloted.delete(agent);
+  // A CLIENT JUST STOPPED BEING THERE, which is the commonest moment for one to start
+  // being there again — closing a client and opening it as somebody else is how an
+  // evening of this actually goes. Worth exactly one more look; if that finds nothing
+  // the watch disarms itself again and we are back to spawning nothing.
+  clientWatch.arm(`${agent}'s client went away — looking once in case it was relaunched`);
   console.error(`[pilot] ${agent} released — ${why}. ` +
                 (p.keeperWasRunning ? 'the keeper will start again once it is back in game'
                                     : 'its keeper was stopped before, so it stays stopped'));
@@ -898,7 +1092,25 @@ function routeOperatorInstruction(targetAgent, said) {
   const from = pilotedSpeaker(said?.speaker);
   if (!from) return false;                       // not the operator: not privileged
   if (from.agent === targetAgent) return false;  // talking to itself
-  const text = String(said?.text ?? '');
+
+  // UNWRAP BEFORE MATCHING. WHAT ARRIVES IS NOT WHAT WAS TYPED.
+  //
+  // The server renders every utterance through a format resource before sending it
+  // (`user_said_str` = `%s says, "%q~n"`, user.kod:95-109), so typing `safe spot here`
+  // reaches us as `Bunsen says, "safe spot here"`. Every verb below is anchored with ^,
+  // and against the wrapped line not one of them can ever match — so NO operator
+  // instruction has ever worked over real speech. It was found by watching the chat ring
+  // while the operator said "safe spot here" five times, in three phrasings and on two
+  // channels, to a character that heard all five and matched none.
+  //
+  // m59-inbox.mjs:118 documents this exact trap and fixes it for the inbox path. This
+  // function runs BEFORE the inbox in Chatter.hear() and never got the same treatment,
+  // which is why the small talk works and the instructions do not. Both now go through
+  // the same two helpers so they cannot drift apart again.
+  //
+  // Sanitise first: colour codes would break the wrapper match.
+  const { text: flat } = sanitizeInbound(said?.text ?? '');
+  const text = unwrapSpeech(flat).said.trim();
   const hit = OPERATOR_VERBS.find(v => v.re.test(text));
   if (!hit) return false;
   const me = from.pilot.character || from.agent;
@@ -913,10 +1125,25 @@ function routeOperatorInstruction(targetAgent, said) {
 }
 
 function startPilotWatch() {
+  // Only ever one scan in flight. The look is asynchronous now, and a PowerShell cold
+  // start can outlast a 4s tick — without this, a slow scan would have a second started
+  // on top of it and the spawns would pile up, which is the failure the whole change is
+  // meant to remove rather than move.
+  let looking = false;
   const t = setInterval(() => {
+    // ALWAYS, and it costs nothing: this is a signal 0, not a process spawn. A claim
+    // whose client has exited must be released whether or not the watch is armed.
     for (const [agent, p] of [...piloted]) {
       if (!pidAlive(p.pid)) releasePilot(agent, `client pid ${p.pid} exited`);
     }
+    // ...and then look for one to pick up. Releasing first matters: a client that exited
+    // and was relaunched gets its new pid noticed on the same tick rather than the next.
+    // A disarmed watch returns immediately without spawning anything.
+    if (looking) return;
+    looking = true;
+    autoClaimLocalClient()
+      .catch(e => console.error(`[pilot] auto-claim: ${e.message}`))
+      .finally(() => { looking = false; });
   }, PILOT_POLL_MS);
   t.unref?.();
 }
@@ -1190,6 +1417,55 @@ class Session {
     if (changed.length) this.saveBookSoon();
   }
 
+  // A BANK BALANCE GOES PAST ON THE WIRE AND IS NEVER MENTIONED AGAIN. Catch it here.
+  //
+  // Same reasoning as noteAdvancement above and the same seam, for a stronger reason:
+  // an ability can at least be re-read for four requests, and a balance cannot be read
+  // at all without walking the character to a counter. The server states it as PROSE
+  // from a banker's mouth (monster.kod:136) and there is no packet to poll, so if this
+  // line goes past unread the number is gone until someone spends the walk.
+  //
+  // It was going past unread. The only balances this fleet had on record were the ones
+  // that happened to fall inside a flight recording still on disk, or inside the
+  // postmortem of a character that died shortly after banking. Everything else had
+  // already been pruned.
+  //
+  // Cheap enough to do on every message: m59-bank.mjs bails on the first regex for
+  // anything that is not about an account, which is every line but a handful per hour.
+  noteBanker(ev) {
+    const who = this.client?.me?.name ?? null;
+    if (!who) return;
+    try {
+      const entry = bankbook.record(who, ev.text, {
+        at: ev.at ?? Date.now(),
+        room: this.client?.room?.id ?? null,
+        roomName: this.world?.room?.name ?? null,
+      });
+      if (entry) {
+        this.lastBank = entry;
+        this.recorder.line('note', { what: 'bank balance recorded', ...entry });
+      }
+    } catch { /* the record is a convenience; never let it interrupt play */ }
+  }
+
+  // The last balance we know of, for whichever account was touched most recently.
+  // Null rather than zero when nothing has ever been recorded — "we have not seen this
+  // character at a bank" and "this character has nothing" are different answers.
+  bankKnown() {
+    const who = this.client?.me?.name ?? null;
+    if (!who) return null;
+    try {
+      const rows = bankbook.balancesFor(who);
+      if (!rows.length) return null;
+      const latest = rows[0];
+      return {
+        balance: latest.balance, account: latest.account, at: latest.at,
+        observed: latest.observed,
+        ...(rows.length > 1 ? { accounts: Object.fromEntries(rows.map(r => [r.account, r.balance])) } : {}),
+      };
+    } catch { return null; }
+  }
+
   // Fold everything the client currently holds into the record. Called after the read
   // that follows a login, and after any refresh.
   recordAbilities({ why = 'read' } = {}) {
@@ -1285,11 +1561,31 @@ class Session {
     c.onEvent = ev => {
       this.recorder.line('event', ev);
       if (ev.kind === 'ability') this.noteAdvancement(ev);
+      if (ev.kind === 'message' && ev.text) this.noteBanker(ev);
     };
     if (character) c.wantName = character;
     await c.login(account, password);
     this.client = c;
     this.world = new World(c, worldMap);
+
+    // WRITE THE NAME DOWN. The roster records an account and a password; which CHARACTER
+    // that account is only becomes known once the login gets as far as the character
+    // list, and it was being thrown away every time. That is why the resume log prints
+    // "resumed t1 (?)" for characters this broker has run for weeks.
+    //
+    // It matters beyond tidiness: the startup check that stands down for a person playing
+    // one of ours has to ask the who list whether that character is online, and the who
+    // list speaks names, not accounts. With nothing on record it can only take the client
+    // command line's word for it.
+    const learned = c.me?.name ?? null;
+    if (learned && learned !== this.credentials.character) {
+      this.credentials = { ...this.credentials, character: learned };
+      const entry = fleetState.get(this.name);
+      if (entry?.credentials) {
+        fleetState.set(this.name, { ...entry, credentials: { ...entry.credentials, character: learned } });
+        saveFleetState();
+      }
+    }
     // The server does not volunteer the world. Ask, paced, and let the replies
     // land before reporting.
     await this.pacer.submit('read', () => c.roomContents());
@@ -2352,17 +2648,55 @@ const TOOLS = [
       type: 'object',
       properties: {
         agent: { type: 'string', description: 'name for this session in the broker; use the same one for every later call' },
-        account: { type: 'string' },
-        password: { type: 'string' },
+        account: { type: 'string', description: 'omit for an agent this broker already knows — the roster has it' },
+        password: { type: 'string', description: 'omit for a known agent; never pass one you had to read out of the roster' },
         character: { type: 'string', description: 'which character on the account; defaults to the first' },
-        host: { type: 'string', description: 'game server address; defaults to M59_HOST or 127.0.0.1' },
-        port: { type: 'number', description: 'game server port; defaults to M59_PORT or 5959' },
+        host: { type: 'string', description: 'game server address. For a KNOWN agent this defaults to the host that ' +
+          'agent joined against, because the character exists on that server and nowhere else. Only falls back to ' +
+          'M59_HOST or 127.0.0.1 for an agent the broker has never seen.' },
+        port: { type: 'number', description: 'game server port; the known agent\'s own port, else M59_PORT or 5959' },
       },
-      required: ['agent', 'account', 'password'],
+      // ONLY THE AGENT IS REQUIRED, so recovering a dropped character is one argument.
+      //
+      // Requiring account and password meant the call that puts a character back in the
+      // world could not be made without handling its password — so recovering a drop
+      // involved reading the roster and passing credentials back in, for a broker that
+      // already had them. The schema rejected `join {agent:"t7"}` before any code ran.
+      // A first-time join still needs them; join() itself will say so.
+      required: ['agent'],
     },
     run: async (a) => {
       const s = session(a.agent);
-      const r = await s.join(a);
+      // A CHARACTER EXISTS ON ONE SERVER, SO REJOINING IT MUST GO BACK TO THAT SERVER.
+      //
+      // Session.join defaults host/port to M59_HOST/M59_PORT, which for this checkout is
+      // 127.0.0.1 — and prod is remote. So `join {agent:"t7"}` for a character the broker
+      // has known for days went to localhost and came back ECONNREFUSED. The roster has
+      // held the right host per entry the whole time, for exactly the reason the comment
+      // above rememberJoin gives ("a roster is per-server, not per-machine"); nothing read
+      // it back on the way in.
+      //
+      // What that cost: Janice dropped, every keeper restart failed because she was not in
+      // the world, the supervisor reported "COULD NOT RESTART ITS KEEPER — it is standing
+      // unattended", and the one command that recovers a dropped character could not reach
+      // the server she lives on. Zoot hit the same wall the next day. Recovering either by
+      // hand meant reading the roster and passing host, port, account and password back in
+      // explicitly — which also means handling the password, for a call that already knew
+      // it.
+      //
+      // So the remembered entry fills anything the caller did not say. An explicit argument
+      // still wins: pointing a session somewhere else on purpose stays possible, it just
+      // stops being what happens by accident.
+      const known = fleetState.get(a.agent)?.credentials;
+      const args = known
+        ? { ...a,
+            account:  a.account  ?? known.account,
+            password: a.password ?? known.password,
+            character: a.character ?? known.character,
+            host:     a.host     ?? known.host,
+            port:     a.port     ?? known.port }
+        : a;
+      const r = await s.join(args);
       // Recorded only after the login actually succeeded, so a bad password never
       // ends up in the resume file to be retried on every future boot.
       //
@@ -2524,7 +2858,10 @@ const TOOLS = [
   },
   {
     name: 'look_at',
-    description: 'The description of one object, by id or name — the prose a human would read.',
+    description: 'The description of one object, by id or name — the prose a human would read. ' +
+      'WORKS ON PEOPLE TOO, including yourself: looking at a player returns whatever description ' +
+      'that character has set (see `describe`), plus the game\'s own line about where they are from ' +
+      'and what they are carrying visibly. That is the only way a description can be read back.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' }, target: { type: ['string', 'number'] } }, required: ['agent', 'target'] },
     run: async (a) => {
@@ -2534,8 +2871,85 @@ const TOOLS = [
       const { events, timedOut } = await c.waitFor({ kinds: ['look'], timeoutMs: 4000 });
       const hit = events.find(e => e.id === t.id) || events[0];
       if (!hit) return { id: t.id, description: null,
-                         note: timedOut ? 'no reply — the object may not be examinable (OF_NOEXAMINE)' : 'no description' };
-      return { id: hit.id, what: hit.what, description: hit.description, inscription: hit.inscription };
+                         note: timedOut ? 'no reply — the object may not be examinable (OF_NOEXAMINE), ' +
+                                          'or it is a player in another room (user.kod:4383 refuses those)'
+                                        : 'no description' };
+      return { id: hit.id, what: hit.what, description: hit.description,
+               inscription: hit.inscription,
+               // Only players carry these. `editable` true means the server would accept a
+               // description change for this object from us, which is how the real client
+               // decides whether to unlock the edit box.
+               ...(hit.player ? { is_player: true, editable: hit.editable,
+                                  extra: hit.extra, url: hit.url || undefined } : {}) };
+    },
+  },
+  {
+    name: 'describe',
+    description:
+      'SET THE PROSE ANOTHER PLAYER GETS WHEN THEY LOOK AT THIS CHARACTER — its bio. ' +
+      'BP_CHANGE_DESCRIPTION writes psPlayerDescription, which is saved with the character and ' +
+      'survives logout.\n' +
+      'IT REPLACES THE DEFAULT LOOK TEXT, it does not add to it. Player.ShowDesc (player.kod:1521) ' +
+      'sends the description and returns before the default prose is built, so a character carrying ' +
+      'one stops announcing its own level and guild to anyone who looks. That is the whole effect, ' +
+      'and it is visible to every human on the server.\n' +
+      'TO READ ONE BACK, LOOK AT THE CHARACTER — `look_at` works on players, including on yourself, ' +
+      'which is what the real client\'s right-click-your-own-portrait dialog does. The server never ' +
+      'volunteers a description, so that round trip is the only way. What was sent is also written ' +
+      'to substrate/descriptions/<character>.json, and calling this with no `text` returns that ' +
+      'record — what WE sent, which is a claim rather than evidence until something looks.\n' +
+      'CLEARING IS NOT UNDOING. `clear` sends an empty string, which leaves the character with a ' +
+      'BLANK look description rather than restoring the default prose — the server has no "no ' +
+      'description" value it will accept from a client (user.kod:4444 treats a nil string as "keep ' +
+      'the old one"). The real client behaves the same way. There is no way back to the default ' +
+      'short of a re-roll.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      text: { type: 'string', description: 'the description to set. Omit to READ what we last sent ' +
+              `instead of writing. Max ${descriptions.MAX_DESCRIPTION} characters; curly quotes and ` +
+              'dashes are folded to ASCII because the wire is Latin-1' },
+      clear: { type: 'boolean', description: 'send an empty description — blank, NOT the default prose' },
+    }, required: ['agent'] },
+    run: async (a) => {
+      const s = session(a.agent), c = s.need();
+      const character = c.me?.name ?? null;
+
+      // READING IS THE DEFAULT, AND THAT IS DELIBERATE. A missing `text` must not
+      // become an empty one: this is a live shared server, and an omitted argument
+      // that silently blanked a character's bio in front of other players is exactly
+      // the failure `safety` already had once.
+      if (a.text === undefined && !a.clear) {
+        const book = descriptions.loadBook(character);
+        return { character, agent: a.agent, description: book.description,
+                 sent_at: book.sent_at, verified: book.verified,
+                 observed: book.observed ?? null,
+                 note: book.description == null
+                   ? 'nothing recorded here — but the character may still have one. `look_at` this ' +
+                     'character (its own agent can look at itself) to ask the server.'
+                   : 'this is what WE SENT, from the local record. To confirm the server agrees, ' +
+                     '`look_at` this character — that reply is the only evidence.' };
+      }
+
+      const { text, changes } = descriptions.cleanDescription(a.clear ? '' : a.text);
+      if (!a.clear && !text)
+        throw new Error('nothing left to send after cleaning — an empty description is a blank bio, ' +
+                        'not a reset; pass clear:true if that is really what you want');
+
+      const before = c.evSeq;
+      await s.pacer.submit('describe', () => c.setDescription(text));
+      // The server acknowledges nothing at all here — no packet, no message. A short
+      // wait only catches an unrelated line that happened to arrive, so it is reported
+      // as "what was said", never as confirmation.
+      const { events } = await c.waitFor({ since: before, timeoutMs: 1200 }).catch(() => ({ events: [] }));
+      const book = descriptions.noteDescription(character, text, { agent: a.agent });
+
+      return { character, agent: a.agent, sent: text,
+               ...(changes.length ? { changes } : {}),
+               recorded: !!book,
+               server_said: events.filter(e => e.text).map(e => String(e.text)).slice(0, 3),
+               note: 'sent, and unconfirmed — the server acknowledges this packet with nothing. It ' +
+                     'also replaces the default look text entirely. Confirm it with `look_at` on ' +
+                     'this same character, which it can do to itself.' };
     },
   },
   {
@@ -4361,9 +4775,15 @@ const TOOLS = [
       'You must be standing in a bank with the banker in the room — the request is relayed to whatever ' +
       'is in the room with you (holder.kod:828), so anywhere else it fails and the failure is a message ' +
       'rather than an error. The banker answers in prose, which is returned here verbatim; there is no ' +
-      'structured balance on the wire, so the number is parsed out of what it says.\n' +
-      'Each town keeps a SEPARATE account: Jasper and Tos share one, Ko\'catan has its own. Money put in ' +
-      'at one is not available at another.',
+      'structured balance on the wire, so the number is parsed out of what it says — and WRITTEN DOWN, ' +
+      'to substrate/banks/<character>.json, because it is never sent again. `node tools/m59-bank.mjs` ' +
+      'reads the whole fleet\'s balances back without moving anybody.\n' +
+      'A WITHDRAWAL DOES NOT REPORT THE NEW BALANCE — it reports the amount handed over ' +
+      '(Lm_bnkr_did_withdraw, monster.kod:144). So `balance` after a withdrawal is the last stated ' +
+      'figure minus what came out, and `balance_observed:false` says so.\n' +
+      'There are TWO accounts, not one per town. Jasper (Yevitan), Tos (Skivlat) and Barloque ' +
+      '(Setag\'lib) all pay into bank 1 — BANK_BASIC and BID_TOS are both 1, blakston.khd:1275 — while ' +
+      'Ko\'catan (Huital ko\'Nosak) is bank 2. Money put into one is not available at the other.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       action: { type: 'string', enum: ['balance', 'deposit', 'withdraw'] },
@@ -4381,20 +4801,30 @@ const TOOLS = [
       await s.pacer.submit('bank', fn);
       const { events } = await c.waitFor({ since: before, timeoutMs: 4000 });
       const said = events.filter(e => e.text).map(e => String(e.text));
-      // "You have 500 shillings in your account." / "You now have 500 shillings in
-      // your account." — the balance is only ever prose, so read it out of the prose.
-      let balance = null;
-      for (const t of said) {
-        const m = /have\s+([\d,]+)\s+shillings?\s+in\s+your\s+account/i.exec(t);
-        if (m) balance = Number(m[1].replace(/,/g, ''));
-      }
+      // WHAT THE BANKER SAID IS ALREADY BEING WRITTEN DOWN by Session.noteBanker, off
+      // the same event stream, so this does not parse it a second time — it reads back
+      // what was stored. That matters for the withdrawal: the server answers a
+      // withdrawal with the AMOUNT HANDED OVER and never states the new balance
+      // (Lm_bnkr_did_withdraw, monster.kod:144), so a regex over `said` returns null
+      // here and used to report "balance: null" after a perfectly good withdrawal. The
+      // record subtracts instead, and says it is arithmetic.
+      const stored = s.bankKnown();
       return {
         action: a.action, amount: a.action === 'balance' ? undefined : amount,
         banker_said: said,
-        balance,
+        balance: stored?.balance ?? null,
+        // FALSE MEANS NOBODY SAID THIS NUMBER OUT LOUD — it was derived by subtracting a
+        // withdrawal from the last balance we were told. True is a banker's own figure.
+        balance_observed: stored?.observed ?? null,
+        account: stored?.account ?? null,
+        balance_read_at: stored?.at ?? null,
+        ...(stored?.accounts ? { all_accounts: stored.accounts } : {}),
         ...(said.length ? {} : { note:
           'the banker said nothing, which almost always means there is no banker in this room. ' +
-          'Banks: "The Royal Bank of Jasper", "The Bank of Tos", "The Bank of Ko\'catan" — travel to one first.' }),
+          'Banks: "The Royal Bank of Jasper" (Yevitan), "First Royal Bank of Tos" (Skivlat) and ' +
+          'Barloque (Setag\'lib) all share ONE account; "The Hungry Vaults" in Ko\'catan ' +
+          '(Huital ko\'Nosak) is a second, separate one. `balance` above, if present, is the last ' +
+          'figure on record from tools/m59-bank.mjs rather than anything said just now.' }),
       };
     },
   },
@@ -5599,6 +6029,26 @@ const TOOLS = [
           mulligans: st?.did?.mulligans ?? 0,
           logoffs: st?.did?.logoffs ?? 0,
           carrying: c.inventory?.length ?? null,
+          // MONEY, BOTH HALVES OF IT, ON THE ROW.
+          //
+          // `carrying` counts items and says nothing about wealth, so "how much has the
+          // fleet got" was twenty-one `inventory` calls for the purse and a walk to a
+          // counter for the balance. Both belong here for the same reason `parked` and
+          // `hunt` do: the alternative is one call per character for something the row
+          // already has in hand.
+          //
+          // They are separate fields because they behave differently under the thing
+          // that dominates this fleet's economics — dying. `purse` is lost on death and
+          // `banked` is not, so summing them into one number would hide the only
+          // distinction that matters.
+          purse: (c.inventory || [])
+            .filter(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))
+            .reduce((t, o) => t + (o.amount || 1), 0),
+          // Null means NOBODY HAS SEEN THIS CHARACTER AT A COUNTER, which is not the
+          // same as a balance of zero and must not be rendered as one. `at` is how old
+          // the figure is; a balance does not decay, but it also does not update while
+          // the character is out in the woods.
+          banked: s.bankKnown(),
           // WHAT THIS ONE COULD ACTUALLY CAST, not merely what it knows.
           //
           // `create weapon` needs nothing, but `create food` needs 2 ElderBerry and
@@ -5753,14 +6203,19 @@ const TOOLS = [
       'second call; `release` is for giving the character back early.\n' +
       'While claimed, speech FROM that character to other fleet members is treated as instruction ' +
       'rather than as chat — see the operator verb table. That privilege lasts exactly as long as ' +
-      'the pid does.',
+      'the pid does.\n' +
+      'THE BROKER DOES NOT HUNT FOR CLIENTS ON A TIMER. Scanning costs a process spawn, so it is ' +
+      'armed by events rather than polled: at boot, when a claim ends, and when something launches ' +
+      'a client. Anything starting a client OUT OF BAND should call `rearm` so the automatic claim ' +
+      'happens without the operator doing anything.',
     schema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['claim', 'release', 'status'] },
+        action: { type: 'string', enum: ['claim', 'release', 'status', 'rearm'] },
         agent: { type: 'string', description: 'the character being played; required for claim/release' },
         pid: { type: 'number', description: 'process id of the client that was launched, required for claim' },
         character: { type: 'string', description: 'name to expect in speech; defaults to the session\'s' },
+        why: { type: 'string', description: 'for rearm: what launched a client, for the log' },
       },
       required: ['action'],
     },
@@ -5771,8 +6226,20 @@ const TOOLS = [
             agent, character: p.character, pid: p.pid, object_id: p.objectId,
             alive: pidAlive(p.pid), held_s: Math.round((Date.now() - p.since) / 1000),
             keeper_resumes_on_release: p.keeperWasRunning })),
+          // WHETHER ANYONE IS EVEN LOOKING. Without this, "the client is running and
+          // nothing claimed it" has two very different causes — no match, or nobody
+          // looked — and the tool answered identically for both.
+          watching: clientWatch.armed,
+          watch_note: clientWatch.why(),
           note: piloted.size ? undefined : 'nobody is being played by hand right now',
         };
+      }
+      if (a.action === 'rearm') {
+        clientWatch.arm(a.why ?? 'asked to look, out of band');
+        return { watching: true, why: clientWatch.why(),
+                 note: 'the pilot watch will look for a local client on its next tick ' +
+                       `(within ${Math.round(PILOT_POLL_MS / 1000)}s) and claim it if it names ` +
+                       'one of ours. It stops looking again the first time it finds nobody.' };
       }
       if (!a.agent) return { error: 'agent is required' };
       if (a.action === 'release') {

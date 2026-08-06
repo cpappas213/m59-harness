@@ -944,6 +944,32 @@ console.log('\nreading who actually struck the killing blow');
      deathBroadcastFor('Rowlf', evs, 2000) === null);
   ok('and one far outside the window is not claimed',
      deathBroadcastFor('Kermit', evs, 999999, { withinMs: 5000 }) === null);
+
+  // `at` NULL SEARCHES THE WHOLE BUFFER, and that is what the keeper now asks for.
+  //
+  // The windowed form is +/-30s around the moment the keeper NOTICED, and noticing is
+  // slow: death is inferred from standing in the Underworld, seen on a later pass, which
+  // can be a whole journey behind. Across 443 attended post-mortems the death line was in
+  // the record 94% of the time and the killer was attributed 31% of the time, and the
+  // difference was entirely this window — the line was sitting in `text`, unmatched.
+  ok('an unwindowed search finds a broadcast the window would have missed',
+     deathBroadcastFor('Kermit', evs, null)?.killer === 'giant rat');
+  ok('it still refuses to claim somebody else\'s death',
+     deathBroadcastFor('Rowlf', evs, null) === null);
+  ok('and reports dt as null rather than inventing one',
+     deathBroadcastFor('Kermit', evs, null)?.dt === null);
+
+  // Two deaths for one character in one buffer: the LATEST is this one.
+  const twice = [
+    { at: 1000, text: '### Kermit was just killed by a giant rat.' },
+    { at: 9000, text: '### Kermit was just killed by a centipede.' },
+  ];
+  ok('the most recent death wins when the buffer holds two',
+     deathBroadcastFor('Kermit', twice, null)?.killer === 'centipede');
+  ok('while the windowed form still answers about the moment it was asked',
+     deathBroadcastFor('Kermit', twice, 1200)?.killer === 'giant rat');
+  ok('an empty buffer is null either way',
+     deathBroadcastFor('Kermit', [], null) === null && deathBroadcastFor('Kermit', [], 0) === null);
 }
 
 
@@ -1217,6 +1243,102 @@ console.log('\nan unreachable vigor floor stops applying');
      k.refuseEngagement('centipede') === null);
   ok('a character with a wide enough band is allowed the ant',
      mk({ maxThreatOver: 200 }).refuseEngagement('ant') === null);
+}
+
+// ------------------------------------------------------------ what is in reach of us
+//
+// Two branches ask this — the retaliation path and the no-wall-nowhere-to-go dead end,
+// where a character that could not find a square and could not leave used to end its pass
+// four lines before the code that would have swung back. Beaker sat in Valley of Ileria at
+// 29/29 doing exactly that, reporting STALLED once a second with monsters in the room.
+{
+  console.log('\nwhat is in reach of us');
+  const OF_ATTACKABLE = OF.ATTACKABLE, OF_PLAYER = OF.PLAYER;
+  const mk = (objs) => {
+    const m = new Map();
+    for (const o of objs) m.set(o.id, o);
+    m.set(9, { id: 9, col: 10, row: 10, nameRsc: 'me', flags: OF_ATTACKABLE });
+    return new Autopilot({ name: 't6', world: {},
+      client: { selfId: 9, self: { col: 10, row: 10 }, room: { objects: m },
+                rsc: { get: r => r }, vitals: () => ({ health: { value: 29, max: 29 } }) } }, {});
+  };
+
+  const near = mk([{ id: 100, col: 11, row: 10, nameRsc: 'centipede', flags: OF_ATTACKABLE }]);
+  ok('something one square away is in reach', near.inReachOfUs().length === 1);
+
+  // REACH is a disc of radius 3 on squares — 28 squares can hit you, not the 8 touching.
+  const three = mk([{ id: 101, col: 13, row: 10, nameRsc: 'centipede', flags: OF_ATTACKABLE }]);
+  ok('three squares away is still in reach', three.inReachOfUs().length === 1);
+  const far = mk([{ id: 102, col: 20, row: 20, nameRsc: 'centipede', flags: OF_ATTACKABLE }]);
+  ok('across the room is not', far.inReachOfUs().length === 0);
+
+  const mate = mk([{ id: 103, col: 11, row: 10, nameRsc: 'Beaker', flags: OF_ATTACKABLE | OF_PLAYER }]);
+  ok('a fleetmate standing on us is never in reach', mate.inReachOfUs().length === 0);
+
+  const scenery = mk([{ id: 104, col: 11, row: 10, nameRsc: 'a rock', flags: 0 }]);
+  ok('and neither is something unattackable', scenery.inReachOfUs().length === 0);
+
+  const both = mk([
+    { id: 105, col: 11, row: 10, nameRsc: 'centipede', flags: OF_ATTACKABLE },
+    { id: 106, col: 10, row: 11, nameRsc: 'Piggy', flags: OF_ATTACKABLE | OF_PLAYER },
+    { id: 107, col: 40, row: 40, nameRsc: 'ant', flags: OF_ATTACKABLE },
+  ]);
+  ok('a crowd is filtered to just what can hit us', both.inReachOfUs().length === 1);
+  ok('and it is the right one', both.inReachOfUs()[0].nameRsc === 'centipede');
+
+  const blind = new Autopilot({ name: 't7', world: {}, client: null }, {});
+  ok('no client means nothing is in reach, not a throw', blind.inReachOfUs().length === 0);
+}
+
+// --------------------------------------------------------- a journey leaves a trail
+//
+// Frames were written once per pass and nowhere else, and travel is a single await INSIDE
+// a pass — so a character that set off across four rooms and died on the way recorded
+// nothing between the room it left and the Underworld. Janice's record says she died in
+// the Brownestone Inn at 30/30 with zero threats present; her last decision there was
+// "leaving now, going to Valley of Ileria" and a frogman killed her 92 seconds later.
+// 16% of attended records show full health at death, which is this shape.
+{
+  console.log('\na journey leaves a trail');
+  const mkRoom = (name, num) => ({ name, num });
+  const mk = (room) => {
+    const k = new Autopilot({ name: 't4', world: { room },
+      client: { selfId: 9, self: { col: 3, row: 4 }, room: { objects: new Map() },
+                rsc: { get: r => r }, vitals: () => ({ health: { value: 30, max: 30 } }) } }, {});
+    return k;
+  };
+  const k = mk(mkRoom('Brownestone Inn', 106));
+  const f = k.recordFrame();
+  ok('a frame records where we are', f.room === 'Brownestone Inn' && f.num === 106);
+  ok('and lands in the ring', k.recent5.length === 1);
+  ok('an ordinary frame carries no reason', f.why === undefined);
+
+  const tagged = k.recordFrame('setting off');
+  ok('a travel frame says why it was written', tagged.why === 'setting off');
+
+  // The wrapper writes both ends, and the arrival end even when the journey throws —
+  // a journey that failed is the case where knowing where it stopped matters most.
+  k.recent5 = [];
+  k.s.travel = async () => { k.s.world.room = mkRoom('Valley of Ileria', 544); return { arrived: true }; };
+  await k.travel(544, {});
+  ok('travelling writes two frames', k.recent5.length === 2, JSON.stringify(k.recent5.map(x => x.why)));
+  ok('the first is where we set off from', k.recent5[0].room === 'Brownestone Inn');
+  ok('the second is where we arrived', k.recent5[1].room === 'Valley of Ileria');
+
+  k.recent5 = [];
+  k.s.travel = async () => { throw new Error('no route'); };
+  await k.travel(999, {}).catch(() => {});
+  ok('a journey that threw still records where it stopped', k.recent5.length === 2);
+  ok('and the call site still sees the throw',
+     await k.travel(999, {}).then(() => false, () => true));
+
+  // The ring is bounded, and a journey now spends from the same budget.
+  k.recent5 = [];
+  for (let i = 0; i < 40; i++) k.recordFrame();
+  ok('the ring stays bounded at 24', k.recent5.length === 24);
+
+  const blind = new Autopilot({ name: 't5', world: {}, client: null }, {});
+  ok('no client means no frame, not a throw', blind.recordFrame() === null);
 }
 
 // ---------------------------------------------- a detail field must not eat the record

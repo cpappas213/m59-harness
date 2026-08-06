@@ -1463,28 +1463,29 @@ export class Autopilot {
     // Bounded by the room's own dimensions, so this is one pass over the floor.
     const within = Math.max(geo.rows ?? 0, geo.cols ?? 0) || 64;
     const spotStats = {};
-    const spot = nearestSafeSpot(geo, me, {
-      // WHAT MAKES A SQUARE A CANDIDATE. `wall` asks for a wall to stand against and
-      // ranks by how much of it there is; `disc` is the old attackers_avoided >= 20
-      // gate, kept so the two can be compared rather than swapped on faith. See
-      // SPOT_RULES — the disc threshold turned out to sit in a trough in the book, and
-      // most of the evidence that put it there was written by a bug in restBroken.
-      //
-      // `los` has to be the same setting quarryReach uses, or the two disagree about
-      // the same monster.
-      within, rule: this.policy.spotRule ?? 'wall', minAvoided: 20,
-      book: this.book, room: room.num, quarryReach, los,
-      stats: spotStats,
-      toward: quarry ? { col: quarry.col, row: quarry.row } : null,
-      // Skip squares another keeper is already standing on, and squares nothing can be
-      // fetched to. Both are expressed as "unreachable" because that is the question
-      // the ranking already asks, and neither is worth a second mechanism.
-      reach: (col, r2) => {
-        if (barren?.has(`${col},${r2}`)) return { reachable: false };
-        if (spotTakenByAnother(this.s.name, room.num, col, r2)) return { reachable: false };
-        return s.world.reach(col, r2);
-      },
-    });
+    // FILL EVERY WALL ONCE BEFORE ANY WALL TAKES A SECOND.
+    //
+    // The search is run with a share cap and re-run one step higher when it finds
+    // nothing, so the first keepers into a room take squares nobody is on, and only once
+    // every square is occupied does anyone accept a neighbour. Four walls and eight
+    // characters settle at two apiece without anybody computing that; four walls and four
+    // characters still get one each, which is the old behaviour exactly.
+    //
+    // Cheap because the expensive part is per-candidate pathfinding inside
+    // nearestSafeSpot, and a re-run only happens when the first pass rejected everything
+    // — which in an uncrowded room never occurs.
+    let spot = null, shareCap = 1;
+    for (; shareCap <= SPOT_SHARE_CAP; shareCap++) {
+      for (const k of Object.keys(spotStats)) delete spotStats[k];   // stats describe the LAST attempt
+      spot = this.searchSafeSpot(geo, me, room, {
+        within, quarryReach, los, quarry, barren, stats: spotStats, shareCap });
+      if (spot) break;
+    }
+    if (spot && shareCap > 1)
+      this.note('sharing a wall rather than standing in the open', {
+        with: spotOccupancy(this.s.name, room.num, spot.col, spot.row), at: { col: spot.col, row: spot.row },
+        why: `every wall in this room already had ${shareCap - 1} on it, and two to a wall ` +
+             'beats one on a wall and one in the open' });
     if (!spot) {
       // Distinguish "flat room" from "ledge system". The second reads as the first
       // unless it is said out loud, and it was West Merchant Way for five characters.
@@ -1874,7 +1875,7 @@ export class Autopilot {
       why: 'fled more than twice with neither the vigor nor the food to fight — the ' +
            'wilderness cannot fix that, and a town can: resting is safe there and the ' +
            'counters sell bread, which is the only way past the resting cap of 80' });
-    const t = await s.travel(best.room, { maxHops: 6 }).catch(e => ({ arrived: false, reason: e.message }));
+    const t = await this.travel(best.room, { maxHops: 6 }).catch(e => ({ arrived: false, reason: e.message }));
     this.fledInARow = 0;
     if (!t.arrived) { this.noProgress('could not reach town: ' + (t.reason || 'refused')); return false; }
     this.progress('reached town to resupply');
@@ -1944,7 +1945,7 @@ export class Autopilot {
     if (room?.num !== e.room) {
       this.doing = 'travelling';
       await this.leaveHold('setting out to provision someone');
-      const r = await s.travel(e.room, { maxHops: 14 }).catch(x => ({ arrived: false, reason: x.message }));
+      const r = await this.travel(e.room, { maxHops: 14 }).catch(x => ({ arrived: false, reason: x.message }));
       if (!r.arrived) {
         e.failures = (e.failures || 0) + 1;
         this.note('could not reach the supplicant', { to_room: e.room, why: r.reason, attempt: e.failures });
@@ -2102,7 +2103,7 @@ export class Autopilot {
     if (room?.num !== e.room) {
       this.doing = 'travelling';
       await this.leaveHold('setting out on a loot run');
-      const r = await s.travel(e.room, { maxHops: 14 }).catch(x => ({ arrived: false, reason: x.message }));
+      const r = await this.travel(e.room, { maxHops: 14 }).catch(x => ({ arrived: false, reason: x.message }));
       if (!r.arrived) {
         e.failures = (e.failures || 0) + 1;
         this.note('could not reach the loot run', { to_room: e.room, why: r.reason, attempt: e.failures });
@@ -2512,6 +2513,142 @@ export class Autopilot {
     return status;
   }
 
+  // ONE ATTEMPT AT FINDING A SQUARE, at a given tolerance for sharing.
+  //
+  // Extracted from takeSafeSpot only so the search can be re-run at a higher share cap
+  // without duplicating the option block — a second copy of these arguments is exactly
+  // how the two would come to disagree about `los` or the book.
+  searchSafeSpot(geo, me, room, { within, quarryReach, los, quarry, barren, stats, shareCap = 1 }) {
+    const s = this.s;
+    return nearestSafeSpot(geo, me, {
+      // WHAT MAKES A SQUARE A CANDIDATE. `wall` asks for a wall to stand against and
+      // ranks by how much of it there is; `disc` is the old attackers_avoided >= 20
+      // gate, kept so the two can be compared rather than swapped on faith. See
+      // SPOT_RULES — the disc threshold turned out to sit in a trough in the book, and
+      // most of the evidence that put it there was written by a bug in restBroken.
+      //
+      // `los` has to be the same setting quarryReach uses, or the two disagree about
+      // the same monster.
+      within, rule: this.policy.spotRule ?? 'wall', minAvoided: 20,
+      book: this.book, room: room.num, quarryReach, los,
+      stats,
+      toward: quarry ? { col: quarry.col, row: quarry.row } : null,
+      // Skip squares already at the share cap, and squares nothing can be fetched to.
+      // Both are expressed as "unreachable" because that is the question the ranking
+      // already asks, and neither is worth a second mechanism.
+      reach: (col, r2) => {
+        if (barren?.has(`${col},${r2}`)) return { reachable: false };
+        if (spotTakenByAnother(this.s.name, room.num, col, r2, shareCap)) return { reachable: false };
+        return s.world.reach(col, r2);
+      },
+    });
+  }
+
+  // ONE FRAME. Extracted from the pass so a JOURNEY CAN LEAVE A TRAIL.
+  //
+  // Frames were written once per pass and nowhere else, and travel is a single await
+  // INSIDE a pass — so a character that set off across four rooms and died on the way
+  // recorded nothing between the room it left and the Underworld. The post-mortem then
+  // reconstructed the death from "the last frame that was not the Underworld", which was
+  // the room it had left minutes earlier.
+  //
+  // Janice is the worked example: her record says she died in the Brownestone Inn at
+  // 30/30 health, with `threats: 0`. Her last decision there was "this room cannot
+  // produce our prey — leaving now, going to Valley of Ileria", and 92 seconds later a
+  // frogman killed her. Inns have no frogmen and nobody dies at full health; every field
+  // in that record was true about somewhere she was no longer standing.
+  //
+  // 16% of attended records show full health at death, which is this shape.
+  //
+  // `why` is kept on the frame so the trail says what it is: a frame written because we
+  // arrived somewhere is a different observation from the pass's regular sample, and a
+  // reader that cannot tell them apart will read a travel trail as a stall.
+  recordFrame(why = null) {
+    const c = this.s.client;
+    if (!c?.room) return null;
+    const v = c.vitals?.() ?? {};
+    const room = this.s.world?.room;
+    const nowT = Date.now();
+    const mine = (flag) => [...c.room.objects.values()]
+      .filter(o => o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && (flag ? (o.flags & OF.PLAYER) : !(o.flags & OF.PLAYER)));
+    const f = {
+      at: nowT, room: room?.name ?? null, num: room?.num ?? null,
+      col: c.self?.col ?? null, row: c.self?.row ?? null,
+      health: v.health?.value ?? null, max: v.health?.max ?? null,
+      vigor: v.vigor?.value ?? null,
+      doing: this.doing ?? this.lastDoing ?? null,
+      ...(why ? { why } : {}),
+      holding: this.hold ? { col: this.hold.col, row: this.hold.row,
+                             proven: this.holdWorks?.() ?? null } : false,
+      // Ages rather than timestamps: a post-mortem is read by someone asking "was it
+      // moving", not "what was the clock".
+      moved_ms: this.movedAt ? nowT - this.movedAt : null,
+      swung_ms: this.swungAt ? nowT - this.swungAt : null,
+      // COUNT SEPARATELY FROM NAMING, because the cap on the names was silently becoming
+      // the answer. `most_at_once` is derived from this list's LENGTH, and the list was
+      // sliced to 6 — so every swarm death recorded "6 on them at the end", 55 times out
+      // of 55 in room 586, and the real number was never written down. A constant that
+      // appears in 100% of your records is a measurement artefact, not a finding.
+      //
+      // NOT FLEETMATES: every character in this fleet is ATTACKABLE and they stand next
+      // to each other by design, so without the player bit a death record names four
+      // Muppets as the things that killed you. They are recorded separately instead.
+      threat_count: mine(false).length,
+      threats: mine(false).map(o => c.rsc.get(o.nameRsc)).slice(0, 6),
+      players_present: [...c.room.objects.values()]
+        .filter(o => o.id !== c.selfId && (o.flags & OF.PLAYER))
+        .map(o => c.rsc.get(o.nameRsc)).slice(0, 6),
+    };
+    this.recent5 = (this.recent5 || []);
+    this.recent5.push(f);
+    // Deep enough to cover the whole of a death rather than its last few seconds. At an
+    // 8s pass this is about three minutes, which is longer than any fight that kills one
+    // of these characters — and a multi-hop journey now spends frames from the same
+    // budget, which is the trade this exists to make.
+    if (this.recent5.length > 24) this.recent5.shift();
+    return f;
+  }
+
+  // TRAVEL, WITH THE TWO ENDS WRITTEN DOWN.
+  //
+  // Every `s.travel(...)` in this file goes through here so that setting off and arriving
+  // are both observations rather than a silence with a conclusion drawn from whichever
+  // side of it a pass happened to land on. The wrapper returns the same promise shape, so
+  // the ten call sites keep their own `.catch(...)` exactly as they were, and the arrival
+  // frame is written in a `finally` — a journey that THREW is the case where knowing
+  // where it stopped matters most.
+  async travel(room, opts) {
+    this.recordFrame('setting off');
+    try {
+      return await this.s.travel(room, opts);   // the SESSION's travel, not this wrapper
+    } finally {
+      this.recordFrame('arrived');
+    }
+  }
+
+  // WHAT IS ACTUALLY IN REACH OF US RIGHT NOW.
+  //
+  // NOT FLEETMATES. Without the player filter this chose a fleetmate 131 times out of
+  // 132 — the characters stand next to each other by design, on walls and in inns, and
+  // every one of them is ATTACKABLE. They cannot hurt each other while their guardian
+  // angels hold, so it never showed as damage; it showed as twenty-five characters busy
+  // all night and three kills between them.
+  //
+  // REACH is a disc of radius 3 on SQUARE coordinates, because that is what the server
+  // tests: SquaredDistanceTo <= GetAttackRange^2 (nomoveon.kod:121). Up to 28 squares can
+  // hit you, not the 8 that touch you.
+  //
+  // Extracted because two branches ask this question — the retaliation path and the
+  // no-wall-nowhere-to-go dead end — and a copy that drifts would mean one of them
+  // quietly disagreeing with the other about whether the character is under attack.
+  inReachOfUs() {
+    const c = this.s.client, me = c?.self;
+    if (!me || !c?.room) return [];
+    return [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER) &&
+      Math.hypot(o.col - me.col, o.row - me.row) <= REACH);
+  }
+
   // IS THIS THING TOO DANGEROUS TO SWING AT — asked of ONE creature, by name.
   //
   // capBlockers answers this for a whole room and only when the room is at cap, so the
@@ -2620,11 +2757,24 @@ export class Autopilot {
     if (!c) return null;
     const name = c.me?.name ?? this.s.name;
     const at = Date.now();
-    const seen = () => skills.deathBroadcastFor(name, c.events ?? [], at);
-    const already = seen();
+    // TIGHT FIRST, THEN THE WHOLE BUFFER.
+    //
+    // The windowed search is the precise answer when the death was noticed promptly, and
+    // it is worth keeping for the `dt` it reports. But noticing is the slow part — death
+    // is inferred from the Underworld on a LATER pass — so when the keeper is a journey
+    // behind, the broadcast scrolled past the window before anything looked for it, and
+    // the record lost the killer in exactly the cases where it is hardest to reconstruct
+    // by hand. That was 69% of attended deaths: the line was sitting in `text` the whole
+    // time, unmatched.
+    const near = () => skills.deathBroadcastFor(name, c.events ?? [], at);
+    const anywhere = () => skills.deathBroadcastFor(name, c.events ?? [], null);
+    const already = near() ?? anywhere();
     if (already) return already;
     await c.waitFor({ kinds: ['message'], timeoutMs: waitMs }).catch(() => null);
-    return seen();
+    // `dt` is null on the fallback, which is the honest answer: we know the killer and we
+    // do not know how long ago, because the thing that would have told us is the clock we
+    // just admitted was wrong.
+    return near() ?? anywhere();
   }
 
   postMortem(reason = 'died') {
@@ -3505,50 +3655,7 @@ export class Autopilot {
     // description of dying and not an explanation of it. Standing on a wall at 6 health
     // and running for a door at 6 health are the same three numbers and opposite
     // mistakes, and only the second column tells them apart.
-    const nowT = Date.now();
-    this.recent5 = (this.recent5 || []);
-    this.recent5.push({ at: nowT, room: room?.name ?? null, num: room?.num ?? null,
-                        col: c.self?.col ?? null, row: c.self?.row ?? null,
-                        health: v.health?.value ?? null, max: v.health?.max ?? null,
-                        vigor: v.vigor?.value ?? null,
-                        doing: this.doing ?? this.lastDoing ?? null,
-                        holding: this.hold ? { col: this.hold.col, row: this.hold.row,
-                                               proven: this.holdWorks?.() ?? null } : false,
-                        // Ages rather than timestamps: a post-mortem is read by someone
-                        // asking "was it moving", not "what was the clock".
-                        moved_ms: this.movedAt ? nowT - this.movedAt : null,
-                        swung_ms: this.swungAt ? nowT - this.swungAt : null,
-                        // NOT FLEETMATES — the same filter the fight path already
-                        // carries, and it was missing here. Every character in this
-                        // fleet is ATTACKABLE and they stand next to each other by
-                        // design, so without the player bit a death record names four
-                        // Muppets as the things that killed you. They are recorded
-                        // separately instead: who was standing there is real context
-                        // for a death, it is just not a threat.
-                        // COUNT SEPARATELY FROM NAMING, because the cap on the names was
-                        // silently becoming the answer. `most_at_once` is derived from
-                        // this list's LENGTH, and the list was sliced to 6 — so every
-                        // swarm death in the fleet recorded "6 on them at the end", 55
-                        // times out of 55 in room 586, and the real number was never
-                        // written down anywhere. A constant that appears in 100% of your
-                        // records is a measurement artefact, not a finding.
-                        //
-                        // The names stay capped: twenty repetitions of "giant rat" tell
-                        // you nothing the count does not. The count is now the truth.
-                        threat_count: [...c.room.objects.values()]
-                          .filter(o => o.id !== c.selfId && (o.flags & OF.ATTACKABLE)
-                                       && !(o.flags & OF.PLAYER)).length,
-                        threats: [...c.room.objects.values()]
-                          .filter(o => o.id !== c.selfId && (o.flags & OF.ATTACKABLE)
-                                       && !(o.flags & OF.PLAYER))
-                          .map(o => c.rsc.get(o.nameRsc)).slice(0, 6),
-                        players_present: [...c.room.objects.values()]
-                          .filter(o => o.id !== c.selfId && (o.flags & OF.PLAYER))
-                          .map(o => c.rsc.get(o.nameRsc)).slice(0, 6) });
-    // Deep enough to cover the whole of a death rather than its last few seconds. At an
-    // 8s pass this is about three minutes, which is longer than any fight that kills
-    // one of these characters.
-    if (this.recent5.length > 24) this.recent5.shift();
+    this.recordFrame();
 
     // Answer people and take hand-outs before anything else. Cheap, and a player
     // trying to help should not have to wait for a fight to finish.
@@ -4513,7 +4620,7 @@ export class Autopilot {
             const p = this.placement;
             p.relocations++;
             if (mine != null) p.aimed_at_assignment += (target.room === mine ? 1 : 0);
-            const r0 = await s.travel(target.room, { maxHops: 14 })
+            const r0 = await this.travel(target.room, { maxHops: 14 })
                              .catch(e => ({ arrived: false, reason: e.message }));
             if (r0.arrived) {
               this.homeRoom = target.room;
@@ -4633,7 +4740,7 @@ export class Autopilot {
                    'something that cannot happen. This is not roaming; roam guards against ' +
                    'leaving GOOD ground, and this is not that.' });
             this.doing = 'travelling';
-            const moved = await this.s.travel(home, { maxHops: 20 })
+            const moved = await this.travel(home, { maxHops: 20 })
                                   .catch(e => ({ arrived: false, reason: e.message }));
             if (moved.arrived) { this.emptyPasses = 0; this.progress('left a room that spawns nothing'); return; }
             this.note('could not get back to the assigned room', { going_to: home, why: moved.reason });
@@ -4959,7 +5066,7 @@ export class Autopilot {
             this.doing = 'travelling';
             await this.leaveHold('leaving a room with no wall in it').catch(() => {});
             const go = elsewhere[0];
-            const moved = await this.s.travel(go.room, { maxHops: 14 })
+            const moved = await this.travel(go.room, { maxHops: 14 })
                                     .catch(e => ({ arrived: false, reason: e.message }));
             if (moved.arrived) {
               this.homeRoom = go.room;
@@ -4980,8 +5087,63 @@ export class Autopilot {
                    'refused for having no wall',
               hint: 'this prey has no safely fightable room for this character — re-target it' });
           }
-          this.noProgress('no safe wall here and nowhere better to go');
-          return;
+          // STANDING STILL WHILE SOMETHING CHEWS ON YOU IS NOT A DECISION, IT IS A GAP.
+          //
+          // This `return` sat four lines above "FIGHT WHAT IS ACTUALLY HITTING YOU", so a
+          // character that found no wall and could not leave bailed out of the pass just
+          // before the branch that would have swung back — and then did it again next
+          // pass, and the pass after that. Beaker was found in Valley of Ileria at 29/29
+          // with monsters in the room, reporting STALLED once a second and never lifting
+          // its weapon. Every refusal on the way here is individually correct and the sum
+          // of them is a punching bag.
+          //
+          // So the dead end stops ending the pass when the character is OTHERWISE READY TO
+          // FIGHT and exactly one thing is on it. Three gates, and each rules out a way
+          // that "might as well swing back" turns into a death:
+          //
+          //   ONE ATTACKER. A swarm is the commonest death in this fleet, and swinging at
+          //   one of four is not a fight, it is choosing which one lands the last blow.
+          //   Against a crowd the existing withdraw/leave path is still correct.
+          //
+          //   HEALTH WE WOULD NORMALLY OPEN ON. safety().engageAt is already the "do not
+          //   start what you cannot finish" line (0.9 under 30 max health, 0.75 above).
+          //   Below it the answer is to heal, not to trade blows without a wall.
+          //
+          //   A TARGET WE WOULD NORMALLY TAKE. refuseEngagement is the same band that
+          //   killed Waldorf when nothing consulted it. Unrecognised or over the band and
+          //   we withdraw, exactly as the retaliation branch does.
+          //
+          // Deliberately NOT a blanket "always swing". The whole safe-spot mechanic is
+          // that nothing can hit you until you swing first, so retaliating is exactly
+          // wrong while a spot is holding — which is why this lives in the branch where
+          // there is provably no spot and no hold, and nowhere else.
+          const onUs = this.inReachOfUs();
+          const lone = onUs.length === 1 ? onUs[0] : null;
+          const loneName = lone ? (c.rsc.get(lone.nameRsc) || '') : '';
+          const vNow = c.vitals?.() ?? {};
+          const hpNow = pct(vNow.health);
+          const ready = hpNow == null || hpNow >= this.safety().engageAt;
+          const refusedLone = lone ? this.refuseEngagement(loneName) : null;
+
+          if (!lone || !ready || refusedLone) {
+            if (onUs.length) this.note('not fighting my way out of this one', {
+              room: room.name, in_reach: onUs.length,
+              what: onUs.map(o => c.rsc.get(o.nameRsc)).filter(Boolean).slice(0, 4),
+              health: hpNow == null ? null : Math.round(hpNow * 100) + '%',
+              engage_at: Math.round(this.safety().engageAt * 100) + '%',
+              why: !lone ? `${onUs.length} of them are in reach and a swarm without a wall is ` +
+                           'how these characters die'
+                   : !ready ? 'below the health we would open a fight at, so healing beats trading blows'
+                   : `would not normally fight a ${loneName}: ${refusedLone.why}` });
+            this.noProgress('no safe wall here and nowhere better to go');
+            return;
+          }
+          this.note('no wall, nowhere to go, and one thing is on us — fighting back', {
+            room: room.name, what: loneName,
+            health: hpNow == null ? null : Math.round(hpNow * 100) + '%',
+            why: 'one attacker, health we would open a fight at, and a target inside the band — ' +
+                 'there is no spot to protect by holding fire and no exit to walk to, so the ' +
+                 'only thing standing still buys is being hit for free' });
         }
       }
 
@@ -5001,15 +5163,8 @@ export class Autopilot {
       // Re-read where we are: taking a spot may have walked us across the room, and
       // "adjacent" computed from before the walk is a different question.
       const here = c.self;
-      // NOT FLEETMATES. This is the list "hit back at whatever is on us" chooses from,
-      // and without the player filter it chose a fleetmate 131 times out of 132 — the
-      // characters stand next to each other by design now, on walls and in inns, and
-      // every one of them is ATTACKABLE. They cannot hurt each other while their
-      // guardian angels hold, so it never showed up as damage; it showed up as
-      // twenty-five characters busy all night and three kills to show for it.
-      const adjacent = here ? [...c.room.objects.values()].filter(o =>
-        o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER) &&
-        Math.hypot(o.col - here.col, o.row - here.row) <= REACH) : [];
+      // See inReachOfUs() for why fleetmates are excluded and why the radius is 3.
+      const adjacent = here ? this.inReachOfUs() : [];
       const want = String(this.clearing || this.policy.hunt || '').toLowerCase();
       const bystander = adjacent.find(o =>
         !(c.rsc.get(o.nameRsc) || '').toLowerCase().includes(want));
@@ -5106,7 +5261,7 @@ export class Autopilot {
             partner: this.policy.partner, they_are_in: mate.room, waited_passes: this.waitedForMate,
             why: 'the wait assumed they were walking to meet us and they are not — 640 passes ' +
                  'of waiting was the record before this was bounded' });
-          const t = await this.s.travel(mate.room, { maxHops: 8 })
+          const t = await this.travel(mate.room, { maxHops: 8 })
                               .catch(e => ({ arrived: false, reason: e.message }));
           if (t.arrived) { this.waitedForMate = 0; this.progress('joined my partner'); return; }
           this.note('could not reach my partner', { why: t.reason ?? 'refused' });
@@ -5576,7 +5731,7 @@ export class Autopilot {
       carrying: carried, to: target.name, hops: target.hops, keeping: this.policy.walkingMoney ?? 400,
       why: 'everything carried is dropped on death and usually unrecoverable; a balance is not' });
     await this.leaveHold('walking to the bank');
-    const r = await s.travel(target.room, { maxHops: Math.max(12, target.hops + 4) })
+    const r = await this.travel(target.room, { maxHops: Math.max(12, target.hops + 4) })
                     .catch(e => ({ arrived: false, reason: e.message }));
     this.money.trips++;
     if (!r.arrived) {
@@ -6179,7 +6334,7 @@ export class Autopilot {
     // that produced a kill, that is where to be.
     if (this.homeRoom != null && room?.num !== this.homeRoom) {
       this.note('heading back to where the hunting was', { from: room?.name, to_room: this.homeRoom });
-      const back = await s.travel(this.homeRoom, { maxHops: 8 }).catch(e => ({ arrived: false, reason: e.message }));
+      const back = await this.travel(this.homeRoom, { maxHops: 8 }).catch(e => ({ arrived: false, reason: e.message }));
       this.emptyPasses = 0;
       if (back.arrived) {
         this.tally.rooms_moved++;
@@ -6223,7 +6378,7 @@ export class Autopilot {
         spawn_chance: target.chance, also_here: target.also_here,
       });
       this.doing = 'travelling';
-      const r = await s.travel(target.room, { maxHops: 12 })
+      const r = await this.travel(target.room, { maxHops: 12 })
                        .catch(e => ({ arrived: false, reason: e.message }));
       this.emptyPasses = 0;
       if (r.arrived) {
@@ -6425,8 +6580,19 @@ export class Autopilot {
 // crowd of attackable things.
 //
 // A player might share a wall deliberately — one tanking while another heals past them
-// is a real tactic. The autopilot is not doing anything of the sort, so the honest
-// default is one each.
+// is a real tactic.
+//
+// SO IT IS A SPREAD, NOT AN EXCLUSION. "One each" was right about the failure it was
+// written for — four characters stacked on (8,15) of the Limping Toad — and wrong about
+// what to do when there are more keepers than squares. A room with four walls and eight
+// characters gave four of them a wall and sent the other four to the no-wall path, which
+// is the branch that precedes most of the deaths. Two to a wall is worse than one and far
+// better than none.
+//
+// The cap therefore RISES ONLY WHEN IT HAS TO: every square fills to one before any takes
+// a second, and to two before any takes a third. takeSafeSpot retries with a higher cap
+// when the search comes back empty, so the distribution is a consequence of the search
+// rather than a number anybody has to maintain.
 //
 // The register lives in the module rather than in a keeper because that is the only
 // place all of them can see: every session in a broker shares this process.
@@ -6457,9 +6623,28 @@ export function releaseSpot(agent) {
 // Partners are not in the way. That is the exception the ONE WALL EACH note above
 // carves out, and it is the only one: every other keeper is still refused, so an
 // uncoordinated fleet cannot pile onto the same corner.
-export function spotTakenByAnother(agent, room, col, row) {
+// How many OTHERS are standing here that this agent is not deliberately sharing with.
+// Partners are not crowding us — that is the exception m59-party.mjs relies on — so they
+// do not count toward the cap.
+export function spotOccupancy(agent, room, col, row) {
+  const held = claimedSpots.get(spotKey(room, col, row));
+  if (!held) return 0;
+  let n = 0;
+  for (const who of held) {
+    if (who === agent) continue;
+    if (mayShareSpot(agent, who)) continue;
+    n++;
+  }
+  return n;
+}
+// `cap` is how many strangers this agent will tolerate on the square. 1 is the old
+// behaviour and stays the default, so every existing caller is unchanged; takeSafeSpot
+// raises it a step at a time when nothing is free at the current level, which is what
+// turns "one each" into "spread evenly".
+export function spotTakenByAnother(agent, room, col, row, cap = 1) {
   const held = claimedSpots.get(spotKey(room, col, row));
   if (!held) return null;
+  if (spotOccupancy(agent, room, col, row) < cap) return null;
   for (const who of held) {
     if (who === agent) continue;
     if (mayShareSpot(agent, who)) continue;
@@ -6467,6 +6652,10 @@ export function spotTakenByAnother(agent, room, col, row) {
   }
   return null;
 }
+// How deep the stacking is allowed to get before a wall stops being worth sharing. Four
+// on one square is the pile-up this register exists to prevent; three is the point where
+// the wall covers less than it costs.
+export const SPOT_SHARE_CAP = 3;
 export const claimedSpotList = () =>
   [...claimedSpots.entries()].flatMap(([k, who]) => [...who].map(agent => ({ at: k, agent })));
 

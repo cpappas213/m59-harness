@@ -471,5 +471,48 @@ section('registry');
      ch.channelFor(item, { frozen: true, mana: 0, speakerInRoom: true }).kind, null);
 }
 
+// ------------------------------------- operator instructions arrive wrapped, like everything
+//
+// routeOperatorInstruction matched against the RAW said.text, which the server has already
+// rendered through user_said_str — so `safe spot here` arrives as `Bunsen says, "safe spot
+// here"` and every ^-anchored verb missed. No operator instruction had ever worked over
+// real speech; the tests passed because they feed bare text, which is the shape the code
+// never actually sees.
+//
+// These mirror the broker's OPERATOR_VERBS patterns. They cannot import them — importing
+// m59-broker.mjs RUNS it — so the guard is that the wrapped forms unwrap to something the
+// anchored patterns match.
+{
+  section('operator verbs survive the say wrapper');
+  const MARK = /^\s*safe\s*spot\s+here\b|^\s*(mark|remember|save)\s+(this\s+)?(as\s+)?(a\s+)?(safe\s+)?(spot|square|wall)\b/i;
+  const STOP = /^\s*(please\s+)?(stop|halt|hold on|wait)\b/i;
+
+  ok('the bare phrase matches, which is all the old tests ever proved',
+     MARK.test('safe spot here'));
+  ok('the wrapped phrase does NOT — this was the bug',
+     !MARK.test('Bunsen says, "safe spot here"'));
+
+  const forms = [
+    'Bunsen says, "safe spot here"',
+    'Bunsen tells you, "safe spot here"',
+    'Bunsen broadcasts, "safe spot here"',
+    'Bunsen yells, "safe spot here"',
+    'You hear Bunsen says, "safe spot here"',
+  ];
+  for (const f of forms)
+    ok(`unwrapping rescues it: ${f.slice(0, 26)}…`, MARK.test(unwrapSpeech(f).said.trim()));
+
+  // Trailing space was one of the live attempts, and \b after `here` tolerates it.
+  ok('a trailing space still matches', MARK.test(unwrapSpeech('Bunsen says, "safe spot here "').said.trim()));
+  ok('another verb survives the same wrapper too',
+     STOP.test(unwrapSpeech('Bunsen says, "stop"').said.trim()));
+  ok('and the speaker name is lifted out of the quoted text',
+     unwrapSpeech('Bunsen says, "safe spot here"').speaker_name === 'Bunsen');
+  // The name must not be able to smuggle a verb in: it is outside the quotes.
+  ok('a name that looks like an instruction does not become one',
+     !MARK.test(unwrapSpeech('safe spot here says, "hello"').said.trim()));
+  ok('unwrapping something unwrapped is a no-op', unwrapSpeech('safe spot here').said === 'safe spot here');
+}
+
 console.log(`\n${failed ? 'FAILED' : 'ok'} — ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

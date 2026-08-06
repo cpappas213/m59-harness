@@ -120,6 +120,40 @@ loopback **and** the POST behind them is refused at the socket for anything else
 hidden button is not a permission check. There is no Start button and there cannot be:
 when the broker is down, nothing is serving that page.
 
+### It looks before it logs anybody in
+
+A resume logs in every character in the roster, and Meridian allows one connection each —
+so a restart is exactly the thing that throws a person out of the world. It happened here:
+a restart to load new code bumped the operator off Zoot mid-sentence, and the auto-claim
+only noticed twenty seconds later, because it matches against live sessions and at boot
+there are none.
+
+So before the first login, `resumeFleet` reads the command line of every running
+`meridian.exe` (`/U:` is the account — `m59-shortcuts.mjs` puts it there), matches it
+against the **roster** rather than against sessions, and claims those agents as piloted.
+A claim is what the reconciler honours, so one call keeps the character out of the resume
+*and* out of the 45s rejoin sweep.
+
+Then it checks. A command line says what a process was *asked* to do, not that anyone
+reached the world, so another character reads the who list and looks for that name — and
+if the character is **not** online, the claim is released and the character resumed after
+all. Otherwise a client left at the login screen would strand a character out of the fleet
+for as long as its window stayed open, silently, because standing down looks exactly like
+working correctly.
+
+The who list speaks names and the roster speaks accounts, which is why a successful login
+now writes the character's name back into the roster entry. That is also why the resume
+log says `resumed t1 (Kermit)` rather than `resumed t1 (?)`.
+
+### The roster never shrinks by accident
+
+`substrate/fleets/<fleet>.json` is the only record of the account passwords, and a save
+writes whatever `fleetState` currently holds — which *during a resume* is "everyone
+processed so far". Anything saving inside that loop, and a keeper starting does, published
+a truncated roster to disk for a few seconds: watched live it went 13 of 21 and back. The
+old guard noticed, kept a `.prev`, and wrote the smaller file anyway. Now entries on disk
+that this process has not loaded are carried forward, and only `forget` removes one.
+
 ### It puts back characters that fall out
 
 The broker rejoins sessions that drop, every 45s, and restarts their keepers. This exists
@@ -266,6 +300,50 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   destination. An unlit one is silent, which is why the old code read a working
   pentagram as a dead one. `node tools/m59-underworld.mjs` prints the table.
 
+- **A BANK BALANCE IS PROSE, IT IS SENT ONCE, AND A WITHDRAWAL DOES NOT STATE IT.**
+  There is no packet for the balance. The banker says it out loud — `Lm_bnkr_balance`,
+  `monster.kod:136` — and never mentions it again, so the only way to *read* one is to
+  walk a character to a counter and ask. That is why it is caught off the event stream
+  and written to `substrate/banks/<character>.json` the moment it goes past, exactly as
+  abilities are. `node tools/m59-bank.mjs` reads the whole fleet's balances back without
+  moving anybody; the `fleet` tool carries `purse` and `banked` on every row.
+
+  Two things about it are counter-intuitive. **A withdrawal reports the amount handed
+  over, not the new balance** (`Lm_bnkr_did_withdraw`, `monster.kod:144`), so that one
+  figure is arithmetic against the last stated balance and is flagged
+  `observed: false` — do not report a derived number as though a banker said it. And
+  **there are two accounts, not one per town**: Jasper, Tos *and Barloque* all pay into
+  bank 1, because `BANK_BASIC` and `BID_TOS` are both `1` (`blakston.khd:1275`), while
+  Ko'catan is bank 2. "But you only have N shillings in your **possession**" is the
+  purse, not the account, and differs from the account line by one word.
+
+- **LOOKING AT A PLAYER IS NOT `BP_LOOK`.** `Player.TryLook` (`user.kod:4374`) diverts to
+  `SendLookPlayer`, which answers with **`BP_USERCOMMAND` / `UC_LOOK_PLAYER` (2)** —
+  object, an editable byte, a formatted description, then two plain strings
+  (`merintr.c:1501`). This client sent `BP_USERCOMMAND` and never parsed an incoming one,
+  so every `look_at` on a character timed out and blamed `OF_NOEXAMINE`, **and I read that
+  silence as proof the protocol could not answer.** It can. A packet nobody parses is
+  indistinguishable from a packet nobody sends, and the difference is a whole command
+  space. A player in another room is refused (`user.kod:4383`); a player looking at
+  *itself* is not, which is exactly what the real client's right-click-your-own-portrait
+  dialog does.
+
+- **A DESCRIPTION REPLACES THE LOOK TEXT.** The bio another player sees is
+  `psPlayerDescription`, set with `BP_CHANGE_DESCRIPTION` (126) and saved with the
+  character. `Player.ShowDesc` (`player.kod:1521`) sends it under the `"%q"` resource and
+  **returns**, never reaching the propagate that builds the default prose — so a character
+  carrying one stops announcing its own level and guild to anyone who looks. The server
+  acknowledges the write with nothing at all, so `describe` records what it sent to
+  `substrate/descriptions/<character>.json` and `m59-describe.mjs --verify` goes and looks:
+  the record is the claim, the look is the evidence.
+
+  Two traps. **Clearing is not undoing** — `""` is not `$`, so an empty description is a
+  *blank* bio, not the default text, and there is no way back short of a re-roll
+  (`user.kod:4444` reads a nil string as "keep the old one"). And **the wire is Latin-1**:
+  `pstr` is `Buffer.from(s, 'latin1')`, which keeps the LOW BYTE of anything above
+  U+00FF, so an em dash goes out as `0x14` and nothing errors. `cleanDescription` folds
+  the punctuation people actually type and drops what it cannot fold.
+
 - **Attach to the broker, do not spawn a second one.** `m59-broker.mjs` with no
   arguments serves stdio MCP *and* resumes a fleet. With one already running,
   the second is refused the lock, comes up healthy and **empty**, and answers
@@ -291,17 +369,20 @@ start Docker Desktop; do not try to start it yourself unless they ask.
 - `M59_ROOT` points at the Meridian 59 source tree. The compendium's citations
   and the Python analysis scripts both read it.
 - Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (91),
-  `node tools/m59-chat-test.mjs` (102) and
-  `node tools/m59-rest-test.mjs` (6) and
+  `node tools/m59-chat-test.mjs` (128) and
+  `node tools/m59-rest-test.mjs` (15) and
   `node tools/m59-ledger-test.mjs` (15) and
-  `node tools/m59-escape-test.mjs` (61) and
-  `node tools/m59-combat-test.mjs` (142) and
+  `node tools/m59-escape-test.mjs` (70) and
+  `node tools/m59-combat-test.mjs` (328) and
   `node tools/m59-stream-test.mjs` (54) and
   `node tools/m59-ability-test.mjs` (44) and
   `node tools/m59-compendium-test.mjs` (42) and
   `node tools/m59-prey-test.mjs` (56) and
   `node tools/m59-spellaudit-test.mjs` (28) and
-  `node tools/m59-party-test.mjs` (45). The rest need a live server —
+  `node tools/m59-localclient-test.mjs` (55) and
+  `node tools/m59-bank-test.mjs` (52) and
+  `node tools/m59-describe-test.mjs` (52) and
+  `node tools/m59-party-test.mjs` (57). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on
   8899 and fail with `ECONNREFUSED` without one, which is not a regression.
 - **Do not `import` `m59-broker.mjs` to check it.** Importing runs it: it tries to

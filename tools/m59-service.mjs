@@ -232,7 +232,20 @@ function errandsRunning() {
     // One-shot errands only. m59-supervise.mjs runs continuously and is built to survive
     // a broker restart — it restarts stalled keepers afterwards — so counting it would
     // refuse every restart for ever, which is a guard that has to be disabled to work.
-    const m = /m59-(feed|rearm|outfit)[.]mjs/.exec(low);
+    //
+    // ALMONER WAS MISSING FROM THIS LIST AND IS THE WORST OMISSION IT COULD HAVE HAD.
+    // It was found running during a restart that this guard waved straight through: it
+    // drives `supply`, a TWO-SIDED trade protocol between two characters the broker
+    // holds, and its own header says a half-finished trade is silent. A killed walk
+    // costs the walk; a killed trade can leave goods in an open offer slot with nothing
+    // holding either end, and nothing reports it. The guard was written from the three
+    // errands that existed when it was written and never revisited when a fourth
+    // arrived — so the check that was meant to catch exactly this did not know about it.
+    //
+    // makefleet is here for the same reason and a worse failure: a character
+    // interrupted mid-creation cannot be repaired, only re-rolled (see CLAUDE.md on
+    // `create automated`).
+    const m = /m59-(feed|rearm|outfit|almoner|makefleet)[.]mjs/.exec(low);
     if (!m) continue;
     const pid = Number((line.split('|')[0] || '').trim());
     out.push({ pid: Number.isFinite(pid) ? pid : null, tool: 'm59-' + m[1] + '.mjs' });

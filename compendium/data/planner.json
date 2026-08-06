@@ -1,0 +1,3033 @@
+{
+ "builtAt": null,
+ "builtFrom": {
+  "koddb": "C:/code/Meridian59",
+  "spells": "2026-07-30T09:16:52.455Z"
+ },
+ "stats": {
+  "might": {
+   "label": "Might",
+   "blurb": "Melee damage, and what heavy weapons key off."
+  },
+  "intellect": {
+   "label": "Intellect",
+   "blurb": "How fast every skill and spell improves, and how many school levels a character can learn in its lifetime."
+  },
+  "stamina": {
+   "label": "Stamina",
+   "blurb": "Maximum health is 101 + stamina, fixed at creation and never moved."
+  },
+  "agility": {
+   "label": "Agility",
+   "blurb": "Avoiding blows, and what most combat skills key off."
+  },
+  "mysticism": {
+   "label": "Mysticism",
+   "blurb": "Mana pool and spellcasting."
+  },
+  "aim": {
+   "label": "Aim",
+   "blurb": "Ranged accuracy, and what the precision weapon skills key off."
+  }
+ },
+ "by_stat": {
+  "might": {
+   "skills": [
+    "axe wielding",
+    "brawling",
+    "hammer wielding",
+    "mace fighting"
+   ],
+   "schools": [],
+   "spell_levels": []
+  },
+  "intellect": {
+   "skills": [],
+   "schools": [],
+   "spell_levels": [],
+   "applies_to_everything": "Raises the improvement rate of every skill and every spell, and sets how many school levels can be learned over the character's lifetime. It is not the requisite stat of any individual skill, so it will never appear in the per-skill column."
+  },
+  "stamina": {
+   "skills": [
+    "second wind"
+   ],
+   "schools": [],
+   "spell_levels": []
+  },
+  "agility": {
+   "skills": [
+    "assess",
+    "block",
+    "disarm",
+    "dodge",
+    "kick",
+    "parry",
+    "punch",
+    "scimitar wielding",
+    "slash",
+    "thrust"
+   ],
+   "schools": [],
+   "spell_levels": []
+  },
+  "mysticism": {
+   "skills": [],
+   "schools": [
+    "Faren",
+    "Jala",
+    "Kraanan",
+    "Qor",
+    "Riija",
+    "Shal’ille"
+   ],
+   "spell_levels": []
+  },
+  "aim": {
+   "skills": [
+    "archery",
+    "fencing",
+    "fire",
+    "short sword fighting"
+   ],
+   "schools": [],
+   "spell_levels": []
+  }
+ },
+ "skills": [
+  {
+   "key": "archery",
+   "name": "archery",
+   "requisite_stat": "aim",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Proficiency",
+   "file": "kod/object/passive/skill/profic/archery.kod",
+   "description": null
+  },
+  {
+   "key": "assess",
+   "name": "assess",
+   "requisite_stat": "agility",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Skill",
+   "file": "kod/object/passive/skill/assess.kod",
+   "description": "This is a crude and often inaccurate technique used to gauge how good an opponent is in the art of hand-to-hand combat."
+  },
+  {
+   "key": "axeproficiency",
+   "name": "axe wielding",
+   "requisite_stat": "might",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Proficiency",
+   "file": "kod/object/passive/skill/profic/profaxe.kod",
+   "description": "Allows the user to become more efficient with any axe."
+  },
+  {
+   "key": "block",
+   "name": "block",
+   "requisite_stat": "agility",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Skill",
+   "file": "kod/object/passive/skill/block.kod",
+   "description": null
+  },
+  {
+   "key": "brawling",
+   "name": "brawling",
+   "requisite_stat": "might",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Proficiency",
+   "file": "kod/object/passive/skill/profic/brawling.kod",
+   "description": null
+  },
+  {
+   "key": "disarm",
+   "name": "disarm",
+   "requisite_stat": "agility",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Skill",
+   "file": "kod/object/passive/skill/disarm.kod",
+   "description": null
+  },
+  {
+   "key": "dodge",
+   "name": "dodge",
+   "requisite_stat": "agility",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Skill",
+   "file": "kod/object/passive/skill/dodge.kod",
+   "description": "Dodge is a basic skill, allowing people to avoid blows in combat."
+  },
+  {
+   "key": "swordproficiency",
+   "name": "fencing",
+   "requisite_stat": "aim",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Proficiency",
+   "file": "kod/object/passive/skill/profic/profswrd.kod",
+   "description": null
+  },
+  {
+   "key": "fire",
+   "name": "fire",
+   "requisite_stat": "aim",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Stroke",
+   "file": "kod/object/passive/skill/stroke/fire.kod",
+   "description": "Fire is the most basic technique used for shooting a missile weapon.  It is not too difficult to learn, but only those with strong aim will be able to master this skill."
+  },
+  {
+   "key": "hammerproficiency",
+   "name": "hammer wielding",
+   "requisite_stat": "might",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Proficiency",
+   "file": "kod/object/passive/skill/profic/profhamr.kod",
+   "description": "This allows the user to use all manner of hammers more proficiently."
+  },
+  {
+   "key": "kick",
+   "name": "kick",
+   "requisite_stat": "agility",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Unarmed",
+   "file": "kod/object/passive/skill/stroke/unarmed/kick.kod",
+   "description": "This is a damaging but costly combat move."
+  },
+  {
+   "key": "maceproficiency",
+   "name": "mace fighting",
+   "requisite_stat": "might",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Proficiency",
+   "file": "kod/object/passive/skill/profic/profmace.kod",
+   "description": null
+  },
+  {
+   "key": "parry",
+   "name": "parry",
+   "requisite_stat": "agility",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Skill",
+   "file": "kod/object/passive/skill/parry.kod",
+   "description": "Parrying allows people with a weapon to turn aside a blow, thus avoiding being hit."
+  },
+  {
+   "key": "punch",
+   "name": "punch",
+   "requisite_stat": "agility",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Unarmed",
+   "file": "kod/object/passive/skill/stroke/unarmed/punch.kod",
+   "description": "This is the most basic hand-to-hand combat move.  Can be very strong for a powerful warrior, but is extremely tiring."
+  },
+  {
+   "key": "scimitarproficiency",
+   "name": "scimitar wielding",
+   "requisite_stat": "agility",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Proficiency",
+   "file": "kod/object/passive/skill/profic/profscim.kod",
+   "description": "Allows for growth and strength in Meridian's most exotic weapon."
+  },
+  {
+   "key": "secondwind",
+   "name": "second wind",
+   "requisite_stat": "stamina",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Skill",
+   "file": "kod/object/passive/skill/secwind.kod",
+   "description": null
+  },
+  {
+   "key": "shortswordproficiency",
+   "name": "short sword fighting",
+   "requisite_stat": "aim",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Proficiency",
+   "file": "kod/object/passive/skill/profic/profshsw.kod",
+   "description": null
+  },
+  {
+   "key": "slash",
+   "name": "slash",
+   "requisite_stat": "agility",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Stroke",
+   "file": "kod/object/passive/skill/stroke/slash.kod",
+   "description": "Slash is the most common weapon skill.  It helps you hit with melee weapons."
+  },
+  {
+   "key": "thrust",
+   "name": "thrust",
+   "requisite_stat": "agility",
+   "abstract": false,
+   "learnable": true,
+   "parent": "Stroke",
+   "file": "kod/object/passive/skill/stroke/thrust.kod",
+   "description": null
+  },
+  {
+   "key": "unarmed",
+   "name": "Unarmed Combat",
+   "requisite_stat": "agility",
+   "abstract": true,
+   "learnable": false,
+   "parent": "Stroke",
+   "file": "kod/object/passive/skill/stroke/unarmed.kod",
+   "description": "This is a hand to hand combat move."
+  },
+  {
+   "key": "proficiency",
+   "name": "Weapon proficiency",
+   "requisite_stat": "agility",
+   "abstract": true,
+   "learnable": false,
+   "parent": "Skill",
+   "file": "kod/object/passive/skill/profic.kod",
+   "description": "This is a weapon proficiency"
+  },
+  {
+   "key": "stroke",
+   "name": "Weapon stroke",
+   "requisite_stat": "agility",
+   "abstract": true,
+   "learnable": false,
+   "parent": "Skill",
+   "file": "kod/object/passive/skill/stroke.kod",
+   "description": "This is a weapon stroke."
+  }
+ ],
+ "spells": [
+  {
+   "name": "fog",
+   "school": "Faren",
+   "level": 1,
+   "mana": 6,
+   "reagents": [
+    {
+     "item": "Elderberry",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "light",
+   "school": "Faren",
+   "level": 1,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "ElderBerry",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "mystic touch",
+   "school": "Faren",
+   "level": 1,
+   "mana": 3,
+   "reagents": [
+    {
+     "item": "Mushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "sweep",
+   "school": "Faren",
+   "level": 1,
+   "mana": 8,
+   "reagents": [
+    {
+     "item": "Mushroom",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "zap",
+   "school": "Faren",
+   "level": 1,
+   "mana": 6,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "bramble wall",
+   "school": "Faren",
+   "level": 2,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "Elderberry",
+     "count": 3
+    },
+    {
+     "item": "Yrxlsap",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "icy fingers",
+   "school": "Faren",
+   "level": 2,
+   "mana": 6,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "resist cold",
+   "school": "Faren",
+   "level": 2,
+   "mana": 9,
+   "reagents": [
+    {
+     "item": "Mushroom",
+     "count": 3
+    },
+    {
+     "item": "RedMushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "resist fire",
+   "school": "Faren",
+   "level": 2,
+   "mana": 4,
+   "reagents": [
+    {
+     "item": "Mushroom",
+     "count": 3
+    },
+    {
+     "item": "RedMushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "touch of flame",
+   "school": "Faren",
+   "level": 2,
+   "mana": 9,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "heat",
+   "school": "Faren",
+   "level": 3,
+   "mana": 8,
+   "reagents": [
+    {
+     "item": "RedMushroom",
+     "count": 1
+    },
+    {
+     "item": "FireSand",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "mana focus",
+   "school": "Faren",
+   "level": 3,
+   "mana": 1,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "resist shock",
+   "school": "Faren",
+   "level": 3,
+   "mana": 6,
+   "reagents": [
+    {
+     "item": "Mushroom",
+     "count": 3
+    },
+    {
+     "item": "BlueMushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "shocking fury",
+   "school": "Faren",
+   "level": 3,
+   "mana": 8,
+   "reagents": [
+    {
+     "item": "BlueMushroom",
+     "count": 2
+    },
+    {
+     "item": "Elderberry",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "spider web",
+   "school": "Faren",
+   "level": 3,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "WebMoss",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "winds",
+   "school": "Faren",
+   "level": 3,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "Elderberry",
+     "count": 3
+    },
+    {
+     "item": "PurpleMushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "blast of fire",
+   "school": "Faren",
+   "level": 4,
+   "mana": 8,
+   "reagents": [
+    {
+     "item": "RedMushroom",
+     "count": 2
+    },
+    {
+     "item": "Elderberry",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "brittle",
+   "school": "Faren",
+   "level": 4,
+   "mana": 8,
+   "reagents": [
+    {
+     "item": "Mushroom",
+     "count": 3
+    },
+    {
+     "item": "PurpleMushroom",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "explosive frost",
+   "school": "Faren",
+   "level": 4,
+   "mana": 8,
+   "reagents": [
+    {
+     "item": "Elderberry",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "fireball",
+   "school": "Faren",
+   "level": 4,
+   "mana": 7,
+   "reagents": [
+    {
+     "item": "RedMushroom",
+     "count": 2
+    },
+    {
+     "item": "OrcTooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "firewall",
+   "school": "Faren",
+   "level": 4,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "RedMushroom",
+     "count": 3
+    },
+    {
+     "item": "Firesand",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "earthquake",
+   "school": "Faren",
+   "level": 5,
+   "mana": 12,
+   "reagents": [
+    {
+     "item": "RedMushroom",
+     "count": 2
+    },
+    {
+     "item": "PurpleMushroom",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "lightning bolt",
+   "school": "Faren",
+   "level": 5,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "BlueMushroom",
+     "count": 2
+    },
+    {
+     "item": "OrcTooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "ring of flames",
+   "school": "Faren",
+   "level": 5,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "RedMushroom",
+     "count": 3
+    },
+    {
+     "item": "Firesand",
+     "count": 3
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "sandstorm",
+   "school": "Faren",
+   "level": 5,
+   "mana": 14,
+   "reagents": [
+    {
+     "item": "OrcTooth",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "shatter",
+   "school": "Faren",
+   "level": 5,
+   "mana": 12,
+   "reagents": [
+    {
+     "item": "RedMushroom",
+     "count": 3
+    },
+    {
+     "item": "PurpleMushroom",
+     "count": 3
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 40,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "lightning wall",
+   "school": "Faren",
+   "level": 6,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "BlueMushroom",
+     "count": 3
+    },
+    {
+     "item": "Yrxlsap",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "spore burst",
+   "school": "Faren",
+   "level": 6,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "PurpleMushroom",
+     "count": 2
+    },
+    {
+     "item": "ShamanBlood",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "invigorate",
+   "school": "Jala",
+   "level": 1,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "Diamond",
+     "count": 1
+    },
+    {
+     "item": "Snack",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "melancholy",
+   "school": "Jala",
+   "level": 1,
+   "mana": 2,
+   "reagents": [
+    {
+     "item": "Sapphire",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "mirth",
+   "school": "Jala",
+   "level": 1,
+   "mana": 2,
+   "reagents": [
+    {
+     "item": "Sapphire",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "truth",
+   "school": "Jala",
+   "level": 1,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "Ruby",
+     "count": 1
+    },
+    {
+     "item": "RainbowFern",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "civility",
+   "school": "Jala",
+   "level": 2,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "Ruby",
+     "count": 1
+    },
+    {
+     "item": "Mushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "conciliation",
+   "school": "Jala",
+   "level": 2,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "Ruby",
+     "count": 1
+    },
+    {
+     "item": "Elderberry",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "warp time",
+   "school": "Jala",
+   "level": 2,
+   "mana": 5,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "distill",
+   "school": "Jala",
+   "level": 3,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "Ruby",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "profane resonance",
+   "school": "Jala",
+   "level": 3,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "Ruby",
+     "count": 1
+    },
+    {
+     "item": "Herbs",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "restorate",
+   "school": "Jala",
+   "level": 3,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "Diamond",
+     "count": 1
+    },
+    {
+     "item": "Herbs",
+     "count": 5
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "sacred resonance",
+   "school": "Jala",
+   "level": 3,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "Ruby",
+     "count": 1
+    },
+    {
+     "item": "EntrootBerry",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "spellbane",
+   "school": "Jala",
+   "level": 3,
+   "mana": 12,
+   "reagents": [
+    {
+     "item": "PolishedSeraphym",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "disharmony",
+   "school": "Jala",
+   "level": 4,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "Ruby",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "jig",
+   "school": "Jala",
+   "level": 4,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "Diamond",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 30,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "mana convergence",
+   "school": "Jala",
+   "level": 5,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "PolishedSeraphym",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "rejuvenate",
+   "school": "Jala",
+   "level": 5,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "Diamond",
+     "count": 1
+    },
+    {
+     "item": "UncutSeraphym",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "crystalize mana",
+   "school": "Jala",
+   "level": 6,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "Sapphire",
+     "count": 1
+    },
+    {
+     "item": "UncutSeraphym",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "create food",
+   "school": "Kraanan",
+   "level": 1,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "ElderBerry",
+     "count": 2
+    },
+    {
+     "item": "Herbs",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "create weapon",
+   "school": "Kraanan",
+   "level": 1,
+   "mana": 15,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "glow",
+   "school": "Kraanan",
+   "level": 1,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "ElderBerry",
+     "count": 2
+    },
+    {
+     "item": "Mushroom",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "relay",
+   "school": "Kraanan",
+   "level": 1,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "Snack",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "bless",
+   "school": "Kraanan",
+   "level": 2,
+   "mana": 6,
+   "reagents": [
+    {
+     "item": "Mushroom",
+     "count": 2
+    },
+    {
+     "item": "Sapphire",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "enchant weapon",
+   "school": "Kraanan",
+   "level": 2,
+   "mana": 17,
+   "reagents": [
+    {
+     "item": "Elderberry",
+     "count": 3
+    },
+    {
+     "item": "orctooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "haste",
+   "school": "Kraanan",
+   "level": 2,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "Snack",
+     "count": 5
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "resist poison",
+   "school": "Kraanan",
+   "level": 2,
+   "mana": 10,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "super strength",
+   "school": "Kraanan",
+   "level": 2,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "Mushroom",
+     "count": 2
+    },
+    {
+     "item": "OrcTooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "detect invisible",
+   "school": "Kraanan",
+   "level": 3,
+   "mana": 15,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "free action",
+   "school": "Kraanan",
+   "level": 3,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "RedMushroom",
+     "count": 1
+    },
+    {
+     "item": "PurpleMushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "magic shield",
+   "school": "Kraanan",
+   "level": 3,
+   "mana": 9,
+   "reagents": [
+    {
+     "item": "Mushroom",
+     "count": 2
+    },
+    {
+     "item": "RedMushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "martyrs battleground",
+   "school": "Kraanan",
+   "level": 3,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "ElderBerry",
+     "count": 1
+    },
+    {
+     "item": "Mushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "night vision",
+   "school": "Kraanan",
+   "level": 3,
+   "mana": 6,
+   "reagents": [
+    {
+     "item": "ElderBerry",
+     "count": 3
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "shroud",
+   "school": "Kraanan",
+   "level": 3,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "Mushroom",
+     "count": 3
+    },
+    {
+     "item": "Elderberry",
+     "count": 3
+    },
+    {
+     "item": "Herbs",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "deflect",
+   "school": "Kraanan",
+   "level": 4,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "Solagh",
+     "count": 1
+    },
+    {
+     "item": "KriipaClaw",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "discordance",
+   "school": "Kraanan",
+   "level": 4,
+   "mana": 8,
+   "reagents": [
+    {
+     "item": "Sapphire",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "dispel illusion",
+   "school": "Kraanan",
+   "level": 4,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "DragonflyEye",
+     "count": 1
+    },
+    {
+     "item": "UncutSeraphym",
+     "count": 1
+    },
+    {
+     "item": "Solagh",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "eagle eyes",
+   "school": "Kraanan",
+   "level": 4,
+   "mana": 5,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "mana bomb",
+   "school": "Kraanan",
+   "level": 4,
+   "mana": 0,
+   "reagents": [
+    {
+     "item": "Sapphire",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "mend",
+   "school": "Kraanan",
+   "level": 4,
+   "mana": 9,
+   "reagents": [
+    {
+     "item": "Sapphire",
+     "count": 1
+    },
+    {
+     "item": "OrcTooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "armor of gort",
+   "school": "Kraanan",
+   "level": 5,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "BlueDragonScale",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "hunt",
+   "school": "Kraanan",
+   "level": 5,
+   "mana": 50,
+   "reagents": [
+    {
+     "item": "KriipaClaw",
+     "count": 4
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "killing fields",
+   "school": "Kraanan",
+   "level": 5,
+   "mana": 9,
+   "reagents": [
+    {
+     "item": "Elderberry",
+     "count": 3
+    },
+    {
+     "item": "OrcTooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "resist magic",
+   "school": "Kraanan",
+   "level": 5,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "BlueDragonScale",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "antimagic aura",
+   "school": "Kraanan",
+   "level": 6,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "Sapphire",
+     "count": 2
+    },
+    {
+     "item": "PolishedSeraphym",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "shatterlock",
+   "school": "Kraanan",
+   "level": 6,
+   "mana": 50,
+   "reagents": [
+    {
+     "item": "KriipaClaw",
+     "count": 4
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "cloak",
+   "school": "Qor",
+   "level": 1,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "EntrootBerry",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -10,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "darkness",
+   "school": "Qor",
+   "level": 1,
+   "mana": 8,
+   "reagents": [
+    {
+     "item": "FairyWing",
+     "count": 1
+    },
+    {
+     "item": "EntrootBerry",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -10,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "detect good",
+   "school": "Qor",
+   "level": 1,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "FairyWing",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -10,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "unholy resolve",
+   "school": "Qor",
+   "level": 1,
+   "mana": 3,
+   "reagents": [
+    {
+     "item": "FairyWing",
+     "count": 1
+    },
+    {
+     "item": "Solagh",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -10,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "acid touch",
+   "school": "Qor",
+   "level": 2,
+   "mana": 10,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": -20,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "fade",
+   "school": "Qor",
+   "level": 2,
+   "mana": 12,
+   "reagents": [
+    {
+     "item": "DarkAngelFeather",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -20,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "karahols curse",
+   "school": "Qor",
+   "level": 2,
+   "mana": 9,
+   "reagents": [
+    {
+     "item": "EntrootBerry",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -20,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "unholy weapon",
+   "school": "Qor",
+   "level": 2,
+   "mana": 17,
+   "reagents": [
+    {
+     "item": "FairyWing",
+     "count": 3
+    },
+    {
+     "item": "OrcTooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -20,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "defile",
+   "school": "Qor",
+   "level": 3,
+   "mana": 0,
+   "reagents": [
+    {
+     "item": "FairyWing",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -30,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "enfeeble",
+   "school": "Qor",
+   "level": 3,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "OrcTooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -30,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "poison fog",
+   "school": "Qor",
+   "level": 3,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "EntrootBerry",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -30,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "silence",
+   "school": "Qor",
+   "level": 3,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "DarkAngelFeather",
+     "count": 2
+    },
+    {
+     "item": "PurpleMushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -30,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "vampiric drain",
+   "school": "Qor",
+   "level": 3,
+   "mana": 10,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": -30,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "animate",
+   "school": "Qor",
+   "level": 4,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "ShamanBlood",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -40,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "curse weapon",
+   "school": "Qor",
+   "level": 4,
+   "mana": 25,
+   "reagents": [
+    {
+     "item": "ShamanBlood",
+     "count": 2
+    },
+    {
+     "item": "OrcTooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -40,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "hold",
+   "school": "Qor",
+   "level": 4,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "PurpleMushroom",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -40,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "shadow rift",
+   "school": "Qor",
+   "level": 4,
+   "mana": 30,
+   "reagents": [
+    {
+     "item": "DarkAngelFeather",
+     "count": 4
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -40,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "shalillebane",
+   "school": "Qor",
+   "level": 4,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "Yrxlsap",
+     "count": 1
+    },
+    {
+     "item": "FairyWing",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -40,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "splash of acid",
+   "school": "Qor",
+   "level": 4,
+   "mana": 10,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": -40,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "blind",
+   "school": "Qor",
+   "level": 5,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "EntrootBerry",
+     "count": 2
+    },
+    {
+     "item": "PurpleMushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -50,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "blood inheritance",
+   "school": "Qor",
+   "level": 5,
+   "mana": 50,
+   "reagents": [
+    {
+     "item": "ShamanBlood",
+     "count": 2
+    },
+    {
+     "item": "EntrootBerry",
+     "count": 2
+    },
+    {
+     "item": "OrcTooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -50,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "death link",
+   "school": "Qor",
+   "level": 5,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "ShamanBlood",
+     "count": 1
+    },
+    {
+     "item": "PolishedSeraphym",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -50,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "invisibility",
+   "school": "Qor",
+   "level": 5,
+   "mana": 12,
+   "reagents": [
+    {
+     "item": "DarkAngelFeather",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -50,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "nodeburst",
+   "school": "Qor",
+   "level": 5,
+   "mana": 1,
+   "reagents": [
+    {
+     "item": "FairyWing",
+     "count": 3
+    },
+    {
+     "item": "EntrootBerry",
+     "count": 3
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -50,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "swap",
+   "school": "Qor",
+   "level": 5,
+   "mana": 9,
+   "reagents": [
+    {
+     "item": "DarkAngelFeather",
+     "count": 1
+    },
+    {
+     "item": "Yrxlsap",
+     "count": 1
+    },
+    {
+     "item": "PurpleMushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -50,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "gaze of the basilisk",
+   "school": "Qor",
+   "level": 6,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "Yrxlsap",
+     "count": 1
+    },
+    {
+     "item": "PurpleMushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": -60,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "anonymity",
+   "school": "Riija",
+   "level": 1,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "RainbowFern",
+     "count": 2
+    },
+    {
+     "item": "FireSand",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "blink",
+   "school": "Riija",
+   "level": 1,
+   "mana": 15,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "feign death",
+   "school": "Riija",
+   "level": 1,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "Solagh",
+     "count": 1
+    },
+    {
+     "item": "RainbowFern",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "flash",
+   "school": "Riija",
+   "level": 1,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "DragonflyEye",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "shadow form",
+   "school": "Riija",
+   "level": 1,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "RainbowFern",
+     "count": 3
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "bait",
+   "school": "Riija",
+   "level": 2,
+   "mana": 8,
+   "reagents": [
+    {
+     "item": "WebMoss",
+     "count": 1
+    },
+    {
+     "item": "FireSand",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "eavesdrop",
+   "school": "Riija",
+   "level": 2,
+   "mana": 8,
+   "reagents": [
+    {
+     "item": "DragonflyEye",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "foresight",
+   "school": "Riija",
+   "level": 2,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "UncutSeraphym",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "forget",
+   "school": "Riija",
+   "level": 2,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "FireSand",
+     "count": 2
+    },
+    {
+     "item": "UncutSeraphym",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "illusionary firewall",
+   "school": "Riija",
+   "level": 3,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "RainbowFern",
+     "count": 3
+    },
+    {
+     "item": "Firesand",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "illusionary form",
+   "school": "Riija",
+   "level": 3,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "WebMoss",
+     "count": 2
+    },
+    {
+     "item": "RainbowFern",
+     "count": 3
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "illusionary wounds",
+   "school": "Riija",
+   "level": 3,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "Solagh",
+     "count": 1
+    },
+    {
+     "item": "FireSand",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "reflection",
+   "school": "Riija",
+   "level": 3,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "Firesand",
+     "count": 2
+    },
+    {
+     "item": "RainbowFern",
+     "count": 2
+    },
+    {
+     "item": "UncutSeraphym",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "vertigo",
+   "school": "Riija",
+   "level": 3,
+   "mana": 12,
+   "reagents": [
+    {
+     "item": "DragonflyEye",
+     "count": 2
+    },
+    {
+     "item": "Solagh",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "apparition",
+   "school": "Riija",
+   "level": 4,
+   "mana": 30,
+   "reagents": [
+    {
+     "item": "WebMoss",
+     "count": 1
+    },
+    {
+     "item": "RainbowFern",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "dement",
+   "school": "Riija",
+   "level": 4,
+   "mana": 6,
+   "reagents": [
+    {
+     "item": "Solagh",
+     "count": 2
+    },
+    {
+     "item": "UncutSeraphym",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "denial",
+   "school": "Riija",
+   "level": 4,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "FireSand",
+     "count": 2
+    },
+    {
+     "item": "Solagh",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "artifice",
+   "school": "Riija",
+   "level": 5,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "FireSand",
+     "count": 3
+    },
+    {
+     "item": "UncutSeraphym",
+     "count": 3
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "evil twin",
+   "school": "Riija",
+   "level": 5,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "Solagh",
+     "count": 3
+    },
+    {
+     "item": "WebMoss",
+     "count": 3
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "morph",
+   "school": "Riija",
+   "level": 5,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "WebMoss",
+     "count": 3
+    },
+    {
+     "item": "DragonflyEye",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "elusion",
+   "school": "Riija",
+   "level": 6,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "KriipaClaw",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "seduce",
+   "school": "Riija",
+   "level": 6,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "WebMoss",
+     "count": 5
+    },
+    {
+     "item": "FireSand",
+     "count": 5
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "summon cow",
+   "school": "Riija",
+   "level": 6,
+   "mana": 5,
+   "reagents": [
+    {
+     "item": "PolishedSeraphym",
+     "count": 5
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 0,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "breath of life",
+   "school": "Shal’ille",
+   "level": 1,
+   "mana": 3,
+   "reagents": [
+    {
+     "item": "Herbs",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 10,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "detect evil",
+   "school": "Shal’ille",
+   "level": 1,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "FairyWing",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 10,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "holy symbol",
+   "school": "Shal’ille",
+   "level": 1,
+   "mana": 8,
+   "reagents": [
+    {
+     "item": "Elderberry",
+     "count": 3
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 10,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "minor heal",
+   "school": "Shal’ille",
+   "level": 1,
+   "mana": 3,
+   "reagents": [
+    {
+     "item": "Herbs",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 10,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "seance",
+   "school": "Shal’ille",
+   "level": 1,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "Herbs",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 10,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "cure poison",
+   "school": "Shal’ille",
+   "level": 2,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "Herbs",
+     "count": 2
+    },
+    {
+     "item": "Elderberry",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 20,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "holy touch",
+   "school": "Shal’ille",
+   "level": 2,
+   "mana": 12,
+   "reagents": [
+    {
+     "item": "Emerald",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 20,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "holy weapon",
+   "school": "Shal’ille",
+   "level": 2,
+   "mana": 17,
+   "reagents": [
+    {
+     "item": "FairyWing",
+     "count": 3
+    },
+    {
+     "item": "OrcTooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 20,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "remove curse",
+   "school": "Shal’ille",
+   "level": 2,
+   "mana": 9,
+   "reagents": [
+    {
+     "item": "Emerald",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 20,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "resist acid",
+   "school": "Shal’ille",
+   "level": 2,
+   "mana": 9,
+   "reagents": [
+    {
+     "item": "Herbs",
+     "count": 2
+    },
+    {
+     "item": "EntrootBerry",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 20,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "cure disease",
+   "school": "Shal’ille",
+   "level": 3,
+   "mana": 9,
+   "reagents": [
+    {
+     "item": "Herbs",
+     "count": 3
+    },
+    {
+     "item": "ElderBerry",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 30,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "holy resolve",
+   "school": "Shal’ille",
+   "level": 3,
+   "mana": 3,
+   "reagents": [
+    {
+     "item": "Solagh",
+     "count": 1
+    },
+    {
+     "item": "FairyWing",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 30,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "hospice",
+   "school": "Shal’ille",
+   "level": 3,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "Herbs",
+     "count": 3
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 30,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "identify",
+   "school": "Shal’ille",
+   "level": 3,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "OrcTooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 30,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "rescue",
+   "school": "Shal’ille",
+   "level": 3,
+   "mana": 16,
+   "reagents": [
+    {
+     "item": "Emerald",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 30,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "spiritual hammer",
+   "school": "Shal’ille",
+   "level": 3,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "Emerald",
+     "count": 2
+    },
+    {
+     "item": "OrcTooth",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 30,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "dazzle",
+   "school": "Shal’ille",
+   "level": 4,
+   "mana": 12,
+   "reagents": [
+    {
+     "item": "Emerald",
+     "count": 1
+    },
+    {
+     "item": "PurpleMushroom",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 40,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "forces of light",
+   "school": "Shal’ille",
+   "level": 4,
+   "mana": 12,
+   "reagents": [
+    {
+     "item": "Elderberry",
+     "count": 2
+    },
+    {
+     "item": "Emerald",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 40,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "mark of dishonor",
+   "school": "Shal’ille",
+   "level": 4,
+   "mana": 12,
+   "reagents": [
+    {
+     "item": "Emerald",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 40,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "purify",
+   "school": "Shal’ille",
+   "level": 4,
+   "mana": 10,
+   "reagents": [
+    {
+     "item": "Emerald",
+     "count": 2
+    },
+    {
+     "item": "Elderberry",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 40,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "qorbane",
+   "school": "Shal’ille",
+   "level": 4,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "Yrxlsap",
+     "count": 1
+    },
+    {
+     "item": "FairyWing",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 40,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "truce",
+   "school": "Shal’ille",
+   "level": 4,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "Emerald",
+     "count": 1
+    },
+    {
+     "item": "Yrxlsap",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 40,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "final rites",
+   "school": "Shal’ille",
+   "level": 5,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "Emerald",
+     "count": 2
+    },
+    {
+     "item": "Elderberry",
+     "count": 5
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 50,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "major heal",
+   "school": "Shal’ille",
+   "level": 5,
+   "mana": 20,
+   "reagents": [
+    {
+     "item": "Herbs",
+     "count": 5
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 50,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "purge",
+   "school": "Shal’ille",
+   "level": 5,
+   "mana": 15,
+   "reagents": [
+    {
+     "item": "Emerald",
+     "count": 5
+    },
+    {
+     "item": "PurpleMushroom",
+     "count": 2
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 50,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "reveal",
+   "school": "Shal’ille",
+   "level": 5,
+   "mana": 30,
+   "reagents": [
+    {
+     "item": "OrcTooth",
+     "count": 3
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 50,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "umbrella",
+   "school": "Shal’ille",
+   "level": 5,
+   "mana": 15,
+   "reagents": [],
+   "prerequisites": [],
+   "required_karma": 50,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "bond",
+   "school": "Shal’ille",
+   "level": 6,
+   "mana": 50,
+   "reagents": [
+    {
+     "item": "PolishedSeraphym",
+     "count": 50
+    },
+    {
+     "item": "Diamond",
+     "count": 50
+    },
+    {
+     "item": "Heartstone",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 60,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  },
+  {
+   "name": "portal of life",
+   "school": "Shal’ille",
+   "level": 6,
+   "mana": 30,
+   "reagents": [
+    {
+     "item": "Emerald",
+     "count": 2
+    },
+    {
+     "item": "PolishedSeraphym",
+     "count": 1
+    }
+   ],
+   "prerequisites": [],
+   "required_karma": 60,
+   "min_hit_points": 0,
+   "casting_stat": "mysticism"
+  }
+ ],
+ "schools": [
+  "Faren",
+  "Jala",
+  "Kraanan",
+  "Qor",
+  "Riija",
+  "Shal’ille"
+ ],
+ "learning": {
+  "level_points": [
+   1,
+   2,
+   4,
+   6,
+   8,
+   10
+  ],
+  "max_school_level": 6,
+  "formula": "iNeed = iPoints*POINTS_SLOPE + (297 - MaxLearnPoints*POINTS_SLOPE) - (RawIntellect*2*POINTS_SLOPE/5), bounded below by MIN_NEEDED_TO_ADVANCE",
+  "intellect_effect": "each point of intellect removes (2*POINTS_SLOPE/5) from the cost of the next level",
+  "source": "player.PlayerCanLearn",
+  "unresolved": [
+   "POINTS_SLOPE",
+   "MIN_NEEDED_TO_ADVANCE"
+  ],
+  "note": "POINTS_SLOPE and MIN_NEEDED_TO_ADVANCE are referenced by PlayerCanLearn but are not in this koddb snapshot. Set M59_ROOT and re-derive before showing exact advancement-point costs; the level table and the direction of the effect are safe to show without them."
+ }
+}
