@@ -2826,12 +2826,41 @@ class Session {
   // One paced round of swings, facing the target before each. Split out from the
   // `attack` tool so the composite skills can drive combat without going through the
   // MCP layer and re-resolving the target every time.
-  async attackRounds(targetId, swings = 4) {
+  // `abortBelow` is a health FRACTION, checked after every swing rather than after the
+  // round. It is the difference between looking at your own health twice a second and
+  // twice a minute.
+  //
+  // WE WERE SAMPLING AT HALF THE RATE WE DIE. A round is four swings, each paced at
+  // ATTACK_INTERVAL_MS and each waiting up to 2500ms for the exchange — call it four
+  // seconds — and the disengage test sat AFTER all four (m59-skills.mjs:1483), inside a
+  // loop that runs twelve rounds. Meanwhile six centipedes land 12-18 damage a round on
+  // a 27-health character: dead in about two seconds.
+  //
+  // It shows up in the ledger exactly as you would predict. Of 65 deaths, 42% never
+  // recorded a health value BELOW their own flee threshold and 32% have a trail that
+  // reads 27/27 -> 27/27 -> 27/27 -> dead. Not a threshold tuned wrong — a threshold
+  // that was never read while it mattered.
+  //
+  // And the check is free. `c.vitals()` is already live: BP_STAT is PUSHED on every
+  // change (player.kod:7343 calls DrawStatSkill on each one), so the number is sitting
+  // in memory between swings. We were not failing to know it, we were failing to look.
+  async attackRounds(targetId, swings = 4, { abortBelow = null } = {}) {
     const c = this.need();
     const messages = [];
+    let aborted = null;
+    const healthPct = () => {
+      const h = c.vitals()?.health;
+      return h?.max ? h.value / h.max : null;
+    };
     for (let i = 0; i < swings; i++) {
       const o = c.room.objects.get(targetId);
       if (!o) break;
+      // Before the swing as well as after it: the previous exchange's damage has
+      // already landed, and one more swing at 15% is how a character dies mid-round.
+      if (abortBelow != null) {
+        const hp = healthPct();
+        if (hp != null && hp < abortBelow) { aborted = { at_health: hp, swing: i }; break; }
+      }
       await this.faceToward(o);
       const before = c.evSeq;
       await this.pacer.submit('attack', () => c.attack(targetId), ATTACK_INTERVAL_MS);
@@ -2839,6 +2868,10 @@ class Session {
       messages.push(...ev.events.filter(e => e.text).map(e => e.text));
       if (ev.events.some(e => e.kind === 'vanished' && e.id === targetId)) break;
       if (!c.room.objects.has(c.selfId)) break;      // we died
+      if (abortBelow != null) {
+        const hp = healthPct();
+        if (hp != null && hp < abortBelow) { aborted = { at_health: hp, swing: i + 1 }; break; }
+      }
       // A refused swing is refused for the same reason for the whole round — nothing
       // inside a round clears PFLAG_NO_FIGHT — so the other three are three more
       // identical refusals bought at a packet each. Stop and let the caller act on it;
@@ -2849,7 +2882,7 @@ class Session {
     // it and the stat only arrives when it changes.
     await this.pacer.submit('read', () => c.stats(1));
     await c.waitFor({ kinds: ['stat'], timeoutMs: 1500 });
-    return { messages, vitals: c.vitals() };
+    return { messages, vitals: c.vitals(), aborted };
   }
 
   // Pick up everything gettable within reach. Shared with the `loot` tool.

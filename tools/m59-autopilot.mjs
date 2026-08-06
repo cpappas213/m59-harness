@@ -27,10 +27,13 @@ import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe 
 import { findPath } from './m59-map.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
 import { inboxIfAny } from './m59-inbox.mjs';
+import { describeCommitment } from './m59-commitment.mjs';
+import * as tougher from './m59-tougher.mjs';
 import { recordEvent } from './m59-ledger.mjs';
 import * as uptime from './m59-uptime.mjs';
 import * as party from './m59-party.mjs';
 import { mayShareSpot } from './m59-party.mjs';
+import { CITY_INNS } from './m59-underworld.mjs';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 
 // Built by: node tools/m59-spawns.mjs
@@ -2341,6 +2344,113 @@ export class Autopilot {
     return true;
   }
 
+  // WALK THE RING TO THE PERSON IT BELONGS TO, THEN PUT THE MONEY SOMEWHERE DEATH CANNOT
+  // REACH IT.
+  //
+  // The opportunistic check in the main loop hands a ring back whenever its owner happens
+  // to be in the room, which for a fleet that never enters a town is approximately never.
+  // Fifteen of the nineteen possible owners stand in a fixed room (SIGNET_OWNERS in
+  // m59-skills.mjs), so this is a two-hop errand: go to that room, offer the ring.
+  //
+  // IT IS DISPATCHED TO THE CHARACTER THAT GETS PAID MOST, which is what makes the whole
+  // thing worth building. Under 30 max health the ring pays ten times its value; at or
+  // over, one times. So the fleet moves rings DOWN to its smallest characters first —
+  // `signets` action=redistribute — and only then sends them walking.
+  //
+  // The last step is not optional. This errand deliberately hands a four-figure sum to
+  // the most fragile character in the fleet, in a purse, in a world where death drops
+  // your entire inventory. Banking it is the point of earning it.
+  async runSignetReturn(e) {
+    const s = this.s, c = s.need();
+    const room = s.world?.room;
+
+    // 0. IS THE RING STILL IN THE PACK? The first live dispatch died on the way and
+    //    dropped both rings on a corpse, and the errand carried on walking to Tos to hand
+    //    over something it no longer had — twenty-five minutes of a small character
+    //    crossing the world for nothing, ending in the same two failures a missing owner
+    //    produces. Death is not the only way to lose it either: the opportunistic check
+    //    hands rings back whenever the owner walks past, and the world deletes the oldest
+    //    signet when a twenty-first is made (library.kod:4288).
+    //
+    //    The cached inventory is checked first because it is free; only if it looks empty
+    //    is a real read spent, because "empty" is also what a stale snapshot looks like
+    //    in the seconds after a reconnect and giving up on that would be a coin flip.
+    const carrying = () => (c.inventory || []).some(o => /signet ring/i.test(c.rsc.get(o.nameRsc) || ''));
+    if (!carrying()) {
+      await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+      await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+      if (!carrying()) {
+        e.done = true;
+        e.why_done = 'the ring is gone';
+        this.note('no signet ring left to return', {
+          was_for: e.owner, to: e.where,
+          why: 'dropped on death, handed over already, or deleted by the world — either way ' +
+               'there is nothing to walk anywhere for' });
+        return true;
+      }
+    }
+
+    // 1. Get there. Two failures and it gives up rather than pacing between a wall and a
+    //    town for twenty minutes; the ring stays in the pack and the opportunistic check
+    //    keeps working on it for free.
+    if (room?.num !== e.room) {
+      this.doing = 'travelling';
+      await this.leaveHold('taking a signet ring back to its owner');
+      const r = await this.travel(e.room, { maxHops: 20 })
+                      .catch(x => ({ arrived: false, reason: x.message }));
+      if (!r.arrived) {
+        e.failures = (e.failures || 0) + 1;
+        this.note('could not reach the ring\'s owner',
+                  { to_room: e.room, where: e.where, why: r.reason, attempt: e.failures });
+        if (e.failures >= 2) { e.done = true; e.why_done = 'could not get there'; }
+        this.noProgress('cannot reach the signet ring\'s owner');
+        return true;
+      }
+      this.note('arrived to return a signet ring', { room: e.where, owner: e.owner });
+      this.progress('reached the ring\'s owner');
+      return true;
+    }
+
+    // 2. Hand it over. returnSignetRings matches the owner named on each ring against the
+    //    objects in this room, so it gives back every ring this character is carrying that
+    //    belongs here — not only the one the errand was cut for. That is free and it is
+    //    the whole reason redistribution groups rings by town before dispatching.
+    const gave = await skills.returnSignetRings(s).catch(x => ({ returned: [], why: x.message }));
+    if (!gave.returned?.length) {
+      e.failures = (e.failures || 0) + 1;
+      // The owner not being here is the interesting case and it is not a bug: the ring
+      // may have named a Wanderer, or the room snapshot may be a pass stale. Two goes.
+      this.note('the ring\'s owner was not here', {
+        owner: e.owner, room: e.where, attempt: e.failures, why: gave.why,
+        note: 'CheckWhyWanted names the correct owner out loud when the wrong NPC is ' +
+              'offered a ring — read the journal if this keeps happening' });
+      if (e.failures >= 2) { e.done = true; e.why_done = 'the owner was not there'; }
+      return true;
+    }
+
+    e.returned = gave.returned.length;
+    this.tally.signets_returned = (this.tally.signets_returned || 0) + gave.returned.length;
+    this.note('returned a signet ring', {
+      to: gave.returned.map(r => r.to), still_carrying: gave.carrying,
+      paid: skills.signetPayout({ level: c.vitals()?.health?.max ?? null }),
+      why: 'walked here on purpose; a ring returned by a character under 30 max health ' +
+           'pays ten times its value',
+    });
+    this.progress('returned a signet ring');
+
+    // 3. BANK IT BEFORE ANYTHING ELSE HAPPENS. bankSurplus() only acts when there is a
+    //    teller in the room, which is exactly right for Yevitan — he stands in the Royal
+    //    Bank of Jasper, so a Jasper ring pays out and is banked without moving. Anywhere
+    //    else this is a no-op and the ordinary bankRun picks it up on a later pass, which
+    //    it will: the default threshold is 500 and this just cleared four figures.
+    await this.bankSurplus().catch(x => this.note('could not bank the ring money',
+      { why: x.message, warning: 'this character is now carrying the payout in a purse' }));
+
+    e.done = true;
+    e.why_done = 'handed over';
+    return true;
+  }
+
   async runErrand() {
     const e = this.errand;
     if (!e) return false;
@@ -2352,6 +2462,10 @@ export class Autopilot {
         this.note('provisioning errand finished',
                   { for: e.supplicant_name, service: e.service, gave: e.gave ?? [],
                     why: e.why_done ?? 'timed out' });
+      else if (e.kind === 'signet')
+        this.note('signet errand finished',
+                  { to: e.owner, town: e.town, returned: e.returned ?? 0,
+                    why: e.why_done ?? 'timed out' });
       else
         this.note('loot run finished', { for: e.farmer_name, took: e.took ?? [], why: e.why_done ?? 'timed out' });
       this.errand = null;
@@ -2361,6 +2475,7 @@ export class Autopilot {
     // A quartermaster errand is a different job with the same priority: it outranks
     // farming and is outranked by staying alive, and we are already past those branches.
     if (e.kind === 'provision') return this.runProvision(e);
+    if (e.kind === 'signet') return this.runSignetReturn(e);
 
     // 1. Get there. Travel is the risky half and the keeper above us has already
     //    decided we are healthy enough to be doing this at all.
@@ -2644,10 +2759,11 @@ export class Autopilot {
       if (this.doing === 'fighting') return `fighting from a ${proven} safe spot`;
       return `holding a ${proven} safe spot`;
     }
+    // One wording for the errand, shared with the commitment the board greys rows on —
+    // a character described as "loot run for Rowlf" in one place and "an errand" in the
+    // other is two facts where there is one.
     if (this.errand)
-      return this.errand.kind === 'provision'
-        ? `${this.errand.service} for ${this.errand.supplicant_name}`
-        : `loot run for ${this.errand.farmer_name}`;
+      return describeCommitment({ errand: this.errand })?.label ?? 'on an errand';
     if (this.mode === 'idle') return 'idle';
     if (this.doing === 'travelling') return 'travelling';
     if (this.doing === 'trading') return 'trading';
@@ -3602,6 +3718,12 @@ export class Autopilot {
       // than only on the fleet snapshot: anything reading a keeper's status — the
       // terminal board, another agent — wants the sentence, not the time buckets.
       activity: this.activity(),
+      // IS THE FLEET ALREADY USING THIS CHARACTER FOR SOMETHING? Null for nearly all of
+      // them, and never absent — a board that greys committed rows has to be able to tell
+      // "free" from "this broker does not answer that question", and undefined is what it
+      // reads as the second. See m59-commitment.mjs for what counts and why the answer is
+      // computed there rather than here.
+      committed: this.commitment(),
       passes: this.passes,
       running_for_seconds: this.startedAt ? Math.round((Date.now() - this.startedAt) / 1000) : 0,
       // The summary is the part a returning model should read first; the journal is
@@ -3826,6 +3948,100 @@ export class Autopilot {
     this.inert = null;
     this.note('no longer inert', { why, was_inert_for_s: Math.round(held / 1000) });
     return null;
+  }
+
+  // The name the world knows this character by, falling back to the agent name before
+  // login has answered. Everything keyed per character — the feed, the gains, the hits
+  // book — has to agree on this or it silently keeps two sets of books.
+  who() { return this.s.client?.me?.name ?? this.s.name ?? null; }
+
+  // "YOU SUDDENLY FEEL A LITTLE TOUGHER." — the only announcement of the only thing this
+  // fleet is for, and nothing was listening for it.
+  //
+  // The point is rolled inside the killing blow (player.kod:7827) and announced on the
+  // spot, so this scans the client's own event ring for the line and hands it to the
+  // record, which attributes it to the kill on either side of it. Everything else about
+  // a gain — the full heal, the 200 nutrition — is a consequence the server applies for
+  // free; it is this string that says a point was earned rather than restored.
+  //
+  // Watermarked rather than time-windowed. A pass can take minutes (a travel is one
+  // await), so "events in the last N seconds" would miss gains outright; a sequence
+  // number cannot. Only ever moves forward, so a gain is counted exactly once.
+  noteToughness() {
+    const c = this.s.client;
+    if (!c) return;
+    const evs = c.events || [];
+    // THE FIRST CALL ONLY SETS THE WATERMARK. The client keeps its last 500 events and
+    // outlives the keeper — `autopilot stop` then `start` hands back the same client —
+    // so starting from zero would re-scan a ring that may already contain a gain this
+    // record has, and write it twice. A keeper that starts mid-session is not entitled
+    // to claim what happened before it was watching.
+    const high0 = evs.reduce((m, e) => Math.max(m, e.seq ?? 0), 0);
+    if (this.toughSeen == null) { this.toughSeen = high0; return; }
+    const from = this.toughSeen;
+    let high = from;
+    for (const e of evs) {
+      // `call` events carry no seq; every message does. Treating a missing seq as 0
+      // skips it, which is right for the only kind that lacks one.
+      const seq = e.seq ?? 0;
+      if (seq <= from) continue;
+      if (seq > high) high = seq;
+      if (e.kind !== 'message' || !tougher.TOUGHER_LINE.test(e.text || '')) continue;
+      const room = this.s.world?.room;
+      const max = c.vitals?.()?.health?.max ?? null;
+      tougher.recordGain(this.who(), {
+        at: e.at ?? Date.now(), from: max == null ? null : max - 1, to: max,
+        room: room?.name ?? null, room_num: room?.num ?? null, said: e.text,
+      });
+      this.tally.toughened = (this.tally.toughened || 0) + 1;
+      this.progress('gained a point of maximum health');
+      this.note('TOUGHER', {
+        now: max, room: room?.name,
+        why: 'the server announced a maximum-health gain — the one thing being farmed',
+      });
+    }
+    this.toughSeen = high;
+    // A gain nothing claimed within the window is written with its cause left null. Done
+    // here rather than on a timer so it costs a comparison on a pass we were running
+    // anyway.
+    tougher.flushPending(this.who());
+  }
+
+  // WHAT THE FLEET IS USING THIS CHARACTER FOR, if anything. One place, because two
+  // things ask it — the keeper's own status, and the terminal that greys the row and
+  // steps over it — and an operation the board misses is one somebody takes a character
+  // out of without knowing there was another end to it.
+  commitment() {
+    return describeCommitment({
+      errand: this.errand,
+      inert: this.inertStatus(),
+      parked: this.parkStatus(),
+      partner: this.policy?.partner ?? null,
+    });
+  }
+
+  // RELEASE IT, whatever is holding it. The override key on the fleet board is the only
+  // caller, and it is an emergency key: a character is about to die on a loot run, or the
+  // person wants it NOW. So this is deliberately blunt — cancel the errand, drop the
+  // pairing on this side, revive an inert keeper — and it reports each thing it undid so
+  // the terminal can say what it just cost. It does not touch the OTHER end of a pairing:
+  // that character's keeper finds its partner gone on its next pass and goes back to
+  // fighting alone, which is the behaviour it already has for a partner that logs out.
+  releaseCommitment(why = 'an operator took this character back') {
+    const was = this.commitment();
+    const undone = [];
+    if (this.errand) {
+      undone.push(`cancelled the ${this.errand.kind || 'errand'}`);
+      this.note('errand cancelled by an operator', { was: was?.label, why });
+      this.errand = null;
+    }
+    if (this.policy?.partner) {
+      undone.push(`unpaired from ${this.policy.partner}`);
+      party.unpair(this.name ?? this.s?.name);
+      this.policy.partner = null;
+    }
+    if (this.inert) { undone.push('revived the keeper'); this.revive(why); }
+    return { released: !!was, was, undone };
   }
 
   inertStatus() {
@@ -4058,16 +4274,28 @@ export class Autopilot {
     // mistakes, and only the second column tells them apart.
     this.recordFrame();
 
+    // DID WE GET TOUGHER? Read before any branch that can return, because most passes
+    // end early — in a safe spot, resting, mid-errand — and a gain announced during one
+    // of those is still a gain. It is a scan of an in-memory ring against a watermark
+    // and sends nothing.
+    this.noteToughness();
+
     // Answer people and take hand-outs before anything else. Cheap, and a player
     // trying to help should not have to wait for a fight to finish.
     await this.social().catch(e => this.note('social failed', { why: e.message }));
 
     // GIVE BACK ANY SIGNET RING WHOSE OWNER IS STANDING HERE.
     //
-    // Each one pays ten times its value to a non-PK character — 1500 shillings — and the
+    // Each one pays up to ten times its value to a character under 30 max health, and the
     // fleet had been carrying them as loot; Statler had six. The owner is named in the
-    // ring's own description, so this needs no NPC-location table, and none would help
-    // because the owners wander. So it is asked wherever we are rather than routed to.
+    // ring's own description, so this costs nothing to ask wherever we happen to be.
+    //
+    // THIS IS THE FALLBACK NOW, NOT THE WHOLE STRATEGY. I said the owners wander and that
+    // an NPC-location table would not help. Four of the nineteen wander; the other fifteen
+    // stand in a fixed room in a town — see SIGNET_OWNERS in m59-skills.mjs — so the ring
+    // usually names a destination, and `signets` dispatches an errand that goes there. This
+    // branch is what catches the four that roam, and what catches a routed ring early if
+    // its owner happens to walk past first.
     //
     // Cheap enough to ask every pass ONLY because the answer is cached: a ring's owner
     // never changes, so it is one look per ring ever, and afterwards this is a name
@@ -4076,11 +4304,14 @@ export class Autopilot {
     if ((c.inventory || []).some(o => /signet ring/i.test(c.rsc.get(o.nameRsc) || ''))) {
       const gave = await skills.returnSignetRings(s).catch(() => null);
       if (gave?.returned?.length) {
+        this.tally.signets_returned = (this.tally.signets_returned || 0) + gave.returned.length;
         this.progress('returned a signet ring');
         this.note('returned a signet ring', {
           to: gave.returned.map(r => r.to),
           still_carrying: gave.carrying,
-          why: 'the owner was standing here, and a returned ring pays ten times its value',
+          paid: skills.signetPayout({ level: c.vitals()?.health?.max ?? null }),
+          why: 'the owner was standing here, and a returned ring pays ten times its value ' +
+               'to a character under 30 max health',
         });
       }
     }
@@ -4229,6 +4460,16 @@ export class Autopilot {
         const file = this.writePostMortem(pm);
         this.lastDeath.post_mortem = file;
         this.lastPostMortem = pm;
+        // ON THE FEED TOO, beside the kills, and only now — after the broadcast has had
+        // its couple of seconds. Recording it any earlier would put the 51%-accurate
+        // guess on the live feed while the authoritative answer arrived a moment later
+        // and went only into the file.
+        tougher.recordDeath(this.who(), {
+          at: this.lastDeath.at, killer: this.lastDeath.killed_by?.[0] ?? null,
+          observed: !!bcast?.killer,
+          room: this.lastDeath.died_in, room_num: this.lastDeath.room_num,
+          level: this.lastDeath.level, in_safe_spot: !!diedHolding,
+        });
         this.note('DIED', { ...this.lastDeath, ...(file ? { post_mortem: file } : {}) });
       }
       this.note('woke up dead', { room: room.name, attempt: (this.underworldTries || 0) + 1 });
@@ -6032,11 +6273,44 @@ export class Autopilot {
         this.noProgress('reconnected after a stale object id');
         return;
       }
+      // WE BROKE OFF. GO ALL THE WAY.
+      //
+      // This branch did not exist, which is why the fleet has been dying at a fifth of
+      // its health bar standing perfectly still. `fight()` set `disengaged`, wrote a
+      // note saying to walk away, and returned into code that read neither.
+      //
+      // Behind a wall the advice inverts and `fight()` says so: sitting still IS the
+      // recovery there, because nothing can land a blow unless we swing first. So a
+      // held safe spot rests where it stands; everything else leaves the room.
+      if (f.disengaged) {
+        const hp = v.health?.max ? Math.round(100 * v.health.value / v.health.max) + '%' : null;
+        if (holding && this.holdWorks?.()) {
+          this.note('broke off behind the wall — resting here rather than running', {
+            at_health: f.disengaged.at_health, mid_round: !!f.disengaged.mid_round,
+            why: 'nothing can hit us on this square unless we swing first, so standing still ' +
+                 'is a free heal and walking off it would start the damage' });
+        } else {
+          await this.retreatToSafety({
+            because: 'broke off a fight at ' + (f.disengaged.at_health ?? hp),
+            mid_round: !!f.disengaged.mid_round,
+            still_here: (this.inReachOfUs() ?? []).length,
+          });
+          this.progress('retreated after breaking off a fight');
+          return;
+        }
+      }
       const looted = (f.looted || []).map(x => x.name + (x.amount ? ` x${x.amount}` : ''));
       if (f.killed) {
         this.tally.kills++;
         this.killTimes.push(Date.now());
         if (this.killTimes.length > 500) this.killTimes.shift();
+        // ON THE FEED, WITH THE CREATURE AND THE ROOM. The tally counts; this remembers
+        // what and where, which is what makes a max-health gain attributable to the thing
+        // that paid for it. Ten per character, in memory — see m59-tougher.mjs.
+        tougher.recordKill(this.who(), {
+          creature: f.target, room: room?.name ?? null, room_num: room?.num ?? null,
+          level: v.health?.max ?? null, rounds: f.rounds, looted, from_safe_spot: !!holding,
+        });
         // A kill means the wilderness is working again, so the run of flees that would
         // otherwise accumulate over a long healthy session is cleared. Without this a
         // character that fled three times an hour ago gets marched to town mid-fight.
@@ -7134,6 +7408,60 @@ export class Autopilot {
   // matter — nothing lands at all. So: try for a wall first, preferring one the book
   // has already proved, and keep the distance-based walk only as the fallback for
   // rooms that genuinely have no corner in them.
+  // RUNNING PART OF THE WAY TO SAFETY IS A DEATH SENTENCE.
+  //
+  // `fight()` has always broken off at the flee threshold, set `disengaged`, and
+  // returned a note saying in plain words: "the monster is still there and still
+  // hostile — walk away before resting, or it will keep hitting you."
+  //
+  // NOTHING READ IT. `grep -n "\.disengaged" m59-autopilot.mjs` returned nothing. So
+  // the character stopped swinging and stood exactly where it was, at 20% health, next
+  // to the six things that had just taken it there. Out in the open that protects you
+  // from nothing — not swinging only helps behind a wall, and the note says so.
+  //
+  // That is the shape of this fleet's deaths. Of 65: 92% were killed by something they
+  // were not hunting, 91% had five or more creatures within reach, and the mean at the
+  // moment of death was 5.6. Standing still in that is not a retreat.
+  //
+  // `withdraw()` is a LOCAL move — to a wall, a few squares. It is the right answer
+  // when a safe spot stopped working and the wrong one here: a few squares away from
+  // six centipedes is still inside their vision (4-6 squares) and well inside a chase.
+  // So this leaves the room entirely and goes to an inn, which is a sanctuary — the
+  // Brownestone and its siblings carry ROOM_NO_COMBAT and ROOM_SANCTUARY, so arriving
+  // is the end of the fight rather than a pause in it.
+  //
+  // The destination is the nearest CITY_INNS entry the router will accept. If travel
+  // cannot get us there we fall back to the local withdraw, because a wall we can
+  // reach beats an inn we cannot.
+  async retreatToSafety(why = {}) {
+    const s = this.s, c = s.client;
+    const here = s.world?.room?.num ?? null;
+    const inns = Object.entries(CITY_INNS).map(([city, v]) => ({ city, ...v }));
+    // Already in one? Then we are safe and this is a no-op worth saying out loud.
+    if (here != null && inns.some(i => i.inn === here)) {
+      this.note('already in a sanctuary', { room: here, ...why });
+      return { arrived: true, already: true };
+    }
+    for (const dest of inns) {
+            this.note('running all the way to safety', {
+        to: dest.innName, room: dest.inn, ...why,
+        health: (() => { const h = c?.vitals?.()?.health; return h?.max ? Math.round(100 * h.value / h.max) + '%' : null; })(),
+        why_not_local: 'a few squares from a crowd is still inside its vision and its chase — ' +
+                       'an inn is a sanctuary and ends the fight',
+      });
+      const r = await this.travel(dest.inn, { reason: 'retreat' }).catch(e => ({ arrived: false, error: String(e) }));
+      if (r?.arrived) {
+        this.progress('reached safety at ' + dest.innName);
+        return { arrived: true, at: dest.innName, room: dest.inn };
+      }
+    }
+    // Nothing reachable. A wall here is better than nothing, so fall through to the
+    // behaviour that at least gets our back covered.
+    this.note('could not reach any inn — falling back to a local wall', why);
+    await this.withdraw(this.inReachOfUs() ?? []).catch(() => {});
+    return { arrived: false, fell_back: true };
+  }
+
   async withdraw(threats) {
     const s = this.s, c = s.client;
     const me0 = c.self, geo0 = s.world?.geometry;

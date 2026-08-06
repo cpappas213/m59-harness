@@ -1411,7 +1411,9 @@ export async function fight(s, {
       }
     }
     const b = c.evSeq;
-    const res = await s.attackRounds(foe.id, swingsPerRound);
+    // The threshold goes DOWN into the round, not just around it. Checking after four
+    // swings meant checking once every four seconds against a death that takes two.
+    const res = await s.attackRounds(foe.id, swingsPerRound, { abortBelow: disengageAt });
     roundsFought++;
     combatLines.push(...res.messages);
 
@@ -1478,6 +1480,13 @@ export async function fight(s, {
                      'resolve a fresh id; do NOT treat this as death.' };
     }
 
+    // Mid-round abort first: attackRounds now watches health between swings, so this
+    // is usually already decided by the time we get here — and decided seconds sooner.
+    if (res.aborted) {
+      disengaged = { at_health: Math.round(res.aborted.at_health * 100) + '%',
+                     mid_round: true, after_swing: res.aborted.swing };
+      break;
+    }
     const v = c.vitals();
     const hp = pct(v.health);
     if (hp !== null && hp < disengageAt) {
@@ -1856,18 +1865,57 @@ export async function sellAll(s, { merchant, keep = [], minPrice = 1 } = {}) {
 
 // ------------------------------------------------------- returning signet rings
 
-// A SIGNET RING IS 1500 SHILLINGS LYING IN THE PACK.
+// A SIGNET RING IS UP TO 1500 SHILLINGS LYING IN THE PACK, AND ONLY FOR SOME OF US.
 //
-// Monsters drop them and the fleet hauls them around as loot. They are not loot: each
-// one belongs to a named NPC, and handing it back pays viValue_average * 10 for any
-// character that has not enabled player-killing — 150 * 10 (ringsgnt.kod:94
-// RewardReturner, and viValue_average at :39). Statler was carrying six.
+// Monsters drop them and the fleet hauls them around as loot. They are not loot: each one
+// belongs to a named NPC, and handing it back pays the ring's value TEN TIMES OVER to a
+// character that has not enabled player-killing, and its plain value to one that has
+// (ringsgnt.kod:94, RewardReturner). Statler was carrying six.
+//
+// WHICH CHARACTER HANDS IT BACK IS WORTH A FACTOR OF TEN, and the fleet was choosing at
+// random. The gate is PFLAG_PKILL_ENABLE, and nobody here sets that deliberately —
+// EvaluatePKStatus (player.kod:11047) sets it for you the moment
+//
+//     piBase_Max_health >= PKILL_ENABLE_HP    (30, blakston.khd:2094)
+//     OR you join a guild
+//     OR you are a murderer or an outlaw
+//
+// and clears it again if all of those stop being true. Max health IS the level here, so
+// in the fleet's own terms: A RING RETURNED BY A CHARACTER UNDER LEVEL 30 PAYS TEN TIMES
+// WHAT THE SAME RING PAYS RETURNED BY ANYONE ELSE. The small ones should be holding them.
+//
+// Two honest caveats on that number. The gate reads piBase_Max_health, which is the
+// UNBOOSTED ceiling; `level` on a fleet row is piMax_health, which a potion can lift
+// above it temporarily without changing PK status either way. And nothing on the wire
+// reports guild membership, so a guilded character under 30 will quietly pay 1x — the
+// fleet has no guilds, which is an assumption and not an observation.
+//
+// AND 1500 IS THE CEILING, NOT THE PRICE. GetValue (item.kod:408) scales viValue_average
+// (150, ringsgnt.kod:39) by condition — 100*piHits_init*piHits/viHits_init_max^2, with
+// hits rolled into [30,70] against a max of 70 — so a battered ring is worth a fraction of
+// a pristine one and the floor is 10. The payout to a newbie is therefore anywhere from
+// 100 to 1500, and vbShow_condition is FALSE on this class (:31), so THE CONDITION CANNOT
+// BE READ before handing it over. Do not report a predicted figure as though it were the
+// price; read what the purse did afterwards.
 //
 // WHO IT BELONGS TO IS READABLE, which is the part that makes this cheap. The ring
 // describes itself as "the family crest of <name>" (ringsgnt.kod:22), so one look names
-// the owner. There is no NPC-location table to build and none would help: these owners
-// wander. So the check is simply "is the person named on this ring standing here", asked
-// wherever we happen to be — which is also why it costs nothing to ask often.
+// the owner.
+//
+// I SAID THERE WAS NO NPC-LOCATION TABLE TO BUILD AND THAT NONE WOULD HELP BECAUSE THE
+// OWNERS WANDER. Three quarters of them do not. CreateSignetRing (library.kod:4245) draws
+// the owner at random from the hinter list — MOB_RANDOM|MOB_LISTEN, monster.kod:466 —
+// filtered to MOB_RECEIVE, not MOB_NOQUEST, and belonging to one of exactly six classes:
+// BarloqueTown, CorNothTown, JasperTown, MarionTown, TosTown, Wanderer. That is nineteen
+// NPCs in the whole game, of which FIFTEEN STAND IN A FIXED ROOM IN A TOWN and four are
+// Wanderers with no home. So a ring names a destination fifteen times out of nineteen,
+// and the fleet was walking past those rooms all day without knowing to stop. The four
+// that roam are still handled the old way, by asking wherever we happen to be — which
+// remains free, and remains the only thing that can work for them.
+//
+// AND THEY EXPIRE. The library keeps at most twenty signets in the world; registering a
+// twenty-first DELETES THE OLDEST and tells whoever was holding it that it is gone
+// (library.kod:4288). Hoarding one is not neutral, it is a decaying asset.
 //
 // The handover is a trade. Monster.CheckWhyWanted (monster.kod:3994) fires when the ring
 // is offered: if it is the right mob it takes it, pays, and says so; if it is the wrong
@@ -1875,6 +1923,80 @@ export async function sellAll(s, { merchant, keep = [], minPrice = 1 } = {}) {
 // of the description was ever wrong.
 const SIGNET_NAME = /signet ring/i;
 const SIGNET_CREST = /family crest of ([^.]+)\./i;
+
+// The nineteen. Extracted from the source tree by the filter above and cross-checked
+// against the room each one was actually observed in (substrate/m59-merchants.json), so
+// `room` is where a character has to walk, not where a class file says it might live.
+//
+// Two of the nineteen are not in this table at all, and that is the point of checking:
+// BarloqueBanker (Setag'lib) and JealousGeneral (Jonas D'Accor) are declared in the kod
+// and CREATED BY NOTHING — no room places either — so neither can ever be in the hinter
+// list and neither can ever own a ring. A table built from the class filter alone would
+// have sent a character to look for them.
+//
+// `roams: true` means there is no room to walk to. The four Wanderers are made in
+// godroom.kod and move; the room they were last seen in is not a destination.
+export const SIGNET_OWNERS = {
+  // Barloque — barlqtwn/
+  "joguer":          { town: 'Barloque', room: 104, where: "Joguer's Herbs and Roots",     is: 'apothecary', kod: 'bqapoth.kod' },
+  "meidei":          { town: 'Barloque', room: 103, where: 'The Bhrama & Falcon',          is: 'bartender',  kod: 'bqbart.kod' },
+  "pritchett":       { town: 'Barloque', room: 106, where: 'Brownestone Inn',              is: 'innkeeper',  kod: 'bqinnk.kod' },
+  "madelia":         { town: 'Barloque', room: 856, where: "Madelia's Fine Peacockeries",  is: 'tailor',     kod: 'bqtailor.kod' },
+  // Cor Noth — crnthtwn/
+  "solomon":         { town: 'Cor Noth', room: 151, where: "Solomon's Edibles",            is: 'grocer',     kod: 'cngrocer.kod' },
+  "d'franco":        { town: 'Cor Noth', room: 153, where: 'Cibilo Creek Inn',             is: 'innkeeper',  kod: 'cninnk.kod' },
+  "rook":            { town: 'Cor Noth', room: 154, where: "The Weapon Master's Abode",    is: 'sergeant',   kod: 'cnsarge.kod' },
+  "hester gilk":     { town: 'Cor Noth', room: 155, where: 'The Spindle and the Spinster', is: 'tailor',     kod: 'cntailor.kod' },
+  // Jasper — jasprtwn/. Yevitan stands IN the bank, which makes a Jasper ring the best
+  // one to hold: the payout and the place to put it are the same room.
+  "yevitan":         { town: 'Jasper',   room: 376, where: 'The Royal Bank of Jasper',     is: 'banker',     kod: 'jsbanker.kod' },
+  "pietro":          { town: 'Jasper',   room: 371, where: "Pietro's Wicked Brews",        is: 'bartender',  kod: 'jsbart.kod' },
+  "afiera d'xor":    { town: 'Jasper',   room: 375, where: 'The Home of the Wise Man',     is: 'elder',      kod: 'jselder.kod' },
+  "widow qesino":    { town: 'Jasper',   room: 370, where: 'Yonder Inn of Jasper',         is: 'innkeeper',  kod: 'jsinnk.kod' },
+  // Marion — marntwn/
+  "tova":            { town: 'Marion',   room: 202, where: 'The Limping Toad Inn and Tavern', is: 'bartender', kod: 'mrbart.kod' },
+  "ran er'hoth":     { town: 'Marion',   room: 200, where: 'Marion',                       is: 'elder',      kod: 'MrElder.kod' },
+  // Tos — tostwn/. Two rooms from the bank at 54.
+  "paddock":         { town: 'Tos',      room: 52,  where: 'Familiars',                    is: 'innkeeper',  kod: 'TsInnK.kod' },
+  // The four with no address — wanderer/
+  "maleval":         { town: null, room: null, roams: true, is: 'dark wizard',     kod: 'dkwizard.kod' },
+  "miriana":         { town: null, room: null, roams: true, is: 'heretic',         kod: 'heretic.kod' },
+  "tendrath":        { town: null, room: null, roams: true, is: 'hunter ghost',    kod: 'huntghst.kod' },
+  "parrin aragone":  { town: null, room: null, roams: true, is: 'minstrel',        kod: 'minstrel.kod' },
+};
+
+// The description gives us the name the server spells, and the table is keyed on a folded
+// version of it. Apostrophes are the whole reason this is a function: "Afiera D'xor" and
+// "Ran er'Hoth" both carry one, and a straight lowercase compare is fine for those — but
+// an unknown name must come back as a miss rather than as an exception, because "we have
+// never heard of this owner" is a legitimate answer for a ring whose look timed out.
+export function signetOwnerOf(name) {
+  if (!name) return null;
+  const key = String(name).trim().toLowerCase().replace(/\s+/g, ' ');
+  return SIGNET_OWNERS[key] ?? null;
+}
+
+// The level at or above which a character stops being paid ten times over.
+export const SIGNET_NEWBIE_LEVEL = 30;      // PKILL_ENABLE_HP, blakston.khd:2094
+
+// WHAT THIS RING IS WORTH IN THIS CHARACTER'S HANDS, as a multiplier and a range rather
+// than a figure — see the condition arithmetic above for why a single number would be a
+// lie. `level` is max health. `guilded` is an input rather than something read, because
+// nothing on the wire reports it; the caller says what it knows.
+export function signetPayout({ level = null, guilded = false } = {}) {
+  const newbie = !guilded && level != null && level < SIGNET_NEWBIE_LEVEL;
+  return {
+    multiplier: newbie ? 10 : 1,
+    newbie,
+    // 10 and 150 are the bounds GetValue can return for this class; everything in
+    // between depends on a condition we are not allowed to see.
+    range: newbie ? [100, 1500] : [10, 150],
+    why: level == null ? 'level unknown — cannot tell which side of 30 this is'
+       : guilded ? 'in a guild, so player-killing is enabled and the ring pays plain value'
+       : newbie ? `under ${SIGNET_NEWBIE_LEVEL} max health, so the ring pays ten times over`
+       : `at or over ${SIGNET_NEWBIE_LEVEL} max health, so player-killing is enabled and the ring pays plain value`,
+  };
+}
 
 // Cached per client and per object id, because a ring's owner never changes and looking
 // costs a round trip. Cleared naturally when the ring leaves the pack.
@@ -1900,7 +2022,19 @@ export async function signetRings(s) {
       }
       known.set(o.id, desc ? (desc.match(SIGNET_CREST)?.[1]?.trim() ?? null) : null);
     }
-    out.push({ id: o.id, owner: known.get(o.id) });
+    // WHERE IT HAS TO GO, on the ring rather than looked up again by every caller. Three
+    // outcomes and they are not the same: a room to walk to, a known owner that roams
+    // (nothing to route to, keep asking wherever we are), and an owner we could not read
+    // or do not recognise. Only the first is dispatchable.
+    const owner = known.get(o.id);
+    const at = signetOwnerOf(owner);
+    out.push({
+      id: o.id, owner,
+      town: at?.town ?? null, room: at?.room ?? null, where: at?.where ?? null,
+      roams: at ? !!at.roams : null,
+      routable: !!at?.room,
+      unknown_owner: !!owner && !at,
+    });
   }
   return out;
 }
