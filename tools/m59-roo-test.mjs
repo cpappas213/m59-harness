@@ -26,6 +26,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  RoomGeometry,
   parseRoo, parseRooSectors, setWallHeights, canCrossWall,
   floorHeightAt, ceilingHeightAt,
   MAX_STEP_HEIGHT, MAX_STEP_HEIGHT_KOD, SECTOR_DEPTHS, sectorDepth, SF, WF,
@@ -177,6 +178,67 @@ console.log('\ncrossing a wall is three tests, not one');
      !canCrossWall(build(up20, { aboveType: 1 }), 0, 'pos', { playerHeight: 99999 }));
   ok('a null sidedef is skipped, as move.c does',
      canCrossWall({ ...build(up64), posSidedefRec: null }, 0, 'pos'));
+}
+
+// ------------------------------------------------------- routing round monsters
+//
+// A monster is not a wall, and the two failure modes are opposite. Treating it as a
+// wall strands a character whenever the only corridor has something in it — the same
+// shape of bug as the coarse grid sealing a doorway. Treating it as nothing walks the
+// character through its attack radius at a walking pace, which is where this fleet's
+// travel deaths come from.
+//
+// So: cost, not prohibition. The radii are the monster's own (`monster.kod:1676`,
+// `:1682`) — vision 4 + difficulty/2, reach Bound(2 + difficulty/6, 2, 3).
+console.log('\nrouting treats monsters as cost, not as wall');
+{
+  const open = (rows, cols, mask = null) => {
+    const flags = Buffer.alloc(rows * cols, 0);
+    if (mask) mask(flags, cols); else flags.fill(1);
+    return new RoomGeometry({ file: 'synthetic', version: 13, rows, cols,
+      grid: Buffer.alloc(rows * cols, 0xff), flags, monsterGrid: null,
+      walls: [], sidedefs: [], sectors: [], clientSize: null });
+  };
+  const g = open(21, 21);
+  const threat = [{ row: 11, col: 11, vision: 6, reach: 3 }];
+  const closest = p => Math.min(...p.steps.map(s => Math.hypot(s.row - 11, s.col - 11)));
+
+  const straight = g.path(11, 1, 11, 21);
+  ok('without threats the route goes straight through it',
+     straight.found && straight.steps.some(s => s.row === 11 && s.col === 11));
+
+  const dodged = g.path(11, 1, 11, 21, { threats: threat });
+  ok('with a threat the route stays outside its vision', dodged.found && closest(dodged) >= 6,
+     `closest approach ${closest(dodged).toFixed(2)} squares`);
+  // The detour is FREE in an open room, because diagonals let it arc. That is worth
+  // asserting: if this ever costs steps, the penalty is mis-tuned rather than the
+  // geometry being tight.
+  ok('...and in the open that costs no extra steps',
+     dodged.steps.length === straight.steps.length,
+     `${straight.steps.length} -> ${dodged.steps.length}`);
+
+  // WHEN YOU HAVE TO, YOU HAVE TO. One-square corridor, monster sitting in it.
+  const corridor = open(21, 21, (f, cols) => { for (let c = 0; c < cols; c++) f[(11 - 1) * cols + c] = 1; });
+  const forced = corridor.path(11, 1, 11, 21, { threats: threat });
+  ok('a route that only exists through its reach is still taken', forced.found,
+     forced.found ? `${forced.steps.length} steps` : forced.reason);
+
+  // A hard `avoid` on the same square would refuse — which is the behaviour this is
+  // deliberately NOT.
+  const blocked = corridor.path(11, 1, 11, 21, { avoid: new Set(['11,11']) });
+  ok('...where a hard avoid would have refused it', !blocked.found, blocked.reason);
+
+  ok('no threats means no cost map at all', g.threatField([]) === null);
+  ok('the penalty tapers with distance', (() => {
+    const f = g.threatField(threat);
+    return f(11, 14) > f(11, 16) && f(11, 16) > 0 && f(11, 18) === 0;
+  })(), 'full weight inside reach, nothing outside vision');
+  ok('two monsters stack', (() => {
+    const one = g.threatField([{ row: 11, col: 11, vision: 6, reach: 3 }])(11, 11);
+    const two = g.threatField([{ row: 11, col: 11, vision: 6, reach: 3 },
+                               { row: 11, col: 12, vision: 6, reach: 3 }])(11, 11);
+    return two > one;
+  })());
 }
 
 // ------------------------------------------------------- against the real tree

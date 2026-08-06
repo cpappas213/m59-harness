@@ -123,7 +123,14 @@ const WALK_SPEED = 18;
 // 24, a number from nowhere: above the walking threshold, so it paid the full cheat
 // check, but not what any client emits.
 const RUN_SPEED  = Number(process.env.M59_RUN_SPEED || 36);
-const RUN_VIGOR_FLOOR = 25;          // well clear of the server's threshold of 10
+// The server snaps you back and logs you if speed > 18 with vigor < VIGOR_RUN_THRESHOLD
+// = 10 (user.kod:54, :2958). This was 25 — a margin of fifteen over a hard limit of ten,
+// which is not caution, it is walking. At 0.18 vigor a second the whole reason for the
+// margin is gone: a character at 12 that runs for ten seconds is still above the
+// threshold, and a character that walks because it is at 24 is walking through the
+// exact ground that kills this fleet. Two points of headroom against a race between
+// our reading of vigor and the server's.
+const RUN_VIGOR_FLOOR = 12;
 
 // WHAT RUNNING COSTS, ARITHMETIC RATHER THAN NERVES — because the caution here was
 // expensive and was never priced.
@@ -1953,6 +1960,45 @@ class Session {
     return this.world.snapshot(opts);
   }
 
+  // WHAT IS WORTH WALKING AROUND, AND HOW WIDE A BERTH IT IS WORTH.
+  //
+  // Every number here is the monster's own, from `monster.kod`:
+  //
+  //   GetVisionDistance()  4 + viDifficulty/2      (:1676) — "either 4, 5, or 6"
+  //   GetAttackRange()     Bound(2 + viDifficulty/6, 2, 3)  (:1682)
+  //
+  // which leaves a band two to three squares wide where it has noticed you and still
+  // has to close. Crossing that band at a run costs nothing; standing in it is a
+  // fight. That is the whole case for routing round rather than through.
+  //
+  // `CanSee` is a plain distance test with no line-of-sight call, so a wall does not
+  // hide us and the radius is a disc rather than a cone. Difficulty comes from the
+  // spawn index, which cites the kod for each creature; anything we cannot identify
+  // gets the top of the published range rather than the bottom, because being wrong
+  // toward caution costs a short detour and being wrong the other way costs a fight.
+  //
+  // Deliberately NOT a hard avoid. A route that only exists through something's reach
+  // is still a route, and refusing it would strand characters exactly as the coarse
+  // grid does at doorways.
+  threatsHere(view = null) {
+    const v = view ?? this.view();
+    const creatures = loadSpawns(SPAWN_FILE)?.creatures ?? {};
+    const out = [];
+    for (const o of (v.objects ?? [])) {
+      if (o.is_player) continue;
+      if (!(Array.isArray(o.can) && o.can.includes('attack'))) continue;
+      if (o.row == null || o.col == null) continue;
+      const meta = creatures[String(o.name ?? '').toLowerCase()];
+      const diff = meta?.difficulty;
+      out.push({
+        row: o.row, col: o.col, name: o.name,
+        vision: diff != null ? 4 + Math.floor(diff / 2) : 6,
+        reach:  diff != null ? Math.min(3, Math.max(2, 2 + Math.floor(diff / 6))) : 3,
+      });
+    }
+    return out;
+  }
+
   // Re-read, then view. Perception is pull-only for room contents: the server sends
   // incremental BP_CREATE/BP_MOVE for things it already told you about, but never
   // volunteers a fresh list.
@@ -2314,7 +2360,12 @@ class Session {
     }
 
     const from = c.self ?? me0;
-    const plan = geo.path(from.row, from.col, row, col);
+    // Route round what can see us, at a cost rather than a prohibition — see
+    // threatsHere(). Computed once per walk rather than per step: monsters wander, but
+    // re-deriving a whole field every square would cost more than the detour saves,
+    // and the replan below picks up anything that has moved into the way since.
+    const threats = this.threatsHere();
+    const plan = geo.path(from.row, from.col, row, col, { threats });
     if (!plan.found)
       return { arrived: false, reason: plan.reason, position: { col: from.col, row: from.row },
                ...(plan.stuck ? { nearest_floor: plan.nearest_floor } : {}),
@@ -2393,7 +2444,9 @@ class Session {
         return { arrived: false, blocked_at: { col: now.col, row: now.row }, steps: taken,
                  routed_around: [...occupied],
                  note: 'kept ending up somewhere other than the planned square' };
-      const re = geo.path(now.row, now.col, row, col, { avoid: occupied });
+      // A replan is exactly when something has moved into the way, so the threat field
+      // is re-read here rather than reused from the top of the walk.
+      const re = geo.path(now.row, now.col, row, col, { avoid: occupied, threats: this.threatsHere() });
       if (!re.found) {
         // With nothing to route around, the answer is genuinely "no route". With
         // squares excluded, the exclusions may BE the problem — so try once more
@@ -5925,7 +5978,21 @@ const TOOLS = [
       // action=return. ONE ERRAND PER CARRIER, and it is cut for the town rather than for
       // the ring: returnSignetRings hands back every ring in the pack whose owner is in
       // the room, so a carrier holding three Jasper rings makes one journey.
+      //
+      // THE FIRST LIVE DISPATCH DIED ON THE WAY AND DROPPED BOTH RINGS ON A CORPSE. That
+      // is not an argument against the errand — it is an argument about which journey and
+      // in what state, and both were being ignored. The character was sent to whichever
+      // town it happened to hold most rings for, however far that was, at whatever health
+      // it happened to be on.
+      //
+      // Both are now conditions of dispatch. THE SHORTEST JOURNEY WINS over the fullest
+      // one: a second ring is worth up to 1500 and arriving at all is worth all of them,
+      // and a route that costs four more rooms of walking through monsters is where this
+      // fails. AND A HURT CHARACTER IS NOT SENT: the keeper puts survival above the errand
+      // and would rest first anyway, but dispatching at 8 of 23 health starts the clock on
+      // a 25-minute errand that begins with a character in no state to walk anywhere.
       const cap = num(a.max_dispatch, 4);
+      const MIN_HEALTH = 0.7;
       const sent = [], skipped = [];
       for (const cr of carriers) {
         if (sent.length >= cap) { skipped.push(`${cr.character}: dispatch cap of ${cap} reached`); continue; }
@@ -5934,6 +6001,12 @@ const TOOLS = [
         if (!p) { skipped.push(`${cr.character}: no keeper`); continue; }
         if (pilotOf(cr.agent)) { skipped.push(`${cr.character}: somebody is playing this one`); continue; }
         if (p.errand) { skipped.push(`${cr.character}: already on ${p.errand.kind}`); continue; }
+        const s = sessions.get(cr.agent);
+        const hv = s?.client?.vitals?.()?.health;
+        if (hv?.max && hv.value / hv.max < MIN_HEALTH) {
+          skipped.push(`${cr.character}: hurt (${hv.value}/${hv.max}) — not sending it walking`);
+          continue;
+        }
         const routable = cr.rings.filter(r => r.routable);
         if (!routable.length) {
           skipped.push(`${cr.character}: ${cr.rings.length} ring(s), no address — ` +
@@ -5941,24 +6014,49 @@ const TOOLS = [
                                                     : 'owner not read yet'));
           continue;
         }
-        // Send it to whichever town it holds most rings for.
+        // NEAREST TOWN FIRST, ring count only as a tiebreak. `world.route()` returns
+        // {found, hops} and NOT an array — taking .length off it scores every destination
+        // Infinity, which is the bug bankRun already had once and which would silently
+        // turn this back into "whichever town, however far".
         const byTown = new Map();
-        for (const r of routable) byTown.set(r.town, (byTown.get(r.town) || 0) + 1);
-        const town = [...byTown.entries()].sort((x, y) => y[1] - x[1])[0][0];
-        const pick = routable.find(r => r.town === town);
+        for (const r of routable) {
+          const t = byTown.get(r.town) ?? { town: r.town, count: 0, pick: r, hops: Infinity };
+          t.count++;
+          if (t.hops === Infinity) {
+            const route = s?.world?.route?.(r.room);
+            t.hops = route?.found ? route.hops.length : Infinity;
+          }
+          byTown.set(r.town, t);
+        }
+        const options = [...byTown.values()].sort((x, y) => x.hops - y.hops || y.count - x.count);
+        const best = options.find(o => Number.isFinite(o.hops));
+        if (!best) {
+          skipped.push(`${cr.character}: cannot route to ${options.map(o => o.town).join('/')} from here`);
+          continue;
+        }
+        const pick = best.pick;
         p.errand = { kind: 'signet', owner: pick.owner, town: pick.town, room: pick.room,
-                     where: pick.where, rings: byTown.get(town),
+                     where: pick.where, rings: best.count, hops: best.hops,
                      at: Date.now(), expires: Date.now() + 25 * 60 * 1000 };
         sent.push({ carrier: cr.character, agent: cr.agent, to: pick.owner,
                     town: pick.town, room: pick.room, where: pick.where,
-                    rings: byTown.get(town), paid: cr.pay.multiplier + 'x' });
+                    rings: best.count, hops: best.hops, paid: cr.pay.multiplier + 'x',
+                    // Say what was NOT chosen when there was a choice, and why. A route
+                    // decision nobody can see is one nobody can argue with.
+                    over: options.length > 1
+                      ? options.filter(o => o !== best)
+                               .map(o => `${o.town} (${o.count} ring(s), ${o.hops} hops)`).join(', ')
+                      : undefined });
       }
       return {
         dispatched: sent.length, errands: sent,
         skipped: skipped.length ? skipped : undefined,
         note: sent.length
           ? 'each will finish what it is doing, walk to the room, hand the ring back and bank the ' +
-            'proceeds — the payout is a purse, and a purse is what death takes'
+            'proceeds — the payout is a purse, and a purse is what death takes. THE WALK IS THE RISK: ' +
+            'the carrier is chosen for being small, and a death on the way drops the ring on a corpse. ' +
+            'Nearest town first and no dispatch under ' + Math.round(MIN_HEALTH * 100) + '% health for ' +
+            'exactly that reason'
           : 'nothing dispatched',
       };
     },

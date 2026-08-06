@@ -281,7 +281,59 @@ export class RoomGeometry {
   // knows about walls and nothing about occupancy, so without this a route through a
   // blocked square is replanned identically for ever: the walker steps, does not move,
   // asks for a route from the same place, and is given the same one.
-  path(fromRow, fromCol, toRow, toCol, { fine = true, maxNodes = 200000, avoid = null } = {}) {
+  // `threats` is the SOFT version of `avoid`, and the difference is the point.
+  //
+  // A monster is not a wall. Routing round it is worth some detour and not an
+  // unbounded one, and a route that only exists through its reach is still a route we
+  // have to take. So threats add COST rather than removing squares, and a path always
+  // exists if the geometry allows one.
+  //
+  // The numbers come from the monster's own AI rather than from taste
+  // (`monster.kod:1676`, `:1682`):
+  //
+  //   GetVisionDistance()  4 + viDifficulty/2   — "either 4, 5, or 6"
+  //   GetAttackRange()     Bound(2 + viDifficulty/6, 2, 3)
+  //
+  // So there is a real band, two to three squares wide, where it has SEEN you and
+  // still has to close the distance — which is exactly the band worth buying with a
+  // detour, because crossing it at a run costs nothing and standing in it costs a
+  // fight. Inside the attack radius you are simply being hit.
+  //
+  // Note this is `CanSee`, not line of sight: it is a plain distance test, so a
+  // monster through a wall still notices. Revenants override vision to 9999 and cannot
+  // be routed around at all, which is why the caller supplies the radius per monster
+  // instead of this file assuming one.
+  //
+  // Each entry: { row, col, vision, reach }. Both radii optional; the defaults are the
+  // middle of the published range.
+  threatField(threats, { reachPenalty = 14, visionPenalty = 3 } = {}) {
+    if (!threats?.length) return null;
+    const pen = new Map();
+    for (const t of threats) {
+      const vision = t.vision ?? 6, reach = t.reach ?? 3;
+      for (let r = t.row - vision; r <= t.row + vision; r++) {
+        for (let c = t.col - vision; c <= t.col + vision; c++) {
+          if (!this.inBounds(r, c)) continue;
+          // Euclidean, because SquaredDistanceTo is (dr^2 + dc^2) on squares — the
+          // same disc the monster itself measures, not a chebyshev box.
+          const d = Math.hypot(r - t.row, c - t.col);
+          if (d > vision) continue;
+          // Full weight inside reach, then tapering out to nothing at the edge of
+          // vision, so the router prefers the far side of a corridor without
+          // refusing the near one.
+          const add = d <= reach ? reachPenalty
+                                 : visionPenalty * (1 - (d - reach) / Math.max(0.001, vision - reach));
+          const k = (r - 1) * this.cols + (c - 1);
+          pen.set(k, (pen.get(k) ?? 0) + add);
+        }
+      }
+    }
+    return (r, c) => pen.get((r - 1) * this.cols + (c - 1)) ?? 0;
+  }
+
+  path(fromRow, fromCol, toRow, toCol,
+       { fine = true, maxNodes = 200000, avoid = null, threats = null, threatCost = null } = {}) {
+    threatCost = threatCost ?? this.threatField(threats);
     if (!this.inBounds(fromRow, fromCol)) return { found: false, reason: 'start is outside the room grid' };
     if (!this.inBounds(toRow, toCol)) return { found: false, reason: 'goal is outside the room grid' };
     if (!this.walkable(toRow, toCol)) return { found: false, reason: 'goal square has no floor' };
@@ -356,7 +408,8 @@ export class RoomGeometry {
         // still want the route, because whatever is standing on it will move and the
         // caller would otherwise be told the square is unreachable for ever.
         if (avoid && !(n.row === toRow && n.col === toCol) && avoid.has(`${n.row},${n.col}`)) continue;
-        const cost = (gScore.get(ck) ?? Infinity) + (n.diagonal ? 1.4142 : 1);
+        const cost = (gScore.get(ck) ?? Infinity) + (n.diagonal ? 1.4142 : 1)
+                   + (threatCost ? threatCost(n.row, n.col) : 0);
         if (cost >= (gScore.get(nk) ?? Infinity)) continue;
         gScore.set(nk, cost);
         came.set(nk, { row: cur.r, col: cur.c, dir: n.dir });
