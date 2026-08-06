@@ -133,24 +133,49 @@ async function outfit(row) {
     // attempts. Nearest is a preference and not a requirement — a shop three rooms
     // further away that can actually be entered is strictly better than one next door
     // that refuses, and `priced` is already sorted, so the next candidate is free.
-    let arrived = false, lastWhy = null, tried = [];
+    // ARRIVING IS NOT THE SAME AS FINDING A SHOPKEEPER, and treating them as the same
+    // is why outfitting quietly did nothing about half the time.
+    //
+    // The candidate list comes from the merchant index, which records where a merchant
+    // was SEEN. Izzio really is recorded at 593 selling leather armour and a shield —
+    // and a character sent there was told "nobody here sells anything (room 593)" and
+    // the whole errand ended, on the first candidate, with two more in the list unread.
+    //
+    // A shop we reached but cannot buy in is worth exactly what a shop we could not
+    // reach is worth, and the loop already knows what to do with the second: try the
+    // next one. This says so for the first as well.
+    let arrived = false, lastWhy = null, tried = [], seller = null;
     for (const room of (candidates.length ? candidates : [shopRoom]).slice(0, 3)) {
       shopRoom = room;
-      for (let i = 0; i < 3 && !arrived; i++) {
+      let here = false;
+      for (let i = 0; i < 3 && !here; i++) {
         const t = await call('travel', { agent: row.agent, to: shopRoom, max_hops: 20 })
                         .catch(e => ({ arrived: false, why: e.message }));
-        if (t.arrived) { arrived = true; break; }
+        if (t.arrived) { here = true; break; }
         const stuck = (t.log || []).filter(h => !h.ok).slice(-1)[0];
         lastWhy = stuck ? `${stuck.from} -> ${stuck.to}: ${stuck.also_tried?.[0]?.why ?? 'refused'}`
                         : (t.why || 'travel refused');
         const st = await call('status', { agent: row.agent, brief: true }).catch(() => null);
-        if (st?.where?.num === shopRoom) { arrived = true; break; }
+        if (st?.where?.num === shopRoom) { here = true; break; }
         await sleep(1500);
       }
-      if (arrived) break;
-      tried.push(`${room} (${lastWhy})`);
+      if (!here) { tried.push(`${room} (${lastWhy})`); continue; }
+
+      // A FAILED READ IS NOT AN EMPTY ROOM. This caught the error and substituted
+      // `{objects: []}`, which is indistinguishable from a room with no merchant in it
+      // — so a timed-out look reported the shop as empty and the character walked away
+      // from a shopkeeper it was standing next to.
+      const seen = await call('look', { agent: row.agent }).catch(e => ({ error: e.message }));
+      if (seen.error) {
+        tried.push(`${room} (could not read the room: ${seen.error})`);
+        continue;
+      }
+      seller = (seen.objects || []).find(o => (o.can || []).includes('buy'));
+      if (!seller) { tried.push(`${room} (reached it, but nobody there sells)`); continue; }
+      arrived = true;
+      break;
     }
-    if (!arrived) return `${who}: could not reach any smith — tried ${tried.join('; ')}`;
+    if (!arrived) return `${who}: no smith worked out — tried ${tried.join('; ')}`;
     log.push(`at ${shopRoom}`);
 
     // FUND IT. The purse first, then the bank we are standing next to, then a partner.
@@ -173,9 +198,7 @@ async function outfit(row) {
 
     // Sell what we are carrying if that is what it takes. A character that has been
     // farming carries reagents and drops worth more than the armour costs.
-    const room = await call('look', { agent: row.agent }).catch(() => ({ objects: [] }));
-    const seller = (room.objects || []).find(o => (o.can || []).includes('buy'));
-    if (!seller) return `${who}: nobody here sells anything (room ${shopRoom})`;
+    // `seller` was found above, as part of deciding this shop was worth stopping at.
     if (money < 400) {
       const sold = await call('sell_all', { agent: row.agent, merchant: seller.id,
         keep: ['flask', 'mace', 'sword', 'axe', 'hammer', 'armor', 'armour', 'shield', 'helm'] })
