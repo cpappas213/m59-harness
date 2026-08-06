@@ -151,7 +151,39 @@ it is a fine-coordinate problem and the raycast is what recovers those squares. 
 heights are still worth having on their own merits — this room has a raised area with 10
 genuinely climbable steps and 27 genuine cliffs — but they were never this bug.
 
-### 1. Raycast: "move as far along this heading as I can"
+### 1. Raycast — and the acceptance test is the Brownestone Inn, not the Toad
+
+Found 2026-08-06 while clearing the `cant_go` failures, and it is a much better test than
+the Limping Toad because a character is **actually stuck in it right now**.
+
+Camilla sits in the Brownestone Inn (`barinn.roo`, room 106) and cannot leave. The exit to
+North Barloque has `stand_on` = (12,17). **The entire row 17 is walkable floor and entirely
+unreachable in the coarse grid** — 37 of 198 walkable squares are cut off, and they are the
+doorway. Every `go` answers "You are unable to go anywhere." because
+`Room.SomethingTryGo` matches on the server's `piRow`, and we are on row 16.
+
+The real geometry says the crossing is legal. The wall on that boundary
+(`x 10752..12800, y 16384`) is:
+
+| | |
+|---|---|
+| `WF_PASSABLE` | yes |
+| step, `z1 - z0` | **256** — against `MAX_STEP_HEIGHT` 384 |
+| headroom, `z2 - z0` | **1472** — against `player.height` 768 |
+
+`canCrossWall` returns **true from both sides**. It is a doorway with a low step, exactly
+the thing the height parse was built to recognise, and a real client walks over it without
+noticing. What blocks us is our own one-byte-per-square projection, which has nowhere to
+record "there is a 16-unit step here" and so records "no".
+
+**So this is not a wall we would be clipping through — it is a step we are refusing to
+take.** That distinction is the whole reason task 0 had to come first, and it is the
+difference between the fix being legitimate and being cheating.
+
+The test for task 1: Camilla leaves the Brownestone Inn. The existing `stepFine` is
+probably most of the machinery; what it lacked was any way to know the step was climbable.
+
+### 1a. Raycast: "move as far along this heading as I can"
 Against the wall segments, in fine coordinates (`KOD_FINENESS` = 64/square; the client's own
 is `CLIENT_FINENESS` = 1024 — mind the conversion). Clip at the first intersection, respect
 the Z step limit. Returns a point, not a square. This is the primitive everything else sits
