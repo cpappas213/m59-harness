@@ -4839,8 +4839,19 @@ export class Autopilot {
     // stops the damage immediately and for free.
     if (hp !== null && hp < this.policy.fleeBelow && near.length && !sheltered) {
       this.tally.withdrawals++;
-      this.note('withdrawing', { health: Math.round(hp * 100) + '%', from: near.map(o => c.rsc.get(o.nameRsc)) });
-      await this.withdraw(near);
+      // ALL THE WAY, NOT FOUR SQUARES. This called withdraw(), a move to a wall a few
+      // squares off, and the town trip above only engages after THREE flees in a row
+      // (townTripIfCornered) — so the first two flees from a losing fight in the open
+      // were a shuffle that nothing was fooled by. Monster vision is 4 + difficulty/2
+      // (monster.kod:1676): four squares is inside every creature in the game.
+      this.note('running for safety', {
+        health: Math.round(hp * 100) + '%', from: near.map(o => c.rsc.get(o.nameRsc)),
+        why: 'below the flee threshold in the open — distance is the only thing that ' +
+             'stops this, and a wall four squares away is not distance' });
+      await this.retreatToSafety({
+        because: 'below the flee threshold in the open',
+        from: near.map(o => c.rsc.get(o.nameRsc)),
+      });
       return;
     }
     if (hp !== null && hp < this.policy.fleeBelow && near.length && sheltered) {
@@ -5034,7 +5045,13 @@ export class Autopilot {
         why: 'hurt, no wall here, and too much vigor for waiting to be worth anything — resting ' +
              'cannot raise vigor past ' + restCeiling + ' and we are already above it, so the ' +
              'only thing standing still produces is time spent hurt in a monster room' });
-      await this.withdraw(near.length ? near : hostiles).catch(() => {});
+      // "Somewhere I can heal" is an inn, not a wall in the same monster room. The
+      // wall version left us inside the vision of everything that was already hitting
+      // us, healing at a rate that damage cancelled out.
+      await this.retreatToSafety({
+        because: 'hurt, no wall here, and too much vigor for waiting to be worth anything',
+        vigor: vigorNow2, monsters_in_room: hostiles.length,
+      });
       this.progress('moved toward somewhere I can heal');
       return;
     }
@@ -7463,9 +7480,25 @@ export class Autopilot {
       this.note('already in a sanctuary', { room: here, ...why });
       return { arrived: true, already: true };
     }
-    for (const dest of inns) {
-            this.note('running all the way to safety', {
-        to: dest.innName, room: dest.inn, ...why,
+    // NEAREST FIRST, AND NOT MANY. Iterating the six in declaration order would send a
+    // character bleeding in the Badlands to whichever inn happened to be listed first —
+    // possibly across the world, through everything in between, at the health that made
+    // it flee. So rank by actual hops and take the closest; anything unroutable sorts
+    // last and is skipped.
+    const ranked = inns
+      .map(i => ({ ...i, hops: s.world?.route?.(i.inn)?.hops?.length ?? Infinity }))
+      .filter(i => Number.isFinite(i.hops))
+      .sort((a, b) => a.hops - b.hops);
+    if (!ranked.length) {
+      this.note('no inn is routable from here — falling back to a local wall', why);
+      await this.withdraw(this.inReachOfUs() ?? []).catch(() => {});
+      return { arrived: false, fell_back: true, no_route: true };
+    }
+    // Two attempts, not six. A retreat that keeps trying is a character walking while
+    // being hit; if the two nearest both refuse, the wall here is the better bet.
+    for (const dest of ranked.slice(0, 2)) {
+      this.note('running all the way to safety', {
+        to: dest.innName, room: dest.inn, hops: dest.hops, ...why,
         health: (() => { const h = c?.vitals?.()?.health; return h?.max ? Math.round(100 * h.value / h.max) + '%' : null; })(),
         why_not_local: 'a few squares from a crowd is still inside its vision and its chase — ' +
                        'an inn is a sanctuary and ends the fight',
@@ -7473,7 +7506,8 @@ export class Autopilot {
       const r = await this.travel(dest.inn, { reason: 'retreat' }).catch(e => ({ arrived: false, error: String(e) }));
       if (r?.arrived) {
         this.progress('reached safety at ' + dest.innName);
-        return { arrived: true, at: dest.innName, room: dest.inn };
+        this.fledInARow = 0;
+        return { arrived: true, at: dest.innName, room: dest.inn, hops: dest.hops };
       }
     }
     // Nothing reachable. A wall here is better than nothing, so fall through to the
