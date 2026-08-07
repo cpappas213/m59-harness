@@ -41,9 +41,10 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DEFAULT_DESTS, CATEGORIES, listBackups, verifyBackup, stamp } from './m59-backup.mjs';
 
-const here = (p) => new URL(p, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const REPO = path.resolve(here('..'));
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 const human = (n) => n < 1024 ? `${n}B` : n < 1048576 ? `${(n / 1024).toFixed(0)}K` : `${(n / 1048576).toFixed(1)}M`;

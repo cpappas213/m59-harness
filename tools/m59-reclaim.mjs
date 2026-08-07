@@ -39,6 +39,7 @@
 // walk must not be sent on it — and the fleet's own dead are proof of what the walk costs.
 import { readFileSync } from 'node:fs';
 import { isTakeable } from './m59-commitment.mjs';
+import { fileURLToPath } from 'node:url';
 
 const argv = process.argv.slice(2);
 const arg = (n, d = null) => {
@@ -200,8 +201,7 @@ async function reclaim(site, courier) {
 // with 341 of them: an empty result from a field that is not there, which is the exact
 // failure m59-lore was written to refuse. Read the files.
 const { readdirSync } = await import('node:fs');
-const PM_DIR = new URL('../substrate/postmortems/', import.meta.url)
-                 .pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const PM_DIR = fileURLToPath(new URL('../substrate/postmortems/', import.meta.url));
 const deaths = readdirSync(PM_DIR).filter(f => f.endsWith('.json')).map(f => {
   try {
     const j = JSON.parse(readFileSync(PM_DIR + f, 'utf8'));
