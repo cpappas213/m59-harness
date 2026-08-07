@@ -346,8 +346,38 @@ const OPPOSITE = { [LEAVE.NORTH]: LEAVE.SOUTH, [LEAVE.SOUTH]: LEAVE.NORTH,
 // that declares an edge INTO Marion simply does nothing. A guess that cannot be
 // corrected is worse than no guess, because the planner keeps routing through it and
 // every attempt looks like a fresh mystery. So: try it once, and on refusal drop it.
-const badInferred = new Set();
-export function forgetInferredExit(from, to) { badInferred.add(from + '->' + to); }
+// AND THE REFUSAL HAS TO SURVIVE A RESTART, or it is not a correction, it is a shrug.
+//
+// This was a bare `new Set()`. Within one process it worked exactly as the comment above
+// describes; across processes it forgot everything, and the broker restarts constantly —
+// 131 boots in one day. So every boot re-inferred the same dead edges and the fleet paid
+// for them again.
+//
+// It was measurable and it was enormous. Deep Woods of Ileria [534] has no exit to The
+// Temple of Shal'ille [48]; the Temple declares an edge east INTO the woods and nothing
+// comes back, so the reverse is inferred and refused. Lifetime: 9 successes against 1,645
+// failures, 82% of every failed hop in the fleet, while the fleet as a whole spent 75% of
+// its time travelling and 6% fighting. One forgotten Set.
+const BAD_EXITS_FILE = process.env.M59_BAD_EXITS ||
+  path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')),
+            '..', 'substrate', 'm59-badexits.json');
+
+const badInferred = new Set(readBadExits());
+function readBadExits() {
+  try { return JSON.parse(fs.readFileSync(BAD_EXITS_FILE, 'utf8')).refused ?? []; } catch { return []; }
+}
+export function forgetInferredExit(from, to) {
+  const key = from + '->' + to;
+  if (badInferred.has(key)) return;
+  badInferred.add(key);
+  try {
+    fs.writeFileSync(BAD_EXITS_FILE, JSON.stringify({
+      note: 'Inferred reverse edges the server has refused. Written by forgetInferredExit ' +
+            'in m59-map.mjs; delete an entry to let the router try it again.',
+      refused: [...badInferred],
+    }, null, 1));
+  } catch { /* a lost note is better than a crashed router */ }
+}
 export function inferredExitCount() { return badInferred.size; }
 
 export function inferredExits(map, roomNum) {
