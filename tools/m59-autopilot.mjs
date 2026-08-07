@@ -111,6 +111,33 @@ const REST_VIGOR_CAP = 0.4;
 // rest of the session.
 const RECOVER_MAX_MS = 12 * 60_000;
 
+// HOW LONG A HURT CHARACTER MAY REFUSE TO GIVE UP A WALL FOR A DISCRETIONARY ERRAND.
+//
+// Far shorter than RECOVER_MAX_MS, because the two waits are not the same. That one is a
+// character sitting in an INN, where nothing can reach it and waiting costs only time.
+// This one is standing on a wall in a monster room, which is safe on the thesis but is
+// still a room with monsters in it — so the cap is set where a real recovery has clearly
+// failed rather than where patience runs out. Full health from the rest threshold takes
+// well under a minute at any decent vigor; three is generous and still bounded.
+const HOLD_WHILE_HURT_MAX_MS = 3 * 60_000;
+
+// THE WATCHDOG'S THREE NUMBERS. See startWatchdog() for what it is for.
+//
+// The tick is fast because it is free: it reads `client.vitals()`, which the server
+// pushes, and writes nothing to the wire. 500ms is well inside the ~1s pace at which
+// damage can arrive, so nothing lands between two ticks unseen.
+const WATCHDOG_MS = Number(process.env.M59_WATCHDOG_MS || 500);
+// How long a pass may be inside one await before the watchdog will interrupt it. Three
+// seconds is three normal passes — long enough that an ordinary slow call is not treated
+// as a stall, short enough that a character bleeding out is not left to it.
+const WATCHDOG_BLOCKED_MS = Number(process.env.M59_WATCHDOG_BLOCKED_MS || 3_000);
+// The longest the record may go without a frame while nothing is changing. Matches the
+// keeper's own resync interval, which is the same number the deaths page uses to decide
+// whether a keeper counts as having been watching (`WATCH_MS` in m59-postmortems.mjs).
+// Deliberately the same: the thing that reports blindness and the thing that prevents it
+// should not disagree about what it is.
+const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
+
 // HOW LONG A KEEPER STAYS INERT WITHOUT ANYBODY SAYING SO AGAIN.
 //
 // Every caller that holds a keeper pairs the hold with a revive, and the pairing is the
@@ -2266,7 +2293,7 @@ export class Autopilot {
 
     if (room?.num !== e.room) {
       this.doing = 'travelling';
-      await this.leaveHold('setting out to provision someone');
+      if ((await this.leaveHold('setting out to provision someone')).refused) return true;
       const r = await this.travel(e.room, { maxHops: 14 }).catch(x => ({ arrived: false, reason: x.message }));
       if (!r.arrived) {
         e.failures = (e.failures || 0) + 1;
@@ -2450,7 +2477,7 @@ export class Autopilot {
     //    keeps working on it for free.
     if (room?.num !== e.room) {
       this.doing = 'travelling';
-      await this.leaveHold('taking a signet ring back to its owner');
+      if ((await this.leaveHold('taking a signet ring back to its owner')).refused) return true;
       const r = await this.travel(e.room, { maxHops: 20 })
                       .catch(x => ({ arrived: false, reason: x.message }));
       if (!r.arrived) {
@@ -2536,7 +2563,7 @@ export class Autopilot {
     //    decided we are healthy enough to be doing this at all.
     if (room?.num !== e.room) {
       this.doing = 'travelling';
-      await this.leaveHold('setting out on a loot run');
+      if ((await this.leaveHold('setting out on a loot run')).refused) return true;
       const r = await this.travel(e.room, { maxHops: 14 }).catch(x => ({ arrived: false, reason: x.message }));
       if (!r.arrived) {
         e.failures = (e.failures || 0) + 1;
@@ -2674,8 +2701,64 @@ export class Autopilot {
   // The one call every deliberate departure goes through, so that "we decided to
   // leave" and "we got out alive" are not two different problems solved in five
   // places. Breaks the siege first when there is one, then lets the hold go.
-  async leaveHold(why) {
+  // GIVING UP A WALL IS A SURVIVAL DECISION, AND MOST CALLERS ARE NOT MAKING ONE.
+  //
+  // Camilla, 2026-08-06 23:59. At −18.0s the keeper saw 69% health, took a safe spot, and
+  // refused to rest in the open. TWO HUNDRED MILLISECONDS LATER, in the same pass, the
+  // room check fired — "this room cannot produce our prey — leaving now" — and this
+  // method gave up the wall it had just taken, `held_s: 0`. She walked out at 20/29 with
+  // two monsters on her and was dead 17.8 seconds later, without swinging once.
+  //
+  // Both decisions were individually right and nothing arbitrated between them. So the
+  // arbitration lives here, at the one place they both go through: A DISCRETIONARY
+  // DEPARTURE FROM A HELD SPOT IS REFUSED WHILE HURT. Routing, roaming, banking and
+  // errands are all discretionary — the room will still be the wrong room in thirty
+  // seconds. Withdrawing from a fight is not, and passes `force`.
+  //
+  // `readyToLeaveSanctuary` is the same rule for inns and does not cover this: it returns
+  // true immediately unless `sanctuary()`, and a monster room with a proven wall in it is
+  // not a sanctuary. It is, however, the safest place in the world for a hurt character —
+  // nothing can hit you there unless you swing first — which is exactly why leaving is
+  // the mistake.
+  //
+  // IT CANNOT DEADLOCK. Refusing returns the pass, the rest gate above sees `hurt` and
+  // `sheltered` and rests to full on the wall, and the next attempt is allowed. If that
+  // somehow never happens the wait is capped and it goes anyway, saying so — the same
+  // shape as the sanctuary hold, and for the same reason: a condition that cannot be met
+  // is a character retired by accident.
+  async leaveHold(why, { force = false } = {}) {
     if (!this.hold) return { left: false };
+    if (!force) {
+      const hp = pct(this.s.client?.vitals?.()?.health);
+      const floor = this.policy.restBelow ?? 0.7;
+      if (hp !== null && hp < floor) {
+        this.holdKeptSince ??= Date.now();
+        const kept = Date.now() - this.holdKeptSince;
+        if (kept < HOLD_WHILE_HURT_MAX_MS) {
+          // Once per hold rather than once per pass: this fires every second otherwise.
+          if (!this.holdKeptNoted) {
+            this.holdKeptNoted = true;
+            this.note('staying on the wall — too hurt to go anywhere discretionary', {
+              wanted_to: why, health: Math.round(hp * 100) + '%',
+              rest_below: Math.round(floor * 100) + '%',
+              proven: this.holdWorks?.() ?? null,
+              why: 'a held safe spot is the safest square available and the errand is not ' +
+                   'urgent. Rest here first — this is the decision that killed Camilla, ' +
+                   'who gave up a proven wall at 69% and died 17.8s later',
+            });
+          }
+          this.holdKept = (this.holdKept || 0) + 1;
+          return { left: false, refused: true, health: hp, wanted_to: why };
+        }
+        this.note('leaving the wall anyway — waited long enough', {
+          wanted_to: why, health: Math.round(hp * 100) + '%',
+          waited_s: Math.round(kept / 1000),
+          why: 'held for the cap without recovering. A wait that cannot end is a stall ' +
+               'worth seeing rather than a wait worth continuing' });
+      }
+      this.holdKeptSince = null;
+      this.holdKeptNoted = false;
+    }
     const out = await this.breakOut(why).catch(e => ({ did: false, why: e.message }));
     this.releaseHold(why);
     return { left: true, reconnected: !!out.did, crowd: out.crowd ?? 0 };
@@ -3045,12 +3128,21 @@ export class Autopilot {
         .map(o => c.rsc.get(o.nameRsc)).slice(0, 6),
     };
     this.recent5 = (this.recent5 || []);
+    // WHEN THE RECORD LAST BREATHED. The watchdog spaces its own frames against this, so
+    // an ordinary busy pass costs nothing extra and only a genuinely blind stretch does.
+    this.lastFrameAt = nowT;
     this.recent5.push(f);
     // Deep enough to cover the whole of a death rather than its last few seconds. At an
     // 8s pass this is about three minutes, which is longer than any fight that kills one
     // of these characters — and a multi-hop journey now spends frames from the same
     // budget, which is the trade this exists to make.
-    if (this.recent5.length > 24) this.recent5.shift();
+    //
+    // WIDENED FOR THE WATCHDOG. It writes a frame per health change during a blind walk,
+    // which is the resolution the record most wants and also the fastest it can be spent:
+    // a character under attack while travelling can burn twenty frames in twenty seconds,
+    // and at 24 that evicted the entire run-up to the death being explained. Forty-eight
+    // frames is about 12KB in a post-mortem — the text log is already larger.
+    if (this.recent5.length > 48) this.recent5.shift();
     return f;
   }
 
@@ -3776,6 +3868,17 @@ export class Autopilot {
       // reads as the second. See m59-commitment.mjs for what counts and why the answer is
       // computed there rather than here.
       committed: this.commitment(),
+      // HOW BLIND THIS KEEPER HAS BEEN, and what it did about it. `longest_block_ms` is
+      // the headline: it is how long the decide loop has gone inside a single await, and
+      // it is the number the whole watchdog exists to bound the damage from. Null before
+      // the keeper has started, never absent while it is running.
+      watchdog: this.watchTimer ? {
+        ticks: this.watch.ticks, frames_written: this.watch.frames,
+        interrupts: this.watch.interrupts,
+        longest_block_ms: this.watch.longest_block_ms,
+        blocked_now_ms: this.passStartedAt ? Date.now() - this.passStartedAt : 0,
+        last_frame_s_ago: this.lastFrameAt ? Math.round((Date.now() - this.lastFrameAt) / 1000) : null,
+      } : null,
       passes: this.passes,
       running_for_seconds: this.startedAt ? Math.round((Date.now() - this.startedAt) / 1000) : 0,
       // The summary is the part a returning model should read first; the journal is
@@ -4123,6 +4226,9 @@ export class Autopilot {
     }
     if (this.running) return this.status();
     this.running = true; this.stopping = false; this.startedAt = Date.now();
+    // The independent eye. Started with the keeper and stopped with it, because it exists
+    // to watch this keeper's blind spots and has nothing to watch when there is no keeper.
+    this.startWatchdog();
     // WRITTEN OUTSIDE THE KEEPER, because a keeper that is gone cannot record that it is
     // gone. Without this there is no way to tell a death the strategy caused from one
     // that happened while nothing was driving — and a broker restart stops all twenty-one
@@ -4169,6 +4275,8 @@ export class Autopilot {
   stop(why = null, { hard = false } = {}) {
     if (!hard) { this.goInert(why); return this.status(); }
     this.stopping = true;
+    this.stopWatchdog();
+    this.passStartedAt = null;
     // A hard stop leaves nothing behind to revive, so clear this rather than letting a
     // later start() see a stale hold and report a revive that did not happen.
     this.inert = null;
@@ -4203,6 +4311,122 @@ export class Autopilot {
     return t.fighting + t.recovering + t.travelling + t.trading;
   }
 
+  // ------------------------------------------------------------------ the watchdog
+  //
+  // THE KEEPER GOES BLIND FOR MOST OF EVERY DEATH, AND ADDING FRAMES AROUND THE AWAIT DOES
+  // NOT FIX IT.
+  //
+  // Measured over 715 deaths: 645 had a keeper the uptime ledger says was running, and
+  // 521 of those — 81% — had it blind at the moment of death. Median gap 18 seconds,
+  // p90 219. The cause is structural rather than a missing call: `pass()` is one long
+  // async function and a single `await this.travel(...)` inside it can run for minutes,
+  // during which nothing re-decides anything.
+  //
+  // travel() ALREADY records a frame either side of itself — 'setting off' and 'arrived' —
+  // and Camilla's post-mortem is the proof that this is not enough. Her last frame reads
+  // `why: "setting off"`, 17.8 seconds before she died: the 'arrived' frame in the
+  // `finally` never described anything, because she died inside the await. Bracketing a
+  // blind interval tells you when it started. It does not make anybody look.
+  //
+  // So the watchdog is a SEPARATE TIMER that does not care what the pass is doing, and
+  // this is the whole point of it being a timer rather than another await: the server
+  // PUSHES health (BP_STAT, one packet per change), so `client.vitals()` is live and
+  // free whatever the pass is blocked on. Reading it costs no packet, no round trip, and
+  // no permission from whatever is holding the call stack.
+  //
+  // Two jobs, in order of how much they matter:
+  //
+  //   1. THE RECORD KEEPS BREATHING. A frame whenever health changes, and one every
+  //      WATCHDOG_FRAME_MS regardless, so a post-mortem is never a bracket around a hole.
+  //   2. IT CAN PULL THE HANDBRAKE. `Session.cancelMovement()` bumps the movement
+  //      generation, and travel checks it in twelve places including inside the paced
+  //      step loops — so a walk stops within about a second of being told to. If health
+  //      crosses the flee line while the pass is blocked in a walk, the walk ends and the
+  //      next pass gets to make a survival decision with fresh numbers instead of
+  //      arriving as a corpse.
+  //
+  // What it deliberately does NOT do is decide anything. It has no policy, it never
+  // fights, rests or moves, and it cannot take a safe spot. It interrupts, and the
+  // ordinary pass — which already knows how to flee, rest and find a wall — does the rest.
+  // A second decision-maker running concurrently with the first is how you get two
+  // keepers arguing over one body.
+  startWatchdog() {
+    if (this.watchTimer) return;
+    this.watch = { ticks: 0, frames: 0, interrupts: 0, longest_block_ms: 0,
+                   lastHealth: null, blockedSince: null, interruptedPass: null };
+    this.watchTimer = setInterval(() => {
+      try { this.watchdogTick(); } catch (e) { this.watch.lastError = e.message; }
+    }, WATCHDOG_MS);
+    this.watchTimer.unref?.();
+  }
+
+  stopWatchdog() {
+    if (!this.watchTimer) return;
+    clearInterval(this.watchTimer);
+    this.watchTimer = null;
+  }
+
+  watchdogTick() {
+    const s = this.s, c = s?.client;
+    if (!c || s.live !== true || c.state !== 'game') return;
+    const w = this.watch;
+    w.ticks++;
+    const now = Date.now();
+    const v = c.vitals?.();
+    const hp = v?.health;
+
+    // 1. A FRAME WHEN SOMETHING MOVED, OR WHEN NOTHING HAS FOR A WHILE.
+    //
+    // Gated on change rather than written every tick, because the frame ring is small and
+    // a three-minute quiet travel would otherwise evict the entire run-up to the death it
+    // is there to explain. A quiet walk produces one frame every WATCHDOG_FRAME_MS; a
+    // character being chewed on produces one per hit, which is exactly the resolution the
+    // record wants and the case the ring should be spent on.
+    const changed = hp?.value != null && hp.value !== w.lastHealth;
+    if (changed || now - (this.lastFrameAt ?? 0) >= WATCHDOG_FRAME_MS) {
+      this.recordFrame(changed ? 'watchdog: health moved' : 'watchdog');
+      w.frames++;
+    }
+    w.lastHealth = hp?.value ?? null;
+
+    // 2. THE HANDBRAKE.
+    const blockedFor = this.passStartedAt ? now - this.passStartedAt : 0;
+    if (blockedFor > w.longest_block_ms) w.longest_block_ms = blockedFor;
+    if (blockedFor < WATCHDOG_BLOCKED_MS) return;
+    w.blockedSince ??= this.passStartedAt;
+
+    // Not while something else is driving. An errand or a supply exchange owns the
+    // character deliberately, and cancelling its movement from underneath it would be
+    // this keeper fighting the thing it stood down for.
+    if (this.inert) return;
+    // Once per blocked pass. Cancelling twice does nothing useful and the note would
+    // repeat every tick.
+    if (w.interruptedPass === this.passes) return;
+
+    const frac = pct(hp);
+    if (frac === null) return;
+    const fleeAt = this.safety().fleeAt;
+    if (frac >= fleeAt) return;
+
+    w.interruptedPass = this.passes;
+    w.interrupts++;
+    this.tally.watchdog_interrupts = (this.tally.watchdog_interrupts || 0) + 1;
+    const stopped = (() => {
+      try { return s.cancelMovement(); } catch (e) { return { cancelled: false, why: e.message }; }
+    })();
+    this.note('WATCHDOG — pulled the character out of a blind walk', {
+      health: `${hp.value}/${hp.max}`, at_fraction: Math.round(frac * 100) + '%',
+      flee_at: Math.round(fleeAt * 100) + '%',
+      pass_blocked_for_s: Math.round(blockedFor / 1000),
+      interrupted: stopped.interrupted ?? null,
+      why: 'the pass has been inside one await long enough to have stopped looking, and ' +
+           'health crossed the withdraw threshold while it was not. The walk is cancelled ' +
+           'so the next pass can decide with real numbers — this keeper does not decide ' +
+           'anything itself',
+    });
+    this.progress('watchdog interrupted a blind walk');
+  }
+
   async loop() {
     // The outer loop is the other half of start()'s cancellation. Between leaving the
     // inner loop and admitting we have stopped there is no await, so a start() can
@@ -4212,6 +4436,10 @@ export class Autopilot {
       while (!this.stopping) {
         this.passes++;
         const began = Date.now();
+        // WHEN THIS PASS STARTED, readable from outside the call stack. The watchdog runs
+        // on its own timer and this is the only way it can tell "the keeper is between
+        // passes" from "the keeper has been inside one await for ninety seconds".
+        this.passStartedAt = began;
         try {
           await this.pass();
           this.spend(Date.now() - began);
@@ -4223,6 +4451,7 @@ export class Autopilot {
           this.note('pass failed', { why: e.message });
           await sleep(5000);
         }
+        this.passStartedAt = null;
         if (this.stopping) break;
         await sleep(this.policy.decideMs ?? 1000);
       }
@@ -5544,7 +5773,7 @@ export class Autopilot {
               why: here.length ? 'none of what spawns here is what we hunt'
                                : 'nothing is generated here at all — it is not a hunting ground' });
             this.doing = 'travelling';
-            await this.leaveHold('travelling to a room that generates our prey');
+            if ((await this.leaveHold('travelling to a room that generates our prey')).refused) return;
             // THE THREE THINGS WE WANT TO KNOW ABOUT AN ASSIGNMENT, recorded where a
             // human and an agent can both read them later: does it do what we hoped
             // (did we end up where we were assigned), does it do it every time
@@ -6034,7 +6263,9 @@ export class Autopilot {
           const elsewhere = this.preyRooms(room);
           if (elsewhere.length) {
             this.doing = 'travelling';
-            await this.leaveHold('leaving a room with no wall in it').catch(() => {});
+            // FORCED: the room has been denied for having no usable wall, so whatever is held
+            // here is not the shelter the refusal exists to protect.
+            await this.leaveHold('leaving a room with no wall in it', { force: true }).catch(() => {});
             const go = elsewhere[0];
             const moved = await this.travel(go.room, { maxHops: 14 })
                                     .catch(e => ({ arrived: false, reason: e.message }));
@@ -6769,7 +7000,7 @@ export class Autopilot {
     this.note('going to the bank', {
       carrying: carried, to: target.name, hops: target.hops, keeping: this.policy.walkingMoney ?? 400,
       why: 'everything carried is dropped on death and usually unrecoverable; a balance is not' });
-    await this.leaveHold('walking to the bank');
+    if ((await this.leaveHold('walking to the bank')).refused) return true;
     const r = await this.travel(target.room, { maxHops: Math.max(12, target.hops + 4) })
                     .catch(e => ({ arrived: false, reason: e.message }));
     this.money.trips++;
@@ -7363,7 +7594,7 @@ export class Autopilot {
     // Getting out is its own move when there is a crowd standing on us. Doing it here
     // rather than at each of the three departures below means it cannot be forgotten
     // at one of them.
-    await this.leaveHold('roaming to look for hunting elsewhere');
+    if ((await this.leaveHold('roaming to look for hunting elsewhere')).refused) return;
 
     // GO BACK TO WHERE THE WORK WAS. Roaming outward is a one-way gradient: each
     // empty room justifies moving to the next, and nothing ever argues for turning
@@ -7681,7 +7912,10 @@ export class Autopilot {
       hint: 'this room cannot be fought in safely at this level; somewhere with a corner is' });
     // Only now is leaving the hold right — we have nowhere better, so the siege has to
     // be broken before the walk.
-    await this.leaveHold('withdrawing from a fight we are losing');
+    // FORCED: this is the survival case, not a discretionary one. A hurt character is
+    // exactly who is withdrawing, so the hurt refusal would block the one departure
+    // that must always be allowed.
+    await this.leaveHold('withdrawing from a fight we are losing', { force: true });
     const me = c.self, geo = s.world?.geometry;
     if (!me || !geo) { this.note('cannot withdraw', { why: 'no geometry' }); return; }
     const away = (r, col) => Math.min(...threats.map(t => Math.hypot(col - t.col, r - t.row)));

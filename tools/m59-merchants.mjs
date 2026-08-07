@@ -6,6 +6,8 @@
 //   node tools/m59-merchants.mjs who-sells <thing>
 //   node tools/m59-merchants.mjs show <name>
 //
+//   node tools/m59-merchants.mjs enrich     re-apply what the SOURCE knows, no server
+//
 // Merchants are picky, and the pickiness is not in the protocol. A merchant decides
 // whether it wants an item in `ObjectDesired`, which is a kod METHOD overridden per
 // merchant — the Barloque apothecary buys reagents but refuses gems, and it says so
@@ -19,10 +21,29 @@
 //
 //   from the SOURCE TREE, which is the only place the buying rule exists at all:
 //     each merchant class's ObjectDesired body, kept verbatim as a note, because a
-//     rule expressed as code cannot be reduced to data without losing the cases
+//     rule expressed as code cannot be reduced to data without losing the cases —
+//     and who the merchant IS, which the server cannot tell us either
 //
-// plFor_sale is [ items, ?, spell/skill numbers, conditional-price list ]
-// (see any SetForSale, e.g. kod/.../towns/barlqtwn/bqapoth.kod).
+// SLOT 2 OF plFor_sale IS SKILLS, AND THIS FILE USED TO THROW IT AWAY. The structure
+// is four positional slots — `AssembleForSaleList` (monster.kod:4819) names them
+// "(items, skills, spells, conditionals)" in its own docstring — and the reader here
+// took only slot 3 as abilities, calling slot 2 "?" in this header. So EVERY SKILL
+// SOLD BY A LIVE MERCHANT WAS DROPPED, silently, for the entire life of the catalogue.
+//
+// It cost a whole answer. Jonas D'Accor sells `block`, the only shield skill in the
+// game; he was in the index the whole time, standing still in Pietro's Wicked Brews,
+// teaching nine spells and — as far as any tool could see — no skills at all. The only
+// trace of block was the source-derived, never-seen JealousGeneral entry, so
+// `who-teaches block` answered with a WANDERER and nothing else, and an errand built on
+// that would have sent characters chasing a man who was sitting in a bar.
+//
+// WHICH IS THE SAME MAN. A merchant here is a CLASS, and a person can wear more than
+// one: RebelLiege and JealousGeneral are both "Jonas D'Accor", teach the same list, and
+// differ only in that one stands still and one walks a circuit. Nothing in the protocol
+// says so — the server hands out object ids and class names, and two ids with two class
+// names look like two people. The NAME RESOURCE in the source is what says otherwise,
+// so classes sharing one are linked as `also`, and a wanderer is never reported as the
+// only source of something his stationary self also sells.
 //
 // The catalogue is a starting point, not an oracle. The authoritative test is still
 // to offer the thing and read what the merchant says — `sell` with confirm:false
@@ -71,11 +92,73 @@ const prop = (lines, name, kind = 'INT') => {
   return null;
 };
 
-// Every merchant class the SOURCE knows about, whether or not one is standing in the
-// world right now. A merchant that spawns conditionally, or lives in a room nobody
-// has visited, is absent from the running server but still real — so the catalogue
-// records it as known-but-unseen rather than pretending it does not exist.
-function merchantClassesInSource() {
+// ------------------------------------------------- what the source tree can be asked
+//
+// One pass over the kod, because four different questions used to walk the whole tree
+// separately and they all want the same file open.
+
+// Everything between a bracket and its match. `plFor_Sale = [$, [ SKID_BLOCK ], [...]]`
+// cannot be read with a regex — the slots nest — so find the close by counting.
+export function balanced(text, open, pair = '[]') {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === pair[0]) depth++;
+    else if (text[i] === pair[1] && --depth === 0) return text.slice(open + 1, i);
+  }
+  return text.slice(open + 1);
+}
+
+// Split a kod list body on the commas BETWEEN slots, ignoring the ones inside them.
+export function splitTopLevel(body) {
+  const parts = [];
+  let depth = 0, cur = '';
+  for (const ch of String(body ?? '')) {
+    if (ch === '[') depth++;
+    else if (ch === ']') depth--;
+    if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  parts.push(cur);
+  return parts;
+}
+
+// POSITION IS THE ONLY THING THAT SAYS SKILL OR SPELL. The numbers are drawn from two
+// different tables that overlap, so a bare number is ambiguous and its SLOT is not —
+// slot 2 is skills, slot 3 is spells (monster.kod:4819). A class may declare several
+// variants (jGeneral.kod has one with shatterlock and one without), so take the union:
+// a merchant that sells a thing under any condition can sell it.
+export function forSaleFromSource(text) {
+  const skills = new Set(), spells = new Set();
+  for (const m of String(text ?? '').matchAll(/plFor_sale\s*=\s*(?=\[)/gi)) {
+    const slots = splitTopLevel(balanced(text, m.index + m[0].length));
+    // Upper-cased on capture. The constant is spelled `SID_FORESIGHT` in blakston.khd
+    // and `SID_Foresight` in the class that implements it, and a Map keyed on the
+    // as-written spelling silently loses whichever one it did not see first.
+    for (const c of (slots[1] ?? '').matchAll(/\bSKID_(\w+)/gi)) skills.add(`SKID_${c[1]}`.toUpperCase());
+    for (const c of (slots[2] ?? '').matchAll(/\bSID_(\w+)/gi))  spells.add(`SID_${c[1]}`.toUpperCase());
+  }
+  return { skills: [...skills], spells: [...spells] };
+}
+
+// WHAT THE GAME CALLS SOMETHING, WHICH IS NEVER SAFE TO GUESS FROM THE CONSTANT.
+// `SKID_PROFICIENCY_MACE` is called "mace fighting" and `SKID_PROFICIENCY_SWORD` is
+// called "fencing"; deriving a name from the constant invents seven of the eight weapon
+// proficiencies, which this repository has already done once and had to undo. So follow
+// the `vrName = <rsc>` reference to the string it points at.
+//
+// Two casings to survive, both of which cost a whole category before they were noticed:
+// resource names are case-insensitive and the tree uses that freely (`Izzio` declares
+// `izzio_name_rsc`), and so are property names (`viSkill_num` in block.kod against
+// `viSkill_Num` in slash.kod).
+export function resourceValue(text, cls, prop, quoted = true) {
+  const fallback = `${cls}_${prop.replace(/^vr/, '').toLowerCase()}_rsc`;
+  const ref = new RegExp(`^\\s*${prop}\\s*=\\s*(\\w+)`, 'im').exec(text)?.[1] ?? fallback;
+  return new RegExp(`^\\s*${ref}\\s*=\\s*${quoted ? '"([^"]*)"' : '(\\S+)'}`, 'im').exec(text)?.[1] ?? null;
+}
+
+// Read every class once: who it is, what it descends from, what it sells and teaches,
+// where it walks, and the rule it buys by.
+export function readSourceClasses(root = M59_ROOT) {
   const out = new Map();
   const walk = dir => {
     let entries = [];
@@ -86,52 +169,119 @@ function merchantClassesInSource() {
       if (!e.name.endsWith('.kod')) continue;
       let text;
       try { text = fs.readFileSync(full, 'utf8'); } catch { continue; }
-      if (!/^ {3}SetForSale/m.test(text)) continue;
-      const cls = /^(\w+)\s+is\s+(\w+)/m.exec(text);
-      if (!cls) continue;
-      out.set(cls[1], {
-        parent: cls[2],
-        file: path.relative(M59_ROOT, full).split(path.sep).join('/'),
+      const decl = /^(\w+)\s+is\s+(\w+)/m.exec(text);
+      if (!decl) continue;
+      const cls = decl[1];
+      const file = path.relative(root, full).split(path.sep).join('/');
+
+      // WHO THIS IS, AND WHAT HE LOOKS LIKE. The class name is ours; the name and icon
+      // resources are the game's, and together they are the only thing that can tell one
+      // man in two coats from two men with one name.
+      //
+      // See resourceValue: the reference is followed rather than the name guessed.
+
+      // Where a wanderer walks. RID_ constants, resolved to room numbers by the caller.
+      const destIdx = text.indexOf('   CreateDestinationList(');
+      const dests = destIdx < 0 ? [] : [...new Set(
+        [...text.slice(destIdx, destIdx + 2000).matchAll(/\b(RID_\w+)/g)].map(m => m[1]))];
+
+      // The buying rule, kept as text: "buys reagents but not gems" is a thing a rule
+      // can say and a flag cannot. Take to the closing brace at METHOD indentation —
+      // kod methods are indented three spaces and closed by a brace in column 4, while
+      // braces inside the body are deeper. The tree is CRLF, so match the line ending
+      // rather than assuming "\n", which runs the capture on into the next method.
+      let desired = null;
+      const di = text.indexOf('   ObjectDesired(');
+      if (di >= 0) {
+        const rest = text.slice(di);
+        const end = /\r?\n {3}\}\r?\n/.exec(rest);
+        desired = { file, body: (end ? rest.slice(0, end.index + end[0].length) : rest.slice(0, 1200)).trimEnd() };
+      }
+
+      out.set(cls, {
+        cls, parent: decl[2], file,
+        name: resourceValue(text, cls, 'vrName'),
+        icon: resourceValue(text, cls, 'vrIcon', false),
+        isMerchant: /^ {3}SetForSale/m.test(text),
         // What it stocks, read straight out of SetForSale. Class names only — the
         // running world gives quantities, the source gives the roster.
         stocks: [...new Set([...text.matchAll(/Create\(&(\w+)/g)].map(m => m[1]))],
-        teaches: [...new Set([...text.matchAll(/\b(SID|SKID)_(\w+)/g)].map(m => `${m[1]}_${m[2]}`))],
+        ...forSaleFromSource(text),
+        destinations: dests,
+        objectDesired: desired,
       });
     }
   };
-  walk(path.join(M59_ROOT, 'kod'));
+  walk(path.join(root, 'kod'));
   return out;
 }
 
-// Pull `ObjectDesired` out of the source. It is a rule, not a table, so it is kept as
-// text — an agent reading "buys reagents but not gems" learns more than it would from
-// any flag we could invent for it.
-function objectDesiredByClass() {
+// Does this class descend from Wanderer? A wanderer's recorded room is where he was
+// STANDING, which for him is a rumour with a timestamp rather than an address.
+export function descendsFrom(classes, cls, ancestor, limit = 24) {
+  for (let c = cls, i = 0; c && i < limit; i++) {
+    const node = classes.get(c);
+    if (!node) return false;
+    if (node.parent === ancestor) return true;
+    c = node.parent;
+  }
+  return false;
+}
+
+// blakston.khd is the one place that turns a constant into a number, for room ids and
+// for ability ids alike.
+export function readConstants(root = M59_ROOT) {
+  const rooms = new Map(), abilities = new Map();
+  let khd = '';
+  try { khd = fs.readFileSync(path.join(root, 'kod/include/blakston.khd'), 'utf8'); } catch { return { rooms, abilities }; }
+  for (const m of khd.matchAll(/^\s*(RID_\w+)\s*=\s*(\d+)/gim)) rooms.set(m[1].toUpperCase(), Number(m[2]));
+  for (const m of khd.matchAll(/^\s*(SID|SKID)_(\w+)\s*=\s*(\d+)/gim))
+    abilities.set(`${m[1]}_${m[2]}`.toUpperCase(), Number(m[3]));
+  return { rooms, abilities };
+}
+
+// WHAT A SKILL OR SPELL COSTS, which is a function of its LEVEL and nothing else —
+// `Skill.GetValue` (skill.kod:128) and `Spell.GetValue` (spell.kod:353) are the same
+// doubling, and `Monster.GetPrice` says in its own docstring "No markup for skills or
+// spells" (monster.kod:4880). So a teacher's mood, markup and faction bonus, all of
+// which move the price of a hat, do not move this. Written as the kod writes it rather
+// than as a power, because the off-by-one is the whole question: a level 1 skill is
+// 500, not 250.
+export function priceOfLevel(level) {
+  if (!(level >= 1)) return null;
+  let j = 2;
+  for (let i = 1; i < level; i++) j *= 2;
+  return 250 * j;
+}
+
+// Level and REAL NAME, per ability constant, from the class that defines it.
+export function readAbilityLevels(root = M59_ROOT) {
   const out = new Map();
-  const walk = dir => {
-    let entries = [];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      const full = path.join(dir, e.name);
-      if (e.isDirectory()) { walk(full); continue; }
-      if (!e.name.endsWith('.kod')) continue;
-      let text;
-      try { text = fs.readFileSync(full, 'utf8'); } catch { continue; }
-      const cls = /^(\w+)\s+is\s+\w+/m.exec(text)?.[1];
-      if (!cls) continue;
-      const i = text.indexOf('   ObjectDesired(');
-      if (i < 0) continue;
-      // Take to the closing brace at METHOD indentation — kod methods are indented
-      // three spaces and closed by a brace in column 4, while braces inside the body
-      // are deeper. The tree is CRLF, so match the line ending rather than assuming
-      // "\n" — assuming it runs the capture on into the next method.
-      const rest = text.slice(i);
-      const m = /\r?\n {3}\}\r?\n/.exec(rest);
-      const body = m ? rest.slice(0, m.index + m[0].length) : rest.slice(0, 1200);
-      out.set(cls, { file: path.relative(M59_ROOT, full).replace(/\\/g, '/'), body: body.trimEnd() });
-    }
-  };
-  walk(path.join(M59_ROOT, 'kod'));
+  for (const [sub, numProp, lvlProp] of [['skill', 'viSkill_num', 'viSkill_level'],
+                                         ['spell', 'viSpell_num', 'viSpell_level']]) {
+    const walk = dir => {
+      let entries = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) { walk(full); continue; }
+        if (!e.name.endsWith('.kod')) continue;
+        let text;
+        try { text = fs.readFileSync(full, 'utf8'); } catch { continue; }
+        const num = new RegExp(`^\\s*${numProp}\\s*=\\s*(\\w+)`, 'im').exec(text);
+        if (!num) continue;
+        const lvl = new RegExp(`^\\s*${lvlProp}\\s*=\\s*(\\d+)`, 'im').exec(text);
+        const cls = /^(\w+)\s+is\s+\w+/m.exec(text)?.[1] ?? '';
+        out.set(num[1].toUpperCase(), {
+          kind: sub,
+          level: lvl ? Number(lvl[1]) : 1,
+          name: resourceValue(text, cls, 'vrName'),
+          file: path.relative(root, full).split(path.sep).join('/'),
+        });
+      }
+    };
+    walk(path.join(root, 'kod/object/passive', sub));
+  }
   return out;
 }
 
@@ -141,7 +291,7 @@ async function readForSale(listId) {
   if (!listId) return null;
   const dump = await adminBatch([`show list ${listId}`], 1200);
   // POSITION IS MEANING here — plFor_sale is a fixed four-slot structure
-  // [ items, ?, spell/skill numbers, conditional prices ] — and an empty slot prints
+  // [ items, skills, spells, conditional prices ] — and an empty slot prints
   // as `$ 0`. Dropping those placeholders silently shifts every later slot left, so
   // the spells a merchant teaches would be read as though they were something else.
   const groups = [];
@@ -158,6 +308,121 @@ async function readForSale(listId) {
     else if (depth === 1) groups.push([entry]);
   }
   return groups;
+}
+
+// ------------------------------------------------------------------ enrichment
+//
+// Everything the SOURCE knows about a merchant, applied to a catalogue that may have
+// come from a server run months ago — or from a server that is not up now. Both `build`
+// and `enrich` go through here so the two paths cannot drift apart.
+
+// A HARD-WON DISTINCTION, RECORDED PER ABILITY. `from: 'server'` is what an instance
+// standing in the world was actually holding. `from: 'source'` is what the class says
+// it sells, which is a LEAD rather than an observation — the live list is per-instance
+// and can differ (jGeneral toggles shatterlock on and off), and the offer list is
+// filtered per BUYER anyway, so acting on a lead costs one look at a shop list.
+export function enrichCatalogue(data, { root = M59_ROOT } = {}) {
+  const classes = readSourceClasses(root);
+  const { rooms: RID, abilities: CONST } = readConstants(root);
+  const levels = readAbilityLevels(root);
+
+  const skillByNum = new Map(), spellByNum = new Map();
+  for (const [constant, info] of levels) {
+    const num = CONST.get(constant);
+    if (num == null) continue;
+    (info.kind === 'skill' ? skillByNum : spellByNum).set(num, { ...info, constant });
+  }
+  // A number blakston.khd names but no class implements. Rare, and the constant is
+  // still better than nothing — but it is the guessed name, so say which it was.
+  const constByNum = new Map([...CONST].map(([c, n]) => [n, c]));
+  // A LAST RESORT, AND IT LIES. "proficiency mace" is a name nothing answers to; the
+  // class calls it "mace fighting". Used only when no class could be found for the
+  // number at all, and worth noticing in the output when it happens.
+  const pretty = c => String(c).replace(/^(SKID|SID)_/, '').toLowerCase().replace(/_/g, ' ');
+
+  // Name a number. Kind comes from the ability's OWN class — `viSkill_num` and
+  // `viSpell_num` are declared on different classes, so the number knows what it is
+  // without us having to remember which slot it arrived in. A number claimed by both
+  // tables keeps the old both-candidates hedge rather than picking one.
+  const describe = (num, { kind = null, from = 'server' } = {}) => {
+    const sk = skillByNum.get(num), sp = spellByNum.get(num);
+    const settled = kind ?? (sk && sp ? null : sk ? 'skill' : sp ? 'spell' : null);
+    const info = settled === 'skill' ? sk : settled === 'spell' ? sp : (sk ?? sp);
+    const guessed = !info?.name && constByNum.has(num);
+    const name = info?.name ?? (constByNum.has(num) ? pretty(constByNum.get(num)) : undefined);
+    return {
+      num, from,
+      ...(settled ? { kind: settled } : {}),
+      // Kept as they always were, so anything reading t.spell || t.skill still works.
+      ...(settled === 'skill' || (!settled && sk) ? { skill: name } : {}),
+      ...(settled === 'spell' || (!settled && sp) || (!settled && !sk && !sp) ? { spell: name } : {}),
+      ...(info ? { constant: info.constant, level: info.level, price: priceOfLevel(info.level) }
+               : constByNum.has(num) ? { constant: constByNum.get(num) } : {}),
+      ...(guessed ? { name_guessed_from_constant: true } : {}),
+    };
+  };
+
+  for (const m of data.merchants) {
+    const src = classes.get(m.cls) ?? null;
+    m.name = src?.name ?? null;
+    m.wanders = descendsFrom(classes, m.cls, 'Wanderer');
+    // Where he WALKS, which for a wanderer is the real answer to "where is he" — the
+    // recorded room is only where somebody last saw him.
+    const circuit = (src?.destinations ?? []).map(r => RID.get(r)).filter(n => n != null);
+    if (m.wanders) m.circuit = circuit;
+    else delete m.circuit;
+
+    const byNum = new Map();
+    for (const t of m.teaches ?? []) {
+      if (t.num == null) continue;
+      byNum.set(t.num, describe(t.num, { kind: t.kind ?? null, from: t.from ?? 'server' }));
+    }
+    // Whatever the class declares and the recorded list did not carry. This is where a
+    // skill dropped by the old slot-blind reader comes back without a server.
+    for (const [constants, kind] of [[src?.skills ?? [], 'skill'], [src?.spells ?? [], 'spell']]) {
+      for (const c of constants) {
+        const num = CONST.get(String(c).toUpperCase());
+        if (num == null || byNum.has(num)) continue;
+        byNum.set(num, describe(num, { kind, from: 'source' }));
+      }
+    }
+    m.teaches = [...byNum.values()];
+    if (src && !m.source) m.source = src.file;
+  }
+
+  // ONE MAN, TWO CLASSES. Nothing on the wire can tell you this: the server hands out
+  // an object id and a class name, and Jonas D'Accor standing still is a different id
+  // and a different class from Jonas D'Accor walking. The name resource is the join.
+  //
+  // BUT A SHARED NAME IS NOT BY ITSELF A SHARED PERSON, and the tree contains the
+  // counter-example that proves it: the Barloque and Tos blacksmiths are BOTH
+  // "Fehr'loi Qan", standing still in two towns at once. The icon separates the cases —
+  // Jonas wears `wngenera.bgf` in both of his classes, while the two smiths draw as
+  // `bqsmith.bgf` and `bsmith.bgf`. So the link is recorded either way, because either
+  // way it is a second place to buy the same thing, and only the icon match is called
+  // the same man.
+  const byName = new Map();
+  for (const m of data.merchants) {
+    if (!m.name) continue;
+    if (!byName.has(m.name)) byName.set(m.name, []);
+    byName.get(m.name).push(m);
+  }
+  for (const m of data.merchants) {
+    const src = classes.get(m.cls) ?? null;
+    const kin = (byName.get(m.name) ?? []).filter(x => x.cls !== m.cls);
+    if (!kin.length) { delete m.also; delete m.also_note; continue; }
+    m.also = kin.map(x => ({
+      cls: x.cls, room: x.room, seen: x.seen, wanders: x.wanders,
+      same_person: !!(src?.icon && classes.get(x.cls)?.icon === src.icon),
+    }));
+    m.also_note = m.also.some(x => x.same_person)
+      ? 'the same man under another class — same name, same icon. One of these usually stands still.'
+      : 'answers to the same name but draws differently, so probably a different person — ' +
+        'still a second place to buy the same things.';
+  }
+
+  data.enrichedAt = new Date().toISOString();
+  return data;
 }
 
 async function build() {
@@ -244,54 +509,35 @@ async function build() {
     }
   }
 
-  const desired = objectDesiredByClass();
-  process.stderr.write(`${desired.size} classes define ObjectDesired in the source\n`);
-
-  // Spell and skill NUMBERS are what plFor_sale carries, but nobody thinks in
-  // numbers. blakston.khd declares them as SID_/SKID_ constants, which is the same
-  // place m59-godmode reads them from.
-  const spellNames = new Map(), skillNames = new Map(), constNums = new Map();
-  try {
-    const khd = fs.readFileSync(path.join(M59_ROOT, 'kod/include/blakston.khd'), 'utf8');
-    for (const m of khd.matchAll(/^\s*(SID|SKID)_(\w+)\s*=\s*(\d+)/gm)) {
-      const pretty = m[2].toLowerCase().replace(/_/g, ' ');
-      (m[1] === 'SID' ? spellNames : skillNames).set(Number(m[3]), pretty);
-      constNums.set(`${m[1]}_${m[2]}`, Number(m[3]));
-    }
-  } catch { /* names are a convenience; the numbers still work without them */ }
-  process.stderr.write(`${spellNames.size} spells and ${skillNames.size} skills named\n`);
-
-  const inSource = merchantClassesInSource();
-  process.stderr.write(`${inSource.size} merchant classes defined in the source\n`);
+  const classes = readSourceClasses();
+  const inSource = new Map([...classes].filter(([, v]) => v.isMerchant));
+  process.stderr.write(`${[...classes.values()].filter(c => c.objectDesired).length} classes define ` +
+                       `ObjectDesired; ${inSource.size} merchant classes in the source\n`);
 
   const out = { builtAt: new Date().toISOString(), merchants: [] };
   for (const m of merchants) {
     const stock = [];
     const teaches = [];
+    // FOUR POSITIONAL SLOTS: items, SKILLS, SPELLS, conditional prices
+    // (AssembleForSaleList, monster.kod:4819). Slot 2 was read as nothing for the whole
+    // life of this catalogue, which is why no live merchant ever appeared to sell a
+    // skill. The numbers are named and classified downstream, by the ability's own
+    // class, so nothing here has to know which table a number came from.
     (m.forSale || []).forEach((group, gi) => {
       for (const e of group) {
         if (e.kind === 'OBJECT') {
           const info = nameById.get(e.v);
           stock.push({ id: e.v, cls: info?.cls ?? null, quantity: info?.number ?? null });
-        } else if (gi === 2) {
-          // Group 3 of plFor_sale is spell and skill NUMBERS, not objects — this is
-          // how a merchant teaches. Buying one calls AddSkill/AddSpell.
-          teaches.push(e.v);
-        }
+        } else if (gi === 1) teaches.push({ num: e.v, kind: 'skill', from: 'server' });
+        else if (gi === 2)   teaches.push({ num: e.v, kind: 'spell', from: 'server' });
       }
     });
-    const od = desired.get(m.cls);
+    const od = classes.get(m.cls)?.objectDesired ?? null;
     out.merchants.push({
       seen: true,
       id: m.id, cls: m.cls, room: m.roomNum, markup: m.markup,
       sells: stock,
-      // A number appears in both tables when a spell and a skill share it, so both
-      // candidate names are offered rather than one being guessed.
-      teaches: teaches.map(n => ({
-        num: n,
-        spell: spellNames.get(n) || undefined,
-        skill: skillNames.get(n) || undefined,
-      })),
+      teaches,
       buying_rule: od ? { source: od.file, kod: od.body } : null,
       buys_anything: !od,     // the base Monster.ObjectDesired returns TRUE
     });
@@ -303,24 +549,19 @@ async function build() {
   for (const [cls, info] of inSource) {
     if (seen.has(cls)) continue;
     if (cls === 'Monster') continue;            // the base class, not a merchant
-    const od = desired.get(cls);
     out.merchants.push({
       seen: false,
       id: null, cls, room: null, markup: null,
       sells: info.stocks.map(c => ({ id: null, cls: c, quantity: null })),
-      teaches: info.teaches.map(name => {
-        const num = constNums.get(name);
-        return { num: num ?? null, spell: num != null ? spellNames.get(num) : undefined,
-                 skill: num != null ? skillNames.get(num) : undefined, constant: name };
-      }),
-      buying_rule: od ? { source: od.file, kod: od.body } : null,
-      buys_anything: !od,
+      teaches: [],                              // filled from the source by enrichCatalogue
+      buying_rule: info.objectDesired ? { source: info.objectDesired.file, kod: info.objectDesired.body } : null,
+      buys_anything: !info.objectDesired,
       source: info.file,
       note: 'defined in the source but no instance was standing in the world when this was built',
     });
   }
 
-  return out;
+  return enrichCatalogue(out);
 }
 
 // --------------------------------------------------------------------- query
@@ -329,7 +570,14 @@ export function loadMerchants(file = OUT) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-const cat = m => `${m.cls}${m.room != null ? ` (room ${m.room})` : ''}`;
+const cat = m => `${m.name ? `${m.name} [${m.cls}]` : m.cls}${m.room != null ? ` (room ${m.room})` : ''}`;
+
+// A teacher is worth reaching only if he is where the catalogue says. Say which kind
+// this is, in one line, rather than leaving it to be discovered by walking there.
+const whereabouts = (m) => m.wanders
+  ? `WANDERS${m.circuit?.length ? ` between rooms ${m.circuit.join(', ')}` : ''}` +
+    `${m.room != null ? `; last seen in ${m.room}` : ''}`
+  : m.room != null ? `stands in room ${m.room}` : 'never seen standing anywhere';
 
 if (import.meta.filename === process.argv[1]) {
   const [cmd, ...rest] = process.argv.slice(2);
@@ -349,18 +597,53 @@ if (import.meta.filename === process.argv[1]) {
     process.exit(0);
   }
 
+  // RE-APPLY THE SOURCE WITHOUT A SERVER. `build` needs the admin socket, which is not
+  // up whenever the server is not — and the half of this catalogue that says who a
+  // merchant IS, where he walks, and what a skill costs never needed the server at all.
+  // So a correction to the reading of the source can reach the file on disk today
+  // rather than waiting for the next build.
+  if (cmd === 'enrich') {
+    const data = loadMerchants();
+    const before = data.merchants.reduce((n, m) => n + m.teaches.filter(t => t.kind === 'skill').length, 0);
+    enrichCatalogue(data);
+    const after = data.merchants.reduce((n, m) => n + m.teaches.filter(t => t.kind === 'skill').length, 0);
+    fs.writeFileSync(OUT, JSON.stringify(data, null, 1));
+    console.log(`enriched ${OUT}`);
+    console.log(`${data.merchants.filter(m => m.name).length} of ${data.merchants.length} merchants named`);
+    console.log(`${data.merchants.filter(m => m.wanders).length} wander; ` +
+                `${data.merchants.filter(m => m.also?.some(x => x.same_person)).length} are one person under ` +
+                `more than one class, ${data.merchants.filter(m => m.also?.length && !m.also.some(x => x.same_person)).length} ` +
+                `merely share a name with somebody`);
+    console.log(`skills on offer: ${before} -> ${after}`);
+    process.exit(0);
+  }
+
   const data = loadMerchants();
 
   if (cmd === 'who-teaches') {
     const q = rest.join(' ').toLowerCase();
-    const hits = data.merchants.filter(m => m.teaches.some(t =>
-      (t.spell || '').includes(q) || (t.skill || '').includes(q) || String(t.num) === q));
+    const matches = t => (t.spell || '').includes(q) || (t.skill || '').includes(q) || String(t.num) === q;
+    // Stationary first. A wanderer's room is where he WAS, and walking there is a coin
+    // toss — worth taking when there is no other seller, and never worth taking first.
+    const hits = data.merchants.filter(m => m.teaches.some(matches))
+                               .sort((a, b) => (a.wanders ? 1 : 0) - (b.wanders ? 1 : 0));
     console.log(hits.length ? `${hits.length} merchant(s) teach something matching "${q}":` : `nothing matches "${q}"`);
     for (const m of hits) {
-      const t = m.teaches.filter(x => (x.spell || '').includes(q) || (x.skill || '').includes(q) || String(x.num) === q);
-      console.log(`  ${cat(m).padEnd(38)} ${t.map(x => x.spell || x.skill || '#' + x.num).join(', ')}`);
+      const t = m.teaches.filter(matches);
+      const price = t.map(x => x.price).filter(Boolean)[0];
+      console.log(`  ${cat(m).padEnd(40)} ${t.map(x => x.spell || x.skill || '#' + x.num).join(', ')}` +
+                  `${price ? `  ${price}sh` : ''}${t.some(x => x.from === 'source') ? '  (source, unconfirmed)' : ''}`);
+      console.log(`    ${whereabouts(m)}`);
+      if (m.also?.length) {
+        const still = m.also.filter(x => !x.wanders && x.room != null);
+        const same = m.also.some(x => x.same_person);
+        console.log(`    ${same ? 'the same man as' : 'shares a name with'} ${m.also.map(x => x.cls).join(', ')}` +
+                    `${still.length ? ` — and ${still[0].cls} STANDS STILL in room ${still[0].room}, go there` : ''}`);
+      }
     }
     console.log('\nBuying a spell or skill is the same shop transaction as buying an item.');
+    console.log('A price is fixed by LEVEL and carries no markup (monster.kod:4880), so it is the ' +
+                'same from every teacher.');
     process.exit(0);
   }
 
@@ -400,16 +683,22 @@ if (import.meta.filename === process.argv[1]) {
     const q = rest.join(' ').toLowerCase();
     const m = data.merchants.find(x => x.cls.toLowerCase().includes(q) || String(x.room) === q);
     if (!m) { console.error(`no merchant matches "${q}"`); process.exit(1); }
-    console.log(`${m.cls}  room ${m.room}  markup ${m.markup ?? '(default)'}`);
+    console.log(`${m.name ?? m.cls} [${m.cls}]  markup ${m.markup ?? '(default)'}`);
+    console.log(whereabouts(m));
+    if (m.also?.length) console.log(`${m.also.some(x => x.same_person) ? 'the same man as' : 'shares a name with'} ` +
+      m.also.map(x => `${x.cls} (${x.wanders ? 'wanders' : x.room != null ? `room ${x.room}` : 'never seen'})`).join(', ') +
+      `\n${m.also_note}`);
     if (m.sells.length) console.log(`sells: ${m.sells.map(s => s.cls + (s.quantity > 1 ? ` x${s.quantity}` : '')).join(', ')}`);
     if (m.teaches.length) console.log(`teaches: ${m.teaches.map(t =>
-      t.spell ? `${t.spell} (spell ${t.num})` : t.skill ? `${t.skill} (skill ${t.num})` : `#${t.num}`).join(', ')}`);
+      `${t.spell || t.skill || '#' + t.num} (${t.kind ?? '?'} ${t.num}` +
+      `${t.price ? `, ${t.price}sh` : ''}${t.from === 'source' ? ', unconfirmed' : ''})`).join(', ')}`);
     console.log(m.buying_rule
       ? `\nbuying rule (${m.buying_rule.source}):\n${m.buying_rule.kod}`
       : '\nno ObjectDesired override — inherits the default, which accepts anything');
     process.exit(0);
   }
 
-  console.error('usage: m59-merchants.mjs build | who-sells <thing> | who-buys <thing> | who-teaches <thing> | show <class|room>');
+  console.error('usage: m59-merchants.mjs build | enrich | who-sells <thing> | who-buys <thing> | ' +
+                'who-teaches <thing> | show <class|room>');
   process.exit(1);
 }

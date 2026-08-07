@@ -401,6 +401,152 @@ console.log('\nequippedNow is null, not empty, when the client cannot answer');
      equippedNow(fakeClient([[1, 'x']], {}, { tracksUse: false })) === null);
 }
 
+// A HELD WALL IS NOT GIVEN UP FOR AN ERRAND WHILE HURT.
+//
+// Camilla, 2026-08-06 23:59: the keeper saw 69% health, took a safe spot, refused to rest
+// in the open — and 200ms later, in the same pass, gave that wall up because the room
+// could not produce its prey. She died 17.8 seconds later without swinging once. Both
+// decisions were right on their own; nothing arbitrated between them, and leaveHold is
+// the one place they both pass through.
+console.log('\ngiving up a wall while hurt');
+{
+  const keeper = (health, max = 29) => {
+    const k = new Autopilot({
+      name: 't9', world: { room: { num: 574 } },
+      client: { vitals: () => ({ health: { value: health, max } }) },
+    }, {});
+    k.hold = { col: 42, row: 48 };
+    k.holdWorks = () => true;
+    k.breakOut = async () => ({ did: false, crowd: 0 });
+    k.releaseHold = (why) => { k._released = why; };
+    return k;
+  };
+
+  // 20/29 is 69%, just under the 0.7 rest threshold. This is Camilla's exact number.
+  const hurt = keeper(20);
+  const r1 = await hurt.leaveHold('travelling to a room that generates our prey');
+  ok('a discretionary departure is refused while hurt', r1.refused === true);
+  ok('and the wall is NOT released', hurt._released === undefined);
+  ok('and it says what it was asked to do',
+     r1.wanted_to === 'travelling to a room that generates our prey');
+  ok('and the journal names the decision that killed Camilla',
+     hurt.journal.some(j => /too hurt to go anywhere discretionary/.test(j.what)));
+
+  // Once rested, the same errand is allowed. This is what makes the refusal a delay
+  // rather than a deadlock — the rest gate above sees `hurt` and `sheltered` and rests
+  // to full on the wall, and the next attempt goes through.
+  const rested = keeper(29);
+  const r2 = await rested.leaveHold('travelling to a room that generates our prey');
+  ok('a healthy character leaves normally', r2.left === true && !r2.refused);
+  ok('and the wall is released', typeof rested._released === 'string');
+
+  // Withdrawing is the one departure that must never be blocked — a hurt character is
+  // exactly who is doing it.
+  const fleeing = keeper(6);
+  const r3 = await fleeing.leaveHold('withdrawing from a fight we are losing', { force: true });
+  ok('a forced departure is never refused', r3.left === true && !r3.refused);
+  ok('even at 20% health', fleeing._released !== undefined);
+
+  // AND IT CANNOT HOLD FOR EVER. A condition that never clears is a character retired by
+  // accident — the same failure readyToLeaveSanctuary caps for inns.
+  const stuck = keeper(20);
+  await stuck.leaveHold('walking to the bank');
+  ok('the hold starts a clock', typeof stuck.holdKeptSince === 'number');
+  stuck.holdKeptSince = Date.now() - (4 * 60_000);        // past the 3-minute cap
+  const r4 = await stuck.leaveHold('walking to the bank');
+  ok('past the cap it goes anyway', r4.left === true && !r4.refused);
+  ok('and says the wait was the problem, not the errand',
+     stuck.journal.some(j => /waited long enough/.test(j.what)));
+
+  // No wall to give up is not a refusal, it is a no-op.
+  const noWall = keeper(20);
+  noWall.hold = null;
+  ok('nothing held is left:false and not a refusal',
+     (await noWall.leaveHold('anything')).refused === undefined);
+}
+
+// THE WATCHDOG — the independent eye that runs while the pass is blocked.
+console.log('\nthe watchdog');
+{
+  const keeper = ({ health = 29, max = 29, blockedMs = 0, inert = null } = {}) => {
+    const objects = new Map([[1, { id: 1, flags: 0, nameRsc: 1 }]]);
+    let cancelled = 0;
+    const k = new Autopilot({
+      name: 't9', live: true, world: { room: { num: 574, name: 'Main gate to Cor Noth' } },
+      client: { state: 'game', selfId: 99, self: { col: 42, row: 48 },
+                room: { objects }, rsc: { get: () => 'centipede' },
+                vitals: () => ({ health: { value: health, max } }) },
+      cancelMovement: () => { cancelled++; return { cancelled: true, interrupted: { kind: 'travel' } }; },
+    }, {});
+    k.startWatchdog();
+    k.passes = 7;
+    k.passStartedAt = blockedMs ? Date.now() - blockedMs : null;
+    k.inert = inert;
+    k._cancels = () => cancelled;
+    return k;
+  };
+
+  // 1. The record keeps breathing.
+  const quiet = keeper({});
+  quiet.recent5 = [];
+  quiet.lastFrameAt = Date.now();
+  quiet.watch.lastHealth = 29;
+  quiet.watchdogTick();
+  ok('a quiet tick with a fresh frame writes nothing', quiet.recent5.length === 0);
+
+  quiet.lastFrameAt = Date.now() - 9_000;                 // past the 8s frame interval
+  quiet.watchdogTick();
+  ok('but silence past the frame interval writes one', quiet.recent5.length === 1);
+  ok('and it is marked as the watchdog\'s', quiet.recent5[0].why === 'watchdog');
+
+  const bleeding = keeper({ health: 20 });
+  bleeding.recent5 = [];
+  bleeding.lastFrameAt = Date.now();
+  bleeding.watch.lastHealth = 29;                          // health just moved
+  bleeding.watchdogTick();
+  ok('a health change writes a frame immediately, however fresh the last one',
+     bleeding.recent5.length === 1);
+  ok('and says that is why', /health moved/.test(bleeding.recent5[0].why));
+
+  // 2. The handbrake. Blocked long enough, and health under the withdraw line.
+  const blocked = keeper({ health: 6, blockedMs: 20_000 });
+  blocked.watchdogTick();
+  ok('a blind walk at 6/29 is interrupted', blocked._cancels() === 1);
+  ok('and it is counted', blocked.tally.watchdog_interrupts === 1);
+  ok('and the journal explains it', blocked.journal.some(j => /WATCHDOG/.test(j.what)));
+
+  // ONCE PER PASS. The tick runs twice a second; cancelling twice does nothing and the
+  // note would repeat forever.
+  blocked.watchdogTick();
+  blocked.watchdogTick();
+  ok('but only once per blocked pass', blocked._cancels() === 1);
+
+  // The three things that must NOT trigger it.
+  const healthy = keeper({ health: 29, blockedMs: 20_000 });
+  healthy.watchdogTick();
+  ok('a long walk at full health is left alone', healthy._cancels() === 0);
+
+  const brief = keeper({ health: 6, blockedMs: 500 });
+  brief.watchdogTick();
+  ok('a short pass is not a blind walk, however hurt', brief._cancels() === 0);
+
+  // An errand or a supply exchange owns the character deliberately. Cancelling its
+  // movement would be this keeper fighting the thing it stood down for.
+  const driven = keeper({ health: 6, blockedMs: 20_000, inert: { why: 'a loot run is driving' } });
+  driven.watchdogTick();
+  ok('an inert keeper never pulls the handbrake', driven._cancels() === 0);
+  ok('though it still keeps the record breathing', driven.watch.frames > 0);
+
+  // It reports what it saw, because "the keeper was blind" is the finding.
+  const st = blocked.status();
+  ok('the block is published for the board', st.watchdog.longest_block_ms >= 20_000);
+  ok('and so is the interrupt count', st.watchdog.interrupts === 1);
+  ok('a stopped watchdog publishes null rather than stale numbers',
+     (() => { blocked.stopWatchdog(); return blocked.status().watchdog === null; })());
+
+  for (const k of [quiet, bleeding, blocked, healthy, brief, driven]) k.stopWatchdog();
+}
+
 console.log('\nthe cliff detector');
 {
   // The real method, on a real Autopilot, with a session stubbed to what it touches.
@@ -1413,10 +1559,16 @@ console.log('\nan unreachable vigor floor stops applying');
   ok('and the call site still sees the throw',
      await k.travel(999, {}).then(() => false, () => true));
 
-  // The ring is bounded, and a journey now spends from the same budget.
+  // The ring is bounded, and a journey now spends from the same budget — as does the
+  // watchdog, which writes a frame per health change during a blind walk. That is the
+  // fastest anything can spend it: twenty frames in twenty seconds for a character being
+  // chewed on while travelling, which at the old cap of 24 evicted the entire run-up to
+  // the death the record exists to explain.
   k.recent5 = [];
-  for (let i = 0; i < 40; i++) k.recordFrame();
-  ok('the ring stays bounded at 24', k.recent5.length === 24);
+  for (let i = 0; i < 80; i++) k.recordFrame();
+  ok('the ring stays bounded at 48', k.recent5.length === 48, `got ${k.recent5.length}`);
+  ok('and keeps the NEWEST frames, which are the ones nearest the death',
+     k.recent5[k.recent5.length - 1].at >= k.recent5[0].at);
 
   const blind = new Autopilot({ name: 't5', world: {}, client: null }, {});
   ok('no client means no frame, not a throw', blind.recordFrame() === null);

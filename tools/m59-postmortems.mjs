@@ -62,6 +62,20 @@ export const POSTMORTEM_DIR = process.env.M59_POSTMORTEM_DIR || here('../substra
 // How fresh an observation has to be to place a death. See the table above.
 export const TRUST_MS = Number(process.env.M59_DEATH_TRUST_MS || 30_000);
 
+// HOW LONG A KEEPER MAY GO WITHOUT LOOKING BEFORE IT COUNTS AS BLIND.
+//
+// Not a taste threshold: 8s is the keeper's own `resyncMs` default — the longest it is
+// DESIGNED to go without re-asking the server for the room and the stats. Past that it is
+// operating outside its own envelope, whatever the uptime ledger says about it being up.
+// The decide loop turns every 1s by default and writes a frame each pass, so an 18s gap is
+// roughly eighteen decisions taken against a view of the world that never changed.
+//
+// Deliberately NOT the same number as TRUST_MS, which answers a different question. 30s is
+// how stale a reading may be before it stops being evidence about WHERE; this is how stale
+// it may be before the keeper stops being able to ACT. A character can bleed out well
+// inside a window that still places it correctly — Camilla did, at 17.8s.
+export const WATCH_MS = Number(process.env.M59_KEEPER_WATCH_MS || 8_000);
+
 // ------------------------------------------------------------------ what killed it
 
 export function causeOf(pm) {
@@ -123,6 +137,47 @@ export function locate(pm) {
   };
 }
 
+// ------------------------------------------------------------- was anything driving?
+//
+// "WAS THE KEEPER UP" IS TWO QUESTIONS AND THE SECOND ONE IS THE USEFUL ONE.
+//
+// A character whose keeper stopped stands still in whatever fight it was in, and reading
+// that as a hunting decision charges the strategy for an operator restart. So the uptime
+// ledger is checked and the answer goes on the row. That much is a plain Y/N.
+//
+// But a keeper can be up, driving, and NOT LOOKING, and this is the far more common and
+// far more dangerous state. A pass can be a single `await` lasting minutes — a travel
+// loops up to 25 hops with no observation in it — so the keeper's last frame is routinely
+// tens of seconds old at the moment of death. Camilla died with the keeper continuously
+// up for sixteen minutes either side, and blind for the last 17.8 seconds of it: her final
+// frame reads 22/29, comfortably above her own flee threshold, while the event stream
+// recorded her going 22 -> 19 -> 18 -> 16 -> 14 -> 11 -> 10 -> 5 -> 4 -> 0 in the interval.
+// The keeper never saw a number it would have fled from, because it never looked.
+//
+// A bare Y there is true and useless. So Y carries how long it had been blind, and the
+// page colours it: a keeper that was watching is not the same as one that was merely
+// running.
+export function keeperOf(pm) {
+  const outage = pm?.during_keeper_outage ?? null;
+  const frame = (pm?.frames || []).filter(f => f?.at != null).sort((a, b) => a.at - b.at).slice(-1)[0];
+  const blind_ms = frame && pm?.at != null ? pm.at - frame.at : null;
+  if (outage)
+    return { up: false, blind_ms, outage,
+             why: `nothing was driving — the keeper had been down ${Math.round((outage.ms ?? 0) / 1000)}s` };
+  if (blind_ms == null)
+    return { up: null, blind_ms: null, outage: null,
+             why: 'no uptime record and no frames — cannot say either way' };
+  return {
+    up: true, blind_ms, outage: null,
+    watching: blind_ms <= WATCH_MS,
+    why: blind_ms <= WATCH_MS
+      ? `the keeper was up and had looked ${Math.round(blind_ms / 100) / 10}s before the end`
+      : `the keeper was UP BUT BLIND — it had not observed this character for ` +
+        `${Math.round(blind_ms / 1000)}s when it died, past its own 8s resync interval, so ` +
+        'nothing it decided in that window was based on the character\'s real state',
+  };
+}
+
 // ------------------------------------------------------------------ loading
 
 const parse = (file) => {
@@ -151,7 +206,7 @@ export function loadPostmortems({ sinceMs = null, limit = 5000 } = {}) {
       doing: pm.was?.doing ?? null,
       in_safe_spot: !!pm.was?.in_safe_spot,
       during_keeper_outage: pm.during_keeper_outage ?? null,
-      cause, where,
+      cause, where, keeper: keeperOf(pm),
     });
   }
   out.sort((a, b) => b.at - a.at);
@@ -186,7 +241,7 @@ export function digest(file) {
 
   return {
     file, character: pm.character, agent: pm.agent, at: pm.at, level,
-    cause, where,
+    cause, where, keeper: keeperOf(pm),
     was: {
       doing: pm.was?.doing ?? null, hunting: pm.was?.hunting ?? null,
       strategy: pm.was?.strategy ?? null, in_safe_spot: !!pm.was?.in_safe_spot,

@@ -4805,8 +4805,17 @@ const TOOLS = [
         throw new Error('no merchant catalogue — build it with: node tools/m59-merchants.mjs build');
       const all = merchantCatalogue.merchants;
       const roomName = n => worldMap?.rooms?.[n]?.name ?? null;
+      // A MERCHANT IS A CLASS; A PERSON CAN WEAR MORE THAN ONE. Jonas D'Accor is
+      // RebelLiege standing in a bar and JealousGeneral walking a circuit, and on the
+      // wire those are two ids with two class names. So the name comes out beside the
+      // class, and `wanders` says whether `room` is an address or a rumour.
       const brief = m => ({
-        merchant: m.cls, room: m.room, room_name: roomName(m.room),
+        merchant: m.cls, name: m.name ?? null, room: m.room, room_name: roomName(m.room),
+        ...(m.wanders ? { wanders: true, circuit: (m.circuit ?? []).map(n => ({ room: n, room_name: roomName(n) })),
+                          room_note: 'this one WALKS — `room` is where he was last seen, not where he is' }
+                      : { wanders: false }),
+        ...(m.also?.length ? { also: m.also.map(x => ({ ...x, room_name: roomName(x.room) })),
+                               also_note: m.also_note } : {}),
         sells: m.sells.map(x => x.cls + (x.quantity > 1 ? ` x${x.quantity}` : '')),
         teaches: m.teaches.map(t => t.spell || t.skill || `#${t.num}`),
       });
@@ -4846,11 +4855,19 @@ const TOOLS = [
 
       if (a.teaches) {
         const q = String(a.teaches).toLowerCase();
-        const hits = all.filter(m => m.teaches.some(t =>
-          (t.spell || '').includes(q) || (t.skill || '').includes(q) || String(t.num) === q));
-        return { matches: hits.map(m => ({ ...brief(m),
-          teaching: m.teaches.filter(t => (t.spell || '').includes(q) || (t.skill || '').includes(q) || String(t.num) === q) })),
-          note: 'buy it the same way you would buy an item — shop, then buy_ids' };
+        const matches = t => (t.spell || '').includes(q) || (t.skill || '').includes(q) || String(t.num) === q;
+        // STATIONARY FIRST. A wanderer's recorded room is where somebody last saw him,
+        // so walking there is a coin toss — worth taking when nothing else sells the
+        // thing, never worth taking first.
+        const hits = all.filter(m => m.teaches.some(matches))
+                        .sort((x, y) => (x.wanders ? 1 : 0) - (y.wanders ? 1 : 0));
+        return { matches: hits.map(m => ({ ...brief(m), teaching: m.teaches.filter(matches) })),
+          note: 'buy it the same way you would buy an item — shop, then buy_ids. The price is fixed ' +
+                'by the ability\'s LEVEL and carries no markup (monster.kod:4880), so it is the same ' +
+                'from every teacher; `from: "source"` means the class declares it but no live ' +
+                'merchant was seen holding it. A skill you cannot learn, or already have, is simply ' +
+                'ABSENT from the shop list rather than refused (monster.kod:4855) — so read the list, ' +
+                'and check `abilities` afterwards rather than trusting a quiet buy.' };
       }
 
       if (a.sells) {

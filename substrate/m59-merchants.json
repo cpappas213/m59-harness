@@ -21,7 +21,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Rycksher",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/basicinn.kod"
   },
   {
    "seen": true,
@@ -33,43 +36,98 @@
    "teaches": [
     {
      "num": 88,
-     "spell": "truth"
+     "from": "server",
+     "kind": "spell",
+     "spell": "truth",
+     "constant": "SID_TRUTH",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 179,
-     "spell": "mirth"
+     "from": "server",
+     "kind": "spell",
+     "spell": "mirth",
+     "constant": "SID_MIRTH",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 180,
-     "spell": "melancholy"
+     "from": "server",
+     "kind": "spell",
+     "spell": "melancholy",
+     "constant": "SID_MELANCHOLY",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 120,
-     "spell": "spellbane"
+     "from": "server",
+     "kind": "spell",
+     "spell": "spellbane",
+     "constant": "SID_SPELLBANE",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 122,
-     "spell": "warp time"
+     "from": "server",
+     "kind": "spell",
+     "spell": "warp time",
+     "constant": "SID_WARP_TIME",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 137,
-     "spell": "jig"
+     "from": "server",
+     "kind": "spell",
+     "spell": "jig",
+     "constant": "SID_JIG",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 131,
-     "spell": "mana convergence"
+     "from": "server",
+     "kind": "spell",
+     "spell": "mana convergence",
+     "constant": "SID_MANA_CONVERGENCE",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 177,
-     "spell": "rejuvenate"
+     "from": "server",
+     "kind": "spell",
+     "spell": "rejuvenate",
+     "constant": "SID_REJUVENATE",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 174,
-     "spell": "disharmony"
+     "from": "server",
+     "kind": "spell",
+     "spell": "disharmony",
+     "constant": "SID_DISHARMONY",
+     "level": 4,
+     "price": 4000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Parrin Aragone",
+   "wanders": true,
+   "circuit": [
+    952,
+    150,
+    371,
+    103,
+    852
+   ],
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/minstrel.kod"
   },
   {
    "seen": true,
@@ -81,11 +139,19 @@
    "teaches": [
     {
      "num": 170,
-     "spell": "civility"
+     "from": "server",
+     "kind": "spell",
+     "spell": "civility",
+     "constant": "SID_CIVILITY",
+     "level": 2,
+     "price": 1000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Duke Akardius",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/factions/duke.kod"
   },
   {
    "seen": true,
@@ -97,51 +163,116 @@
    "teaches": [
     {
      "num": 87,
-     "spell": "spore burst"
+     "from": "server",
+     "kind": "spell",
+     "spell": "spore burst",
+     "constant": "SID_SPORE_BURST",
+     "level": 6,
+     "price": 16000
     },
     {
      "num": 85,
-     "spell": "curse weapon"
+     "from": "server",
+     "kind": "spell",
+     "spell": "curse weapon",
+     "constant": "SID_CURSE_WEAPON",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 111,
-     "spell": "death link"
+     "from": "server",
+     "kind": "spell",
+     "spell": "death link",
+     "constant": "SID_DEATH_LINK",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 127,
-     "spell": "gaze of the basilisk"
+     "from": "server",
+     "kind": "spell",
+     "spell": "gaze of the basilisk",
+     "constant": "SID_GAZE_OF_THE_BASILISK",
+     "level": 6,
+     "price": 16000
     },
     {
      "num": 114,
-     "spell": "animate"
+     "from": "server",
+     "kind": "spell",
+     "spell": "animate",
+     "constant": "SID_ANIMATE",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 164,
-     "spell": "shocking fury"
+     "from": "server",
+     "kind": "spell",
+     "spell": "shocking fury",
+     "constant": "SID_SHOCKING_FURY",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 165,
-     "spell": "blast of fire"
+     "from": "server",
+     "kind": "spell",
+     "spell": "blast of fire",
+     "constant": "SID_BLAST_OF_FIRE",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 166,
-     "spell": "explosive frost"
+     "from": "server",
+     "kind": "spell",
+     "spell": "explosive frost",
+     "constant": "SID_EXPLOSIVE_FROST",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 167,
-     "spell": "splash of acid"
+     "from": "server",
+     "kind": "spell",
+     "spell": "splash of acid",
+     "constant": "SID_SPLASH_OF_ACID",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 22,
-     "spell": "vampiric drain"
+     "from": "server",
+     "kind": "spell",
+     "spell": "vampiric drain",
+     "constant": "SID_VAMPIRIC_DRAIN",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 147,
-     "spell": "shadow rift"
+     "from": "server",
+     "kind": "spell",
+     "spell": "shadow rift",
+     "constant": "SID_SHADOW_RIFT",
+     "level": 4,
+     "price": 4000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Maleval",
+   "wanders": true,
+   "circuit": [
+    802,
+    952,
+    53,
+    200,
+    950
+   ],
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/dkwizard.kod"
   },
   {
    "seen": true,
@@ -278,7 +409,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Madelia",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqtailor.kod"
   },
   {
    "seen": true,
@@ -290,11 +424,19 @@
    "teaches": [
     {
      "num": 171,
-     "spell": "conciliation"
+     "from": "server",
+     "kind": "spell",
+     "spell": "conciliation",
+     "constant": "SID_CONCILIATION",
+     "level": 2,
+     "price": 1000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Princess Kateriina",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/factions/princess.kod"
   },
   {
    "seen": true,
@@ -306,79 +448,172 @@
    "teaches": [
     {
      "num": 86,
-     "spell": "anonymity"
+     "from": "server",
+     "kind": "spell",
+     "spell": "anonymity",
+     "constant": "SID_ANONYMITY",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 101,
-     "spell": "apparition"
+     "from": "server",
+     "kind": "spell",
+     "spell": "apparition",
+     "constant": "SID_APPARITION",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 84,
-     "spell": "artifice"
+     "from": "server",
+     "kind": "spell",
+     "spell": "artifice",
+     "constant": "SID_ARTIFICE",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 102,
-     "spell": "forget"
+     "from": "server",
+     "kind": "spell",
+     "spell": "forget",
+     "constant": "SID_FORGET",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 104,
-     "spell": "morph"
+     "from": "server",
+     "kind": "spell",
+     "spell": "morph",
+     "constant": "SID_MORPH",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 99,
-     "spell": "reflection"
+     "from": "server",
+     "kind": "spell",
+     "spell": "reflection",
+     "constant": "SID_REFLECTION",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 77,
-     "spell": "illusionary form"
+     "from": "server",
+     "kind": "spell",
+     "spell": "illusionary form",
+     "constant": "SID_ILLUSIONARY_FORM",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 112,
-     "spell": "foresight"
+     "from": "server",
+     "kind": "spell",
+     "spell": "foresight",
+     "constant": "SID_FORESIGHT",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 107,
-     "spell": "vertigo"
+     "from": "server",
+     "kind": "spell",
+     "spell": "vertigo",
+     "constant": "SID_VERTIGO",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 105,
-     "spell": "denial"
+     "from": "server",
+     "kind": "spell",
+     "spell": "denial",
+     "constant": "SID_DENIAL",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 106,
-     "spell": "illusionary wounds"
+     "from": "server",
+     "kind": "spell",
+     "spell": "illusionary wounds",
+     "constant": "SID_ILLUSIONARY_WOUNDS",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 113,
-     "spell": "flash"
+     "from": "server",
+     "kind": "spell",
+     "spell": "flash",
+     "constant": "SID_FLASH",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 76,
-     "spell": "shadow form"
+     "from": "server",
+     "kind": "spell",
+     "spell": "shadow form",
+     "constant": "SID_SHADOW_FORM",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 129,
-     "spell": "illusionary firewall"
+     "from": "server",
+     "kind": "spell",
+     "spell": "illusionary firewall",
+     "constant": "SID_ILLUSIONARY_FIREWALL",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 115,
-     "spell": "bait"
+     "from": "server",
+     "kind": "spell",
+     "spell": "bait",
+     "constant": "SID_BAIT",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 142,
-     "spell": "feign death"
+     "from": "server",
+     "kind": "spell",
+     "spell": "feign death",
+     "constant": "SID_FEIGN_DEATH",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 169,
-     "spell": "elusion"
+     "from": "server",
+     "kind": "spell",
+     "spell": "elusion",
+     "constant": "SID_ELUSION",
+     "level": 6,
+     "price": 16000
     },
     {
      "num": 143,
-     "spell": "evil twin"
+     "from": "server",
+     "kind": "spell",
+     "spell": "evil twin",
+     "constant": "SID_EVIL_TWIN",
+     "level": 5,
+     "price": 8000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Monk of Riija",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/temples/kcrjmonk.kod"
   },
   {
    "seen": true,
@@ -390,63 +625,136 @@
    "teaches": [
     {
      "num": 38,
-     "spell": "darkness"
+     "from": "server",
+     "kind": "spell",
+     "spell": "darkness",
+     "constant": "SID_DARKNESS",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 124,
-     "spell": "detect good"
+     "from": "server",
+     "kind": "spell",
+     "spell": "detect good",
+     "constant": "SID_DETECT_GOOD",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 45,
-     "spell": "acid touch"
+     "from": "server",
+     "kind": "spell",
+     "spell": "acid touch",
+     "constant": "SID_ACID_TOUCH",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 66,
-     "spell": "karahols curse"
+     "from": "server",
+     "kind": "spell",
+     "spell": "Kara'hol's curse",
+     "constant": "SID_KARAHOLS_CURSE",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 59,
-     "spell": "unholy weapon"
+     "from": "server",
+     "kind": "spell",
+     "spell": "unholy weapon",
+     "constant": "SID_UNHOLY_WEAPON",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 53,
-     "spell": "enfeeble"
+     "from": "server",
+     "kind": "spell",
+     "spell": "enfeeble",
+     "constant": "SID_ENFEEBLE",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 47,
-     "spell": "hold"
+     "from": "server",
+     "kind": "spell",
+     "spell": "hold",
+     "constant": "SID_HOLD",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 73,
-     "spell": "nodeburst"
+     "from": "server",
+     "kind": "spell",
+     "spell": "nodeburst",
+     "constant": "SID_NODEBURST",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 55,
-     "spell": "swap"
+     "from": "server",
+     "kind": "spell",
+     "spell": "swap",
+     "constant": "SID_SWAP",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 49,
-     "spell": "defile"
+     "from": "server",
+     "kind": "spell",
+     "spell": "defile",
+     "constant": "SID_DEFILE",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 51,
-     "spell": "invisibility"
+     "from": "server",
+     "kind": "spell",
+     "spell": "invisibility",
+     "constant": "SID_INVISIBILITY",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 152,
-     "spell": "cloak"
+     "from": "server",
+     "kind": "spell",
+     "spell": "cloak",
+     "constant": "SID_CLOAK",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 144,
-     "spell": "poison fog"
+     "from": "server",
+     "kind": "spell",
+     "spell": "poison fog",
+     "constant": "SID_POISON_FOG",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 173,
-     "spell": "profane resonance"
+     "from": "server",
+     "kind": "spell",
+     "spell": "profane resonance",
+     "constant": "SID_PROFANE_RESONANCE",
+     "level": 3,
+     "price": 2000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Priestess Zuxana",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/temples/qorprst.kod"
   },
   {
    "seen": true,
@@ -458,63 +766,136 @@
    "teaches": [
     {
      "num": 11,
-     "spell": "bless"
+     "from": "server",
+     "kind": "spell",
+     "spell": "bless",
+     "constant": "SID_BLESS",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 61,
-     "spell": "enchant weapon"
+     "from": "server",
+     "kind": "spell",
+     "spell": "enchant weapon",
+     "constant": "SID_ENCHANT_WEAPON",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 17,
-     "spell": "super strength"
+     "from": "server",
+     "kind": "spell",
+     "spell": "super strength",
+     "constant": "SID_SUPER_STRENGTH",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 4,
-     "spell": "night vision"
+     "from": "server",
+     "kind": "spell",
+     "spell": "night vision",
+     "constant": "SID_NIGHT_VISION",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 56,
-     "spell": "create weapon"
+     "from": "server",
+     "kind": "spell",
+     "spell": "create weapon",
+     "constant": "SID_CREATE_WEAPON",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 63,
-     "spell": "create food"
+     "from": "server",
+     "kind": "spell",
+     "spell": "create food",
+     "constant": "SID_CREATE_FOOD",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 43,
-     "spell": "discordance"
+     "from": "server",
+     "kind": "spell",
+     "spell": "discordance",
+     "constant": "SID_DISCORDANCE",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 68,
-     "spell": "mana bomb"
+     "from": "server",
+     "kind": "spell",
+     "spell": "mana bomb",
+     "constant": "SID_MANA_BOMB",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 52,
-     "spell": "antimagic aura"
+     "from": "server",
+     "kind": "spell",
+     "spell": "anti-magic aura",
+     "constant": "SID_ANTIMAGIC_AURA",
+     "level": 6,
+     "price": 16000
     },
     {
      "num": 39,
-     "spell": "killing fields"
+     "from": "server",
+     "kind": "spell",
+     "spell": "killing fields",
+     "constant": "SID_KILLING_FIELDS",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 54,
-     "spell": "resist magic"
+     "from": "server",
+     "kind": "spell",
+     "spell": "resist magic",
+     "constant": "SID_RESIST_MAGIC",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 74,
-     "spell": "armor of gort"
+     "from": "server",
+     "kind": "spell",
+     "spell": "armor of Gort",
+     "constant": "SID_ARMOR_OF_GORT",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 162,
-     "spell": "eagle eyes"
+     "from": "server",
+     "kind": "spell",
+     "spell": "eagle eyes",
+     "constant": "SID_EAGLE_EYES",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 158,
-     "spell": "relay"
+     "from": "server",
+     "kind": "spell",
+     "spell": "relay",
+     "constant": "SID_RELAY",
+     "level": 1,
+     "price": 500
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Priestess Qerti'nya",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/temples/kranprst.kod"
   },
   {
    "seen": true,
@@ -525,7 +906,10 @@
    "sells": [],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "ghostly remains of Queen Venya'cyr",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/deadlich.kod"
   },
   {
    "seen": true,
@@ -582,7 +966,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Eric d'Jorn",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzbart.kod"
   },
   {
    "seen": true,
@@ -637,7 +1024,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzapoth.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if Send(Self,@IsObjectReagent,#what=what) or send(self,@IsObjectGem,#what=what)\r\n         { return True;}\r\n      return False;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Ravi",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzapoth.kod"
   },
   {
    "seen": true,
@@ -677,7 +1067,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzsmith.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n           if send(what,@CanBeGivenToNPC) AND\r\n           (send(self,@IsObjectWearable,#what=what)\r\n           or send(self,@IsObjectWeapon,#what=what))\r\n\t   { return TRUE; }\r\n\t   \r\n\t   return FALSE;\t\t   \r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Tomas",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzsmith.kod"
   },
   {
    "seen": true,
@@ -734,7 +1127,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Eric d'Jorn",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzbart.kod"
   },
   {
    "seen": true,
@@ -789,7 +1185,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzapoth.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if Send(Self,@IsObjectReagent,#what=what) or send(self,@IsObjectGem,#what=what)\r\n         { return True;}\r\n      return False;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Ravi",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzapoth.kod"
   },
   {
    "seen": true,
@@ -829,7 +1228,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzsmith.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n           if send(what,@CanBeGivenToNPC) AND\r\n           (send(self,@IsObjectWearable,#what=what)\r\n           or send(self,@IsObjectWeapon,#what=what))\r\n\t   { return TRUE; }\r\n\t   \r\n\t   return FALSE;\t\t   \r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Tomas",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/hazartwn/hzsmith.kod"
   },
   {
    "seen": true,
@@ -838,9 +1240,22 @@
    "room": 2,
    "markup": null,
    "sells": [],
-   "teaches": [],
+   "teaches": [
+    {
+     "num": 405,
+     "from": "source",
+     "kind": "skill",
+     "skill": "second wind",
+     "constant": "SKID_SECOND_WIND",
+     "level": 4,
+     "price": 4000
+    }
+   ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Drechx",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/council/fourcon.kod"
   },
   {
    "seen": true,
@@ -852,95 +1267,208 @@
    "teaches": [
     {
      "num": 2,
-     "spell": "minor heal"
+     "from": "server",
+     "kind": "spell",
+     "spell": "minor heal",
+     "constant": "SID_MINOR_HEAL",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 60,
-     "spell": "holy weapon"
+     "from": "server",
+     "kind": "spell",
+     "spell": "holy weapon",
+     "constant": "SID_HOLY_WEAPON",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 125,
-     "spell": "detect evil"
+     "from": "server",
+     "kind": "spell",
+     "spell": "detect evil",
+     "constant": "SID_DETECT_EVIL",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 21,
-     "spell": "holy touch"
+     "from": "server",
+     "kind": "spell",
+     "spell": "holy touch",
+     "constant": "SID_HOLY_TOUCH",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 31,
-     "spell": "remove curse"
+     "from": "server",
+     "kind": "spell",
+     "spell": "remove curse",
+     "constant": "SID_REMOVE_CURSE",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 37,
-     "spell": "cure poison"
+     "from": "server",
+     "kind": "spell",
+     "spell": "cure poison",
+     "constant": "SID_CURE_POISON",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 40,
-     "spell": "cure disease"
+     "from": "server",
+     "kind": "spell",
+     "spell": "cure disease",
+     "constant": "SID_CURE_DISEASE",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 7,
-     "spell": "rescue"
+     "from": "server",
+     "kind": "spell",
+     "spell": "rescue",
+     "constant": "SID_RESCUE",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 44,
-     "spell": "mark of dishonor"
+     "from": "server",
+     "kind": "spell",
+     "spell": "mark of dishonor",
+     "constant": "SID_MARK_OF_DISHONOR",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 72,
-     "spell": "purify"
+     "from": "server",
+     "kind": "spell",
+     "spell": "purify",
+     "constant": "SID_PURIFY",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 27,
-     "spell": "forces of light"
+     "from": "server",
+     "kind": "spell",
+     "spell": "forces of light",
+     "constant": "SID_FORCES_OF_LIGHT",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 42,
-     "spell": "major heal"
+     "from": "server",
+     "kind": "spell",
+     "spell": "major heal",
+     "constant": "SID_MAJOR_HEAL",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 50,
-     "spell": "umbrella"
+     "from": "server",
+     "kind": "spell",
+     "spell": "umbrella",
+     "constant": "SID_UMBRELLA",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 100,
-     "spell": "spiritual hammer"
+     "from": "server",
+     "kind": "spell",
+     "spell": "spiritual hammer",
+     "constant": "SID_SPIRITUAL_HAMMER",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 110,
-     "spell": "portal of life"
+     "from": "server",
+     "kind": "spell",
+     "spell": "portal of life",
+     "constant": "SID_PORTAL_OF_LIFE",
+     "level": 6,
+     "price": 16000
     },
     {
      "num": 132,
-     "spell": "holy symbol"
+     "from": "server",
+     "kind": "spell",
+     "spell": "holy symbol",
+     "constant": "SID_HOLY_SYMBOL",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 133,
-     "spell": "final rites"
+     "from": "server",
+     "kind": "spell",
+     "spell": "final rites",
+     "constant": "SID_FINAL_RITES",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 148,
-     "spell": "breath of life"
+     "from": "server",
+     "kind": "spell",
+     "spell": "breath of life",
+     "constant": "SID_BREATH_OF_LIFE",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 154,
-     "spell": "seance"
+     "from": "server",
+     "kind": "spell",
+     "spell": "seance",
+     "constant": "SID_SEANCE",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 149,
-     "spell": "resist acid"
+     "from": "server",
+     "kind": "spell",
+     "spell": "resist acid",
+     "constant": "SID_RESIST_ACID",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 161,
-     "spell": "dazzle"
+     "from": "server",
+     "kind": "spell",
+     "spell": "dazzle",
+     "constant": "SID_DAZZLE",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 172,
-     "spell": "sacred resonance"
+     "from": "server",
+     "kind": "spell",
+     "spell": "sacred resonance",
+     "constant": "SID_SACRED_RESONANCE",
+     "level": 3,
+     "price": 2000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Priestess Xiana",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/temples/shalprst.kod"
   },
   {
    "seen": true,
@@ -952,71 +1480,154 @@
    "teaches": [
     {
      "num": 30,
-     "spell": "light"
+     "from": "server",
+     "kind": "spell",
+     "spell": "light",
+     "constant": "SID_LIGHT",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 23,
-     "spell": "zap"
+     "from": "server",
+     "kind": "spell",
+     "spell": "zap",
+     "constant": "SID_ZAP",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 25,
-     "spell": "winds"
+     "from": "server",
+     "kind": "spell",
+     "spell": "winds",
+     "constant": "SID_WINDS",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 29,
-     "spell": "resist fire"
+     "from": "server",
+     "kind": "spell",
+     "spell": "withstand fire",
+     "constant": "SID_RESIST_FIRE",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 36,
-     "spell": "resist cold"
+     "from": "server",
+     "kind": "spell",
+     "spell": "resist cold",
+     "constant": "SID_RESIST_COLD",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 28,
-     "spell": "resist shock"
+     "from": "server",
+     "kind": "spell",
+     "spell": "resist shock",
+     "constant": "SID_RESIST_SHOCK",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 20,
-     "spell": "touch of flame"
+     "from": "server",
+     "kind": "spell",
+     "spell": "touch of flame",
+     "constant": "SID_TOUCH_OF_FLAME",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 24,
-     "spell": "icy fingers"
+     "from": "server",
+     "kind": "spell",
+     "spell": "icy fingers",
+     "constant": "SID_ICY_FINGERS",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 67,
-     "spell": "mana focus"
+     "from": "server",
+     "kind": "spell",
+     "spell": "mana focus",
+     "constant": "SID_MANA_FOCUS",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 58,
-     "spell": "brittle"
+     "from": "server",
+     "kind": "spell",
+     "spell": "brittle",
+     "constant": "SID_BRITTLE",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 5,
-     "spell": "fireball"
+     "from": "server",
+     "kind": "spell",
+     "spell": "fireball",
+     "constant": "SID_FIREBALL",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 14,
-     "spell": "earthquake"
+     "from": "server",
+     "kind": "spell",
+     "spell": "earthquake",
+     "constant": "SID_EARTHQUAKE",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 57,
-     "spell": "shatter"
+     "from": "server",
+     "kind": "spell",
+     "spell": "shatter",
+     "constant": "SID_SHATTER",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 75,
-     "spell": "sandstorm"
+     "from": "server",
+     "kind": "spell",
+     "spell": "sandstorm",
+     "constant": "SID_SANDSTORM",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 150,
-     "spell": "fog"
+     "from": "server",
+     "kind": "spell",
+     "spell": "fog",
+     "constant": "SID_FOG",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 157,
-     "spell": "mystic touch"
+     "from": "server",
+     "kind": "spell",
+     "spell": "mystic touch",
+     "constant": "SID_MYSTIC_TOUCH",
+     "level": 1,
+     "price": 500
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Priestess Tenuv'vyal",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/temples/farnprst.kod"
   },
   {
    "seen": true,
@@ -1028,11 +1639,19 @@
    "teaches": [
     {
      "num": 76,
-     "spell": "shadow form"
+     "from": "server",
+     "kind": "spell",
+     "spell": "shadow form",
+     "constant": "SID_SHADOW_FORM",
+     "level": 1,
+     "price": 500
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Alzahakar",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/council/onecon.kod"
   },
   {
    "seen": true,
@@ -1044,31 +1663,70 @@
    "teaches": [
     {
      "num": 128,
-     "spell": "firewall"
+     "from": "server",
+     "kind": "spell",
+     "spell": "firewall",
+     "constant": "SID_FIREWALL",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 126,
-     "spell": "martyrs battleground"
+     "from": "server",
+     "kind": "spell",
+     "spell": "martyr's battleground",
+     "constant": "SID_MARTYRS_BATTLEGROUND",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 141,
-     "spell": "bramble wall"
+     "from": "server",
+     "kind": "spell",
+     "spell": "bramble wall",
+     "constant": "SID_BRAMBLE_WALL",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 145,
-     "spell": "bond"
+     "from": "server",
+     "kind": "spell",
+     "spell": "bond",
+     "constant": "SID_BOND",
+     "level": 6,
+     "price": 16000
     },
     {
      "num": 163,
-     "spell": "silence"
+     "from": "server",
+     "kind": "spell",
+     "spell": "silence",
+     "constant": "SID_SILENCE",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 160,
-     "spell": "ring of flames"
+     "from": "server",
+     "kind": "spell",
+     "spell": "ring of flames",
+     "constant": "SID_RING_OF_FLAMES",
+     "level": 5,
+     "price": 8000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Miriana",
+   "wanders": true,
+   "circuit": [
+    511,
+    567,
+    516,
+    597
+   ],
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/heretic.kod"
   },
   {
    "seen": true,
@@ -1118,7 +1776,17 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/izzio.kod",
     "kod": "   ObjectDesired(what=$,who=$,report=TRUE)\r\n   \"This is set in individual buyers.  It allows them to pick and choose\"\r\n   \"what they want to buy.\"\r\n   {\r\n      local i;\r\n\r\n      % Don't take money for resale.  That's just silly.\r\n      if IsClass(what,&Money)\r\n      {\r\n         return FALSE;\r\n      }\r\n\r\n      if length(first(plFor_Sale)) > MAX_FORSALE\r\n      {\r\n         Post(poOwner,@SomeoneSaid,#what=self,#string=Izzio_Full_rsc,#type=SAY_RESOURCE);\r\n\r\n         return FALSE;\r\n      }\r\n\r\n      for i in first(plFor_Sale)\r\n      {\r\n         if GetClass(i) = GetClass(what)\r\n         {\r\n            if isclass(what,&numberitem)\r\n            {\r\n                return TRUE;\r\n            }\r\n            else\r\n            {\r\n               if report\r\n               {\r\n                  Post(poOwner,@SomeoneSaid,#what=self,#string=Izzio_AlreadyHaveOne_rsc,#type=SAY_RESOURCE);\r\n               }\r\n            }\r\n            \r\n            return FALSE;\r\n         }\r\n      }\r\n\r\n      if send(what,@HasAttribute,#ItemAtt=IA_BONDED) OR send(what,@IsItemType,#type=ITEMTYPE_SPECIAL)\r\n      {\r\n         return FALSE;\r\n      }\r\n\r\n      if isClass(what,&Token) OR isClass(what,&Totem)\r\n      {\r\n         return FALSE;\r\n      }\r\n      \r\n      return TRUE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Izzio",
+   "wanders": true,
+   "circuit": [
+    575,
+    535,
+    593,
+    48,
+    568
+   ],
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/izzio.kod"
   },
   {
    "seen": true,
@@ -1130,23 +1798,52 @@
    "teaches": [
     {
      "num": 136,
-     "spell": "spider web"
+     "from": "server",
+     "kind": "spell",
+     "spell": "spider web",
+     "constant": "SID_SPIDER_WEB",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 140,
-     "spell": "lightning wall"
+     "from": "server",
+     "kind": "spell",
+     "spell": "lightning wall",
+     "constant": "SID_LIGHTNING_WALL",
+     "level": 6,
+     "price": 16000
     },
     {
      "num": 138,
-     "spell": "deflect"
+     "from": "server",
+     "kind": "spell",
+     "spell": "deflect",
+     "constant": "SID_DEFLECT",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 134,
-     "spell": "hunt"
+     "from": "server",
+     "kind": "spell",
+     "spell": "hunt",
+     "constant": "SID_HUNT",
+     "level": 5,
+     "price": 8000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Tendrath",
+   "wanders": true,
+   "circuit": [
+    578,
+    599,
+    39,
+    615
+   ],
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/huntghst.kod"
   },
   {
    "seen": true,
@@ -1157,7 +1854,10 @@
    "sells": [],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Bei Naq",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/council/twocon.kod"
   },
   {
    "seen": true,
@@ -1166,9 +1866,22 @@
    "room": 563,
    "markup": null,
    "sells": [],
-   "teaches": [],
+   "teaches": [
+    {
+     "num": 406,
+     "from": "source",
+     "kind": "skill",
+     "skill": "disarm",
+     "constant": "SKID_DISARM",
+     "level": 6,
+     "price": 16000
+    }
+   ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Cylill",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/council/threecon.kod"
   },
   {
    "seen": true,
@@ -1180,15 +1893,28 @@
    "teaches": [
     {
      "num": 168,
-     "spell": "purge"
+     "from": "server",
+     "kind": "spell",
+     "spell": "purge",
+     "constant": "SID_PURGE",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 181,
-     "spell": "crystalize mana"
+     "from": "server",
+     "kind": "spell",
+     "spell": "crystalize mana",
+     "constant": "SID_CRYSTALIZE_MANA",
+     "level": 6,
+     "price": 16000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Esseldi",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/council/fivecon.kod"
   },
   {
    "seen": true,
@@ -1200,27 +1926,55 @@
    "teaches": [
     {
      "num": 123,
-     "spell": "detect invisible"
+     "from": "server",
+     "kind": "spell",
+     "spell": "detect invisible",
+     "constant": "SID_DETECT_INVISIBLE",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 62,
-     "spell": "holy resolve"
+     "from": "server",
+     "kind": "spell",
+     "spell": "holy resolve",
+     "constant": "SID_HOLY_RESOLVE",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 35,
-     "spell": "unholy resolve"
+     "from": "server",
+     "kind": "spell",
+     "spell": "unholy resolve",
+     "constant": "SID_UNHOLY_RESOLVE",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 118,
-     "spell": "shalillebane"
+     "from": "server",
+     "kind": "spell",
+     "spell": "Shal'illebane",
+     "constant": "SID_SHALILLEBANE",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 119,
-     "spell": "qorbane"
+     "from": "server",
+     "kind": "spell",
+     "spell": "Qorbane",
+     "constant": "SID_QORBANE",
+     "level": 4,
+     "price": 4000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "The Bone Priestess",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbonepr.kod"
   },
   {
    "seen": true,
@@ -1231,7 +1985,10 @@
    "sells": [],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "dragonfly queen",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/dflyq.kod"
   },
   {
    "seen": true,
@@ -1242,7 +1999,10 @@
    "sells": [],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "dragonfly queen",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/dflyq.kod"
   },
   {
    "seen": true,
@@ -1305,14 +2065,22 @@
    "teaches": [
     {
      "num": 146,
-     "spell": "blood inheritance"
+     "from": "server",
+     "kind": "spell",
+     "spell": "blood inheritance",
+     "constant": "SID_BLOOD_INHERITANCE",
+     "level": 5,
+     "price": 8000
     }
    ],
    "buying_rule": {
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcmerch.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      return TRUE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Wulfgang zax'Ak",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcmerch.kod"
   },
   {
    "seen": true,
@@ -1334,7 +2102,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Hanla zax'Ta",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbowmak.kod"
   },
   {
    "seen": true,
@@ -1345,7 +2116,10 @@
    "sells": [],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Cital ko'Manca",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcguardG.kod"
   },
   {
    "seen": true,
@@ -1377,7 +2151,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Quetzal",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kclangua.kod"
   },
   {
    "seen": true,
@@ -1392,9 +2169,31 @@
      "quantity": null
     }
    ],
-   "teaches": [],
+   "teaches": [
+    {
+     "num": 425,
+     "from": "source",
+     "kind": "skill",
+     "skill": "fire",
+     "constant": "SKID_FIRE",
+     "level": 4,
+     "price": 4000
+    },
+    {
+     "num": 456,
+     "from": "source",
+     "kind": "skill",
+     "skill": "archery",
+     "constant": "SKID_PROFICIENCY_BOW",
+     "level": 5,
+     "price": 8000
+    }
+   ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Kochtal ko'Tulca",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcweapon.kod"
   },
   {
    "seen": true,
@@ -1439,7 +2238,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcsmith.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if Send(what,@CanBeGivenToNPC) and \r\n         (Send(Self,@IsObjectWearable,#what=what) OR\r\n          Send(Self,@IsObjectWeapon,#what=what))\r\n      {  \r\n         return True;  \r\n      }\r\n      return False;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Ixla cha'Totlak",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcsmith.kod"
   },
   {
    "seen": true,
@@ -1604,7 +2406,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kctailor.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if IsClass(what,&NumberItem) and\r\n         Send(what,@GetNumber) > 100\r\n      {\r\n         return FALSE;\r\n      }\r\n\r\n      if Send(self,@IsObjectGem,#what=what) or\r\n         Send(self,@IsObjectSundry,#what=what)\r\n      {\r\n\t      return TRUE;\r\n      }\r\n\r\n      return FALSE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Tepal ix'Zonak",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kctailor.kod"
   },
   {
    "seen": true,
@@ -1634,7 +2439,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcshopk.kod",
     "kod": "   ObjectDesired(what=$,who=$,report=TRUE)\r\n   \"This is set in individual buyers.  It allows them to pick and choose\"\r\n   \"what they want to buy.\"\r\n   {\r\n      local i;\r\n\r\n      % Don't take money for resale.  That's just silly.\r\n      if IsClass(what,&Money)\r\n      {\r\n         return FALSE;\r\n      }\r\n\r\n      if length(first(plFor_Sale)) > MAX_FORSALE\r\n      {\r\n         Send(self,@SayToOne,#target=who,#message_rsc=JunkMan_Full_rsc);\r\n\t\t return FALSE;\r\n      }\r\n\r\n      for i in first(plFor_Sale)\r\n      {\r\n         if GetClass(i) = GetClass(what)\r\n         {\r\n            if IsClass(i,&NumberItem)\r\n            {\r\n\t\t\t   % Only accept stackable items if we don't have too many of them.\r\n               if (send(what,@GetNumber) + send(i,@GetNumber)) < NUMBER_ITEM_MAX\r\n\t\t\t   {\r\n\t\t\t      return TRUE;\r\n\t\t\t   }\r\n\t\t\t   Send(self,@SayToOne,#target=who,#message_rsc=JunkMan_too_many_rsc);\r\n            }\r\n\t\t\telse\r\n\t\t\t{\r\n\t\t\t   Send(self,@SayToOne,#target=who,#message_rsc=JunkMan_AlreadyHaveOne_rsc);\r\n\t\t\t}\r\n\r\n            return FALSE;\r\n         }\r\n      }\r\n\r\n      if send(what,@HasAttribute,#ItemAtt=IA_BONDED) OR send(what,@IsItemType,#type=ITEMTYPE_SPECIAL)\r\n      {\r\n         return FALSE;\r\n      }\r\n\r\n      if IsClass(what,&Token) OR IsClass(what,&Totem)\r\n      {\r\n         return FALSE;\r\n      }\r\n      \r\n      return TRUE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Pacal ix'Anoak",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcshopk.kod"
   },
   {
    "seen": true,
@@ -1645,7 +2453,10 @@
    "sells": [],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Huital ko'Nosak",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbanker.kod"
   },
   {
    "seen": true,
@@ -1672,7 +2483,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Moxal ix'Hanak",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcinnk.kod"
   },
   {
    "seen": true,
@@ -1697,7 +2511,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbart.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if isClass(what,&ShortSword)\r\n      {\r\n         return TRUE;\r\n      }\r\n      \r\n      return FALSE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Oxal ix'Tokak",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcbart.kod"
   },
   {
    "seen": true,
@@ -1742,7 +2559,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcapoth.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if send(self,@IsObjectReagent,#what=what)\r\n         AND NOT send(self,@IsObjectGem,#what=what)\r\n      {\r\n         return TRUE;\r\n      }\r\n      \r\n      return FALSE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Zala ix'Mecya",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcapoth.kod"
   },
   {
    "seen": true,
@@ -1775,14 +2595,32 @@
    "teaches": [
     {
      "num": 12,
-     "spell": "magic shield"
+     "from": "server",
+     "kind": "spell",
+     "spell": "magic shield",
+     "constant": "SID_MAGIC_SHIELD",
+     "level": 3,
+     "price": 2000
     }
    ],
    "buying_rule": {
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqSmith.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if Send(what,@CanBeGiventoNPC) and \r\n         (Send(Self,@IsObjectWearable,#what=what) OR\r\n         Send(Self,@IsObjectMisc,#what=what) OR\r\n         Send(Self,@IsObjectWeapon,#what=what)) {return True;}\r\n      return False;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Fehr'loi Qan",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqSmith.kod",
+   "also": [
+    {
+     "cls": "TosBlacksmith",
+     "room": null,
+     "seen": false,
+     "wanders": false,
+     "same_person": false
+    }
+   ],
+   "also_note": "answers to the same name but draws differently, so probably a different person — still a second place to buy the same things."
   },
   {
    "seen": true,
@@ -1799,7 +2637,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Caramo",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqclerk.kod"
   },
   {
    "seen": true,
@@ -1834,7 +2675,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqmerch.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if isClass(what,&NumberItem) and\r\n         send(what,@GetNumber) > 25\r\n      {\r\n         return FALSE;\r\n      }\r\n\r\n      if send(self,@IsObjectGem,#what=what) or\r\n         send(self,@IsObjectSundry,#what=what)\r\n      {\r\n\t return TRUE;\r\n      }\r\n\r\n      return FALSE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Herbutte",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqmerch.kod"
   },
   {
    "seen": true,
@@ -1861,7 +2705,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Pritchett",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqinnk.kod"
   },
   {
    "seen": true,
@@ -1904,18 +2751,31 @@
    "teaches": [
     {
      "num": 33,
-     "spell": "heat"
+     "from": "server",
+     "kind": "spell",
+     "spell": "heat",
+     "constant": "SID_HEAT",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 65,
-     "spell": "fade"
+     "from": "server",
+     "kind": "spell",
+     "spell": "fade",
+     "constant": "SID_FADE",
+     "level": 2,
+     "price": 1000
     }
    ],
    "buying_rule": {
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqapoth.kod",
     "kod": "   ObjectDesired(what=$, who=$)\r\n   {\r\n      if Send(self, @IsObjectReagent, #what=what)\r\n         AND NOT Send(self, @IsObjectGem, #what=what)\r\n      {\r\n         return TRUE;\r\n      }\r\n\r\n      return FALSE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Joguer",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqapoth.kod"
   },
   {
    "seen": true,
@@ -1967,7 +2827,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Meidei",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/bqbart.kod"
   },
   {
    "seen": true,
@@ -1979,11 +2842,19 @@
    "teaches": [
     {
      "num": 46,
-     "spell": "blind"
+     "from": "server",
+     "kind": "spell",
+     "spell": "blind",
+     "constant": "SID_BLIND",
+     "level": 5,
+     "price": 8000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Yevitan",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/jasprtwn/jsbanker.kod"
   },
   {
    "seen": true,
@@ -1995,43 +2866,110 @@
    "teaches": [
     {
      "num": 80,
-     "spell": "identify"
+     "from": "server",
+     "kind": "spell",
+     "spell": "identify",
+     "constant": "SID_IDENTIFY",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 81,
-     "spell": "reveal"
+     "from": "server",
+     "kind": "spell",
+     "spell": "reveal",
+     "constant": "SID_REVEAL",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 82,
-     "spell": "shroud"
+     "from": "server",
+     "kind": "spell",
+     "spell": "shroud",
+     "constant": "SID_SHROUD",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 89,
-     "spell": "dispel illusion"
+     "from": "server",
+     "kind": "spell",
+     "spell": "dispel illusion",
+     "constant": "SID_DISPEL_ILLUSION",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 116,
-     "spell": "haste"
+     "from": "server",
+     "kind": "spell",
+     "spell": "haste",
+     "constant": "SID_HASTE",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 130,
-     "spell": "resist poison"
+     "from": "server",
+     "kind": "spell",
+     "spell": "resist poison",
+     "constant": "SID_RESIST_POISON",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 153,
-     "spell": "glow"
+     "from": "server",
+     "kind": "spell",
+     "spell": "glow",
+     "constant": "SID_GLOW",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 151,
-     "spell": "free action"
+     "from": "server",
+     "kind": "spell",
+     "spell": "free action",
+     "constant": "SID_FREE_ACTION",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 139,
-     "spell": "shatterlock"
+     "from": "server",
+     "kind": "spell",
+     "spell": "shatterlock",
+     "constant": "SID_SHATTERLOCK",
+     "level": 6,
+     "price": 16000
+    },
+    {
+     "num": 404,
+     "from": "source",
+     "kind": "skill",
+     "skill": "block",
+     "constant": "SKID_BLOCK",
+     "level": 1,
+     "price": 500
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Jonas D'Accor",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/factions/rebel.kod",
+   "also": [
+    {
+     "cls": "JealousGeneral",
+     "room": null,
+     "seen": false,
+     "wanders": true,
+     "same_person": true
+    }
+   ],
+   "also_note": "the same man under another class — same name, same icon. One of these usually stands still."
   },
   {
    "seen": true,
@@ -2063,7 +3001,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Pietro",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/jasprtwn/jsbart.kod"
   },
   {
    "seen": true,
@@ -2075,15 +3016,28 @@
    "teaches": [
     {
      "num": 1,
-     "spell": "lightning bolt"
+     "from": "server",
+     "kind": "spell",
+     "spell": "lightning bolt",
+     "constant": "SID_LIGHTNING_BOLT",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 64,
-     "spell": "dement"
+     "from": "server",
+     "kind": "spell",
+     "spell": "dement",
+     "constant": "SID_DEMENT",
+     "level": 4,
+     "price": 4000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Afiera D'xor",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/jasprtwn/jselder.kod"
   },
   {
    "seen": true,
@@ -2203,7 +3157,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/jasprtwn/jsmerch.kod",
     "kod": "   ObjectDesired(what = $, who = $)\r\n   {\r\n      if Send(what,@CanBeGiventoNPC)\r\n         AND send(self,@IsObjectReagent,#what=what)\r\n      {\r\n         return TRUE;\r\n      }\r\n      \r\n      return FALSE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Zhieu B'hob",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/jasprtwn/jsmerch.kod"
   },
   {
    "seen": true,
@@ -2243,12 +3200,25 @@
      "quantity": null
     }
    ],
-   "teaches": [],
+   "teaches": [
+    {
+     "num": 453,
+     "from": "source",
+     "kind": "skill",
+     "skill": "scimitar wielding",
+     "constant": "SKID_PROFICIENCY_SCIMITAR",
+     "level": 4,
+     "price": 4000
+    }
+   ],
    "buying_rule": {
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/jasprtwn/jssmith.kod",
     "kod": "   ObjectDesired(what = $, who = $)\r\n   {\r\n      if Send(what,@CanBeGiventoNPC)\r\n         AND (Send(Self,@IsObjectWeapon,#what=what)\r\n              OR Send(Self,@IsObjectWearable,#what=what))\r\n      {\r\n         if IsClass(what,&NeruditeSword)\r\n            OR IsClass(what,&NeruditeArmor)\r\n            OR IsClass(what,&NeruditeBow)\r\n         {\r\n            send(poOwner,@SomeoneSaid,#what=self,#string=JsBla_island_items,#type=SAY_RESOURCE);\r\n            return FALSE;\r\n         }\r\n\r\n         return TRUE;\r\n      }\r\n      \r\n      return FALSE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Quintor",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/jasprtwn/jssmith.kod"
   },
   {
    "seen": true,
@@ -2266,15 +3236,28 @@
    "teaches": [
     {
      "num": 156,
-     "spell": "sweep"
+     "from": "server",
+     "kind": "spell",
+     "spell": "sweep",
+     "constant": "SID_SWEEP",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 176,
-     "spell": "restorate"
+     "from": "server",
+     "kind": "spell",
+     "spell": "restorate",
+     "constant": "SID_RESTORATE",
+     "level": 3,
+     "price": 2000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Widow Qesino",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/jasprtwn/jsinnk.kod"
   },
   {
    "seen": true,
@@ -2421,7 +3404,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Hester Gilk",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/crnthtwn/cntailor.kod"
   },
   {
    "seen": true,
@@ -2451,9 +3437,103 @@
      "quantity": null
     }
    ],
-   "teaches": [],
+   "teaches": [
+    {
+     "num": 401,
+     "from": "source",
+     "kind": "skill",
+     "skill": "dodge",
+     "constant": "SKID_DODGE",
+     "level": 2,
+     "price": 1000
+    },
+    {
+     "num": 430,
+     "from": "source",
+     "kind": "skill",
+     "skill": "punch",
+     "constant": "SKID_PUNCH",
+     "level": 1,
+     "price": 500
+    },
+    {
+     "num": 421,
+     "from": "source",
+     "kind": "skill",
+     "skill": "slash",
+     "constant": "SKID_SLASH",
+     "level": 1,
+     "price": 500
+    },
+    {
+     "num": 455,
+     "from": "source",
+     "kind": "skill",
+     "skill": "axe wielding",
+     "constant": "SKID_PROFICIENCY_AXE",
+     "level": 3,
+     "price": 2000
+    },
+    {
+     "num": 454,
+     "from": "source",
+     "kind": "skill",
+     "skill": "hammer wielding",
+     "constant": "SKID_PROFICIENCY_HAMMER",
+     "level": 3,
+     "price": 2000
+    },
+    {
+     "num": 450,
+     "from": "source",
+     "kind": "skill",
+     "skill": "brawling",
+     "constant": "SKID_BRAWLING",
+     "level": 2,
+     "price": 1000
+    },
+    {
+     "num": 457,
+     "from": "source",
+     "kind": "skill",
+     "skill": "short sword fighting",
+     "constant": "SKID_PROFICIENCY_SHORT_SWORD",
+     "level": 2,
+     "price": 1000
+    },
+    {
+     "num": 452,
+     "from": "source",
+     "kind": "skill",
+     "skill": "mace fighting",
+     "constant": "SKID_PROFICIENCY_MACE",
+     "level": 1,
+     "price": 500
+    },
+    {
+     "num": 451,
+     "from": "source",
+     "kind": "skill",
+     "skill": "fencing",
+     "constant": "SKID_PROFICIENCY_SWORD",
+     "level": 3,
+     "price": 2000
+    },
+    {
+     "num": 402,
+     "from": "source",
+     "kind": "skill",
+     "skill": "parry",
+     "constant": "SKID_PARRY",
+     "level": 4,
+     "price": 4000
+    }
+   ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Rook",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/crnthtwn/cnsarge.kod"
   },
   {
    "seen": true,
@@ -2465,11 +3545,19 @@
    "teaches": [
     {
      "num": 175,
-     "spell": "invigorate"
+     "from": "server",
+     "kind": "spell",
+     "spell": "invigorate",
+     "constant": "SID_INVIGORATE",
+     "level": 1,
+     "price": 500
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "D'Franco",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/crnthtwn/cninnk.kod"
   },
   {
    "seen": true,
@@ -2524,7 +3612,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/crnthtwn/cngrocer.kod",
     "kod": "   ObjectDesired(what = $, who = $)\r\n   {\r\n      if Send(what, @CanBeGiventoNPC) AND\r\n         (Send(self, @IsObjectReagent, #what=what)\r\n         OR Send(self, @IsObjectSundry, #what=what)\r\n         OR IsClass(what, &NeruditeOreChunk)\r\n         OR IsClass(what, &OrcPitBossHead))\r\n      {\r\n         return TRUE;\r\n      }\r\n\r\n      return FALSE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Solomon",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/crnthtwn/cngrocer.kod"
   },
   {
    "seen": true,
@@ -2562,11 +3653,19 @@
    "teaches": [
     {
      "num": 159,
-     "spell": "distill"
+     "from": "server",
+     "kind": "spell",
+     "spell": "distill",
+     "constant": "SID_DISTILL",
+     "level": 3,
+     "price": 2000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Lady Aftyn",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrhealer.kod"
   },
   {
    "seen": true,
@@ -2604,14 +3703,22 @@
    "teaches": [
     {
      "num": 13,
-     "spell": "mend"
+     "from": "server",
+     "kind": "spell",
+     "spell": "mend",
+     "constant": "SID_MEND",
+     "level": 4,
+     "price": 4000
     }
    ],
    "buying_rule": {
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/MrSmith.kod",
     "kod": "   ObjectDesired(what = $, who = $)\r\n   {\r\n      % Allow him to buy the weapons and shields from the nearby crypt.\r\n      if Send(what,@CanBeGiventoNPC)\r\n         AND (Send(Self,@IsObjectWeapon,#what=what)\r\n              OR IsClass(what,&Shield))\r\n      {\r\n         return TRUE;\r\n      }\r\n      \r\n      return FALSE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Colhorr",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/MrSmith.kod"
   },
   {
    "seen": true,
@@ -2638,7 +3745,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Tova",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrbart.kod"
   },
   {
    "seen": true,
@@ -2678,7 +3788,10 @@
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrinnk.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if Send(self,@IsObjectSundry,#what=what)\r\n         OR Send(self,@IsObjectReagent,#what=what)\r\n         OR Send(self,@IsObjectWearable,#what=what)\r\n      {\r\n         return TRUE;\r\n      }\r\n      \r\n      return FALSE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Morrigan",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/mrinnk.kod"
   },
   {
    "seen": true,
@@ -2690,11 +3803,19 @@
    "teaches": [
     {
      "num": 26,
-     "spell": "truce"
+     "from": "server",
+     "kind": "spell",
+     "spell": "truce",
+     "constant": "SID_TRUCE",
+     "level": 4,
+     "price": 4000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Ran er'Hoth",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/marntwn/MrElder.kod"
   },
   {
    "seen": true,
@@ -2721,7 +3842,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Skivlat",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/TsBanker.kod"
   },
   {
    "seen": true,
@@ -2769,14 +3893,22 @@
    "teaches": [
     {
      "num": 41,
-     "spell": "hospice"
+     "from": "server",
+     "kind": "spell",
+     "spell": "hospice",
+     "constant": "SID_HOSPICE",
+     "level": 3,
+     "price": 2000
     }
    ],
    "buying_rule": {
     "source": "kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/TsApoth.kod",
     "kod": "   ObjectDesired(what=$,who=$)\r\n   {\r\n      if send(self,@IsObjectReagent,#what=what)\r\n         AND NOT send(self,@IsObjectGem,#what=what)\r\n      {\r\n         return TRUE;\r\n      }\r\n\r\n      return FALSE;\r\n   }"
    },
-   "buys_anything": false
+   "buys_anything": false,
+   "name": "Frisconar",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/TsApoth.kod"
   },
   {
    "seen": true,
@@ -2798,7 +3930,10 @@
    ],
    "teaches": [],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Paddock",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/TsInnK.kod"
   },
   {
    "seen": true,
@@ -2810,11 +3945,19 @@
    "teaches": [
     {
      "num": 155,
-     "spell": "eavesdrop"
+     "from": "server",
+     "kind": "spell",
+     "spell": "eavesdrop",
+     "constant": "SID_EAVESDROP",
+     "level": 2,
+     "price": 1000
     }
    ],
    "buying_rule": null,
-   "buys_anything": true
+   "buys_anything": true,
+   "name": "Roq",
+   "wanders": false,
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/barlqtwn/assassin.kod"
   },
   {
    "seen": false,
@@ -2826,24 +3969,38 @@
    "teaches": [
     {
      "num": 147,
+     "from": "server",
+     "kind": "spell",
      "spell": "shadow rift",
-     "constant": "SID_SHADOW_RIFT"
+     "constant": "SID_SHADOW_RIFT",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 26,
+     "from": "server",
+     "kind": "spell",
      "spell": "truce",
-     "constant": "SID_TRUCE"
+     "constant": "SID_TRUCE",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 46,
+     "from": "server",
+     "kind": "spell",
      "spell": "blind",
-     "constant": "SID_BLIND"
+     "constant": "SID_BLIND",
+     "level": 5,
+     "price": 8000
     }
    ],
    "buying_rule": null,
    "buys_anything": true,
    "source": "kod/object/active/holder/nomoveon/battler/monster/lich.kod",
-   "note": "defined in the source but no instance was standing in the world when this was built"
+   "note": "defined in the source but no instance was standing in the world when this was built",
+   "name": "Queen Venya'cyr",
+   "wanders": false
   },
   {
    "seen": false,
@@ -2881,8 +4038,12 @@
    "teaches": [
     {
      "num": 12,
+     "from": "server",
+     "kind": "spell",
      "spell": "magic shield",
-     "constant": "SID_MAGIC_SHIELD"
+     "constant": "SID_MAGIC_SHIELD",
+     "level": 3,
+     "price": 2000
     }
    ],
    "buying_rule": {
@@ -2891,7 +4052,19 @@
    },
    "buys_anything": false,
    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/tostwn/TsSmith.kod",
-   "note": "defined in the source but no instance was standing in the world when this was built"
+   "note": "defined in the source but no instance was standing in the world when this was built",
+   "name": "Fehr'loi Qan",
+   "wanders": false,
+   "also": [
+    {
+     "cls": "BarloqueBlacksmith",
+     "room": 113,
+     "seen": true,
+     "wanders": false,
+     "same_person": false
+    }
+   ],
+   "also_note": "answers to the same name but draws differently, so probably a different person — still a second place to buy the same things."
   },
   {
    "seen": false,
@@ -2903,59 +4076,119 @@
    "teaches": [
     {
      "num": 404,
+     "from": "server",
+     "kind": "skill",
      "skill": "block",
-     "constant": "SKID_BLOCK"
+     "constant": "SKID_BLOCK",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 80,
+     "from": "server",
+     "kind": "spell",
      "spell": "identify",
-     "constant": "SID_IDENTIFY"
+     "constant": "SID_IDENTIFY",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 81,
+     "from": "server",
+     "kind": "spell",
      "spell": "reveal",
-     "constant": "SID_REVEAL"
+     "constant": "SID_REVEAL",
+     "level": 5,
+     "price": 8000
     },
     {
      "num": 82,
+     "from": "server",
+     "kind": "spell",
      "spell": "shroud",
-     "constant": "SID_SHROUD"
+     "constant": "SID_SHROUD",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 89,
+     "from": "server",
+     "kind": "spell",
      "spell": "dispel illusion",
-     "constant": "SID_DISPEL_ILLUSION"
+     "constant": "SID_DISPEL_ILLUSION",
+     "level": 4,
+     "price": 4000
     },
     {
      "num": 116,
+     "from": "server",
+     "kind": "spell",
      "spell": "haste",
-     "constant": "SID_HASTE"
+     "constant": "SID_HASTE",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 130,
+     "from": "server",
+     "kind": "spell",
      "spell": "resist poison",
-     "constant": "SID_RESIST_POISON"
+     "constant": "SID_RESIST_POISON",
+     "level": 2,
+     "price": 1000
     },
     {
      "num": 153,
+     "from": "server",
+     "kind": "spell",
      "spell": "glow",
-     "constant": "SID_GLOW"
+     "constant": "SID_GLOW",
+     "level": 1,
+     "price": 500
     },
     {
      "num": 151,
+     "from": "server",
+     "kind": "spell",
      "spell": "free action",
-     "constant": "SID_FREE_ACTION"
+     "constant": "SID_FREE_ACTION",
+     "level": 3,
+     "price": 2000
     },
     {
      "num": 139,
+     "from": "server",
+     "kind": "spell",
      "spell": "shatterlock",
-     "constant": "SID_SHATTERLOCK"
+     "constant": "SID_SHATTERLOCK",
+     "level": 6,
+     "price": 16000
     }
    ],
    "buying_rule": null,
    "buys_anything": true,
    "source": "kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/jGeneral.kod",
-   "note": "defined in the source but no instance was standing in the world when this was built"
+   "note": "defined in the source but no instance was standing in the world when this was built",
+   "name": "Jonas D'Accor",
+   "wanders": true,
+   "circuit": [
+    375,
+    801,
+    371,
+    103,
+    153
+   ],
+   "also": [
+    {
+     "cls": "RebelLiege",
+     "room": 371,
+     "seen": true,
+     "wanders": false,
+     "same_person": true
+    }
+   ],
+   "also_note": "the same man under another class — same name, same icon. One of these usually stands still."
   }
- ]
+ ],
+ "enrichedAt": "2026-08-07T00:39:26.624Z"
 }

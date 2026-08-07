@@ -42,7 +42,7 @@ const ok = (name, cond, extra = '') => {
   else { fail++; console.log('  FAIL ' + name + (extra ? '  ' + extra : '')); }
 };
 
-const { loadPostmortems, locate, causeOf, facets, digest, TRUST_MS } =
+const { loadPostmortems, locate, causeOf, facets, digest, keeperOf, TRUST_MS, WATCH_MS } =
   await import('./m59-postmortems.mjs');
 const { SQUARIFY_JS } = await import('./m59-deaths-page.mjs');
 const t = await import('./m59-tougher.mjs');
@@ -141,6 +141,45 @@ console.log('\nwhere it died — evidence or nothing');
   const noFrames = locate(death({ frameAgo: null }));
   ok('a death with no frames at all is unplaced', noFrames.trusted === false);
   ok('and says so rather than blaming staleness', /never got a frame/.test(noFrames.why));
+}
+
+// ------------------------------------------------------------------ was it driving?
+
+console.log('\nwas a keeper driving — and was it looking');
+{
+  const fresh = keeperOf(death({ frameAgo: 2_000 }));
+  ok('a keeper that looked two seconds ago was watching', fresh.up === true && fresh.watching === true);
+  ok('and the gap is carried, not just the verdict', fresh.blind_ms === 2_000);
+
+  // THE CASE THIS COLUMN EXISTS FOR, and it is Camilla's exactly. The uptime ledger says
+  // the keeper was up — it was, continuously, for sixteen minutes either side — and its
+  // last observation was 17.8 seconds before the end. In those 17.8 seconds the event
+  // stream recorded her going 22 -> 19 -> 18 -> 16 -> 14 -> 11 -> 10 -> 5 -> 4 -> 0. The
+  // keeper never saw a number it would have fled from because it never looked, and a
+  // plain Y in this column would say it was in control.
+  const blind = keeperOf(death({ frameAgo: 17_819 }));
+  ok('a keeper up but 18s blind still reads as up', blind.up === true);
+  ok('but is NOT counted as watching', blind.watching === false);
+  ok('and says so in words', /UP BUT BLIND/.test(blind.why));
+
+  ok('exactly at the resync interval still counts as watching',
+     keeperOf(death({ frameAgo: WATCH_MS })).watching === true);
+  ok('a second past it does not', keeperOf(death({ frameAgo: WATCH_MS + 1000 })).watching === false);
+
+  // THE BLIND THRESHOLD IS NOT THE LOCATION THRESHOLD, and conflating them was the first
+  // version's mistake: at 30s, Camilla's 17.8s of blindness rendered as a clean green Y.
+  // A death can be placed accurately by a reading the keeper could not have acted on.
+  ok('a gap can place a death and still be blind',
+     locate(death({ frameAgo: 17_819 })).trusted === true &&
+     keeperOf(death({ frameAgo: 17_819 })).watching === false);
+
+  const down = keeperOf({ ...death({ frameAgo: 3_000 }), during_keeper_outage: { ms: 45_000 } });
+  ok('an outage is an N', down.up === false);
+  ok('and reports how long it had been down', /45s/.test(down.why));
+
+  const nothing = keeperOf(death({ frameAgo: null }));
+  ok('no frames and no outage is an honest ?', nothing.up === null);
+  ok('rather than an assumed yes', nothing.watching === undefined);
 }
 
 // ------------------------------------------------------------------ the facets

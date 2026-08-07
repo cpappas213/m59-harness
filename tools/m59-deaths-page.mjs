@@ -311,12 +311,12 @@ document.addEventListener('click', function (e) {
   document.querySelectorAll('tr.detail').forEach(function (d) { d.remove(); });
   var row = document.createElement('tr');
   row.className = 'detail';
-  row.innerHTML = '<td colspan="6" class="dim">reading the post mortem…</td>';
+  row.innerHTML = '<td colspan="7" class="dim">reading the post mortem…</td>';
   tr.parentNode.insertBefore(row, tr.nextSibling);
   fetch('/deaths/report?file=' + encodeURIComponent(tr.dataset.file))
     .then(function (r) { return r.json(); })
-    .then(function (d) { row.innerHTML = '<td colspan="6">' + renderDigest(d) + '</td>'; })
-    .catch(function (err) { row.innerHTML = '<td colspan="6" class="bad">could not read it: ' + err + '</td>'; });
+    .then(function (d) { row.innerHTML = '<td colspan="7">' + renderDigest(d) + '</td>'; })
+    .catch(function (err) { row.innerHTML = '<td colspan="7" class="bad">could not read it: ' + err + '</td>'; });
 });
 function kv(k, v) { return '<div class="kv"><div class="k">' + k + '</div><div>' + v + '</div></div>'; }
 function renderDigest(d) {
@@ -332,8 +332,18 @@ function renderDigest(d) {
   var text = (d.text || []).map(function (t) {
     return '<div><span class="t">-' + (t.dt / 1000).toFixed(1) + 's</span> ' + t.text + '</div>';
   }).join('');
+  // THE CELL THAT EXPLAINS MOST OF THIS PAGE. A keeper that was up and not looking is
+  // the ordinary case, not the exception, and the report should say it in words.
+  var k = d.keeper || {};
+  var keeper = k.up === false ? '<span class="bad">N — nothing was driving</span>'
+             : k.up === null ? '<span class="dim">? — no record either way</span>'
+             : k.watching ? '<span class="good">Y</span> <span class="dim">last looked ' +
+                 ((k.blind_ms || 0) / 1000).toFixed(1) + 's before the end</span>'
+             : '<span class="guess">Y, but BLIND for ' + Math.round((k.blind_ms || 0) / 1000) +
+               's</span> <span class="dim">— running, and not looking</span>';
   return '<div class="grid">' +
     kv('killed by', killer) +
+    kv('keeper', keeper) +
     kv('where', place) +
     kv('was', (d.was.doing || '?') + (d.was.hunting ? ' · hunting ' + d.was.hunting : '')) +
     kv('level', d.level + (d.was.in_safe_spot ? ' · <span class="bad">in a safe spot</span>' : '')) +
@@ -348,6 +358,30 @@ function renderDigest(d) {
 }
 `;
 
+// WAS ANYTHING DRIVING? Y/N — with the part that a bare Y hides.
+//
+// N is an outage: nothing was at the controls, and the death says nothing about how the
+// fleet fights. Y is the uptime ledger saying the keeper was running.
+//
+// But 81% of the deaths where the keeper WAS up have it blind at the moment of death —
+// median gap 18 seconds — and a plain Y over that is the most misleading cell on the page.
+// A keeper blind for 18s has taken roughly eighteen decisions against a view of the world
+// that stopped changing, including every decision about whether to flee. So Y carries the
+// gap, and only a keeper inside its own 8s resync envelope gets the green one.
+function keeperCell(k) {
+  if (!k || k.up === null)
+    return `<span class="dim" title="${esc(k?.why ?? 'no record')}">?</span>`;
+  if (k.up === false)
+    return `<span class="bad" title="${esc(k.why)}">N</span>`;
+  const gap = k.blind_ms == null ? null
+    : k.blind_ms < 1000 ? `${k.blind_ms}ms` : `${Math.round(k.blind_ms / 1000)}s`;
+  if (k.watching)
+    return `<span class="good" title="${esc(k.why)}">Y</span>` +
+           (gap ? ` <span class="dim gapnum">${gap}</span>` : '');
+  return `<span class="guess" title="${esc(k.why)}">Y</span>` +
+         `<span class="pill inf" title="${esc(k.why)}">blind ${gap}</span>`;
+}
+
 // ------------------------------------------------------------------ /deaths
 
 export function renderDeaths({ hours = 168 } = {}) {
@@ -357,12 +391,15 @@ export function renderDeaths({ hours = 168 } = {}) {
   const observed = rows.filter(r => r.cause.observed).length;
   const inSpot = rows.filter(r => r.in_safe_spot).length;
   const unattended = rows.filter(r => r.during_keeper_outage).length;
+  const blind = rows.filter(r => r.keeper.up === true && !r.keeper.watching).length;
+  const watching = rows.filter(r => r.keeper.watching).length;
 
   const logRows = rows.slice(0, 80).map(r => `
     <tr class="death" data-file="${esc(r.file)}">
       <td class="dim">${esc(ago(r.at))}</td>
       <td>${esc(r.character ?? '?')}</td>
       <td class="dim">${r.level ?? '—'}</td>
+      <td class="keeper">${keeperCell(r.keeper)}</td>
       <td>${r.cause.killer
             ? `${lore(r.cause.killer)} ${r.cause.observed
                  ? '<span class="pill obs">announced</span>'
@@ -407,6 +444,9 @@ export function renderDeaths({ hours = 168 } = {}) {
       <div class="n">the number that falsifies the thesis</div></div>
     <div class="card"><div class="k">keeper was down</div><div class="v ${unattended ? 'bad' : 'dim'}">${unattended}</div>
       <div class="n">not evidence about the strategy</div></div>
+    <div class="card"><div class="k">up but blind</div><div class="v ${blind ? 'bad' : 'good'}">${blind}</div>
+      <div class="n">${watching} were actually watching — a keeper past its own 8s resync is
+        deciding against a world that stopped changing</div></div>
   </div>
 
   <div class="panel">
@@ -424,8 +464,10 @@ export function renderDeaths({ hours = 168 } = {}) {
   <div class="sub">Click one to open its report.</div>
   <div class="panel scroller" style="padding:.25rem .5rem">
   <table>
-    <thead><tr><th>when</th><th>who</th><th>lvl</th><th>killed by</th><th>where</th><th>doing</th></tr></thead>
-    <tbody>${logRows || '<tr><td colspan="6" class="empty">no deaths in this window</td></tr>'}</tbody>
+    <thead><tr><th>when</th><th>who</th><th>lvl</th>
+      <th title="was a keeper driving — and had it looked recently">keeper?</th>
+      <th>killed by</th><th>where</th><th>doing</th></tr></thead>
+    <tbody>${logRows || '<tr><td colspan="7" class="empty">no deaths in this window</td></tr>'}</tbody>
   </table>
   </div>
 </div>
