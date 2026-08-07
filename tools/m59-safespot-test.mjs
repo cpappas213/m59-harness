@@ -228,6 +228,67 @@ console.log('\n--- quiet inside the grace proves nothing either ---');
      JSON.stringify(p.book.get(999, 13, 13)));
 }
 
+// PUTTING BACK A SQUARE RETIRED BEFORE THE GRACE EXISTED. See m59-safespot-retest.mjs.
+//
+// The danger in this direction is the opposite of the usual one: a reinstatement that
+// restores TRUST rather than eligibility would put characters back onto squares on the
+// strength of a judgement we have just decided was unreliable.
+console.log('\n--- reinstating a square retired on one point of damage ---');
+{
+  // From the book module, not the tool: m59-safespot-retest.mjs is a script with no
+  // entry-point guard, so importing it here would run it against the real book.
+  const { selectForRetest, reinstateUntested } = await import('./m59-safespots.mjs');
+  const rooms = {
+    999: {
+      '1,1': { col: 1, row: 1, held: 3, failed: 1, damage_taken: 1, held_seconds: 40 },
+      '2,2': { col: 2, row: 2, held: 2, failed: 1, damage_taken: 6 },
+      '3,3': { col: 3, row: 3, held: 0, failed: 1, damage_taken: 1 },
+      '4,4': { col: 4, row: 4, held: 4, failed: 0 },
+      '5,5': { col: 5, row: 5, held: 2, failed: 1, damage_taken: 1, verified: true },
+    },
+  };
+  const picked = selectForRetest(rooms, { maxDamage: 1 });
+  const keys = picked.map(p => p.key).sort();
+  ok('picks the square that held and then went out on one point',
+     keys.join(',') === '1,1', keys.join(',') || '(none)');
+  ok('leaves a square that lost six — something genuinely reached that one',
+     !keys.includes('2,2'));
+  ok('leaves a square that never held — there is no proof to restore',
+     !keys.includes('3,3'));
+  ok('leaves a square that was never retired', !keys.includes('4,4'));
+  ok('leaves a human-verified square alone', !keys.includes('5,5'),
+     'a mark already outranks our arithmetic; zeroing its record would be a loss');
+
+  const back = reinstateUntested(rooms[999]['1,1']);
+  ok('the reinstated square is untested, not proven', back.held === 0 && back.failed === 0,
+     JSON.stringify({ held: back.held, failed: back.failed }));
+  ok('and is therefore NOT inherited as trusted',
+     !(!!back.held && !new SafeSpotBook(null).discredited(back)),
+     'takeSafeSpot reads held && !discredited — restoring held would rest characters on it');
+  ok('it stays eligible to be offered again', back.retest === true,
+     'zeroing held alone would drop any square that qualified only because it had held');
+  ok('and keeps what it used to be', back.retest_from?.held === 3 && back.retest_from?.failed === 1,
+     JSON.stringify(back.retest_from));
+  ok('a reinstated square that fails again is out for good',
+     new SafeSpotBook(null).discredited({ ...back, failed: 1 }),
+     'retest must not survive a fresh failure, or the grace becomes a way back in for ever');
+
+  // SELECTED AGAINST ONE BOOK, WRITTEN TO ANOTHER. The pardon zeroes damage_taken, which
+  // is the very number that identifies this subset — so after it has run the squares are
+  // invisible in the live book and have to be chosen from a snapshot taken before it.
+  // The history kept must then be the SNAPSHOT's, not the pardoned record's zeroes.
+  const pardoned = { col: 1, row: 1, held: 3, failed: 0, damage_taken: 0,
+                     failed_before_wallhug: 1, retested_at: 0 };
+  const viaRef = reinstateUntested(pardoned, { from: rooms[999]['1,1'] });
+  ok('the live record is what gets rewritten', viaRef.held === 0 && viaRef.failed === 0,
+     JSON.stringify({ held: viaRef.held, failed: viaRef.failed }));
+  ok('but the history kept is the snapshot\'s, not the pardoned zeroes',
+     viaRef.retest_from.failed === 1 && viaRef.retest_from.damage_taken === 1,
+     JSON.stringify(viaRef.retest_from));
+  ok('and the pardon\'s own marker is left intact', viaRef.failed_before_wallhug === 1,
+     'overwriting it would erase that a different tool had already judged this square');
+}
+
 console.log('\n--- damage we asked for proves nothing ---');
 {
   const w = world();

@@ -359,6 +359,70 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   not chosen: 30s keeps 384 of 637 and leaks no inn, 60s starts letting them back in. The
   253 it cannot place are reported as a count, never as a room.
 
+- **"WAS THE KEEPER UP" IS THE WRONG QUESTION. IT USUALLY WAS, AND IT USUALLY WAS NOT
+  LOOKING.** Of 715 deaths, 645 had a keeper the uptime ledger says was running — and
+  **521 of those 645 (81%) had it BLIND at the moment of death**, median gap 18 seconds,
+  p90 219 seconds. A pass can be a single `await` lasting minutes (a travel loops up to 25
+  hops with no observation in it), so the keeper goes on deciding against a view of the
+  world that stopped changing. Every one of those decisions includes "should I flee".
+
+  `keeperOf()` in `m59-postmortems.mjs` therefore answers both halves, and the deaths page
+  shows `Y 3s` / `Y blind 18s` / `N` rather than a bare Y. The blind threshold is
+  **`WATCH_MS`, 8s — the keeper's own `resyncMs` default**, the longest it is designed to
+  go without re-asking the server. It is deliberately NOT `TRUST_MS` (30s): that one asks
+  whether a reading still places a death, this one asks whether the keeper could have acted
+  on it, and a character can bleed out entirely inside a window that still places it.
+
+  The worked example is Camilla, 2026-08-06 23:59. The keeper was up continuously for 16
+  minutes either side. At −18.0s it saw 69% health, took a safe spot and refused to rest in
+  the open. **0.2 seconds later, in the same pass, the room check fired — "this room cannot
+  produce our prey — leaving now" — and it gave up the wall it had just taken (`held_s: 0`)
+  and walked.** Its last frame reads 22/29, above its own flee threshold of 0.69. The
+  event stream recorded the next 18 seconds — 22 → 19 → 18 → 16 → 14 → 11 → 10 → 5 → 4 → 0
+  — while she ping-ponged across the 574/584 boundary taking a hit from each room's
+  monsters on every crossing. She never swung once; `ms_since_swung` was 409783.
+
+  **`leaveHold` now refuses a DISCRETIONARY departure below the rest threshold** — routing,
+  roaming, banking and errands all go through it, and the room will still be the wrong room
+  in thirty seconds. `force: true` keeps the withdraw path open, because a hurt character
+  is exactly who is withdrawing. `readyToLeaveSanctuary` is the same rule for inns and does
+  not cover this: it returns true immediately unless `sanctuary()`, and a monster room with
+  a proven wall in it is not one — though it is the safest square in the world to be hurt
+  in, which is precisely why leaving was the mistake. The refusal cannot deadlock (the rest
+  gate above rests to full on the wall) and is capped at three minutes anyway.
+
+- **THE KEEPER IS A LONG-AWAIT MACHINE, AND THE WATCHDOG IS THE ONLY THING WATCHING
+  DURING ONE.** `pass()` is one async function and a single `await` inside it can run for
+  minutes. Measured across 703 deaths with a usable frame: **82% had the keeper blind
+  (>8s since its last observation) at the moment of death**, and the last thing it was
+  doing breaks down as
+
+  | doing | deaths | mean blind | worst |
+  |---|---|---|---|
+  | travelling | 203 | 183s | 909s |
+  | recovering | 153 | 73s | 736s |
+  | stalled | 120 | 40s | 1043s |
+  | fighting | 87 | 44s | 540s |
+
+  **Bracketing the await does not fix it, and travel already brackets.** `Autopilot.travel`
+  records 'setting off' and 'arrived' frames either side; Camilla's last frame reads
+  `why: "setting off"` 17.8s before she died, and the `finally` frame never described
+  anything because she died inside. A bracket tells you when the blindness started.
+
+  So the fix is a timer, not another await. `startWatchdog()` ticks every 500ms
+  independently of the pass — free, because the server PUSHES health, so `client.vitals()`
+  is live whatever the call stack is blocked on. It writes a frame on every health change
+  and at least every 8s, and if health crosses the flee line while a pass has been blocked
+  over 3s it calls `Session.cancelMovement()`, which travel honours in twelve places
+  including inside the paced step loops. **It decides nothing** — it interrupts, and the
+  ordinary pass, which already knows how to flee and rest, decides with fresh numbers.
+
+  Worth knowing before extending it: `restUntil` already polls every 3s and aborts on
+  damage, and `fight` already aborts below `disengageAt`. **Travel was the only long await
+  with nothing watching health**, which is why it is both the largest bucket above and the
+  one the interrupt targets. An interrupt that costs an errand its attempt is the correct
+  outcome, not a bug to route around.
+
 - **"YOU SUDDENLY FEEL A LITTLE TOUGHER." IS THE ONLY ANNOUNCEMENT OF THE ONLY THING THIS
   FLEET IS FOR, AND NOTHING WAS LISTENING.** `player_improve_maxhealth` (`player.kod:144`)
   is sent the instant `GainBaseMaxHealth` fires, inside the killing blow. The ledger
@@ -423,6 +487,39 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   unrecognised kind is reported as itself rather than dropped, which is what stops a new
   operation being invisible to the one thing meant to protect it.
 
+- **A SKILL IS BOUGHT LIKE A HAT, AND FOR A YEAR NO LIVE MERCHANT APPEARED TO SELL ONE.**
+  `plFor_sale` is four positional slots and `AssembleForSaleList` names them in its own
+  docstring — **"(items, skills, spells, conditionals)"** (`monster.kod:4819`).
+  `m59-merchants.mjs` read slot 3 as the abilities and called slot 2 `?`, so every skill
+  sold by a merchant standing in the world was dropped on the floor. Nothing errored;
+  `who-teaches block` simply answered with a WANDERER, because the only surviving trace
+  of block was a source-derived entry for a class nobody had seen. The man who actually
+  sells it — Jonas D'Accor — has been standing still in Pietro's Wicked Brews the whole
+  time. Recovering slot 2 also found Rook in Cor Noth teaching **ten** skills, including
+  every weapon proficiency.
+
+  **A merchant is a CLASS; a person can wear more than one.** `RebelLiege` and
+  `JealousGeneral` are both "Jonas D'Accor" and differ only in that one stands still and
+  one walks a circuit — on the wire that is two ids and two class names and nothing else.
+  The catalogue links them by NAME RESOURCE, and calls it the same man only when the ICON
+  agrees too: the Barloque and Tos blacksmiths are both "Fehr'loi Qan" and are two
+  different people, which is the counter-example that stops the name alone being trusted.
+
+  **And the price is fixed by LEVEL with no markup** (`Skill.GetValue` skill.kod:128,
+  `Monster.GetPrice` monster.kod:4880) — `250 * 2^level`, so a level 1 skill is **500**,
+  not 250. That is why `m59-outfit.mjs --learn <name>` can withdraw the right amount at a
+  bank before setting off, which it must: nobody in this fleet carries 500 shillings.
+
+- **THE OFFER LIST IS FILTERED PER BUYER, AND A REFUSAL IS SILENCE.** A skill you already
+  have, or cannot yet learn, is not refused — it is simply ABSENT from the shop list
+  (`monster.kod:4855-4861`), with no message of any kind. So "the buy did not complain"
+  means nothing, exactly as it means nothing for equipping. `--learn` re-reads
+  `abilities` after every purchase and reports `paid N and DID NOT GET IT` rather than
+  assuming. Whether a character *can* learn one is `PlayerCanLearn` (`player.kod:10509`),
+  and it short-circuits to SUCCESS if you already know two abilities in that school at
+  that level — which every character here does for weaponcraft, via *mace fighting* and
+  *slash*.
+
 - **Attach to the broker, do not spawn a second one.** `m59-broker.mjs` with no
   arguments serves stdio MCP *and* resumes a fleet. With one already running,
   the second is refused the lock, comes up healthy and **empty**, and answers
@@ -447,14 +544,14 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/<name>.mjs`. Only the chat responder needs `npm install`.
 - `M59_ROOT` points at the Meridian 59 source tree. The compendium's citations
   and the Python analysis scripts both read it.
-- Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (103),
+- Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (116),
   `node tools/m59-chat-test.mjs` (128) and
   `node tools/m59-rest-test.mjs` (38) and
   `node tools/m59-ledger-test.mjs` (25) and
   `node tools/m59-escape-test.mjs` (70) and
-  `node tools/m59-combat-test.mjs` (351) and
+  `node tools/m59-combat-test.mjs` (380) and
   `node tools/m59-commitment-test.mjs` (49) and
-  `node tools/m59-deaths-test.mjs` (70) and
+  `node tools/m59-deaths-test.mjs` (82) and
   `node tools/m59-stream-test.mjs` (54) and
   `node tools/m59-ability-test.mjs` (44) and
   `node tools/m59-compendium-test.mjs` (42) and
@@ -465,7 +562,8 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-describe-test.mjs` (52) and
   `node tools/m59-party-test.mjs` (57) and
   `node tools/m59-hits-test.mjs` (41) and
-  `node tools/m59-roo-test.mjs` (42, of which 9 skip without a copy of the game's
+  `node tools/m59-merchants-test.mjs` (65, dropping to 37 without `M59_ROOT`) and
+  `node tools/m59-roo-test.mjs` (57, of which 9 skip without a copy of the game's
   `resource/rooms`). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on
   8899 and fail with `ECONNREFUSED` without one, which is not a regression.

@@ -29,6 +29,27 @@
 // under conditions that no longer apply. Clearing them is not forgetting evidence, it
 // is discarding a measurement whose method was wrong. `held` history is kept — that
 // evidence was always valid, because holding is holding wherever you stood.
+// A THIRD DISCRIMINATOR, AND THE ONLY ONE THAT HANDS THE SQUARE BACK UNTESTED.
+//
+//   node tools/m59-safespot-retest.mjs --untested --dry-run
+//
+// The pardon below clears the failure and KEEPS `held`, on the sound reasoning that
+// holding is holding wherever you stood. That is right for a measurement retired because
+// of where the character was standing. It is wrong for this one: takeSafeSpot inherits
+// `proven` from a clean held record, so a pardoned square is rested on immediately, and
+// what is being undone here is precisely a judgement we no longer trust.
+//
+// The cause is packet timing. A blow resolved on the server while we were still a square
+// short can arrive after we have reported standing on the spot, and observe() blamed the
+// square for it — permanently. SETTLE_GRACE_MS in m59-autopilot.mjs closed that in
+// August 2026; everything retired before it was judged without it.
+//
+// The signature is a square that had PROVED itself and then went out on at most one
+// point of damage, which is what a single late packet looks like. Of 1969 squares on
+// record, 1467 were discredited; 519 of those had held first, and 309 of THOSE went out
+// on a single point. They come back as untested — eligible, unproven, and made to earn
+// their twelve quiet seconds again with a character standing on them.
+import { selectForRetest, reinstateUntested } from './m59-safespots.mjs';
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
 
 const arg = (n) => process.argv.includes('--' + n);
@@ -93,6 +114,88 @@ const rooms = book.rooms || {};
 
 let cleared = 0, kept = 0, squares = 0, alsoHeld = 0;
 const perRoom = {};
+
+// --untested: hand back the squares retired by packet timing, as untested. See the note
+// at the top of this file for why this one zeroes `held` where the pardon below keeps it.
+if (arg('untested')) {
+  const maxDamage = Number(argVal('max-damage') ?? 1);
+  const total = Object.values(rooms).reduce((n, s) => n + Object.keys(s).length, 0);
+
+  // SELECT AGAINST ONE BOOK, WRITE TO ANOTHER.
+  //
+  //   --from <file>   choose the squares using this snapshot instead of the live book
+  //
+  // The evidence that identifies this subset is `damage_taken`, and the pardon above
+  // zeroes it. So once the pardon has run over a book the subset is no longer visible in
+  // it — not because those squares are fine, but because the number that told them apart
+  // is gone. Selecting from a snapshot taken before the pardon recovers it:
+  //
+  //   git show <commit>:substrate/m59-safespots.json > /tmp/before.json
+  //   node tools/m59-safespot-retest.mjs --untested --from /tmp/before.json
+  //
+  // Squares in the snapshot that are missing from the live book are reported rather than
+  // created: a square nobody has recorded since is not one to invent a history for.
+  const fromFile = argVal('from');
+  let refRooms = rooms;
+  if (fromFile) {
+    try { refRooms = (JSON.parse(readFileSync(fromFile, 'utf8')).rooms) || {}; }
+    catch (e) { console.error(`--from: cannot read ${fromFile}: ${e.message}`); process.exit(1); }
+  }
+
+  const all = selectForRetest(refRooms, { maxDamage });
+  const picked = [], missing = [];
+  for (const p of all) {
+    if (rooms[p.room]?.[p.key]) picked.push(p); else missing.push(p);
+  }
+  const per = {};
+  for (const p of picked) per[p.room] = (per[p.room] || 0) + 1;
+
+  console.log(`${total} squares in the book across ${Object.keys(rooms).length} rooms`);
+  if (fromFile)
+    console.log(`selected against ${fromFile} (${all.length} match), applying to the live book`);
+  if (missing.length)
+    console.log(`  ${missing.length} selected square(s) are not in the live book — skipped, not created`);
+  console.log(`${picked.length} square(s) ${DRY ? 'would be' : ''} handed back as UNTESTED ` +
+              `(held before failing, and lost <= ${maxDamage})`);
+  for (const [room, n] of Object.entries(per).sort((a, b) => b[1] - a[1]))
+    console.log(`  room ${String(room).padStart(5)}: ${n}`);
+  if (DRY) { console.log('\ndry run — nothing written'); process.exit(0); }
+
+  // THE BROKER HOLDS THIS BOOK IN MEMORY AND WRITES IT FROM THERE. safeSpotBook() is a
+  // singleton inside that process and save() serialises whatever it currently holds, so
+  // an edit made underneath a running broker is not merged — it is overwritten the next
+  // time any character proves or disproves a square, and nothing reports that it was.
+  // The modes below only print a reminder to restart; this one refuses, because a silent
+  // revert of a 309-square change is not something to find out about by noticing.
+  let up = null;
+  try {
+    const r = await fetch('http://127.0.0.1:8901/health', { signal: AbortSignal.timeout(1500) });
+    up = await r.json();
+  } catch { /* nothing listening: safe to write */ }
+  if (up?.ok && !arg('force')) {
+    console.error(`\nREFUSING: a broker is up (pid ${up.pid}, fleet "${up.fleet}") holding this book.`);
+    console.error('  It would overwrite this edit the next time a square is proved or disproved.');
+    console.error(`  node tools/m59-service.mjs stop --fleet ${up.fleet || 'prod'}`);
+    console.error('  then re-run with --untested, then start it again.');
+    process.exit(2);
+  }
+
+  // The record REWRITTEN is the live one; the history KEPT is the snapshot's, because
+  // the live one's failure numbers were already cleared by the pardon.
+  for (const p of picked)
+    rooms[p.room][p.key] = reinstateUntested(rooms[p.room][p.key], {
+      from: p.rec,
+      why: fromFile ? 'retired before SETTLE_GRACE_MS existed; selected from ' + fromFile
+                    : 'retired before SETTLE_GRACE_MS existed',
+    });
+  const bak = FILE.replace(/\.json$/, '.before-untest.json');
+  copyFileSync(FILE, bak);
+  writeFileSync(FILE, JSON.stringify(book, null, 0));
+  console.log(`\nwritten. backup: ${bak}`);
+  console.log(`${picked.length} square(s) are untested again. They are NOT trusted: each has to`);
+  console.log('hold for 12s with something adjacent before any character rests on it.');
+  process.exit(0);
+}
 
 if (PHANTOMS) {
   let gone = 0, heldToo = 0, emptied = [];

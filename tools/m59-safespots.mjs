@@ -378,7 +378,13 @@ export function nearestSafeSpot(geo, from, {
     const gate = rule === 'disc'
       ? s.attackers_avoided >= minAvoided
       : s.back_cover >= minBackCover;
-    if (!gate && !(seen && seen.held > 0)) continue;
+    // `retest` keeps a REINSTATED square eligible without making it trusted. A square
+    // put back by m59-safespot-retest.mjs has had its held count zeroed — it is being
+    // asked to prove itself again from nothing — and zeroing it would otherwise drop any
+    // square that qualified only BECAUSE it had held, so the reassessment could never
+    // happen. It grants no proof bonus below, and it does not survive discredited()
+    // above: fail again and the square is out for good, exactly as before.
+    if (!gate && !(seen && (seen.held > 0 || seen.retest))) continue;
     // A square nothing can walk to is not a safe spot, it is a balcony. Checked before
     // the reachability test because a cliff passes that easily — being unreachable is
     // precisely what makes it score well.
@@ -606,4 +612,66 @@ let theBook = null;
 export function safeSpotBook(file = null) {
   if (!theBook) theBook = new SafeSpotBook(file);
   return theBook;
+}
+
+// PUTTING BACK A SQUARE THAT WAS RETIRED BY A PACKET RATHER THAN BY A WALL.
+//
+// These two live here, next to discredited(), rather than in m59-safespot-retest.mjs
+// where they are used: that file is a script with no entry-point guard, so importing it
+// to test the rule would run it against the real book. The rule is the part worth
+// pinning, so the rule lives with the data it describes.
+//
+// The subset is narrow on purpose. A square that HELD and was then retired on at most a
+// point of damage is the shape a single late packet makes — see SETTLE_GRACE_MS in
+// m59-autopilot.mjs, which did not exist when these were judged. A square that lost six
+// is one something genuinely reached, and stays out.
+export function selectForRetest(rooms, { maxDamage = 1 } = {}) {
+  const picked = [];
+  for (const [room, spots] of Object.entries(rooms || {})) {
+    for (const [k, r] of Object.entries(spots || {})) {
+      // A mark already outranks our arithmetic, so a verified square is not discredited
+      // and needs no rescuing. Zeroing a person's held record to fix a problem they do
+      // not have would be a loss rather than a repair.
+      if (r.verified) continue;
+      if (!((r.held || 0) > 0)) continue;
+      if (!((r.failed || 0) > 0)) continue;
+      if ((r.damage_taken || 0) > maxDamage) continue;
+      picked.push({ room: Number(room), key: k, rec: r });
+    }
+  }
+  return picked;
+}
+
+// UNTESTED, NOT TRUSTED, AND THAT DISTINCTION IS THE WHOLE POINT.
+//
+// The pardon in m59-safespot-retest.mjs clears `failed` and keeps `held`, on the sound
+// reasoning that holding is holding wherever you stood. Applied here that would be
+// exactly wrong: takeSafeSpot inherits `proven` from a clean held record, so the keeper
+// would go and REST on these squares — trusting a judgement we have just decided was
+// unreliable, without ever re-testing it. So `held` goes too, and the square has to earn
+// its twelve quiet seconds again from nothing.
+// `from` is the record the DECISION was made against, which is not always the record
+// being rewritten. The failures that identify this subset were cleared out of the live
+// book by the pardon in m59-safespot-retest.mjs before this ran, so the selection has to
+// be made against an older snapshot — and the history worth keeping is that snapshot's,
+// not the pardoned record's zeroes. Defaults to the record itself, which is the ordinary
+// case.
+export function reinstateUntested(rec, { why = 'retired before SETTLE_GRACE_MS existed',
+                                         from = rec } = {}) {
+  const out = { ...rec, held: 0, failed: 0 };
+  delete out.damage_taken;
+  delete out.held_seconds;
+  // Keeps it eligible where the geometry cutoff alone would not offer it — see the gate
+  // in nearestSafeSpot. Grants no proof bonus, and does not survive a fresh failure.
+  out.retest = true;
+  out.retest_at = Date.now();
+  out.retest_why = why;
+  out.retest_from = {
+    held: from.held || 0, failed: from.failed || 0,
+    damage_taken: from.damage_taken || 0,
+    held_seconds: from.held_seconds || 0,
+    most_attackers: from.most_attackers || 0,
+    at: from.at ?? null,
+  };
+  return out;
 }
