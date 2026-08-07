@@ -12,6 +12,9 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { summarise, readLedger } from './m59-ledger.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
+// The tab bar, from the one place that has it. This page used to carry its own copy and
+// the deaths page carried another; a fourth board would have had to be added to both.
+import { NAV } from './m59-page-chrome.mjs';
 
 // WHICH FLEET THIS PAGE IS OF. Named on the page rather than left implicit: the
 // dashboard binds to every interface and is the thing people leave open on a phone,
@@ -385,11 +388,7 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [] } 
 <body><div class="wrap">
   <h1>Meridian 59 — ${esc(FLEET_LABEL)} fleet</h1>
   <div class="sub">last ${hours}h · ${sum.samples} samples · refreshes every 60s</div>
-  <nav class="tabs">
-    <a href="/" class="on">Fleet</a>
-    <a href="/deaths">Post mortems</a>
-    <a href="/tougher">Tougher</a>
-  </nav>
+${NAV('fleet')}
 ${offlineBanner}
 ${controls}
 

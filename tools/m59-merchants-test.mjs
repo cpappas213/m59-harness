@@ -30,7 +30,7 @@ import path from 'node:path';
 const M59_ROOT = process.env.M59_ROOT || 'C:/code/meridian59';
 const haveSource = fs.existsSync(path.join(M59_ROOT, 'kod/include/blakston.khd'));
 
-const { splitTopLevel, balanced, forSaleFromSource, resourceValue, descendsFrom,
+const { splitTopLevel, balanced, forSaleFromSource, resourceValue, descendsFrom, sellsFromInventory,
         priceOfLevel, readSourceClasses, readConstants, readAbilityLevels,
         enrichCatalogue } = await import('./m59-merchants.mjs');
 
@@ -138,6 +138,72 @@ ok('a missing resource is null rather than the reference name',
   // A parent that points back at its child would spin for ever on a malformed tree.
   const loop = new Map([['A', { parent: 'B' }], ['B', { parent: 'A' }]]);
   ok('a cycle in the parent chain terminates', descendsFrom(loop, 'A', 'Wanderer') === false);
+}
+
+// ------------------------------------------------- a merchant that can run out, or fill up
+
+console.log('\nwho keeps a real pack, and who assembles a list');
+{
+  // Declared-or-null, never false-by-default: a class that says nothing is answering
+  // with its parent's answer, and flattening that to `false` here would make an
+  // unresolvable chain indistinguishable from a merchant that cannot run out.
+  const classes = new Map([
+    ['Monster', { cls: 'Monster', parent: 'Object', sellsFromInventoryDeclared: false, maxForSale: null }],
+    ['Towns', { cls: 'Towns', parent: 'Monster', sellsFromInventoryDeclared: null, maxForSale: null }],
+    ['Wanderer', { cls: 'Wanderer', parent: 'Towns', sellsFromInventoryDeclared: null, maxForSale: null }],
+    ['Izzio', { cls: 'Izzio', parent: 'Wanderer', sellsFromInventoryDeclared: true, maxForSale: 25 }],
+    ['BarloqueApothecary', { cls: 'BarloqueApothecary', parent: 'Towns', sellsFromInventoryDeclared: null, maxForSale: null }],
+    ['Orphan', { cls: 'Orphan', parent: 'NotInTheTree', sellsFromInventoryDeclared: null, maxForSale: null }],
+    ['LittleIzzio', { cls: 'LittleIzzio', parent: 'Izzio', sellsFromInventoryDeclared: null, maxForSale: null }],
+  ]);
+  ok('a class that declares it is finite, and says how much it holds',
+     sellsFromInventory(classes, 'Izzio').finite === true &&
+     sellsFromInventory(classes, 'Izzio').max_for_sale === 25);
+  // THE REASON THIS IS A CHAIN WALK AND NOT A FIELD READ.
+  ok('AND SO IS A SUBCLASS THAT NEVER MENTIONS IT — the flag is inherited',
+     sellsFromInventory(classes, 'LittleIzzio').finite === true,
+     JSON.stringify(sellsFromInventory(classes, 'LittleIzzio')));
+  ok('an ordinary counter resolves to Monster\'s FALSE and cannot run out',
+     sellsFromInventory(classes, 'BarloqueApothecary').finite === false);
+  ok('and says which class answered, so the reading can be checked',
+     sellsFromInventory(classes, 'BarloqueApothecary').from === 'Monster');
+  // "We could not tell" must not render as "it cannot run out": the two lead to
+  // different decisions at a counter. This is the case CorNothTown produced for real.
+  ok('A CHAIN THAT BREAKS IS UNKNOWN, NOT FALSE',
+     sellsFromInventory(classes, 'Orphan').finite === null,
+     JSON.stringify(sellsFromInventory(classes, 'Orphan')));
+  const loop = new Map([['A', { cls: 'A', parent: 'B', sellsFromInventoryDeclared: null }],
+                        ['B', { cls: 'B', parent: 'A', sellsFromInventoryDeclared: null }]]);
+  ok('a cycle terminates rather than spinning', sellsFromInventory(loop, 'A').finite === null);
+}
+
+// KOD CLASS NAMES ARE CASE-INSENSITIVE AND THE TREE USES THAT. `crnthtwn.kod` declares
+// `CorNothTown`; `cngrocer.kod` says `CornothGrocer is CornothTown`. A plain Map made
+// those two different classes and every walk up that chain stopped at the first hop —
+// silently, and in the direction that looks like a legitimate "no".
+console.log('\nthe parent chain survives the tree disagreeing with itself about case');
+if (!haveSource) {
+  skipped('the real class map (needs M59_ROOT)');
+} else {
+  const classes = readSourceClasses();
+  ok('the town class is declared with the tree\'s own spelling',
+     !!classes.get('CorNothTown'), 'CorNothTown missing from the source read');
+  ok('AND IS FOUND UNDER THE SPELLING ITS CHILD USES',
+     classes.get('CornothTown')?.cls === 'CorNothTown',
+     JSON.stringify(classes.get('CornothTown')?.cls));
+  ok('so a merchant behind that hop resolves instead of coming back unknown',
+     sellsFromInventory(classes, 'CornothGrocer').finite === false,
+     JSON.stringify(sellsFromInventory(classes, 'CornothGrocer')));
+  // Iteration keeps the file's own spelling — build() rebuilds a Map from these entries.
+  ok('iterating still yields the canonical name, not a lowercased one',
+     [...classes.keys()].includes('CorNothTown'));
+  ok('the two merchants that keep a real pack are the only two',
+     [...classes.values()].filter(c => c.sellsFromInventoryDeclared === true)
+       .map(c => c.cls).sort().join(',') === 'Izzio,KocatanShopkeeper',
+     [...classes.values()].filter(c => c.sellsFromInventoryDeclared === true).map(c => c.cls).join(','));
+  ok('and neither of the counters the reagent errand uses is one of them',
+     sellsFromInventory(classes, 'MarionInnkeeper').finite === false &&
+     sellsFromInventory(classes, 'BarloqueApothecary').finite === false);
 }
 
 // ------------------------------------------------- one man in two coats, and two men

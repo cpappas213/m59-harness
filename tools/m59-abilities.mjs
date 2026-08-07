@@ -190,6 +190,143 @@ export async function ensureAbilities(s, { kinds = 'both', maxAgeMs = DEFAULT_MA
   };
 }
 
+// --------------------------------------------------------------- the whole fleet
+//
+// THE ONE QUESTION THESE FILES EXIST TO ANSWER IS "IS PRACTICE WORKING", AND IT IS NOT A
+// QUESTION ABOUT ONE CHARACTER. An ability number on its own says nothing — 42 in mace
+// fighting is either good or terrible depending on what the other twenty are at, and
+// whether it was 38 this morning. Both comparisons need every book at once.
+//
+// ATROPHY IS THE HALF NOBODY WOULD GO LOOKING FOR. What you stop using decays when the
+// advancement window rolls over, and a number that quietly went DOWN produces no event,
+// no message and no complaint. It is in the history exactly as a gain is — `by` is
+// negative — and it is separated out here rather than netted off, because a fleet that
+// gained 40 points and lost 38 is a fleet standing still, and one number cannot say so.
+export function fleetAbilities({ sinceMs = 7 * 24 * 3600 * 1000 } = {}) {
+  const cutoff = sinceMs ? Date.now() - sinceMs : 0;
+  const books = listCharacters().map(loadBook).filter(b => b.character);
+
+  // name -> the row on the ability sheet. Keyed by name across the whole fleet, because
+  // the interesting comparison is one skill down twenty-one characters.
+  const abilities = new Map();
+  const changes = [];
+
+  for (const b of books) {
+    for (const kind of ['skills', 'spells']) {
+      for (const [name, v] of Object.entries(b[kind] || {})) {
+        const a = abilities.get(name) ?? { name, kind: kind === 'skills' ? 'skill' : 'spell',
+                                           held: [], advanced: 0, atrophied: 0 };
+        a.held.push({ character: b.character, ability: v.ability ?? null, best: v.best ?? null,
+                      at: v.at ?? null,
+                      // Peaked higher than it stands: this one has decayed since.
+                      decayed: v.best != null && v.ability != null && v.best > v.ability });
+        abilities.set(name, a);
+      }
+    }
+    for (const c of b.history || []) {
+      if (!c?.at || c.at < cutoff) continue;
+      changes.push({ ...c, character: b.character });
+    }
+  }
+
+  for (const c of changes) {
+    const a = abilities.get(c.name);
+    if (!a) continue;                      // advanced then forgotten: nothing to file it under
+    if (c.by > 0) a.advanced += c.by; else a.atrophied += -c.by;
+  }
+
+  const rows = [...abilities.values()].map(a => {
+    const nums = a.held.map(h => h.ability).filter(n => n != null);
+    const best = a.held.filter(h => h.ability != null)
+                       .sort((x, y) => y.ability - x.ability)[0] ?? null;
+    return {
+      name: a.name, kind: a.kind,
+      characters: a.held.length,
+      // The numbers themselves, sorted, so a page can draw the spread rather than a mean
+      // that hides one character at 90 and twenty at 5.
+      values: nums.slice().sort((x, y) => y - x),
+      mean: nums.length ? Math.round(nums.reduce((t, n) => t + n, 0) / nums.length) : null,
+      best: best?.ability ?? null, best_character: best?.character ?? null,
+      advanced: a.advanced, atrophied: a.atrophied,
+      decayed: a.held.filter(h => h.decayed).length,
+      held: a.held.sort((x, y) => (y.ability ?? -1) - (x.ability ?? -1)),
+    };
+  }).sort((x, y) => (y.advanced - x.advanced) || (y.best ?? 0) - (x.best ?? 0));
+
+  const perCharacter = books.map(b => {
+    const mine = changes.filter(c => c.character === b.character);
+    const nums = [...Object.values(b.skills || {}), ...Object.values(b.spells || {})]
+      .map(v => v.ability).filter(n => n != null);
+    return {
+      character: b.character,
+      skills: Object.keys(b.skills || {}).length,
+      spells: Object.keys(b.spells || {}).length,
+      total_ability: nums.reduce((t, n) => t + n, 0),
+      best: nums.length ? Math.max(...nums) : null,
+      advanced: mine.filter(c => c.by > 0).reduce((t, c) => t + c.by, 0),
+      atrophied: mine.filter(c => c.by < 0).reduce((t, c) => t - c.by, 0),
+      // The safety-net age, not the truth: the server pushes every change, so a book
+      // read an hour ago is still current. Shown so a character whose pushes stopped
+      // arriving is distinguishable from one that simply is not practising.
+      read_at: Math.max(b.read_at?.skills || 0, b.read_at?.spells || 0) || null,
+    };
+  }).sort((a, b) => b.advanced - a.advanced || b.total_ability - a.total_ability);
+
+  // Treemap facets. `value` is POINTS OF ABILITY, not events: three separate +1s and one
+  // +3 are the same amount of progress and should be the same rectangle.
+  //
+  // `child` is the OTHER dimension, and it has to be passed rather than derived. The
+  // first version picked it off the sign — characters when gaining, abilities when
+  // losing — so drilling into a character on the "who advanced" map split it by
+  // character and every rectangle was the one already clicked. It renders perfectly and
+  // is simply the same number twice, which is why the test asks what the children are
+  // rather than that there are some.
+  const facet = (pick, child, sign) => {
+    const m = new Map();
+    for (const c of changes) {
+      if (sign > 0 ? !(c.by > 0) : !(c.by < 0)) continue;
+      const k = pick(c);
+      if (k == null) continue;
+      const e = m.get(k) ?? { name: k, value: 0, children: new Map() };
+      e.value += Math.abs(c.by);
+      const sub = child(c);
+      if (sub != null) e.children.set(sub, (e.children.get(sub) || 0) + Math.abs(c.by));
+      m.set(k, e);
+    }
+    return [...m.values()].map(e => ({
+      name: e.name, value: e.value,
+      children: [...e.children].sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value })),
+    })).sort((a, b) => b.value - a.value);
+  };
+
+  const gained = changes.filter(c => c.by > 0).reduce((t, c) => t + c.by, 0);
+  const lost = changes.filter(c => c.by < 0).reduce((t, c) => t - c.by, 0);
+
+  return {
+    window_hours: +(sinceMs / 3600000).toFixed(1),
+    characters: books.length,
+    skills: rows.filter(r => r.kind === 'skill').length,
+    spells: rows.filter(r => r.kind === 'spell').length,
+    // Net, and both halves of it. See the header: netting alone hides a standstill.
+    advanced: gained, atrophied: lost, net: gained - lost,
+    changes_recorded: changes.length,
+    abilities: rows,
+    by_character: perCharacter,
+    by_ability_gained: facet(c => c.name, c => c.character, +1),
+    by_character_gained: facet(c => c.character, c => c.name, +1),
+    by_ability_lost: facet(c => c.name, c => c.character, -1),
+    recent: changes.sort((a, b) => b.at - a.at),
+    read_this_way:
+      'These numbers are PUSHED, not polled: the server sends BP_STAT for one slot on ' +
+      'every change (player.kod:7343), so the book is current unless the character was ' +
+      'logged out. A first sighting is not advancement and is deliberately absent from ' +
+      'the history — the window shows what MOVED, so a fresh character shows nothing ' +
+      'rather than appearing to have learned everything it knows. A negative change is ' +
+      'atrophy and is real: what you stop using decays when the advancement window rolls ' +
+      'over, silently.',
+  };
+}
+
 // ---------------------------------------------------------------------- cli
 if (process.argv[1]?.endsWith('m59-abilities.mjs')) {
   const who = process.argv[2];

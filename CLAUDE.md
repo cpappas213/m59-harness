@@ -171,6 +171,65 @@ answering "not in game". Three things it will not do:
 
 `--no-rejoin` or `M59_REJOIN=0` turns it off.
 
+## Backing the fleet up, and putting it back
+
+```bash
+node tools/m59-backup.mjs                 # every destination, everything
+node tools/m59-backup.mjs --list          # what exists, where, and how many rosters
+node tools/m59-backup.mjs --credentials-only    # just the irreplaceable part, seconds
+node tools/m59-backup.mjs --verify <dir>  # re-hash a backup against its own manifest
+```
+
+Two destinations by default — `C:\m59\backups` and `D:\m59\backups`, override with
+`M59_BACKUP_DIRS` or repeated `--to` — because a backup on the same disk as the original
+protects against somebody deleting a file and against nothing else.
+
+**What is actually at risk, in order.** The **rosters** (`substrate/fleets/<name>.json`,
+`substrate/fleet-state.json`, `substrate/fleet-accounts.json`) are the only record of the
+account passwords: no reset, no email on the account, no way to ask the server. Lose one
+and those characters are not deleted, just permanently unreachable. Then the **character
+sheets**, which are the only snapshot of `prod` — `m59-shutdown.mjs` copies the *server's*
+savegame aside, and prod's server is somebody else's machine, so run against prod it copies
+a stale local save and reports success. Then the **records** (abilities, banks, tougher,
+descriptions, history), none of which can be backfilled.
+
+The backup refreshes the character export first (`m59-sheet.mjs --checkpoint`), and carries
+on without it if the broker is down — saying so — because a backup that refuses to run when
+the fleet is down is missing exactly when the rosters most need copying.
+
+Four things it enforces rather than documents:
+
+- **A backup with no roster in it is refused.** The failure that matters is not a crash, it
+  is a nightly job reporting success while containing everything except the one file nobody
+  can regenerate.
+- **`*.lock` is never backed up.** `prod.json.lock` is 32 bytes naming a pid; restored it is
+  a stale claim that stops a broker starting. It was also being *counted as a roster*, so a
+  directory holding nothing but a lock would have satisfied the guard above.
+- **Nothing is written inside the repository** — in there it is either committed (plaintext
+  passwords in git, for ever) or gitignored and deleted by the next clean.
+- **What was written is read back**, hashed. That caught a real bug on the first live run:
+  hashing each file once but re-reading the source per destination gave D: different bytes
+  for `substrate/hits/*.json`, which the running broker rewrites every few seconds. Sources
+  are now read once and the same bytes go to every destination, so the copies are identical.
+
+```bash
+node tools/m59-restore.mjs --list
+node tools/m59-restore.mjs --latest          # says what it WOULD do, changes nothing
+node tools/m59-restore.mjs --latest --apply
+```
+
+**Restore is the dangerous half, in a specific way.** A roster gains entries over time — a
+new character, a name written back after a first login — so a week-old backup is a smaller,
+older, entirely valid-looking file that restores cleanly and silently loses every account
+added since. So: it plans by default and needs `--apply`; it **refuses while a broker holds
+the fleet**, which owns the roster and rewrites it from memory (stop it with
+`m59-service.mjs stop` first); it copies whatever it replaces to
+`substrate/.before-restore-<stamp>/` — gitignored, and holding rosters, so it is as secret
+as the originals; and **a roster that would shrink is refused outright** unless you pass
+`--force`. A backup that does not verify against its manifest is never restored at all.
+
+`node tools/m59-backup-test.mjs` (42) pins all of that against scratch directories.
+
 ## Asked to shut down, stop the server, or "we're done for now"?
 
 ```bash
@@ -487,6 +546,68 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   unrecognised kind is reported as itself rather than dropped, which is what stops a new
   operation being invisible to the one thing meant to protect it.
 
+- **TWO MERCHANTS HOLD A REAL INVENTORY AND CAN RUN OUT — OF STOCK, AND OF SHELF SPACE.**
+  Every other merchant assembles its list on demand and cannot run dry: `monster.kod`
+  declares `vbSellFromInventory = FALSE` and only two classes in the whole tree override
+  it, both `MOB_BUYER | MOB_SELLER` with `MAX_FORSALE = 25`.
+
+  | | file | when full it says |
+  |---|---|---|
+  | **Izzio**, the wanderer | `izzio.kod:54` | "Look at my pack. Where would I put it?" |
+  | **Ko'catan shopkeeper**, the island vendor that buys anything | `kcshopk.kod:54` | "I wish I could take that off of your hands for you, but mine are all full too!" |
+
+  This cuts BOTH ways and the selling half is the one that will catch you. Each has three
+  separate refusals — full (`length(lForSale) < MAX_FORSALE`), already-have-one
+  (no duplicates), and *"I already have several of those for sale"* — and **every one of
+  them is a sentence spoken to the room, not an error on the wire**. So a `sell_all` at
+  these two can decline item by item while the call reports success, which is why
+  `m59-reagents.mjs` reads the PURSE afterwards rather than trusting what the buy or sell
+  was asked to do. Fill one up and it stops buying until somebody clears it.
+
+  **Do not generalise a "the shop had none" reading to a merchant that is not one of these
+  two.** I did, from a real run: Beaker and Sweetums were told "202 sells no elderberry or
+  herbs after all", and 202 is MarionInnkeeper, which inherits `FALSE` and cannot run out
+  — Statler bought twelve from that same counter seconds later. The tell that it was a
+  failed interaction rather than an empty shop is that both had an UNCHANGED PURSE: every
+  character that sold also bought. **Roq is Rook** (`cnsarge.kod:19`,
+  `cornothsergeant_name_rsc = "Rook"`) and he does not declare it either.
+  `m59-merchants.mjs` now resolves the flag and puts `finite_stock` on the row, so ask it
+  rather than assuming.
+
+  **And CLASS NAMES ARE CASE-INSENSITIVE TOO — that is the third kind of name in this
+  tree that is, after resource names and property names.** `crnthtwn.kod` declares
+  `CorNothTown`; `cngrocer.kod` says `CornothGrocer is CornothTown`. `kodbase.txt` lists
+  it once, so they are one class to the compiler and were two keys to a plain `Map` —
+  which stopped every walk up that chain at the first hop, silently and in the direction
+  that looks like a legitimate answer. `descendsFrom` had been returning false for it all
+  along, so Solomon in Cor Noth was reported as stationary whether or not he is. The class
+  map is now case-insensitive on lookup while keeping the file's own spelling on iteration.
+
+- **THERE ARE FIVE BOARDS AND ONE TAB BAR, AND A PURSE HAS NO RECORD BUT THE SAMPLE.**
+  `/` (fleet), `/deaths`, `/tougher`, `/economy` and `/skills`, all on the dashboard port
+  (8902 — the MCP port serves only the fleet page). The nav, the stylesheet and the
+  inlined treemap live in **`m59-page-chrome.mjs`**: a new board is one line in `TABS`,
+  and it is one line because five hand-written copies of a tab list means the sixth board
+  is invisible from whichever copy nobody remembered to edit. That had already happened
+  once — the fleet page and the deaths page carried two separate copies.
+
+  What each board can answer is decided by whether the quantity leaves a trace.
+  **A bank balance does** — a banker says it aloud and `substrate/banks/` catches it — so
+  `/economy` can report it with the broker down. **A purse and a pack do not.** Nothing
+  announces an inventory, so their only record is the ledger sample, `recordSample` writes
+  them, and a purse column full of dashes means the broker predates that code rather than
+  that the fleet is broke. `/economy` is therefore the ONE board that asks the running
+  fleet: the broker passes live rows in and they win, and the record answers when nothing
+  is running. Reagents have a third source — every `cast` and `cast_declined` event states
+  the caster's stock — and the row says which of the three it got, because a two-hour-old
+  figure and a live one must not render identically.
+
+  `/skills` reads `substrate/abilities/`, which exists because the numbers are PUSHED.
+  **Read it for the atrophy**, which is the half nothing else would show: over a week the
+  fleet gained 1846 points and lost 1558, with `relay` and `blink` losing hundreds and
+  gaining nothing. The page never nets the two, because a fleet gaining 40 and losing 38
+  is standing still and one number cannot say so.
+
 - **A SKILL IS BOUGHT LIKE A HAT, AND FOR A YEAR NO LIVE MERCHANT APPEARED TO SELL ONE.**
   `plFor_sale` is four positional slots and `AssembleForSaleList` names them in its own
   docstring — **"(items, skills, spells, conditionals)"** (`monster.kod:4819`).
@@ -549,7 +670,7 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-rest-test.mjs` (38) and
   `node tools/m59-ledger-test.mjs` (25) and
   `node tools/m59-escape-test.mjs` (70) and
-  `node tools/m59-combat-test.mjs` (380) and
+  `node tools/m59-combat-test.mjs` (383) and
   `node tools/m59-commitment-test.mjs` (49) and
   `node tools/m59-deaths-test.mjs` (82) and
   `node tools/m59-stream-test.mjs` (54) and
@@ -562,7 +683,11 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-describe-test.mjs` (52) and
   `node tools/m59-party-test.mjs` (57) and
   `node tools/m59-hits-test.mjs` (41) and
-  `node tools/m59-merchants-test.mjs` (65, dropping to 37 without `M59_ROOT`) and
+  `node tools/m59-economy-test.mjs` (61 — the Economy and Skills boards, and the one
+  tab bar all five boards share) and
+  `node tools/m59-backup-test.mjs` (42 — backing the rosters up and putting them back,
+  against scratch directories; never touches a real fleet) and
+  `node tools/m59-merchants-test.mjs` (77, dropping to 43 without `M59_ROOT`) and
   `node tools/m59-roo-test.mjs` (57, of which 9 skip without a copy of the game's
   `resource/rooms`). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on

@@ -156,10 +156,38 @@ export function resourceValue(text, cls, prop, quoted = true) {
   return new RegExp(`^\\s*${ref}\\s*=\\s*${quoted ? '"([^"]*)"' : '(\\S+)'}`, 'im').exec(text)?.[1] ?? null;
 }
 
+// KOD CLASS NAMES ARE CASE-INSENSITIVE, AND THE TREE USES THAT — THIRD TIME.
+//
+// `crnthtwn.kod` declares `CorNothTown`; `cngrocer.kod` says `CornothGrocer is
+// CornothTown`. Both are the same class to the compiler (`kodbase.txt` lists it once)
+// and two different keys to a plain Map, so every walk up that chain stopped dead at
+// the first hop.
+//
+// It fails SILENTLY and in the safe-looking direction: `descendsFrom` returns false, so
+// Solomon in Cor Noth was reported as standing still whether or not he does, and the
+// finite-stock resolver could not classify him at all. Nothing errors — a broken chain
+// and a chain that genuinely ends both look like "no".
+//
+// This is the same trap resourceValue already carries for resource names (`Izzio`
+// declares `izzio_name_rsc`) and property names (`viSkill_num` against `viSkill_Num`).
+// It cost a category each time, so the lookup is fixed here rather than at each caller:
+// entries keep the spelling the file used — `build` iterates them — while `get` and
+// `has` ignore case.
+class ClassMap extends Map {
+  #ci = new Map();
+  set(k, v) { this.#ci.set(String(k).toLowerCase(), k); return super.set(k, v); }
+  get(k) {
+    if (super.has(k)) return super.get(k);
+    const canonical = this.#ci.get(String(k).toLowerCase());
+    return canonical === undefined ? undefined : super.get(canonical);
+  }
+  has(k) { return super.has(k) || this.#ci.has(String(k).toLowerCase()); }
+}
+
 // Read every class once: who it is, what it descends from, what it sells and teaches,
 // where it walks, and the rule it buys by.
 export function readSourceClasses(root = M59_ROOT) {
-  const out = new Map();
+  const out = new ClassMap();
   const walk = dir => {
     let entries = [];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
@@ -198,11 +226,26 @@ export function readSourceClasses(root = M59_ROOT) {
         desired = { file, body: (end ? rest.slice(0, end.index + end[0].length) : rest.slice(0, 1200)).trimEnd() };
       }
 
+      // DOES THIS ONE KEEP A REAL PACK? Almost nobody does — `Monster` declares
+      // `vbSellFromInventory = FALSE` and the list is assembled on demand, which is why
+      // an ordinary counter can never run out and why "the shop had none" is almost
+      // always a failed read rather than an empty shelf. Two classes override it, and
+      // for those two the flag changes what every answer means.
+      //
+      // Captured as declared-or-null rather than resolved here, because it is
+      // INHERITED: a subclass of Izzio would be finite without saying so, and a `false`
+      // written in at this level would be indistinguishable from "did not mention it".
+      // sellsFromInventory() below walks the chain.
+      const declared = /^\s*vbSellFromInventory\s*=\s*(TRUE|FALSE)/im.exec(text)?.[1] ?? null;
+      const cap = /^\s*MAX_FORSALE\s*=\s*(\d+)/im.exec(text)?.[1] ?? null;
+
       out.set(cls, {
         cls, parent: decl[2], file,
         name: resourceValue(text, cls, 'vrName'),
         icon: resourceValue(text, cls, 'vrIcon', false),
         isMerchant: /^ {3}SetForSale/m.test(text),
+        sellsFromInventoryDeclared: declared === null ? null : declared.toUpperCase() === 'TRUE',
+        maxForSale: cap == null ? null : Number(cap),
         // What it stocks, read straight out of SetForSale. Class names only — the
         // running world gives quantities, the source gives the roster.
         stocks: [...new Set([...text.matchAll(/Create\(&(\w+)/g)].map(m => m[1]))],
@@ -214,6 +257,47 @@ export function readSourceClasses(root = M59_ROOT) {
   };
   walk(path.join(root, 'kod'));
   return out;
+}
+
+// A MERCHANT THAT CAN RUN OUT — OF STOCK, AND OF SHELF SPACE.
+//
+// `vbSellFromInventory = TRUE` means this one sells the actual objects it is holding
+// rather than a list assembled per buyer, and it is the single most consequential flag
+// on a merchant because it makes THREE different silences possible that no other
+// merchant has:
+//
+//   it has none left            — so "sells no elderberry" is literally true
+//   its pack is full            — MAX_FORSALE, so a SELL is refused
+//   it already holds that kind  — so a sell is refused even with room, per item
+//
+// Every one of those is a sentence spoken to the room (`izzio_Full_rsc`,
+// `JunkMan_too_many_rsc`, `..._AlreadyHaveOne_rsc`) and NONE of them is an error on the
+// wire. A caller that trusts "the call did not complain" learns nothing.
+//
+// Only two classes in the tree set it — Izzio and the Ko'catan shopkeeper, both
+// MAX_FORSALE = 25 — and `Monster` sets it FALSE, so the walk always terminates. It
+// matters that this is resolved through the PARENT CHAIN rather than read off the class:
+// the flag is inherited, and a class that says nothing is answering with its parent's
+// answer, not with "no".
+//
+// Do not generalise the finite reading to anyone else. It cost a wrong diagnosis: two
+// characters were told "202 sells no elderberry after all" and 202 is MarionInnkeeper,
+// which inherits FALSE and cannot run out — a third character bought from that counter
+// seconds later.
+export function sellsFromInventory(classes, cls, limit = 24) {
+  for (let c = cls, i = 0; c && i < limit; i++) {
+    const node = classes.get(c);
+    if (!node) break;
+    if (node.sellsFromInventoryDeclared !== null)
+      return { finite: node.sellsFromInventoryDeclared, from: node.cls,
+               max_for_sale: node.maxForSale ?? classes.get(cls)?.maxForSale ?? null };
+    c = node.parent;
+  }
+  // Nothing in the chain said. `Monster` does, so this is a class we could not resolve
+  // rather than a merchant that is genuinely undecided — reported as unknown rather
+  // than defaulted to false, because "we could not tell" and "it cannot run out" lead
+  // to different decisions at a counter.
+  return { finite: null, from: null, max_for_sale: null };
 }
 
 // Does this class descend from Wanderer? A wanderer's recorded room is where he was
@@ -366,6 +450,25 @@ export function enrichCatalogue(data, { root = M59_ROOT } = {}) {
     const src = classes.get(m.cls) ?? null;
     m.name = src?.name ?? null;
     m.wanders = descendsFrom(classes, m.cls, 'Wanderer');
+    // Whether this one keeps a real pack. See sellsFromInventory: only two do, and for
+    // those two an empty shop list and a refused sale are both things that HAPPEN
+    // rather than things that mean the read failed.
+    const stock = sellsFromInventory(classes, m.cls);
+    if (stock.finite) {
+      m.finite_stock = true;
+      m.max_for_sale = stock.max_for_sale;
+      m.finite_stock_note =
+        `sells the objects it is actually holding (vbSellFromInventory on ${stock.from}), ` +
+        `up to ${stock.max_for_sale ?? '?'} at a time. It can be OUT of something, and it ` +
+        `can be too FULL to buy from you — it refuses per item, out loud, with no error ` +
+        `on the wire. Read the purse afterwards; do not trust the call.`;
+    } else {
+      delete m.finite_stock; delete m.max_for_sale; delete m.finite_stock_note;
+      // Only when the chain could not be resolved at all. A merchant we cannot classify
+      // is worth a line, because the default reading assumes it cannot run out.
+      if (stock.finite === null && src) m.finite_stock_unknown = true;
+      else delete m.finite_stock_unknown;
+    }
     // Where he WALKS, which for a wanderer is the real answer to "where is he" — the
     // recorded room is only where somebody last saw him.
     const circuit = (src?.destinations ?? []).map(r => RID.get(r)).filter(n => n != null);
@@ -615,6 +718,12 @@ if (import.meta.filename === process.argv[1]) {
                 `more than one class, ${data.merchants.filter(m => m.also?.length && !m.also.some(x => x.same_person)).length} ` +
                 `merely share a name with somebody`);
     console.log(`skills on offer: ${before} -> ${after}`);
+    const finite = data.merchants.filter(m => m.finite_stock);
+    console.log(`${finite.length} sell from a real pack and can run out, or fill up: ` +
+                `${finite.map(m => `${m.name ?? m.cls} (holds ${m.max_for_sale})`).join(', ') || 'none'}`);
+    const unsure = data.merchants.filter(m => m.finite_stock_unknown);
+    if (unsure.length) console.log(`${unsure.length} could not be resolved either way: ` +
+                                   unsure.map(m => m.cls).join(', '));
     process.exit(0);
   }
 
@@ -653,8 +762,17 @@ if (import.meta.filename === process.argv[1]) {
     console.log(hits.length ? `${hits.length} merchant(s) sell something matching "${q}":` : `nothing matches "${q}"`);
     for (const m of hits) {
       const items = m.sells.filter(s => (s.cls || '').toLowerCase().includes(q));
-      console.log(`  ${cat(m).padEnd(38)} ${items.map(i => i.cls + (i.quantity > 1 ? ` x${i.quantity}` : '')).join(', ')}`);
+      console.log(`  ${cat(m).padEnd(38)} ${items.map(i => i.cls + (i.quantity > 1 ? ` x${i.quantity}` : '')).join(', ')}` +
+                  `${m.finite_stock ? `  <- FINITE, may be out (holds ${m.max_for_sale})` : ''}`);
     }
+    // A merchant that can be out of the thing you walked across the map for is worth
+    // saying at the bottom of the list rather than leaving in the JSON.
+    const finite = hits.filter(m => m.finite_stock);
+    if (finite.length)
+      console.log(`\n${finite.length} of those sell from a real pack and CAN BE OUT: ` +
+                  `${finite.map(m => m.name ?? m.cls).join(', ')}. Everyone else assembles ` +
+                  `the list on demand and cannot run dry — so an empty offer list from them ` +
+                  `is a failed read, not an empty shelf.`);
     process.exit(0);
   }
 
@@ -685,6 +803,9 @@ if (import.meta.filename === process.argv[1]) {
     if (!m) { console.error(`no merchant matches "${q}"`); process.exit(1); }
     console.log(`${m.name ?? m.cls} [${m.cls}]  markup ${m.markup ?? '(default)'}`);
     console.log(whereabouts(m));
+    // Loud, and above the stock list, because it changes what the stock list MEANS —
+    // for these two it is what he happens to be holding right now, not a menu.
+    if (m.finite_stock) console.log(`\nFINITE STOCK — ${m.finite_stock_note}\n`);
     if (m.also?.length) console.log(`${m.also.some(x => x.same_person) ? 'the same man as' : 'shares a name with'} ` +
       m.also.map(x => `${x.cls} (${x.wanders ? 'wanders' : x.room != null ? `room ${x.room}` : 'never seen'})`).join(', ') +
       `\n${m.also_note}`);

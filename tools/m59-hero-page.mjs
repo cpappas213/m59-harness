@@ -47,6 +47,15 @@ const STYLE = `
   td { padding:.28rem .6rem .28rem 0; border-bottom:1px solid var(--line); vertical-align:top; }
   .num { text-align:right; font-variant-numeric:tabular-nums; }
   .dim { color:var(--dim); } .good { color:var(--good); } .bad { color:var(--bad); } .skip { color:var(--skip); }
+  /* The ability number with its own size behind it. A wash rather than a separate
+     column, so the table still fits a phone and the shape is still scannable down the
+     page. Fixed 0-100 scale — see the comment where this is built. */
+  .ability { position:relative; display:inline-block; min-width:74px; padding:.05rem .4rem;
+             border-radius:4px; text-align:right; font-variant-numeric:tabular-nums; }
+  .ability i { position:absolute; inset:0 auto 0 0; display:block; border-radius:4px;
+               background:color-mix(in srgb, var(--good) 26%, transparent); }
+  .ability b { position:relative; font-weight:600; }
+  .decay { color:var(--bad); font-size:.75em; margin-left:.25em; }
   .detail { max-width:430px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   a.lore, a.room-link { color:var(--accent); text-decoration:none; border-bottom:1px dotted var(--line); }
   a.lore:hover, a.room-link:hover { border-bottom-color:var(--accent); }
@@ -82,14 +91,65 @@ export function renderHero(h, { localhost = false } = {}) {
         <td class="num dim">${i.amount ?? ''}</td>
         <td class="dim">${esc((i.can || []).join(', '))}</td></tr>`).join('');
 
+  // WHICH SCHOOL, BY NAME — AND THE NUMBER ON THE ROW IS NOT THE NUMBER IN THE HEADER.
+  //
+  // This cell used to print the raw value, so the column read "spell · 2": a bare number
+  // sitting beside the ability percentage, looking exactly like a second fact about how
+  // good you are at it. Naming it is the fix, and the naming has a trap in it.
+  //
+  // `m59-parse.mjs:763` reads the spell list as `school: r.u8() - 1`, so what reaches us
+  // is ALREADY ONE BELOW the constant in blakston.khd:2029-2038. Keying this table on the
+  // client's value would have been a table of plausible wrong answers — every spell named
+  // as the school below its own, with nothing to notice, because "create food · Qor" is a
+  // perfectly sensible-looking row. It was caught by checking against a spell whose school
+  // this repository already states in prose: create food is KRAANAN (m59-autopilot.mjs:905),
+  // and it came out Qor.
+  //
+  // So the table stays keyed on the kod constant — the citable thing — and the +1 is
+  // applied at the lookup, where the comment explaining it can sit next to it. Skill
+  // schools start at 10 in the same enum, deliberately, so the two sets can share the
+  // field without colliding.
+  const SCHOOLS = { 1: "Shal'ille", 2: 'Qor', 3: 'Kraanan', 4: 'Faren',
+                    5: 'Riija', 6: 'Jala', 7: 'DM command',
+                    10: 'fencing', 11: 'brawling', 12: 'telepathy', 13: 'thievery' };
+  // An id nothing names is shown as itself rather than dropped: a school this table has
+  // not heard of is worth seeing, and silently blanking it would hide a new one for ever.
+  // Kod 0 is the non-school the touch-attack pseudo-spell carries, and arrives here as -1.
+  const schoolOf = (s) => {
+    if (s == null) return null;
+    const kod = Number(s) + 1;
+    if (kod === 0) return null;
+    return SCHOOLS[kod] ?? `school ${kod}`;
+  };
+
+  // HOW GOOD IS IT AT EACH ONE. The number runs 0-100 and is the only signal that
+  // practice is working, so it is the column this table exists for — sorted on it, drawn
+  // against a fixed 0-100 rather than against this character's own best, so a character
+  // that is uniformly poor looks it.
+  //
+  // A blank here is not a zero. It means nobody has read that group yet, which happens
+  // for a few minutes after a broker restart until the ability sweep reaches this
+  // character — so it renders as "not read" rather than as a number.
+  const bar = (n) => `<span class="ability"><i style="width:${Math.max(2, Math.min(100, n))}%"></i>` +
+                     `<b>${n}</b></span>`;
   const abilities = [
     ...(h.skills || []).map(s => ({ ...s, kind: 'skill' })),
     ...(h.spells || []).map(s => ({ ...s, kind: 'spell' })),
-  ].map(a => `
+  ].sort((a, b) => (b.ability ?? -1) - (a.ability ?? -1) ||
+                   String(a.name).localeCompare(String(b.name)))
+   .map(a => {
+    // Peaked higher than it stands: what you stop using decays when the advancement
+    // window rolls over, silently, and this is the only place a person would see it.
+    const decayed = a.best != null && a.ability != null && a.best > a.ability;
+    return `
     <tr><td>${lore(a.name)}</td>
-        <td class="dim">${esc(a.kind)}${a.school ? ' · ' + esc(a.school) : ''}</td>
-        <td class="num dim">${a.ability ?? ''}</td>
-        <td class="num dim">${a.mana != null ? a.mana + ' mana' : ''}</td></tr>`).join('');
+        <td class="dim">${esc(a.kind)}${schoolOf(a.school) ? ' · ' + esc(schoolOf(a.school)) : ''}</td>
+        <td class="num">${a.ability == null
+            ? '<span class="dim" title="no ability read has arrived for this group yet — not the same as zero">not read</span>'
+            : bar(a.ability)}${decayed
+            ? ` <span class="decay" title="peaked at ${a.best}, so this one has atrophied — what you stop using decays when the advancement window rolls over">↓${a.best - a.ability}</span>`
+            : ''}</td></tr>`;
+  }).join('');
 
   const stats = Object.entries(h.stats || {}).map(([k, val]) => `
     <tr><td class="dim">${esc(k)}</td><td class="num">${esc(val)}</td></tr>`).join('');
@@ -184,8 +244,9 @@ export function renderHero(h, { localhost = false } = {}) {
     </div>
     <div>
       <h2>Skills and spells</h2>
-      <table><thead><tr><th>name</th><th>kind</th><th class="num">at</th><th class="num">cost</th></tr></thead>
-        <tbody>${abilities || '<tr><td colspan="4" class="dim">none known</td></tr>'}</tbody></table>
+      <table><thead><tr><th>name</th><th>kind</th>
+        <th class="num" title="ability, 0-100 — the only signal that practice is working">at</th></tr></thead>
+        <tbody>${abilities || '<tr><td colspan="3" class="dim">none known</td></tr>'}</tbody></table>
     </div>
   </div>
 

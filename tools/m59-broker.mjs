@@ -61,6 +61,8 @@ import { planCharacter, STAT_ORDER, STAT_PRESETS } from './m59-newchar.mjs';
 import { recordSample, recordEvent, summarise as ledgerSummary, readLedger, deathReport, timeReport, spellReport, killsIn } from './m59-ledger.mjs';
 import { renderDashboard } from './m59-dashboard.mjs';
 import { renderDeaths, renderTougher, deathReportJSON } from './m59-deaths-page.mjs';
+import { renderEconomy } from './m59-economy-page.mjs';
+import { renderSkills } from './m59-skills-page.mjs';
 import { renderHero, startScript } from './m59-hero-page.mjs';
 import { inboxIfAny, dropInbox, sanitizeInbound, unwrapSpeech } from './m59-inbox.mjs';
 import { localClients, soleClientAgent, createClientWatch,
@@ -7377,9 +7379,41 @@ function heroSnapshot(name) {
         name: c.rsc.get(o.nameRsc), amount: o.amount || undefined, can: affordances(o.flags) })),
       max_carry: st?.policy?.maxCarry ?? null,
       weapon_priority: st?.policy?.weaponPriority ?? 'by proficiency',
-      skills: (c.skills || []).map(x => ({ name: c.rsc.get(x.nameRsc), ability: x.ability })),
-      spells: (c.spells || []).map(x => ({
-        name: c.rsc.get(x.nameRsc), ability: x.ability, school: x.school })),
+      // HOW GOOD IT IS AT EACH ONE — which is the whole reason to look at this list, and
+      // which this page showed as a blank column for its entire life.
+      //
+      // `c.skills` and `c.spells` are the POSITIONAL lists: one entry per slot of plSkills
+      // / plSpells, carrying a name resource and nothing else. `x.ability` on them is
+      // simply undefined, and `?? ''` rendered that as an empty cell rather than as an
+      // error — so the column looked like a character that had not practised anything.
+      //
+      // The numbers arrive separately, as BP_STAT group 3/4, and are keyed by the object
+      // id the stat carries. A stat's `name` only exists for groups 1 and 2, so no by-name
+      // search of statsById can ever find one. `abilityOf` is the accessor built for this;
+      // see m59-abilities.mjs and the trap in CLAUDE.md.
+      //
+      // The kept book is the fallback, not the primary: after a broker restart the live
+      // map is empty until the ability sweep reaches this character, and a page that says
+      // "nothing" for twenty minutes after every restart is the same blank column again.
+      // Which source answered is carried through so the page can say so.
+      ...(() => {
+        const book = abilities.loadBook(c.me?.name ?? name);
+        const merge = (list, kind) => (list || []).map(x => {
+          const nm = c.rsc.get(x.nameRsc);
+          const live = c.abilityOf?.(nm) ?? null;
+          const kept = book?.[kind === 'skill' ? 'skills' : 'spells']?.[nm] ?? null;
+          return {
+            name: nm,
+            ability: live ?? kept?.ability ?? null,
+            // Peaked higher than it stands: this one has atrophied. Same signal the
+            // /skills board shows, and it is free here because the book already holds it.
+            best: kept?.best ?? null,
+            ability_from: live != null ? 'live' : kept?.ability != null ? 'kept' : null,
+            ...(kind === 'spell' ? { school: x.school, mana: x.mana } : {}),
+          };
+        });
+        return { skills: merge(c.skills, 'skill'), spells: merge(c.spells, 'spell') };
+      })(),
       activity: ap ? ap.activity() : 'no keeper',
       strategy: st?.policy?.strategy ?? null,
       safe_spot: st?.safe_spot ?? false,
@@ -7518,15 +7552,44 @@ function serveDashboard(port) {
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
       return res.end(JSON.stringify(deathReportJSON(url.searchParams.get('file'))));
     }
-    if (url.pathname === '/deaths' || url.pathname === '/tougher') {
+    if (url.pathname === '/deaths' || url.pathname === '/tougher' || url.pathname === '/skills') {
       try {
         const hours = Number(url.searchParams.get('hours')) || 168;
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-        return res.end(url.pathname === '/deaths' ? renderDeaths({ hours }) : renderTougher({ hours }));
+        return res.end(url.pathname === '/deaths' ? renderDeaths({ hours })
+                     : url.pathname === '/skills' ? renderSkills({ hours })
+                     : renderTougher({ hours }));
       } catch (e) {
         res.writeHead(500, { 'content-type': 'text/plain' });
         return res.end(`${url.pathname} failed: ` + e.message);
       }
+    }
+    // THE ONE BOARD THAT ASKS THE RUNNING FLEET A QUESTION.
+    //
+    // Every other page here is a pure read of what is on disk, which is what lets them
+    // answer at all when the broker is down. The economy cannot be: a purse and a pack
+    // are not announced by anything, so the record of them is a five-minute sample and
+    // the live inventory is five minutes better. The rows are already in hand — this is
+    // the same in-memory call the ledger sampler makes, no packets — so the page asks
+    // for them and falls back to the record when the call fails.
+    //
+    // Deliberately NOT awaited into the pure renderer's signature: renderEconomy works
+    // with `live: null` and says so on the row, which is what a future standalone reader
+    // of this record would get.
+    if (url.pathname === '/economy') {
+      const hours = Number(url.searchParams.get('hours')) || 168;
+      const tool = TOOLS.find(t => t.name === 'fleet');
+      Promise.resolve(tool ? tool.run({}) : null)
+        .then(out => out?.fleet ?? null, () => null)
+        .then(live => {
+          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+          res.end(renderEconomy({ hours, live }));
+        })
+        .catch(e => {
+          res.writeHead(500, { 'content-type': 'text/plain' });
+          res.end('/economy failed: ' + e.message);
+        });
+      return;
     }
     if (url.pathname !== '/' && !url.pathname.startsWith('/fleet')) {
       res.writeHead(404); return res.end('not found');

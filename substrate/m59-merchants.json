@@ -1786,7 +1786,10 @@
     48,
     568
    ],
-   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/izzio.kod"
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/wanderer/izzio.kod",
+   "finite_stock": true,
+   "max_for_sale": 25,
+   "finite_stock_note": "sells the objects it is actually holding (vbSellFromInventory on Izzio), up to 25 at a time. It can be OUT of something, and it can be too FULL to buy from you — it refuses per item, out loud, with no error on the wire. Read the purse afterwards; do not trust the call."
   },
   {
    "seen": true,
@@ -2442,7 +2445,10 @@
    "buys_anything": false,
    "name": "Pacal ix'Anoak",
    "wanders": false,
-   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcshopk.kod"
+   "source": "kod/object/active/holder/nomoveon/battler/monster/towns/kocatwn/kcshopk.kod",
+   "finite_stock": true,
+   "max_for_sale": 25,
+   "finite_stock_note": "sells the objects it is actually holding (vbSellFromInventory on KocatanShopkeeper), up to 25 at a time. It can be OUT of something, and it can be too FULL to buy from you — it refuses per item, out loud, with no error on the wire. Read the purse afterwards; do not trust the call."
   },
   {
    "seen": true,
@@ -4190,5 +4196,5 @@
    "also_note": "the same man under another class — same name, same icon. One of these usually stands still."
   }
  ],
- "enrichedAt": "2026-08-07T00:39:26.624Z"
+ "enrichedAt": "2026-08-07T05:55:01.679Z"
 }

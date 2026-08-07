@@ -108,6 +108,22 @@ export function recordSample(rows = []) {
       has_weapon: r.has_weapon ?? null,
       has_food: r.has_food ?? null,
       activity: r.activity ?? null,
+      // WHAT IT IS CARRYING, IN THE THREE QUANTITIES THAT DECIDE WHETHER IT CAN KEEP
+      // WORKING. The purse buys the reagents, the reagents become food, and food is the
+      // only way past the vigor-80 resting cap — so an economy that has stopped moving
+      // is a fleet that will quietly stop earning some hours later.
+      //
+      // These have NO OTHER HOME. A bank balance survives in substrate/banks/ because a
+      // banker says it out loud and it is written down; a purse and a pack are only ever
+      // what the inventory says right now, and nothing was keeping them. So the sample is
+      // their record, and the Economy board is built on it.
+      //
+      // The bank balance is deliberately NOT copied here. It already has a record with
+      // its own timestamps and its own observed/derived flag, and a quantity with two
+      // homes in this repository has always ended up with two answers.
+      purse: r.purse ?? null,
+      elderberry: r.reagents?.elderberry ?? null,
+      herbs: r.reagents?.herbs ?? null,
       deaths_in_safe_spot: r.deaths_in_safe_spot ?? null,
       deaths_in_proven_safe_spot: r.deaths_in_proven_safe_spot ?? null,
       mulligans: r.mulligans ?? null,

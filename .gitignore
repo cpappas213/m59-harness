@@ -64,9 +64,15 @@ node_modules/
 /commissions/
 
 # The account passwords for a fleet made by tools/m59-makefleet.mjs. This is the
-# ONLY copy of them — back it up if you care about the characters, but never
-# commit it.
+# ONLY copy of them — back it up with tools/m59-backup.mjs, but never commit it.
 /substrate/fleet-accounts.json
+
+# What a restore replaced. tools/m59-restore.mjs never overwrites anything without
+# first copying it aside here, which is what makes a wrong restore reversible — and
+# means this directory holds ROSTERS, i.e. plaintext account passwords. It is as
+# secret as the files above and must never be committed. Delete one once you are
+# satisfied the restore was the one you wanted.
+/substrate/.before-restore-*/
 
 # The click-to-play shortcuts written by tools/m59-shortcuts.mjs. The client has
 # no way to be handed a password except on its command line, so each of these is

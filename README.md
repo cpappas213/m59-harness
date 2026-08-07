@@ -119,7 +119,10 @@ tools/m59-rsc.mjs           the resource table, id → text, straight off the wi
 tools/m59.mjs               say / listen / escort / follow, over the admin socket
 tools/m59-proxy.mjs         sit between a human client and the server and watch
 tools/m59-tui.mjs           interactive fleet terminal
-tools/m59-dashboard.mjs     the fleet web page
+tools/m59-dashboard.mjs     the fleet web page — /, and the tab bar for the four below
+tools/m59-deaths-page.mjs   /deaths and /tougher: what killed them, what it took to gain
+tools/m59-economy.mjs       purses, bank balances and reagents — /economy
+tools/m59-abilities.mjs     every skill and spell number the fleet holds — /skills
 
 substrate/m59-map.json        264 rooms with their .roo geometry, built once over the admin socket
 substrate/m59-merchants.json  70 merchants: who buys, sells and teaches what
