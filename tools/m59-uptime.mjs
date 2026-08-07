@@ -58,8 +58,22 @@ export function outages(agent, ledger = readLedger(), now = Date.now()) {
   const out = [];
   let downAt = null, why = null;
   for (const e of mine) {
+    // A KEEPER THAT WAS REVIVED IS DRIVING AGAIN, WHATEVER OPENED THE OUTAGE.
+    //
+    // This closed only on `start`, and the autopilot records four events, not two: a hard
+    // stop writes `stop`, a soft one writes `inert`, and coming back writes `revive` or
+    // `start` depending on which call did it. So a hard stop followed by revives — which
+    // is the normal shape of a redeploy, and of every errand that holds a keeper — left
+    // the outage open until the next literal `start`, hours later.
+    //
+    // Measured: Statler was charged an 8h13m outage running from a redeploy at 08:57 to
+    // the next `start` at 17:10, during which it killed 27 things. Three deaths fell
+    // inside windows like that and were reported as "nothing was driving the character",
+    // which is the one number this file exists to get right — it is what deaths are
+    // discounted by when judging the hunting strategy. Inflating it hides real failures
+    // behind fake ones.
     if (e.event === 'stop' && downAt == null) { downAt = e.at; why = e.why ?? null; }
-    else if (e.event === 'start' && downAt != null) {
+    else if ((e.event === 'start' || e.event === 'revive') && downAt != null) {
       out.push({ from: downAt, to: e.at, ms: e.at - downAt, why });
       downAt = null; why = null;
     }
