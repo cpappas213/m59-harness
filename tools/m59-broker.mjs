@@ -37,7 +37,7 @@ import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, un
 import { join, dirname } from 'node:path';
 import { M59Client, KOD_FINENESS } from './m59-client.mjs';
 import { loadResources } from './m59-rsc.mjs';
-import { describeObject, affordances, OF } from './m59-parse.mjs';
+import { describeObject, affordances, OF, dropSpec } from './m59-parse.mjs';
 import { World, sharedWorldMap, spreadEdges } from './m59-world.mjs';
 import { loadMap, resolveRoom, forgetInferredExit } from './m59-map.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
@@ -4952,10 +4952,17 @@ const TOOLS = [
       'apply target), so `use` on a loaf silently does nothing at all — no message, no error, no ' +
       'vigor. That mattered: resting stops awarding vigor at 80 of 200, everything above it has ' +
       'to be eaten, and a character sitting at 80 with bread in its pack is 30x more likely to ' +
-      'die than one above 85. There was no way to make one eat except to wait for its keeper.',
+      'die than one above 85. There was no way to make one eat except to wait for its keeper.\n' +
+      'DROPPING A STACK IS NOT DROPPING AN ITEM. Money, arrows, mushrooms and herbs are one ' +
+      'object carrying a count, and the server takes that count from a separate list ' +
+      '(UserDropItems, user.kod:3775). Drop is the only verb here that has one: `amount` takes ' +
+      'part of a stack, and leaving it out drops the whole thing. It is not possible to drop a ' +
+      'stack "by id" — that is what produces "You don\'t have that amount of X to drop."',
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       verb: { type: 'string', enum: ['use', 'unuse', 'get', 'drop', 'activate', 'eat', 'go'] },
+      amount: { type: 'number', description: 'drop only: how many out of a stack. Omitted drops ' +
+        'the whole stack. Ignored by every other verb — nothing else on this wire takes a count.' },
       target: { type: ['string', 'number'] } }, required: ['agent', 'verb'] },
     run: async (a) => {
       const s = session(a.agent), c = s.need();
@@ -4965,8 +4972,24 @@ const TOOLS = [
         await s.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
       } else {
         const t = resolveTarget(s, a.target);
+        // A STACK IS DROPPED BY {id, amount}, NEVER BY A BARE ID. This sent the bare id
+        // for everything, so `drop` on 192 herbs put the count nowhere, Split refused a
+        // nil (numbitem.kod:257) and the character was told "You don't have that amount
+        // of herbs to drop." — while the tool reported the request as sent. dropSpec is
+        // the one rule; see m59-parse.mjs for what the server does with each shape.
+        if (a.amount != null) {
+          if (!Number.isInteger(a.amount) || a.amount < 1)
+            throw new Error(`amount must be a whole number of 1 or more, got ${a.amount}`);
+          // Refuse here rather than let Split refuse there. We are holding the stack size
+          // already, and "you don't have that amount" arrives as a chat line the caller
+          // has to notice among the others — an error it cannot miss is worth more.
+          const have = t.amount ?? 0;
+          if (have >= 1 && a.amount > have)
+            throw new Error(`asked to drop ${a.amount} but only ${have} in the stack`);
+        }
         const fn = { use: () => c.use(t.id), unuse: () => c.unuse(t.id), get: () => c.get(t.id),
-                     drop: () => c.drop([t.id]), activate: () => c.activate(t.id),
+                     drop: () => c.drop([dropSpec(t, a.amount ?? null)]),
+                     activate: () => c.activate(t.id),
                      // onto ourselves — that is what eating IS on the wire
                      eat: () => c.apply(t.id, c.selfId) }[a.verb];
         if (!fn) throw new Error(`unknown verb "${a.verb}"`);

@@ -17,7 +17,7 @@
 // caller did not ask for. A skill that gives up says why, at which stage, and what
 // the state was when it stopped.
 
-import { OF, isTeleporter, describeObject } from './m59-parse.mjs';
+import { OF, isTeleporter, describeObject, dropSpec } from './m59-parse.mjs';
 // The Underworld's exits, and which city is nearest to any room. As a namespace,
 // because escapeUnderworld re-exports most of it and a bare import would shadow.
 import * as UW from './m59-underworld.mjs';
@@ -678,7 +678,7 @@ export async function freeRoomFor(s, { max = 4 } = {}) {
   for (const d of dead) {
     // Same spec shape the keeper's pack-clearer uses: a bare id, or {id, amount} for a
     // stack. Passing {id} for a single item is refused as a partial-stack drop.
-    await s.pacer.submit('drop', () => c.drop([(d.amount ?? 1) > 1 ? { id: d.id, amount: d.amount } : d.id]));
+    await s.pacer.submit('drop', () => c.drop([dropSpec(d)]));
     dropped.push(d);
   }
   if (dropped.length) {

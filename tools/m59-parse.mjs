@@ -461,6 +461,36 @@ export function encodeIdList(items) {
   return Buffer.concat([head, ...parts]);
 }
 
+// WHAT TO HAND encodeIdList FOR AN ITEM, WHICH IS NOT THE SAME AS ITS ID.
+//
+// UserDropItems (user.kod:3775) walks the id list and, for every item the SERVER thinks
+// is a NumberItem, takes the next count off a PARALLEL number list — the one
+// encodeIdList writes when an element carries {id, amount}. Send a stack as a bare id
+// and that list is empty, so `number` arrives nil, Split refuses it (it wants
+// `number >= 1 and number <= piNumber`, numbitem.kod:257) and the character is told
+// "You don't have that amount of X to drop." (user.kod:183). Nothing is dropped, and as
+// far as the wire is concerned the request succeeded.
+//
+// The `number <= 0` guard above Split (user.kod:3806) does NOT catch this: nil is not
+// less than or equal to zero in kod, so a missing count falls past it into Split and
+// comes back as the "don't have that amount" message rather than the "can't do anything
+// with N items" one. Same outcome, different sentence — worth knowing when reading a
+// report of it.
+//
+// THE TEST IS THE TAG, NOT WHETHER THERE IS MORE THAN ONE. extractObject reads an amount
+// only for a number-tagged object and files 0 for everything else, so a stack with ONE
+// left carries amount 1 — and an `amount > 1` test sends that as a bare id and drops
+// nothing. That is the same bug again at the bottom of every stack, where it is hardest
+// to notice, because "I dropped my last herb and still have it" reads as a UI glitch.
+//
+// `want` asks for part of the stack; omitted, it drops the lot.
+export function dropSpec(o, want = null) {
+  if (!o) return undefined;
+  const stack = o.tag === CLIENT_TAG_NUMBER || (o.amount ?? 0) >= 1;
+  if (!stack) return o.id;
+  return { id: o.id, amount: want == null ? (o.amount ?? 1) : want };
+}
+
 // ------------------------------------------------------------------- trading
 //
 // The offer protocol, which is the only way one player hands anything to another —

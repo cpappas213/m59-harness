@@ -655,13 +655,25 @@ console.log('\nthe post-mortem');
 console.log('\ndropping a stack needs the quantity');
 {
   const k = new Autopilot({ name: 't6', world: { room: {} }, client: null }, {});
-  // encodeIdList has always taken {id, amount}; every caller passed a bare id, and
-  // UserDrop (user.kod:3802) returns early on `number <= 0` without dropping anything.
-  // Beaker spent 14 passes on "dropped red mushroom x20" while still carrying 15 of 14.
+  // encodeIdList has always taken {id, amount}; the callers passed a bare id, and
+  // UserDropItems (user.kod:3775) then has no count to give UserDrop, so Split refuses a
+  // nil (numbitem.kod:257) and nothing is dropped. Beaker spent 14 passes on "dropped red
+  // mushroom x20" while still carrying 15 of 14.
   ok('a stack is sent with its quantity',
      JSON.stringify(k.dropSpec({ id: 7, amount: 20 })) === '{"id":7,"amount":20}');
-  ok('a single item is still sent as a bare id', k.dropSpec({ id: 7, amount: 1 }) === 7);
+  // AN ORDINARY ITEM IS amount 0, NOT amount 1. extractObject only reads an amount for a
+  // number-tagged object and files 0 for the rest, so `amount: 1` is a STACK WITH ONE
+  // LEFT — and the old `amount > 1` test sent that as a bare id and dropped nothing. The
+  // same bug, at the bottom of every stack, where it reads as a UI glitch.
+  ok('an ordinary item is sent as a bare id', k.dropSpec({ id: 7, amount: 0 }) === 7);
   ok('and so is one with no amount at all', k.dropSpec({ id: 7 }) === 7);
+  ok('but the LAST of a stack still carries its count',
+     JSON.stringify(k.dropSpec({ id: 7, amount: 1 })) === '{"id":7,"amount":1}',
+     'a bare id here drops nothing and says "you don\'t have that amount"');
+  ok('a number-tagged object is a stack even if the amount is missing',
+     JSON.stringify(k.dropSpec({ id: 7, tag: 1 })) === '{"id":7,"amount":1}');
+  ok('part of a stack can be asked for',
+     JSON.stringify(k.dropSpec({ id: 7, amount: 192 }, 5)) === '{"id":7,"amount":5}');
   ok('a missing object does not throw', k.dropSpec(undefined) === undefined);
 }
 

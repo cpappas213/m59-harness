@@ -21,7 +21,7 @@
 //     find itself somewhere else can find out why.
 
 import * as skills from './m59-skills.mjs';
-import { OF, affordances } from './m59-parse.mjs';
+import { OF, affordances, dropSpec as dropSpecFor } from './m59-parse.mjs';
 import { isFood, foodValue } from './m59-items.mjs';
 import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe } from './m59-spawns.mjs';
 import { findPath } from './m59-map.mjs';
@@ -2837,19 +2837,16 @@ export class Autopilot {
 
   // DROPPING A STACK NEEDS THE QUANTITY, or the server refuses and says nothing useful.
   //
-  // UserDrop (user.kod:3802) on a NumberItem does `if number <= 0 { return }` -- so a
-  // drop request carrying no count drops NOTHING, silently as far as the keeper is
-  // concerned. encodeIdList has taken {id, amount} all along; every caller here passed a
-  // bare id.
-  //
   // The cost was not one item. makeRoom returns from the pass as soon as it has "made
   // room", so a character whose overflow was a stack dropped nothing, stayed over the
   // limit, and returned at the top of every pass for ever. Beaker did it 14 passes
   // running -- "bags full - dropped red mushroom x20", still carrying 15 of 14 -- and
   // never reached the hunting code at all.
-  dropSpec(o) {
-    return (o?.amount ?? 1) > 1 ? { id: o.id, amount: o.amount } : o?.id;
-  }
+  //
+  // The rule itself now lives beside encodeIdList in m59-parse.mjs, because this was the
+  // third copy of it and the fourth site -- the broker's `act` -- had no copy at all and
+  // was still sending bare ids. See dropSpec there for what the server actually does.
+  dropSpec(o, want = null) { return dropSpecFor(o, want); }
 
   // THE ROOM HAS FILLED UP WITH THINGS WE DECLINED TO KILL.
   //
