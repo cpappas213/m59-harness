@@ -27,10 +27,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   RoomGeometry,
-  parseRoo, parseRooSectors, setWallHeights, canCrossWall,
+  parseRoo, parseRooNodes, parseRooSectors, setWallHeights, canCrossWall,
   floorHeightAt, ceilingHeightAt,
   MAX_STEP_HEIGHT, MAX_STEP_HEIGHT_KOD, SECTOR_DEPTHS, sectorDepth, SF, WF,
-  CLIENT_FINENESS, KOD_FINENESS, PLAYER_HEIGHT, PLAYER_RADIUS, PLAYER_WIDTH,
+  CLIENT_FINENESS, KOD_FINENESS, MAX_BSP_POINTS,
+  PLAYER_HEIGHT, PLAYER_RADIUS, PLAYER_WIDTH,
   heightKodToClient, DEFAULT_ROO_DIRS,
 } from './m59-roo.mjs';
 
@@ -54,6 +55,7 @@ ok('depth is the low two flag bits', sectorDepth(0x0403) === 3 && sectorDepth(0x
 ok('player width 496, radius 248', PLAYER_WIDTH === 496 && PLAYER_RADIUS === 248, 'game.c:261, move.c:122');
 ok('player height 768', PLAYER_HEIGHT === 768, 'game.c:262');
 ok('fineness 1024 client / 64 kod', CLIENT_FINENESS === 1024 && KOD_FINENESS === 64, 'drawdefs.h:42,52');
+ok('a BSP leaf is bounded to 20 vertices', MAX_BSP_POINTS === 20, 'bsp.h:303');
 
 // ------------------------------------------------------- the variable-length walk
 //
@@ -121,10 +123,103 @@ console.log('\nthe sector record is variable-length');
   // step onto them becomes an unclimbable cliff.
   const neg = parseRooSectors(section(sectorBytes({ id: 1, floorKod: -40, ceilKod: 100, flags: 0 })), 12, SEC_OFF);
   ok('floor heights are signed', neg[0].floorHeight === heightKodToClient(-40), `${neg[0].floorHeight}`);
+  const highTexture = sectorBytes({ id: 1, floorKod: 0, ceilKod: 100, flags: 0 });
+  highTexture.writeUInt16LE(50063, 2);
+  ok('texture resource ids are unsigned WORDs',
+    parseRooSectors(section(highTexture), 12, SEC_OFF)[0].floorType === 50063,
+    'real resource ids exceed signed int16');
   // Truncation must lose sectors, not invent them: the header claims nine, one is present.
   const short = section(sectorBytes({ id: 1, floorKod: 1, ceilKod: 2, flags: 0 }));
   short.writeUInt16LE(9, SEC_OFF);
   ok('a truncated section stops rather than guessing', parseRooSectors(short, 12, SEC_OFF).length === 1);
+}
+
+// ------------------------------------------------------- BSP leaves / subsectors
+// A leaf is the actual floor patch. Its sector reference is what joins raw polygon
+// geometry to texture, height, slope and light, so test that association with bytes
+// built independently of the parser and preserve a deliberately fractional winding.
+const NODE_OFF = 4;
+const f32 = n => { const b = Buffer.alloc(4); b.writeFloatLE(n); return b; };
+const i32 = n => { const b = Buffer.alloc(4); b.writeInt32LE(n); return b; };
+const bboxBytes = (box, coord) => Buffer.concat(box.map(coord));
+function internalNodeBytes({ bbox, separator, positive, negative, firstWall = 0, coord = f32 }) {
+  const refs = Buffer.alloc(6);
+  refs.writeUInt16LE(positive, 0); refs.writeUInt16LE(negative, 2); refs.writeUInt16LE(firstWall, 4);
+  return Buffer.concat([Buffer.from([1]), bboxBytes(bbox, coord), ...separator.map(coord), refs]);
+}
+function leafNodeBytes({ bbox, sector, polygon, coord = f32 }) {
+  const head = Buffer.alloc(4);
+  head.writeUInt16LE(sector, 0); head.writeUInt16LE(polygon.length, 2);
+  return Buffer.concat([Buffer.from([2]), bboxBytes(bbox, coord), head,
+    ...polygon.flatMap(([x, y]) => [coord(x), coord(y)])]);
+}
+function nodeSection(...records) {
+  const count = Buffer.alloc(2); count.writeUInt16LE(records.length);
+  return Buffer.concat([Buffer.alloc(NODE_OFF), count, ...records]);
+}
+const throws = fn => { try { fn(); return false; } catch { return true; } };
+
+console.log('\nBSP leaves preserve ROO subsectors and resolve sectors');
+{
+  const sectors = parseRooSectors(section(
+    sectorBytes({ id: 71, floorKod: 10, ceilKod: 200, flags: 0 }),
+    sectorBytes({ id: 72, floorKod: 20, ceilKod: 220, flags: SF.SLOPED_FLOOR, slopes: 1 }),
+  ), 12, SEC_OFF);
+  const clockwise = [[1024.25, 0], [2048, 0], [2048, 1024], [1024.25, 1024]];
+  const nodes = nodeSection(
+    internalNodeBytes({ bbox: [0, 0, 2048, 1024], separator: [1, 0, -1024], positive: 2, negative: 3 }),
+    leafNodeBytes({ bbox: [1024.25, 0, 2048, 1024], sector: 2, polygon: clockwise }),
+    leafNodeBytes({ bbox: [0, 0, 1024.25, 1024], sector: 1,
+      polygon: [[0, 0], [1024.25, 0], [1024.25, 1024], [0, 1024]] }),
+  );
+  const bsp = parseRooNodes(nodes, 13, NODE_OFF, sectors, 0);
+  ok('the root and all three nodes parse', bsp.root === 1 && bsp.nodes.length === 3);
+  ok('both leaves become renderable subsectors', bsp.leaves.length === 2);
+  ok('every leaf is tied to the parsed sector it references',
+    bsp.leaves.every(leaf => leaf.sector === sectors[leaf.sectorNum - 1]));
+  ok('raw float coordinates and original winding survive unchanged',
+    JSON.stringify(bsp.leaves[0].polygon) === JSON.stringify(clockwise),
+    JSON.stringify(bsp.leaves[0].polygon));
+
+  const geo = new RoomGeometry({ file: 'fixture.roo', version: 13, rows: 1, cols: 1,
+    grid: Buffer.from([0]), flags: Buffer.from([1]), monsterGrid: null,
+    walls: [], sidedefs: [], sectors, nodes: bsp.nodes, leaves: bsp.leaves, clientSize: null });
+  const baked = geo.toJSON({ includeWalls: false });
+  const restored = RoomGeometry.fromJSON(baked);
+  ok('the baked map carries sector textures, heights, light and slope angle',
+    baked.sectors[1].floorType === sectors[1].floorType &&
+    baked.sectors[1].floorHeight === sectors[1].floorHeight &&
+    baked.sectors[1].light === sectors[1].light &&
+    baked.sectors[1].slopedFloor.textureAngle === 0);
+  ok('the baked-map round trip re-associates leaves with sectors',
+    restored.leaves.every(leaf => leaf.sector === restored.sectors[leaf.sectorNum - 1]));
+
+  ok('a leaf cannot name a sector that was not parsed', throws(() => parseRooNodes(
+    nodeSection(leafNodeBytes({ bbox: [0, 0, 1, 1], sector: 3,
+      polygon: [[0, 0], [1, 0], [0, 1]] })), 13, NODE_OFF, sectors, 0)));
+  ok('oversized leaf polygons are rejected before reading their payload', (() => {
+    const bad = nodeSection(leafNodeBytes({ bbox: [0, 0, 1, 1], sector: 1,
+      polygon: Array.from({ length: MAX_BSP_POINTS + 1 }, (_, i) => [i, i]) }));
+    return throws(() => parseRooNodes(bad, 13, NODE_OFF, sectors, 0));
+  })());
+  ok('out-of-range child references are rejected', throws(() => parseRooNodes(
+    nodeSection(internalNodeBytes({ bbox: [0, 0, 1, 1], separator: [1, 0, 0], positive: 2, negative: 0 })),
+    13, NODE_OFF, sectors, 0)));
+  ok('cycles in the BSP references are rejected', throws(() => parseRooNodes(
+    nodeSection(internalNodeBytes({ bbox: [0, 0, 1, 1], separator: [1, 0, 0], positive: 1, negative: 0 })),
+    13, NODE_OFF, sectors, 0)));
+  const v12 = parseRooNodes(nodeSection(leafNodeBytes({ bbox: [-64, 0, 64, 64], sector: 1,
+    polygon: [[-64, 0], [64, 0], [0, 64]], coord: i32 })), 12, NODE_OFF, sectors, 0);
+  ok('pre-v13 signed integer coordinates remain in their raw scale',
+    v12.leaves[0].polygon[0][0] === -64);
+  const completeLeaf = nodeSection(leafNodeBytes({ bbox: [0, 0, 1, 1], sector: 1,
+    polygon: [[0, 0], [1, 0], [0, 1]] }));
+  ok('truncated leaf payloads are rejected', throws(() => parseRooNodes(
+    completeLeaf.subarray(0, completeLeaf.length - 1), 13, NODE_OFF, sectors, 0)));
+  const nonFinite = Buffer.from(completeLeaf);
+  nonFinite.writeFloatLE(Number.NaN, NODE_OFF + 3); // count(2), type(1), then bbox.x0
+  ok('non-finite v13 coordinates are rejected',
+    throws(() => parseRooNodes(nonFinite, 13, NODE_OFF, sectors, 0)));
 }
 
 // ------------------------------------------------------- wall heights from sectors
@@ -297,7 +392,8 @@ if (!roomsDir) {
   skip('the Limping Toad', 'ditto');
 } else {
   const files = fs.readdirSync(roomsDir).filter(f => f.toLowerCase().endsWith('.roo'));
-  let parsed = 0, threw = 0, withSectors = 0, sloped = 0, wading = 0;
+  let parsed = 0, threw = 0, withSectors = 0, withLeaves = 0, leafRefs = 0,
+      badLeafRefs = 0, sloped = 0, wading = 0;
   const deltas = new Map();
   for (const f of files) {
     let buf;
@@ -307,6 +403,11 @@ if (!roomsDir) {
       parsed++;
       const h = g.heightSummary;
       if (h) { withSectors++; if (h.sloped) sloped++; if (h.wading) wading++; }
+      if (g.leaves?.length) withLeaves++;
+      for (const leaf of g.leaves || []) {
+        leafRefs++;
+        if (leaf.sector !== g.sectors?.[leaf.sectorNum - 1]) badLeafRefs++;
+      }
     } catch { threw++; continue; }
     // Where the variable-length walk ENDS. A wrong stride shows up here as a delta
     // that differs between flat rooms and sloped ones, which is the only signal
@@ -328,6 +429,9 @@ if (!roomsDir) {
   }
   ok('every room parses without throwing', threw === 0, `${parsed} parsed, ${threw} threw`);
   ok('every room yields sectors', withSectors === parsed, `${withSectors}/${parsed}`);
+  ok('every room yields BSP leaf surfaces', withLeaves === parsed, `${withLeaves}/${parsed}`);
+  ok('every real leaf resolves to its parsed sector', leafRefs > 0 && badLeafRefs === 0,
+     `${leafRefs} leaves, ${badLeafRefs} bad references`);
   ok('the tree really does contain slopes', sloped > 0, `${sloped} rooms sloped, ${wading} wading`);
   // THE STRIDE PROOF. Sloped rooms must land on the same boundary as flat ones. If the
   // 46 were wrong, every sloped room would be displaced by a multiple of the error and

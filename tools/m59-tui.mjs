@@ -227,7 +227,7 @@ function listView() {
       ? c.bold(c.yellow('X')) + c.dim(' TAKE ') + c.yellow(cur.character ?? cur.agent) +
         c.dim(' off ' + cut(curHeld.label ?? 'fleet work', 24))
       : c.bold(c.yellow('X')) + c.dim(' leave override');
-  L.push(c.dim('  ↑↓/jk move · ⏎ open · L launch · C compendium · ') + xSays +
+  L.push(c.dim('  ↑↓/jk move · ⏎ open · L launch · C compendium · P plan · ') + xSays +
          c.dim(' · r refresh · q quit'));
   if (S.status) L.push('  ' + S.status);
   if (S.lastError) L.push('  ' + c.red(S.lastError));
@@ -483,24 +483,32 @@ function rosterFor(agent) {
 // nothing is serving, then opens the browser at an endpoint that reads the character
 // out of the broker, sets a cookie with it, and redirects to the bestiary.
 //
+// P IS THE SAME HANDOVER POINTED THE OTHER WAY. C asks "what can this character survive";
+// P opens the planner, which asks "what should it be carrying", and writes the answer to
+// substrate/loadouts/<name>.json where the keeper reads it. One key each, because they are
+// the two directions of the same import and neither is a submenu of the other.
+//
 // A character not in game gets the compendium anyway, without the import. The pages
 // are worth reading on their own, and an error page would be a worse answer to a key
 // than a working one with a note.
-async function compendium(row) {
+async function compendium(row, to = '/creatures/') {
   const live = row?.in_game !== false && row?.agent;
-  S.status = c.dim('opening the compendium…');
+  const what = to === '/planner/' ? 'planner' : 'compendium';
+  S.status = c.dim(`opening the ${what}…`);
   draw();
   try {
     const how = await ensureServing(COMPENDIUM_PORT);
-    const url = live ? importUrl(row.agent, '/creatures/', COMPENDIUM_PORT)
-                     : `http://127.0.0.1:${COMPENDIUM_PORT}/creatures/`;
+    const url = live ? importUrl(row.agent, to, COMPENDIUM_PORT)
+                     : `http://127.0.0.1:${COMPENDIUM_PORT}${to}`;
     openBrowser(url);
-    S.status = c.green(how.already ? 'compendium already serving' : 'started the compendium')
+    S.status = c.green(how.already ? `${what} already serving` : `started the ${what}`)
       + ' ' + c.dim(`· 127.0.0.1:${COMPENDIUM_PORT} · `)
-      + (live ? c.cyan(`bestiary computed for ${row.character ?? row.agent}`)
+      + (live ? c.cyan(to === '/planner/'
+                        ? `planning ${row.character ?? row.agent}`
+                        : `bestiary computed for ${row.character ?? row.agent}`)
               : c.yellow('no character imported — that one is not in game'));
   } catch (e) {
-    S.status = c.red('compendium: ' + e.message);
+    S.status = c.red(`${what}: ` + e.message);
   }
   draw();
 }
@@ -563,6 +571,7 @@ function onKey(str, key) {
     } else if (str === 'X' || str === 'x') override(S.rows[S.sel]).then(draw, oops);
     else if (str === 'L' || str === 'l') launch(S.rows[S.sel]).then(draw, fail);
     else if (str === 'C' || str === 'c') compendium(S.rows[S.sel]);
+    else if (str === 'P' || str === 'p') compendium(S.rows[S.sel], '/planner/');
     else if (str === 'r') { S.status = c.dim('refreshing…'); refresh().then(draw); }
   } else {
     if (key.name === 'q' || key.name === 'escape' || key.name === 'return') {
@@ -570,6 +579,7 @@ function onKey(str, key) {
     } else if (str === 'X' || str === 'x') override(S.hero).then(draw, oops);
     else if (str === 'L' || str === 'l') launch(S.hero).then(draw, fail);
     else if (str === 'C' || str === 'c') compendium(S.hero);
+    else if (str === 'P' || str === 'p') compendium(S.hero, '/planner/');
     else if (str === 'r') { refresh().then(() => { S.hero = S.rows.find(r => r.agent === S.hero.agent) ?? S.hero; draw(); }); }
   }
   draw();

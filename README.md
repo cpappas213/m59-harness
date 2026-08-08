@@ -117,6 +117,7 @@ tools/m59-spells.mjs        spell costs, reagents and the karma gate, compiled f
 tools/m59-safespots.mjs     squares a character can hold, and against how many
 tools/m59-rsc.mjs           the resource table, id → text, straight off the wire
 tools/m59.mjs               say / listen / escort / follow, over the admin socket
+tools/m59-fleets.mjs        every roster on this machine: slots, server, who is holding it
 tools/m59-proxy.mjs         sit between a human client and the server and watch
 tools/m59-tui.mjs           interactive fleet terminal
 tools/m59-dashboard.mjs     the fleet web page — /, and the tab bar for the four below
@@ -144,6 +145,8 @@ Offline, no server needed:
 node tools/m59-safespot-test.mjs      # 91 tests — safe squares, errand pairing
 node tools/m59-chat-test.mjs          # 102 tests — sanitiser and leak detection
 node tools/m59-escape-test.mjs        # 29 tests — leaving and fighting from a sitting start
+node tools/m59-fleets-test.mjs        # the roster inventory, against a fixture broker
+node tools/m59-loadout-test.mjs       # 109 tests — loadouts, and what reaches the counter
 ```
 
 Against a live server, with test accounts:
@@ -181,6 +184,33 @@ pages render and images 404.
 
 To rebuild the site itself from a changed source tree: `node tools/build.mjs`
 inside `compendium/`. See [`compendium/README.md`](compendium/README.md).
+
+## Telling the fleet what a character should be carrying
+
+The compendium's **planner** is the page between the reference site and the live
+fleet. It rebuilds the client's own right-hand panel — inventory, spells, skills,
+stats, the same four tabs — and makes it editable, so what comes out is a
+**loadout**: one file per character saying what gear it should get back to, how
+many of each thing it should carry, and what it should sell on sight.
+
+```bash
+node tools/m59-compendium.mjs --open --to /planner/    # or press P in the fleet terminal
+node tools/m59-loadout.mjs                             # every loadout on this machine
+node tools/m59-loadout.mjs Kermit --check              # ...against what Kermit holds now
+node tools/m59-loadout.mjs Kermit --init               # seed one from its character sheet
+```
+
+The keeper reads `substrate/loadouts/<character>.json` every pass and acts on it:
+it tops up to the minimums at a counter it is already standing at, holds back
+what the floors protect, sheds what the ceilings and the sell list release, and
+reaches for the weapon the list names rather than whichever one it happens to be
+best with. Every rule in it used to be a constant shared by all twenty-one
+characters.
+
+**A loadout adds rules; it never removes them.** A character without one behaves
+exactly as it did before loadouts existed, and a loadout that mentions only
+elderberry changes nothing about anything else. That is the property
+`m59-loadout-test.mjs` spends most of its 109 assertions on.
 
 ## Source analysis
 

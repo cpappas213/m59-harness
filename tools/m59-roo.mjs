@@ -74,6 +74,9 @@ export const CLIENT_FINENESS = 1024;
 export const LOG_CLIENT_FINENESS = 10;
 export const KOD_FINENESS = 64;                  // drawdefs.h:52
 export const LOG_KOD_FINENESS = 6;
+// clientd3d/bsp.h:303. BSP leaves are fixed-capacity convex polygons in the
+// canonical client; accepting a larger count would overrun that client's Poly.
+export const MAX_BSP_POINTS = 20;
 // drawdefs.h:60 — heights are stored in kod units and shifted into client units by
 // the same 4 bits as fine coordinates. Both directions, because the .roo stores kod
 // and every comparison in move.c is done in client units.
@@ -142,13 +145,14 @@ export const DEFAULT_ROO_DIRS = [
 ];
 
 export class RoomGeometry {
-  constructor({ file, version, rows, cols, grid, flags, monsterGrid, walls, sidedefs, sectors, clientSize }) {
-    Object.assign(this, { file, version, rows, cols, grid, flags, monsterGrid, walls, sidedefs, sectors, clientSize });
+  constructor({ file, version, rows, cols, grid, flags, monsterGrid, walls, sidedefs,
+                sectors, nodes, leaves, clientSize }) {
+    Object.assign(this, { file, version, rows, cols, grid, flags, monsterGrid, walls,
+                          sidedefs, sectors, nodes, leaves, clientSize });
   }
 
-  // The relief, as a spread rather than a per-square lookup — a per-square answer needs
-  // the BSP leaf a point falls in, which is task "BSP nodes" and not yet built. This is
-  // enough to tell a flat room from a stepped one and to prove the parse is sane.
+  // The relief as a quick spread. Precise surfaces now live in `leaves`: each convex
+  // polygon is directly associated with its sector and slope plane.
   get heightSummary() {
     if (!this.sectors?.length) return null;
     const f = this.sectors.map(s => s.floorHeight), c = this.sectors.map(s => s.ceilingHeight);
@@ -575,10 +579,12 @@ export class RoomGeometry {
     };
   }
 
-  // Compact enough to bake into JSON: three base64 byte planes. A 60x60 room is
-  // about 4.8kB this way, so the whole world fits in a couple of megabytes and the
-  // broker needs no access to the game's resource directory at all.
-  toJSON({ includeWalls = true } = {}) {
+  // Compact enough to bake into JSON: three base64 byte planes plus the renderable
+  // BSP leaves. Internal BSP nodes are deliberately not baked: the renderer needs
+  // each convex subsector and its sector, not the traversal tree used by the old
+  // software renderer. Vertex order and coordinates remain exactly as the .roo
+  // stored them; winding is render-significant and must not be "cleaned up" here.
+  toJSON({ includeWalls = true, includeSurfaces = true } = {}) {
     const out = {
       file: path.basename(this.file || ''),
       version: this.version, rows: this.rows, cols: this.cols,
@@ -594,10 +600,45 @@ export class RoomGeometry {
         [Math.round(w.x0), Math.round(w.y0), Math.round(w.x1), Math.round(w.y1),
          (w.passable ? 1 : 0) | (w.mapNever ? 2 : 0) | (w.mapAlways ? 4 : 0)]);
     }
+    if (includeSurfaces && this.sectors && this.leaves) {
+      out.sectors = this.sectors.map((s, i) => ({
+        id: i + 1,
+        serverId: s.serverId,
+        floorType: s.floorType,
+        ceilingType: s.ceilingType,
+        tx: s.tx, ty: s.ty,
+        floorHeight: s.floorHeight,
+        ceilingHeight: s.ceilingHeight,
+        light: s.light,
+        flags: s.flags,
+        speed: s.speed,
+        depth: s.depth,
+        slopedFloor: s.slopedFloor ? { ...s.slopedFloor } : null,
+        slopedCeiling: s.slopedCeiling ? { ...s.slopedCeiling } : null,
+      }));
+      out.leaves = this.leaves.map(leaf => ({
+        node: leaf.node,
+        sector: leaf.sectorNum,
+        bbox: [...leaf.bbox],
+        polygon: leaf.polygon.map(([x, y]) => [x, y]),
+      }));
+    }
     return out;
   }
 
   static fromJSON(j) {
+    const sectors = Array.isArray(j.sectors) ? j.sectors.map((s, i) => ({
+      ...s,
+      id: i + 1,
+      slopedFloor: s.slopedFloor ? { ...s.slopedFloor } : null,
+      slopedCeiling: s.slopedCeiling ? { ...s.slopedCeiling } : null,
+    })) : null;
+    const leaves = Array.isArray(j.leaves) ? j.leaves.map(leaf => ({
+      type: 'leaf', node: leaf.node, sectorNum: leaf.sector,
+      sector: sectors?.[leaf.sector - 1] ?? null,
+      bbox: Array.isArray(leaf.bbox) ? [...leaf.bbox] : [],
+      polygon: Array.isArray(leaf.polygon) ? leaf.polygon.map(p => [...p]) : [],
+    })) : null;
     return new RoomGeometry({
       file: j.file, version: j.version, rows: j.rows, cols: j.cols,
       grid: Buffer.from(j.grid, 'base64'),
@@ -607,6 +648,7 @@ export class RoomGeometry {
         x0, y0, x1, y1, drawable: true,
         passable: !!(f & 1), mapNever: !!(f & 2), mapAlways: !!(f & 4),
       })) : null,
+      sectors, nodes: null, leaves,
     });
   }
 }
@@ -634,6 +676,116 @@ function readCoord(buf, p, version) {
   return version >= 13 ? buf.readFloatLE(p) : buf.readInt32LE(p);
 }
 
+// The BSP node section is the missing link between a sector (which owns height,
+// light, and textures) and a patch of floor on the map. In Meridian terminology a
+// leaf is also the subsector: one convex polygon, clockwise looking down, with a
+// mandatory 1-based sector reference (clientd3d/bspload.c LoadNodes/RoomSwizzle).
+//
+// Layout at nodeOff:
+//   count(2)
+//   node[count]: type(1), bbox x0/y0/x1/y1 (4 each), then
+//     internal: separator a/b/c (4 each), positive(2), negative(2), first_wall(2)
+//     leaf: sector(2), point_count(2), point x/y pairs (4 each)
+//
+// Coordinates are returned exactly as encoded. Version 13+ stores IEEE floats;
+// earlier versions store signed int32. In particular, polygon winding is preserved.
+export function parseRooNodes(buf, version, nodeOff, sectors = null, wallCount = null, nodeEnd = null) {
+  if (!(nodeOff > 0 && nodeOff + 2 <= buf.length))
+    return { root: 0, nodes: [], leaves: [], bytes: 0 };
+
+  const limit = Number.isInteger(nodeEnd) && nodeEnd > nodeOff && nodeEnd <= buf.length
+    ? nodeEnd : buf.length;
+  let q = nodeOff;
+  const count = buf.readUInt16LE(q); q += 2;
+  // A leaf with zero points is still 21 bytes. Reject an impossible count before
+  // allocating or looping over attacker-controlled data.
+  if (count > Math.floor((limit - q) / 21))
+    throw new Error(`BSP declares ${count} nodes but its section has room for fewer than that`);
+
+  const nodes = [];
+  const leaves = [];
+  const need = (bytes, what) => {
+    if (q + bytes > limit)
+      throw new Error(`truncated BSP ${what}: need ${bytes} bytes at ${q}, section ends at ${limit}`);
+  };
+  const value = what => {
+    need(4, what);
+    const n = readCoord(buf, q, version); q += 4;
+    if (!Number.isFinite(n)) throw new Error(`non-finite BSP ${what}`);
+    return n;
+  };
+
+  for (let i = 0; i < count; i++) {
+    need(17, `node ${i + 1} header`);
+    const type = buf.readUInt8(q++);
+    const bbox = [value('bbox x0'), value('bbox y0'), value('bbox x1'), value('bbox y1')];
+    if (type === 1) {
+      const separator = { a: value('separator a'), b: value('separator b'), c: value('separator c') };
+      need(6, `internal node ${i + 1} references`);
+      const positive = buf.readUInt16LE(q); q += 2;
+      const negative = buf.readUInt16LE(q); q += 2;
+      const firstWall = buf.readUInt16LE(q); q += 2;
+      nodes.push({ type: 'internal', node: i + 1, bbox, separator, positive, negative, firstWall });
+      continue;
+    }
+    if (type !== 2) throw new Error(`unknown BSP node type ${type} at node ${i + 1}`);
+
+    need(4, `leaf ${i + 1} header`);
+    const sectorNum = buf.readUInt16LE(q); q += 2;
+    const pointCount = buf.readUInt16LE(q); q += 2;
+    if (pointCount < 3 || pointCount > MAX_BSP_POINTS)
+      throw new Error(`BSP leaf ${i + 1} has ${pointCount} points; expected 3..${MAX_BSP_POINTS}`);
+    need(pointCount * 8, `leaf ${i + 1} polygon`);
+    const polygon = [];
+    for (let p = 0; p < pointCount; p++) polygon.push([value('point x'), value('point y')]);
+    if (!sectorNum) throw new Error(`BSP leaf ${i + 1} has no sector reference`);
+    if (Array.isArray(sectors) && sectorNum > sectors.length)
+      throw new Error(`BSP leaf ${i + 1} references sector ${sectorNum}; only ${sectors.length} parsed`);
+    const leaf = {
+      type: 'leaf', node: i + 1, bbox, sectorNum,
+      sector: Array.isArray(sectors) ? sectors[sectorNum - 1] : null,
+      polygon,
+    };
+    nodes.push(leaf);
+    leaves.push(leaf);
+  }
+
+  // RoomSwizzle validates the same 1-based references before traversing. Do it
+  // iteratively here so a maliciously deep tree cannot overflow the JS call stack.
+  for (const node of nodes) {
+    if (node.type !== 'internal') continue;
+    for (const [name, ref] of [['positive', node.positive], ['negative', node.negative]]) {
+      if (ref < 0 || ref > count)
+        throw new Error(`BSP node ${node.node} ${name} child ${ref} outside 0..${count}`);
+    }
+    if (Number.isInteger(wallCount) && (node.firstWall < 0 || node.firstWall > wallCount))
+      throw new Error(`BSP node ${node.node} first wall ${node.firstWall} outside 0..${wallCount}`);
+  }
+  const color = new Uint8Array(count); // 0 unseen, 1 visiting, 2 complete
+  for (let start = 1; start <= count; start++) {
+    if (color[start - 1]) continue;
+    const stack = [[start, false]];
+    while (stack.length) {
+      const [id, leaving] = stack.pop();
+      if (leaving) { color[id - 1] = 2; continue; }
+      if (color[id - 1] === 1) throw new Error(`cycle in BSP tree at node ${id}`);
+      if (color[id - 1] === 2) continue;
+      color[id - 1] = 1;
+      stack.push([id, true]);
+      const node = nodes[id - 1];
+      if (node.type !== 'internal') continue;
+      // Reverse push keeps the canonical positive-then-negative traversal order.
+      for (const child of [node.negative, node.positive]) {
+        if (!child) continue;
+        if (color[child - 1] === 1) throw new Error(`cycle in BSP tree at node ${child}`);
+        if (!color[child - 1]) stack.push([child, false]);
+      }
+    }
+  }
+
+  return { root: count ? 1 : 0, nodes, leaves, bytes: q - nodeOff };
+}
+
 // A SECTOR RECORD IS NOT FIXED-LENGTH, which is the whole reason this needs care.
 // clientd3d/bspload.c LoadSectors (line 736) reads 19 bytes, then a speed byte from
 // version 10, and THEN — inline, still inside the same loop iteration — a 46-byte
@@ -659,7 +811,13 @@ function readSlope(buf, p, version) {
   // replaces rather than dividing by zero; do the same so GetFloorHeight cannot NaN.
   let a = val(p), b = val(p + 4), c = val(p + 8), d = val(p + 12);
   if (c === 0) { a = 0; b = 0; c = 1024; d = 0; }
-  return { a, b, c, d, x0: val(p + 16), y0: val(p + 20) };
+  return {
+    a, b, c, d,
+    x0: val(p + 16), y0: val(p + 20),
+    // Unlike the other slope values this remains an integer angle in v13+ too.
+    // The renderer needs it to orient the floor/ceiling texture on the plane.
+    textureAngle: buf.readInt32LE(p + 24),
+  };
 }
 
 export function parseRooSectors(buf, version, sectorOff) {
@@ -672,10 +830,12 @@ export function parseRooSectors(buf, version, sectorOff) {
     if (q + fixed > buf.length) break;
     const flags = buf.readInt32LE(q + 15);
     const s = {
-      serverId: buf.readInt16LE(q),
-      floorType: buf.readInt16LE(q + 2),
-      ceilingType: buf.readInt16LE(q + 4),
-      tx: buf.readInt16LE(q + 6), ty: buf.readInt16LE(q + 8),
+      // These five are WORDs in bsp.h/LoadSectors. Resource ids routinely cross
+      // 32767 (barrent.roo is one), so signed reads turn valid textures negative.
+      serverId: buf.readUInt16LE(q),
+      floorType: buf.readUInt16LE(q + 2),
+      ceilingType: buf.readUInt16LE(q + 4),
+      tx: buf.readUInt16LE(q + 6), ty: buf.readUInt16LE(q + 8),
       // Kept in CLIENT units, because that is the space every comparison happens in.
       floorHeight: heightKodToClient(buf.readInt16LE(q + 10)),
       ceilingHeight: heightKodToClient(buf.readInt16LE(q + 12)),
@@ -859,12 +1019,16 @@ export function parseRooWalls(buf, version) {
   // movement check reads them from.
   const sectors = parseRooSectors(buf, version, sectorOff);
   for (const w of walls) setWallHeights(w, sectors);
+  // A BSP leaf is the renderable subsector. Parsing it after sectors lets us
+  // resolve each mandatory 1-based reference to the exact sector object now.
+  const bsp = parseRooNodes(buf, version, nodeOff, sectors, walls.length, wallOff);
 
   return {
     width, height,
     cols: width >> LOG_CLIENT_FINENESS, rows: height >> LOG_CLIENT_FINENESS,
     offsets: { nodeOff, wallOff, sidedefOff, sectorOff },
     sidedefs, walls, sectors,
+    root: bsp.root, nodes: bsp.nodes, leaves: bsp.leaves,
   };
 }
 
@@ -910,6 +1074,8 @@ export function parseRoo(buf, file = '') {
                             walls: client ? client.walls : null,
                             sidedefs: client ? client.sidedefs : null,
                             sectors: client ? client.sectors : null,
+                            nodes: client ? client.nodes : null,
+                            leaves: client ? client.leaves : null,
                             clientSize: client ? { width: client.width, height: client.height,
                                                    rows: client.rows, cols: client.cols } : null });
 }
