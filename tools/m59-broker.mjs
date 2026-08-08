@@ -70,7 +70,8 @@ import { localClients, soleClientAgent, createClientWatch,
          identifyClients, clientsHoldingRoster } from './m59-localclient.mjs';
 import { chatTools } from './m59-chat-tools.mjs';
 import { rtsSafeSpellRule, rtsSpellTargetAllowed, rtsJobReport,
-         rtsPacketAuthorityCheck, rtsCleanupAuthorityCheck } from './m59-rts-safety.mjs';
+         rtsPacketAuthorityCheck, rtsCleanupAuthorityCheck,
+         requireRtsLocalCaller } from './m59-rts-safety.mjs';
 
 const HOST = process.env.M59_HOST || '127.0.0.1';
 const PORT = Number(process.env.M59_PORT || 5959);
@@ -3207,6 +3208,28 @@ const session = name => {
 
 const num = (v, d) => (v === undefined || v === null ? d : Number(v));
 
+// WHICH FACULTIES THIS OPERATOR HAS AGREED A BOT MAY TAKE.
+//
+// Survival, mortality, identity and recovery are what keep a character alive when nobody
+// is driving, and a bot must not be able to take them by omission — a claim that silently
+// succeeds is exactly how "unattended and safe" stops being true without anyone noticing.
+// So consent is a deliberate act recorded on disk, and the default is NOTHING.
+//
+// `substrate/may-yield-<fleet>.json`, holding e.g. ["survival"]. Absent, unreadable or
+// malformed all mean the same thing as empty, because every failure here must fall to the
+// safe side. It is read per call rather than cached: revoking consent should take effect
+// on the next claim, not on the next broker restart, and this runs once per claim.
+function fleetMayYield() {
+  try {
+    // Same URL-relative form the recordings directory uses, and the same Windows drive
+    // fix-up: `new URL(...).pathname` yields "/C:/..." which fs will not open.
+    const f = new URL(`../substrate/may-yield-${FLEET ?? 'default'}.json`, import.meta.url)
+                .pathname.replace(/^\/([A-Za-z]:)/, '$1');
+    const v = JSON.parse(readFileSync(f, 'utf8'));
+    return Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
+  } catch { return []; }
+}
+
 // A Symbol cannot arrive through MCP JSON. It is an internal-only hook used by RTS
 // jobs to recheck their complete authority from inside the pacer's callback, in the
 // same synchronous turn as the actual mutating client call. The guard throws when
@@ -3243,12 +3266,23 @@ function controlToken(value) {
   return token;
 }
 
-function requireLocalControlEndpoint(s, hostValue, portValue) {
+// THE CONTROL PLANE IS LOCAL. THE GAME SERVER NEED NOT BE.
+//
+// requireLocalControlEndpoint used to assert both, and the two are not the same claim.
+// The first half now lives in m59-rts-safety.mjs as requireRtsLocalCaller, where it is
+// pure and directly testable: an RTS control tool must have arrived from this machine,
+// because this transport is unauthenticated and M59_BIND can expose it.
+//
+// The second half is what the endpoint check always actually did: bind this packet to
+// one exact server. The session's own join credentials must equal the endpoint named,
+// so a gateway armed for one fleet cannot drive a character that is connected
+// somewhere else. That equality is the safety; the address being loopback never was.
+function requireControlEndpoint(s, hostValue, portValue) {
   const expectedHost = typeof hostValue === 'string' ? hostValue.trim().toLowerCase() : '';
   const expectedPort = Number(portValue);
-  if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(expectedHost) ||
+  if (!/^[a-z0-9.\-]{1,255}$/.test(expectedHost) ||
       !Number.isInteger(expectedPort) || expectedPort < 1 || expectedPort > 65535)
-    throw new Error('RTS control requires an explicit loopback game server');
+    throw new Error('RTS control requires an explicit game server host and port');
   const actualHost = typeof s.credentials?.host === 'string'
     ? s.credentials.host.trim().toLowerCase() : '';
   const actualPort = Number(s.credentials?.port);
@@ -3263,8 +3297,11 @@ function requireRtsKeeperInactive(s) {
     throw new Error('RTS control refused while this character has an active keeper; make it inert first');
 }
 
-function requireLocalControlSession(s, hostValue, portValue) {
-  const endpoint = requireLocalControlEndpoint(s, hostValue, portValue);
+// The entry check for every RTS control tool: local caller, exact endpoint, and no
+// keeper already driving this character.
+function requireControlSession(s, caller, hostValue, portValue) {
+  requireRtsLocalCaller(caller);
+  const endpoint = requireControlEndpoint(s, hostValue, portValue);
   requireRtsKeeperInactive(s);
   return endpoint;
 }
@@ -3280,7 +3317,7 @@ function requireRtsRoom(s, expectedRoom, packet) {
 function rtsPacketAuthority({ s, host, port, room, token, validate = null }) {
   return (packet, detail = null) => rtsPacketAuthorityCheck({
     packet, detail,
-    endpoint: () => requireLocalControlEndpoint(s, host, port),
+    endpoint: () => requireControlEndpoint(s, host, port),
     keeper: () => requireRtsKeeperInactive(s),
     room: () => requireRtsRoom(s, room, packet),
     owner: () => {
@@ -3299,7 +3336,7 @@ function rtsPacketAuthority({ s, host, port, room, token, validate = null }) {
 function rtsCleanupAuthority({ s, host, port, room, token }) {
   return packet => rtsCleanupAuthorityCheck({
     packet,
-    endpoint: () => requireLocalControlEndpoint(s, host, port),
+    endpoint: () => requireControlEndpoint(s, host, port),
     keeper: () => requireRtsKeeperInactive(s),
     room: () => requireRtsRoom(s, room, packet),
     owner: () => {
@@ -4035,13 +4072,13 @@ const TOOLS = [
       target: { type: 'number' },
       swings: { type: 'number', description: 'maximum paced swings, default 20' },
       control_token: { type: 'string', description: 'opaque owner token required for cancellation' },
-      server_host: { type: 'string', description: 'exact loopback game host authorized by the gateway' },
-      server_port: { type: 'number', description: 'exact local game port authorized by the gateway' },
+      server_host: { type: 'string', description: 'exact game host authorized by the gateway; must equal this session\'s own' },
+      server_port: { type: 'number', description: 'exact game port authorized by the gateway; must equal this session\'s own' },
     }, required: ['agent', 'room', 'target', 'control_token', 'server_host', 'server_port'] },
-    run: (a) => {
+    run: (a, caller) => {
       const s = session(a.agent), c = s.need();
       const token = controlToken(a.control_token);
-      requireLocalControlSession(s, a.server_host, a.server_port);
+      requireControlSession(s, caller, a.server_host, a.server_port);
       const actualRoom = s.world?.room?.num ?? null;
       if (actualRoom !== Number(a.room))
         throw new Error(`stale attack intent: ${a.agent} is in room ${actualRoom}, not ${a.room}`);
@@ -4098,14 +4135,14 @@ const TOOLS = [
       row: { type: 'number' },
       max_steps: { type: 'number', description: 'hard movement budget, default 120, maximum 400' },
       control_token: { type: 'string', description: 'opaque owner token required for cancellation' },
-      server_host: { type: 'string', description: 'exact loopback game host authorized by the gateway' },
-      server_port: { type: 'number', description: 'exact local game port authorized by the gateway' },
+      server_host: { type: 'string', description: 'exact game host authorized by the gateway; must equal this session\'s own' },
+      server_port: { type: 'number', description: 'exact game port authorized by the gateway; must equal this session\'s own' },
     }, required: ['agent', 'room', 'col', 'row', 'control_token', 'server_host', 'server_port'] },
-    run: (a) => {
+    run: (a, caller) => {
       const s = session(a.agent);
       s.need();
       const token = controlToken(a.control_token);
-      requireLocalControlSession(s, a.server_host, a.server_port);
+      requireControlSession(s, caller, a.server_host, a.server_port);
       const actualRoom = s.world?.room?.num ?? null;
       const room = Number(a.room), col = Number(a.col), row = Number(a.row);
       if (!Number.isSafeInteger(room) || actualRoom !== room)
@@ -4158,7 +4195,7 @@ const TOOLS = [
       'Start one typed RTS context action as a background session job and return immediately. ' +
       'The allowlist covers posture, recovery, exact positioning, cached loadout/food, exact safe ' +
       'inventory operations, safety-on, loot, and conservative spell casting. Room, object, shared ' +
-      'fail-closed safe-spell policy, keeper, and exact loopback server authority are all ' +
+      'fail-closed safe-spell policy, keeper, local caller, and exact server authority are all ' +
       'rechecked here, at the ' +
       'last process boundary before Meridian packets. Use cancel_action with the returned token.',
     schema: { type: 'object', properties: {
@@ -4178,13 +4215,13 @@ const TOOLS = [
                  description: 'gateway-derived gettable ids for grab_nearby' },
       spell: { type: 'string', description: 'exact server-observed spell name' },
       control_token: { type: 'string', description: 'opaque owner token required for cancellation' },
-      server_host: { type: 'string', description: 'exact loopback game host authorized by the gateway' },
-      server_port: { type: 'number', description: 'exact local game port authorized by the gateway' },
+      server_host: { type: 'string', description: 'exact game host authorized by the gateway; must equal this session\'s own' },
+      server_port: { type: 'number', description: 'exact game port authorized by the gateway; must equal this session\'s own' },
     }, required: ['agent', 'room', 'action', 'control_token', 'server_host', 'server_port'] },
-    run: (a) => {
+    run: (a, caller) => {
       const s = session(a.agent), c = s.need();
       const token = controlToken(a.control_token);
-      requireLocalControlSession(s, a.server_host, a.server_port);
+      requireControlSession(s, caller, a.server_host, a.server_port);
       const action = typeof a.action === 'string' ? a.action : '';
       if (![
         'stand', 'rest_here', 'recover_here', 'grab_nearby', 'take', 'cast',
@@ -4602,16 +4639,17 @@ const TOOLS = [
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       control_token: { type: 'string', description: 'must own the active RTS action' },
-      server_host: { type: 'string', description: 'exact loopback game host authorized by the gateway' },
-      server_port: { type: 'number', description: 'exact local game port authorized by the gateway' },
+      server_host: { type: 'string', description: 'exact game host authorized by the gateway; must equal this session\'s own' },
+      server_port: { type: 'number', description: 'exact game port authorized by the gateway; must equal this session\'s own' },
     }, required: ['agent', 'control_token', 'server_host', 'server_port'] },
-    run: (a) => {
+    run: (a, caller) => {
       const s = session(a.agent);
       const token = controlToken(a.control_token);
       // Cancellation is the one control call that remains valid after a keeper resumes:
-      // it removes the old controller's authority instead of exercising it. Endpoint
-      // equality and exact token ownership remain mandatory.
-      requireLocalControlEndpoint(s, a.server_host, a.server_port);
+      // it removes the old controller's authority instead of exercising it. A local
+      // caller, endpoint equality, and exact token ownership remain mandatory.
+      requireRtsLocalCaller(caller);
+      requireControlEndpoint(s, a.server_host, a.server_port);
       const job = s.job && !s.job.done ? s.job : null;
       if (!job) return { cancelled: false, note: 'no background action is active' };
       if (!job.controlToken || job.controlToken !== token)
@@ -5231,7 +5269,20 @@ const TOOLS = [
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       action: { type: 'string',
-                enum: ['start', 'stop', 'inert', 'revive', 'status', 'list', 'park', 'unpark', 'release'] },
+                enum: ['start', 'stop', 'inert', 'revive', 'status', 'list', 'park', 'unpark', 'release',
+                       'claim', 'heartbeat', 'yield'] },
+      // PER-FACULTY OWNERSHIP. `inert` is the whole character; these are halves of one.
+      // A bot claims `work`/`movement`/`economy` and the keeper keeps everything that
+      // decides on a one-second clock. See Autopilot.claimFaculties.
+      faculties: { type: 'array', items: { type: 'string' },
+                   description: 'claim/yield: which of identity, mortality, survival, ' +
+                                'recovery, work, movement, economy, social. Omit on yield ' +
+                                'to hand everything back' },
+      by: { type: 'string', description: 'claim/heartbeat/yield: who holds it, e.g. ' +
+                                         '"dum/valley-grind@pid-1234". Only the holder may yield one' },
+      lease_ms: { type: 'number', description: 'claim/heartbeat: taken back by the keeper ' +
+                                               'this long after the last heartbeat. Leases fail ' +
+                                               'BACK to the keeper, never open — default 120000' },
       why: { type: 'string', description: 'on stop/inert: why, for the uptime ledger — a deliberate ' +
                                           'hold must be distinguishable from a keeper that dropped' },
       hard: { type: 'boolean', description: 'on stop: END the keeper rather than making it inert. ' +
@@ -5328,6 +5379,15 @@ const TOOLS = [
         return p.stop(a.why ?? 'asked to stop, no reason given', { hard: !!a.hard });
       if (a.action === 'inert') return p.goInert(a.why ?? 'asked to go inert, no reason given');
       if (a.action === 'revive') { p.revive(a.why ?? 'asked to revive'); return p.status(); }
+      // OWNING PART OF A CHARACTER. The survival floor is refused unless the roster has
+      // consented to yield it, so a bot cannot take it by omission — see PROTECTED_FACULTIES.
+      if (a.action === 'claim')
+        return p.claimFaculties({ faculties: a.faculties, by: a.by, leaseMs: num(a.lease_ms, 120_000),
+                                  why: a.why, mayYield: fleetMayYield() });
+      if (a.action === 'yield')
+        return p.releaseFaculties({ faculties: a.faculties ?? null, by: a.by });
+      if (a.action === 'heartbeat')
+        return p.heartbeatFaculties({ by: a.by, leaseMs: num(a.lease_ms, 120_000) });
       // PARK IS NOT STOP, AND THE DIFFERENCE IS THE WHOLE POINT. A stopped keeper is a
       // character held still in whatever was happening to it; a parked one is awake,
       // still defends itself, still flees, and is deliberately getting behind a wall so
@@ -7798,6 +7858,37 @@ const TOOLS = [
           // The safe-spot thesis is a survival claim, so it has to be scored as one.
           // Deaths while standing in a square we believed in are the number that
           // falsifies it, and they are worth separating from deaths in the open.
+          // THE ORDERS THIS KEEPER IS ACTUALLY RUNNING — the one field whose absence
+          // forced every directional reader to make N server requests a tick.
+          //
+          // `fleet` sends NOTHING to the game server: it reads the client's cached world
+          // and each keeper's in-memory status, so it is one call for the whole fleet.
+          // `status` sends FOUR requests per character — stats(1), stats(2), the spell
+          // list, the skill list — through the pacer, plus a settle. For twenty-one
+          // characters that is 84 requests a tick against 1, and nothing in the two tool
+          // names says so.
+          //
+          // Anything writing orders has to diff against the current policy or it writes
+          // them every tick, and the only place to read the policy was `status`. So a bot
+          // that merely wanted to check whether a character was already configured
+          // correctly paid the expensive call to find out it had nothing to do. The row
+          // is built from ap.status() and simply dropped this.
+          //
+          // It is the whole policy rather than the eight fields a bot diffs today,
+          // because the next reader will want a ninth and picking the subset here is how
+          // this omission happened in the first place. It is already in memory; sending
+          // it costs nothing on the wire that the row does not already cost.
+          policy: st?.policy ?? null,
+          // Hoisted out of the policy as well, because placement is the question asked
+          // most often and `policy.assignedRoom` is a mouthful on every row that reads it.
+          assigned_room: st?.policy?.assignedRoom ?? null,
+          // WHY THIS ONE IS NOT WORKING, AS DATA. On the ROW rather than only on
+          // `status` because the reader that needs it most — the supervisor deciding
+          // whether to restart a keeper — reads rows, and asking per character would be
+          // twenty-one calls a tick to answer a question the row already knows. See
+          // refuse() in m59-autopilot.mjs for why the prose version was a liability.
+          refusals: st?.refusals ?? [],
+          waiting_on: st?.waiting_on ?? null,
           deaths_in_safe_spot: st?.did?.deaths_in_safe_spot ?? 0,
           deaths_in_proven_safe_spot: st?.did?.deaths_in_proven_safe_spot ?? 0,
           mulligans: st?.did?.mulligans ?? 0,
@@ -8130,7 +8221,15 @@ const TOOLS = [
 
 const byName = new Map(TOOLS.map(t => [t.name, t]));
 
-async function callTool(name, args) {
+// Where a call came from. Only the RTS control tools consult it — they are the ones
+// that send a Meridian packet on behalf of a remote requester, and the transport is
+// the only evidence the broker has about whether that requester is on this machine.
+// A tool that is handed no caller at all gets none of that authority: internal
+// in-process callers below use the fleet/read tools, never a control tool.
+const CALLER_STDIO = Object.freeze({ transport: 'stdio', local: true });
+const CALLER_INTERNAL = Object.freeze({ transport: 'internal', local: true });
+
+async function callTool(name, args, caller) {
   const t = byName.get(name);
   if (!t) throw new Error(`unknown tool "${name}"`);
   // Record the call against the character it was for, with how long it took and
@@ -8139,7 +8238,7 @@ async function callTool(name, args) {
   const rec = args?.agent ? sessions.get(args.agent)?.recorder : null;
   const t0 = Date.now();
   try {
-    const out = await t.run(args || {});
+    const out = await t.run(args || {}, caller);
     rec?.line('call', { tool: name, args, ms: Date.now() - t0 });
     return out;
   } catch (e) {
@@ -8156,7 +8255,7 @@ const SERVER_INFO = { name: 'meridian59', version: '1.0.0' };
 // One JSON-RPC handler, shared by both transports. Notifications (no id) get no
 // reply, which matters: answering `notifications/initialized` with a result is a
 // protocol error some clients reject the connection over.
-async function handleRpc(msg) {
+async function handleRpc(msg, caller) {
   const { id, method, params } = msg;
   const reply = result => (id === undefined ? null : { jsonrpc: '2.0', id, result });
   const fail = (code, message) => (id === undefined ? null : { jsonrpc: '2.0', id, error: { code, message } });
@@ -8174,7 +8273,7 @@ async function handleRpc(msg) {
     case 'tools/call': {
       const { name, arguments: args } = params || {};
       try {
-        const out = await callTool(name, args);
+        const out = await callTool(name, args, caller);
         return reply({ content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] });
       } catch (e) {
         // A tool failure is a result with isError, not a JSON-RPC error: the agent
@@ -8203,7 +8302,9 @@ function serveStdio() {
       if (!line) continue;
       let msg;
       try { msg = JSON.parse(line); } catch { continue; }
-      const out = await handleRpc(msg);
+      // stdio is local by construction: this is a pipe from the process that spawned
+      // the broker, so there is no remote requester to distinguish.
+      const out = await handleRpc(msg, CALLER_STDIO);
       if (out) process.stdout.write(JSON.stringify(out) + '\n');
     }
   });
@@ -8485,6 +8586,11 @@ function serveHttp(port) {
       }
     }
     if (req.method !== 'POST') { res.writeHead(405); return res.end(); }
+    // Decided at the socket, before any body is parsed, and carried alongside the
+    // message rather than re-derived later. Every tool but RTS control ignores it;
+    // this transport is otherwise unauthenticated by design and M59_BIND can put it
+    // on a LAN interface, so a write must not infer locality from reachability.
+    const caller = { transport: 'http', local: brokerLoopbackRequest(req) };
     let body = '';
     req.on('data', d => { body += d; if (body.length > 4e6) req.destroy(); });
     req.on('end', async () => {
@@ -8494,7 +8600,10 @@ function serveHttp(port) {
         return res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32700, message: 'parse error' } }));
       }
       const batch = Array.isArray(msg) ? msg : [msg];
-      const outs = (await Promise.all(batch.map(handleRpc))).filter(Boolean);
+      // Named, not point-free: batch.map(handleRpc) would hand each call the array
+      // index as its caller, which is exactly the argument that decides whether a
+      // Meridian packet may be sent.
+      const outs = (await Promise.all(batch.map(m => handleRpc(m, caller)))).filter(Boolean);
       if (!outs.length) { res.writeHead(202); return res.end(); }
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(Array.isArray(msg) ? outs : outs[0]));
@@ -8799,7 +8908,7 @@ function serveDashboard(port) {
 async function selftest(account, password) {
   const call = async (name, args) => {
     const r = await handleRpc({ jsonrpc: '2.0', id: 1, method: 'tools/call',
-                                params: { name, arguments: args } });
+                                params: { name, arguments: args } }, CALLER_INTERNAL);
     const text = r.result.content[0].text;
     console.log(`\n== ${name} ${JSON.stringify(args)}`);
     console.log(text.length > 1400 ? text.slice(0, 1400) + '\n   ...' : text);

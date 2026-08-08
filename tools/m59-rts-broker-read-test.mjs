@@ -173,9 +173,11 @@ try {
 
   const cancelSource = source.slice(contextEnd,
     source.indexOf("name: 'shop'", contextEnd));
-  assert.match(cancelSource, /requireLocalControlEndpoint[(]s,/,
+  assert.match(cancelSource, /requireControlEndpoint[(]s,/,
     'owned cancellation retains exact endpoint verification');
-  assert.doesNotMatch(cancelSource, /requireLocalControlSession|requireRtsKeeperInactive/,
+  assert.match(cancelSource, /requireRtsLocalCaller[(]caller[)]/,
+    'owned cancellation still requires a caller on this machine');
+  assert.doesNotMatch(cancelSource, /requireControlSession|requireRtsKeeperInactive/,
     'owned cancellation remains available after a keeper resumes');
 
   const castStart = source.indexOf("name: 'cast'");

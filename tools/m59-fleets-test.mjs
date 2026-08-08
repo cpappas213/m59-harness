@@ -118,17 +118,49 @@ check(byLabel.split.server === null, 'a roster mixing two servers reported one')
 
 check(!/hunter2|password/i.test(text), 'PASSWORD-SHAPED DATA REACHED THE OUTPUT');
 
-// Production is refused control even when every other condition is met.
+// A fleet is no longer refused control for its NAME, and its game server no longer has
+// to be loopback. Locality is asserted about the CALLER, at the broker, where an RTS
+// control tool that did not arrive from this machine is refused outright. What survives
+// here is the endpoint binding: the broker holding the roster must have its live
+// sessions on that roster's own game server.
 const prodLocal = mkdtempSync(join(tmpdir(), 'm59-fleets-prod-'));
 mkdirSync(join(prodLocal, 'fleets'));
-writeFileSync(join(prodLocal, 'fleets', 'production.json'),
-  JSON.stringify(roster('127.0.0.1', 5959, ['p1'])));
-const { json: prodJson } = await run(prodLocal, ['--port', '0']);
-check(prodJson.fleets[0].control_eligible === false,
-  'a loopback roster called production was offered control');
-check(/production/i.test(prodJson.fleets[0].control_reason),
-  'the production refusal does not say why');
-check(prodJson.brokers.length === 0, '--port 0 still probed a broker');
+const prodPath = join(prodLocal, 'fleets', 'production.json');
+writeFileSync(prodPath, JSON.stringify(roster('76.214.42.186', 5959, ['p1'])));
+
+const prodBroker = http.createServer((req, res) => {
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({
+    ok: true, pid: 909, root: '/somewhere/else/m59-harness', fleet: 'production',
+    state: prodPath, sessions: ['p1'], game_server: { host: '76.214.42.186', port: 5959 },
+  }));
+});
+await new Promise(done => prodBroker.listen(0, '127.0.0.1', done));
+const { json: prodJson } = await run(prodLocal, ['--port', String(prodBroker.address().port)]);
+check(prodJson.fleets[0].control_eligible === true,
+  `a production fleet on its own server was refused control: ${prodJson.fleets[0].control_reason}`);
+check(prodJson.fleets[0].loopback === false, 'a remote game server was reported as loopback');
+prodBroker.close();
+
+// The endpoint binding is the part that still has teeth: a broker whose sessions are on
+// a different server than the roster names cannot be armed for it, whatever it is called.
+const strayBroker = http.createServer((req, res) => {
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({
+    ok: true, pid: 910, root: '/somewhere/else/m59-harness', fleet: 'production',
+    state: prodPath, sessions: ['p1'], game_server: { host: '10.0.0.9', port: 5959 },
+  }));
+});
+await new Promise(done => strayBroker.listen(0, '127.0.0.1', done));
+const { json: strayJson } = await run(prodLocal, ['--port', String(strayBroker.address().port)]);
+check(strayJson.fleets[0].control_eligible === false,
+  'a broker whose sessions are on another server was offered control');
+check(/game server/i.test(strayJson.fleets[0].control_reason),
+  `the endpoint refusal does not say why: ${strayJson.fleets[0].control_reason}`);
+strayBroker.close();
+
+const { json: unprobedJson } = await run(prodLocal, ['--port', '0']);
+check(unprobedJson.brokers.length === 0, '--port 0 still probed a broker');
 
 // Two rosters that report one label cannot be told apart from a health response.
 const collide = mkdtempSync(join(tmpdir(), 'm59-fleets-collide-'));

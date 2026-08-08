@@ -5,8 +5,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { rtsCleanupAuthorityCheck, rtsJobReport,
-         rtsPacketAuthorityCheck } from './m59-rts-safety.mjs';
+import { rtsCleanupAuthorityCheck, rtsJobReport, rtsPacketAuthorityCheck,
+         rtsCallerIsLocal, requireRtsLocalCaller } from './m59-rts-safety.mjs';
 
 const callbacks = (calls, { isCancelled = false } = {}) => ({
   endpoint: () => calls.push('endpoint'),
@@ -154,9 +154,11 @@ assert.match(context, /lootFloor\([\s\S]*beforeMutation/,
   'context loot passes the packet guard into movement and get');
 
 const cancel = section("name: 'cancel_action',", "name: 'shop',");
-assert.match(cancel, /requireLocalControlEndpoint[(]s,/,
+assert.match(cancel, /requireControlEndpoint[(]s,/,
   'cancel still verifies the exact endpoint');
-assert.doesNotMatch(cancel, /requireLocalControlSession|requireRtsKeeperInactive/,
+assert.match(cancel, /requireRtsLocalCaller[(]caller[)]/,
+  'cancel still requires a caller on this machine');
+assert.doesNotMatch(cancel, /requireControlSession|requireRtsKeeperInactive/,
   'owned cancellation remains available after a keeper resumes');
 assert.match(cancel, /job[.]controlToken !== token/,
   'cancel retains exact token ownership');
@@ -168,4 +170,60 @@ assert.match(skills, /beforeMutation[(]'eat', \{ item_id: item[.]o[.]id/,
 assert.match(skills, /beforeCleanup[(]'cleanup-stand'[)]/,
   'recovery cleanup has its own authority hook inside the pacer callback');
 
-console.log('m59 RTS final-packet authority and cancellation telemetry passed');
+// THE CALLER IS THE THING THAT HAS TO BE LOCAL.
+//
+// The game server may be anywhere — prod is remote and shared. What may not be remote
+// is whoever asked for the packet, because this transport is unauthenticated and
+// M59_BIND can bind it past loopback. Absent or malformed context is refused: a control
+// tool that cannot tell where it came from has no authority to send anything.
+assert.equal(rtsCallerIsLocal({ transport: 'stdio', local: true }), true);
+assert.equal(rtsCallerIsLocal({ transport: 'http', local: true }), true);
+assert.equal(rtsCallerIsLocal({ transport: 'http', local: false }), false);
+assert.equal(rtsCallerIsLocal(undefined), false, 'a missing caller is not local');
+assert.equal(rtsCallerIsLocal(null), false);
+assert.equal(rtsCallerIsLocal({}), false, 'an empty caller is not local');
+assert.equal(rtsCallerIsLocal({ transport: 'http', local: 'true' }), false,
+  'a truthy string must not stand in for a locality decision');
+assert.equal(rtsCallerIsLocal({ transport: 'http', local: 1 }), false);
+assert.equal(rtsCallerIsLocal({ local: true }), false, 'locality must name its transport');
+// batch.map(handleRpc) would pass the array index here, which is truthy and has no
+// .local — the refusal below is what makes that mistake fail closed rather than open.
+assert.equal(rtsCallerIsLocal(0), false);
+assert.equal(rtsCallerIsLocal(1), false);
+assert.throws(() => requireRtsLocalCaller({ transport: 'http', local: false }),
+  /only from this machine/);
+assert.throws(() => requireRtsLocalCaller(undefined), /only from this machine/);
+assert.deepEqual(requireRtsLocalCaller({ transport: 'stdio', local: true }),
+  { transport: 'stdio', local: true });
+
+// Both transports must decide locality themselves and hand it down; neither may let a
+// tool infer it. The HTTP path derives it at the socket, before a body is parsed.
+assert.match(broker, /const caller = \{ transport: 'http', local: brokerLoopbackRequest\(req\) \}/,
+  'the HTTP transport does not derive caller locality from the socket');
+assert.match(broker, /handleRpc\(msg, CALLER_STDIO\)/,
+  'the stdio transport does not declare itself local');
+assert.match(broker, /batch\.map\(m => handleRpc\(m, caller\)\)/,
+  'the JSON-RPC batch path must not pass handleRpc point-free: map would supply the index as caller');
+assert.doesNotMatch(broker, /Promise\.all\(batch\.map\(handleRpc\)\)/,
+  'batch.map(handleRpc) hands each call the array index as its caller');
+assert.match(broker, /async function callTool\(name, args, caller\)/,
+  'callTool drops the caller before it reaches a tool');
+assert.match(broker, /t\.run\(args \|\| \{\}, caller\)/,
+  'tools are invoked without their caller');
+
+// Every RTS control tool takes the caller and checks it. A new one that forgets is the
+// failure this guards: it would be reachable from any host that can open the port.
+for (const [tool, next] of [["name: 'attack_intent',", "name: 'move_intent',"],
+                            ["name: 'move_intent',", "name: 'context_intent',"],
+                            ["name: 'context_intent',", "name: 'cancel_action',"]]) {
+  const body = section(tool, next);
+  assert.match(body, /run: \(a, caller\) =>/, `${tool} does not receive its caller`);
+  assert.match(body, /requireControlSession\(s, caller,/, `${tool} does not check its caller`);
+}
+// And the endpoint check itself no longer decides locality — it binds to one server.
+assert.doesNotMatch(broker, /requireLocalControlEndpoint\(/,
+  'the endpoint check still carries the old conflated name');
+assert.match(broker, /function requireControlEndpoint\(s, hostValue, portValue\)/,
+  'the endpoint check is missing');
+
+console.log('m59 RTS final-packet authority, caller locality, and cancellation telemetry passed');

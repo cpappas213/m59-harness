@@ -357,13 +357,13 @@ export class BrokerReader {
     try {
       if (!this.ordersEnabled) throw orderError(403, 'RTS gateway orders are disabled');
       if (!sameEndpoint(health?.game_server, this.controlServer))
-        throw orderError(403, 'broker fleet is not wholly attached to the allowed local game server');
+        throw orderError(403, 'broker fleet is not wholly attached to the allowed game server');
       const agents = Array.isArray(health.sessions) ? health.sessions.map(cleanAgent) : [];
       if (!agents.length || agents.some(agent => !agent))
         throw orderError(503, 'RTS control requires at least one valid broker session');
       for (const agent of agents) {
         if (!sameEndpoint(health.session_game_servers?.[agent], this.controlServer))
-          throw orderError(403, `${agent || 'a broker session'} is not attached to the allowed local game server`);
+          throw orderError(403, `${agent || 'a broker session'} is not attached to the allowed game server`);
       }
       this.controlStatus = { configured: true, armed: true, reason: null };
       return health;
@@ -1427,14 +1427,14 @@ async function main() {
   const fleetIndex = argv.indexOf('--fleet');
   const explicitFleet = fleetIndex >= 0 ? String(argv[fleetIndex + 1] || '') : '';
   if (ordersEnabled && !explicitFleet)
-    throw new Error('--enable-orders requires an explicit --fleet <non-production-name>');
-  if (ordersEnabled && /^prod(?:uction)?$/i.test(explicitFleet))
-    throw new Error('production fleets cannot be write-enabled through the RTS gateway');
+    throw new Error('--enable-orders requires an explicit --fleet <name>');
+  // PvE-only is a separate policy from which fleet may be driven, and it is unchanged:
+  // this gateway never targets another player, on any server.
   if (ordersEnabled && argv.includes('--allow-pvp'))
     throw new Error('RTS control is PvE-only; --allow-pvp is not supported');
   const controlServer = option(argv, '--control-server', '');
   if (ordersEnabled && !controlServer)
-    throw new Error('--enable-orders requires --control-server <exact-loopback-host:port>');
+    throw new Error('--enable-orders requires --control-server <exact-host:port>');
   const requestedAgents = (option(argv, '--agents', '') || '').split(',').filter(Boolean);
   if (ordersEnabled && !requestedAgents.length)
     throw new Error('--enable-orders requires an explicit non-empty --agents control roster');

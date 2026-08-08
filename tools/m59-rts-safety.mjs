@@ -35,6 +35,33 @@ export function rtsSpellTargetAllowed(rule, {
 
 export const RTS_SAFE_SPELL_NAMES = Object.freeze([...SAFE_SPELLS.keys()]);
 
+// THE CONTROL PLANE IS LOCAL; THE GAME SERVER NEED NOT BE.
+//
+// The broker's JSON-RPC transport carries every RTS write, has no authentication of
+// its own, and M59_BIND can deliberately bind it to a LAN interface — so being able to
+// reach it is not authority to drive a character. Reads are already refused off-loopback
+// at the socket regardless of that bind; this is the same statement for writes, and it
+// is what replaced the old rule that the GAME server had to be a local lab. That rule
+// was a blast-radius proxy rather than a check: it conflated "the commander is on this
+// machine" with "the target is disposable", and it made a shared remote server
+// undrivable for no security gain.
+//
+// A caller is local when its transport says so: stdio is a pipe from the process that
+// spawned the broker, and an HTTP request must have arrived from loopback on a loopback
+// Host header. Absent or malformed context is refused — a control tool that cannot tell
+// where it came from has no business sending a Meridian packet.
+export function rtsCallerIsLocal(caller) {
+  return !!caller && caller.local === true && typeof caller.transport === 'string' &&
+    caller.transport.length > 0;
+}
+
+export function requireRtsLocalCaller(caller) {
+  if (!rtsCallerIsLocal(caller))
+    throw new Error('RTS control is accepted only from this machine: the broker\'s ' +
+      'JSON-RPC transport is unauthenticated and may be bound beyond loopback');
+  return caller;
+}
+
 // Run the authority chain synchronously inside a pacer callback. Callers provide
 // closures over broker state so this module stays independent of sessions and
 // autopilots. Ordering matters: a packet never reaches action validation unless its

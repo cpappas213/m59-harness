@@ -246,23 +246,27 @@ function judge(entry, brokers, defaultFleetName, labelCounts) {
       : 'no broker is holding this roster (start one: node tools/m59-service.mjs start --fleet -)';
   }
 
-  // Control eligibility is the gateway's rule restated, not a new one: an explicit
-  // non-production fleet label whose sessions are all on a loopback game server. It is
-  // reported so a launcher can arm the right fleets without re-deriving the policy, and
-  // the gateway and broker still check it again at their own boundaries.
+  // Control eligibility is the gateway's rule restated, not a new one: an unambiguous
+  // fleet label whose roster agrees on one game server, held by a broker whose live
+  // sessions are all on that exact server. It is reported so a launcher can arm the
+  // right fleets without re-deriving the policy, and the gateway and broker still check
+  // it again at their own boundaries.
+  //
+  // That server does not have to be loopback. What must be local is the CALLER: the
+  // broker refuses an RTS control tool that did not arrive from this machine, and the
+  // gateway and commander are loopback-only in their own right. A shared remote server
+  // reached by a local control plane is an ordinary control target.
   //
   // The unnamed fleet is eligible under the same terms, because the broker gives it the
   // explicit label "default" and a gateway can name that. What it may not be is
   // AMBIGUOUS: a roster literally called default.json reports the same label, and then
   // neither the gateway nor anything else can tell the two apart from a health response.
   if (entry.ambiguous_label) entry.control_reason = `two rosters both report the label "${entry.label}"`;
-  else if (/^prod(?:uction)?$/i.test(entry.label)) entry.control_reason = 'production is never controllable from a client';
   else if (!entry.server) entry.control_reason = 'the roster does not agree on one game server';
-  else if (!entry.loopback) entry.control_reason = `${entry.server.host} is not a loopback game server`;
   else if (entry.status !== 'attachable') entry.control_reason = 'no broker is holding this roster';
-  else if (held.game_server && !(LOOPBACK.has(String(held.game_server.host).toLowerCase()) &&
+  else if (held.game_server && !(String(held.game_server.host).toLowerCase() === entry.server.host.toLowerCase() &&
            Number(held.game_server.port) === entry.server.port)) {
-    entry.control_reason = 'the broker\'s live sessions are not on this roster\'s loopback endpoint';
+    entry.control_reason = 'the broker\'s live sessions are not on this roster\'s game server';
   } else entry.control_eligible = true;
   if (entry.control_eligible) entry.control_reason = '';
   return entry;

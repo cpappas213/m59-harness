@@ -398,10 +398,20 @@ await assert.rejects(() => dispatchCancelOrder(reader, {
 }, { now }), /cancel order contains unsupported field: force/);
 
 assert.deepEqual(parseControlServer('127.0.0.1:5959'), endpoint);
-assert.throws(() => parseControlServer('76.214.42.186:5959'), /loopback/);
-assert.throws(() => new BrokerReader({ expectedFleet: 'prod', ordersEnabled: true,
+// A remote game server is an ordinary control target. What the endpoint has to be is
+// NAMED and exact, not local: locality is asserted about the caller, at the broker,
+// and every write still compares this value against the session's own credentials.
+assert.deepEqual(parseControlServer('76.214.42.186:5959'), { host: '76.214.42.186', port: 5959 });
+assert.throws(() => parseControlServer('76.214.42.186'), /explicit host:port/);
+assert.throws(() => parseControlServer('76.214.42.186:0'), /exact game endpoint/);
+// The fleet must still be named — a gateway that inherited a default would arm writes
+// against whichever roster the broker happened to hold — but any name is allowed.
+assert.throws(() => new BrokerReader({ expectedFleet: '', ordersEnabled: true,
   controlServer: '127.0.0.1:5959', controlToken: '0123456789abcdef',
-  allowedAgents: ['t1'] }), /non-production/);
+  allowedAgents: ['t1'] }), /explicit --fleet/);
+assert.ok(new BrokerReader({ expectedFleet: 'prod', ordersEnabled: true,
+  controlServer: '76.214.42.186:5959', controlToken: '0123456789abcdef',
+  allowedAgents: ['t1'] }), 'a named production fleet on its own server was refused arming');
 assert.throws(() => new BrokerReader({ expectedFleet: 'local-control-test', ordersEnabled: true,
   controlServer: '127.0.0.1:5959', allowedAgents: ['t1'] }), /CONTROL_TOKEN/);
 assert.throws(() => new BrokerReader({ expectedFleet: 'local-control-test', ordersEnabled: true,
