@@ -1,0 +1,922 @@
+// planner.js -- the character planner, and the thing that hands a loadout to the fleet.
+//
+// Three sources for a character, in the order the page tries them:
+//
+//   1. THE LIVE ONE. When the harness is serving this page (m59-compendium.mjs), /_planner
+//      answers with a character's real attributes, abilities, equipment and pack, plus
+//      whatever loadout it already has. The `m59char` cookie names which one — the same
+//      cookie the bestiary reads, set by pressing C in the fleet terminal.
+//   2. A FILE. Either a loadout exported earlier, or a character sheet out of
+//      substrate/sheets/. Both are recognised; a sheet becomes a starting point.
+//   3. NOTHING. A blank build, which is the whole planner minus the diff.
+//
+// WHAT IS OBSERVED AND WHAT IS PLANNED ARE NEVER DRAWN THE SAME. Everything read off a real
+// character renders solid; everything somebody typed renders hatched, and says so. That is
+// the site's one rule and this is the page most able to break it, because a plan and a
+// reading are the same shape here.
+
+/* global window, document, fetch, FileReader, Blob, URL */
+(function () {
+  var root = document.getElementById('plPanel');
+  if (!root) return;
+  var rel = window.M59_REL || '..';
+  var LEARN = window.M59Learn || null;
+
+  // ------------------------------------------------------------------ state
+
+  var D = null;            // planner.json
+  var BY_ITEM = {};        // normalised item name -> catalogue row
+  var BY_SPELL = {};       // normalised spell name -> row
+  var TAB = 'inventory';
+  var SEL = null;          // selected item name in the inventory grid
+  var FILTER = 'reagent';
+  var QUERY = '';
+  var SERVED = false;      // is the harness serving this, i.e. can we save?
+
+  // The loadout being edited, in the on-disk shape. Kept in exactly that shape so what the
+  // page shows and what the file contains cannot drift apart.
+  var L = null;
+  // What was OBSERVED of the character, if anything. Never edited, never saved — it is the
+  // evidence the plan is drawn against.
+  var OBS = null;
+
+  var norm = function (s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); };
+  var el = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  };
+
+  function blank(name) {
+    return {
+      format: 'm59-loadout/1', character: name || '', agent: null, updated: null, note: '',
+      plan: { schools: {}, weapon_level: null, abilities: [] },
+      gear: { weapon: [], slots: {} },
+      carry: [], sell: [], keep: [], purse: { float: null, bank_above: null },
+    };
+  }
+
+  function say(text, kind) {
+    var m = el('plMsg');
+    m.textContent = text || '';
+    m.className = 'pl-msg' + (kind ? ' ' + kind : '');
+  }
+
+  // ------------------------------------------------------------------ the pack
+
+  // What the character is actually holding, as {normalised name: count}. Empty when nothing
+  // was observed — which is NOT the same as an empty pack, so every reader checks OBS first.
+  function held() {
+    var out = {};
+    if (!OBS || !OBS.inventory) return out;
+    OBS.inventory.forEach(function (i) {
+      var k = norm(i.name);
+      out[k] = (out[k] || 0) + (i.amount || 1);
+    });
+    return out;
+  }
+
+  function carryEntry(name) {
+    var k = norm(name);
+    for (var i = 0; i < L.carry.length; i++) if (norm(L.carry[i].item) === k) return L.carry[i];
+    return null;
+  }
+
+  // ------------------------------------------------------------------ tabs
+
+  function selectTab(id) {
+    TAB = id;
+    ['inventory', 'spells', 'skills', 'stats'].forEach(function (t) {
+      var b = el('tab-' + t), p = el('pane-' + t);
+      if (b) b.setAttribute('aria-selected', String(t === id));
+      if (p) p.hidden = t !== id;
+    });
+    renderEditor();
+  }
+
+  // ------------------------------------------------------------------ inventory pane
+
+  function iconFor(name) {
+    var it = BY_ITEM[norm(name)];
+    return it && it.icon ? rel + '/' + it.icon : null;
+  }
+
+  function renderInventory() {
+    var grid = el('plGrid'), have = held(), any = OBS && OBS.inventory;
+    grid.innerHTML = '';
+    L.carry.forEach(function (c) {
+      var n = norm(c.item), h = any ? (have[n] || 0) : null;
+      var cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'm59-cell'
+        + (h !== null && h < c.min ? ' short' : '')
+        + (h !== null && c.max !== null && h > c.max ? ' over' : '');
+      cell.setAttribute('aria-pressed', String(SEL === c.item));
+      cell.title = c.item + ' — want ' + c.min + (c.max === null ? ' or more' : ' to ' + c.max)
+        + (h === null ? '' : ', holding ' + h);
+      var src = iconFor(c.item);
+      cell.innerHTML =
+        (src ? '<img src="' + esc(src) + '" alt="">' : '<span class="noicon">' + esc(c.item) + '</span>')
+        + '<span class="n">' + c.min + '</span>'
+        + (c.max === null ? '' : '<span class="mx">/' + c.max + '</span>');
+      cell.onclick = function () { SEL = c.item; renderInventory(); renderEditor(); };
+      grid.appendChild(cell);
+    });
+    el('plGridEmpty').hidden = L.carry.length > 0;
+
+    // WEIGHT AND BULK ARE BOTH BOUNDED BY 1700 + might*20 (player.kod:10456), so a list that
+    // fits by weight can still be refused for bulk. Both are shown, and the might it is
+    // measured against is the character's own.
+    var might = (L.plan.stats && L.plan.stats.might) || (OBS && OBS.attributes && OBS.attributes.might) || 0;
+    var cap = 1700 + might * 20;
+    var w = 0, b = 0, unknown = 0;
+    L.carry.forEach(function (c) {
+      var it = BY_ITEM[norm(c.item)];
+      if (!it || it.weight == null) { unknown++; return; }
+      w += it.weight * c.min; b += (it.bulk == null ? 0 : it.bulk) * c.min;
+    });
+    el('plCarryFoot').innerHTML =
+      '<span' + (w > cap ? ' class="over"' : '') + '>weight ' + w + ' / ' + cap + '</span>'
+      + '<span' + (b > cap ? ' class="over"' : '') + '>bulk ' + b + ' / ' + cap + '</span>'
+      + '<span>' + L.carry.length + ' kind(s)</span>'
+      + (unknown ? '<span>' + unknown + ' not in the catalogue, not counted</span>' : '')
+      + (might ? '' : '<span>no might known, so the cap is the floor of 1700</span>');
+  }
+
+  // ------------------------------------------------------------------ spells pane
+
+  // The highest level known in each school, off the observed character. Blink excluded —
+  // the server does not count it toward a school's level (player.kod:10735).
+  function observedSchools() {
+    var out = {};
+    if (!OBS || !OBS.spells) return out;
+    OBS.spells.forEach(function (sp) {
+      if (norm(sp.name) === 'blink') return;
+      var row = BY_SPELL[norm(sp.name)];
+      var school = sp.school || (row && row.school), lvl = sp.level || (row && row.level);
+      if (!school || !lvl) return;
+      out[school] = Math.max(out[school] || 0, lvl);
+    });
+    return out;
+  }
+
+  // How many abilities the character has at a given school and level, which decides both
+  // whether the next one is cheap (knowOneAtLevel) and whether the scarcity relief applies.
+  function countAt(school, level) {
+    if (!OBS || !OBS.spells) return 0;
+    var n = 0;
+    OBS.spells.forEach(function (sp) {
+      var row = BY_SPELL[norm(sp.name)];
+      var s = sp.school || (row && row.school), l = sp.level || (row && row.level);
+      if (s === school && l === level) n++;
+    });
+    return n;
+  }
+
+  // Every track's level as PlayerCanLearn counts them: the six schools plus one for skills.
+  function trackLevels(planned) {
+    var have = observedSchools(), out = {};
+    D.schools.forEach(function (s) {
+      var p = planned && L.plan.schools[s];
+      out[s] = Math.max(have[s] || 0, p || 0);
+    });
+    out.weapon = (L.plan.weapon_level || 0) || observedWeaponLevel();
+    return out;
+  }
+
+  // iWeapon: the highest viSkill_level of any skill known, all of them pooled. The wire
+  // does not carry a skill's level — BP_STAT sends a name and a number — so it comes off the
+  // compiled table, which is the only place it exists outside the server.
+  //
+  // A MAX, and that is load-bearing: knowing thrust (the level-50 sentinel) makes iWeapon
+  // 50, which costs nothing at all because Nth falls off the end of the table. See
+  // levelPointsAt in learn.mjs.
+  var BY_SKILL = {};
+  function observedWeaponLevel() {
+    if (!OBS || !OBS.skills) return 0;
+    var top = 0;
+    OBS.skills.forEach(function (sk) {
+      var lvl = sk.level || (BY_SKILL[norm(sk.name)] && BY_SKILL[norm(sk.name)].level);
+      if (lvl) top = Math.max(top, lvl);
+    });
+    return top;
+  }
+
+  function intellect() {
+    return (L.plan.stats && L.plan.stats.intellect)
+      || (OBS && OBS.attributes && OBS.attributes.intellect) || 0;
+  }
+
+  function renderSpells() {
+    var wrap = el('plSchools'), have = observedSchools();
+    wrap.innerHTML = '';
+    D.schools.forEach(function (school) {
+      var row = document.createElement('div');
+      row.className = 'm59-school';
+      var want = L.plan.schools[school] || 0, has = have[school] || 0;
+
+      var pips = '';
+      for (var lv = 1; lv <= (D.learning.max_school_level || 6); lv++) {
+        var mine = lv <= has, chosen = lv <= want;
+        pips += '<button type="button" class="m59-pip'
+          + (mine ? ' have' : '') + (chosen ? ' on' : '') + (chosen && !mine ? ' beyond' : '')
+          + '" data-school="' + esc(school) + '" data-level="' + lv + '"'
+          + ' title="' + esc(school) + ' level ' + lv
+          + (mine ? ' — already known' : chosen ? ' — planned' : '') + '">' + lv + '</button>';
+      }
+
+      // THE COST OF THE NEXT LEVEL, not of the plan. That is the number that decides
+      // anything: a plan four levels out is priced against knowledge the character does not
+      // have yet, and quoting a total for it would be arithmetic about an imaginary
+      // character.
+      var next = Math.max(has, 0) + 1;
+      var cost = { need: null };
+      if (LEARN && next <= (D.learning.max_school_level || 6)) {
+        cost = LEARN.learnCost({
+          trackLevels: trackLevels(false), school: school, level: next, intellect: intellect(),
+          knowOneAtLevel: countAt(school, next) > 0,
+          prevLevelCount: next > 1 ? countAt(school, next - 1) : 3,
+          constants: D.learning,
+        });
+      }
+      var costHtml = cost.need == null
+        ? '<span class="cost">—</span>'
+        : '<span class="cost" title="' + esc(cost.why) + '">L' + next + ' needs ' + cost.need + '</span>';
+
+      row.innerHTML = '<span class="k" title="' + esc(school) + '">' + esc(school) + '</span>'
+        + '<span class="m59-pips">' + pips + '</span>' + costHtml;
+      wrap.appendChild(row);
+    });
+
+    Array.prototype.forEach.call(wrap.querySelectorAll('.m59-pip'), function (b) {
+      b.onclick = function () {
+        var s = b.getAttribute('data-school'), lv = Number(b.getAttribute('data-level'));
+        // Clicking the level you already asked for clears it, so there is a way back to
+        // "no opinion" that is not the same as "level zero".
+        if (L.plan.schools[s] === lv) delete L.plan.schools[s]; else L.plan.schools[s] = lv;
+        renderSpells(); renderEditor();
+      };
+    });
+
+    var t = trackLevels(true), pts = LEARN ? LEARN.trackPoints(D.learning.level_points, t) : null;
+    el('plSchoolFoot').innerHTML =
+      (pts === null ? '' : '<span>' + pts + ' track points if this plan is reached</span>')
+      + '<span>intellect ' + intellect() + ' buys off '
+      + (D.learning.points_slope == null ? '—'
+         : Math.trunc(intellect() * 2 * D.learning.points_slope / 5)) + '</span>'
+      + '<span>the seventh track is skills: level ' + t.weapon + '</span>';
+  }
+
+  // ------------------------------------------------------------------ skills pane
+
+  function renderSkills() {
+    var wrap = el('plSkills');
+    var abilityOf = {};
+    if (OBS && OBS.skills) OBS.skills.forEach(function (s) { abilityOf[norm(s.name)] = s.ability; });
+    var wanted = {};
+    L.plan.abilities.forEach(function (a) { wanted[norm(a.name)] = true; });
+
+    wrap.innerHTML = '';
+    D.skills.filter(function (s) { return s.learnable; }).forEach(function (s) {
+      var ab = abilityOf[norm(s.name)], want = wanted[norm(s.name)];
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'm59-row' + (ab == null && want ? ' planned' : '');
+      b.setAttribute('aria-pressed', String(!!want));
+      b.title = (s.description || s.name) + '\nkeys off ' + (s.requisite_stat || 'nothing recorded')
+        + '\n' + (s.for_sale ? 'level ' + s.level + ', ' + s.price + ' shillings (250 x 2^level, no markup)'
+                             : (s.level_note || 'not sold'));
+      b.innerHTML = '<span class="ic"></span><span class="nm">' + esc(s.name) + '</span>'
+        + (s.requisite_stat ? '<span class="tag">' + esc(s.requisite_stat) + '</span>' : '')
+        // NOT SOLD IS NOT A MISSING PRICE. assess, thrust and kick are granted rather than
+        // bought, and showing them with a blank price would read as "we could not find out".
+        + '<span class="tag">' + (s.for_sale ? 'L' + s.level + ' · ' + s.price + 'sh' : 'granted') + '</span>'
+        + '<span class="pc">' + (ab == null ? '—' : ab + '%') + '</span>';
+      b.onclick = function () {
+        if (wanted[norm(s.name)]) {
+          L.plan.abilities = L.plan.abilities.filter(function (a) { return norm(a.name) !== norm(s.name); });
+        } else {
+          L.plan.abilities.push({ name: s.name, kind: 'skill', level: null, why: null });
+        }
+        renderSkills(); renderEditor();
+      };
+      wrap.appendChild(b);
+    });
+
+    var known = Object.keys(abilityOf).length;
+    // WHAT THE PLAN COSTS TO BUY, which is the number an errand withdraws against. Only the
+    // ones not already known, and only the ones anybody sells.
+    var bill = 0, unsold = 0;
+    L.plan.abilities.forEach(function (a) {
+      if (abilityOf[norm(a.name)] != null) return;
+      var s = BY_SKILL[norm(a.name)];
+      if (s && s.for_sale) bill += s.price; else if (s) unsold++;
+    });
+    el('plSkillFoot').innerHTML =
+      '<span>' + known + ' known' + (OBS ? '' : ' (nothing observed)') + '</span>'
+      + '<span>' + L.plan.abilities.length + ' on the plan</span>'
+      + (bill ? '<span>' + bill + 'sh to buy what is missing</span>' : '')
+      + (unsold ? '<span>' + unsold + ' of them are granted, not sold</span>' : '')
+      + '<span>250 &times; 2^level, no markup (monster.kod:4880)</span>';
+  }
+
+  // ------------------------------------------------------------------ stats pane
+
+  var STAT_ORDER = ['might', 'intellect', 'stamina', 'agility', 'mysticism', 'aim'];
+
+  function renderStats() {
+    var wrap = el('plStats');
+    var obs = (OBS && OBS.attributes) || null;
+    wrap.innerHTML = '';
+    STAT_ORDER.forEach(function (k) {
+      var meta = D.stats[k] || { label: k, blurb: '' };
+      var observed = obs ? obs[k] : null;
+      var planned = L.plan.stats ? L.plan.stats[k] : null;
+      var v = planned != null ? planned : (observed == null ? 0 : observed);
+      var kk = document.createElement('span');
+      kk.className = 'k'; kk.textContent = meta.label; kk.title = meta.blurb;
+      var bar = document.createElement('span');
+      // ATTRIBUTES ARE FIXED AT CREATION AND NEVER MOVE, so a slider here is a HYPOTHETICAL
+      // character — a re-roll — not something this character can be walked towards. It is
+      // hatched for that reason, the same way a planned school level is.
+      bar.className = 'm59-bar edit' + (planned != null ? ' planned' : observed != null ? ' observed' : '');
+      bar.title = meta.blurb + (observed != null && planned != null && planned !== observed
+        ? '\nObserved ' + observed + '. A different value here describes a RE-ROLL: attributes are '
+          + 'fixed at creation and never move.' : '');
+      // The ceiling is the server's own `hard_cap`, which it sends with every attribute.
+      // 70 is only the fallback for a build nobody has observed.
+      var cap = (OBS && OBS.attribute_caps && OBS.attribute_caps[k]) || 70;
+      bar.innerHTML = '<i style="width:' + Math.max(0, Math.min(100, v / cap * 100)) + '%"></i>'
+        + '<b>' + v + '</b>'
+        + '<input type="range" min="0" max="' + cap + '" step="1" value="' + v
+        + '" aria-label="' + esc(meta.label) + '">';
+      bar.querySelector('input').oninput = function (e) {
+        L.plan.stats = L.plan.stats || {};
+        L.plan.stats[k] = Number(e.target.value);
+        renderStats(); renderInventory(); renderSpells(); renderEditor();
+      };
+      wrap.appendChild(kk); wrap.appendChild(bar);
+    });
+
+    var sta = (L.plan.stats && L.plan.stats.stamina) != null ? L.plan.stats.stamina
+      : (obs ? obs.stamina : null);
+    var total = STAT_ORDER.reduce(function (t, k) {
+      var planned = L.plan.stats ? L.plan.stats[k] : null;
+      var v = planned != null ? planned : (obs ? obs[k] : 0);
+      return t + (v || 0);
+    }, 0);
+    el('plStatFoot').innerHTML =
+      '<span>max health ceiling ' + (sta == null ? '—' : 101 + sta) + ' (101 + stamina)</span>'
+      + '<span>' + total + ' points spent</span>'
+      + '<span>carry ' + (1700 + ((L.plan.stats && L.plan.stats.might) != null
+        ? L.plan.stats.might : (obs ? obs.might : 0) || 0) * 20) + '</span>';
+  }
+
+  // ------------------------------------------------------------------ the editor column
+
+  function renderEditor() {
+    var t = el('plEditorTitle'), b = el('plEditorBody');
+    if (TAB === 'inventory') { t.textContent = 'What to carry'; renderCarryEditor(b); }
+    else if (TAB === 'spells') { t.textContent = 'Schools and what they cost'; renderSpellEditor(b); }
+    else if (TAB === 'skills') { t.textContent = 'Skills on the plan'; renderSkillEditor(b); }
+    else { t.textContent = 'Attributes, and what they are worth'; renderStatEditor(b); }
+    renderDiff();
+    renderProblems();
+  }
+
+  // ---- inventory editor: the picker and the selected entry
+
+  function renderCarryEditor(box) {
+    var kinds = ['reagent', 'food', 'weapon', 'armour', 'shield', 'other'];
+    box.innerHTML =
+      '<p class="hint">The number on each icon is the MINIMUM — what the keeper tops up to '
+      + 'when it is standing at a counter, and what it will not sell below. The small number '
+      + 'is the ceiling: anything above it is shed.</p>'
+      + '<div class="pl-filters">'
+      + kinds.map(function (k) {
+        return '<button type="button" class="btn" data-kind="' + k + '" aria-pressed="'
+          + (FILTER === k) + '">' + k + '</button>';
+      }).join('')
+      + '</div>'
+      + '<label style="display:block;margin-bottom:6px">Search '
+      + '<input type="search" id="plSearch" value="' + esc(QUERY) + '" style="width:100%">'
+      + '</label>'
+      + '<div class="pl-picker" id="plPicker"></div>'
+      + '<div id="plEntry"></div>';
+
+    Array.prototype.forEach.call(box.querySelectorAll('[data-kind]'), function (btn) {
+      btn.onclick = function () { FILTER = btn.getAttribute('data-kind'); renderEditor(); };
+    });
+    var s = el('plSearch');
+    s.oninput = function () { QUERY = s.value; renderPicker(); };
+    renderPicker();
+    renderEntry();
+  }
+
+  function renderPicker() {
+    var box = el('plPicker');
+    if (!box) return;
+    var q = norm(QUERY);
+    var rows = D.items.filter(function (i) {
+      var kindOk = FILTER === 'other'
+        ? ['reagent', 'food', 'weapon', 'armour', 'shield'].indexOf(i.kind) < 0
+        : i.kind === FILTER;
+      if (q) return norm(i.name).indexOf(q) >= 0;      // a search crosses the filters
+      return kindOk;
+    }).slice(0, 300);
+
+    box.innerHTML = rows.map(function (i) {
+      var on = !!carryEntry(i.name);
+      var meta = [];
+      if (i.weight != null) meta.push(i.weight + 'w');
+      if (i.value != null) meta.push(i.value + 'sh');
+      if (i.nutrition) meta.push(i.nutrition + ' vigor');
+      if (i.reagent_for && i.reagent_for.length) meta.push(i.reagent_for.length + ' spells');
+      return '<button type="button" class="pl-pick" data-name="' + esc(i.name) + '"'
+        + (on ? ' disabled' : '') + ' title="' + esc(i.description || i.name) + '">'
+        + (i.icon ? '<img src="' + esc(rel + '/' + i.icon) + '" alt="">' : '<span style="width:20px"></span>')
+        + '<span class="nm">' + esc(i.name) + (on ? ' — already asked for' : '') + '</span>'
+        + '<span class="meta">' + esc(meta.join(' · ')) + '</span></button>';
+    }).join('') || '<p class="pl-note" style="padding:8px">Nothing matches.</p>';
+
+    Array.prototype.forEach.call(box.querySelectorAll('.pl-pick'), function (btn) {
+      btn.onclick = function () {
+        var name = btn.getAttribute('data-name');
+        if (carryEntry(name)) return;
+        var it = BY_ITEM[norm(name)];
+        L.carry.push({
+          item: name, min: 1, max: null, match: 'exact',
+          why: it && it.reagent_for && it.reagent_for.length
+            ? 'reagent for ' + it.reagent_for.slice(0, 3).map(function (r) { return r.spell; }).join(', ')
+            : null,
+        });
+        SEL = name;
+        renderInventory(); renderEditor();
+      };
+    });
+  }
+
+  function renderEntry() {
+    var box = el('plEntry');
+    if (!box) return;
+    var c = SEL ? carryEntry(SEL) : null;
+    if (!c) { box.innerHTML = '<p class="pl-note">Pick something in the grid to set its amounts.</p>'; return; }
+    var it = BY_ITEM[norm(c.item)];
+    var have = held()[norm(c.item)];
+    box.innerHTML = '<h2 style="margin-top:14px">' + esc(c.item) + '</h2>'
+      + (it && it.description ? '<p class="hint">' + esc(it.description) + '</p>' : '')
+      + '<div class="pl-fields">'
+      + '<label for="plMin">Carry at least</label><input type="number" id="plMin" min="0" max="9999" value="' + c.min + '">'
+      + '<label for="plMax">Shed above</label><input type="number" id="plMax" min="0" max="9999" value="'
+      + (c.max === null ? '' : c.max) + '" placeholder="no ceiling">'
+      + '<label for="plWhy">Because</label><input type="text" id="plWhy" value="' + esc(c.why || '') + '">'
+      + '</div>'
+      + '<p class="pl-note" style="margin-top:8px">'
+      + (OBS ? 'Holding ' + (have || 0) + ' now. ' : '')
+      + (it && it.weight != null ? c.min + ' of these weigh ' + (it.weight * c.min) + '. ' : '')
+      + (it && it.reagent_for && it.reagent_for.length
+        ? 'Consumed by ' + it.reagent_for.map(function (r) { return esc(r.spell) + ' (' + r.count + ')'; })
+          .slice(0, 8).join(', ') + (it.reagent_for.length > 8 ? ' and others' : '') + '.'
+        : '')
+      + '</p>'
+      + '<p><button type="button" class="btn" id="plDrop">Stop asking for this</button></p>';
+
+    el('plMin').oninput = function (e) { c.min = Math.max(0, Number(e.target.value) || 0); renderInventory(); renderDiff(); renderProblems(); };
+    el('plMax').oninput = function (e) {
+      var v = e.target.value === '' ? null : Math.max(0, Number(e.target.value) || 0);
+      c.max = v; renderInventory(); renderDiff(); renderProblems();
+    };
+    el('plWhy').oninput = function (e) { c.why = e.target.value || null; };
+    el('plDrop').onclick = function () {
+      L.carry = L.carry.filter(function (x) { return norm(x.item) !== norm(c.item); });
+      SEL = null; renderInventory(); renderEditor();
+    };
+  }
+
+  // ---- spells editor
+
+  function renderSpellEditor(box) {
+    var have = observedSchools();
+    var chosen = Object.keys(L.plan.schools);
+    var wanted = [];               // every spell the plan would reach
+    D.spells.forEach(function (sp) {
+      var target = L.plan.schools[sp.school];
+      if (target && sp.level <= target) wanted.push(sp);
+    });
+
+    // WHAT THE PLAN NEEDS TO CAST, which is the point of the whole page: a spell list is
+    // also a shopping list, and until now nothing joined the two. Counted as ONE CASTING of
+    // each spell, because "how many castings" is a question about how the character is
+    // played and this page cannot answer it — the number is a floor, and the minimums in
+    // the inventory tab are where somebody says how many.
+    var need = {};
+    wanted.forEach(function (sp) {
+      (sp.reagents || []).forEach(function (r) {
+        var it = itemForClass(r.item);
+        var key = it ? it.name : r.item;
+        need[key] = Math.max(need[key] || 0, r.count);
+      });
+    });
+    var needList = Object.keys(need).sort();
+
+    box.innerHTML =
+      '<p class="hint">Solid pips are levels the character already has; hatched ones are the '
+      + 'plan. The cost shown is for the NEXT level only — a level four out is priced against '
+      + 'knowledge this character does not have yet, so a total for it would be arithmetic '
+      + 'about an imaginary character.</p>'
+      + (chosen.length
+        ? '<p class="pl-note">The plan reaches <strong>' + wanted.length + '</strong> spell(s) across '
+          + chosen.length + ' school(s).</p>'
+        : '<p class="pl-note">No school picked yet.</p>')
+      + (needList.length
+        ? '<h2 style="margin-top:14px">Reagents those spells eat</h2>'
+          + '<p class="hint">One casting of each. Add them to the carry list and set real '
+          + 'numbers on the Inventory tab.</p>'
+          + '<ul style="margin:0 0 8px;padding-left:18px">'
+          + needList.map(function (n) {
+            return '<li>' + esc(n) + ' &times;' + need[n]
+              + (carryEntry(n) ? ' <em>— already asked for</em>' : '') + '</li>';
+          }).join('') + '</ul>'
+          + '<p><button type="button" class="btn" id="plAddReagents">Add these to the carry list</button></p>'
+        : '')
+      + (LEARN && D.learning.points_slope != null ? '' :
+        '<p class="pl-problems">Costs are not shown: ' + esc((D.learning.unresolved || []).join(', '))
+        + ' could not be read from the game source.</p>')
+      + '<h2 style="margin-top:14px">Spells the plan would reach</h2>'
+      + (wanted.length
+        ? '<div class="pl-picker">' + wanted.map(function (sp) {
+          var known = OBS && OBS.spells && OBS.spells.some(function (x) { return norm(x.name) === norm(sp.name); });
+          return '<div class="pl-pick" style="cursor:default">'
+            + '<span class="nm">' + esc(sp.name) + (known ? '' : ' <em>— not learned</em>') + '</span>'
+            + '<span class="meta">' + esc(sp.school) + ' L' + sp.level
+            + (sp.mana ? ' · ' + sp.mana + ' mana' : '') + '</span></div>';
+        }).join('') + '</div>'
+        : '');
+
+    var add = el('plAddReagents');
+    if (add) add.onclick = function () {
+      needList.forEach(function (n) {
+        if (carryEntry(n)) return;
+        var it = BY_ITEM[norm(n)];
+        // A FLOOR OF ONE CASTING IS NOT ENOUGH TO CAST TWICE, and the whole reason the fleet
+        // sits at 80 vigor is running out between shops. Ten castings is the keeper's own
+        // default (REAGENT_TARGET) expressed per character, and it is a starting number to
+        // be edited, not a claim.
+        L.carry.push({ item: n, min: need[n] * 10, max: need[n] * 20, match: 'exact',
+                       why: it && it.reagent_for && it.reagent_for.length
+                         ? 'reagent for ' + it.reagent_for.slice(0, 3).map(function (r) { return r.spell; }).join(', ')
+                         : 'a spell on the plan needs it' });
+      });
+      say('added ' + needList.length + ' reagent(s) to the carry list', 'good');
+      selectTab('inventory');
+      renderInventory(); renderEditor();
+    };
+  }
+
+  // The catalogue keys on DISPLAY names and a spell's reagent list names CLASSES —
+  // "ElderBerry" against "elderberry". Matched on the class first and the name second,
+  // rather than lowercasing one and hoping.
+  var BY_CLASS = {};
+  function itemForClass(cls) {
+    return BY_CLASS[norm(cls)] || BY_ITEM[norm(cls)] || null;
+  }
+
+  // ---- skills editor
+
+  function renderSkillEditor(box) {
+    var abilityOf = {};
+    if (OBS && OBS.skills) OBS.skills.forEach(function (s) { abilityOf[norm(s.name)] = s.ability; });
+    var missing = L.plan.abilities.filter(function (a) { return abilityOf[norm(a.name)] == null; });
+    box.innerHTML =
+      '<p class="hint">Ticking a skill puts it on the plan. It does not buy it — '
+      + '<code>node tools/m59-outfit.mjs --learn &lt;name&gt;</code> is the errand that does, '
+      + 'and it reads these names.</p>'
+      + (L.plan.abilities.length
+        ? '<ul style="padding-left:18px">' + L.plan.abilities.map(function (a) {
+          var ab = abilityOf[norm(a.name)];
+          return '<li>' + esc(a.name) + (ab == null ? ' <em>— not learned</em>' : ' — ' + ab + '%') + '</li>';
+        }).join('') + '</ul>'
+        : '<p class="pl-note">Nothing on the plan.</p>')
+      + (missing.length
+        ? '<p class="pl-note">' + missing.length + ' of these are not learned. A merchant that '
+          + 'cannot teach you one does not say so — it is simply absent from the shop list '
+          + '(<code>monster.kod:4855</code>), so a quiet trip is not evidence of anything.</p>'
+        : '')
+      + '<h2 style="margin-top:14px">What each attribute drives</h2>'
+      + Object.keys(D.by_stat).filter(function (k) { return (D.by_stat[k].skills || []).length; })
+        .map(function (k) {
+          return '<p class="pl-note"><strong>' + esc((D.stats[k] || {}).label || k) + '</strong> — '
+            + esc(D.by_stat[k].skills.join(', ')) + '</p>';
+        }).join('');
+  }
+
+  // ---- stats editor
+
+  function renderStatEditor(box) {
+    var obs = OBS && OBS.attributes;
+    box.innerHTML =
+      '<p class="hint">Attributes are fixed at character creation and never move. Changing '
+      + 'them here describes a <strong>re-roll</strong> — a different character — not '
+      + 'something this one can be walked towards. That is why they hatch when you touch '
+      + 'them.</p>'
+      + (obs && L.plan.stats
+        ? '<p><button type="button" class="btn" id="plStatReset">Back to what was observed</button></p>'
+        : '')
+      + Object.keys(D.stats).map(function (k) {
+        return '<p class="pl-note"><strong>' + esc(D.stats[k].label) + '</strong> — '
+          + esc(D.stats[k].blurb) + '</p>';
+      }).join('')
+      + (D.by_stat.intellect && D.by_stat.intellect.applies_to_everything
+        ? '<p class="pl-note">' + esc(D.by_stat.intellect.applies_to_everything) + '</p>' : '');
+    var r = el('plStatReset');
+    if (r) r.onclick = function () {
+      delete L.plan.stats;
+      renderStats(); renderInventory(); renderSpells(); renderEditor();
+    };
+  }
+
+  // ------------------------------------------------------------------ the diff
+
+  function renderDiff() {
+    var box = el('plDiffBox'), out = el('plDiff');
+    if (!OBS || !OBS.inventory) { box.hidden = true; return; }
+    box.hidden = false;
+    var have = held(), rows = [];
+
+    L.carry.forEach(function (c) {
+      var h = have[norm(c.item)] || 0;
+      if (h < c.min) rows.push(['buy', c.item, (c.min - h) + ' more', h + ' of ' + c.min]);
+      else if (c.max !== null && h > c.max) rows.push(['shed', c.item, (h - c.max) + ' over', h + ' of ' + c.max]);
+    });
+    L.sell.forEach(function (s) {
+      var h = have[norm(s)] || 0;
+      if (h > 0) rows.push(['shed', s, 'all ' + h, 'on the sell list']);
+    });
+    // GEAR: HOLDING THE SECOND CHOICE IS NOT MISSING IT. Reporting those alike is how an
+    // outfitting run buys a mace for a character already carrying one.
+    function gearRow(list, what) {
+      if (!list || !list.length) return;
+      var best = -1;
+      for (var i = 0; i < list.length; i++) if ((have[norm(list[i])] || 0) > 0) { best = i; break; }
+      if (best < 0) rows.push(['buy', list[0], 'missing', what]);
+      else if (best > 0) rows.push(['', list[best], 'holding this', 'wants ' + list.slice(0, best).join(' or ')]);
+    }
+    gearRow(L.gear.weapon, 'weapon');
+    Object.keys(L.gear.slots).forEach(function (s) { gearRow(L.gear.slots[s], s); });
+
+    if (!rows.length) {
+      out.innerHTML = '<p class="pl-note">Everything the loadout asks for is already there.</p>';
+      return;
+    }
+    out.innerHTML = '<table class="data"><tbody>' + rows.map(function (r) {
+      return '<tr class="' + r[0] + '"><td>' + esc(r[1]) + '</td><td>' + esc(r[2])
+        + '</td><td class="muted">' + esc(r[3]) + '</td></tr>';
+    }).join('') + '</tbody></table>';
+  }
+
+  // ------------------------------------------------------------------ problems
+  //
+  // The same checks m59-loadout.mjs's normalise() makes on the way in, run here so the page
+  // says so before somebody saves rather than after. The tool is still the authority — this
+  // is a preview of its answer, not a substitute for it.
+
+  function renderProblems() {
+    var box = el('plProblemBox'), out = el('plProblems'), p = [];
+    L.carry.forEach(function (c) {
+      if (c.max !== null && c.max < c.min)
+        p.push('"' + c.item + '": the ceiling (' + c.max + ') is below the floor (' + c.min
+          + '). The keeper would buy up to the floor and sell back to the ceiling, for ever, '
+          + 'paying the vendor spread on every lap.');
+      if (!BY_ITEM[norm(c.item)])
+        p.push('"' + c.item + '" is not in the item catalogue — check the spelling.');
+    });
+    L.sell.forEach(function (s) {
+      if (L.keep.some(function (k) { return norm(k) === norm(s); }))
+        p.push('"' + s + '" is on both the sell and the keep list. Keep wins.');
+      var c = carryEntry(s);
+      if (c && c.min > 0) p.push('"' + s + '" is sell-on-sight but ' + c.min + ' are wanted. The floor wins.');
+    });
+    if (!L.character) p.push('No character name, so there is nowhere to save this.');
+    box.hidden = p.length === 0;
+    out.innerHTML = p.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
+  }
+
+  // ------------------------------------------------------------------ loading a character
+
+  function cookieAgent() {
+    try {
+      var m = document.cookie.match(/(?:^|;\s*)m59char=([^;]*)/);
+      if (!m) return null;
+      var b = JSON.parse(decodeURIComponent(m[1]));
+      return (b && b.from && b.from.agent) || null;
+    } catch (e) { return null; }
+  }
+
+  function adopt(snapshot) {
+    OBS = snapshot.observed || null;
+    L = snapshot.loadout || blank(snapshot.character || (OBS && OBS.character) || '');
+    if (!L.character && OBS && OBS.character) L.character = OBS.character;
+    if (!L.agent && OBS && OBS.agent) L.agent = OBS.agent;
+    el('plName').value = L.character || '';
+    SEL = L.carry.length ? L.carry[0].item : null;
+    renderAll();
+  }
+
+  function renderAll() {
+    renderInventory(); renderSpells(); renderSkills(); renderStats(); renderEditor();
+  }
+
+  // A FILE CAN BE EITHER OF TWO THINGS AND THEY ARE NOT THE SAME. A loadout is a plan; a
+  // character sheet out of substrate/sheets/ is an observation. Loading a sheet as though it
+  // were a plan would turn "this is what it happens to be carrying" into "this is what it
+  // must carry", which is exactly the confusion this page exists to remove.
+  function adoptFile(j) {
+    if (j && j.format === 'm59-loadout/1') {
+      adopt({ loadout: j, character: j.character, observed: OBS });
+      say('loaded the loadout for ' + (j.character || 'an unnamed character'), 'good');
+      return;
+    }
+    if (j && j._format && j.attributes) {
+      OBS = {
+        character: j.character, agent: j.agent, attributes: j.attributes,
+        skills: j.skills || [], spells: j.spells || [],
+        inventory: j.inventory || [], equipment: (j.equipment && j.equipment.worn) || [],
+        at: j.captured_at_iso || null, source: 'a character sheet',
+      };
+      L = blank(j.character || '');
+      L.agent = j.agent || null;
+      L.note = 'Started from a character sheet captured ' + (j.captured_at_iso || 'at an unknown time') + '.';
+      el('plName').value = L.character;
+      renderAll();
+      say('read the sheet for ' + j.character + ' — it is an observation, so nothing is planned yet', 'good');
+      return;
+    }
+    say('that file is neither a loadout nor a character sheet', 'bad');
+  }
+
+  // ------------------------------------------------------------------ saving
+
+  function currentLoadout() {
+    var out = JSON.parse(JSON.stringify(L));
+    out.character = el('plName').value.trim() || out.character;
+    out.format = 'm59-loadout/1';
+    return out;
+  }
+
+  function exportFile() {
+    var j = currentLoadout();
+    if (!j.character) { say('give it a name first', 'bad'); return; }
+    var blob = new Blob([JSON.stringify(j, null, 1)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = j.character.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    say('downloaded — put it in substrate/loadouts/ and the keeper will read it', 'good');
+  }
+
+  function save() {
+    var j = currentLoadout();
+    if (!j.character) { say('give it a name first', 'bad'); return; }
+    if (!SERVED) {
+      say('nothing is listening — use Export, or open this page from the harness ' +
+          '(node tools/m59-compendium.mjs --open --to /planner/)', 'bad');
+      return;
+    }
+    say('saving…');
+    fetch(rel + '/_loadout', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(j),
+    }).then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }); })
+      .then(function (res) {
+        if (!res.ok) { say(res.b.error || 'refused', 'bad'); return; }
+        L = res.b.loadout || L;
+        say('saved to ' + res.b.path + (res.b.problems && res.b.problems.length
+          ? ' — with ' + res.b.problems.length + ' thing(s) to look at' : ''), 'good');
+        if (res.b.problems && res.b.problems.length) {
+          var out = el('plProblems');
+          el('plProblemBox').hidden = false;
+          out.innerHTML = res.b.problems.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
+        }
+        renderAll();
+      })
+      .catch(function (e) { say('could not save: ' + e.message, 'bad'); });
+  }
+
+  // ------------------------------------------------------------------ boot
+
+  function fillCharacterSelect(choices) {
+    var s = el('plChar');
+    s.innerHTML = '';
+    // A PLACEHOLDER FIRST, ALWAYS. A select defaults to its first option, and `change` does
+    // not fire on that — so listing the fleet straight away left the box reading
+    // "Kermit (t1)" beside an empty panel that was nobody's. The control has to be able to
+    // say "nothing yet", because that is the true state on arrival.
+    var ph = document.createElement('option');
+    ph.value = ''; ph.textContent = '— nobody loaded —';
+    s.appendChild(ph);
+    choices.forEach(function (group) {
+      if (!group.rows.length) return;
+      var g = document.createElement('optgroup');
+      g.label = group.label;
+      group.rows.forEach(function (r) {
+        var o = document.createElement('option');
+        o.value = r.value; o.textContent = r.text;
+        g.appendChild(o);
+      });
+      s.appendChild(g);
+    });
+    var o = document.createElement('option');
+    o.value = '__new__'; o.textContent = 'A new character…';
+    s.appendChild(o);
+  }
+
+  function loadAgent(agent) {
+    say('reading ' + agent + '…');
+    return fetch(rel + '/_planner?agent=' + encodeURIComponent(agent))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j.error) { say(j.error, 'bad'); return; }
+        adopt(j);
+        say(j.loadout
+          ? 'loaded ' + j.observed.character + ' and the loadout it already has'
+          : 'loaded ' + j.observed.character + ' — no loadout yet, so this is a fresh one', 'good');
+      })
+      .catch(function (e) { say('could not read ' + agent + ': ' + e.message, 'bad'); });
+  }
+
+  fetch(rel + '/data/planner.json').then(function (r) { return r.json(); }).then(function (j) {
+    D = j;
+    D.items.forEach(function (i) { BY_ITEM[norm(i.name)] = i; BY_CLASS[norm(i.cls)] = i; });
+    D.spells.forEach(function (s) { BY_SPELL[norm(s.name)] = s; });
+    D.skills.forEach(function (s) { BY_SKILL[norm(s.name)] = s; });
+
+    L = blank('');
+    renderAll();
+
+    ['inventory', 'spells', 'skills', 'stats'].forEach(function (t) {
+      el('tab-' + t).onclick = function () { selectTab(t); };
+    });
+    el('plExport').onclick = exportFile;
+    el('plSave').onclick = save;
+    el('plImport').onclick = function () { el('plFile').click(); };
+    el('plFile').onchange = function (e) {
+      var f = e.target.files && e.target.files[0];
+      if (!f) return;
+      var fr = new FileReader();
+      fr.onload = function () {
+        try { adoptFile(JSON.parse(fr.result)); }
+        catch (err) { say('that file is not JSON: ' + err.message, 'bad'); }
+      };
+      fr.readAsText(f);
+      e.target.value = '';
+    };
+    el('plName').oninput = function () { L.character = el('plName').value; renderProblems(); };
+    el('plChar').onchange = function () {
+      var v = el('plChar').value;
+      if (!v) return;
+      if (v === '__new__') { OBS = null; L = blank(''); el('plName').value = ''; renderAll(); say(''); return; }
+      if (v.indexOf('agent:') === 0) loadAgent(v.slice(6));
+      else if (v.indexOf('loadout:') === 0) {
+        fetch(rel + '/_loadout?character=' + encodeURIComponent(v.slice(8)))
+          .then(function (r) { return r.json(); })
+          .then(function (b) { adopt({ loadout: b.loadout, character: b.loadout.character, observed: null }); })
+          .catch(function (e) { say(e.message, 'bad'); });
+      }
+    };
+
+    // Is the harness serving us? /_loadouts is its endpoint and nothing else answers it, so
+    // a 404 here is the honest signal that Save cannot work — which the page then says
+    // rather than offering a button that silently does nothing.
+    fetch(rel + '/_loadouts').then(function (r) {
+      if (!r.ok) throw new Error('not the harness');
+      return r.json();
+    }).then(function (b) {
+      SERVED = true;
+      fillCharacterSelect([
+        { label: 'In the fleet', rows: (b.fleet || []).map(function (r) {
+          return { value: 'agent:' + r.agent, text: r.character + ' (' + r.agent + ')'
+            + (r.loadout ? ' — has a loadout' : '') };
+        }) },
+        { label: 'Saved loadouts', rows: (b.loadouts || []).map(function (r) {
+          return { value: 'loadout:' + r.character, text: r.character };
+        }) },
+      ]);
+      var agent = cookieAgent();
+      if (agent) {
+        var opt = 'agent:' + agent;
+        if (Array.prototype.some.call(el('plChar').options, function (o) { return o.value === opt; }))
+          el('plChar').value = opt;
+        return loadAgent(agent);
+      }
+      say('pick a character, or press C on one in the fleet terminal to arrive with it loaded');
+    }).catch(function () {
+      SERVED = false;
+      fillCharacterSelect([]);
+      say('opened as a static page — plan freely and Export; Save needs the harness serving this ' +
+          '(node tools/m59-compendium.mjs --open --to /planner/)');
+    });
+  }).catch(function (e) {
+    say('could not load data/planner.json (' + e.message + ') — run node tools/m59-planner-data.mjs', 'bad');
+  });
+}());

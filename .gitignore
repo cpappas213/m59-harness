@@ -146,3 +146,15 @@ __pycache__/
 # The timestamped series underneath was already excluded — `--checkpoint` writes 21 more
 # every run — and stays excluded by the rule above.
 /substrate/sheets/checkpoints/
+
+# LOADOUTS ARE COMMITTED, and the .tmp beside them is not.
+#
+# substrate/loadouts/<character>.json is what a character is SUPPOSED to be carrying — the
+# gear it should get back to, the floors and ceilings for what it holds, what it sheds on
+# sight. It is a plan, not a credential: no account, no password, and the character names
+# in it are already in substrate/sheets/. It is also the only record of a decision somebody
+# made in the planner, so it belongs in the history for exactly the reason the sheets do.
+#
+# writeLoadout renames a .tmp into place so a keeper never reads half a file; the .tmp
+# exists for milliseconds and must never be committed.
+/substrate/loadouts/*.tmp

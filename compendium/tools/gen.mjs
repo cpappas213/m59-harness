@@ -31,7 +31,8 @@ const GUIDE_ORDER = [
 
 // ---------------------------------------------------------------- shell
 
-function shell({ title, body, rel = '..', nav, active, wide = false, crumbs = '', desc = '', scripts = [] }) {
+function shell({ title, body, rel = '..', nav, active, wide = false, crumbs = '', desc = '',
+                 scripts = [], styles = [] }) {
   const navHtml = nav.map((n) =>
     `<a href="${rel}/${n.href}"${n.id === active ? ' class="on"' : ''}>${esc(n.title)}</a>`).join('');
   return `<!doctype html>
@@ -42,6 +43,7 @@ function shell({ title, body, rel = '..', nav, active, wide = false, crumbs = ''
 <title>${esc(title)} — Meridian 59 Compendium</title>
 ${desc ? `<meta name="description" content="${esc(desc)}">` : ''}
 <link rel="stylesheet" href="${rel}/assets/style.css">
+${styles.map((s2) => `<link rel="stylesheet" href="${rel}/assets/${s2}">`).join('')}
 <script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 </head>
 <body>
@@ -214,7 +216,7 @@ pages is cited to the line of Blakod that enforces it.</p>`;
     }
     write(`${dir}/index.html`, shell({
       title: meta.title, active: meta.id, nav, wide: true, desc: meta.blurb,
-      scripts: out.scripts || [],
+      scripts: out.scripts || [], styles: out.styles || [],
       crumbs: `<a href="../index.html">Home</a> › ${esc(meta.title)}`,
       body: out.indexHtml,
     }));

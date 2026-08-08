@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planner — Meridian 59 Compendium</title>
+<meta name="description" content="Plan a character, then hand the fleet a list of what it should be carrying.">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/planner.css">
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html">Guides</a><a href="../spells/index.html">Spells</a><a href="../planner/index.html" class="on">Planner</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main class="wide">
+<p class="crumbs"><a href="../index.html">Home</a> › Planner</p>
+<h1>Character planner</h1>
+<p class="lede">Bring a character in, decide what it should become and what it should be
+carrying, and hand that back to the fleet. The panel is the client's own — the same four
+tabs in the same order — and everything in it is editable.</p>
+
+<div class="pl-bar">
+  <label>Character
+    <select id="plChar" aria-label="Which character to plan"></select>
+  </label>
+  <label>Name <input type="text" id="plName" size="14" autocomplete="off" spellcheck="false"></label>
+  <span class="grow"></span>
+  <button type="button" class="btn" id="plImport">Import a file…</button>
+  <input type="file" id="plFile" accept="application/json,.json" hidden>
+  <button type="button" class="btn" id="plExport">Export</button>
+  <button type="button" class="btn primary" id="plSave">Save to the fleet</button>
+  <span class="pl-msg" id="plMsg" role="status"></span>
+</div>
+
+<div class="pl-wrap">
+  <div class="m59" id="plPanel">
+    <div class="m59-tabs" role="tablist" aria-label="Character panel">
+      <button type="button" class="m59-tab" role="tab" id="tab-inventory" data-tab="inventory" aria-controls="pane-inventory" aria-selected="true"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="5" width="14" height="9" fill="#7a4a20" stroke="#3a2410"/><rect x="1" y="3" width="14" height="3" fill="#96601f" stroke="#3a2410"/><rect x="7" y="7" width="2" height="4" fill="#d8b040" stroke="#3a2410" stroke-width=".5"/></svg><span class="lbl">Inventory</span></button><button type="button" class="m59-tab" role="tab" id="tab-spells" data-tab="spells" aria-controls="pane-spells" aria-selected="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 L11 5" stroke="#7a4a20" stroke-width="2"/><path d="M12 2 l1 2.5 2.5 1 -2.5 1 -1 2.5 -1 -2.5 -2.5 -1 2.5 -1z" fill="#e8d24a" stroke="#8a6a10" stroke-width=".5"/></svg><span class="lbl">Spells</span></button><button type="button" class="m59-tab" role="tab" id="tab-skills" data-tab="skills" aria-controls="pane-skills" aria-selected="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 14V7a1 1 0 0 1 2 0V4a1 1 0 0 1 2 0v3a1 1 0 0 1 2 0v1a1 1 0 0 1 2 0v3a3 3 0 0 1-3 3z" fill="#d8a878" stroke="#6a3a14"/></svg><span class="lbl">Skills</span></button><button type="button" class="m59-tab" role="tab" id="tab-stats" data-tab="stats" aria-controls="pane-stats" aria-selected="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="3" width="14" height="3" fill="#5c1414" stroke="#c8a028" stroke-width=".7"/><rect x="1.7" y="3.7" width="9" height="1.6" fill="#18a018"/><rect x="1" y="7" width="14" height="3" fill="#5c1414" stroke="#c8a028" stroke-width=".7"/><rect x="1.7" y="7.7" width="5" height="1.6" fill="#18a018"/><rect x="1" y="11" width="14" height="3" fill="#5c1414" stroke="#c8a028" stroke-width=".7"/><rect x="1.7" y="11.7" width="12" height="1.6" fill="#18a018"/></svg><span class="lbl">Stats</span></button>
+    </div>
+
+    <div class="m59-pane" id="pane-inventory" role="tabpanel" aria-labelledby="tab-inventory">
+      <div class="m59-grid" id="plGrid"></div>
+      <div class="m59-empty" id="plGridEmpty">Nothing asked for yet. Pick something from the
+        list on the right — reagents first, they are what the fleet actually runs out of.</div>
+      <div class="m59-foot" id="plCarryFoot"></div>
+    </div>
+
+    <div class="m59-pane" id="pane-spells" role="tabpanel" aria-labelledby="tab-spells" hidden>
+      <div class="m59-schools" id="plSchools"></div>
+      <div class="m59-foot" id="plSchoolFoot"></div>
+    </div>
+
+    <div class="m59-pane" id="pane-skills" role="tabpanel" aria-labelledby="tab-skills" hidden>
+      <div class="m59-list" id="plSkills"></div>
+      <div class="m59-foot" id="plSkillFoot"></div>
+    </div>
+
+    <div class="m59-pane" id="pane-stats" role="tabpanel" aria-labelledby="tab-stats" hidden>
+      <div class="m59-bars" id="plStats"></div>
+      <div class="m59-foot" id="plStatFoot"></div>
+    </div>
+  </div>
+
+  <div class="pl-side">
+    <section id="plEditor">
+      <h2 id="plEditorTitle">What this tab changes</h2>
+      <div id="plEditorBody"></div>
+    </section>
+
+    <section id="plDiffBox" hidden>
+      <h2>Against what it is carrying now</h2>
+      <p class="hint">Read live from the fleet when the harness is serving this page. This is
+      exactly what <code>node tools/m59-loadout.mjs &lt;name&gt; --check</code> reports, and
+      what the keeper acts on.</p>
+      <div class="pl-diff" id="plDiff"></div>
+    </section>
+
+    <section id="plProblemBox" hidden>
+      <h2>Worth knowing about this loadout</h2>
+      <ul class="pl-problems" id="plProblems"></ul>
+    </section>
+
+    <section>
+      <h2>What happens to this</h2>
+      <p class="pl-note"><strong>Save to the fleet</strong> writes
+      <code>substrate/loadouts/&lt;character&gt;.json</code>. From there the keeper reads it
+      every pass: it stops selling what the list protects, sheds what the list says to shed,
+      tops up to the minimums when it is standing at a counter anyway, and reaches for the
+      weapon named here rather than whichever one it happens to be best with. Nothing the
+      list is silent about changes — a loadout adds rules, it does not replace them.</p>
+      <p class="pl-note"><strong>Export</strong> downloads the same file. Drop it in that
+      directory by hand and it means the same thing; the planner is a convenience, not the
+      format's owner.</p>
+      <p class="pl-prov">Skills, spells and items derived from the game source
+      (<code>C:/code/Meridian59</code>): 22 skills,
+      150 spells across 6 schools,
+      202 items.
+      Learning constants read from the source: <code>POINTS_SLOPE</code> kod/object/active/holder/nomoveon/battler/player.kod:93, <code>MIN_NEEDED_TO_ADVANCE</code> kod/object/active/holder/nomoveon/battler/player.kod:97, <code>MAX_LEARN_POINTS</code> kod/util/settings.kod:71.</p>
+    </section>
+  </div>
+</div>
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+<script src="../assets/learn.js"></script><script src="../assets/planner.js"></script>
+</body>
+</html>

@@ -98,6 +98,10 @@
    "key": "archery",
    "name": "archery",
    "requisite_stat": "aim",
+   "level": 5,
+   "for_sale": true,
+   "price": 8000,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Proficiency",
@@ -108,6 +112,10 @@
    "key": "assess",
    "name": "assess",
    "requisite_stat": "agility",
+   "level": 50,
+   "for_sale": false,
+   "price": null,
+   "level_note": "viSkill_level is 50 and the game has 6 levels — a sentinel for \"granted, not sold\". It contributes nothing to the learning cost because Nth falls off the end of vlLevelPoints and returns nil.",
    "abstract": false,
    "learnable": true,
    "parent": "Skill",
@@ -118,6 +126,10 @@
    "key": "axeproficiency",
    "name": "axe wielding",
    "requisite_stat": "might",
+   "level": 3,
+   "for_sale": true,
+   "price": 2000,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Proficiency",
@@ -128,6 +140,10 @@
    "key": "block",
    "name": "block",
    "requisite_stat": "agility",
+   "level": 1,
+   "for_sale": true,
+   "price": 500,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Skill",
@@ -138,6 +154,10 @@
    "key": "brawling",
    "name": "brawling",
    "requisite_stat": "might",
+   "level": 2,
+   "for_sale": true,
+   "price": 1000,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Proficiency",
@@ -148,6 +168,10 @@
    "key": "disarm",
    "name": "disarm",
    "requisite_stat": "agility",
+   "level": 6,
+   "for_sale": true,
+   "price": 16000,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Skill",
@@ -158,6 +182,10 @@
    "key": "dodge",
    "name": "dodge",
    "requisite_stat": "agility",
+   "level": 2,
+   "for_sale": true,
+   "price": 1000,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Skill",
@@ -168,6 +196,10 @@
    "key": "swordproficiency",
    "name": "fencing",
    "requisite_stat": "aim",
+   "level": 3,
+   "for_sale": true,
+   "price": 2000,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Proficiency",
@@ -178,6 +210,10 @@
    "key": "fire",
    "name": "fire",
    "requisite_stat": "aim",
+   "level": 4,
+   "for_sale": true,
+   "price": 4000,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Stroke",
@@ -188,6 +224,10 @@
    "key": "hammerproficiency",
    "name": "hammer wielding",
    "requisite_stat": "might",
+   "level": 3,
+   "for_sale": true,
+   "price": 2000,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Proficiency",
@@ -198,6 +238,10 @@
    "key": "kick",
    "name": "kick",
    "requisite_stat": "agility",
+   "level": 50,
+   "for_sale": false,
+   "price": null,
+   "level_note": "viSkill_level is 50 and the game has 6 levels — a sentinel for \"granted, not sold\". It contributes nothing to the learning cost because Nth falls off the end of vlLevelPoints and returns nil.",
    "abstract": false,
    "learnable": true,
    "parent": "Unarmed",
@@ -208,6 +252,10 @@
    "key": "maceproficiency",
    "name": "mace fighting",
    "requisite_stat": "might",
+   "level": 1,
+   "for_sale": true,
+   "price": 500,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Proficiency",
@@ -218,6 +266,10 @@
    "key": "parry",
    "name": "parry",
    "requisite_stat": "agility",
+   "level": 4,
+   "for_sale": true,
+   "price": 4000,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Skill",
@@ -228,6 +280,10 @@
    "key": "punch",
    "name": "punch",
    "requisite_stat": "agility",
+   "level": 1,
+   "for_sale": true,
+   "price": 500,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Unarmed",
@@ -238,6 +294,10 @@
    "key": "scimitarproficiency",
    "name": "scimitar wielding",
    "requisite_stat": "agility",
+   "level": 4,
+   "for_sale": true,
+   "price": 4000,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Proficiency",
@@ -248,6 +308,10 @@
    "key": "secondwind",
    "name": "second wind",
    "requisite_stat": "stamina",
+   "level": 4,
+   "for_sale": true,
+   "price": 4000,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Skill",
@@ -258,6 +322,10 @@
    "key": "shortswordproficiency",
    "name": "short sword fighting",
    "requisite_stat": "aim",
+   "level": 2,
+   "for_sale": true,
+   "price": 1000,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Proficiency",
@@ -268,6 +336,10 @@
    "key": "slash",
    "name": "slash",
    "requisite_stat": "agility",
+   "level": 1,
+   "for_sale": true,
+   "price": 500,
+   "level_note": null,
    "abstract": false,
    "learnable": true,
    "parent": "Stroke",
@@ -278,6 +350,10 @@
    "key": "thrust",
    "name": "thrust",
    "requisite_stat": "agility",
+   "level": 50,
+   "for_sale": false,
+   "price": null,
+   "level_note": "viSkill_level is 50 and the game has 6 levels — a sentinel for \"granted, not sold\". It contributes nothing to the learning cost because Nth falls off the end of vlLevelPoints and returns nil.",
    "abstract": false,
    "learnable": true,
    "parent": "Stroke",
@@ -288,6 +364,10 @@
    "key": "unarmed",
    "name": "Unarmed Combat",
    "requisite_stat": "agility",
+   "level": 1,
+   "for_sale": true,
+   "price": 500,
+   "level_note": null,
    "abstract": true,
    "learnable": false,
    "parent": "Stroke",
@@ -298,6 +378,10 @@
    "key": "proficiency",
    "name": "Weapon proficiency",
    "requisite_stat": "agility",
+   "level": 1,
+   "for_sale": true,
+   "price": 500,
+   "level_note": null,
    "abstract": true,
    "learnable": false,
    "parent": "Skill",
@@ -308,6 +392,10 @@
    "key": "stroke",
    "name": "Weapon stroke",
    "requisite_stat": "agility",
+   "level": 1,
+   "for_sale": true,
+   "price": 500,
+   "level_note": null,
    "abstract": true,
    "learnable": false,
    "parent": "Skill",
@@ -3011,6 +3099,3624 @@
   "Riija",
   "Shal’ille"
  ],
+ "items": [
+  {
+   "name": "chain armor",
+   "cls": "ChainArmor",
+   "kind": "armour",
+   "weight": 200,
+   "bulk": 250,
+   "value": 1000,
+   "nutrition": null,
+   "icon": "assets/img/chainamr_g1.png",
+   "reagent_for": null,
+   "description": "Thousands of tiny, steel links make up this chain armor. Although light and reasonably comfortable, it provides a fair measure of protection.",
+   "file": "kod/object/item/passitem/defmod/armor/chain.kod"
+  },
+  {
+   "name": "leather armor",
+   "cls": "LeatherArmor",
+   "kind": "armour",
+   "weight": 100,
+   "bulk": 150,
+   "value": 400,
+   "nutrition": null,
+   "icon": "assets/img/leathamr_g1.png",
+   "reagent_for": null,
+   "description": "This armor is made from thick, cured troll hides roughly stitched together. Despite a smell reminiscent of rotting troll meat, the armor provides some protection.",
+   "file": "kod/object/item/passitem/defmod/armor/leather.kod"
+  },
+  {
+   "name": "light robes",
+   "cls": "LightRobe",
+   "kind": "armour",
+   "weight": 75,
+   "bulk": 125,
+   "value": 300,
+   "nutrition": null,
+   "icon": "assets/img/ltrobe_g2.png",
+   "reagent_for": null,
+   "description": "Woven from fine jungle textiles, this light robe offers little in the way of protection.",
+   "file": "kod/object/item/passitem/defmod/armor/robe/lghtrobe.kod"
+  },
+  {
+   "name": "nerudite armor",
+   "cls": "NeruditeArmor",
+   "kind": "armour",
+   "weight": 500,
+   "bulk": 500,
+   "value": 3000,
+   "nutrition": null,
+   "icon": "assets/img/nerudamr_g1.png",
+   "reagent_for": null,
+   "description": "Forged from mighty Nerudite, this plate is lighter and more durable than normal plate. This chest piece exemplifies the remarkable skill of Ixla cha'Totlak.",
+   "file": "kod/object/item/passitem/defmod/armor/neruarmr.kod"
+  },
+  {
+   "name": "plate armor",
+   "cls": "PlateArmor",
+   "kind": "armour",
+   "weight": 600,
+   "bulk": 600,
+   "value": 2000,
+   "nutrition": null,
+   "icon": "assets/img/plateamr_g1.png",
+   "reagent_for": null,
+   "description": "Formed from solid sheets of hardened steel, this armor offers protection from all but the most ferocious assault. It bears the mark of Fehr'loi Qan, a sign of fine workmanship and first rate materials.",
+   "file": "kod/object/item/passitem/defmod/armor/plate.kod"
+  },
+  {
+   "name": "robes of the disciple",
+   "cls": "DiscipleRobe",
+   "kind": "armour",
+   "weight": 130,
+   "bulk": 160,
+   "value": 2000,
+   "nutrition": null,
+   "icon": "assets/img/robe_g2.png",
+   "reagent_for": null,
+   "description": "Heavy and warm, disciple robes typically denote a fervent (and some would say unhealthy) dedication to one school or another.",
+   "file": "kod/object/item/passitem/defmod/armor/robe/robedisc.kod"
+  },
+  {
+   "name": "scale armor",
+   "cls": "ScaleArmor",
+   "kind": "armour",
+   "weight": 330,
+   "bulk": 350,
+   "value": 1500,
+   "nutrition": null,
+   "icon": "assets/img/scaleamr_g1.png",
+   "reagent_for": null,
+   "description": "Thousands of overlapping steel scales give this armor its strength. This armor is stronger than chain mail and lighter than plate. Markings suggest it was made by Quintor, master armor maker.",
+   "file": "kod/object/item/passitem/defmod/armor/scale.kod"
+  },
+  {
+   "name": "apple",
+   "cls": "Apple",
+   "kind": "food",
+   "weight": 6,
+   "bulk": 6,
+   "value": 25,
+   "nutrition": 10,
+   "icon": "assets/img/apple_g1.png",
+   "reagent_for": null,
+   "description": "This bright red apple, a favorite food of the country folk of Marion, is enormous and free of blemishes. It was probably grown in the deep forest of Farol.",
+   "file": "kod/object/item/passitem/numbitem/food/apple.kod"
+  },
+  {
+   "name": "bowl of soup",
+   "cls": "Soup",
+   "kind": "food",
+   "weight": 9,
+   "bulk": 9,
+   "value": 0,
+   "nutrition": 9,
+   "icon": "assets/img/soupbowl_g1.png",
+   "reagent_for": null,
+   "description": "A steamy bowl of soup, with good chunky bits of mushroom and a blend of herbs.",
+   "file": "kod/object/item/passitem/numbitem/food/soup.kod"
+  },
+  {
+   "name": "bunch of grapes",
+   "cls": "Grapes",
+   "kind": "food",
+   "weight": 7,
+   "bulk": 7,
+   "value": 0,
+   "nutrition": 7,
+   "icon": "assets/img/grapes_g1.png",
+   "reagent_for": null,
+   "description": "Pietro's secret recipes usually involve spicy wine grapes from the west. These particular grapes are extra plump and succulent.",
+   "file": "kod/object/item/passitem/numbitem/food/grapes.kod"
+  },
+  {
+   "name": "chocolate mint",
+   "cls": "Mint",
+   "kind": "food",
+   "weight": 1,
+   "bulk": 1,
+   "value": 10,
+   "nutrition": 5,
+   "icon": "assets/img/roommint_g1.png",
+   "reagent_for": null,
+   "description": "A small block of imported Kocatani chocolate infused with a strain of mint which only grows in Faronath, this delicacy is purported to have certain magical properties in addition to its unquestionable appeal to the taste buds.",
+   "file": "kod/object/item/passitem/numbitem/food/mint.kod"
+  },
+  {
+   "name": "drumstick",
+   "cls": "Drumstick",
+   "kind": "food",
+   "weight": 9,
+   "bulk": 15,
+   "value": 0,
+   "nutrition": 9,
+   "icon": "assets/img/drumstik_g1.png",
+   "reagent_for": null,
+   "description": "The luscious leg of a large southern bird, covered lightly with some crunchy breadcrumbs and baked to a warm golden color.",
+   "file": "kod/object/item/passitem/numbitem/food/drumstik.kod"
+  },
+  {
+   "name": "fortune cookie",
+   "cls": "FortuneCookie",
+   "kind": "food",
+   "weight": 2,
+   "bulk": 2,
+   "value": 0,
+   "nutrition": 1,
+   "icon": "assets/img/ftncooky_g1.png",
+   "reagent_for": null,
+   "description": "The desire for a sweet future balances with the desire for a sweet cookie. Until you actually break the cookie and read your message, you will fulfill neither.",
+   "file": "kod/object/item/passitem/numbitem/food/ftncooky.kod"
+  },
+  {
+   "name": "Frenzy Food",
+   "cls": "ChaosFood",
+   "kind": "food",
+   "weight": 5000,
+   "bulk": 10,
+   "value": 1,
+   "nutrition": 200,
+   "icon": "assets/img/mushroom_g1.png",
+   "reagent_for": null,
+   "description": "At first glance, these mushrooms appear common, but look at the psychedelic colors! This is actually Frenzy Food! No Stomach No Problem!",
+   "file": "kod/object/item/passitem/numbitem/food/chaosfood.kod"
+  },
+  {
+   "name": "goblet of ale",
+   "cls": "Goblet",
+   "kind": "food",
+   "weight": 10,
+   "bulk": 15,
+   "value": 0,
+   "nutrition": 3,
+   "icon": "assets/img/goblet_g1.png",
+   "reagent_for": null,
+   "description": "Ale from the Duke's own private kegs,brewed to his exacting specifications.",
+   "file": "kod/object/item/passitem/numbitem/food/goblet.kod"
+  },
+  {
+   "name": "goblet of wine",
+   "cls": "wineGoblet",
+   "kind": "food",
+   "weight": 10,
+   "bulk": 12,
+   "value": 50,
+   "nutrition": 6,
+   "icon": "assets/img/goblet_g1.png",
+   "reagent_for": null,
+   "description": "A fine and exquisite drink. Only the commoners would find this distasteful.",
+   "file": "kod/object/item/passitem/numbitem/food/gobletwn.kod"
+  },
+  {
+   "name": "Inky-cap mushroom",
+   "cls": "InkyCap",
+   "kind": "food",
+   "weight": 4,
+   "bulk": 10,
+   "value": 250,
+   "nutrition": 50,
+   "icon": "assets/img/mushroom_g1.png",
+   "reagent_for": null,
+   "description": "At first glance, these mushrooms appear common, but look at the green stem! These are actually Darken's Invigorating Inky Caps!",
+   "file": "kod/object/item/passitem/numbitem/food/inkycap.kod"
+  },
+  {
+   "name": "loaf of bread",
+   "cls": "Bread",
+   "kind": "food",
+   "weight": 20,
+   "bulk": 20,
+   "value": 60,
+   "nutrition": 20,
+   "icon": "assets/img/bread_g1.png",
+   "reagent_for": null,
+   "description": "This sweet smelling bread is a specialty of Tos although it can be found throughout the land. The baker is said to infuse the dough with magical elderberry, although none know for certain.",
+   "file": "kod/object/item/passitem/numbitem/food/bread.kod"
+  },
+  {
+   "name": "meat pie",
+   "cls": "Meatpie",
+   "kind": "food",
+   "weight": 30,
+   "bulk": 20,
+   "value": 80,
+   "nutrition": 30,
+   "icon": "assets/img/meatpie_g1.png",
+   "reagent_for": null,
+   "description": "A golden brown crust tops this gigantic pie. It is filled with stewed troll meat, cheese, and spices from far lands.",
+   "file": "kod/object/item/passitem/numbitem/food/meatpie.kod"
+  },
+  {
+   "name": "mug of brew",
+   "cls": "StoutGoblet",
+   "kind": "food",
+   "weight": 10,
+   "bulk": 15,
+   "value": 25,
+   "nutrition": 3,
+   "icon": "assets/img/mug_g1.png",
+   "reagent_for": null,
+   "description": "The pewter and wood mug is roughly formed. A logo stamped onto its silver lip reads \"Pietro's Wicked Brew.\"",
+   "file": "kod/object/item/passitem/numbitem/food/gobletst.kod"
+  },
+  {
+   "name": "mug of Pekonch",
+   "cls": "KocatanMug",
+   "kind": "food",
+   "weight": 10,
+   "bulk": 15,
+   "value": 25,
+   "nutrition": 3,
+   "icon": "assets/img/mug2_g1.png",
+   "reagent_for": null,
+   "description": "This Ko'catani wine is so thick you could stand a dagger up in it.",
+   "file": "kod/object/item/passitem/numbitem/food/kocmug.kod"
+  },
+  {
+   "name": "mug of stout",
+   "cls": "Mug",
+   "kind": "food",
+   "weight": 7,
+   "bulk": 10,
+   "value": 30,
+   "nutrition": 6,
+   "icon": "assets/img/mug_g1.png",
+   "reagent_for": null,
+   "description": "A dark hazelnut stout with a thick head of foam fills this large, well-crafted mug.",
+   "file": "kod/object/item/passitem/numbitem/food/mug.kod"
+  },
+  {
+   "name": "slice of pork",
+   "cls": "Pork",
+   "kind": "food",
+   "weight": 9,
+   "bulk": 9,
+   "value": 0,
+   "nutrition": 9,
+   "icon": "assets/img/pork_g1.png",
+   "reagent_for": null,
+   "description": "A juicy slab of hamhock, slow roasted with a bit of apple glaze.",
+   "file": "kod/object/item/passitem/numbitem/food/pork.kod"
+  },
+  {
+   "name": "spider eye",
+   "cls": "Spideye",
+   "kind": "food",
+   "weight": 9,
+   "bulk": 9,
+   "value": 0,
+   "nutrition": 9,
+   "icon": "assets/img/spideye_g1.png",
+   "reagent_for": null,
+   "description": "Twice the size of an olive, and many times more tasty. The eye of a giant spider has been known as a delicacy, especially to the older residents of Marion.",
+   "file": "kod/object/item/passitem/numbitem/food/spideye.kod"
+  },
+  {
+   "name": "turkey leg",
+   "cls": "TurkeyLeg",
+   "kind": "food",
+   "weight": 9,
+   "bulk": 10,
+   "value": 50,
+   "nutrition": 15,
+   "icon": "assets/img/drumstik_g1.png",
+   "reagent_for": null,
+   "description": "This is a scrumptious roasted turkey leg. The turkey is native to the jungles of Ko'catan and imported to the mainland by traders. Some people believe that the avars attack trading caravans to free the captured birds.",
+   "file": "kod/object/item/passitem/numbitem/food/turkyleg.kod"
+  },
+  {
+   "name": "water skin",
+   "cls": "Waterskin",
+   "kind": "food",
+   "weight": 30,
+   "bulk": 15,
+   "value": 10,
+   "nutrition": 3,
+   "icon": "assets/img/watrskin_g1.png",
+   "reagent_for": null,
+   "description": "This leather skin contains cool, refreshing water drawn from the headwaters of the River Ille.",
+   "file": "kod/object/item/passitem/numbitem/food/watrskin.kod"
+  },
+  {
+   "name": "wheel of cheese",
+   "cls": "Cheese",
+   "kind": "food",
+   "weight": 30,
+   "bulk": 30,
+   "value": 80,
+   "nutrition": 30,
+   "icon": "assets/img/cheese_g1.png",
+   "reagent_for": null,
+   "description": "This delicious cheese is made from the sweet milk of the pygmy cow. As the pygmy cow is rarely seen in Meridian proper, a cheese as fine as this is a delicacy indeed.",
+   "file": "kod/object/item/passitem/numbitem/food/cheese.kod"
+  },
+  {
+   "name": "alchemical formula",
+   "cls": "FormulaScroll",
+   "kind": "other",
+   "weight": 3,
+   "bulk": 10,
+   "value": 50,
+   "nutrition": null,
+   "icon": "assets/img/scr08_g1.png",
+   "reagent_for": null,
+   "description": "This scroll is covered in spidery script which is only barely legible. It appears to be some sort of alchemical formula, calling for such strange ingredients as a child's spit, sap from a hundred-year-old tree, and a spider's entrails.",
+   "file": "kod/object/item/passitem/formula.kod"
+  },
+  {
+   "name": "Amulet of Shadows",
+   "cls": "ShadowAmulet",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 25,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/amulet_g1.png",
+   "reagent_for": null,
+   "description": "You cannot get a good look at the amulet. Shadows seem to cling to it even in direct sunlight.",
+   "file": "kod/object/item/passitem/necklace/shadowam.kod"
+  },
+  {
+   "name": "Amulet of the Three",
+   "cls": "NecromancerAmulet",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 25,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/necamlet_g1.png",
+   "reagent_for": null,
+   "description": "There is something deeply disturbing about this amulet. When you look at it in the corner of your eye, you can almost see the evil pouring forth from it.",
+   "file": "kod/object/item/actitem/necroam.kod"
+  },
+  {
+   "name": "Ancient Shield",
+   "cls": "TotemFour",
+   "kind": "other",
+   "weight": 100,
+   "bulk": 100,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/qo09_g1.png",
+   "reagent_for": null,
+   "description": "Thought to be an artifact from the Empire of the Nexus before this land was even discovered, this ancient shield is too old and valuable to be used in combat. Being one of a kind, this shield can not be carried in one's possession for very long or tucked away in a chest.",
+   "file": "kod/object/item/passitem/totem/totem4.kod"
+  },
+  {
+   "name": "ant mask",
+   "cls": "AntMask",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/mmant_g3.png",
+   "reagent_for": null,
+   "description": "Finally! An adult-sized ant mask from Ko'catan. Now you can participate in the strange island ritual you've always heard about.",
+   "file": "kod/object/item/passitem/defmod/helmet/mask/antmask.kod"
+  },
+  {
+   "name": "arrows",
+   "cls": "Arrow",
+   "kind": "other",
+   "weight": 4,
+   "bulk": 4,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/arrow_g3.png",
+   "reagent_for": null,
+   "description": "Slender and straight with jungle bird feathers for guidance, this is standard ammunition for a bow.",
+   "file": "kod/object/item/passitem/numbitem/ammo/arrow.kod"
+  },
+  {
+   "name": "blood of the innocent",
+   "cls": "OfferingQor",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 30,
+   "value": 1000,
+   "nutrition": null,
+   "icon": "assets/img/bloodinn_g1.png",
+   "reagent_for": null,
+   "description": "This bottle of liquid holds some ominous purpose you can only guess at.",
+   "file": "kod/object/item/passitem/offering/offerqor.kod"
+  },
+  {
+   "name": "blue heartstone",
+   "cls": "BlueHeartStone",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 10,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/xeogem_g1.png",
+   "reagent_for": null,
+   "description": "This is called a 'heartstone'. It is a huge blue gem taken from the body of a fallen Ma'Xeochicatl. It wiggles slightly and is cool to the touch. The uses for this gem are not widely known.",
+   "file": "kod/object/item/passitem/hstone/hstonblu.kod"
+  },
+  {
+   "name": "bolts",
+   "cls": "Bolt",
+   "kind": "other",
+   "weight": 3,
+   "bulk": 2,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/sphere_g1.png",
+   "reagent_for": null,
+   "description": "These are fired from your typical crossbow.",
+   "file": "kod/object/item/passitem/numbitem/ammo/bolt.kod"
+  },
+  {
+   "name": "bonkstick",
+   "cls": "BonkStick",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 25,
+   "value": 150,
+   "nutrition": null,
+   "icon": "assets/img/hammer_g1.png",
+   "reagent_for": null,
+   "description": "You are looking at an object",
+   "file": "kod/object/item/passitem/specwand/bonkstik.kod"
+  },
+  {
+   "name": "book",
+   "cls": "Book",
+   "kind": "other",
+   "weight": 50,
+   "bulk": 50,
+   "value": 1000,
+   "nutrition": null,
+   "icon": "assets/img/book1_g3.png",
+   "reagent_for": null,
+   "description": "A thick leather cover binds this book, darkened with age and wear. It appears to come from some ancient time.",
+   "file": "kod/object/item/passitem/inscript/book.kod"
+  },
+  {
+   "name": "bottle of lies",
+   "cls": "OfferingRiija",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 30,
+   "value": 1000,
+   "nutrition": null,
+   "icon": "assets/img/lies_g1.png",
+   "reagent_for": null,
+   "description": "This bottle of liquid holds some ominous purpose you can only guess at.",
+   "file": "kod/object/item/passitem/offering/offerrii.kod"
+  },
+  {
+   "name": "brass medallion",
+   "cls": "FarenCharm",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 20,
+   "value": 500,
+   "nutrition": null,
+   "icon": "assets/img/frcharm_g1.png",
+   "reagent_for": null,
+   "description": "This necklace is a long string of brass medallions carefully crafted together. In the largest of the medallions, the image of a storm has been delicately engraved.",
+   "file": "kod/object/item/passitem/necklace/frcharm.kod"
+  },
+  {
+   "name": "bronze room key",
+   "cls": "RoomKeySecureCopy",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 80,
+   "nutrition": null,
+   "icon": "assets/img/roomkeyc_g1.png",
+   "reagent_for": null,
+   "description": "This crudely-fashioned bronze key copy is used to gain access to a private room at an inn.",
+   "file": "kod/object/item/passitem/roomkeyc/rmkeysec.kod"
+  },
+  {
+   "name": "brown heartstone",
+   "cls": "BrownHeartStone",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 10,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/xeogem_g1.png",
+   "reagent_for": null,
+   "description": "This is called a 'heartstone'. It is a huge brown gem taken from the body of a fallen Te'Xeochicatl. It feels much like a normal stone. The uses for this gem are not widely known.",
+   "file": "kod/object/item/passitem/hstone/hstonbrn.kod"
+  },
+  {
+   "name": "brown potion",
+   "cls": "IllusionaryFormPotion",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 20,
+   "value": 60,
+   "nutrition": null,
+   "icon": "assets/img/flask_g1.png",
+   "reagent_for": null,
+   "description": "This is a deep, dark, murky, chunky potion.",
+   "file": "kod/object/item/passitem/pillufrm.kod"
+  },
+  {
+   "name": "burning water",
+   "cls": "OfferingFaren",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 30,
+   "value": 1000,
+   "nutrition": null,
+   "icon": "assets/img/burnwate_g1.png",
+   "reagent_for": null,
+   "description": "This bottle of liquid holds some ominous purpose you can only guess at.",
+   "file": "kod/object/item/passitem/offering/offerfar.kod"
+  },
+  {
+   "name": "Chalice of the Rain",
+   "cls": "Chalice",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 20,
+   "value": 500,
+   "nutrition": null,
+   "icon": "assets/img/chalice_g1.png",
+   "reagent_for": null,
+   "description": "This ornate chalice is adorned with holy markings of Shal'ille. An inscription reads \"to catch her tears.\"",
+   "file": "kod/object/item/passitem/chalice.kod"
+  },
+  {
+   "name": "chess board",
+   "cls": "Chess",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 30,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/marblplr_g1.png",
+   "reagent_for": null,
+   "description": "Two players can use this board to play a game of chess. Anyone else can use the board to observe. The board must be on the ground for people to be able to play each other. If you pick up a board in the middle of a match, the board will save the status of the game so that it may be concluded later. It is wise to find a safe area to play.",
+   "file": "kod/object/item/passitem/minigame/chess.kod"
+  },
+  {
+   "name": "chunk of nerudite",
+   "cls": "NeruditeOreChunk",
+   "kind": "other",
+   "weight": 300,
+   "bulk": 300,
+   "value": 1500,
+   "nutrition": null,
+   "icon": "assets/img/neruore_g1.png",
+   "reagent_for": null,
+   "description": "This is a huge, unwieldy hunk of ugly, green rock, with strong, luminent veins suggesting immense hidden value inside.",
+   "file": "kod/object/item/passitem/nerudore.kod"
+  },
+  {
+   "name": "chunk of ore",
+   "cls": "CheapOreChunk",
+   "kind": "other",
+   "weight": 500,
+   "bulk": 500,
+   "value": 300,
+   "nutrition": null,
+   "icon": "assets/img/ore_g1.png",
+   "reagent_for": null,
+   "description": "This is a huge, unwieldy hunk of rock, with a few thin veins of metal barely visible. You wonder at the massive amount of labor that would be necessary to extract enough metal from it in order to fashion something useful.",
+   "file": "kod/object/item/passitem/orecheap.kod"
+  },
+  {
+   "name": "chunk of ore",
+   "cls": "OreChunk",
+   "kind": "other",
+   "weight": 600,
+   "bulk": 600,
+   "value": 1000,
+   "nutrition": null,
+   "icon": "assets/img/ore_g1.png",
+   "reagent_for": null,
+   "description": "This is a huge, unwieldy hunk of rock, with strong, silver veins suggesting immense hidden value inside.",
+   "file": "kod/object/item/passitem/orechunk.kod"
+  },
+  {
+   "name": "circlet",
+   "cls": "Circlet",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 15,
+   "value": 350,
+   "nutrition": null,
+   "icon": "assets/img/invcirc_g1.png",
+   "reagent_for": null,
+   "description": "This pewter stranded circlet is hot to the touch. A message inscribed on the inside of this magical device reads \"Physical essence into magical power.\"",
+   "file": "kod/object/item/passitem/defmod/helmet/circlet.kod"
+  },
+  {
+   "name": "cow mask",
+   "cls": "CowMask",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/res0002c_g3.png",
+   "reagent_for": null,
+   "description": "Sculpted like the head of a cow, it is sometimes worn by divinity. Moo.",
+   "file": "kod/object/item/passitem/defmod/helmet/mask/cowmask.kod"
+  },
+  {
+   "name": "crystal sphere token",
+   "cls": "FiveToken",
+   "kind": "other",
+   "weight": 500,
+   "bulk": 50,
+   "value": 2500,
+   "nutrition": null,
+   "icon": null,
+   "reagent_for": null,
+   "description": "Swirling with mystical patterns, this ancient token is some relative of the mana nodes, and in the hands of a Councilor is rumored to glow when near one. Returning it would likely raise your status in the Royal Court.",
+   "file": "kod/object/item/passitem/token/token5.kod"
+  },
+  {
+   "name": "daemon skeleton mask",
+   "cls": "DaemonMask",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/res0002e_g3.png",
+   "reagent_for": null,
+   "description": "This mask looks sinister, good for scaring little children. It would be dangerous to store this in your pocket.",
+   "file": "kod/object/item/passitem/defmod/helmet/mask/daemmask.kod"
+  },
+  {
+   "name": "demon skull token",
+   "cls": "FourToken",
+   "kind": "other",
+   "weight": 500,
+   "bulk": 50,
+   "value": 2500,
+   "nutrition": null,
+   "icon": "assets/img/tskull_g1.png",
+   "reagent_for": null,
+   "description": "The fabled demon beast was known for its endurance and fortitude. This ancient token is rumored to speak its secrets to the Councilor who cares for it. Returning it would likely raise your status in the Royal Court.",
+   "file": "kod/object/item/passitem/token/token4.kod"
+  },
+  {
+   "name": "diamond pendant",
+   "cls": "ShalilleCharm",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 20,
+   "value": 500,
+   "nutrition": null,
+   "icon": "assets/img/shcharm_g1.png",
+   "reagent_for": null,
+   "description": "Made of carefully cut diamonds set in finely worked copper, this pendant would be anyone's best friend.",
+   "file": "kod/object/item/passitem/necklace/shcharm.kod"
+  },
+  {
+   "name": "dress pattern",
+   "cls": "DressPattern",
+   "kind": "other",
+   "weight": 4,
+   "bulk": 10,
+   "value": 60,
+   "nutrition": null,
+   "icon": "assets/img/scr10_g1.png",
+   "reagent_for": null,
+   "description": "This appears to be a pattern for some sort of elaborate gown. The most complicated of the versions is stitched together of more than two thousand separate pieces of cloth, delicately darted and ruffled, and requires the use of exotic fabrics such as queen spider silk and yeti fur.",
+   "file": "kod/object/item/passitem/dresspat.kod"
+  },
+  {
+   "name": "egg",
+   "cls": "SpiderEgg",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 30,
+   "value": 250,
+   "nutrition": null,
+   "icon": "assets/img/spdregg_g1.png",
+   "reagent_for": null,
+   "description": "This egg, the size of a large melon, has a tough, leathery covering. Some kind of liquid sloshes inside.",
+   "file": "kod/object/item/passitem/spdregg.kod"
+  },
+  {
+   "name": "egg shell",
+   "cls": "SpiderEggShell",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 20,
+   "value": 25,
+   "nutrition": null,
+   "icon": "assets/img/spdreggx_g1.png",
+   "reagent_for": null,
+   "description": "This large broken shell has a tough, leathery texture.",
+   "file": "kod/object/item/passitem/spdreggX.kod"
+  },
+  {
+   "name": "feather of an avar shaman",
+   "cls": "AvarShamanFeather",
+   "kind": "other",
+   "weight": 2,
+   "bulk": 5,
+   "value": 50,
+   "nutrition": null,
+   "icon": "assets/img/avfeathr_g1.png",
+   "reagent_for": null,
+   "description": "This is an undamaged tail feather from an avar shaman. The strong barbs of the feather would make excellent guides for an arrow shaft.",
+   "file": "kod/object/item/passitem/avarfeth.kod"
+  },
+  {
+   "name": "feathered choker",
+   "cls": "RiijaCharm",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 20,
+   "value": 500,
+   "nutrition": null,
+   "icon": "assets/img/rjcharm_g1.png",
+   "reagent_for": null,
+   "description": "Unorthodox and ornate, this choker is wondrous to look at, but it doesn't look like much fun to wear.",
+   "file": "kod/object/item/passitem/necklace/rjcharm.kod"
+  },
+  {
+   "name": "fey mask",
+   "cls": "FeyMask",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/mmskl_g3.png",
+   "reagent_for": null,
+   "description": "This is a fey mask. It seems to shift based on your karmic standing.",
+   "file": "kod/object/item/passitem/defmod/helmet/mask/feymask.kod"
+  },
+  {
+   "name": "fine lute",
+   "cls": "FineLute",
+   "kind": "other",
+   "weight": 85,
+   "bulk": 150,
+   "value": 1600,
+   "nutrition": null,
+   "icon": "assets/img/music_g1.png",
+   "reagent_for": null,
+   "description": "The lute is of a higher quality than most lutes. The instrument has been constructed flawlessly and the dark stain was obviously applied by a master craftsman. Its pine construction offers a richer sound than the more common rosewood lutes.",
+   "file": "kod/object/item/passitem/instrum/lute/finelute.kod"
+  },
+  {
+   "name": "fire arrows",
+   "cls": "FireArrow",
+   "kind": "other",
+   "weight": 4,
+   "bulk": 4,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/arrowfir_g3.png",
+   "reagent_for": null,
+   "description": "The enchanted, searing-hot heads of these arrows glow menacingly, making them the clear choice for taking aim against flammable targets.",
+   "file": "kod/object/item/passitem/numbitem/ammo/firearow.kod"
+  },
+  {
+   "name": "flag of the Duke",
+   "cls": "DukeFlag",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/flagdinv_g1.png",
+   "reagent_for": null,
+   "description": "This flag bears the royal colors of the Duke, protector of Tos.",
+   "file": "kod/object/item/passitem/factflag/dukeflag.kod"
+  },
+  {
+   "name": "flag of the Princess",
+   "cls": "PrincessFlag",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/flagpinv_g1.png",
+   "reagent_for": null,
+   "description": "This flag bears the royal colors of the Princess, sovereign of Barloque.",
+   "file": "kod/object/item/passitem/factflag/prncflag.kod"
+  },
+  {
+   "name": "flask",
+   "cls": "Arsenic",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 20,
+   "value": 40,
+   "nutrition": null,
+   "icon": "assets/img/flask_g1.png",
+   "reagent_for": null,
+   "description": "The pungent liquid in this bottle contains floating bits of strange matter.",
+   "file": "kod/object/item/passitem/arsenic.kod"
+  },
+  {
+   "name": "flask",
+   "cls": "Flask",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 25,
+   "value": 60,
+   "nutrition": null,
+   "icon": "assets/img/flask_g1.png",
+   "reagent_for": null,
+   "description": "This flask, formed from clear glass and topped by a cork, contains a thick blue fluid. It looks cool and refreshing.",
+   "file": "kod/object/item/passitem/healer/flask.kod"
+  },
+  {
+   "name": "gauntlets",
+   "cls": "Gauntlet",
+   "kind": "other",
+   "weight": 50,
+   "bulk": 50,
+   "value": 400,
+   "nutrition": null,
+   "icon": "assets/img/gauntlet_g2.png",
+   "reagent_for": null,
+   "description": "These polished steel gauntlets offer protection for hands and forearms allowing you to strike with greater confidence and force.",
+   "file": "kod/object/item/passitem/attmod/gauntlet.kod"
+  },
+  {
+   "name": "gift",
+   "cls": "Gift",
+   "kind": "other",
+   "weight": 50,
+   "bulk": 50,
+   "value": 30,
+   "nutrition": null,
+   "icon": "assets/img/package_g1.png",
+   "reagent_for": null,
+   "description": "This is a gift from the gods, to thank you for your patience and your patronage.",
+   "file": "kod/object/item/passitem/gift.kod"
+  },
+  {
+   "name": "gnarled staff",
+   "cls": "StaffOfJolting",
+   "kind": "other",
+   "weight": 40,
+   "bulk": 40,
+   "value": 200,
+   "nutrition": null,
+   "icon": "assets/img/joltstaf_g2.png",
+   "reagent_for": null,
+   "description": "You are looking at an object",
+   "file": "kod/object/item/passitem/specwand/joltstaf.kod"
+  },
+  {
+   "name": "gold room key",
+   "cls": "RoomKey",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 80,
+   "nutrition": null,
+   "icon": "assets/img/roomkey_g1.png",
+   "reagent_for": null,
+   "description": "This finely-crafted golden key is used to gain access to a private room at an inn.",
+   "file": "kod/object/item/passitem/roomkeyc/roomkey.kod"
+  },
+  {
+   "name": "Gold Urn",
+   "cls": "TotemTwo",
+   "kind": "other",
+   "weight": 100,
+   "bulk": 100,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/qo02_g1.png",
+   "reagent_for": null,
+   "description": "Excavated during the construction of the palace of the dark Princess Venya'cyr, the Urn came quickly into her possession as a valued treasure. Ancient rumors suggest the Urn is cursed. The craftsmanship of this priceless relic comes from unknown origins, certainly predating the Meridian settlers. An unusual presence prevents this object from being stored in a chest or held for very long.",
+   "file": "kod/object/item/passitem/totem/totem2.kod"
+  },
+  {
+   "name": "helm",
+   "cls": "SimpleHelm",
+   "kind": "other",
+   "weight": 50,
+   "bulk": 25,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/helm_g2.png",
+   "reagent_for": null,
+   "description": "Steel and chain links give moderate protection to the wearer of this padded helmet.",
+   "file": "kod/object/item/passitem/defmod/helmet/simphelm.kod"
+  },
+  {
+   "name": "invitation",
+   "cls": "GuildInvitation",
+   "kind": "other",
+   "weight": 0,
+   "bulk": 0,
+   "value": 0,
+   "nutrition": null,
+   "icon": "assets/img/scroll_g1.png",
+   "reagent_for": null,
+   "description": "If you \"use\" this invitation, you will join %s%q. This invitation will delete itself two minutes after being offered.",
+   "file": "kod/object/item/actitem/invitat.kod"
+  },
+  {
+   "name": "iron key",
+   "cls": "SanctuaryKey",
+   "kind": "other",
+   "weight": 12,
+   "bulk": 10,
+   "value": 300,
+   "nutrition": null,
+   "icon": "assets/img/fishkey_g1.png",
+   "reagent_for": null,
+   "description": "This is an intricately wrought iron key.",
+   "file": "kod/object/item/passitem/sanctkey.kod"
+  },
+  {
+   "name": "ivy circlet",
+   "cls": "IvyCirclet",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 20,
+   "value": 450,
+   "nutrition": null,
+   "icon": "assets/img/ivycircl_g2.png",
+   "reagent_for": null,
+   "description": "Healthy, green leaves of ivy are wrapped around a wooden wreath. This looks like it would be cool and refreshing against your brow.",
+   "file": "kod/object/item/passitem/defmod/helmet/ivycircl.kod"
+  },
+  {
+   "name": "jade cat token",
+   "cls": "ThreeToken",
+   "kind": "other",
+   "weight": 500,
+   "bulk": 50,
+   "value": 2500,
+   "nutrition": null,
+   "icon": "assets/img/tcat_g1.png",
+   "reagent_for": null,
+   "description": "Like a living cat is known for its dexterity and mastery of skills, this ancient token is rumored to teach its techniques to its Councilor master. Returning it would likely raise your status in the Royal Court.",
+   "file": "kod/object/item/passitem/token/token3.kod"
+  },
+  {
+   "name": "Jewel of Froz",
+   "cls": "JewelofFroz",
+   "kind": "other",
+   "weight": 15,
+   "bulk": 10,
+   "value": 400,
+   "nutrition": null,
+   "icon": "assets/img/frozjewl_g1.png",
+   "reagent_for": null,
+   "description": "You are looking at an object",
+   "file": "kod/object/item/passitem/attmod/frozjewl.kod"
+  },
+  {
+   "name": "jeweled egg token",
+   "cls": "TwoToken",
+   "kind": "other",
+   "weight": 500,
+   "bulk": 50,
+   "value": 2500,
+   "nutrition": null,
+   "icon": "assets/img/tegg_g1.png",
+   "reagent_for": null,
+   "description": "Encrusted with every gemstone known, this ancient token is rumored to call forth the riches of the land at the wish of the Councilor who tends it. Returning it would likely raise your status in the Royal Court.",
+   "file": "kod/object/item/passitem/token/token2.kod"
+  },
+  {
+   "name": "key",
+   "cls": "Key",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 80,
+   "nutrition": null,
+   "icon": "assets/img/fekey_g1.png",
+   "reagent_for": null,
+   "description": "This intricately formed key bears the inscription of a wizard.",
+   "file": "kod/object/item/passitem/key.kod"
+  },
+  {
+   "name": "kriipa mask",
+   "cls": "KriipaMask",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/mmkrp_g3.png",
+   "reagent_for": null,
+   "description": "A mask with the image of the fierce Kriipa. It doesn't seem to make you jump any higher, however.",
+   "file": "kod/object/item/passitem/defmod/helmet/mask/kriipmsk.kod"
+  },
+  {
+   "name": "letter",
+   "cls": "CouncilLetter",
+   "kind": "other",
+   "weight": 3,
+   "bulk": 10,
+   "value": 40,
+   "nutrition": null,
+   "icon": "assets/img/scr04_g1.png",
+   "reagent_for": null,
+   "description": "This official-looking piece of correspondence is embossed with a gilt crest. You wonder what is written on it, but dare not break the seal to peek.",
+   "file": "kod/object/item/passitem/cncllttr.kod"
+  },
+  {
+   "name": "letter",
+   "cls": "Letter",
+   "kind": "other",
+   "weight": 3,
+   "bulk": 10,
+   "value": 40,
+   "nutrition": null,
+   "icon": "assets/img/scr04_g1.png",
+   "reagent_for": null,
+   "description": "This letter from the Princess is embossed with a gilt crest, and smells faintly of her perfume.",
+   "file": "kod/object/item/passitem/letter.kod"
+  },
+  {
+   "name": "letter",
+   "cls": "NecromancerWarningLetter",
+   "kind": "other",
+   "weight": 3,
+   "bulk": 10,
+   "value": 40,
+   "nutrition": null,
+   "icon": "assets/img/scr08_g1.png",
+   "reagent_for": null,
+   "description": "This letter is scribbled mostly illegibly in a winding, chaotic script. You can make out the following phrases amongst its ramblings: \"...There are things older than the ground on which we live. There are beings ancient beyond your wildest...\" \"...no wisdom or sanctity in these beings. There is only hunger. They are here.\" \"...hungry and all life is their prey. Be warned.\"",
+   "file": "kod/object/item/passitem/ncwrnlet.kod"
+  },
+  {
+   "name": "long skirt",
+   "cls": "Skirt",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 50,
+   "nutrition": null,
+   "icon": "assets/img/lgskirt_g2.png",
+   "reagent_for": null,
+   "description": "This skirt will cover your legs nicely but won't provide much protection.",
+   "file": "kod/object/item/passitem/defmod/pants/skirt.kod"
+  },
+  {
+   "name": "love letter",
+   "cls": "LoveLetter",
+   "kind": "other",
+   "weight": 3,
+   "bulk": 10,
+   "value": 40,
+   "nutrition": null,
+   "icon": "assets/img/scr01_g1.png",
+   "reagent_for": null,
+   "description": "This is a lengthy love letter consisting of disgustingly gushy prose intercut with pieces of excruciatingly bad poetry. The whole thing is probably intended to be romantic, but by the fifth reference to strewing rose petals in someone-or-other's hair you find yourself unable to read any further for fear of losing your lunch.",
+   "file": "kod/object/item/passitem/lovelttr.kod"
+  },
+  {
+   "name": "magic spirit helmet",
+   "cls": "Helm",
+   "kind": "other",
+   "weight": 30,
+   "bulk": 50,
+   "value": 1000,
+   "nutrition": null,
+   "icon": "assets/img/ornhelma_g2.png",
+   "reagent_for": null,
+   "description": "Finely crafted and ornate in its design, this impressive looking piece of headgear is eerily cold to the touch. The Duke commissioned Fehr'loi Qan with the aid of Priestess Qerti'nya to create these helmets specifically for winners of officially sanctioned tournaments.",
+   "file": "kod/object/item/passitem/defmod/helmet/helm.kod"
+  },
+  {
+   "name": "mana crystal",
+   "cls": "ManaCrystal",
+   "kind": "other",
+   "weight": 5,
+   "bulk": 5,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/manacrys_g1.png",
+   "reagent_for": null,
+   "description": "A crystalized form of raw mana, the energy for spells. Use this to regain the mana stored in this crystal. Since it is attuned to you, you cannot drop it or give it to anyone else.",
+   "file": "kod/object/item/passitem/manacrys.kod"
+  },
+  {
+   "name": "Minjaka Vase",
+   "cls": "TotemThree",
+   "kind": "other",
+   "weight": 100,
+   "bulk": 100,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/qo06_g1.png",
+   "reagent_for": null,
+   "description": "Antiquarians claim there only to be a few of the priceless Minjaka Vases left in existence. These exquisitely mastered vases use to line the throne room of Castle Victoria during the Minjakan dynasty of explorers in the second century. Being one of a kind, this vase can not be carried in one's possession for very long or tucked away in a chest.",
+   "file": "kod/object/item/passitem/totem/totem3.kod"
+  },
+  {
+   "name": "monocle",
+   "cls": "QorCharm",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 20,
+   "value": 500,
+   "nutrition": null,
+   "icon": "assets/img/qrcharm_g1.png",
+   "reagent_for": null,
+   "description": "In your hand rests a copper-edged lens. The glass feels surreally cool in your hand.",
+   "file": "kod/object/item/passitem/necklace/qrcharm.kod"
+  },
+  {
+   "name": "mummy mask",
+   "cls": "MummyMask",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/res0002k_g3.png",
+   "reagent_for": null,
+   "description": "This is either a mummy mask, or bandages for recovering from fireball burns.",
+   "file": "kod/object/item/passitem/defmod/helmet/mask/mummymsk.kod"
+  },
+  {
+   "name": "mysterious potion",
+   "cls": "MysteryPotion",
+   "kind": "other",
+   "weight": 17,
+   "bulk": 20,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/potion01_g1.png",
+   "reagent_for": null,
+   "description": "This is an odd potion of a type you have not seen before. It certainly doesn't look like something you would want to drink willingly.",
+   "file": "kod/object/item/passitem/mystpot.kod"
+  },
+  {
+   "name": "mysterious wand",
+   "cls": "MysteryWand",
+   "kind": "other",
+   "weight": 15,
+   "bulk": 20,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/joltstaf_g1.png",
+   "reagent_for": null,
+   "description": "This is an odd looking wand of a type you have never seen before. It doesn't look very reliable to you.",
+   "file": "kod/object/item/passitem/mystwand.kod"
+  },
+  {
+   "name": "mystic perfume",
+   "cls": "OfferingJala",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 30,
+   "value": 1000,
+   "nutrition": null,
+   "icon": "assets/img/solagh_g1.png",
+   "reagent_for": null,
+   "description": "This bottle of liquid holds some ominous purpose you can only guess at.",
+   "file": "kod/object/item/passitem/offering/offerjal.kod"
+  },
+  {
+   "name": "necklace of Jala",
+   "cls": "JalaNecklace",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 20,
+   "value": 2000,
+   "nutrition": null,
+   "icon": "assets/img/jalaneck_g1.png",
+   "reagent_for": null,
+   "description": "This necklace looks like it would fit tightly around your neck. The golden musical note hints that this necklace may be of some value to those that call themselves Bards.",
+   "file": "kod/object/item/passitem/instrum/jalaneck.kod"
+  },
+  {
+   "name": "nerudite arrows",
+   "cls": "NeruditeArrow",
+   "kind": "other",
+   "weight": 5,
+   "bulk": 4,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/arrowner_g3.png",
+   "reagent_for": null,
+   "description": "These carved arrowheads do a little more damage than standard arrows, but should the small green stone shatter under the impact, it could prove fatal to the victim.",
+   "file": "kod/object/item/passitem/numbitem/ammo/neruarow.kod"
+  },
+  {
+   "name": "notice of delinquent taxes",
+   "cls": "TaxLetter",
+   "kind": "other",
+   "weight": 3,
+   "bulk": 10,
+   "value": 40,
+   "nutrition": null,
+   "icon": "assets/img/scr04_g1.png",
+   "reagent_for": null,
+   "description": "You are very glad that this curt, crisply penned letter is not addressed to you.",
+   "file": "kod/object/item/passitem/taxlettr.kod"
+  },
+  {
+   "name": "obfuscatory document",
+   "cls": "ScamScroll",
+   "kind": "other",
+   "weight": 3,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/scr09_g1.png",
+   "reagent_for": null,
+   "description": "The words 'MAKE SHILLINGS FAST' are boldly printed across the top of this scroll (and, strangely enough, the same words are printed upside-down at the bottom.) The rest of the parchment is covered with layer upon layer of doublespeak the like of which you have never seen in your life. Try as you might to eke some sliver of meaning out of the jumble of words, you simply cannot make head or tail of it.",
+   "file": "kod/object/item/passitem/scamscrl.kod"
+  },
+  {
+   "name": "orc pit boss head",
+   "cls": "OrcPitBossHead",
+   "kind": "other",
+   "weight": 80,
+   "bulk": 100,
+   "value": 600,
+   "nutrition": null,
+   "icon": "assets/img/orcpitbx_g4.png",
+   "reagent_for": null,
+   "description": "Nearly three times the weight of a human head, this mass of thick skull and oozing brains begins to attract flies. The stench alone disrupts any appetite you may have had.",
+   "file": "kod/object/item/passitem/bosshead.kod"
+  },
+  {
+   "name": "pants",
+   "cls": "PantsA",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 50,
+   "nutrition": null,
+   "icon": "assets/img/pantsa_g2.png",
+   "reagent_for": null,
+   "description": "These pants will cover your legs but won't help much in the way of protection.",
+   "file": "kod/object/item/passitem/defmod/pants/pantsA.kod"
+  },
+  {
+   "name": "pants",
+   "cls": "PantsB",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 50,
+   "nutrition": null,
+   "icon": "assets/img/pantsb_g2.png",
+   "reagent_for": null,
+   "description": "These pants will cover your legs but won't help much in the way of protection.",
+   "file": "kod/object/item/passitem/defmod/pants/pantsb.kod"
+  },
+  {
+   "name": "pants",
+   "cls": "PantsC",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 50,
+   "nutrition": null,
+   "icon": "assets/img/pantsc_g2.png",
+   "reagent_for": null,
+   "description": "These pants will cover your legs but won't help much in the way of protection.",
+   "file": "kod/object/item/passitem/defmod/pants/pantsc.kod"
+  },
+  {
+   "name": "pants",
+   "cls": "PantsD",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 50,
+   "nutrition": null,
+   "icon": "assets/img/pantsd_g2.png",
+   "reagent_for": null,
+   "description": "These pants will cover your legs but won't help much in the way of protection.",
+   "file": "kod/object/item/passitem/defmod/pants/pantsd.kod"
+  },
+  {
+   "name": "personal letter",
+   "cls": "WarLetter",
+   "kind": "other",
+   "weight": 3,
+   "bulk": 10,
+   "value": 40,
+   "nutrition": null,
+   "icon": "assets/img/scr01_g1.png",
+   "reagent_for": null,
+   "description": "You are looking at an object",
+   "file": "kod/object/item/passitem/warlettr.kod"
+  },
+  {
+   "name": "potion of forgetfulness",
+   "cls": "ForgetPotionFaren",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 20,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/forgetpo_g1.png",
+   "reagent_for": null,
+   "description": null,
+   "file": "kod/object/item/passitem/pforget/forgetfr.kod"
+  },
+  {
+   "name": "potion of forgetfulness",
+   "cls": "ForgetPotionJala",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 20,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/forgetpo_g1.png",
+   "reagent_for": null,
+   "description": null,
+   "file": "kod/object/item/passitem/pforget/forgetjl.kod"
+  },
+  {
+   "name": "potion of forgetfulness",
+   "cls": "ForgetPotionKraanan",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 20,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/forgetpo_g1.png",
+   "reagent_for": null,
+   "description": null,
+   "file": "kod/object/item/passitem/pforget/forgetkr.kod"
+  },
+  {
+   "name": "potion of forgetfulness",
+   "cls": "ForgetPotionQor",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 20,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/forgetpo_g1.png",
+   "reagent_for": null,
+   "description": "Drinking this potion will wipe all memory of Qor's spells from your mind. May have very serious side effects.",
+   "file": "kod/object/item/passitem/pforget/forgetqr.kod"
+  },
+  {
+   "name": "potion of forgetfulness",
+   "cls": "ForgetPotionRiija",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 20,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/forgetpo_g1.png",
+   "reagent_for": null,
+   "description": null,
+   "file": "kod/object/item/passitem/pforget/forgetrj.kod"
+  },
+  {
+   "name": "potion of forgetfulness",
+   "cls": "ForgetPotionShalille",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 20,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/forgetpo_g1.png",
+   "reagent_for": null,
+   "description": null,
+   "file": "kod/object/item/passitem/pforget/forgetsh.kod"
+  },
+  {
+   "name": "potion of forgetfulness",
+   "cls": "forgetpotionskills",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 20,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/forgetpo_g1.png",
+   "reagent_for": null,
+   "description": "Drinking this potion causes one to forget all skills that he or she possesses. May have very serious side effects.",
+   "file": "kod/object/item/passitem/pforget/forgetsk.kod"
+  },
+  {
+   "name": "Priceless Heirloom of Barloque",
+   "cls": "TotemOne",
+   "kind": "other",
+   "weight": 100,
+   "bulk": 100,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/qo03_g1.png",
+   "reagent_for": null,
+   "description": "This decorative piece of art was created for King Zarcos the 4th to be given to his wife on their wedding day. Later, when Queen Joline was convicted of treason and exiled, the king ordered the heirloom destroyed because it reminded him of her. Apparently, the orders were not completely carried out. Being one of a kind, this heirloom can not be carried in one's possession for very long or tucked away in a chest.",
+   "file": "kod/object/item/passitem/totem/totem1.kod"
+  },
+  {
+   "name": "prism",
+   "cls": "Prism",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 200,
+   "nutrition": null,
+   "icon": null,
+   "reagent_for": null,
+   "description": "When held up to the light, this prism refracts a pretty rainbow of colors. If the legends of these magical items hold true, however, its true worth lies in its ability to focus the magical energies of multiple spellcasters for the casting of certain special spells. According to the mages of antiquity, a prism must be placed upon the ground before a spell may be focused through it. Once casting has begun, as many mages as the prism has sides may contribute to the energies stored within, and at least one mage must be casting at all times to keep the stored energy from dissipating. The spell being chanted will fire when enough magical power has been stored in the prism and there is exactly one caster for each side of the prism. This prism has",
+   "file": "kod/object/item/passitem/prism.kod"
+  },
+  {
+   "name": "rat mask",
+   "cls": "RatMask",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/mmrat_g3.png",
+   "reagent_for": null,
+   "description": "A silly mask that looks like a rat's head.",
+   "file": "kod/object/item/passitem/defmod/helmet/mask/ratmask.kod"
+  },
+  {
+   "name": "rebel flag",
+   "cls": "RebelFlag",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/flagjinv_g1.png",
+   "reagent_for": null,
+   "description": "This flag bears the colors of the rebel forces of Jasper.",
+   "file": "kod/object/item/passitem/factflag/reblflag.kod"
+  },
+  {
+   "name": "Recipe for a Stunted Dwarf",
+   "cls": "RecipeScroll",
+   "kind": "other",
+   "weight": 3,
+   "bulk": 10,
+   "value": 40,
+   "nutrition": null,
+   "icon": "assets/img/scr05_g1.png",
+   "reagent_for": null,
+   "description": "This is a recipe for what looks to be a mighty stiff drink. The list of ingredients includes scorpion venom, gall of troll, and dark angel ichor. Certainly not for the faint of heart!",
+   "file": "kod/object/item/passitem/recipe.kod"
+  },
+  {
+   "name": "red heartstone",
+   "cls": "RedHeartStone",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 10,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/xeogem_g1.png",
+   "reagent_for": null,
+   "description": "This is called a 'heartstone'. It is a huge red gem taken from the body of a fallen Ro'Xeochicatl. It glows softly and is warm to the touch. The uses for this gem are not widely known.",
+   "file": "kod/object/item/passitem/hstone/hstonred.kod"
+  },
+  {
+   "name": "relic of Qor",
+   "cls": "Scepter",
+   "kind": "other",
+   "weight": 75,
+   "bulk": 50,
+   "value": 70,
+   "nutrition": null,
+   "icon": "assets/img/scepter_g1.png",
+   "reagent_for": null,
+   "description": "This object bears the markings of Qor. An inscription reads \"The true servant shall bring this to the barren place and speak my name.\"",
+   "file": "kod/object/item/passitem/scepter.kod"
+  },
+  {
+   "name": "Royal Ballot",
+   "cls": "BallotItem",
+   "kind": "other",
+   "weight": 2,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/scr02_g1.png",
+   "reagent_for": null,
+   "description": "This is an official document of the Office of the Justicar. The Royal Justicar is the arbiter in disputes of Law in the Royal Eyes. Ye may cast thine vote for a candidate for the Office, if ye be a lawful citizen yourself, and thine candidate is also. Ye may only cast one vote each term of the Office. Only those votes received by the Caramo, the Assistant to the Justicar, are to be tallied. =[C]= Caramo, Assistant to the Royal Justicar",
+   "file": "kod/object/item/passitem/inscript/ballot.kod"
+  },
+  {
+   "name": "royal shirt",
+   "cls": "RoyalShirt",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 200,
+   "nutrition": null,
+   "icon": "assets/img/defshirt_g2.png",
+   "reagent_for": null,
+   "description": "This is a royal shirt handstitched by the famed seamstress Madelia. It is the latest fashion, considered the mark of high class.",
+   "file": "kod/object/item/passitem/defmod/shirt/royalsht.kod"
+  },
+  {
+   "name": "runed coffer token",
+   "cls": "OneToken",
+   "kind": "other",
+   "weight": 500,
+   "bulk": 50,
+   "value": 2500,
+   "nutrition": null,
+   "icon": "assets/img/eyebox_g1.png",
+   "reagent_for": null,
+   "description": "Covered in mysterious runes said to explain the workings of spells, the token is unreadable by all except the Councilor who studies it.",
+   "file": "kod/object/item/passitem/token/token1.kod"
+  },
+  {
+   "name": "shilling",
+   "cls": "Money",
+   "kind": "other",
+   "weight": 0,
+   "bulk": 0,
+   "value": 1,
+   "nutrition": null,
+   "icon": "assets/img/coin_g1.png",
+   "reagent_for": null,
+   "description": "The currency of Meridian. A profile of an ancient princess adorns the front and an apothecary's stone the back.",
+   "file": "kod/object/item/passitem/numbitem/money.kod"
+  },
+  {
+   "name": "shirt",
+   "cls": "Tanktop",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 40,
+   "nutrition": null,
+   "icon": "assets/img/defshirt_g2.png",
+   "reagent_for": null,
+   "description": "This shirt covers the bare essentials, but offers little or no protection to the wearer.",
+   "file": "kod/object/item/passitem/defmod/shirt/tanktop.kod"
+  },
+  {
+   "name": "short skirt",
+   "cls": "ShortSkirt",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 50,
+   "nutrition": null,
+   "icon": "assets/img/skirt_g2.png",
+   "reagent_for": null,
+   "description": "This short skirt will show off your lovely legs! Don't expect much protection, though.",
+   "file": "kod/object/item/passitem/defmod/pants/shrtskrt.kod"
+  },
+  {
+   "name": "shrunken head",
+   "cls": "ShrunkenHead",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 50,
+   "nutrition": null,
+   "icon": "assets/img/shruhead_g1.png",
+   "reagent_for": null,
+   "description": "There is something both grotesque and fascinating in staring at the mummified, distorted face on this reduced skull. What magic this object may hold, you haven't a clue.",
+   "file": "kod/object/item/passitem/shruhead.kod"
+  },
+  {
+   "name": "shrunken head mask",
+   "cls": "ShrunkenHeadMask",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/res0002a_g3.png",
+   "reagent_for": null,
+   "description": "Are you sure this will fit?",
+   "file": "kod/object/item/passitem/defmod/helmet/mask/shrnkmsk.kod"
+  },
+  {
+   "name": "silver arrows",
+   "cls": "SilverArrow",
+   "kind": "other",
+   "weight": 5,
+   "bulk": 4,
+   "value": 30,
+   "nutrition": null,
+   "icon": "assets/img/arrowsil_g3.png",
+   "reagent_for": null,
+   "description": "The sharp clean edge of the arrowhead makes for nasty wounds. Some archers have found these to be the nock of choice for battling the undead.",
+   "file": "kod/object/item/passitem/numbitem/ammo/slvarrow.kod"
+  },
+  {
+   "name": "sinister parchment",
+   "cls": "NecromancerLetter",
+   "kind": "other",
+   "weight": 3,
+   "bulk": 10,
+   "value": 40,
+   "nutrition": null,
+   "icon": "assets/img/necscrol_g1.png",
+   "reagent_for": null,
+   "description": "This scroll is covered with sininster-looking spidery script in some unidentifiable language, if it's language at all.",
+   "file": "kod/object/item/passitem/neclettr.kod"
+  },
+  {
+   "name": "skull mask",
+   "cls": "SkullMask",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/mmskl_g3.png",
+   "reagent_for": null,
+   "description": "An odd skull mask originally crafted in Ko'catan. It's used to represent death in certain island ceremonies.",
+   "file": "kod/object/item/passitem/defmod/helmet/mask/skullmsk.kod"
+  },
+  {
+   "name": "sky heartstone",
+   "cls": "SkyHeartStone",
+   "kind": "other",
+   "weight": 5,
+   "bulk": 10,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/xeogem_g1.png",
+   "reagent_for": null,
+   "description": "This is called a 'heartstone'. It is a huge sky blue gem taken from the body of a fallen Ve'Xeochicatl. The heartstone feels very light in your hands. The uses for this gem are not widely known.",
+   "file": "kod/object/item/passitem/hstone/hstonsky.kod"
+  },
+  {
+   "name": "special gift",
+   "cls": "SpecialGiftTwo",
+   "kind": "other",
+   "weight": 50,
+   "bulk": 50,
+   "value": 30,
+   "nutrition": null,
+   "icon": "assets/img/package_g1.png",
+   "reagent_for": null,
+   "description": "This is a special gift from the gods, to thank you for your patience and your patronage.",
+   "file": "kod/object/item/passitem/spcgift2.kod"
+  },
+  {
+   "name": "special gift",
+   "cls": "SpecialGift",
+   "kind": "other",
+   "weight": 50,
+   "bulk": 50,
+   "value": 30,
+   "nutrition": null,
+   "icon": "assets/img/package_g1.png",
+   "reagent_for": null,
+   "description": "This is a special gift from the gods, to thank you for your patience and your patronage.",
+   "file": "kod/object/item/passitem/specgift.kod"
+  },
+  {
+   "name": "steel torc",
+   "cls": "KraananCharm",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 20,
+   "value": 500,
+   "nutrition": null,
+   "icon": "assets/img/krcharm_g1.png",
+   "reagent_for": null,
+   "description": "Made not for ornamentation but for protection, this torc looks more than suitable for stopping any blow headed towards the throat.",
+   "file": "kod/object/item/passitem/necklace/krcharm.kod"
+  },
+  {
+   "name": "sweat of the warrior king",
+   "cls": "OfferingKraanan",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 30,
+   "value": 1000,
+   "nutrition": null,
+   "icon": "assets/img/sweat_g1.png",
+   "reagent_for": null,
+   "description": "This bottle of liquid holds some ominous purpose you can only guess at.",
+   "file": "kod/object/item/passitem/offering/offerkra.kod"
+  },
+  {
+   "name": "tears of a newborn",
+   "cls": "OfferingShalille",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 30,
+   "value": 1000,
+   "nutrition": null,
+   "icon": "assets/img/tear_g1.png",
+   "reagent_for": null,
+   "description": "This bottle of liquid holds some ominous purpose you can only guess at.",
+   "file": "kod/object/item/passitem/offering/offersha.kod"
+  },
+  {
+   "name": "The Emperor's Chalice",
+   "cls": "TotemFive",
+   "kind": "other",
+   "weight": 100,
+   "bulk": 100,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/qo01_g1.png",
+   "reagent_for": null,
+   "description": "Fabricated in the 5th century, this one of a kind heirloom was meant to be delivered as a gift to the Emperor of the old land. Before the couriers could set out, the Nexus snapped, destroying any possible route to the empire. The Chalice was lost for centuries, thought to be absconded with by thieves. Being one of a kind, this Chalice can not be carried in one's possession for very long or tucked away in a chest.",
+   "file": "kod/object/item/passitem/totem/totem5.kod"
+  },
+  {
+   "name": "The Widow Qesino's famous chicken soup",
+   "cls": "ChickenSoup",
+   "kind": "other",
+   "weight": 15,
+   "bulk": 20,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/soupbowl_g1.png",
+   "reagent_for": null,
+   "description": "This is a bowl of the Widow Qesino's award-winning chicken soup. Mmmmm, smells mighty fine.",
+   "file": "kod/object/item/passitem/chiksoup.kod"
+  },
+  {
+   "name": "treaty",
+   "cls": "GuildTreaty",
+   "kind": "other",
+   "weight": 0,
+   "bulk": 0,
+   "value": 0,
+   "nutrition": null,
+   "icon": "assets/img/light_g1.png",
+   "reagent_for": null,
+   "description": "This treaty will create an alliance between %s%s and %s%s.",
+   "file": "kod/object/item/actitem/treaty.kod"
+  },
+  {
+   "name": "troll mask",
+   "cls": "TrollMask",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/mmtrl_g3.png",
+   "reagent_for": null,
+   "description": "A mask featuring the visage of a fierce troll! Use it to scare your friends.",
+   "file": "kod/object/item/passitem/defmod/helmet/mask/trollmsk.kod"
+  },
+  {
+   "name": "true lute",
+   "cls": "TrueLute",
+   "kind": "other",
+   "weight": 100,
+   "bulk": 150,
+   "value": 2500,
+   "nutrition": null,
+   "icon": "assets/img/truelute_g1.png",
+   "reagent_for": null,
+   "description": "This is the most perfect lute you have ever seen. It is rumored that Jala herself owned a lute that was identical to this one. It is made of a strange, dark, heavy wood and has a most beautiful sound. This lute surely gives more potence to the magical songs of the bard who plays it.",
+   "file": "kod/object/item/passitem/instrum/lute/truelute.kod"
+  },
+  {
+   "name": "vial of perfume",
+   "cls": "AphrodesiacPotion",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 25,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/solagh_g1.png",
+   "reagent_for": null,
+   "description": "One whiff of this musky-scented fluid is enough to give you a warm, fuzzy feeling.",
+   "file": "kod/object/item/passitem/potaphro.kod"
+  },
+  {
+   "name": "vial of sacchaqua",
+   "cls": "Sacchaqua",
+   "kind": "other",
+   "weight": 20,
+   "bulk": 25,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/solagh_g1.png",
+   "reagent_for": null,
+   "description": "This small vial is filled with crystalized fluid. A quick taste reveals the contents to be no more than sugar water.",
+   "file": "kod/object/item/passitem/sachaqua.kod"
+  },
+  {
+   "name": "wand of fire",
+   "cls": "FireWand",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 20,
+   "value": 150,
+   "nutrition": null,
+   "icon": "assets/img/wand2_g1.png",
+   "reagent_for": null,
+   "description": "You are looking at an object",
+   "file": "kod/object/item/passitem/specwand/firewand.kod"
+  },
+  {
+   "name": "wand of healing",
+   "cls": "HealWand",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 20,
+   "value": 200,
+   "nutrition": null,
+   "icon": "assets/img/healwand_g1.png",
+   "reagent_for": null,
+   "description": "You are looking at an object",
+   "file": "kod/object/item/passitem/specwand/healwand.kod"
+  },
+  {
+   "name": "wand of vampiric shock",
+   "cls": "VampireWand",
+   "kind": "other",
+   "weight": 25,
+   "bulk": 25,
+   "value": 200,
+   "nutrition": null,
+   "icon": "assets/img/wand3_g1.png",
+   "reagent_for": null,
+   "description": "You are looking at an object",
+   "file": "kod/object/item/passitem/specwand/vampwand.kod"
+  },
+  {
+   "name": "war pendant",
+   "cls": "WarJoinPendant",
+   "kind": "other",
+   "weight": 0,
+   "bulk": 0,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/factpend_g1.png",
+   "reagent_for": null,
+   "description": "You are looking at an object",
+   "file": "kod/object/item/passitem/warjoin.kod"
+  },
+  {
+   "name": "xeochicatl mask",
+   "cls": "XeoMask",
+   "kind": "other",
+   "weight": 10,
+   "bulk": 10,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/res0002m_g3.png",
+   "reagent_for": null,
+   "description": "This looks like the head of a feared Xeochicatl. Spellcasting ability (including smite) not included.",
+   "file": "kod/object/item/passitem/defmod/helmet/mask/xeomask.kod"
+  },
+  {
+   "name": "blue dragon scale",
+   "cls": "BlueDragonScale",
+   "kind": "reagent",
+   "weight": 10,
+   "bulk": 10,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/bdrgscal_g1.png",
+   "reagent_for": [
+    {
+     "spell": "armor of Gort",
+     "count": 2
+    },
+    {
+     "spell": "resist magic",
+     "count": 1
+    }
+   ],
+   "description": "This scale is hard as Jasper rock and as thick as a man's finger. They seem to be the only remnants of the ancient Dragons that were thought to have gone extinct centuries ago.",
+   "file": "kod/object/item/passitem/numbitem/bdrgscal.kod"
+  },
+  {
+   "name": "blue mushroom",
+   "cls": "BlueMushroom",
+   "kind": "reagent",
+   "weight": 2,
+   "bulk": 5,
+   "value": 50,
+   "nutrition": null,
+   "icon": "assets/img/mushroom_g1.png",
+   "reagent_for": [
+    {
+     "spell": "lightning bolt",
+     "count": 2
+    },
+    {
+     "spell": "slitherbolt",
+     "count": 2
+    },
+    {
+     "spell": "shocking fury",
+     "count": 2
+    },
+    {
+     "spell": "resist shock",
+     "count": 1
+    },
+    {
+     "spell": "zap",
+     "count": 1
+    },
+    {
+     "spell": "lightning wall",
+     "count": 3
+    }
+   ],
+   "description": "These magical mushrooms pulse with energy.",
+   "file": "kod/object/item/passitem/numbitem/mushb.kod"
+  },
+  {
+   "name": "dark angel feather",
+   "cls": "DarkAngelFeather",
+   "kind": "reagent",
+   "weight": 2,
+   "bulk": 4,
+   "value": 150,
+   "nutrition": null,
+   "icon": "assets/img/dangfeth_g1.png",
+   "reagent_for": [
+    {
+     "spell": "fade",
+     "count": 1
+    },
+    {
+     "spell": "shadow rift",
+     "count": 4
+    },
+    {
+     "spell": "invisibility",
+     "count": 1
+    },
+    {
+     "spell": "silence",
+     "count": 2
+    },
+    {
+     "spell": "swap",
+     "count": 1
+    }
+   ],
+   "description": "This feather, nearly a foot long, must have come from a truly awesome beast.",
+   "file": "kod/object/item/passitem/numbitem/dangfeth.kod"
+  },
+  {
+   "name": "diamond",
+   "cls": "Diamond",
+   "kind": "reagent",
+   "weight": 1,
+   "bulk": 1,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/diamond_g1.png",
+   "reagent_for": [
+    {
+     "spell": "invigorate",
+     "count": 1
+    },
+    {
+     "spell": "jig",
+     "count": 1
+    },
+    {
+     "spell": "rejuvenate",
+     "count": 1
+    },
+    {
+     "spell": "restorate",
+     "count": 1
+    },
+    {
+     "spell": "bond",
+     "count": 50
+    }
+   ],
+   "description": "Mined in dark and dangerous caves far below Jasper, this diamond is brilliant and valuable.",
+   "file": "kod/object/item/passitem/numbitem/diamond.kod"
+  },
+  {
+   "name": "dragonfly eye",
+   "cls": "DragonflyEye",
+   "kind": "reagent",
+   "weight": 2,
+   "bulk": 3,
+   "value": 50,
+   "nutrition": null,
+   "icon": "assets/img/dflyeye_g1.png",
+   "reagent_for": [
+    {
+     "spell": "dispel illusion",
+     "count": 1
+    },
+    {
+     "spell": "flash",
+     "count": 2
+    },
+    {
+     "spell": "morph",
+     "count": 2
+    },
+    {
+     "spell": "eavesdrop",
+     "count": 2
+    },
+    {
+     "spell": "vertigo",
+     "count": 2
+    }
+   ],
+   "description": "Once belonging to a dragonfly, these eyes are uncommon, but much desired magical fare.",
+   "file": "kod/object/item/passitem/numbitem/dflyeye.kod"
+  },
+  {
+   "name": "edible mushroom",
+   "cls": "Snack",
+   "kind": "reagent",
+   "weight": 2,
+   "bulk": 3,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/mushroom_g1.png",
+   "reagent_for": [
+    {
+     "spell": "invigorate",
+     "count": 1
+    },
+    {
+     "spell": "haste",
+     "count": 5
+    },
+    {
+     "spell": "relay",
+     "count": 1
+    }
+   ],
+   "description": "These large, brownish mushrooms are an edible cousin of the more magical variety. They provide some sustenance although their nutritional value is questionable.",
+   "file": "kod/object/item/passitem/numbitem/food/snack.kod"
+  },
+  {
+   "name": "elderberry",
+   "cls": "ElderBerry",
+   "kind": "reagent",
+   "weight": 3,
+   "bulk": 3,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/shrubbry_g1.png",
+   "reagent_for": [
+    {
+     "spell": "blast of fire",
+     "count": 1
+    },
+    {
+     "spell": "explosive frost",
+     "count": 1
+    },
+    {
+     "spell": "shocking fury",
+     "count": 1
+    },
+    {
+     "spell": "cure disease",
+     "count": 2
+    },
+    {
+     "spell": "cure poison",
+     "count": 1
+    },
+    {
+     "spell": "create food",
+     "count": 2
+    },
+    {
+     "spell": "enchant weapon",
+     "count": 3
+    },
+    {
+     "spell": "final rites",
+     "count": 5
+    },
+    {
+     "spell": "glow",
+     "count": 2
+    },
+    {
+     "spell": "holy symbol",
+     "count": 3
+    },
+    {
+     "spell": "conciliation",
+     "count": 1
+    },
+    {
+     "spell": "night vision",
+     "count": 3
+    },
+    {
+     "spell": "purify",
+     "count": 2
+    },
+    {
+     "spell": "forces of light",
+     "count": 2
+    },
+    {
+     "spell": "killing fields",
+     "count": 3
+    },
+    {
+     "spell": "light",
+     "count": 1
+    },
+    {
+     "spell": "martyr's battleground",
+     "count": 1
+    },
+    {
+     "spell": "winds",
+     "count": 3
+    },
+    {
+     "spell": "shroud",
+     "count": 3
+    },
+    {
+     "spell": "bramble wall",
+     "count": 3
+    },
+    {
+     "spell": "fog",
+     "count": 1
+    }
+   ],
+   "description": "These magical herbs are rich and succulent. Bright red berries cling to tender branches.",
+   "file": "kod/object/item/passitem/numbitem/elderbry.kod"
+  },
+  {
+   "name": "emerald",
+   "cls": "Emerald",
+   "kind": "reagent",
+   "weight": 1,
+   "bulk": 1,
+   "value": 30,
+   "nutrition": null,
+   "icon": "assets/img/emerald_g1.png",
+   "reagent_for": [
+    {
+     "spell": "spiritual hammer",
+     "count": 2
+    },
+    {
+     "spell": "dazzle",
+     "count": 1
+    },
+    {
+     "spell": "mark of dishonor",
+     "count": 1
+    },
+    {
+     "spell": "final rites",
+     "count": 2
+    },
+    {
+     "spell": "holy touch",
+     "count": 2
+    },
+    {
+     "spell": "umbrella",
+     "count": 2
+    },
+    {
+     "spell": "portal of life",
+     "count": 2
+    },
+    {
+     "spell": "purge",
+     "count": 5
+    },
+    {
+     "spell": "purify",
+     "count": 2
+    },
+    {
+     "spell": "remove curse",
+     "count": 1
+    },
+    {
+     "spell": "rescue",
+     "count": 1
+    },
+    {
+     "spell": "forces of light",
+     "count": 1
+    },
+    {
+     "spell": "truce",
+     "count": 1
+    }
+   ],
+   "description": "This sparkling green \"Jasper emerald\" is beautiful, although not exceptionally valuable. It has a warm, magical glow.",
+   "file": "kod/object/item/passitem/numbitem/emerald.kod"
+  },
+  {
+   "name": "entroot berry",
+   "cls": "EntrootBerry",
+   "kind": "reagent",
+   "weight": 2,
+   "bulk": 2,
+   "value": 60,
+   "nutrition": null,
+   "icon": "assets/img/darkber_g1.png",
+   "reagent_for": [
+    {
+     "spell": "splash of acid",
+     "count": 2
+    },
+    {
+     "spell": "blind",
+     "count": 2
+    },
+    {
+     "spell": "sacred resonance",
+     "count": 1
+    },
+    {
+     "spell": "blood inheritance",
+     "count": 2
+    },
+    {
+     "spell": "nodeburst",
+     "count": 3
+    },
+    {
+     "spell": "cloak",
+     "count": 2
+    },
+    {
+     "spell": "Kara'hol's curse",
+     "count": 2
+    },
+    {
+     "spell": "resist acid",
+     "count": 1
+    },
+    {
+     "spell": "acid touch",
+     "count": 1
+    },
+    {
+     "spell": "darkness",
+     "count": 1
+    },
+    {
+     "spell": "poison fog",
+     "count": 2
+    }
+   ],
+   "description": "These 'berries' are not actually berries at all, but rather dark yet colorful protrusions that sometimes grow from the roots of the living trees. Despite their name, they are bitter, chalky in texture, and ultimately inedible.",
+   "file": "kod/object/item/passitem/numbitem/entberry.kod"
+  },
+  {
+   "name": "fairy wing",
+   "cls": "FairyWing",
+   "kind": "reagent",
+   "weight": 2,
+   "bulk": 5,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/farywing_g1.png",
+   "reagent_for": [
+    {
+     "spell": "defile",
+     "count": 1
+    },
+    {
+     "spell": "holy weapon",
+     "count": 3
+    },
+    {
+     "spell": "nodeburst",
+     "count": 3
+    },
+    {
+     "spell": "detect evil",
+     "count": 1
+    },
+    {
+     "spell": "detect good",
+     "count": 1
+    },
+    {
+     "spell": "holy resolve",
+     "count": 1
+    },
+    {
+     "spell": "unholy resolve",
+     "count": 1
+    },
+    {
+     "spell": "darkness",
+     "count": 1
+    },
+    {
+     "spell": "Qorbane",
+     "count": 1
+    },
+    {
+     "spell": "Shal'illebane",
+     "count": 1
+    },
+    {
+     "spell": "unholy weapon",
+     "count": 3
+    }
+   ],
+   "description": "This tiny fairy wing is as delicate as aged parchment. It is extremely rare and is said to be a powerful magical reagent.",
+   "file": "kod/object/item/passitem/numbitem/farywing.kod"
+  },
+  {
+   "name": "firesand",
+   "cls": "FireSand",
+   "kind": "reagent",
+   "weight": 7,
+   "bulk": 4,
+   "value": 30,
+   "nutrition": null,
+   "icon": "assets/img/firesand_g1.png",
+   "reagent_for": [
+    {
+     "spell": "anonymity",
+     "count": 1
+    },
+    {
+     "spell": "artifice",
+     "count": 3
+    },
+    {
+     "spell": "illusionary wounds",
+     "count": 1
+    },
+    {
+     "spell": "bait",
+     "count": 1
+    },
+    {
+     "spell": "forget",
+     "count": 2
+    },
+    {
+     "spell": "denial",
+     "count": 2
+    },
+    {
+     "spell": "heat",
+     "count": 1
+    },
+    {
+     "spell": "seduce",
+     "count": 5
+    },
+    {
+     "spell": "reflection",
+     "count": 2
+    },
+    {
+     "spell": "firewall",
+     "count": 2
+    },
+    {
+     "spell": "illusionary firewall",
+     "count": 2
+    },
+    {
+     "spell": "ring of flames",
+     "count": 3
+    }
+   ],
+   "description": "Strangely warm and of unusual color, this sand catches your eye amongst its ordinary counterparts.",
+   "file": "kod/object/item/passitem/numbitem/firesand.kod"
+  },
+  {
+   "name": "herb",
+   "cls": "Herbs",
+   "kind": "reagent",
+   "weight": 2,
+   "bulk": 4,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/herb_g1.png",
+   "reagent_for": [
+    {
+     "spell": "breath of life",
+     "count": 1
+    },
+    {
+     "spell": "cure disease",
+     "count": 3
+    },
+    {
+     "spell": "cure poison",
+     "count": 2
+    },
+    {
+     "spell": "create food",
+     "count": 2
+    },
+    {
+     "spell": "minor heal",
+     "count": 1
+    },
+    {
+     "spell": "hospice",
+     "count": 3
+    },
+    {
+     "spell": "profane resonance",
+     "count": 1
+    },
+    {
+     "spell": "restorate",
+     "count": 5
+    },
+    {
+     "spell": "major heal",
+     "count": 5
+    },
+    {
+     "spell": "resist acid",
+     "count": 2
+    },
+    {
+     "spell": "resist poison",
+     "count": 2
+    },
+    {
+     "spell": "seance",
+     "count": 2
+    },
+    {
+     "spell": "shroud",
+     "count": 2
+    }
+   ],
+   "description": "These magical herbs are dark green in color. The leaves are oily and have a mint-like aroma.",
+   "file": "kod/object/item/passitem/numbitem/herbs.kod"
+  },
+  {
+   "name": "kriipa claw",
+   "cls": "KriipaClaw",
+   "kind": "reagent",
+   "weight": 4,
+   "bulk": 2,
+   "value": 60,
+   "nutrition": null,
+   "icon": "assets/img/kriclaw_g1.png",
+   "reagent_for": [
+    {
+     "spell": "elusion",
+     "count": 2
+    },
+    {
+     "spell": "hunt",
+     "count": 4
+    },
+    {
+     "spell": "shatterlock",
+     "count": 4
+    },
+    {
+     "spell": "deflect",
+     "count": 1
+    }
+   ],
+   "description": "The weapons of the dangerous Kriipa, Perfect Kriipa claws are hard to come by, but handy to have about.",
+   "file": "kod/object/item/passitem/numbitem/kripclaw.kod"
+  },
+  {
+   "name": "mushroom",
+   "cls": "Mushroom",
+   "kind": "reagent",
+   "weight": 2,
+   "bulk": 5,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/mushroom_g1.png",
+   "reagent_for": [
+    {
+     "spell": "brittle",
+     "count": 3
+    },
+    {
+     "spell": "mana focus",
+     "count": 1
+    },
+    {
+     "spell": "glow",
+     "count": 2
+    },
+    {
+     "spell": "civility",
+     "count": 1
+    },
+    {
+     "spell": "mystic touch",
+     "count": 1
+    },
+    {
+     "spell": "bless",
+     "count": 2
+    },
+    {
+     "spell": "eagle eyes",
+     "count": 3
+    },
+    {
+     "spell": "magic shield",
+     "count": 2
+    },
+    {
+     "spell": "resist cold",
+     "count": 3
+    },
+    {
+     "spell": "withstand fire",
+     "count": 3
+    },
+    {
+     "spell": "resist shock",
+     "count": 3
+    },
+    {
+     "spell": "super strength",
+     "count": 2
+    },
+    {
+     "spell": "martyr's battleground",
+     "count": 1
+    },
+    {
+     "spell": "shroud",
+     "count": 3
+    },
+    {
+     "spell": "sweep",
+     "count": 2
+    }
+   ],
+   "description": "These mushrooms are a common magical reagent.",
+   "file": "kod/object/item/passitem/numbitem/mushroom.kod"
+  },
+  {
+   "name": "orc tooth",
+   "cls": "OrcTooth",
+   "kind": "reagent",
+   "weight": 3,
+   "bulk": 3,
+   "value": 40,
+   "nutrition": null,
+   "icon": "assets/img/orctooth_g1.png",
+   "reagent_for": [
+    {
+     "spell": "fireball",
+     "count": 1
+    },
+    {
+     "spell": "lightning bolt",
+     "count": 1
+    },
+    {
+     "spell": "slitherbolt",
+     "count": 1
+    },
+    {
+     "spell": "spiritual hammer",
+     "count": 1
+    },
+    {
+     "spell": "curse weapon",
+     "count": 1
+    },
+    {
+     "spell": "enchant weapon",
+     "count": 1
+    },
+    {
+     "spell": "enfeeble",
+     "count": 1
+    },
+    {
+     "spell": "holy weapon",
+     "count": 1
+    },
+    {
+     "spell": "identify",
+     "count": 1
+    },
+    {
+     "spell": "mend",
+     "count": 1
+    },
+    {
+     "spell": "blood inheritance",
+     "count": 1
+    },
+    {
+     "spell": "super strength",
+     "count": 1
+    },
+    {
+     "spell": "reveal",
+     "count": 3
+    },
+    {
+     "spell": "killing fields",
+     "count": 1
+    },
+    {
+     "spell": "sandstorm",
+     "count": 2
+    },
+    {
+     "spell": "unholy weapon",
+     "count": 1
+    }
+   ],
+   "description": "This yellowed fang is nearly four inches in length. Bits of dried flesh cling to its base.",
+   "file": "kod/object/item/passitem/numbitem/orctooth.kod"
+  },
+  {
+   "name": "polished seraphym",
+   "cls": "PolishedSeraphym",
+   "kind": "reagent",
+   "weight": 4,
+   "bulk": 3,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/serappol_g1.png",
+   "reagent_for": [
+    {
+     "spell": "mana convergence",
+     "count": 1
+    },
+    {
+     "spell": "spellbane",
+     "count": 1
+    },
+    {
+     "spell": "bond",
+     "count": 50
+    },
+    {
+     "spell": "summon bovine",
+     "count": 5
+    },
+    {
+     "spell": "umbrella",
+     "count": 1
+    },
+    {
+     "spell": "portal of life",
+     "count": 1
+    },
+    {
+     "spell": "anti-magic aura",
+     "count": 1
+    },
+    {
+     "spell": "death link",
+     "count": 1
+    }
+   ],
+   "description": "They say that a perfect seraphym gem can be used to capture the souls of your beaten enemies, damning them to an eternal hell of torture and agony. However, it should be noted that \"they\" are complete idiots who know nothing about magic.",
+   "file": "kod/object/item/passitem/numbitem/polserpm.kod"
+  },
+  {
+   "name": "purple mushroom",
+   "cls": "PurpleMushroom",
+   "kind": "reagent",
+   "weight": 2,
+   "bulk": 5,
+   "value": 80,
+   "nutrition": null,
+   "icon": "assets/img/mushroom_g1.png",
+   "reagent_for": [
+    {
+     "spell": "blind",
+     "count": 1
+    },
+    {
+     "spell": "brittle",
+     "count": 2
+    },
+    {
+     "spell": "dazzle",
+     "count": 1
+    },
+    {
+     "spell": "earthquake",
+     "count": 2
+    },
+    {
+     "spell": "hold",
+     "count": 2
+    },
+    {
+     "spell": "eagle eyes",
+     "count": 1
+    },
+    {
+     "spell": "free action",
+     "count": 1
+    },
+    {
+     "spell": "gaze of the basilisk",
+     "count": 1
+    },
+    {
+     "spell": "purge",
+     "count": 2
+    },
+    {
+     "spell": "silence",
+     "count": 1
+    },
+    {
+     "spell": "winds",
+     "count": 1
+    },
+    {
+     "spell": "shatter",
+     "count": 3
+    },
+    {
+     "spell": "swap",
+     "count": 1
+    },
+    {
+     "spell": "spore burst",
+     "count": 2
+    }
+   ],
+   "description": "These magical mushrooms make your hand tingle with magical energy.",
+   "file": "kod/object/item/passitem/numbitem/mushp.kod"
+  },
+  {
+   "name": "rainbow fern",
+   "cls": "RainbowFern",
+   "kind": "reagent",
+   "weight": 2,
+   "bulk": 4,
+   "value": 20,
+   "nutrition": null,
+   "icon": "assets/img/fern_g1.png",
+   "reagent_for": [
+    {
+     "spell": "anonymity",
+     "count": 2
+    },
+    {
+     "spell": "apparition",
+     "count": 2
+    },
+    {
+     "spell": "feign death",
+     "count": 1
+    },
+    {
+     "spell": "illusionary form",
+     "count": 3
+    },
+    {
+     "spell": "truth",
+     "count": 2
+    },
+    {
+     "spell": "shadow form",
+     "count": 3
+    },
+    {
+     "spell": "reflection",
+     "count": 2
+    },
+    {
+     "spell": "illusionary firewall",
+     "count": 3
+    }
+   ],
+   "description": "This jungle plant was once as common as weeds throughout the Koniman Jungle, until its strength as a spell reagent was discovered. Now, amateur herbologists plunder the jungle in search of its benefits.",
+   "file": "kod/object/item/passitem/numbitem/rnbwfern.kod"
+  },
+  {
+   "name": "red mushroom",
+   "cls": "RedMushroom",
+   "kind": "reagent",
+   "weight": 2,
+   "bulk": 5,
+   "value": 40,
+   "nutrition": null,
+   "icon": "assets/img/mushroom_g1.png",
+   "reagent_for": [
+    {
+     "spell": "blast of fire",
+     "count": 2
+    },
+    {
+     "spell": "fireball",
+     "count": 2
+    },
+    {
+     "spell": "explosive frost",
+     "count": 2
+    },
+    {
+     "spell": "earthquake",
+     "count": 2
+    },
+    {
+     "spell": "free action",
+     "count": 1
+    },
+    {
+     "spell": "magic shield",
+     "count": 1
+    },
+    {
+     "spell": "resist cold",
+     "count": 1
+    },
+    {
+     "spell": "withstand fire",
+     "count": 1
+    },
+    {
+     "spell": "resist poison",
+     "count": 1
+    },
+    {
+     "spell": "touch of flame",
+     "count": 1
+    },
+    {
+     "spell": "icy fingers",
+     "count": 1
+    },
+    {
+     "spell": "heat",
+     "count": 1
+    },
+    {
+     "spell": "shatter",
+     "count": 3
+    },
+    {
+     "spell": "firewall",
+     "count": 3
+    },
+    {
+     "spell": "ring of flames",
+     "count": 3
+    }
+   ],
+   "description": "These magical mushrooms singe your nostrils with a mysterious, acrid odor.",
+   "file": "kod/object/item/passitem/numbitem/mushr.kod"
+  },
+  {
+   "name": "ruby",
+   "cls": "Ruby",
+   "kind": "reagent",
+   "weight": 1,
+   "bulk": 1,
+   "value": 200,
+   "nutrition": null,
+   "icon": "assets/img/ruby_g1.png",
+   "reagent_for": [
+    {
+     "spell": "distill",
+     "count": 1
+    },
+    {
+     "spell": "civility",
+     "count": 1
+    },
+    {
+     "spell": "conciliation",
+     "count": 1
+    },
+    {
+     "spell": "disharmony",
+     "count": 1
+    },
+    {
+     "spell": "profane resonance",
+     "count": 1
+    },
+    {
+     "spell": "sacred resonance",
+     "count": 1
+    },
+    {
+     "spell": "truth",
+     "count": 1
+    }
+   ],
+   "description": "This fire ruby is larger than a man's fist and extremely valuable.",
+   "file": "kod/object/item/passitem/numbitem/ruby.kod"
+  },
+  {
+   "name": "sapphire",
+   "cls": "Sapphire",
+   "kind": "reagent",
+   "weight": 1,
+   "bulk": 1,
+   "value": 60,
+   "nutrition": null,
+   "icon": "assets/img/sapphire_g2.png",
+   "reagent_for": [
+    {
+     "spell": "discordance",
+     "count": 2
+    },
+    {
+     "spell": "crystalize mana",
+     "count": 1
+    },
+    {
+     "spell": "melancholy",
+     "count": 1
+    },
+    {
+     "spell": "mirth",
+     "count": 1
+    },
+    {
+     "spell": "mana bomb",
+     "count": 2
+    },
+    {
+     "spell": "mend",
+     "count": 1
+    },
+    {
+     "spell": "bless",
+     "count": 2
+    },
+    {
+     "spell": "anti-magic aura",
+     "count": 2
+    }
+   ],
+   "description": "This large, heavy sapphire will fetch a decent price on the market. It has a warm magical glow.",
+   "file": "kod/object/item/passitem/numbitem/sapphire.kod"
+  },
+  {
+   "name": "shaman blood",
+   "cls": "ShamanBlood",
+   "kind": "reagent",
+   "weight": 4,
+   "bulk": 5,
+   "value": 70,
+   "nutrition": null,
+   "icon": "assets/img/avblood_g1.png",
+   "reagent_for": [
+    {
+     "spell": "animate",
+     "count": 1
+    },
+    {
+     "spell": "vampiric drain",
+     "count": 1
+    },
+    {
+     "spell": "curse weapon",
+     "count": 2
+    },
+    {
+     "spell": "blood inheritance",
+     "count": 2
+    },
+    {
+     "spell": "death link",
+     "count": 1
+    },
+    {
+     "spell": "spore burst",
+     "count": 1
+    }
+   ],
+   "description": "Spellcasters of the birdlike avars do not learn their abilities. Quite the opposite, the magic courses through their veins - which means that it is magic that can be borrowed.",
+   "file": "kod/object/item/passitem/numbitem/shamblod.kod"
+  },
+  {
+   "name": "uncut seraphym",
+   "cls": "UncutSeraphym",
+   "kind": "reagent",
+   "weight": 6,
+   "bulk": 5,
+   "value": 30,
+   "nutrition": null,
+   "icon": "assets/img/serapunc_g1.png",
+   "reagent_for": [
+    {
+     "spell": "artifice",
+     "count": 3
+    },
+    {
+     "spell": "dement",
+     "count": 1
+    },
+    {
+     "spell": "dispel illusion",
+     "count": 1
+    },
+    {
+     "spell": "forget",
+     "count": 2
+    },
+    {
+     "spell": "foresight",
+     "count": 2
+    },
+    {
+     "spell": "crystalize mana",
+     "count": 1
+    },
+    {
+     "spell": "rejuvenate",
+     "count": 1
+    },
+    {
+     "spell": "reflection",
+     "count": 2
+    }
+   ],
+   "description": "There must be something remarkable about this ugly lump of stone, for the wizards of the orc clans certainly seem fond of them. A vein in the rock pulses occasionally, like a heartbeat.",
+   "file": "kod/object/item/passitem/numbitem/uncserpm.kod"
+  },
+  {
+   "name": "vial of solagh",
+   "cls": "Solagh",
+   "kind": "reagent",
+   "weight": 4,
+   "bulk": 6,
+   "value": 60,
+   "nutrition": null,
+   "icon": "assets/img/solagh_g1.png",
+   "reagent_for": [
+    {
+     "spell": "illusionary wounds",
+     "count": 1
+    },
+    {
+     "spell": "dement",
+     "count": 2
+    },
+    {
+     "spell": "dispel illusion",
+     "count": 2
+    },
+    {
+     "spell": "feign death",
+     "count": 1
+    },
+    {
+     "spell": "deflect",
+     "count": 1
+    },
+    {
+     "spell": "denial",
+     "count": 1
+    },
+    {
+     "spell": "detect invisible",
+     "count": 2
+    },
+    {
+     "spell": "holy resolve",
+     "count": 1
+    },
+    {
+     "spell": "unholy resolve",
+     "count": 1
+    },
+    {
+     "spell": "evil twin",
+     "count": 3
+    },
+    {
+     "spell": "vertigo",
+     "count": 1
+    }
+   ],
+   "description": "No one knows what this milky white liquid is, or where it comes from, save for a handful of the world's alchemists. It is rumored that its ingredients are cheap and its distillation fairly simple, but the secret to its creation is closely guarded, mostly just to keep the price shored up.",
+   "file": "kod/object/item/passitem/numbitem/solagh.kod"
+  },
+  {
+   "name": "web moss",
+   "cls": "WebMoss",
+   "kind": "reagent",
+   "weight": 1,
+   "bulk": 3,
+   "value": 70,
+   "nutrition": null,
+   "icon": "assets/img/webmoss_g1.png",
+   "reagent_for": [
+    {
+     "spell": "apparition",
+     "count": 1
+    },
+    {
+     "spell": "bait",
+     "count": 1
+    },
+    {
+     "spell": "illusionary form",
+     "count": 2
+    },
+    {
+     "spell": "morph",
+     "count": 3
+    },
+    {
+     "spell": "seduce",
+     "count": 5
+    },
+    {
+     "spell": "evil twin",
+     "count": 3
+    },
+    {
+     "spell": "spider web",
+     "count": 1
+    }
+   ],
+   "description": "One of the world's more ingenious carnivorous plants, web moss captures small insects much as a spider web does, and then folds over on itself to devour it's prey. Harvesting this substance is a dangerous and tedious process, but once the moss has dried, it can be invaluable for the casting of some spells.",
+   "file": "kod/object/item/passitem/numbitem/webmoss.kod"
+  },
+  {
+   "name": "yrxl sap",
+   "cls": "Yrxlsap",
+   "kind": "reagent",
+   "weight": 4,
+   "bulk": 5,
+   "value": 100,
+   "nutrition": null,
+   "icon": "assets/img/yrxlsap_g1.png",
+   "reagent_for": [
+    {
+     "spell": "gaze of the basilisk",
+     "count": 1
+    },
+    {
+     "spell": "Qorbane",
+     "count": 1
+    },
+    {
+     "spell": "Shal'illebane",
+     "count": 1
+    },
+    {
+     "spell": "truce",
+     "count": 1
+    },
+    {
+     "spell": "swap",
+     "count": 1
+    },
+    {
+     "spell": "bramble wall",
+     "count": 1
+    },
+    {
+     "spell": "lightning wall",
+     "count": 1
+    }
+   ],
+   "description": "There is but one known Yrx'l still known to civilization, for mages have craved the blood of the eldritch tree, which provided the lifeblood to their more powerful spells. Now that all are extinct on Meridian's mainland and only one exists here, it is an unspoken rule that one shall leave the tree alone, and allow it to provide its life blood as it chooses.",
+   "file": "kod/object/item/passitem/numbitem/yrxlsap.kod"
+  },
+  {
+   "name": "gold round shield",
+   "cls": "GoldShield",
+   "kind": "shield",
+   "weight": 225,
+   "bulk": 150,
+   "value": 500,
+   "nutrition": null,
+   "icon": "assets/img/rshield_g1.png",
+   "reagent_for": null,
+   "description": "Finely made, this hefty gold shield offers a fair measure of protection. Delicate engravings, the mark of Quintor, adorn its circumference.",
+   "file": "kod/object/item/passitem/defmod/shield/goldshld.kod"
+  },
+  {
+   "name": "herald shield",
+   "cls": "GuildShield",
+   "kind": "shield",
+   "weight": 200,
+   "bulk": 150,
+   "value": 400,
+   "nutrition": null,
+   "icon": null,
+   "reagent_for": null,
+   "description": "You are looking at an object",
+   "file": "kod/object/item/passitem/defmod/shield/guilshld.kod"
+  },
+  {
+   "name": "knight's shield",
+   "cls": "Knightshield",
+   "kind": "shield",
+   "weight": 175,
+   "bulk": 200,
+   "value": 800,
+   "nutrition": null,
+   "icon": "assets/img/mtlshld_g1.png",
+   "reagent_for": null,
+   "description": "Nearly three feet from top to bottom, this glimmering shield of polished steel is of the highest quality. You see the mark of Fehr'loi Qan inscribed on the wooden handle.",
+   "file": "kod/object/item/passitem/defmod/shield/knhtshld.kod"
+  },
+  {
+   "name": "orc shield",
+   "cls": "OrcShield",
+   "kind": "shield",
+   "weight": 250,
+   "bulk": 200,
+   "value": 1000,
+   "nutrition": null,
+   "icon": "assets/img/osh_g1.png",
+   "reagent_for": null,
+   "description": "The skull that decorates the face of the shield offers a fair amount of fear to potential opponents, but the shield seems to be far more decorative than useful. Still, there seems to be a darker edge to the shield that you can't place your finger on, and one wonders if this device has some hidden attribute.",
+   "file": "kod/object/item/passitem/defmod/shield/orcshld.kod"
+  },
+  {
+   "name": "shield of the Duke's army",
+   "cls": "DukeShield",
+   "kind": "shield",
+   "weight": 0,
+   "bulk": 0,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/gshe_g1.png",
+   "reagent_for": null,
+   "description": "This shield identifies you as an elite soldier of Duke Akardius' army.",
+   "file": "kod/object/item/passitem/defmod/shield/soldshld/dukeshld.kod"
+  },
+  {
+   "name": "shield of the Princess' army",
+   "cls": "PrincessShield",
+   "kind": "shield",
+   "weight": 0,
+   "bulk": 0,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/gshe_g1.png",
+   "reagent_for": null,
+   "description": "This shield identifies you as a proud member of the Princess' army.",
+   "file": "kod/object/item/passitem/defmod/shield/soldshld/prinshld.kod"
+  },
+  {
+   "name": "shield of the rebel militia",
+   "cls": "RebelShield",
+   "kind": "shield",
+   "weight": 0,
+   "bulk": 0,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/gshe_g1.png",
+   "reagent_for": null,
+   "description": "This shield identifies you as a soldier of the rebel militia under Jonas.",
+   "file": "kod/object/item/passitem/defmod/shield/soldshld/reblshld.kod"
+  },
+  {
+   "name": "small round shield",
+   "cls": "MetalShield",
+   "kind": "shield",
+   "weight": 100,
+   "bulk": 125,
+   "value": 160,
+   "nutrition": null,
+   "icon": "assets/img/metlshld_g1.png",
+   "reagent_for": null,
+   "description": "This small shield is made from a sheet of tin bent and fitted to a wooden frame. Although the workmanship is poor, it offers some protection during battle.",
+   "file": "kod/object/item/passitem/defmod/shield/metlshld.kod"
+  },
+  {
+   "name": "torch",
+   "cls": "Torch",
+   "kind": "shield",
+   "weight": 10,
+   "bulk": 10,
+   "value": 30,
+   "nutrition": null,
+   "icon": "assets/img/torch_g7.png",
+   "reagent_for": null,
+   "description": "A shaft of crudely hewn rough timber is topped by oily rags. When used it will provide limited illumination.",
+   "file": "kod/object/item/passitem/defmod/shield/torch.kod"
+  },
+  {
+   "name": "axe",
+   "cls": "Axe",
+   "kind": "weapon",
+   "weight": 90,
+   "bulk": 90,
+   "value": 600,
+   "nutrition": null,
+   "icon": "assets/img/axe_g3.png",
+   "reagent_for": null,
+   "description": "Heavy and razor sharp, this great axe is extremely dangerous. Its head can cleave even the thick hide of trolls.",
+   "file": "kod/object/item/passitem/weapon/axe.kod"
+  },
+  {
+   "name": "battle bow",
+   "cls": "BattleBow",
+   "kind": "weapon",
+   "weight": 70,
+   "bulk": 80,
+   "value": 3000,
+   "nutrition": null,
+   "icon": "assets/img/bow_g3.png",
+   "reagent_for": null,
+   "description": "Expertly carved for power, this bow gives you the envious advantage of a stronger attack at a sacrifice of accuracy at long ranges. You should only use this bow at closer ranges.",
+   "file": "kod/object/item/passitem/weapon/ranged/bow/battlbow.kod"
+  },
+  {
+   "name": "black dagger",
+   "cls": "BlackDagger",
+   "kind": "weapon",
+   "weight": 25,
+   "bulk": 35,
+   "value": 10,
+   "nutrition": null,
+   "icon": "assets/img/bkswd_g1.png",
+   "reagent_for": null,
+   "description": "You are looking at an object",
+   "file": "kod/object/item/passitem/weapon/bkdagger.kod"
+  },
+  {
+   "name": "crossbow",
+   "cls": "Crossbow",
+   "kind": "weapon",
+   "weight": 120,
+   "bulk": 100,
+   "value": 4000,
+   "nutrition": null,
+   "icon": "assets/img/tcat_g1.png",
+   "reagent_for": null,
+   "description": "This Crossbow gives you the envious advantage of ranged attack.",
+   "file": "kod/object/item/passitem/weapon/ranged/crossbow.kod"
+  },
+  {
+   "name": "Dark Blade of Roq",
+   "cls": "UniqueWeapon",
+   "kind": "weapon",
+   "weight": 25,
+   "bulk": 35,
+   "value": 0,
+   "nutrition": null,
+   "icon": "assets/img/bkswd_g1.png",
+   "reagent_for": null,
+   "description": "The personal blade of Roq the assassin. This blade appears to be identical to the black daggers Roq hands out for the Assassin game. But the dried blood of Duke Kalior along the blade reveals this to be a much more potent weapon. It almost crackles with malevolent energy.",
+   "file": "kod/object/item/passitem/weapon/unique.kod"
+  },
+  {
+   "name": "gold sword",
+   "cls": "GoldSword",
+   "kind": "weapon",
+   "weight": 90,
+   "bulk": 60,
+   "value": 600,
+   "nutrition": null,
+   "icon": "assets/img/gsword_g3.png",
+   "reagent_for": null,
+   "description": "This sword is delicate and ornamental. It seems like it might be good for a fanciful duel, but it is certainly not suitable for the rigors of blood combat.",
+   "file": "kod/object/item/passitem/weapon/goldswrd.kod"
+  },
+  {
+   "name": "hammer",
+   "cls": "Hammer",
+   "kind": "weapon",
+   "weight": 80,
+   "bulk": 75,
+   "value": 450,
+   "nutrition": null,
+   "icon": "assets/img/hammer_g3.png",
+   "reagent_for": null,
+   "description": "Heavy and blunt, this hammer is a powerful weapon, capable of shattering flesh and bone. It is the favored weapon of the mining folk of Jasper.",
+   "file": "kod/object/item/passitem/weapon/hammer.kod"
+  },
+  {
+   "name": "long sword",
+   "cls": "LongSword",
+   "kind": "weapon",
+   "weight": 80,
+   "bulk": 60,
+   "value": 800,
+   "nutrition": null,
+   "icon": "assets/img/sword_g3.png",
+   "reagent_for": null,
+   "description": "This blade of steel is the weapon of choice for both cutthroats and noblemen. Nearly four feet long, its heft is impressive. The name of its maker, Fehr'Loi Qan, is inscribed on its blade.",
+   "file": "kod/object/item/passitem/weapon/longswrd.kod"
+  },
+  {
+   "name": "longbow",
+   "cls": "Longbow",
+   "kind": "weapon",
+   "weight": 70,
+   "bulk": 80,
+   "value": 2500,
+   "nutrition": null,
+   "icon": "assets/img/bow_g3.png",
+   "reagent_for": null,
+   "description": "Expertly carved for flexibility and range, this bow gives you the envious advantage of a long ranged attack.",
+   "file": "kod/object/item/passitem/weapon/ranged/bow/longbow.kod"
+  },
+  {
+   "name": "mace",
+   "cls": "Mace",
+   "kind": "weapon",
+   "weight": 60,
+   "bulk": 60,
+   "value": 50,
+   "nutrition": null,
+   "icon": "assets/img/mace_g3.png",
+   "reagent_for": null,
+   "description": "Lethal in appearance, this weapon is actually only minimally effective. Its spiked head is made of soft metal and its wooden shaft is thin and brittle.",
+   "file": "kod/object/item/passitem/weapon/mace.kod"
+  },
+  {
+   "name": "magic bow",
+   "cls": "MagicBow",
+   "kind": "weapon",
+   "weight": 70,
+   "bulk": 70,
+   "value": 3000,
+   "nutrition": null,
+   "icon": "assets/img/bow_g3.png",
+   "reagent_for": null,
+   "description": "Crafted by the gods, this bow hums with magical power.",
+   "file": "kod/object/item/passitem/weapon/ranged/bow/magicbow.kod"
+  },
+  {
+   "name": "mystic sword",
+   "cls": "MysticSword",
+   "kind": "weapon",
+   "weight": 60,
+   "bulk": 60,
+   "value": 1250,
+   "nutrition": null,
+   "icon": "assets/img/mystswd_g3.png",
+   "reagent_for": null,
+   "description": "Ancient runes adorn this fine weapon, a lightweight blade of unsurpassed excellence. Kraanan's blessing surrounds this sword.",
+   "file": "kod/object/item/passitem/weapon/mystswrd.kod"
+  },
+  {
+   "name": "nerudite bow",
+   "cls": "NeruditeBow",
+   "kind": "weapon",
+   "weight": 100,
+   "bulk": 100,
+   "value": 3500,
+   "nutrition": null,
+   "icon": "assets/img/bow_g3.png",
+   "reagent_for": null,
+   "description": "They DO exist! This bow was forged from the notoriously brittle nerudite instead of carved from wood. The bow doesn't look very flexible.",
+   "file": "kod/object/item/passitem/weapon/ranged/bow/nerubow.kod"
+  },
+  {
+   "name": "nerudite sword",
+   "cls": "NeruditeSword",
+   "kind": "weapon",
+   "weight": 80,
+   "bulk": 70,
+   "value": 1000,
+   "nutrition": null,
+   "icon": "assets/img/nerswd_g3.png",
+   "reagent_for": null,
+   "description": "Swift and strong, the nerudite weapon feels good in your hand.",
+   "file": "kod/object/item/passitem/weapon/neruswd.kod"
+  },
+  {
+   "name": "practice bow",
+   "cls": "PracticeBow",
+   "kind": "weapon",
+   "weight": 50,
+   "bulk": 60,
+   "value": 1750,
+   "nutrition": null,
+   "icon": "assets/img/bow_g3.png",
+   "reagent_for": null,
+   "description": "Carved for durability, this bow is generally used by students to practice the skills of ranged combat. Softer woods were used in the construction, allowing the practice bow to last much longer than other bows, at the expense of power. This bow should not be used in lethal combat.",
+   "file": "kod/object/item/passitem/weapon/ranged/bow/pracbow.kod"
+  },
+  {
+   "name": "scimitar",
+   "cls": "Scimitar",
+   "kind": "weapon",
+   "weight": 85,
+   "bulk": 70,
+   "value": 150,
+   "nutrition": null,
+   "icon": "assets/img/scimitar_g3.png",
+   "reagent_for": null,
+   "description": "This elegant weapon, heavy yet finely formed, is both beautiful and deadly. Runes of war decorate its golden hilt.",
+   "file": "kod/object/item/passitem/weapon/scimitar.kod"
+  },
+  {
+   "name": "short sword",
+   "cls": "ShortSword",
+   "kind": "weapon",
+   "weight": 50,
+   "bulk": 50,
+   "value": 250,
+   "nutrition": null,
+   "icon": "assets/img/shswd_g3.png",
+   "reagent_for": null,
+   "description": "Plain in appearance, the blade of this short sword is sharp enough to be dangerous. It can be effective when wielded against small beasts.",
+   "file": "kod/object/item/passitem/weapon/shrtswrd.kod"
+  },
+  {
+   "name": "spiritual hammer",
+   "cls": "SpiritualHammer",
+   "kind": "weapon",
+   "weight": 15,
+   "bulk": 60,
+   "value": 0,
+   "nutrition": null,
+   "icon": "assets/img/hammer_g3.png",
+   "reagent_for": null,
+   "description": "Inherently having holy blessings, this hammer is even more powerful than the standard variation.",
+   "file": "kod/object/item/passitem/weapon/spirhamm.kod"
+  },
+  {
+   "name": "sword of Riija",
+   "cls": "RiijaSword",
+   "kind": "weapon",
+   "weight": 90,
+   "bulk": 90,
+   "value": 5000,
+   "nutrition": null,
+   "icon": "assets/img/quswrd_g3.png",
+   "reagent_for": null,
+   "description": "This is a very awkward looking sword, but it feels surprisingly light in your hands. Before your very eyes, dark and weird runes shift slightly on this deadly weapon.",
+   "file": "kod/object/item/passitem/weapon/riijaswd.kod"
+  },
+  {
+   "name": "Sword of the Hunt",
+   "cls": "HunterSword",
+   "kind": "weapon",
+   "weight": 70,
+   "bulk": 50,
+   "value": 4000,
+   "nutrition": null,
+   "icon": "assets/img/huntswrd_g4.png",
+   "reagent_for": null,
+   "description": "This weapon is truly a fine piece of workmanship. Intricate organic carvings intertwine along the hilt, enclosing an exquisitely beautiful gem, almost as if it were an eye gazing calmly back at you. Indeed, every now and then out of the corner of your eye you almost catch it blinking.",
+   "file": "kod/object/item/passitem/weapon/huntsw.kod"
+  }
+ ],
  "learning": {
   "level_points": [
    1,
@@ -3021,13 +6727,29 @@
    10
   ],
   "max_school_level": 6,
+  "tracks": [
+   "weapon skills",
+   "Faren",
+   "Jala",
+   "Kraanan",
+   "Qor",
+   "Riija",
+   "Shal’ille"
+  ],
+  "points_slope": 7,
+  "min_needed_to_advance": 75,
+  "max_learn_points": 16,
+  "cites": {
+   "POINTS_SLOPE": "kod/object/active/holder/nomoveon/battler/player.kod:93",
+   "MIN_NEEDED_TO_ADVANCE": "kod/object/active/holder/nomoveon/battler/player.kod:97",
+   "MAX_LEARN_POINTS": "kod/util/settings.kod:71"
+  },
   "formula": "iNeed = iPoints*POINTS_SLOPE + (297 - MaxLearnPoints*POINTS_SLOPE) - (RawIntellect*2*POINTS_SLOPE/5), bounded below by MIN_NEEDED_TO_ADVANCE",
+  "scarcity": "if the previous level holds fewer than three abilities the cost is eased: prev_level 1 divides iNeed by 3, prev_level 2 multiplies it by 2/3 (player.kod:10915-10930)",
+  "have": "iHave is the sum of your best THREE ability values among what you already know at the level below, in the same school — 297 flat for level 1. Learning succeeds when iHave >= iNeed (player.kod:10775)",
   "intellect_effect": "each point of intellect removes (2*POINTS_SLOPE/5) from the cost of the next level",
   "source": "player.PlayerCanLearn",
-  "unresolved": [
-   "POINTS_SLOPE",
-   "MIN_NEEDED_TO_ADVANCE"
-  ],
-  "note": "POINTS_SLOPE and MIN_NEEDED_TO_ADVANCE are referenced by PlayerCanLearn but are not in this koddb snapshot. Set M59_ROOT and re-derive before showing exact advancement-point costs; the level table and the direction of the effect are safe to show without them."
+  "unresolved": [],
+  "note": null
  }
 }

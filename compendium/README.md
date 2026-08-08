@@ -22,7 +22,30 @@ just press `C` in the fleet terminal on whichever character you are looking at.
 `node tools/lint.mjs` reports zero broken links, zero malformed fragments, and
 zero citations pointing at a line that does not exist.
 
-Two pages do real work rather than listing things:
+Three pages do real work rather than listing things:
+
+- **`planner/index.html`** is the page between this site and the live fleet, and the only
+  one here that can *write*. It rebuilds the client's own right-hand panel — inventory,
+  spells, skills, stats, the same four tabs in the same order, the same stat bars and the
+  same stack counts in the corner of each cell — and makes all of it editable. Bring a
+  character in (press `P` on it in the fleet terminal, or pick it from the dropdown),
+  choose the level you want in each spell school, tick the skills, and put items in the
+  inventory with a **minimum** to carry and a **ceiling** to shed above. Saving writes
+  `substrate/loadouts/<character>.json`, which the keeper then reads before it buys, sells,
+  keeps or drops anything — so the gear a character gets back to after a day of breaking
+  things is a decision somebody made rather than a constant shared by twenty-one of them.
+
+  Two things it will tell you that nothing else does. Picking a school shows the **reagents
+  those spells eat**, with a button that turns them into the carry list — a spell list is
+  also a shopping list, and until now nothing joined the two. And each school shows what
+  its **next** level costs, computed the way `PlayerCanLearn` computes it, including the
+  scarcity relief that makes a thin level below cost a third as much. Only the next level:
+  a level four out is priced against knowledge the character does not have yet, so a total
+  for it would be arithmetic about an imaginary character.
+
+  Served by the harness it saves; opened any other way it exports the same file for you to
+  drop in by hand, and says which of the two it is doing.
+
 
 - **`creatures/index.html`** is a combat calculator. Describe a character —
   five presets from a mace-wielding newbie to a maxed scimitar build, all

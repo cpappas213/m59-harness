@@ -1,0 +1,60 @@
+{
+ "format": "m59-loadout/1",
+ "character": "Kermit",
+ "agent": "t1",
+ "updated": "2026-08-08T01:25:54.224Z",
+ "note": "",
+ "plan": {
+  "schools": {},
+  "weapon_level": null,
+  "abilities": []
+ },
+ "gear": {
+  "weapon": [],
+  "slots": {}
+ },
+ "carry": [
+  {
+   "item": "leather armor",
+   "min": 1,
+   "max": null,
+   "match": "exact",
+   "why": null,
+   "weight": 100,
+   "kind": "armour"
+  },
+  {
+   "item": "small round shield",
+   "min": 1,
+   "max": null,
+   "match": "exact",
+   "why": null,
+   "weight": 100,
+   "kind": "shield"
+  },
+  {
+   "item": "elderberry",
+   "min": 20,
+   "max": null,
+   "match": "exact",
+   "why": "reagent for blast of fire, explosive frost, shocking fury",
+   "weight": 3,
+   "kind": "reagent"
+  },
+  {
+   "item": "herb",
+   "min": 20,
+   "max": null,
+   "match": "exact",
+   "why": "reagent for breath of life, cure disease, cure poison",
+   "weight": 2,
+   "kind": "reagent"
+  }
+ ],
+ "sell": [],
+ "keep": [],
+ "purse": {
+  "float": null,
+  "bank_above": null
+ }
+}

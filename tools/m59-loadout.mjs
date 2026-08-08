@@ -1,0 +1,667 @@
+#!/usr/bin/env node
+// WHAT ONE CHARACTER IS SUPPOSED TO BE CARRYING, WRITTEN DOWN WHERE THE KEEPER CAN READ IT.
+//
+//   node tools/m59-loadout.mjs                      # every loadout on this machine
+//   node tools/m59-loadout.mjs Kermit               # one, and what it asks for
+//   node tools/m59-loadout.mjs Kermit --check       # ...against what Kermit is holding now
+//   node tools/m59-loadout.mjs --check-all          # the whole fleet, one line each
+//   node tools/m59-loadout.mjs Kermit --init        # write a starter file from the sheet
+//   node tools/m59-loadout.mjs Kermit --json        # the file, normalised
+//
+// WHY THIS EXISTS. Every buy, sell, keep and drop decision in this repository was a
+// constant somewhere in a tool: WANTS in m59-outfit.mjs, KEEP in m59-reagents.mjs, the
+// `keep` regex in makeRoom, REAGENT_TARGET in the keeper. Twenty-one characters, one
+// answer each. So a caster that needs forty herbs and a fighter that needs none are told
+// the same number, and the only way to change it for one character is to edit a tool and
+// restart the broker — which logs out the fleet.
+//
+// A loadout is that answer per character, in a file, edited in the compendium's planner
+// and read by the keeper. It is the same shape whichever end wrote it.
+//
+// IT IS AN OVERLAY, NOT A REPLACEMENT, and that is the single most important thing about
+// it. Silence means "carry on as before". A loadout that says nothing but "twenty-four
+// elderberry" must not cause a character to start selling its armour, because everything
+// that used to protect the armour is still there and this only adds to it. Every helper
+// below is written so that an EMPTY loadout produces exactly the behaviour that existed
+// before loadouts did — which is also why `null` is a real answer everywhere and not a
+// reason to substitute a default.
+//
+// NAMES ARE EXACT BY DEFAULT, AND THAT IS DELIBERATE. This repository has already paid
+// for substring matching twice: `keep: ['mace']` protected the item literally called
+// "broken mace" so every character hauled its shattered weapons around for ever, and a
+// junk list containing "mushroom" would have sold the edible ones, which are food. So an
+// entry matches the display name the server sends, exactly, unless it asks for something
+// looser — and asking is a decision somebody makes on purpose.
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.join(HERE, '..');
+// Overridable so the tests can point it at a scratch directory. They must: a loadout is
+// the file a live keeper reads every pass, and a test that writes into the real directory
+// is a test that changes what twenty-one characters are trying to carry.
+export const LOADOUT_DIR = process.env.M59_LOADOUT_DIR || path.join(REPO, 'substrate', 'loadouts');
+export const LOADOUT_FORMAT = 'm59-loadout/1';
+
+// ------------------------------------------------------------------ names
+
+// The wire's spelling, flattened. Display names arrive with whatever punctuation and
+// casing the resource happened to use, and "Small Round Shield" and "small round shield"
+// are the same object.
+export const norm = (s) => String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+// A FILENAME IS NOT A CHARACTER NAME, AND THIS IS THE ONLY PLACE THAT DECIDES SO.
+// The planner posts a character name over a socket, and the socket is on loopback but the
+// name still lands on the filesystem. Everything outside the allowed set is dropped
+// rather than escaped, so there is no encoding to get wrong and no `..` to normalise
+// away — a name that does not survive this is refused by the caller instead of being
+// quietly written somewhere else. Meridian character names are letters, and the fleet's
+// agent handles are letters and digits.
+export function slugOf(character) {
+  const s = String(character ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return s.slice(0, 48) || null;
+}
+
+export const loadoutPath = (character) => {
+  const slug = slugOf(character);
+  return slug ? path.join(LOADOUT_DIR, slug + '.json') : null;
+};
+
+// ------------------------------------------------------------------ the catalogue
+//
+// Used only to CHECK a loadout, never to build one. An item the catalogue has never heard
+// of is reported as a problem and then honoured anyway: the catalogue is a snapshot of
+// one source tree and the server is the authority, so refusing an unknown name would be
+// this file deciding it knows the game better than the person typing.
+let CATALOGUE = null, SPELLBOOK = null, LEARNING = null;
+function loadPlannerData() {
+  if (CATALOGUE) return;
+  let j = {};
+  try { j = JSON.parse(fs.readFileSync(path.join(REPO, 'compendium', 'data', 'planner.json'), 'utf8')); }
+  catch { /* every reader below treats an empty table as "cannot check", not as "empty" */ }
+  CATALOGUE = new Map((j.items || []).map(i => [norm(i.name), i]));
+  SPELLBOOK = new Map((j.spells || []).map(s => [norm(s.name), s]));
+  LEARNING = j.learning ?? {};
+}
+export function catalogue() { loadPlannerData(); return CATALOGUE; }
+// WHICH SCHOOL AND WHICH LEVEL A SPELL IS. Not on the wire and not in a character sheet:
+// BP_SPELLS gives a name, a target count and a school, and the LEVEL — the number the
+// whole learning cost is computed from — is declared in kod and never sent.
+export function spellbook() { loadPlannerData(); return SPELLBOOK; }
+export function learningConstants() { loadPlannerData(); return LEARNING; }
+
+// ------------------------------------------------------------------ the shape
+
+export function blank(character, agent = null) {
+  return {
+    format: LOADOUT_FORMAT,
+    character: String(character ?? ''),
+    agent: agent ?? null,
+    updated: null,
+    note: '',
+    plan: { schools: {}, weapon_level: null, abilities: [] },
+    gear: { weapon: [], slots: {} },
+    carry: [],
+    sell: [],
+    keep: [],
+    purse: { float: null, bank_above: null },
+  };
+}
+
+// The slots the keeper's wearBest knows about, plus the hand. Anything else in `slots` is
+// carried through untouched and reported — a slot this file has not heard of is a fact
+// about the loadout, not an error to swallow.
+export const GEAR_SLOTS = ['body', 'shield', 'head', 'hands', 'feet', 'neck', 'finger', 'cloak'];
+
+const numOr = (v, d = null) => (v === null || v === undefined || v === '' || Number.isNaN(Number(v))
+  ? d : Number(v));
+
+// TURN WHATEVER WAS ON DISK INTO THE ONE SHAPE EVERY READER EXPECTS, and say what was
+// wrong with it rather than throwing. A loadout is hand-editable and comes off a web
+// form; the failure mode that matters is not a malformed file, it is a file that parses
+// and means something slightly different from what its author intended.
+export function normalise(raw, { character = null } = {}) {
+  const problems = [];
+  const src = (raw && typeof raw === 'object') ? raw : {};
+  const out = blank(character ?? src.character ?? '', src.agent ?? null);
+
+  if (src.format && src.format !== LOADOUT_FORMAT)
+    problems.push(`format is "${src.format}", not "${LOADOUT_FORMAT}" — reading it anyway`);
+  out.character = String(character ?? src.character ?? '').trim();
+  out.agent = src.agent ? String(src.agent) : null;
+  out.updated = src.updated ?? null;
+  out.note = typeof src.note === 'string' ? src.note.slice(0, 2000) : '';
+  if (!out.character) problems.push('no character name');
+
+  // ---- the plan half: what the character is trying to become.
+  const schools = {};
+  for (const [k, v] of Object.entries(src.plan?.schools ?? {})) {
+    const lvl = numOr(v, null);
+    if (lvl === null || lvl < 0) { problems.push(`school "${k}": ${JSON.stringify(v)} is not a level`); continue; }
+    // Six is the length of vlLevelPoints (system.kod:414). A seventh level is not a
+    // stretch goal, it is a number the server has no entry for.
+    if (lvl > 6) { problems.push(`school "${k}": level ${lvl} — the game has six`); continue; }
+    schools[k] = Math.round(lvl);
+  }
+  out.plan.schools = schools;
+  out.plan.weapon_level = numOr(src.plan?.weapon_level, null);
+  out.plan.abilities = (Array.isArray(src.plan?.abilities) ? src.plan.abilities : [])
+    .map(a => (typeof a === 'string' ? { name: a } : a))
+    .filter(a => a && a.name)
+    .map(a => ({
+      name: String(a.name).trim(),
+      kind: a.kind === 'spell' || a.kind === 'skill' ? a.kind : null,
+      // The game's own price, 250 * 2^level with no markup (monster.kod:4880). Recorded
+      // by the planner so an errand can withdraw before setting off; recomputed rather
+      // than trusted when it is missing.
+      level: numOr(a.level, null),
+      why: a.why ? String(a.why).slice(0, 200) : null,
+    }));
+
+  // ---- the carrying half: what the keeper acts on.
+  const seen = new Set();
+  for (const e of (Array.isArray(src.carry) ? src.carry : [])) {
+    const item = typeof e === 'string' ? { item: e } : (e || {});
+    const name = String(item.item ?? item.name ?? '').trim();
+    if (!name) { problems.push('a carry entry with no item name'); continue; }
+    const key = norm(name);
+    if (seen.has(key)) { problems.push(`"${name}" is listed twice — the later one wins`); }
+    seen.add(key);
+    let min = numOr(item.min, 0);
+    let max = numOr(item.max, null);
+    if (min < 0) { problems.push(`"${name}": min ${min} is below zero, read as 0`); min = 0; }
+    // A MAX BELOW A MIN IS A TRAP THAT NEVER SETTLES: the keeper buys up to min and then
+    // sells back down to max, for ever, paying the vendor spread on every lap. Raise the
+    // max to the min and say so, rather than honouring a pair of numbers that cannot both
+    // be satisfied.
+    if (max !== null && max < min) {
+      problems.push(`"${name}": max ${max} is below min ${min} — raised to ${min}, ` +
+                    'or the keeper would buy and sell the same item for ever');
+      max = min;
+    }
+    const known = catalogue().get(key);
+    if (!known && catalogue().size)
+      problems.push(`"${name}" is not in the item catalogue — kept, but check the spelling ` +
+                    '(names are the game\'s own display names)');
+    out.carry.push({
+      item: name, min, max,
+      match: item.match === 'contains' || item.match === 'prefix' ? item.match : 'exact',
+      why: item.why ? String(item.why).slice(0, 200) : (known?.reagent_for?.length
+        ? `reagent for ${known.reagent_for.slice(0, 3).map(r => r.spell).join(', ')}` : null),
+      weight: known?.weight ?? null,
+      kind: known?.kind ?? null,
+    });
+  }
+
+  const nameList = (v, label) => (Array.isArray(v) ? v : [])
+    .map(x => String(typeof x === 'string' ? x : x?.item ?? '').trim())
+    .filter(x => { if (!x) problems.push(`an empty entry in ${label}`); return !!x; });
+  out.sell = nameList(src.sell, 'sell');
+  out.keep = nameList(src.keep, 'keep');
+
+  // BOTH LISTS AT ONCE IS NOT A PREFERENCE, IT IS A CONTRADICTION, and it has a safe
+  // direction: keeping something we should have sold costs a slot, selling something we
+  // meant to keep costs the item. So keep wins, loudly.
+  for (const s of out.sell) if (out.keep.some(k => norm(k) === norm(s)))
+    problems.push(`"${s}" is on both the sell and keep lists — kept`);
+  // And an item with a floor under it cannot also be sell-fodder, for the same reason.
+  for (const s of out.sell) {
+    const c = out.carry.find(x => norm(x.item) === norm(s));
+    if (c && c.min > 0) problems.push(`"${s}" is sell-on-sight but ${c.min} are wanted — the floor wins`);
+  }
+
+  const weapons = nameList(src.gear?.weapon, 'gear.weapon');
+  out.gear.weapon = weapons;
+  for (const [slot, v] of Object.entries(src.gear?.slots ?? {})) {
+    const list = nameList(v, `gear.slots.${slot}`);
+    if (!list.length) continue;
+    if (!GEAR_SLOTS.includes(slot))
+      problems.push(`slot "${slot}" is not one this repository knows (${GEAR_SLOTS.join(', ')}) — carried through`);
+    out.gear.slots[slot] = list;
+  }
+
+  out.purse.float = numOr(src.purse?.float, null);
+  out.purse.bank_above = numOr(src.purse?.bank_above, null);
+
+  return { loadout: out, problems };
+}
+
+// ------------------------------------------------------------------ disk
+
+export function listLoadouts() {
+  let files = [];
+  try { files = fs.readdirSync(LOADOUT_DIR).filter(f => f.endsWith('.json')); } catch { return []; }
+  const out = [];
+  for (const f of files.sort()) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(LOADOUT_DIR, f), 'utf8'));
+      const { loadout, problems } = normalise(raw);
+      out.push({ file: f, path: path.join(LOADOUT_DIR, f), loadout, problems,
+                 mtime: fs.statSync(path.join(LOADOUT_DIR, f)).mtimeMs });
+    } catch (e) {
+      out.push({ file: f, path: path.join(LOADOUT_DIR, f), loadout: null,
+                 problems: [`could not read it: ${e.message}`], mtime: 0 });
+    }
+  }
+  return out;
+}
+
+export function readLoadout(character) {
+  const p = loadoutPath(character);
+  if (!p || !fs.existsSync(p)) return null;
+  const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+  return { ...normalise(raw, { character: raw.character ?? character }), path: p };
+}
+
+export function writeLoadout(character, raw, { force = false } = {}) {
+  const p = loadoutPath(character);
+  if (!p) throw new Error(`"${character}" is not a usable character name`);
+  const { loadout, problems } = normalise(raw, { character: raw?.character ?? character });
+  // TWO NAMES CAN SLUG TO ONE FILE, AND THE LOSER IS OVERWRITTEN SILENTLY. `slugOf` drops
+  // everything that is not a letter or a digit, so "Kermit" and "Kermit the Frog!" differ
+  // by punctuation and land on the same path — and the second save would replace the
+  // first character's whole loadout while reporting success. Refuse instead, unless the
+  // caller means it.
+  if (!force && fs.existsSync(p)) {
+    let held = null;
+    try { held = JSON.parse(fs.readFileSync(p, 'utf8')).character ?? null; } catch { /* unreadable: let the write fix it */ }
+    if (held && norm(held) !== norm(loadout.character))
+      throw new Error(`${path.basename(p)} already holds "${held}", not "${loadout.character}" — ` +
+                      'two names that differ only by punctuation share one file');
+  }
+  loadout.updated = new Date().toISOString();
+  fs.mkdirSync(LOADOUT_DIR, { recursive: true });
+  // Written whole and renamed into place. The keeper reads this file on a timer, and a
+  // half-written one parses as a syntax error at exactly the moment somebody is changing
+  // what a live character is supposed to carry.
+  const tmp = p + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(loadout, null, 1));
+  fs.renameSync(tmp, p);
+  return { path: p, loadout, problems };
+}
+
+// WHAT THE KEEPER CALLS, EVERY PASS, FOR TWENTY-ONE CHARACTERS. So it caches on mtime and
+// costs a stat() when nothing has changed — and it never throws, because a keeper that
+// dies on a malformed loadout is a character that stops playing because somebody typed a
+// stray comma into a web form.
+const CACHE = new Map();       // slug -> { mtime, loadout, problems }
+export function loadoutFor(character) {
+  const slug = slugOf(character);
+  if (!slug) return null;
+  const p = path.join(LOADOUT_DIR, slug + '.json');
+  let mtime = 0;
+  try { mtime = fs.statSync(p).mtimeMs; } catch { CACHE.delete(slug); return null; }
+  const hit = CACHE.get(slug);
+  if (hit && hit.mtime === mtime) return hit.loadout;
+  try {
+    const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const { loadout, problems } = normalise(raw, { character: raw.character ?? character });
+    CACHE.set(slug, { mtime, loadout, problems });
+    return loadout;
+  } catch {
+    // A broken file is remembered as broken so it is not re-read and re-parsed every pass.
+    CACHE.set(slug, { mtime, loadout: null, problems: ['unparseable'] });
+    return null;
+  }
+}
+export const forgetLoadouts = () => CACHE.clear();
+
+// ------------------------------------------------------------------ matching
+
+// Does this display name satisfy this entry? Exact unless the entry asked otherwise.
+export function entryMatches(entry, name) {
+  const n = norm(name), want = norm(entry.item ?? entry);
+  if (!n || !want) return false;
+  const how = entry.match ?? 'exact';
+  if (how === 'contains') return n.includes(want);
+  if (how === 'prefix') return n.startsWith(want);
+  return n === want;
+}
+
+const countIn = (items, entry) => (items || [])
+  .filter(i => entryMatches(entry, i.name))
+  .reduce((t, i) => t + (i.amount ?? i.count ?? 1), 0);
+
+// ------------------------------------------------------------------ what the keeper asks
+
+// EVERYTHING THIS LOADOUT PROTECTS, as one test. Returns null when the loadout has nothing
+// to say, and null is the answer that means "use the behaviour that was already there" —
+// callers must not read it as "protects nothing".
+export function keepTest(loadout, items = null) {
+  if (!loadout) return null;
+  const rules = [];
+  for (const k of loadout.keep) rules.push({ entry: { item: k }, why: 'on the keep list' });
+  for (const w of loadout.gear.weapon) rules.push({ entry: { item: w }, why: 'a weapon this character is meant to fight with' });
+  for (const [slot, list] of Object.entries(loadout.gear.slots))
+    for (const g of list) rules.push({ entry: { item: g }, why: `this character's ${slot}` });
+  // A CARRIED ITEM IS PROTECTED ONLY UP TO ITS FLOOR, WHICH MEANS THE TEST NEEDS THE PACK.
+  // Twelve elderberry with a floor of twelve are all protected; the thirteenth is not, and
+  // a keep test that cannot count cannot tell them apart. Without an inventory the floor
+  // is treated as protecting the whole stack, which is the safe direction: it declines to
+  // sell something it might need rather than selling something it does.
+  for (const c of loadout.carry) {
+    if (c.min <= 0) continue;
+    const have = items ? countIn(items, c) : null;
+    rules.push({ entry: c, why: have === null ? `wanted, ${c.min} minimum`
+                                              : `${have} held against a floor of ${c.min}`,
+                 floor: c.min, have });
+  }
+  if (!rules.length) return null;
+  const test = (name) => {
+    for (const r of rules) {
+      if (!entryMatches(r.entry, name)) continue;
+      // Above the floor the surplus is fair game — that is what a maximum is for.
+      if (r.floor != null && r.have != null && r.have > r.floor) continue;
+      return r.why;
+    }
+    return null;
+  };
+  test.rules = rules;
+  return test;
+}
+
+// THINGS THIS CHARACTER HAS SAID IT DOES NOT WANT. Separate from "not protected", because
+// the two lead to different actions: unprotected loot is sold when a shop happens to be
+// there, and sell-fodder is why the trip is worth making.
+export function sellTest(loadout) {
+  if (!loadout || !loadout.sell.length) return null;
+  const keep = keepTest(loadout);
+  return (name) => {
+    if (keep && keep(name)) return null;            // keep always wins; normalise said so
+    for (const s of loadout.sell) if (entryMatches({ item: s }, name)) return 'on the sell list';
+    return null;
+  };
+}
+
+// WHAT IS SHORT AND WHAT IS SURPLUS, in the vocabulary the fleet's interest board speaks.
+// This is what lets one character's shopping list stop another character selling the thing
+// it needs, which the board already does for elderberry and herbs and could not do for
+// anything else because nothing else had a target.
+export function wantsOf(loadout, items) {
+  if (!loadout) return null;
+  const wants = [], spare = new Map();
+  for (const c of loadout.carry) {
+    const have = countIn(items, c);
+    if (have < c.min) wants.push(norm(c.item));
+    else if (c.max !== null && have > c.max) spare.set(norm(c.item), have - c.max);
+  }
+  return { wants, spare };
+}
+
+// ------------------------------------------------------------------ reconcile
+//
+// The whole loadout against a real pack: what to buy, what to sell, what not to touch, and
+// in what order to give things up when the bags are full.
+export function reconcile(loadout, { items = [], equipped = [] } = {}) {
+  if (!loadout) return null;
+  const wornNames = new Set((equipped || []).map(e => norm(e.name ?? e)));
+  const buy = [], sell = [], keep = [];
+
+  for (const c of loadout.carry) {
+    const have = countIn(items, c);
+    if (have < c.min)
+      buy.push({ item: c.item, have, want: c.min, short: c.min - have, why: c.why,
+                 weight: c.weight, kind: c.kind });
+    else if (c.max !== null && have > c.max)
+      sell.push({ item: c.item, have, keep_back: c.max, over: have - c.max,
+                  why: `above the ${c.max} this character asked for` });
+    if (c.min > 0) keep.push({ item: c.item, upto: c.min, have, why: c.why ?? 'wanted' });
+  }
+
+  for (const s of loadout.sell) {
+    const have = countIn(items, { item: s });
+    if (have > 0) sell.push({ item: s, have, keep_back: 0, over: have, why: 'on the sell list' });
+  }
+  for (const k of loadout.keep) keep.push({ item: k, upto: null, why: 'on the keep list' });
+
+  // GEAR IS A PREFERENCE LIST AND THE ANSWER IS "THE BEST ONE WE HAVE", not "the first
+  // one". A character that owns its second choice is not missing its gear; it is one
+  // upgrade short, and reporting those the same way is how an outfitting run buys a mace
+  // for somebody already carrying one.
+  const gearFor = (list) => {
+    const held = list.map((n, i) => ({ n, i, have: countIn(items, { item: n }) })).filter(x => x.have > 0);
+    const best = held.length ? held.reduce((a, b) => (a.i <= b.i ? a : b)) : null;
+    return {
+      want: list,
+      have: best ? best.n : null,
+      worn: best ? wornNames.has(norm(best.n)) : false,
+      missing: !best,
+      // Only a real upgrade, and only when something better is actually listed above it.
+      upgrade_to: best && best.i > 0 ? list.slice(0, best.i) : null,
+    };
+  };
+  const gear = { weapon: loadout.gear.weapon.length ? gearFor(loadout.gear.weapon) : null, slots: {} };
+  for (const [slot, list] of Object.entries(loadout.gear.slots)) gear.slots[slot] = gearFor(list);
+  for (const g of [gear.weapon, ...Object.values(gear.slots)]) {
+    if (!g) continue;
+    if (g.missing) buy.push({ item: g.want[0], have: 0, want: 1, short: 1, why: 'gear this character is missing', gear: true });
+    for (const n of g.want) keep.push({ item: n, upto: null, why: 'gear' });
+  }
+
+  const purse = (items || []).filter(i => /shilling/i.test(i.name ?? ''))
+    .reduce((t, i) => t + (i.amount ?? 1), 0);
+
+  return {
+    character: loadout.character,
+    buy, sell, keep, gear,
+    purse: { have: purse, float: loadout.purse.float,
+             spendable: loadout.purse.float === null ? null : Math.max(0, purse - loadout.purse.float),
+             bank_above: loadout.purse.bank_above },
+    // The one number an outfitting run needs before it sets off, and it is knowable: item
+    // values are viValue_average and a skill is 250*2^level with no markup. Null for
+    // anything the catalogue cannot price, and stated as a floor rather than a total, so
+    // nobody withdraws against it as though it were exact.
+    at_least: buy.reduce((t, b) => {
+      const v = catalogue().get(norm(b.item))?.value;
+      return v == null ? t : t + v * (b.short ?? 1);
+    }, 0),
+    ok: !buy.length && !sell.length,
+    summary: buy.length || sell.length
+      ? [buy.length ? `${buy.length} short` : null, sell.length ? `${sell.length} to shed` : null]
+        .filter(Boolean).join(', ')
+      : 'as asked',
+  };
+}
+
+// THE ORDER TO GIVE THINGS UP IN WHEN THE BAGS ARE FULL. Lowest first. Returns null when
+// the loadout has nothing to say about a pack, so the keeper's own ranking stands.
+export function dropRank(loadout, items = []) {
+  if (!loadout) return null;
+  const keep = keepTest(loadout, items);
+  const sell = sellTest(loadout);
+  // A FUNCTION THAT ALWAYS ANSWERS null IS NOT THE SAME AS NO FUNCTION. The caller tests
+  // this for existence to decide whether the loadout has anything to say about a pack, so
+  // an empty loadout has to be indistinguishable from an absent one here.
+  if (!keep && !sell) return null;
+  return (name) => {
+    if (sell?.(name)) return -1;              // asked for this to go: before anything else
+    if (keep?.(name)) return 3;               // protected: only if there is nothing else
+    return null;                              // no opinion — let the caller's ranking decide
+  };
+}
+
+// ------------------------------------------------------------------ a starter file
+//
+// WHAT THE CHARACTER IS ALREADY DOING, WRITTEN DOWN. A blank loadout is a page nobody
+// fills in; one seeded from the sheet is a page somebody edits. It claims nothing beyond
+// the observation: the gear is what the character is wearing, the reagents are the ones
+// the fleet already runs on, and both are wrong for somebody and easy to change.
+export function starterFrom(sheet) {
+  const l = blank(sheet?.character ?? '', sheet?.agent ?? null);
+  l.note = 'Seeded from the character sheet — this is what it was carrying, not a plan yet.';
+  const worn = (sheet?.equipment?.worn ?? []).map(w => w.name).filter(Boolean);
+  const cat = catalogue();
+  for (const n of worn) {
+    const item = cat.get(norm(n));
+    if (item?.kind === 'weapon') l.gear.weapon.push(n);
+    else if (item?.kind === 'shield') (l.gear.slots.shield ??= []).push(n);
+    else if (item?.kind === 'armour') (l.gear.slots.body ??= []).push(n);
+  }
+  // The two the whole fleet turns on. REAGENT_TARGET in m59-autopilot.mjs is 20 and this
+  // is the same 20 written where one character can disagree with it.
+  for (const item of ['elderberry', 'herb'])
+    l.carry.push({ item, min: 20, max: 40, match: 'exact', why: 'create food, 2 per casting',
+                   weight: cat.get(item)?.weight ?? null, kind: 'reagent' });
+  for (const [school, lvl] of Object.entries(schoolLevels(sheet))) l.plan.schools[school] = lvl;
+  return l;
+}
+
+// The highest level known in each school, which is exactly what PlayerCanLearn sums to
+// price the next one (player.kod:10813). Blink is excluded there and excluded here: the
+// server does not count it toward a school's level, so neither may a planner.
+export function schoolLevels(sheet, spellData = null) {
+  const levelOf = spellData
+    ? new Map(spellData.map(s => [norm(s.name), s]))
+    : spellbook();
+  const out = {};
+  for (const sp of (sheet?.spells ?? [])) {
+    if (norm(sp.name) === 'blink') continue;
+    const known = levelOf.get(norm(sp.name));
+    // The SCHOOL can come off the wire; the LEVEL cannot, so a spell the compiled table
+    // has never heard of contributes nothing rather than a guessed level. Dropping it is
+    // the safe direction: it understates the character's progress, and the alternative
+    // understates the cost of its next level, which is the number people act on.
+    const school = sp.school ?? known?.school;
+    const lvl = sp.level ?? known?.level;
+    if (!school || !lvl) continue;
+    out[school] = Math.max(out[school] ?? 0, lvl);
+  }
+  return out;
+}
+
+// The seventh track: the highest level of any SKILL known, all of them pooled. Skills have
+// levels too and PlayerCanLearn sums them into the same total (player.kod:10822), which is
+// why a character with a level-3 proficiency pays more for its next spell.
+export function weaponTrackLevel(sheet, skillData = null) {
+  loadPlannerData();
+  const bySkill = skillData ? new Map(skillData.map(s => [norm(s.name), s])) : null;
+  let top = 0;
+  for (const sk of (sheet?.skills ?? [])) {
+    const lvl = sk.level ?? bySkill?.get(norm(sk.name))?.level ?? null;
+    if (lvl) top = Math.max(top, lvl);
+  }
+  return top;
+}
+
+// ------------------------------------------------------------------ the learning cost
+//
+// PlayerCanLearn, as arithmetic, so the planner can answer "can this character learn that"
+// without asking the server — which will not answer anyway: a skill it cannot learn is
+// simply ABSENT from the shop list, with no message of any kind (monster.kod:4855).
+//
+// RE-EXPORTED, NOT REIMPLEMENTED. The planner page needs the same arithmetic in a browser,
+// so it lives in compendium/tools/learn.mjs, which has no imports and is inlined into
+// assets/learn.js by the page's build. Two copies of a formula in this repository have
+// always become two answers to a question.
+export { learnCost, canLearn, trackPoints, levelPointsAt } from '../compendium/tools/learn.mjs';
+
+// ---------------------------------------------------------------------- cli
+if (import.meta.filename === process.argv[1]) {
+  const argv = process.argv.slice(2);
+  const flag = (n) => argv.includes('--' + n);
+  // `indexOf` of a missing flag is -1, and -1+1 is 0 — which is the character name. That
+  // read the port as `Number("Kermit")`, NaN, and the failure surfaced as the broker not
+  // answering on port NaN rather than as a bad argument.
+  const pi = argv.indexOf('--port');
+  const PORT = Number(pi >= 0 ? argv[pi + 1] : 8901) || 8901;
+  const who = argv.filter((a, i) => !a.startsWith('--') && !(pi >= 0 && i === pi + 1))[0] ?? null;
+
+  const broker = async (name, args = {}) => {
+    const r = await fetch(`http://127.0.0.1:${PORT}/`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+    });
+    const j = await r.json();
+    const text = j.result?.content?.[0]?.text;
+    if (j.error || j.result?.isError) throw new Error(text ?? JSON.stringify(j.error));
+    return JSON.parse(text);
+  };
+
+  const show = (rec) => {
+    const l = rec.loadout;
+    if (!l) { console.log(`  ${rec.file}: ${rec.problems.join('; ')}`); return; }
+    console.log(`${l.character}${l.agent ? ` (${l.agent})` : ''}` +
+                `${l.updated ? '  updated ' + l.updated.slice(0, 16).replace('T', ' ') : ''}`);
+    if (l.note) console.log(`  ${l.note}`);
+    if (l.gear.weapon.length) console.log(`  weapon   ${l.gear.weapon.join(' > ')}`);
+    for (const [s, v] of Object.entries(l.gear.slots)) console.log(`  ${s.padEnd(8)} ${v.join(' > ')}`);
+    for (const c of l.carry)
+      console.log(`  carry    ${c.item} ${c.min}${c.max === null ? '+' : '–' + c.max}` +
+                  `${c.why ? '   (' + c.why + ')' : ''}`);
+    if (l.sell.length) console.log(`  sell     ${l.sell.join(', ')}`);
+    if (l.keep.length) console.log(`  keep     ${l.keep.join(', ')}`);
+    const schools = Object.entries(l.plan.schools);
+    if (schools.length) console.log(`  schools  ${schools.map(([k, v]) => `${k} ${v}`).join(', ')}`);
+    if (l.plan.abilities.length) console.log(`  learn    ${l.plan.abilities.map(a => a.name).join(', ')}`);
+    for (const p of rec.problems) console.log(`  ! ${p}`);
+  };
+
+  if (who && flag('init')) {
+    const sheetPath = path.join(REPO, 'substrate', 'sheets', who + '.json');
+    if (!fs.existsSync(sheetPath)) {
+      console.error(`no sheet at ${sheetPath} — run tools/m59-sheet.mjs first, or write the file by hand`);
+      process.exit(1);
+    }
+    const sheet = JSON.parse(fs.readFileSync(sheetPath, 'utf8'));
+    const p = loadoutPath(who);
+    if (fs.existsSync(p) && !flag('force')) {
+      console.error(`${p} already exists — --force to overwrite it`);
+      process.exit(1);
+    }
+    const res = writeLoadout(who, starterFrom(sheet));
+    console.log(`wrote ${res.path}`);
+    show({ file: path.basename(res.path), loadout: res.loadout, problems: res.problems });
+    process.exit(0);
+  }
+
+  if (flag('check-all') || (who && flag('check'))) {
+    const rows = who ? [readLoadout(who)].filter(Boolean) : listLoadouts().filter(r => r.loadout);
+    if (!rows.length) { console.log('no loadouts to check'); process.exit(0); }
+    let fleet = null;
+    try { fleet = await broker('fleet', {}); }
+    catch (e) { console.error(`the broker on ${PORT} is not answering (${e.message}) — nothing to check against`); process.exit(1); }
+    for (const rec of rows) {
+      const l = rec.loadout;
+      const row = (fleet.fleet || []).find(r => norm(r.character) === norm(l.character));
+      if (!row) { console.log(`${l.character}: not in the fleet`); continue; }
+      let inv = { items: [] }, eq = { equipped: [] };
+      try { inv = await broker('inventory', { agent: row.agent }); } catch { /* reported below */ }
+      try { eq = await broker('equipment', { agent: row.agent }); } catch { /* worn is optional */ }
+      const r = reconcile(l, { items: inv.items || [], equipped: eq.equipped || [] });
+      console.log(`${l.character.padEnd(10)} ${r.summary}` +
+                  (r.at_least ? `   at least ${r.at_least}sh` : ''));
+      for (const b of r.buy) console.log(`   buy   ${b.item} x${b.short}${b.why ? '   (' + b.why + ')' : ''}`);
+      for (const s of r.sell) console.log(`   shed  ${s.item} x${s.over}   (${s.why})`);
+      for (const [slot, g] of Object.entries(r.gear.slots))
+        if (g.upgrade_to) console.log(`   ${slot}: holding ${g.have}, wants ${g.upgrade_to.join(' or ')}`);
+      if (r.gear.weapon?.upgrade_to)
+        console.log(`   weapon: holding ${r.gear.weapon.have}, wants ${r.gear.weapon.upgrade_to.join(' or ')}`);
+    }
+    process.exit(0);
+  }
+
+  if (who) {
+    const rec = readLoadout(who);
+    if (!rec) {
+      console.error(`no loadout for "${who}" — ${loadoutPath(who) ?? 'that name cannot be a filename'}`);
+      console.error('write one in the compendium planner, or: node tools/m59-loadout.mjs ' + who + ' --init');
+      process.exit(1);
+    }
+    if (flag('json')) console.log(JSON.stringify(rec.loadout, null, 1));
+    else show({ file: path.basename(rec.path), ...rec });
+    process.exit(0);
+  }
+
+  const all = listLoadouts();
+  if (!all.length) {
+    console.log(`no loadouts in ${LOADOUT_DIR}`);
+    console.log('One per character. Write them in the compendium planner ' +
+                '(node tools/m59-compendium.mjs --open --to /planner/), or seed one from a sheet:');
+    console.log('  node tools/m59-loadout.mjs Kermit --init');
+    process.exit(0);
+  }
+  console.log(`${all.length} loadout(s) in ${LOADOUT_DIR}`);
+  for (const rec of all) { console.log(''); show(rec); }
+}

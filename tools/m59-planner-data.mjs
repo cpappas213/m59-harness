@@ -29,7 +29,15 @@
 //
 // So: match case-insensitively, and walk the parent chain only when the class itself is
 // silent.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import path from 'node:path';
+// The compendium's own readers, imported rather than reimplemented. Class variables
+// INHERIT — `viWeight` is declared on a parent for most of the 324 item classes — and a
+// second implementation of that walk is how the item table ends up disagreeing with the
+// item pages it sits next to.
+import { loadImages, descendants, ivar, nameOf, descOf, humanize,
+         iconFor, ownMessage, findMessage, parseConsPairs, cleanText } from
+       '../compendium/tools/lib.mjs';
 
 const arg = (n, d = null) => {
   const i = process.argv.indexOf('--' + n);
@@ -89,6 +97,17 @@ function displayName(key, c) {
   return named?.value || c.name || key;
 }
 
+// HOW MANY LEVELS THERE ARE, read before anything that needs to know. `vlLevelPoints` is
+// set in System's own Constructor rather than declared as a classvar, so it is recovered
+// from the message body (system.kod:414). Six entries, and both the schools table and the
+// "is this a real skill level or a sentinel" test below depend on knowing that.
+const sys = classes['system'];
+const levelPointsBody = (sys?.messages || []).map(m => String(m.body || ''))
+  .find(b => /vlLevelPoints\s*=\s*\[/.test(b));
+const levelPoints = levelPointsBody
+  ? JSON.parse(levelPointsBody.match(/vlLevelPoints\s*=\s*(\[[^\]]*\])/)[1])
+  : null;
+
 const skills = [];
 for (const [key, c] of Object.entries(classes)) {
   if (!/\/skill\//.test(c.file || '')) continue;
@@ -104,6 +123,40 @@ for (const [key, c] of Object.entries(classes)) {
     key,
     name: displayName(key, c),
     requisite_stat: stat,
+    // THE SEVENTH TRACK. PlayerCanLearn sums `GetLevelLearnPoints` over the six schools AND
+    // over `iWeapon` — the highest `viSkill_level` of any skill known, all of them pooled
+    // (player.kod:10692) — so a character that has been learning proficiencies pays more for
+    // its next spell. Without this the planner understates every such build, and it does so
+    // in the direction that looks affordable.
+    //
+    // LEVEL 50 IS A SENTINEL, NOT A LEVEL. assess, thrust and kick declare
+    // `viSkill_level = 50` and the game has six levels. `Skill.GetValue` (skill.kod:128)
+    // doubles per level, so the "price" is 250 * 2^50 — nobody buys one, which is the point:
+    // they are granted, not sold. Emitting that number would have put 281474976710656000sh
+    // on a page as though it were a price.
+    //
+    // It matters for the COST too, and in the direction nobody would guess.
+    // `GetLevelLearnPoints(50)` is `Nth(vlLevelPoints, 50)` on a six-element list, and Nth
+    // past the end returns NIL after logging "Nth can't go past end of list"
+    // (blakserv/list.c:178). So a character that knows thrust has iWeapon = 50 and its
+    // weapon track contributes NOTHING — including hiding the proficiency levels it would
+    // otherwise have been charged for. `levelPointsAt` reproduces that by returning 0 above
+    // the table rather than clamping to the last entry, which would have been the natural
+    // thing to write and would have been wrong.
+    ...(() => {
+      const l = ivar(db, c, 'viSkill_level');
+      const real = l != null && levelPoints != null && l >= 1 && l <= levelPoints.length;
+      return {
+        level: l,
+        for_sale: real,
+        price: real ? 250 * 2 ** l : null,
+        level_note: l != null && !real
+          ? `viSkill_level is ${l} and the game has ${levelPoints?.length ?? '?'} levels — a `
+            + 'sentinel for "granted, not sold". It contributes nothing to the learning cost '
+            + 'because Nth falls off the end of vlLevelPoints and returns nil.'
+          : null,
+      };
+    })(),
     abstract,
     learnable: !abstract,
     parent: c.parent || null,
@@ -173,24 +226,114 @@ byStat.intellect.applies_to_everything =
 //
 // so each point of intellect buys (2 * POINTS_SLOPE / 5) advancement points off the
 // cost of the next level, and the cost rises with how much is already known.
-const sys = classes['system'];
-const levelPointsBody = (sys?.messages || []).map(m => String(m.body || ''))
-  .find(b => /vlLevelPoints\s*=\s*\[/.test(b));
-const levelPoints = levelPointsBody
-  ? JSON.parse(levelPointsBody.match(/vlLevelPoints\s*=\s*(\[[^\]]*\])/)[1])
-  : null;
+// THREE CONSTANTS ARE NOT IN THE SNAPSHOT AND ARE READ OUT OF THE SOURCE FILE INSTEAD.
+//
+// POINTS_SLOPE and MIN_NEEDED_TO_ADVANCE are `constants:` in player.kod, and
+// piMaxLearnPoints is a classvar on Settings. None of the three is in koddb's constant
+// table — the builder folds `.khd` includes and not a class's own `constants:` block —
+// so the first version of this file exported them as nulls and said, correctly, that a
+// planner must refuse to draw a cost curve without them.
+//
+// It does not have to refuse: the tree they live in is the same tree every citation on
+// this site points into, so they are read from it directly, with the line they came from
+// carried alongside. A GREP IS NOT A PARSE, and that is the whole risk here — so each one
+// is anchored to its own declaration syntax, and anything that does not match exactly
+// stays null and goes back on the unresolved list rather than defaulting to a plausible
+// number. A wrong slope produces a cost curve that looks authoritative and is invented,
+// which is strictly worse than no curve at all.
+const M59 = process.env.M59_ROOT || 'C:/code/Meridian59';
+const PLAYER_KOD = path.join(M59, 'kod/object/active/holder/nomoveon/battler/player.kod');
+const SETTINGS_KOD = path.join(M59, 'kod/util/settings.kod');
 
-// TWO CONSTANTS ARE NOT RESOLVABLE FROM THIS SNAPSHOT, AND SAYING SO IS THE POINT.
+function constantFrom(file, re, label) {
+  if (!existsSync(file)) return { value: null, cite: null, why: `${file} is not here` };
+  const text = readFileSync(file, 'utf8');
+  const m = re.exec(text);
+  if (!m) return { value: null, cite: null, why: `${label} did not match its declaration in ${path.basename(file)}` };
+  const line = text.slice(0, m.index).split('\n').length;
+  return { value: Number(m[1]), cite: `${path.relative(M59, file).replace(/\\/g, '/')}:${line}`, why: null };
+}
+
+// `^[ \t]*` and NOT `^\s*`. `\s` matches a newline, so on a declaration preceded by a
+// blank line the match starts one line early and every citation this file emits is off by
+// one — which is the one kind of wrong a citation must never be, because it points at a
+// real line that says something else and reads as verified.
+const POINTS_SLOPE = constantFrom(PLAYER_KOD, /^[ \t]*POINTS_SLOPE[ \t]*=[ \t]*(-?\d+)/m, 'POINTS_SLOPE');
+const MIN_NEEDED = constantFrom(PLAYER_KOD, /^[ \t]*MIN_NEEDED_TO_ADVANCE[ \t]*=[ \t]*(-?\d+)/m, 'MIN_NEEDED_TO_ADVANCE');
+const MAX_LEARN_POINTS = constantFrom(SETTINGS_KOD, /^[ \t]*piMaxLearnPoints[ \t]*=[ \t]*(-?\d+)/m, 'piMaxLearnPoints');
+
+const CONSTS = { POINTS_SLOPE, MIN_NEEDED_TO_ADVANCE: MIN_NEEDED, MAX_LEARN_POINTS };
+const unresolved = Object.entries(CONSTS).filter(([, v]) => v.value == null).map(([k]) => k);
+
+// -------------------------------------------------- what a character can be asked to carry
 //
-// POINTS_SLOPE and MIN_NEEDED_TO_ADVANCE are referenced inside PlayerCanLearn's body but
-// are not captured in koddb's constant table — they live in a .khd include the builder
-// did not fold in. M59_ROOT is unset here, so there is nothing local to read them from.
+// The planner's inventory panel is a shopping list, so it needs the things a character
+// can actually hold, with the two numbers that decide whether it can hold them.
 //
-// A planner that guessed them would produce a cost curve that looks authoritative and is
-// invented. So they are exported as nulls with the formula intact: whatever consumes
-// this can show the level table and the shape of the relationship, and must refuse to
-// draw exact numbers until these are filled in from the source tree.
-const unresolved = ['POINTS_SLOPE', 'MIN_NEEDED_TO_ADVANCE'];
+// WEIGHT AND BULK ARE INHERITED AND USUALLY NOT DECLARED HERE. ElderBerry's chain is
+// ElderBerry -> NumberItem -> PassiveItem -> Item, and only one of those says what a
+// berry weighs. `ivar` walks that chain; reading `classvars` directly would give null for
+// most of the table and a carry estimate that is quietly far too optimistic.
+//
+// A REAGENT IS NOT A CLASS. Nothing in the tree declares an item to BE one — an item is a
+// reagent because some spell's ResetReagents names it (derive/reagents.mjs makes the same
+// point). So the reagent flag is the inversion of every spell's component list, which
+// also means a spell added to the game brings its components with it.
+const images = (() => { try { return loadImages(); } catch { return {}; } })();
+
+const reagentUses = new Map();                   // lowercased CLASS name -> [{spell, count}]
+for (const s of descendants(db, 'Spell')) {
+  if (ivar(db, s, 'viSpell_num') === null) continue;
+  const m = ownMessage(s, 'ResetReagents') || findMessage(db, s, 'ResetReagents');
+  for (const r of (m ? parseConsPairs(m.body) : [])) {
+    const k = r.cls.toLowerCase();
+    if (!reagentUses.has(k)) reagentUses.set(k, []);
+    reagentUses.get(k).push({ spell: nameOf(db, s) || humanize(s.name), count: r.count });
+  }
+}
+
+const inChain = (c, ancestor) => c.chain.some(x => lower(x) === lower(ancestor));
+
+// One label per item, in the order the planner groups them. First match wins, so the
+// specific slots come before the general ones — a shield is Armor too.
+const KINDS = [
+  ['reagent', (c) => reagentUses.has(lower(c.name))],
+  ['food',    (c) => inChain(c, 'Food')],
+  ['weapon',  (c) => inChain(c, 'Weapon')],
+  ['shield',  (c) => inChain(c, 'Shield')],
+  ['armour',  (c) => inChain(c, 'Armor')],
+  ['money',   (c) => /^shilling|^coin/i.test(c.name)],
+];
+
+const items = [];
+for (const c of descendants(db, 'Item')) {
+  // A CLASS WITH CHILDREN IS USUALLY A CATEGORY. `Weapon`, `Food` and `Armor` are not
+  // things anybody carries, and offering them in a shopping list produces a want nothing
+  // in the world can satisfy. Kept only when the game gives it a name of its own AND
+  // nothing inherits from it.
+  if ((c.children || []).length) continue;
+  const name = nameOf(db, c);
+  if (!name) continue;                        // no name resource: an internal, not an item
+  const kind = KINDS.find(([, test]) => test(c))?.[0] ?? 'other';
+  const icon = iconFor(db, images, c);
+  const uses = reagentUses.get(lower(c.name)) ?? null;
+  items.push({
+    name: cleanText(name),
+    cls: c.name,
+    kind,
+    weight: ivar(db, c, 'viWeight'),
+    bulk: ivar(db, c, 'viBulk'),
+    value: ivar(db, c, 'viValue_average'),
+    nutrition: kind === 'food' ? ivar(db, c, 'viNutrition') : null,
+    // Relative to a page one directory below the site root, which is where every page
+    // this feeds lives. derive/README.md's "URLs are global" rule.
+    icon: icon ? icon.src.replace(/^\.\.\//, '') : null,
+    reagent_for: uses,
+    description: cleanText(descOf(db, c) || '') || null,
+    file: c.file || null,
+  });
+}
+items.sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
 
 const out = {
   builtAt: null,          // stamped by the caller; kept null so reruns diff cleanly
@@ -200,18 +343,38 @@ const out = {
   skills,
   spells,
   schools,
+  items,
   learning: {
     level_points: levelPoints,                 // cost weight of each school level, 1..6
     max_school_level: levelPoints ? levelPoints.length : null,
+    // THE SEVENTH TRACK IS THE WEAPON SKILLS, AND IT IS EASY TO MISS. PlayerCanLearn sums
+    // GetLevelLearnPoints over iWeapon and the six schools (player.kod:10813) — iWeapon
+    // being the highest level of any SKILL known, all of them pooled — so a planner that
+    // costs only the six schools understates every build that has learned a proficiency.
+    tracks: ['weapon skills', ...schools],
+    points_slope: POINTS_SLOPE.value,
+    min_needed_to_advance: MIN_NEEDED.value,
+    max_learn_points: MAX_LEARN_POINTS.value,
+    cites: Object.fromEntries(Object.entries(CONSTS).map(([k, v]) => [k, v.cite])),
     formula: 'iNeed = iPoints*POINTS_SLOPE + (297 - MaxLearnPoints*POINTS_SLOPE) '
            + '- (RawIntellect*2*POINTS_SLOPE/5), bounded below by MIN_NEEDED_TO_ADVANCE',
+    // The two discounts that make the low levels reachable at all, and which a planner
+    // that stops at the formula above gets wrong by a factor of three.
+    scarcity: 'if the previous level holds fewer than three abilities the cost is eased: '
+            + 'prev_level 1 divides iNeed by 3, prev_level 2 multiplies it by 2/3 '
+            + '(player.kod:10915-10930)',
+    // What you are measured against, which is NOT a pool that accumulates.
+    have: 'iHave is the sum of your best THREE ability values among what you already know '
+        + 'at the level below, in the same school — 297 flat for level 1. Learning succeeds '
+        + 'when iHave >= iNeed (player.kod:10775)',
     intellect_effect: 'each point of intellect removes (2*POINTS_SLOPE/5) from the cost '
                     + 'of the next level',
     source: 'player.PlayerCanLearn',
     unresolved,
     note: unresolved.length
-      ? 'POINTS_SLOPE and MIN_NEEDED_TO_ADVANCE are referenced by PlayerCanLearn but are '
-        + 'not in this koddb snapshot. Set M59_ROOT and re-derive before showing exact '
+      ? `${unresolved.join(' and ')} could not be read (`
+        + Object.entries(CONSTS).filter(([, v]) => v.why).map(([k, v]) => `${k}: ${v.why}`).join('; ')
+        + '). Set M59_ROOT to the game source and re-derive before showing exact '
         + 'advancement-point costs; the level table and the direction of the effect are '
         + 'safe to show without them.'
       : null,
@@ -233,10 +396,20 @@ if (PRINT_ONLY) {
     console.log(`  ${sc.padEnd(12)} ${counts.join('  ')}`);
   }
   console.log(`\nlevel points: ${JSON.stringify(levelPoints)}`);
-  console.log(`unresolved constants: ${unresolved.join(', ') || 'none'}`);
+  for (const [k, v] of Object.entries(CONSTS))
+    console.log(`  ${k.padEnd(22)} ${v.value ?? 'UNRESOLVED'}${v.cite ? '   ' + v.cite : ''}${v.why ? '   (' + v.why + ')' : ''}`);
+  const byKind = {};
+  for (const i of items) byKind[i.kind] = (byKind[i.kind] || 0) + 1;
+  console.log(`\nitems (${items.length}): ` +
+              Object.entries(byKind).map(([k, n]) => `${k} ${n}`).join(', '));
+  console.log(`  no weight declared anywhere in the chain: ` +
+              items.filter(i => i.weight == null).length);
 } else {
   writeFileSync(OUT, JSON.stringify(out, null, 1));
   console.log(`wrote ${OUT}`);
-  console.log(`  ${skills.length} skills, ${spells.length} spells, ${schools.length} schools`);
+  console.log(`  ${skills.length} skills, ${spells.length} spells, ${schools.length} schools, ` +
+              `${items.length} items`);
   if (unresolved.length) console.log(`  UNRESOLVED: ${unresolved.join(', ')} — see learning.note`);
+  else console.log(`  learning constants resolved: POINTS_SLOPE ${POINTS_SLOPE.value}, ` +
+                   `MIN_NEEDED_TO_ADVANCE ${MIN_NEEDED.value}, MaxLearnPoints ${MAX_LEARN_POINTS.value}`);
 }

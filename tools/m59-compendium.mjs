@@ -34,6 +34,11 @@ import { fileURLToPath } from 'node:url';
 // seven of the eight were invented until recently, and a second copy is how that comes
 // back.
 import { proficiencyFor as profFor } from './m59-skills.mjs';
+// The loadout format, and the only thing that decides what a character name may become on
+// the filesystem. This server accepts one over a socket; it does not get to invent its own
+// rule for that.
+import { readLoadout, writeLoadout, listLoadouts, loadoutPath, slugOf, normalise, LOADOUT_DIR }
+  from './m59-loadout.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(HERE, '..');
@@ -251,6 +256,12 @@ async function characterBuild(agent) {
   });
 }
 
+const JSONH = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' };
+const json = (res, body, code = 200) => {
+  res.writeHead(code, JSONH);
+  res.end(JSON.stringify(body, null, 1));
+};
+
 export function createServer() {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
@@ -309,6 +320,155 @@ export function createServer() {
       res.writeHead(302, { location: url.searchParams.get('to') || '/creatures/',
                            'set-cookie': `${COOKIE}=; Path=/; Max-Age=0` });
       return res.end();
+    }
+
+    // ------------------------------------------------------------------ the planner
+    //
+    // THREE ENDPOINTS, AND ONE OF THEM WRITES. That is a first for this tree — everything
+    // else here is a static site that happens to be served — so it is worth being explicit
+    // about what bounds it: the listener is 127.0.0.1 only (see the header of this file),
+    // the path is `substrate/loadouts/<slug>.json` with the slug computed by
+    // m59-loadout.mjs and nothing else, and the body is run through the same `normalise`
+    // the tool uses before a byte is written. A loadout holds no credential — it is a
+    // shopping list — which is why this is a reasonable thing to expose at all and why the
+    // roster, which does, stays behind the path-traversal guard in serveStatic.
+
+    // WHAT THE PLANNER OPENS WITH: a character as observed, plus whatever plan it has. Both
+    // halves, separately labelled, because the page's one job is to never draw them alike.
+    if (url.pathname === '/_planner') {
+      const agent = url.searchParams.get('agent');
+      if (!agent) { res.writeHead(400, JSONH).end(JSON.stringify({ error: 'need ?agent=' })); return; }
+      try {
+        const [status, equipment, ability, inv] = await Promise.all([
+          broker('status', { agent, brief: true }),
+          broker('equipment', { agent }),
+          broker('abilities', { agent, known_only: false }),
+          broker('inventory', { agent }),
+        ]);
+        const character = status?.character ?? status?.name ?? agent;
+        // A CHARACTER CAN HAVE A LOADOUT AND NOT BE IN THE FLEET, and vice versa. Read it by
+        // NAME, because the roster's agent handles are per-machine and a loadout is about
+        // the character.
+        let saved = null;
+        try { saved = readLoadout(character); } catch { /* a broken file is not a reason to refuse the character */ }
+        // ATTRIBUTES ARRIVE AS {value, display_scale, hard_cap} AND THE PAGE WANTS NUMBERS.
+        // Flattened here rather than in the browser, because `hard_cap` is the real ceiling
+        // a re-roll may spend up to (70) and the page had it hardcoded — a number the
+        // server already knows should not be typed into a stylesheet's neighbour.
+        const attrRaw = status?.attributes ?? status?.stats ?? {};
+        const attributes = {}, caps = {};
+        for (const [k, v] of Object.entries(attrRaw)) {
+          attributes[k] = Number.isFinite(v) ? v : (Number.isFinite(v?.value) ? v.value : 0);
+          if (Number.isFinite(v?.hard_cap)) caps[k] = v.hard_cap;
+        }
+        return json(res, {
+          observed: {
+            character, agent,
+            attributes, attribute_caps: caps,
+            // A CHARACTER'S LEVEL IS ITS MAXIMUM HEALTH. There is no separate field, here or
+            // in the game — see substrate/sheets/*.json, which says the same thing.
+            level: status?.vitals?.health?.max ?? null,
+            skills: ability?.skills ?? [],
+            spells: ability?.spells ?? [],
+            inventory: inv?.items ?? [],
+            equipment: equipment?.equipped ?? [],
+            at: new Date().toISOString(),
+            source: 'the broker, live',
+            // The page shows this: an ability list read four minutes ago and one read now
+            // must not render identically.
+            abilities_age_ms: ability?.freshness?.age_ms ?? null,
+          },
+          loadout: saved?.loadout ?? null,
+          problems: saved?.problems ?? [],
+          character,
+        });
+      } catch (e) {
+        res.writeHead(502, JSONH);
+        return res.end(JSON.stringify({ error: `could not read ${agent}: ${e.message}. ` +
+          `This needs the broker on ${BROKER_PORT} with that agent in game.` }));
+      }
+    }
+
+    // WHO THERE IS TO PLAN FOR. Also the page's test for whether it is being served by the
+    // harness at all — nothing else answers this path, so a 404 is the honest signal that
+    // Save cannot work, and the page says so rather than offering a button that does
+    // nothing.
+    if (url.pathname === '/_loadouts') {
+      const saved = listLoadouts();
+      let fleet = [];
+      try {
+        const f = await broker('fleet', {});
+        const has = new Set(saved.filter(s => s.loadout).map(s => slugOf(s.loadout.character)));
+        fleet = (f.fleet || []).filter(r => r.character)
+          .map(r => ({ agent: r.agent, character: r.character, loadout: has.has(slugOf(r.character)) }));
+      } catch { /* no broker: the saved loadouts are still worth listing */ }
+      return json(res, {
+        dir: LOADOUT_DIR,
+        fleet,
+        loadouts: saved.map(s => ({ character: s.loadout?.character ?? s.file,
+                                    file: s.file, ok: !!s.loadout, problems: s.problems })),
+      });
+    }
+
+    if (url.pathname === '/_loadout' && req.method === 'GET') {
+      const character = url.searchParams.get('character');
+      if (!character) { res.writeHead(400, JSONH).end(JSON.stringify({ error: 'need ?character=' })); return; }
+      const rec = readLoadout(character);
+      if (!rec) { res.writeHead(404, JSONH).end(JSON.stringify({ error: `no loadout for ${character}` })); return; }
+      return json(res, { loadout: rec.loadout, problems: rec.problems, path: rec.path });
+    }
+
+    if (url.pathname === '/_loadout' && req.method === 'POST') {
+      let body = '';
+      let tooBig = false;
+      req.on('data', (c) => {
+        body += c;
+        // A shopping list is a few kilobytes. Bounded so a stuck or hostile client cannot
+        // make this process hold an unbounded string — the socket is loopback, which limits
+        // who can try it, not how much they can send.
+        if (body.length > 256 * 1024 && !tooBig) { tooBig = true; req.destroy(); }
+      });
+      req.on('end', () => {
+        if (tooBig) return;
+        let raw;
+        try { raw = JSON.parse(body); }
+        catch (e) { res.writeHead(400, JSONH); return res.end(JSON.stringify({ error: 'not JSON: ' + e.message })); }
+        const character = String(raw?.character ?? '').trim();
+        // TWO CHECKS, AND THE SECOND IS NOT REDUNDANT.
+        //
+        // `slugOf` already makes escape impossible — it drops everything that is not a
+        // letter or digit, so "../../substrate/fleets/prod" lands on
+        // `loadouts/substrate-fleets-prod.json` rather than anywhere near the roster. That
+        // is the property that matters and it is tested.
+        //
+        // But it lands SOMEWHERE, under a name nobody asked for, and a write that silently
+        // renames its target is the shape of a bug even when it is not the shape of an
+        // exploit. No Meridian character name contains a slash or a dot-dot, so a request
+        // carrying one is not a character name and is refused rather than flattened.
+        if (/[\\/]|\.\./.test(character)) {
+          res.writeHead(400, JSONH);
+          return res.end(JSON.stringify({ error: `"${character}" is not a character name — ` +
+            'it looks like a path. Nothing here can be written outside substrate/loadouts/, ' +
+            'but a name that would be silently rewritten is refused rather than accepted.' }));
+        }
+        if (!slugOf(character)) {
+          res.writeHead(400, JSONH);
+          return res.end(JSON.stringify({ error: `"${character}" cannot be a character name — ` +
+            'letters and digits, please' }));
+        }
+        try {
+          // `force` because the planner is editing a named character deliberately, and the
+          // collision guard exists for a caller that does not know it is overwriting. Say
+          // which file it went to either way: a save that lands somewhere unexpected must
+          // not look identical to one that lands where you meant.
+          const out = writeLoadout(character, raw, { force: true });
+          return json(res, { ok: true, path: out.path, loadout: out.loadout, problems: out.problems });
+        } catch (e) {
+          res.writeHead(400, JSONH);
+          return res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
     }
 
     serveStatic(req, res, url.pathname);
