@@ -440,7 +440,12 @@ async function round(n) {
     // supervisor working.
     //
     // The keeper relocates itself out of a denied room. Leave it alone to do it.
-    if (/no safe wall|refusing to fight/i.test(reason)) {
+    // NOW READ AS DATA. `status.refusals` carries a stable code; the regex below stays
+    // only as the fallback for a broker that predates the field, and can go once every
+    // broker in use reports it. The code is the contract; the sentence is for people.
+    const refusals = Array.isArray(r.refusals) ? r.refusals : [];
+    const refused = (code) => refusals.some(x => x?.code === code && x?.blocking !== false);
+    if (refused('NO_SAFE_WALL') || /no safe wall|refusing to fight/i.test(reason)) {
       console.log(`   leaving ${r.character} alone: ${reason.slice(0, 70)} ` +
                   '(a refusal, not a stall — it relocates itself)');
       continue;
@@ -464,7 +469,8 @@ async function round(n) {
     // is not accumulating.
     //
     // The keeper arms itself and moves on the moment it reaches 15. Leave it be.
-    if (/needs \d+ to make one|resting for the mana|regain mana|unarmed —/i.test(reason)) {
+    if (refused('UNARMED_NO_DONOR') || r.waiting_on?.code === 'MANA_FOR_CREATE_WEAPON' ||
+        /needs \d+ to make one|resting for the mana|regain mana|unarmed —/i.test(reason)) {
       console.log(`   leaving ${r.character} alone: ${reason.slice(0, 70)} ` +
                   '(waiting for casting mana — churning the keeper restarts the decision, not the wait)');
       continue;

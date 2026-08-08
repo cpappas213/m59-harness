@@ -198,7 +198,17 @@ node tools/m59-compendium.mjs --open --to /planner/    # or press P in the fleet
 node tools/m59-loadout.mjs                             # every loadout on this machine
 node tools/m59-loadout.mjs Kermit --check              # ...against what Kermit holds now
 node tools/m59-loadout.mjs Kermit --init               # seed one from its character sheet
+node tools/m59-loadout.mjs Kermit --gear-to-fleet      # what giving everyone its gear would do
 ```
+
+The **gear** half is the one part of a loadout that is about the fleet rather than
+about a character — how many reagents a caster burns is its own business, but
+"fight with a short sword and wear leather" is a decision about all of them. So
+the planner's *Apply gear to fleet*, and `--gear-to-fleet --apply`, write that one
+field into every character's loadout and change nothing else in any of them. Both
+say what they would do first: it is one file per character, and an empty gear list
+is refused rather than applied, because a loadout nobody has filled in is not an
+instruction to strip the fleet.
 
 The keeper reads `substrate/loadouts/<character>.json` every pass and acts on it:
 it tops up to the minimums at a counter it is already standing at, holds back
@@ -210,7 +220,7 @@ characters.
 **A loadout adds rules; it never removes them.** A character without one behaves
 exactly as it did before loadouts existed, and a loadout that mentions only
 elderberry changes nothing about anything else. That is the property
-`m59-loadout-test.mjs` spends most of its 109 assertions on.
+`m59-loadout-test.mjs` spends most of its 126 assertions on.
 
 ## Source analysis
 

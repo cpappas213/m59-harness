@@ -7,6 +7,8 @@
 //   node tools/m59-loadout.mjs --check-all          # the whole fleet, one line each
 //   node tools/m59-loadout.mjs Kermit --init        # write a starter file from the sheet
 //   node tools/m59-loadout.mjs Kermit --json        # the file, normalised
+//   node tools/m59-loadout.mjs Kermit --gear-to-fleet          # ...says what it WOULD do
+//   node tools/m59-loadout.mjs Kermit --gear-to-fleet --apply  # give everyone that gear
 //
 // WHY THIS EXISTS. Every buy, sell, keep and drop decision in this repository was a
 // constant somewhere in a tool: WANTS in m59-outfit.mjs, KEEP in m59-reagents.mjs, the
@@ -102,7 +104,10 @@ export function blank(character, agent = null) {
     updated: null,
     note: '',
     plan: { schools: {}, weapon_level: null, abilities: [] },
-    gear: { weapon: [], slots: {} },
+    // `from` is provenance and nothing else reads it: a gear stanza that arrived from a
+    // fleet-wide apply looks exactly like one somebody typed for this character, and the
+    // difference is the whole reason to open the file.
+    gear: { weapon: [], slots: {}, from: null },
     carry: [],
     sell: [],
     keep: [],
@@ -221,6 +226,7 @@ export function normalise(raw, { character = null } = {}) {
       problems.push(`slot "${slot}" is not one this repository knows (${GEAR_SLOTS.join(', ')}) — carried through`);
     out.gear.slots[slot] = list;
   }
+  out.gear.from = src.gear?.from ? String(src.gear.from).slice(0, 200) : null;
 
   out.purse.float = numOr(src.purse?.float, null);
   out.purse.bank_above = numOr(src.purse?.bank_above, null);
@@ -280,6 +286,131 @@ export function writeLoadout(character, raw, { force = false } = {}) {
   fs.writeFileSync(tmp, JSON.stringify(loadout, null, 1));
   fs.renameSync(tmp, p);
   return { path: p, loadout, problems };
+}
+
+// ------------------------------------------------------------------ one answer, every character
+//
+// THE GEAR HALF IS THE ONE PART OF A LOADOUT THAT IS ABOUT THE FLEET RATHER THAN ABOUT A
+// CHARACTER. How many reagents this caster burns, which schools it is heading for, what its
+// purse floor is — all of that is one character's business. "Fight with a short sword, wear
+// leather, carry a shield" is a decision about how the fleet plays, and the only way to give
+// it to twenty-one characters was to type it twenty-one times.
+//
+// So this copies the GEAR AND NOTHING ELSE. Every other field of an existing loadout is left
+// exactly as it was found — that is what makes it safe to run across characters somebody has
+// already planned by hand, and it is the property the tests pin hardest.
+//
+// AN EMPTY GEAR IS REFUSED, because it is not a request. A loadout with no gear in it is the
+// ordinary state of one nobody has filled in yet, so a fleet-wide write of it would silently
+// clear twenty-one characters' weapon preferences and report success — which is exactly the
+// shape of every failure this repository has already paid for. `allowEmpty` is how somebody
+// says they meant it.
+
+const cloneGear = (g) => ({
+  weapon: [...(g?.weapon ?? [])],
+  slots: Object.fromEntries(Object.entries(g?.slots ?? {}).map(([k, v]) => [k, [...v]])),
+  from: g?.from ?? null,
+});
+
+export const gearIsEmpty = (gear) =>
+  !(gear?.weapon?.length) && !Object.values(gear?.slots ?? {}).some(v => v?.length);
+
+// Two gear stanzas are the same answer when they name the same things IN THE SAME ORDER.
+// The order is the preference — first choice first — so a list reordered is a different
+// instruction, and reporting it as "no change" would hide the only edit somebody made.
+// `from` is provenance, not preference, and is deliberately not compared.
+export function sameGear(a, b) {
+  const key = (g) => JSON.stringify([
+    (g?.weapon ?? []).map(norm),
+    Object.keys(g?.slots ?? {}).filter(s => (g.slots[s] ?? []).length).sort()
+      .map(s => [norm(s), g.slots[s].map(norm)]),
+  ]);
+  return key(a) === key(b);
+}
+
+// Run a gear stanza through the same normalise() everything else goes through, so a
+// fleet-wide write cannot mean something a single save would not.
+export function normaliseGear(gear) {
+  const { loadout, problems } = normalise({ character: 'x', gear }, { character: 'x' });
+  return { gear: loadout.gear, problems };
+}
+
+// PLANNING AND APPLYING ARE THE SAME FUNCTION, called twice. A preview computed by different
+// code from the write it previews is a preview of something else — and this one writes to
+// every character at once, which is the worst possible place for that gap.
+//
+// `characters` is [{character, agent}] or plain names. Nothing here asks a broker who the
+// fleet is: the caller decides that, because "the fleet" is a live question and this file
+// only knows about files.
+export function applyGearToAll(gear, characters, { from = null, apply = false, allowEmpty = false } = {}) {
+  const { gear: want, problems } = normaliseGear(gear);
+  if (gearIsEmpty(want) && !allowEmpty)
+    throw new Error('this plan has no gear on it — nothing to apply. An empty gear list is not ' +
+                    'an instruction to strip the fleet, it is a loadout nobody has filled in yet.');
+
+  const stamp = from ? `${String(from).slice(0, 120)}${apply ? `, ${new Date().toISOString().slice(0, 16).replace('T', ' ')}` : ''}` : null;
+  const rows = [];
+  for (const c of characters ?? []) {
+    const character = String((typeof c === 'string' ? c : c?.character) ?? '').trim();
+    const agent = typeof c === 'string' ? null : (c?.agent ?? null);
+    const row = { character, agent, had: false, created: false, changed: false,
+                  before: null, after: null, path: null, error: null };
+    rows.push(row);
+
+    if (!slugOf(character)) { row.error = 'not a usable character name'; continue; }
+
+    let existing = null;
+    try { existing = readLoadout(character); }
+    catch (e) {
+      // A FILE THAT WILL NOT PARSE IS LEFT ALONE. Overwriting it would replace a loadout
+      // whose contents nobody can now see with one holding only gear, and the carry list
+      // that went missing would look like something nobody ever wrote.
+      row.error = `${loadoutPath(character)} could not be read (${e.message}) — left alone`;
+      continue;
+    }
+    // Two names that differ only by punctuation share one file (see writeLoadout). Across a
+    // whole fleet that is a collision waiting to happen, and the loser would be overwritten
+    // with somebody else's gear.
+    if (existing && norm(existing.loadout.character) !== norm(character)) {
+      row.error = `${path.basename(existing.path)} holds "${existing.loadout.character}", not ` +
+                  `"${character}" — two names that differ only by punctuation share one file`;
+      continue;
+    }
+
+    row.had = !!existing;
+    row.created = !existing;
+    row.before = existing ? cloneGear(existing.loadout.gear) : null;
+    row.changed = !existing || !sameGear(existing.loadout.gear, want);
+    // An unchanged row is not rewritten, so what it will hold afterwards is what it holds
+    // now — including its own provenance. Restamping a file the keeper is reading, to record
+    // that nothing about it changed, is a write with no reader.
+    row.after = row.changed ? { ...cloneGear(want), from: stamp } : cloneGear(existing.loadout.gear);
+    if (!apply || !row.changed) { if (existing) row.path = existing.path; continue; }
+
+    const raw = existing ? { ...existing.loadout } : blank(character, agent);
+    raw.gear = { ...cloneGear(want), from: stamp };
+    if (!raw.agent && agent) raw.agent = agent;
+    try {
+      const out = writeLoadout(character, raw);
+      row.path = out.path;
+      row.after = cloneGear(out.loadout.gear);
+    } catch (e) { row.error = e.message; row.changed = false; }
+  }
+
+  return {
+    applied: !!apply,
+    gear: cloneGear(want),
+    from: from ?? null,
+    problems,
+    rows,
+    counts: {
+      total: rows.length,
+      changed: rows.filter(r => r.changed && !r.error).length,
+      unchanged: rows.filter(r => !r.changed && !r.error).length,
+      created: rows.filter(r => r.created && !r.error).length,
+      failed: rows.filter(r => r.error).length,
+    },
+  };
 }
 
 // WHAT THE KEEPER CALLS, EVERY PASS, FOR TWENTY-ONE CHARACTERS. So it caches on mtime and
@@ -614,6 +745,48 @@ if (import.meta.filename === process.argv[1]) {
     console.log(`wrote ${res.path}`);
     show({ file: path.basename(res.path), loadout: res.loadout, problems: res.problems });
     process.exit(0);
+  }
+
+  // The planner's "Apply gear to fleet" button, on the command line. Plans by default and
+  // needs --apply, for the same reason m59-restore.mjs does: it writes one file per
+  // character, and a fleet-wide write that happens before you have read what it would do is
+  // one you find out about from the keeper.
+  if (who && flag('gear-to-fleet')) {
+    const rec = readLoadout(who);
+    if (!rec) { console.error(`no loadout for "${who}" — nothing to copy gear from`); process.exit(1); }
+    let fleet = null;
+    try { fleet = await broker('fleet', {}); }
+    catch (e) {
+      console.error(`the broker on ${PORT} is not answering (${e.message}) — and "the fleet" is a ` +
+                    'live question. The saved loadouts on this machine are a different set of ' +
+                    'characters and are deliberately not substituted for it.');
+      process.exit(1);
+    }
+    const chars = (fleet.fleet || []).filter(r => r.character)
+      .map(r => ({ character: r.character, agent: r.agent }));
+    let res;
+    try {
+      res = applyGearToAll(rec.loadout.gear, chars,
+                           { from: rec.loadout.character, apply: flag('apply'), allowEmpty: flag('force') });
+    } catch (e) { console.error(e.message); process.exit(1); }
+    const g = res.gear;
+    console.log(`${flag('apply') ? 'applied' : 'would apply'} ${rec.loadout.character}'s gear to ` +
+                `${chars.length} character(s):`);
+    if (g.weapon.length) console.log(`  weapon   ${g.weapon.join(' > ')}`);
+    for (const [s, v] of Object.entries(g.slots)) console.log(`  ${s.padEnd(8)} ${v.join(' > ')}`);
+    for (const p of res.problems) console.log(`  ! ${p}`);
+    for (const r of res.rows) {
+      const what = r.error ? `! ${r.error}`
+        : !r.changed ? 'already has it'
+        : r.created ? (flag('apply') ? 'new loadout written' : 'would get a new loadout')
+        : (flag('apply') ? 'gear replaced' : 'would be changed') +
+          (r.before && !gearIsEmpty(r.before) ? ` (was ${r.before.weapon.join(' > ') || 'no weapon'})` : ' (had no gear)');
+      console.log(`  ${r.character.padEnd(12)} ${what}`);
+    }
+    console.log(`${res.counts.changed} changed, ${res.counts.unchanged} already as asked` +
+                (res.counts.failed ? `, ${res.counts.failed} refused` : ''));
+    if (!flag('apply')) console.log('nothing was written — add --apply');
+    process.exit(res.counts.failed ? 1 : 0);
   }
 
   if (flag('check-all') || (who && flag('check'))) {

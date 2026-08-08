@@ -732,6 +732,29 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   a roster slot, and a loadout follows the character. `loadoutFor` caches on mtime, so the
   per-pass cost is a `stat()`.
 
+  **THE GEAR HALF IS THE ONE PART THAT IS ABOUT THE FLEET RATHER THAN ABOUT A CHARACTER**,
+  and so it is the one part worth handing to all of them at once — *Apply gear to fleet* in
+  the planner, or `node tools/m59-loadout.mjs <name> --gear-to-fleet --apply`. How many
+  reagents a caster burns is its own business; "fight with a short sword and wear leather" is
+  a decision about how the fleet plays, and saying it twenty-one times is how it ends up said
+  twenty-one slightly different ways. Four things it does rather than documents:
+
+  - **It copies `gear` and nothing else.** Every carry list, school plan, sell list, keep
+    list, note and purse floor it passes over is left exactly as it was found, which is what
+    makes it safe against characters somebody has already planned by hand.
+  - **An empty gear list is REFUSED.** That is the ordinary state of a loadout nobody has
+    filled in — not an instruction to clear twenty-one weapon preferences — and applying it
+    would have reported success. `allowEmpty` is how somebody says they meant it.
+  - **It plans first and the plan is the same function as the write**, `applyGearToAll` with
+    `apply: false`. A preview computed by different code from the write it previews is a
+    preview of something else, and this one writes a file per character.
+  - **A loadout that will not parse is left alone**, not replaced with one holding only gear:
+    the carry list that went missing would look like something nobody ever wrote.
+
+  `gear.from` records which plan a character's gear arrived from, and the planner clears it
+  the moment somebody edits the list — a line claiming the gear came from Kermit, over a list
+  Kermit never had, is worse than no line.
+
 - **THE PLANNER IS THE ONLY PAGE IN THE COMPENDIUM THAT CAN WRITE, and it looks like the
   game because it is editing the game's own four screens.** `compendium/planner/` rebuilds
   the client's right-hand panel — inventory, spells, skills, stats, same order, same stat
@@ -813,9 +836,10 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-describe-test.mjs` (52) and
   `node tools/m59-party-test.mjs` (57) and
   `node tools/m59-hits-test.mjs` (41) and
-  `node tools/m59-loadout-test.mjs` (109 — the loadout format, the learning arithmetic, and
-  the composed sell decision, against scratch directories; it sets `M59_LOADOUT_DIR` so it
-  never reads the real one, which a live keeper is reading every pass) and
+  `node tools/m59-loadout-test.mjs` (126 — the loadout format, the learning arithmetic, the
+  composed sell decision, and the fleet-wide gear write, against scratch directories; it sets
+  `M59_LOADOUT_DIR` so it never reads the real one, which a live keeper is reading every
+  pass) and
   `node tools/m59-economy-test.mjs` (61 — the Economy and Skills boards, and the one
   tab bar all five boards share) and
   `node tools/m59-backup-test.mjs` (42 — backing the rosters up and putting them back,

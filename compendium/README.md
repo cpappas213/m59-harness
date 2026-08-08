@@ -43,6 +43,16 @@ Three pages do real work rather than listing things:
   a level four out is priced against knowledge the character does not have yet, so a total
   for it would be arithmetic about an imaginary character.
 
+  The inventory tab also holds the **gear** — an ordered weapon and armour preference, best
+  first, which is a different kind of answer from a carry list: the keeper reaches for the
+  first of these the character owns and an outfitting run buys the first it is missing, so a
+  character holding the second is one upgrade short rather than missing its gear. That is
+  also the one part of a loadout that is about the fleet rather than about a character, so
+  **Apply gear to fleet** writes it into every character's loadout and changes nothing else
+  in any of them. It says what it would do first, per character, and refuses an empty list:
+  a loadout nobody has filled in is not an instruction to strip twenty-one weapon
+  preferences.
+
   Served by the harness it saves; opened any other way it exports the same file for you to
   drop in by hand, and says which of the two it is doing.
 

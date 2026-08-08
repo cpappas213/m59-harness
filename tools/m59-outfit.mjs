@@ -174,6 +174,14 @@ const usable = (items) => (items || []).filter(i => {
   const k = armourKind(nameOf(i));
   return !k || armourScore(k) > 0;
 });
+
+// Would this character actually put it on? Shared by the shop-choosing loop and the buy
+// loop, so "this smith supplies what we need" and "buy this" cannot disagree — chain and
+// plate score below bare skin and are neither.
+const wearableItem = (i) => {
+  const k = armourKind(nameOf(i));
+  return !k || armourScore(k) > 0;
+};
 function missingFor(items, wants = WANTS) {
   const have = usable(items);
   return wants.filter(w => !carries(have, w.re) && !carries(have, w.fallback));
@@ -462,7 +470,7 @@ async function outfit(row) {
     const bill = toLearn.length ? toLearn.reduce((t, a) => t + (a.price ?? 0), 0)
                : (missing.length ? GEAR_FLOOR : 0);
     if (bill > 0) {
-      const have = purseOf((await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || []);
+      let have = purseOf((await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || []);
       if (have < bill) {
         const mine = row.banked?.account ?? null;
         const usable = BANK_ROOMS.filter(b => !mine || b.account === mine);
@@ -500,6 +508,16 @@ async function outfit(row) {
           const now = purseOf((await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || []);
           log.push(now > have ? `withdrew ${now - have}sh at ${b.banker}`
                               : `${b.banker} handed over nothing (account ${b.account})`);
+          // MOVE THE BASELINE, or the second counter reports the first one's money.
+          //
+          // `have` was read once before this loop and never updated, so after a successful
+          // withdrawal at Yevitan the comparison at Skivlat was still against the ORIGINAL
+          // purse — `now > have` stayed true and the log said "withdrew 814sh at Yevitan,
+          // withdrew 814sh at Skivlat" for one withdrawal of 814. Jasper, Tos and Barloque
+          // share one account, so the second counter had nothing left to give and the line
+          // claiming otherwise is the only thing that was wrong. A stale baseline reads
+          // exactly like a real gain, which is why it survived a live run unnoticed.
+          have = now;
           if (now >= bill) break;
         }
       }
@@ -551,6 +569,34 @@ async function outfit(row) {
         const what = (seen.objects || []).map(o => o.name).filter(Boolean).slice(0, 8);
         tried.push(`${room} (reached it; ${what.length ? 'saw ' + what.join(', ') : 'room read as empty'})`);
         continue;
+      }
+
+      // AND A SHOPKEEPER WHO DOES NOT STOCK IT IS NOT A SHOP EITHER.
+      //
+      // The comment above says a shop we cannot buy in is worth what a shop we could not
+      // reach is worth — and then the loop stopped at the first counter with a `buy`
+      // affordance, whether or not it sold the thing. Fehr'loi Qan at 113 is the nearest
+      // smith to most of the fleet and does not stock leather at all: Kermit, Bunsen and
+      // Piggy each withdrew their savings, walked there, were told "leather armour: not
+      // sold here", and came home bare with two candidates in the list unread. Three of
+      // four re-kits in one run, and the same shape that sent Lew to a 1800-shilling
+      // counter and Rowlf after him.
+      //
+      // So peek at the list before settling. The read is one call and it is made again
+      // below for the real purchase — cheap against a walk across the world. The test
+      // uses the SAME wearable predicate as the buy loop, or a smith stocking nothing but
+      // chain would count as supplying armour and the character would arrive, refuse it,
+      // and leave with nothing again.
+      if (WANT_GEAR && missing.length) {
+        const peek = await call('shop', { agent: row.agent, seller: seller.id }).catch(() => null);
+        const offers = peek?.items || [];
+        const supplies = missing.some(w =>
+          offers.some(i => (w.re.test(nameOf(i)) || w.fallback.test(nameOf(i))) && wearableItem(i)));
+        if (!supplies) {
+          tried.push(`${room} (${offers.length} on the shelf, none of ${missing.map(x => x.what).join('/')})`);
+          seller = null;
+          continue;
+        }
       }
 
       // WALK TO THE SHOPKEEPER BEFORE TRADING WITH IT.

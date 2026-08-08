@@ -37,8 +37,8 @@ import { proficiencyFor as profFor } from './m59-skills.mjs';
 // The loadout format, and the only thing that decides what a character name may become on
 // the filesystem. This server accepts one over a socket; it does not get to invent its own
 // rule for that.
-import { readLoadout, writeLoadout, listLoadouts, loadoutPath, slugOf, normalise, LOADOUT_DIR }
-  from './m59-loadout.mjs';
+import { readLoadout, writeLoadout, listLoadouts, loadoutPath, slugOf, normalise, LOADOUT_DIR,
+         applyGearToAll } from './m59-loadout.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(HERE, '..');
@@ -262,6 +262,25 @@ const json = (res, body, code = 200) => {
   res.end(JSON.stringify(body, null, 1));
 };
 
+// A shopping list is a few kilobytes. Bounded so a stuck or hostile client cannot make this
+// process hold an unbounded string — the socket is loopback, which limits who can try it,
+// not how much they can send. One copy, because both writing endpoints need the same bound
+// and a second copy of a limit is how the two come to differ.
+function readBody(req, res, then) {
+  let body = '', tooBig = false;
+  req.on('data', (c) => {
+    body += c;
+    if (body.length > 256 * 1024 && !tooBig) { tooBig = true; req.destroy(); }
+  });
+  req.on('end', () => {
+    if (tooBig) return;
+    let raw;
+    try { raw = JSON.parse(body); }
+    catch (e) { res.writeHead(400, JSONH); return res.end(JSON.stringify({ error: 'not JSON: ' + e.message })); }
+    return then(raw);
+  });
+}
+
 export function createServer() {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
@@ -419,20 +438,7 @@ export function createServer() {
     }
 
     if (url.pathname === '/_loadout' && req.method === 'POST') {
-      let body = '';
-      let tooBig = false;
-      req.on('data', (c) => {
-        body += c;
-        // A shopping list is a few kilobytes. Bounded so a stuck or hostile client cannot
-        // make this process hold an unbounded string — the socket is loopback, which limits
-        // who can try it, not how much they can send.
-        if (body.length > 256 * 1024 && !tooBig) { tooBig = true; req.destroy(); }
-      });
-      req.on('end', () => {
-        if (tooBig) return;
-        let raw;
-        try { raw = JSON.parse(body); }
-        catch (e) { res.writeHead(400, JSONH); return res.end(JSON.stringify({ error: 'not JSON: ' + e.message })); }
+      return readBody(req, res, (raw) => {
         const character = String(raw?.character ?? '').trim();
         // TWO CHECKS, AND THE SECOND IS NOT REDUNDANT.
         //
@@ -468,7 +474,55 @@ export function createServer() {
           return res.end(JSON.stringify({ error: e.message }));
         }
       });
-      return;
+    }
+
+    // ONE PLAN'S GEAR, GIVEN TO EVERY CHARACTER IN THE FLEET.
+    //
+    // The gear half is the part of a loadout that is about how the fleet plays rather than
+    // about one character, and it was the only part somebody had to type twenty-one times.
+    // This copies it and NOTHING ELSE — every other field of every loadout it touches is
+    // left as it was found, which is what makes it safe against characters already planned
+    // by hand.
+    //
+    // WHO THE FLEET IS COMES FROM THE BROKER, NOT FROM THE PAGE. The page's list is who it
+    // thought was in game when it loaded, and this writes a file per character. With no
+    // broker there is no fleet, and the loadouts saved on this machine are a DIFFERENT set
+    // of characters — refused rather than quietly substituted.
+    //
+    // It plans by default; `apply: true` is a second call, after somebody has read the
+    // first. Both are the same function in m59-loadout.mjs, so the preview cannot describe
+    // a write that would not happen.
+    if (url.pathname === '/_gear-to-fleet' && req.method === 'POST') {
+      return readBody(req, res, async (raw) => {
+        let fleet;
+        try { fleet = await broker('fleet', {}); }
+        catch (e) {
+          res.writeHead(502, JSONH);
+          return res.end(JSON.stringify({ error:
+            `the broker on ${BROKER_PORT} is not answering (${e.message}) — and "the whole fleet" ` +
+            'is a live question. The loadouts saved here are a different set of characters, so they ' +
+            'are not substituted for it.' }));
+        }
+        const characters = (fleet.fleet || []).filter(r => r.character)
+          .map(r => ({ character: r.character, agent: r.agent }));
+        if (!characters.length) {
+          res.writeHead(409, JSONH);
+          return res.end(JSON.stringify({ error:
+            'the broker answered, but no character in the fleet has a name yet — a resume writes the ' +
+            'name back on the first successful login, so this is what an empty or booting fleet looks like' }));
+        }
+        try {
+          const out = applyGearToAll(raw?.gear, characters, {
+            from: raw?.from ?? null,
+            apply: raw?.apply === true,
+            allowEmpty: raw?.allow_empty === true,
+          });
+          return json(res, { ok: true, ...out });
+        } catch (e) {
+          res.writeHead(400, JSONH);
+          return res.end(JSON.stringify({ error: e.message }));
+        }
+      });
     }
 
     serveStatic(req, res, url.pathname);

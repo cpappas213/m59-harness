@@ -298,6 +298,31 @@ const vigorOf = v => (v?.vigor?.value ?? null);
 // about elderberry, and being over-stocked on herbs costs weight and nothing else.
 const REAGENT_TARGET = 20;
 
+// AND THE COMMENT ABOVE IS NOW EXACTLY BACKWARDS, WHICH IS THE WHOLE ARGUMENT FOR A
+// PER-KIND TARGET.
+//
+// "Herbs are already abundant (135 fleet-wide against 8 elderberry)" was true when it was
+// written. Measured today, after nine hours of running: 999 ELDERBERRY AND 13 HERBS. Six
+// castable pairs across twenty-one characters, one of whom can cook, and `create food`
+// declined for want of reagents 785 times in that window alone (3,816 lifetime).
+//
+// The inversion is structural, not luck. The hunting grounds DROP elderberry — every
+// fungus beast pays in it — and nothing anywhere drops herbs, so the only herb in the
+// world arrives by being bought at an apothecary. One number for both kinds therefore
+// buys the thing that is free and rations the thing that is scarce, and the surplus is
+// dead weight: 999 elderberries are ~48 a character of carry allowance spent on the half
+// of the recipe nobody is short of.
+//
+// So the floor is per kind. Herbs are bought deep because a visit to Joguer is rare and
+// each casting burns two; elderberry keeps the old target because the field refills it
+// for nothing. This changes only HOW MUCH is bought at a counter the character is already
+// standing at — it opens no new trip, which is the failure mode the last two changes to
+// this file had to be walked back from.
+const REAGENT_TARGET_BY_KIND = { elderberry: REAGENT_TARGET, herb: 60 };
+const reagentTargetFor = (kind, policyTarget) =>
+  policyTarget != null ? policyTarget
+                       : (REAGENT_TARGET_BY_KIND[kind] ?? REAGENT_TARGET);
+
 // WHAT A THING IS WORTH, from viValue_average in the kod — the number a merchant prices
 // around, before markup. Read once at load; a missing file simply makes every pile value
 // zero, which reads as "not worth a walk" and is the safe direction to fail in.
@@ -3626,6 +3651,56 @@ export class Autopilot {
     } else if (this.stalledSince) this.stalledWhy = why;
   }
 
+  // A REFUSAL IS NOT A STALL, AND SAYING SO IN PROSE MADE SOMETHING ELSE PARSE PROSE.
+  //
+  // A keeper that will not fight in a room with no safe wall, or that is sitting to
+  // accumulate the 15 mana `create weapon` needs, is doing exactly the right thing — and
+  // from outside it is indistinguishable from a character doing nothing. The external
+  // supervisor told the two apart with regular expressions over this file's own sentences:
+  //
+  //     if (/no safe wall|refusing to fight/i.test(reason)) …
+  //     if (/needs \d+ to make one|resting for the mana|regain mana|unarmed —/i.test(reason)) …
+  //
+  // Both exist because of recorded loops. Restarting a keeper that refused a room throws
+  // away the session record of WHICH rooms it refused, so the fresh keeper walks back in,
+  // re-probes, refuses again and reports a stall again — once a minute, for ever, with
+  // every log line looking like the supervisor working. Eight characters were caught in
+  // that inside a minute. The mana one is the same shape: Sweetums sat at 4 of 18, Animal
+  // at 11, Zoot at 13, each restarted every 90 seconds, each re-deciding rather than
+  // waiting, all three bare-handed.
+  //
+  // The coupling is to SENTENCES, and the sentences belong to this file. Reword one and
+  // the fleet starts churning again with nothing to say so. So the reason becomes data:
+  // a stable code that is never localised, the faculty it blocks, whether it is blocking
+  // at all, and when to look again. Anything outside reads the code; the prose stays for
+  // people.
+  //
+  // `refusals` are conditions that persist until cleared. `waitingOn` is the outward half
+  // of progress() — the difference between STUCK and DELIBERATELY WAITING, which is the
+  // distinction the whole supervisor problem turns on.
+  refuse(code, { faculty = 'work', blocking = true, why = '', remedy = null,
+                 retryAfterMs = null } = {}) {
+    const had = this.refusals?.get(code);
+    (this.refusals ??= new Map()).set(code, {
+      code, faculty, blocking, why, remedy,
+      retry_after_ms: retryAfterMs,
+      // `since` survives a refresh: how long a character has been refusing is the
+      // question a reader actually asks, and restamping it on every pass would answer
+      // "no time at all" for ever.
+      since: had?.since ?? Date.now(),
+    });
+    return code;
+  }
+
+  clearRefusal(code) { this.refusals?.delete(code); }
+
+  // Deliberately waiting for something that arrives on its own — mana, a stomach, a
+  // respawn. One at a time, because a character waits for one thing.
+  waitFor(code, { expectedMs = null, why = '' } = {}) {
+    this.waitingOn = { code, expected_ms: expectedMs, why, since: Date.now() };
+  }
+  doneWaiting() { this.waitingOn = null; }
+
   // A DETAIL FIELD MUST NOT BE ABLE TO EAT THE RECORD'S OWN KEYS.
   //
   // This was `{ at: Date.now(), pass, what, ...detail }` — spread LAST — which is the
@@ -3962,6 +4037,11 @@ export class Autopilot {
       // `inert` set is the normal shape of an errand in progress — the loop is watching
       // and recording, and it is not the thing moving the character.
       inert: this.inertStatus(),
+      // WHO OWNS WHICH HALF OF THIS CHARACTER. Always present, never undefined: a reader
+      // has to be able to tell "the keeper owns everything" from "this broker does not
+      // answer that question", and undefined reads as the second. With nothing attached
+      // every entry is the string 'keeper', which is the case m59-faculty-test pins.
+      faculties: this.facultyStatus(),
       // What it is up to, in the words someone watching would use. Belongs here rather
       // than only on the fleet snapshot: anything reading a keeper's status — the
       // terminal board, another agent — wants the sentence, not the time buckets.
@@ -4012,6 +4092,14 @@ export class Autopilot {
         ? { since_seconds: Math.round((Date.now() - this.stalledSince) / 1000),
             idle_passes: this.idlePasses, why: this.stalledWhy }
         : false,
+      // THE SAME TWO FACTS AS `stalled`, AS DATA RATHER THAN AS A SENTENCE.
+      //
+      // Always arrays/null rather than absent, because a reader has to be able to tell
+      // "this keeper reports no refusals" from "this broker does not answer that
+      // question" — undefined reads as the second and is what makes a new field
+      // invisible to whoever forgot to redeploy. See refuse().
+      refusals: [...(this.refusals?.values() ?? [])],
+      waiting_on: this.waitingOn ?? null,
       home_room: this.homeRoom,
       // WHAT VIGOR IT IS ACTUALLY FIGHTING AT. Vigor sets how fast health comes back
       // between fights, so a character that engages tired stays tired. `below_want`
@@ -4313,6 +4401,118 @@ export class Autopilot {
     return { inert: true, why: this.inert.why,
              for_s: Math.round((Date.now() - this.inert.at) / 1000),
              gives_up_after_s: Math.round(this.inert.maxMs / 1000) };
+  }
+
+  // ------------------------------------------------------------------------- faculties
+  //
+  // `inert` IS ALL-OR-NOTHING, AND THAT IS THE ONE THING WRONG WITH IT.
+  //
+  // goInert() is the right primitive and its reasoning is exactly right: a STOPPED keeper
+  // writes no frames, runs no observe(), records no death and files no post-mortem, so the
+  // character keeps playing while the instruments go dark — which is precisely when they
+  // are wanted. `during_keeper_outage` exists on the post-mortem because deaths kept
+  // happening in the windows this file had chosen to stop looking.
+  //
+  // What it cannot express is PART of a character. `meridian59-dum-bot` needs to say "I
+  // own what to hunt and which room to stand in; you keep survival, resting, re-arming and
+  // the Underworld", and there was no way to say it. So ownership becomes per faculty.
+  //
+  // THREE PROPERTIES MATTER MORE THAN THE SHAPE:
+  //
+  //  1. `inert` is exactly `claim(['work','movement','economy','social'])`. Every existing
+  //     caller — the errands, the supply hold, the pilot claim, the supervisor — keeps
+  //     working unchanged, because this is a refactor with a compatibility alias and not a
+  //     second concept sitting beside the first.
+  //  2. LEASES FAIL BACK TO THE KEEPER, NEVER OPEN. A bot that crashes, is Ctrl-C'd, or was
+  //     never started must leave a character that still defends itself. INERT_MAX_MS
+  //     already encodes this instinct and its note is the right one: an unattended
+  //     character is worse than a contested one. An expired claim is not a claim, and the
+  //     check is on every read rather than on a timer, so there is no window where a dead
+  //     bot still owns something.
+  //  3. SURVIVAL AND MORTALITY ARE NOT YIELDABLE unless the roster says so. An operator may
+  //     hand a bot the survival floor; a bot must not be able to take it silently. That is
+  //     the single guarantee keeping "unattended and safe" true as behaviour migrates out.
+  static FACULTIES = ['identity', 'mortality', 'survival', 'recovery',
+                      'work', 'movement', 'economy', 'social'];
+  // The four the keeper will not give up without explicit consent recorded against the
+  // roster. Everything else is the carve-out and is freely claimable.
+  static PROTECTED_FACULTIES = ['identity', 'mortality', 'survival', 'recovery'];
+
+  facultyOwner(faculty) {
+    // `inert` is the legacy whole-character claim and still answers first, so a caller
+    // that never learned about faculties sees exactly what it always saw.
+    if (this.inert && !Autopilot.PROTECTED_FACULTIES.includes(faculty))
+      return this.inert.why ? `inert:${this.inert.why}` : 'inert';
+    const c = this.claims?.get(faculty);
+    if (!c) return 'keeper';
+    if (c.until <= Date.now()) { this.claims.delete(faculty); return 'keeper'; }
+    return c.owner;
+  }
+
+  // Does something other than the keeper own this right now? The keeper asks this before
+  // acting on a directional branch; it never asks it about a protected one.
+  facultyHeld(faculty) { return this.facultyOwner(faculty) !== 'keeper'; }
+
+  claimFaculties({ faculties = [], by = null, leaseMs = 120_000, why = null,
+                   mayYield = [] } = {}) {
+    const want = (Array.isArray(faculties) ? faculties : [faculties]).filter(Boolean);
+    const granted = [], refused = [];
+    for (const f of want) {
+      if (!Autopilot.FACULTIES.includes(f)) { refused.push({ faculty: f, why: 'no such faculty' }); continue; }
+      if (Autopilot.PROTECTED_FACULTIES.includes(f) && !mayYield.includes(f)) {
+        refused.push({ faculty: f,
+          why: 'this faculty keeps the character alive and is not yielded by default; ' +
+               'the roster must name it in may_yield' });
+        continue;
+      }
+      (this.claims ??= new Map()).set(f, {
+        owner: by || 'unnamed', until: Date.now() + Math.max(1_000, leaseMs), why });
+      granted.push(f);
+    }
+    if (granted.length) this.note('faculties claimed', {
+      granted, refused: refused.length ? refused : undefined, by, lease_ms: leaseMs, why,
+      note: 'the keeper keeps everything not listed, and takes these back when the lease ' +
+            'expires without a heartbeat' });
+    return { granted, refused, faculties: this.facultyStatus() };
+  }
+
+  releaseFaculties({ faculties = null, by = null } = {}) {
+    const all = faculties == null;
+    const list = all ? [...(this.claims?.keys() ?? [])]
+                     : (Array.isArray(faculties) ? faculties : [faculties]);
+    const released = [];
+    for (const f of list) {
+      const c = this.claims?.get(f);
+      if (!c) continue;
+      // Only the holder may release, or anyone may release everything on a null list —
+      // an operator taking a character back from a bot that is gone.
+      if (by && c.owner !== by && !all) continue;
+      this.claims.delete(f); released.push(f);
+    }
+    if (released.length) this.note('faculties released', { released, by });
+    return { released, faculties: this.facultyStatus() };
+  }
+
+  // Push the lease out. A bot that is alive says so; one that is not, does not.
+  heartbeatFaculties({ by = null, leaseMs = 120_000 } = {}) {
+    const renewed = [];
+    for (const [f, c] of (this.claims?.entries() ?? [])) {
+      if (by && c.owner !== by) continue;
+      c.until = Date.now() + Math.max(1_000, leaseMs); renewed.push(f);
+    }
+    return { renewed, faculties: this.facultyStatus() };
+  }
+
+  facultyStatus() {
+    const out = {};
+    for (const f of Autopilot.FACULTIES) {
+      const owner = this.facultyOwner(f);
+      if (owner === 'keeper') { out[f] = 'keeper'; continue; }
+      const c = this.claims?.get(f);
+      out[f] = c ? { owner: c.owner, expires_in_ms: Math.max(0, c.until - Date.now()), why: c.why }
+                 : { owner, expires_in_ms: null, why: this.inert?.why ?? null };
+    }
+    return out;
   }
 
   start() {
@@ -5155,7 +5355,20 @@ export class Autopilot {
           this.restWatch = { at: now, mana: manaNow };
         }
       }
-      this.noProgress(`unarmed — ${c.vitals?.()?.mana?.value ?? 0} mana, needs 15 to make one`);
+      // WAITING FOR MANA IS THE PLAN, NOT A STALL. Churning the keeper restarts the
+      // decision, not the wait, and that is why it never used to finish.
+      const manaNow = c.vitals?.()?.mana?.value ?? 0;
+      this.waitFor('MANA_FOR_CREATE_WEAPON', {
+        // Mana regenerates on its own timer; this is an estimate for a reader deciding
+        // whether to look again, not a promise.
+        expectedMs: Math.max(0, (15 - manaNow)) * 20_000,
+        why: `unarmed with no donor; ${manaNow} of the 15 mana create weapon needs` });
+      this.refuse('UNARMED_NO_DONOR', {
+        faculty: 'work', blocking: true,
+        why: `unarmed — ${manaNow} mana, needs 15 to make one`,
+        remedy: 'hand it a weapon, or leave it alone until it can cast one',
+        retryAfterMs: 60_000 });
+      this.noProgress(`unarmed — ${manaNow} mana, needs 15 to make one`);
       return;
     }
 
@@ -5879,6 +6092,50 @@ export class Autopilot {
     }
 
     // 4. Work. Only in farm mode, and only on what we were told to hunt.
+    //
+    // AND ONLY IF NOBODY ELSE OWNS IT. This is the seam the carve-out is cut along: every
+    // branch above decides on a one-second clock and has one right answer, and this one
+    // decides on a clock of minutes and has none. A bot holding `work` is choosing the
+    // quarry, the room and the errand; the keeper below it still flees, rests, re-arms and
+    // gets itself out of the Underworld, because those are decided further up and returned
+    // before reaching here.
+    //
+    // The check is deliberately at the TOP of the branch rather than sprinkled through it.
+    // Half-owned work — a bot picking the room while the keeper picks the prey — is two
+    // movers on one character, which is the configuration error this whole exercise exists
+    // to avoid, and it reads as working from both sides.
+    // A CLAIM ON `work` IS OWNERSHIP OF THE DECISION, NOT A STOP ORDER — AND THE FIRST
+    // VERSION OF THIS GOT THAT BACKWARDS.
+    //
+    // It returned here when `work` was claimed, which reads as "something else is driving,
+    // so stand down". That is right for `inert`, where another PROCESS is moving the
+    // character step by step, and it is exactly wrong for a directional bot. DUM does not
+    // move anybody: it writes ORDERS — what to hunt, which room, which thresholds — and
+    // the keeper executes them, on its own one-second clock, as it always has.
+    //
+    // So the early return would have idled every character it was applied to. Claiming
+    // `work` on all twenty-one would have stood the whole fleet down while DUM reported
+    // that it was driving them and the board reported healthy keepers: the exact
+    // both-logs-look-correct failure this carve-out is supposed to remove.
+    //
+    // What the claim actually buys is COORDINATION. It records who owns the directional
+    // fields so two writers cannot fight over them, it is visible on the board, and it
+    // expires back to the keeper. The keeper keeps working throughout — which is also what
+    // makes the parity claim testable at all: a fleet under a doctrine that reproduces its
+    // own settings should be indistinguishable from one with no bot attached.
+    //
+    // Noted once per holder so the ownership is legible without a line every eight seconds.
+    if (this.mode === 'farm') {
+      const owner = this.facultyOwner('work');
+      if (this.notedWorkOwner !== owner) {
+        this.notedWorkOwner = owner;
+        if (owner !== 'keeper') this.note('work is directed by something else', {
+          owner, faculties: this.facultyStatus(),
+          note: 'that bot chooses the orders — quarry, room, thresholds. This keeper still ' +
+                'carries them out, and still owns survival, resting, re-arming and the ' +
+                'Underworld, which are decided far above this branch' });
+      }
+    }
     if (this.mode === 'farm') {
       // EAT FIRST — BEFORE THE ROOM, THE PREY, THE PACK OR THE WALL.
       //
@@ -6134,6 +6391,12 @@ export class Autopilot {
       // into punching — and the server reports neither. `create food` and `create
       // weapon` are carried by every character here, so the first question when either
       // is missing is whether we can simply make one.
+      if (skills.weaponsOf(this.s.client).length) {
+        // Armed again: the refusal and the wait are over. A refusal nobody clears is
+        // worse than none, because a reader steps over the character for ever.
+        this.clearRefusal('UNARMED_NO_DONOR');
+        if (this.waitingOn?.code === 'MANA_FOR_CREATE_WEAPON') this.doneWaiting();
+      }
       if (!skills.weaponsOf(this.s.client).length) {
         const armed = await this.armSelf().catch(() => false);
         if (!armed) {
@@ -6309,7 +6572,16 @@ export class Autopilot {
           const noneExist = !probe.took && /more defensible than open floor|out of the fight/i
                               .test(String(probe.why || ''));
           denied = probe.took ? false : (noneExist ? (probe.why || 'no defensible square found') : undefined);
-          if (denied !== undefined) this.noWallRooms.set(room.num, denied);
+          if (denied !== undefined) {
+            this.noWallRooms.set(room.num, denied);
+            // Data, not a sentence. The supervisor used to read this off the prose.
+            if (denied) this.refuse('NO_SAFE_WALL', {
+              faculty: 'work', blocking: true,
+              why: `no wall in ${room.name} held under test: ${denied}`,
+              remedy: 'assign a different room; the keeper relocates itself',
+              retryAfterMs: 600_000 });
+            else this.clearRefusal('NO_SAFE_WALL');
+          }
           else this.note('could not reach a wall this pass — not blaming the room', {
             room: room.name, why: probe.why,
             note: 'the room has candidate squares; getting to one failed, which is about us ' +
@@ -7203,6 +7475,50 @@ export class Autopilot {
     // Which counter first. With money in hand the bread shop is the whole trip; without
     // it, the bank comes first and buyFoodInTown walks the last hop afterwards.
     const needsCashFirst = starving && spendable < 60 && canFetch;
+
+    // BROKE WHILE CARRYING A FORTUNE IN LOOT, WHICH IS THE SAME SHAPE AS THE LAST TWO.
+    //
+    // A bank trip needs 500 shillings and the pack trip needs a full pack, so a character
+    // with 103 shillings, nothing banked and ten stacks of goods opens neither door and
+    // never sells. Measured this pass: Scooter carrying 110 elderberry, 36 red mushroom,
+    // 28 purple, 24 mushroom, 10 sapphire and 3 emerald, unable to buy the 480 leather it
+    // needs; Bunsen and Beaker the same. They are not poor, they are holding stock.
+    //
+    // The door that fixes the condition required the condition already fixed — the same
+    // trap as "cannot afford food because it never goes to the shop that sells it" and
+    // "cannot re-arm because the check cannot see broken gear". Being unable to replace
+    // your armour is exactly when selling matters, so that is the trigger.
+    //
+    // A MARKET, NOT A BANK: Roq buys, a banker takes and gives nothing back. And unlike
+    // the food trip this one cannot spin, because it always achieves something — the goods
+    // become money on arrival and the condition clears itself. The cooldown is here anyway,
+    // because a character that reaches Roq and sells nothing (everything protected, or the
+    // walk failed) must not turn round and set off again on the next pass.
+    const SELL_TRIP_COOLDOWN_MS = 600_000;
+    const soldRecently = Date.now() - (this.sellTripAt ?? 0) < SELL_TRIP_COOLDOWN_MS;
+    // What a replacement piece of armour costs at the dearest counter the router might
+    // pick, which is the bill this trip exists to make payable.
+    const tooPoorToReplaceGear = carried + balance < 500;
+    // Only worth a walk if there is something aboard to sell. This is a PROXY — stacks
+    // that are not money — and deliberately not a call to skills.sellable, which judges one
+    // item at a time and needs the worn list and the keep regex to answer. Getting that
+    // exactly right here would duplicate sellAll's decision in a second place, and a
+    // quantity with two homes in this repository has always ended up with two answers.
+    //
+    // Being wrong costs a walk that sells less than hoped, which sellAll reports honestly;
+    // the trip is still the right call for a character that cannot replace its armour.
+    const spare = (c.inventory || [])
+      .filter(o => !/shilling/i.test(c.rsc.get(o.nameRsc) || '')).length;
+    const brokeWithGoods = tooPoorToReplaceGear && spare >= 4 && !soldRecently && !starving;
+    if (brokeWithGoods && !this.notedBroke) {
+      this.notedBroke = true;
+      this.note('out of money with a pack worth selling — going to market', {
+        purse: carried, banked: balance, sellable_stacks: spare, to: MARKETS[0]?.name,
+        why: 'a bank trip needs 500 and a pack trip needs a full pack; with neither, a ' +
+             'character carrying loot it could sell stands in a field unable to replace ' +
+             'its armour' });
+    }
+    if (!brokeWithGoods) this.notedBroke = false;
     if (starving && !this.notedStarving) {
       this.notedStarving = true;
       this.note('out of food and cannot cook — going to town for some', {
@@ -7212,7 +7528,7 @@ export class Autopilot {
     }
     if (!starving) this.notedStarving = false;
 
-    if (carried <= above && !packFull && !starving) {
+    if (carried <= above && !packFull && !starving && !brokeWithGoods) {
       // Say what we saw, occasionally. A threshold that never trips is indistinguishable
       // from one that is never checked, and that cost an eight-minute run to find out.
       if (carried > 0 && (!this.notedPurse || Date.now() - this.notedPurse > 120_000)) {
@@ -7234,9 +7550,12 @@ export class Autopilot {
     // the bread shop — but only when hunger is the ONLY reason. A character that is also
     // rich or also full has business at the counter that pays, and buyFoodInTown runs at
     // the end of that trip anyway, so it gets both out of one walk.
+    // A full pack goes to the market, money goes to the bank, an empty larder to the bread
+    // shop — and a broke character with goods goes to the market too, for the same reason
+    // the full pack does: Roq is the one who pays, and a banker takes and gives nothing.
     const destinations = needsCashFirst ? BANKS
                        : (starving && !packFull && carried <= above ? [FOOD_SHOP]
-                       : (packFull && carried <= above ? MARKETS : BANKS));
+                       : ((packFull || brokeWithGoods) && carried <= above ? MARKETS : BANKS));
     const options = destinations
       .map(b => { const r = s.world?.route?.(b.room);
                   return { ...b, hops: r?.found ? r.hops.length : Infinity }; })
@@ -7255,6 +7574,7 @@ export class Autopilot {
     // nothing from repeating, and "bought nothing" is the case that would otherwise never
     // set it.
     if (starving) this.foodTripAt = Date.now();
+    if (brokeWithGoods) this.sellTripAt = Date.now();
     this.note(starving && !packFull && carried <= above ? 'going to town for food' : 'going to the bank', {
       carrying: carried, to: target.name, hops: target.hops, keeping: this.policy.walkingMoney ?? 400,
       why: starving && !packFull && carried <= above
@@ -7309,11 +7629,13 @@ export class Autopilot {
   // hour. Both are one trip and the walk between them is a single room.
   async buyReagentsInTown() {
     const s = this.s, c = s.need();
-    const want = this.policy.reagentTarget ?? REAGENT_TARGET;
+    const wantEb = reagentTargetFor('elderberry', this.policy.reagentTarget);
+    const wantHb = reagentTargetFor('herb', this.policy.reagentTarget);
+    const want = wantEb;
     const have = this.reagentCount();
     // Only the shortfall that stops a cast. Being deep in elderberry and out of herbs is
     // the normal state here, and it is exactly as unable to cook as having neither.
-    if (have.elderberry >= want && have.herbs >= want) return;
+    if (have.elderberry >= wantEb && have.herbs >= wantHb) return;
     if (s.world?.room?.num !== REAGENT_SHOP.room) {
       const r = await this.travel(REAGENT_SHOP.room, { maxHops: 12 })
                           .catch(e => ({ arrived: false, reason: e.message }));
@@ -7786,9 +8108,14 @@ export class Autopilot {
   // the money a character needs to get home.
   async restockReagents(seller) {
     const s = this.s, c = s.need();
-    const want = this.policy.reagentTarget ?? REAGENT_TARGET;
+    // Per kind: the field refills elderberry for nothing and nothing in the world drops a
+    // herb, so they are not the same number. See REAGENT_TARGET_BY_KIND.
+    const wantEb = reagentTargetFor('elderberry', this.policy.reagentTarget);
+    const wantHb = reagentTargetFor('herb', this.policy.reagentTarget);
+    const want = wantEb;                      // what the older log lines and notes report
     const have = this.reagentCount();
-    const need = { elderberry: Math.max(0, want - have.elderberry), herb: Math.max(0, want - have.herbs) };
+    const need = { elderberry: Math.max(0, wantEb - have.elderberry),
+                   herb:       Math.max(0, wantHb - have.herbs) };
 
     // WHAT THIS CHARACTER ASKED FOR, WHICH MAY BE NEITHER OF THOSE TWO.
     //

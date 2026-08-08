@@ -51,7 +51,7 @@
     return {
       format: 'm59-loadout/1', character: name || '', agent: null, updated: null, note: '',
       plan: { schools: {}, weapon_level: null, abilities: [] },
-      gear: { weapon: [], slots: {} },
+      gear: { weapon: [], slots: {}, from: null },
       carry: [], sell: [], keep: [], purse: { float: null, bank_above: null },
     };
   }
@@ -376,7 +376,7 @@
 
   function renderEditor() {
     var t = el('plEditorTitle'), b = el('plEditorBody');
-    if (TAB === 'inventory') { t.textContent = 'What to carry'; renderCarryEditor(b); }
+    if (TAB === 'inventory') { t.textContent = 'Gear, and what to carry'; renderCarryEditor(b); }
     else if (TAB === 'spells') { t.textContent = 'Schools and what they cost'; renderSpellEditor(b); }
     else if (TAB === 'skills') { t.textContent = 'Skills on the plan'; renderSkillEditor(b); }
     else { t.textContent = 'Attributes, and what they are worth'; renderStatEditor(b); }
@@ -389,7 +389,9 @@
   function renderCarryEditor(box) {
     var kinds = ['reagent', 'food', 'weapon', 'armour', 'shield', 'other'];
     box.innerHTML =
-      '<p class="hint">The number on each icon is the MINIMUM — what the keeper tops up to '
+      gearEditorHtml()
+      + '<h2 style="margin-top:16px">What to carry</h2>'
+      + '<p class="hint">The number on each icon is the MINIMUM — what the keeper tops up to '
       + 'when it is standing at a counter, and what it will not sell below. The small number '
       + 'is the ceiling: anything above it is shed.</p>'
       + '<div class="pl-filters">'
@@ -404,6 +406,7 @@
       + '<div class="pl-picker" id="plPicker"></div>'
       + '<div id="plEntry"></div>';
 
+    bindGearEditor(box);
     Array.prototype.forEach.call(box.querySelectorAll('[data-kind]'), function (btn) {
       btn.onclick = function () { FILTER = btn.getAttribute('data-kind'); renderEditor(); };
     });
@@ -411,6 +414,135 @@
     s.oninput = function () { QUERY = s.value; renderPicker(); };
     renderPicker();
     renderEntry();
+  }
+
+  // ---- the gear editor
+  //
+  // GEAR IS A DIFFERENT KIND OF ANSWER FROM A CARRY LIST AND THE PAGE HAD NO WAY TO SAY IT.
+  // A carry entry is a quantity — twenty elderberry, shed above forty. Gear is an ORDERED
+  // PREFERENCE with one winner per slot: the keeper reaches for the first of these it owns
+  // (weaponPriorityNow, m59-autopilot.mjs:982) and an outfitting run buys the first it is
+  // missing. Until now the only way to fill it in was to seed a file from a character sheet
+  // and hand-edit the JSON, which is why every loadout here has an empty one.
+  //
+  // The slots are the keeper's own (GEAR_SLOTS in m59-loadout.mjs). The catalogue only
+  // classifies weapons, shields and body armour, so those three offer a filtered list and
+  // the rest offer everything — an honest "we do not know which items go here" rather than
+  // an empty box that reads as "there are none".
+
+  var GEAR_SLOTS = ['body', 'shield', 'head', 'hands', 'feet', 'neck', 'finger', 'cloak'];
+  var GEAR_KIND = { weapon: 'weapon', shield: 'shield', body: 'armour' };
+  var GEAR_SLOT = 'weapon';        // which slot the add control is pointed at
+
+  function gearList(key, make) {
+    if (key === 'weapon') return L.gear.weapon;
+    if (!L.gear.slots[key] && make) L.gear.slots[key] = [];
+    return L.gear.slots[key] || null;
+  }
+
+  function gearKeys() {
+    var out = ['weapon'];
+    GEAR_SLOTS.forEach(function (s) { if ((L.gear.slots[s] || []).length) out.push(s); });
+    // A slot from a file that this page has not heard of is shown rather than dropped — it
+    // is a fact about the loadout, and normalise() carries it through for the same reason.
+    Object.keys(L.gear.slots).forEach(function (s) {
+      if (out.indexOf(s) < 0 && (L.gear.slots[s] || []).length) out.push(s);
+    });
+    return out;
+  }
+
+  function gearEditorHtml() {
+    var have = held(), any = OBS && OBS.inventory;
+    var rows = gearKeys().map(function (key) {
+      var list = gearList(key) || [];
+      var items = list.map(function (n, i) {
+        var src = iconFor(n), h = any ? (have[norm(n)] || 0) : null;
+        return '<span class="pl-gear-item' + (i === 0 ? ' first' : '') + (h === 0 ? ' none' : '') + '"'
+          + ' title="' + esc(n) + (i === 0 ? ' — first choice' : ' — fallback ' + i)
+          + (h === null ? '' : h > 0 ? ', holding one' : ', not in the pack') + '">'
+          + (src ? '<img src="' + esc(src) + '" alt="">' : '')
+          + '<b>' + esc(n) + '</b>'
+          + (i === 0 ? '' : '<button type="button" data-gear-up="' + esc(key) + '" data-i="' + i
+             + '" title="Make this the first choice">&#9650;</button>')
+          + '<button type="button" data-gear-rm="' + esc(key) + '" data-i="' + i
+          + '" title="Stop asking for this">&times;</button></span>';
+      }).join('');
+      if (!items && key !== 'weapon') return '';
+      return '<div class="pl-gear"><span class="slot">' + esc(key) + '</span>'
+        + '<span class="items">' + (items || '<em class="muted">nothing asked for</em>') + '</span></div>';
+    }).join('');
+
+    var slotOpts = ['weapon'].concat(GEAR_SLOTS).map(function (s) {
+      return '<option value="' + esc(s) + '"' + (GEAR_SLOT === s ? ' selected' : '') + '>' + esc(s) + '</option>';
+    }).join('');
+    var kind = GEAR_KIND[GEAR_SLOT] || null;
+    var choices = D.items.filter(function (i) {
+      return kind ? i.kind === kind : (i.kind !== 'reagent' && i.kind !== 'food');
+    }).sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+
+    return '<h2>Gear — what it fights in</h2>'
+      + '<p class="hint">An ordered preference, best first. The keeper reaches for the first of '
+      + 'these the character owns, and an outfitting run buys the first it is missing — so a '
+      + 'character holding the second is one upgrade short, not missing its gear. Names are '
+      + 'exact: a list saying "short sword" is <em>not</em> satisfied by a mace.</p>'
+      + '<div class="pl-gears">' + rows + '</div>'
+      + '<div class="pl-gear-add">'
+      + '<select id="plGearSlot" aria-label="Which slot">' + slotOpts + '</select>'
+      + '<select id="plGearItem" aria-label="Which item">'
+      + choices.map(function (i) { return '<option value="' + esc(i.name) + '">' + esc(i.name) + '</option>'; }).join('')
+      + '</select>'
+      + '<button type="button" class="btn" id="plGearAdd">Add</button>'
+      + '</div>'
+      + (kind ? '' : '<p class="hint">The catalogue only classifies weapons, shields and body '
+         + 'armour, so this list is everything else it knows rather than the pieces that fit '
+         + 'that slot.</p>')
+      + (L.gear.from ? '<p class="pl-note">This gear was applied from ' + esc(L.gear.from) + '.</p>' : '');
+  }
+
+  // EDITING THE LIST ENDS ITS PROVENANCE. `from` says this gear arrived from somebody else's
+  // plan, and the moment somebody adds or reorders an entry that is no longer true — a line
+  // claiming it came from Kermit, over a list Kermit never had, is worse than no line.
+  function gearEdited() {
+    L.gear.from = null;
+    renderInventory(); renderEditor();
+  }
+
+  function bindGearEditor(box) {
+    var slot = box.querySelector('#plGearSlot');
+    if (slot) slot.onchange = function () { GEAR_SLOT = slot.value; renderEditor(); };
+    var add = box.querySelector('#plGearAdd');
+    if (add) add.onclick = function () {
+      var name = box.querySelector('#plGearItem').value;
+      var list = gearList(GEAR_SLOT, true);
+      if (list.some(function (n) { return norm(n) === norm(name); })) {
+        say(name + ' is already on that list', 'bad');
+        return;
+      }
+      list.push(name);
+      gearEdited();
+    };
+    Array.prototype.forEach.call(box.querySelectorAll('[data-gear-rm]'), function (b) {
+      b.onclick = function () {
+        var key = b.getAttribute('data-gear-rm'), i = Number(b.getAttribute('data-i'));
+        var list = gearList(key);
+        if (!list) return;
+        list.splice(i, 1);
+        // An empty slot is removed rather than left as an empty list, because an empty list
+        // and an absent one mean the same thing to every reader and only one of them is
+        // written down that way.
+        if (!list.length && key !== 'weapon') delete L.gear.slots[key];
+        gearEdited();
+      };
+    });
+    Array.prototype.forEach.call(box.querySelectorAll('[data-gear-up]'), function (b) {
+      b.onclick = function () {
+        var key = b.getAttribute('data-gear-up'), i = Number(b.getAttribute('data-i'));
+        var list = gearList(key);
+        if (!list || i <= 0) return;
+        list.unshift(list.splice(i, 1)[0]);
+        gearEdited();
+      };
+    });
   }
 
   function renderPicker() {
@@ -803,6 +935,115 @@
       .catch(function (e) { say('could not save: ' + e.message, 'bad'); });
   }
 
+  // ------------------------------------------------------------------ the fleet, all at once
+  //
+  // ONE PLAN'S GEAR, GIVEN TO EVERYBODY. The gear half is the only part of a loadout that is
+  // about how the fleet plays rather than about one character — a carry list, a school plan
+  // and a purse floor are all one character's business, but "fight with a short sword and
+  // wear leather" is a decision about all of them, and saying it twenty-one times is how it
+  // ends up said twenty-one slightly different ways.
+  //
+  // IT PLANS FIRST AND ALWAYS. The first press asks the server what it would do and shows
+  // the answer per character; the second one writes. That is not politeness — this writes a
+  // file per character, and the fleet-wide write nobody read first is the one that turns up
+  // later as twenty characters carrying something nobody chose.
+
+  function gearEmpty(g) {
+    if (!g) return true;
+    if (g.weapon && g.weapon.length) return false;
+    var slots = g.slots || {};
+    return !Object.keys(slots).some(function (s) { return slots[s] && slots[s].length; });
+  }
+
+  function gearToFleet(apply) {
+    if (!SERVED) {
+      say('nothing is listening — this one needs the harness serving the page ' +
+          '(node tools/m59-compendium.mjs --open --to /planner/)', 'bad');
+      return;
+    }
+    var j = currentLoadout();
+    // Refused here as well as on the server, and for the same reason: an empty gear list is
+    // not an instruction to strip the fleet, it is a loadout nobody has filled in yet.
+    if (gearEmpty(j.gear)) {
+      say('there is no gear on this plan — add a weapon or a piece of armour above first', 'bad');
+      return;
+    }
+    say(apply ? 'writing…' : 'asking what that would do…');
+    fetch(rel + '/_gear-to-fleet', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ gear: j.gear, from: j.character || null, apply: !!apply }),
+    }).then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }); })
+      .then(function (res) {
+        if (!res.ok) { el('plFleetBox').hidden = true; say(res.b.error || 'refused', 'bad'); return; }
+        renderFleetPlan(res.b);
+        if (!res.b.applied) {
+          say(res.b.counts.changed
+            ? 'nothing written yet — ' + res.b.counts.changed + ' of ' + res.b.counts.total
+              + ' would change'
+            : 'every character in the fleet already asks for this gear', 'good');
+          return;
+        }
+        say(res.b.counts.changed + ' of ' + res.b.counts.total + ' given this gear'
+            + (res.b.counts.failed ? ', ' + res.b.counts.failed + ' refused' : ''),
+            res.b.counts.failed ? 'bad' : 'good');
+        // The select says which characters have a loadout, and some of them have one now
+        // that did not a moment ago. The files are already written either way, so a failure
+        // here is a stale label rather than a lost write — said, not swallowed.
+        refreshChoices().catch(function (e) {
+          say('written, but the character list could not be re-read: ' + e.message, 'bad');
+        });
+      })
+      .catch(function (e) { say('could not reach the fleet: ' + e.message, 'bad'); });
+  }
+
+  function renderFleetPlan(b) {
+    var box = el('plFleetBox'), out = el('plFleet');
+    box.hidden = false;
+    var lines = [];
+    if (b.gear.weapon.length) lines.push('weapon — ' + b.gear.weapon.join(' then '));
+    Object.keys(b.gear.slots).forEach(function (s) {
+      lines.push(s + ' — ' + b.gear.slots[s].join(' then '));
+    });
+    var mine = norm(el('plName').value || L.character);
+
+    var rows = b.rows.map(function (r) {
+      var cls = r.error ? 'bad' : r.changed ? 'changed' : 'same';
+      var what = r.error ? 'refused'
+        : !r.changed ? 'already asks for this'
+        : r.created ? (b.applied ? 'new loadout written' : 'would get its first loadout')
+        : (b.applied ? 'gear replaced' : 'would be changed');
+      var was = r.error ? r.error
+        : r.before && (r.before.weapon.length || Object.keys(r.before.slots).length)
+          ? 'was ' + (r.before.weapon[0] || Object.keys(r.before.slots).map(function (s) {
+              return r.before.slots[s][0];
+            }).join(', ') || 'nothing')
+          : r.had ? 'had no gear on it' : 'no loadout yet';
+      return '<tr class="' + cls + '"><td>' + esc(r.character)
+        + (norm(r.character) === mine ? ' <em>(this one)</em>' : '')
+        + '</td><td>' + esc(what) + '</td><td class="muted">' + esc(was) + '</td></tr>';
+    }).join('');
+
+    out.innerHTML =
+      '<p class="hint">Only the gear. Carry lists, schools, sell and keep lists and purse floors '
+      + 'stay exactly as they are in every one of these files — including this character\'s, whose '
+      + 'other edits are still unsaved until you press Save.</p>'
+      + '<p class="pl-note"><strong>' + lines.map(esc).join('<br>') + '</strong></p>'
+      + (b.problems && b.problems.length
+        ? '<ul class="pl-problems">' + b.problems.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul>'
+        : '')
+      + '<div class="pl-fleet"><table class="data"><tbody>' + rows + '</tbody></table></div>'
+      + '<p>' + (b.applied
+        ? '<button type="button" class="btn" id="plFleetClose">Close</button>'
+        : '<button type="button" class="btn primary" id="plFleetGo"' + (b.counts.changed ? '' : ' disabled')
+          + '>Write it to ' + b.counts.changed + ' character(s)</button> '
+          + '<button type="button" class="btn" id="plFleetCancel">Cancel</button>') + '</p>';
+
+    var go = el('plFleetGo');
+    if (go) go.onclick = function () { gearToFleet(true); };
+    var cancel = el('plFleetCancel') || el('plFleetClose');
+    if (cancel) cancel.onclick = function () { box.hidden = true; say(''); };
+  }
+
   // ------------------------------------------------------------------ boot
 
   function fillCharacterSelect(choices) {
@@ -829,6 +1070,32 @@
     var o = document.createElement('option');
     o.value = '__new__'; o.textContent = 'A new character…';
     s.appendChild(o);
+  }
+
+  // WHO THERE IS TO PLAN FOR, re-read rather than assumed. Also the page's one test for
+  // whether the harness is serving it. Called again after a fleet-wide write, because
+  // characters that had no loadout a moment ago have one now and the select says so.
+  function refreshChoices() {
+    return fetch(rel + '/_loadouts').then(function (r) {
+      if (!r.ok) throw new Error('not the harness');
+      return r.json();
+    }).then(function (b) {
+      var was = el('plChar').value;
+      fillCharacterSelect([
+        { label: 'In the fleet', rows: (b.fleet || []).map(function (r) {
+          return { value: 'agent:' + r.agent, text: r.character + ' (' + r.agent + ')'
+            + (r.loadout ? ' — has a loadout' : '') };
+        }) },
+        { label: 'Saved loadouts', rows: (b.loadouts || []).map(function (r) {
+          return { value: 'loadout:' + r.character, text: r.character };
+        }) },
+      ]);
+      // Refilling a select resets it to the placeholder, which would say nobody is loaded
+      // while a whole character is on the page.
+      if (was && Array.prototype.some.call(el('plChar').options, function (o) { return o.value === was; }))
+        el('plChar').value = was;
+      return b;
+    });
   }
 
   function loadAgent(agent) {
@@ -859,6 +1126,7 @@
     });
     el('plExport').onclick = exportFile;
     el('plSave').onclick = save;
+    el('plGearFleet').onclick = function () { gearToFleet(false); };
     el('plImport').onclick = function () { el('plFile').click(); };
     el('plFile').onchange = function (e) {
       var f = e.target.files && e.target.files[0];
@@ -888,20 +1156,8 @@
     // Is the harness serving us? /_loadouts is its endpoint and nothing else answers it, so
     // a 404 here is the honest signal that Save cannot work — which the page then says
     // rather than offering a button that silently does nothing.
-    fetch(rel + '/_loadouts').then(function (r) {
-      if (!r.ok) throw new Error('not the harness');
-      return r.json();
-    }).then(function (b) {
+    refreshChoices().then(function () {
       SERVED = true;
-      fillCharacterSelect([
-        { label: 'In the fleet', rows: (b.fleet || []).map(function (r) {
-          return { value: 'agent:' + r.agent, text: r.character + ' (' + r.agent + ')'
-            + (r.loadout ? ' — has a loadout' : '') };
-        }) },
-        { label: 'Saved loadouts', rows: (b.loadouts || []).map(function (r) {
-          return { value: 'loadout:' + r.character, text: r.character };
-        }) },
-      ]);
       var agent = cookieAgent();
       if (agent) {
         var opt = 'agent:' + agent;

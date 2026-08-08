@@ -208,6 +208,44 @@
 .pl-fields input[type="number"] { width: 6em; }
 .pl-fields input[type="text"] { width: 100%; }
 
+/* Gear: one row per slot, the entries in preference order. The first is drawn as the
+ * choice it is; the rest are visibly fallbacks, because a character holding its second
+ * choice is one upgrade short and not missing its gear, and the two must not read alike. */
+.pl-gears { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.pl-gear { display: grid; grid-template-columns: 56px 1fr; gap: 8px; align-items: start; }
+.pl-gear > .slot { font-size: 12px; opacity: .75; padding-top: 3px; }
+.pl-gear > .items { display: flex; flex-wrap: wrap; gap: 4px; }
+.pl-gear-item {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 3px;
+  border: 1px solid var(--line, #d6d3cd); border-radius: 3px; font-size: 12px;
+}
+.pl-gear-item.first { border-color: currentColor; }
+.pl-gear-item.first b::after { content: " · 1st"; font-weight: 400; opacity: .6; font-size: 10px; }
+/* Not in the pack. Only ever shown against a character we have actually observed. */
+.pl-gear-item.none b { opacity: .6; text-decoration: underline dotted; }
+.pl-gear-item img { width: 18px; height: 18px; object-fit: contain; image-rendering: pixelated; }
+.pl-gear-item b { font-weight: 400; }
+/* Small controls on a small chip, but not so small they are a dexterity test: a ✕ that is
+ * two pixels wide either side of the glyph is one mis-click away from removing the wrong
+ * entry, and the whole list is three items long. */
+.pl-gear-item button {
+  background: none; border: 0; padding: 2px 5px; margin: -2px 0; cursor: pointer;
+  color: inherit; font: inherit; font-size: 13px; line-height: 1; opacity: .6;
+}
+.pl-gear-item button:hover { opacity: 1; }
+.pl-gear-add { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+.pl-gear-add select { min-width: 0; }
+.pl-gear-add select:last-of-type { flex: 1 1 auto; }
+
+/* The fleet-wide plan. Three verdicts, and "already asks for this" has to be as legible as
+ * the two that change something — a preview where the no-ops are invisible is a preview
+ * that overstates what it is about to do. */
+.pl-fleet { max-height: 300px; overflow: auto; }
+.pl-fleet table { width: 100%; font-size: 12.5px; }
+.pl-fleet .changed td:nth-child(2) { color: #1d7a3a; }
+.pl-fleet .same td:nth-child(2) { opacity: .6; }
+.pl-fleet .bad td:nth-child(2) { color: #a4232b; }
+
 .pl-diff table { width: 100%; }
 .pl-diff .buy  td:first-child::before { content: "buy "; color: #1d7a3a; }
 .pl-diff .shed td:first-child::before { content: "shed "; color: #a4232b; }

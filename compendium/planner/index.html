@@ -33,6 +33,7 @@ tabs in the same order — and everything in it is editable.</p>
   <button type="button" class="btn" id="plImport">Import a file…</button>
   <input type="file" id="plFile" accept="application/json,.json" hidden>
   <button type="button" class="btn" id="plExport">Export</button>
+  <button type="button" class="btn" id="plGearFleet" title="Give every character in the fleet this weapon and armour preference. Only the gear — every other part of their loadouts is left alone.">Apply gear to fleet</button>
   <button type="button" class="btn primary" id="plSave">Save to the fleet</button>
   <span class="pl-msg" id="plMsg" role="status"></span>
 </div>
@@ -67,6 +68,11 @@ tabs in the same order — and everything in it is editable.</p>
   </div>
 
   <div class="pl-side">
+    <section id="plFleetBox" hidden>
+      <h2>Give the whole fleet this gear</h2>
+      <div id="plFleet"></div>
+    </section>
+
     <section id="plEditor">
       <h2 id="plEditorTitle">What this tab changes</h2>
       <div id="plEditorBody"></div>
@@ -93,6 +99,13 @@ tabs in the same order — and everything in it is editable.</p>
       tops up to the minimums when it is standing at a counter anyway, and reaches for the
       weapon named here rather than whichever one it happens to be best with. Nothing the
       list is silent about changes — a loadout adds rules, it does not replace them.</p>
+      <p class="pl-note"><strong>Apply gear to fleet</strong> writes the <em>gear</em> half of
+      this plan — the weapon and armour preference — into every character's loadout, and
+      changes nothing else in any of them: carry lists, schools, sell and keep lists and purse
+      floors are left exactly as they are. It says what it would do first and needs a second
+      press. It is the same thing as
+      <code>node tools/m59-loadout.mjs &lt;name&gt; --gear-to-fleet --apply</code>, and it does
+      not save the rest of what you have edited here — that is what Save is for.</p>
       <p class="pl-note"><strong>Export</strong> downloads the same file. Drop it in that
       directory by hand and it means the same thing; the planner is a convenience, not the
       format's owner.</p>

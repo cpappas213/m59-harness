@@ -441,6 +441,99 @@ console.log('\nseeding one from a sheet');
   ok('and it says it is an observation rather than a plan', /not a plan yet/.test(l.note));
 }
 
+// THE ONE PART OF A LOADOUT THAT IS ABOUT THE FLEET RATHER THAN ABOUT A CHARACTER, and the
+// only write in this repository that touches twenty-one files at once. What is pinned is
+// that it touches exactly one field of them.
+console.log('\none plan\'s gear, given to every character');
+{
+  const gear = { weapon: ['short sword', 'mace'], slots: { body: ['leather armor'] } };
+
+  // A character somebody has already planned by hand, in full.
+  L.writeLoadout('Gonzo', {
+    character: 'Gonzo',
+    note: 'the one with the nose', carry: [{ item: 'elderberry', min: 24, max: 40 }],
+    sell: ['sapphire'], keep: ['signet ring'], purse: { float: 200, bank_above: 1000 },
+    plan: { schools: { Kraanan: 2 }, abilities: [{ name: 'block' }] },
+    gear: { weapon: ['mace'], slots: {} },
+  });
+  const before = L.readLoadout('Gonzo').loadout;
+
+  const fleet = [{ character: 'Gonzo', agent: 't5' }, { character: 'Rowlf', agent: 't6' }];
+
+  const plan = L.applyGearToAll(gear, fleet, { from: 'Kermit' });
+  ok('a plan writes nothing at all',
+     !existsSync(join(root, 'loadouts', 'rowlf.json')) &&
+     JSON.stringify(L.readLoadout('Gonzo').loadout) === JSON.stringify(before));
+  ok('and it says what each character would get',
+     plan.counts.total === 2 && plan.counts.changed === 2 && plan.counts.created === 1);
+  ok('a character with no loadout is reported as getting its first one',
+     plan.rows[1].created === true && plan.rows[1].had === false);
+
+  const done = L.applyGearToAll(gear, fleet, { from: 'Kermit', apply: true });
+  const after = L.readLoadout('Gonzo').loadout;
+  ok('applying gives everyone the gear',
+     after.gear.weapon.join() === 'short sword,mace' &&
+     L.readLoadout('Rowlf').loadout.gear.slots.body.join() === 'leather armor');
+  ok('THE PLAN AND THE WRITE AGREE, because they are the same function',
+     JSON.stringify(plan.rows.map(r => [r.character, r.changed, r.created])) ===
+     JSON.stringify(done.rows.map(r => [r.character, r.changed, r.created])));
+
+  // THE PROPERTY THE WHOLE THING TURNS ON. A fleet-wide write that quietly took anything
+  // else with it would empty twenty carry lists at once, and the only place that shows up
+  // is a keeper deciding it has nothing to protect.
+  ok('and it changes NOTHING else about a loadout somebody wrote by hand',
+     after.note === before.note &&
+     JSON.stringify(after.carry) === JSON.stringify(before.carry) &&
+     JSON.stringify(after.sell) === JSON.stringify(before.sell) &&
+     JSON.stringify(after.keep) === JSON.stringify(before.keep) &&
+     JSON.stringify(after.plan) === JSON.stringify(before.plan) &&
+     JSON.stringify(after.purse) === JSON.stringify(before.purse));
+  ok('a character that had no loadout gets one that is otherwise blank',
+     L.readLoadout('Rowlf').loadout.carry.length === 0 &&
+     L.readLoadout('Rowlf').loadout.agent === 't6');
+  ok('the file records where its gear came from', /Kermit/.test(after.gear.from ?? ''));
+
+  const again = L.applyGearToAll(gear, fleet, { from: 'Kermit', apply: true });
+  ok('running it twice changes nobody the second time',
+     again.counts.changed === 0 && again.counts.unchanged === 2);
+
+  // ORDER IS THE PREFERENCE, so the same two names the other way round is a different
+  // instruction. Reporting that as "no change" would swallow the only edit somebody made.
+  const swapped = L.applyGearToAll({ weapon: ['mace', 'short sword'], slots: { body: ['leather armor'] } },
+                                   fleet, { from: 'Kermit' });
+  ok('reordering a preference list is a change, not a no-op', swapped.counts.changed === 2);
+  ok('and provenance alone is not', L.sameGear({ weapon: ['mace'], slots: {}, from: 'a' },
+                                               { weapon: ['mace'], slots: {}, from: 'b' }));
+
+  // AN EMPTY GEAR IS THE ORDINARY STATE OF A LOADOUT NOBODY HAS FILLED IN. Applied across a
+  // fleet it would clear every character's weapon preference and report success.
+  ok('an empty gear list is refused rather than applied',
+     (() => { try { L.applyGearToAll({ weapon: [], slots: {} }, fleet, { apply: true }); return false; }
+              catch { return true; } })());
+  ok('...unless somebody says they mean it',
+     (() => { try { return L.applyGearToAll({ weapon: [], slots: {} }, fleet,
+                                            { allowEmpty: true }).counts.changed === 2; }
+              catch { return false; } })());
+  ok('and gearIsEmpty knows the difference between no list and an empty one',
+     L.gearIsEmpty({ weapon: [], slots: { body: [] } }) && !L.gearIsEmpty({ weapon: [], slots: { body: ['x'] } }));
+
+  // A FILE THAT WILL NOT PARSE IS LEFT ALONE, not replaced with one holding only gear — the
+  // carry list that went missing would look like something nobody ever wrote.
+  writeFileSync(join(root, 'loadouts', 'scooter.json'), '{ this is not json');
+  const broken = L.applyGearToAll(gear, [{ character: 'Scooter' }], { apply: true });
+  ok('an unreadable loadout is reported and left where it is',
+     broken.counts.failed === 1 && /could not be read/.test(broken.rows[0].error) &&
+     readFileSync(join(root, 'loadouts', 'scooter.json'), 'utf8') === '{ this is not json');
+  ok('a name that cannot be a filename is refused rather than flattened',
+     L.applyGearToAll(gear, [{ character: '../..' }], { apply: true }).rows[0].error !== null);
+
+  // The same normalise() every other write goes through, so a fleet-wide one cannot mean
+  // something a single save would not.
+  const odd = L.applyGearToAll({ weapon: ['mace'], slots: { hat: ['helmet'] } }, fleet, {});
+  ok('an unknown slot is carried through and said out loud',
+     odd.gear.slots.hat.join() === 'helmet' && odd.problems.some(p => /slot "hat"/.test(p)));
+}
+
 rmSync(root, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
