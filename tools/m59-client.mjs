@@ -214,6 +214,10 @@ export class M59Client {
     this.keepalivePending = 0;       // heartbeat inventory replies still owed to us
 
     this.room = { id: null, objects: new Map() };   // object id -> room object
+    // Local trigger token for renderer animation state. The server does not send an
+    // animation epoch, so two identical BP_CHANGE attack programs are otherwise
+    // indistinguishable. Increment only when an appearance record is installed.
+    this.appearanceRevision = 0;
     this.inventory = [];
     this.spells = [];
     this.skills = [];
@@ -1052,7 +1056,10 @@ export class M59Client {
         const res = parseRoomContents(body);
         if (!this.check('ROOM_CONTENTS', res)) { this.lastRoomHex = body.toString('hex'); break; }
         this.room.id = res.roomId;
-        this.room.objects = new Map(res.objects.map(o => [o.id, o]));
+        this.room.objects = new Map(res.objects.map(o => {
+          o.appearanceRevision = ++this.appearanceRevision;
+          return [o.id, o];
+        }));
         this.log(`room ${res.roomId}: ${res.count} object(s)`);
         this.emit('room-contents', { room: res.roomId, count: res.count,
                                      objects: res.objects.map(o => describeObject(o, this.lookup)) });
@@ -1062,6 +1069,7 @@ export class M59Client {
       case BP.CREATE: {
         const res = parseCreate(body);
         if (!this.check('CREATE', res)) break;
+        res.object.appearanceRevision = ++this.appearanceRevision;
         this.room.objects.set(res.object.id, res.object);
         this.emit('appeared', { id: res.object.id, what: describeObject(res.object, this.lookup) });
         break;
@@ -1124,7 +1132,10 @@ export class M59Client {
         if (!this.check('CHANGE', res)) break;
         const o = this.room.objects.get(res.object.id);
         // Keep position: BP_CHANGE carries appearance only.
-        if (o) Object.assign(o, res.object, { x: o.x, y: o.y, col: o.col, row: o.row, angle: o.angle });
+        if (o) Object.assign(o, res.object, {
+          x: o.x, y: o.y, col: o.col, row: o.row, angle: o.angle,
+          appearanceRevision: ++this.appearanceRevision,
+        });
 
         // PICKING UP A STACKABLE ITEM YOU ALREADY CARRY ARRIVES HERE, NOT AS
         // BP_INVENTORY_ADD. There is no new inventory object to add — the existing

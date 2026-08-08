@@ -45,6 +45,95 @@ const dirName = deg => {
   return names[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
 };
 
+// The protocol object is already the renderer's authority. Keep its animation
+// vocabulary intact rather than guessing a current frame: group numbers are KOD's
+// 1-based BGF groups, and cycle/once animations need their whole range to reproduce
+// what the native client draws.
+function renderAnimation(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return {
+    type: Number.isInteger(value.animation) ? value.animation : null,
+    group: Number.isInteger(value.group) ? value.group : null,
+    period: Number.isInteger(value.period) ? value.period : null,
+    group_low: Number.isInteger(value.groupLow) ? value.groupLow : null,
+    group_high: Number.isInteger(value.groupHigh) ? value.groupHigh : null,
+    group_final: Number.isInteger(value.groupFinal) ? value.groupFinal : null,
+  };
+}
+
+function iconResource(c, iconRsc) {
+  if (iconRsc === null) return null;
+  // ResourceTable.get deliberately invents a readable placeholder for unknown ids.
+  // That is helpful in prose and wrong for a renderer: `<rsc 123>` is not a file.
+  if (typeof c.rsc?.has === 'function' && !c.rsc.has(iconRsc)) return null;
+  const value = c.rsc?.get?.(iconRsc);
+  if (typeof value !== 'string' || /^<(?:rsc|dynamic)\s+\d+>$/.test(value)) return null;
+  return value;
+}
+
+function renderLight(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return {
+    flags: Number.isInteger(value.flags) ? value.flags : null,
+    intensity: Number.isInteger(value.intensity) ? value.intensity : null,
+    color: Number.isInteger(value.color) ? value.color : null,
+  };
+}
+
+function renderOverlay(c, value) {
+  const row = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const iconRsc = Number.isInteger(row.iconRsc) ? row.iconRsc : null;
+  return {
+    icon_rsc: iconRsc,
+    icon_resource: iconResource(c, iconRsc),
+    // Attachment number only. Over/under ordering comes from the matching hotspot
+    // sign in the selected BGF frame, so preserve this byte without interpreting it.
+    hotspot: Number.isInteger(row.hotspot) ? row.hotspot : null,
+    translation: Number.isInteger(row.translation) ? row.translation : null,
+    effect: Number.isInteger(row.effect) ? row.effect : null,
+    animation: renderAnimation(row.animate),
+  };
+}
+
+function renderLayer(c, value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return {
+    translation: Number.isInteger(value.translation) ? value.translation : null,
+    effect: Number.isInteger(value.effect) ? value.effect : null,
+    animation: renderAnimation(value.animate),
+    overlays: (Array.isArray(value.overlays) ? value.overlays : []).map(row => renderOverlay(c, row)),
+  };
+}
+
+function renderState(c, value) {
+  const row = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const iconRsc = Number.isInteger(row.iconRsc) ? row.iconRsc : null;
+  return {
+    // Fine coordinates are the exact 1/64-square wire values. col/row remain beside
+    // them for tactical code, but are too coarse for smooth isometric movement.
+    x: Number.isInteger(row.x) ? row.x : null,
+    y: Number.isInteger(row.y) ? row.y : null,
+    angle: Number.isInteger(row.angle) ? row.angle : null,
+    facing_degrees: Number.isFinite(row.degrees) ? row.degrees : null,
+    // Local monotonic trigger token, not a server id or a time. A renderer resets
+    // ANIMATE_ONCE only when this changes; comparing descriptors cannot distinguish
+    // two identical consecutive attacks.
+    appearance_revision: Number.isInteger(row.appearanceRevision) ? row.appearanceRevision : null,
+    appearance: {
+      icon_rsc: iconRsc,
+      icon_resource: iconResource(c, iconRsc),
+      flags: Number.isInteger(row.flags) ? row.flags : null,
+      rarity: Number.isInteger(row.rarity) ? row.rarity : null,
+      light: renderLight(row.light),
+      translation: Number.isInteger(row.translation) ? row.translation : null,
+      effect: Number.isInteger(row.effect) ? row.effect : null,
+      animation: renderAnimation(row.animate),
+      overlays: (Array.isArray(row.overlays) ? row.overlays : []).map(overlay => renderOverlay(c, overlay)),
+      motion: renderLayer(c, row.motion),
+    },
+  };
+}
+
 // Inert furniture, as a tally rather than a list. Keeps the ids so an agent that
 // wants to look at a tree still can, but spends one line on sixty plants instead
 // of sixty. Only ever called with objects that have NO affordances — see snapshot.
@@ -358,7 +447,7 @@ export class World {
 
   // ------------------------------------------------------------------ objects
 
-  objects() {
+  objects({ includeAppearance = false } = {}) {
     const c = this.c, me = this.self;
     const list = [...c.room.objects.values()].filter(o => o.id !== c.selfId);
     return list.map(o => {
@@ -373,6 +462,7 @@ export class World {
         can,
         is_player: !!(o.flags & OF.PLAYER),
         teleporter: isTeleporter(o.flags) || undefined,
+        ...(includeAppearance ? renderState(c, o) : {}),
       };
       if (o.amount) out.amount = o.amount;
       if (o.flags & OF.PLAYER) {
@@ -444,6 +534,34 @@ export class World {
   }
 
   // ------------------------------------------------------------------ snapshot
+
+  // The renderer's hot path. This deliberately does no A*, boundary scanning, or
+  // minimap rendering: every field below is already in the protocol client's memory
+  // and changes can therefore be projected at packet speed. `snapshot()` remains the
+  // tactical query for deciding whether and how an order can be executed.
+  perception() {
+    const c = this.c, room = this.room, geo = this.geometry, me = this.self;
+    return {
+      room: room
+        ? { num: room.num, name: room.name, size: { rows: room.rows, cols: room.cols },
+            resource: room.rooFile, object_id: c.room.id }
+        : { num: null, name: c.roomNameRsc ? c.rsc.get(c.roomNameRsc) : null,
+            object_id: c.room.id,
+            note: 'this room is not in substrate/m59-map.json — rebuild the map' },
+      you: me
+        ? { object_id: c.selfId, col: me.col, row: me.row,
+            facing: dirName(me.degrees ?? 0), facing_degrees: me.degrees,
+            ...renderState(c, me),
+            on_walkable: geo ? geo.walkable(me.row, me.col) : null }
+        : { object_id: c.selfId, note: 'not present in room contents yet — call look' },
+      vitals: c.vitals(),
+      carrying: c.inventory.length,
+      objects: this.objects({ includeAppearance: true }),
+      exits: [],
+      projection: 'render',
+      topology_note: 'exits and reachability belong to the tactical look/room scene, not the render hot path',
+    };
+  }
 
   // One call, everything. This is what an agent should read at the start of a turn.
   //
