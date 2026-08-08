@@ -1,0 +1,16 @@
+{
+ "note": "Inferred reverse edges the server has refused. Written by forgetInferredExit in m59-map.mjs; delete an entry to let the router try it again.",
+ "refused": [
+  "534->48",
+  "150->575",
+  "563->150",
+  "556->150",
+  "552->574",
+  "545->150",
+  "544->150",
+  "584->150",
+  "585->574",
+  "576->574",
+  "563->574"
+ ]
+}

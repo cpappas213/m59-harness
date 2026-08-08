@@ -22,6 +22,10 @@ import { OF, isTeleporter, describeObject, dropSpec } from './m59-parse.mjs';
 // because escapeUnderworld re-exports most of it and a bare import would shadow.
 import * as UW from './m59-underworld.mjs';
 import { weighPack, isWeaponName } from './m59-items.mjs';
+// A character's own buy/sell/keep list, when it has one. Imported for the two pure
+// predicates only — this file does not go looking for the file, because the caller knows
+// which character it is and this one does not.
+import { keepTest as keepTestFor, sellTest as sellTestFor } from './m59-loadout.mjs';
 
 // Health fractions. Chosen from what the game does rather than taste: a monster that
 // can take you from half to nothing in one exchange is common, and the server's
@@ -110,8 +114,31 @@ export const WEAPON_IS_BROKEN = /is broken; you can'?t use it/i;  // weapon.kod:
 // unarmed. Zoot accumulated four of them and fought bare-handed with a full pack.
 export const WEAPON_USE_BROKEN = /can'?t use .*--it'?s broken/i;  // player.kod:127
 export const WEAPON_CONDITION = /shattered by a powerful blow/i;  // seen when examining it
+
+// RUINED ARMOUR REFUSES IN COMPLETE SILENCE, AND ONLY THE DESCRIPTION SAYS SO.
+//
+// A broken weapon announces itself on the use path — player.kod:127, "You can't use
+// X--it's broken." Armour does not. `use` on a ruined breastplate returns no message at
+// all, the use list simply does not change, and wearBest could say no more than "the
+// server never added it to the use list, and said nothing".
+//
+// So nothing condemned the piece. The character carried it, failed to wear it every
+// pass, and — because an unworn item looks exactly like a spare — sold it on the next
+// town trip. Beaker ran that loop with two leathers and finished unarmoured with 3,495
+// in the bank. Reading the condition line is the only way to tell, and it is there:
+//
+//   armor.kod:24   " is useless.  It has been torn into several pieces…"
+//   helmet.kod:24  " is useless, having been cleft in two by a forceful blow."
+//
+// against the sound reading, "without blemish or flaw". Confirmed live on Beaker: of two
+// identical-looking leathers, the one described as useless was refused silently and the
+// one without blemish went straight on.
+export const ARMOUR_CONDITION = /is useless[.,]/i;                // armor.kod:24, helmet.kod:24
+export const brokenGearText = (t) => ARMOUR_CONDITION.test(t || '');
+
 export const brokenWeaponText = (t) => WEAPON_SHATTERED.test(t || '') || WEAPON_IS_BROKEN.test(t || '')
-                                    || WEAPON_USE_BROKEN.test(t || '') || WEAPON_CONDITION.test(t || '');
+                                    || WEAPON_USE_BROKEN.test(t || '') || WEAPON_CONDITION.test(t || '')
+                                    || ARMOUR_CONDITION.test(t || '');
 
 // Learned, per client, because it cannot be read. A weapon enters this set the moment
 // the server refuses it or announces it shattering, and leaves only when it leaves the
@@ -242,10 +269,13 @@ export const equippedNow = (c) => (c?.using instanceof Set ? c.using : null);
 export const HANDS_FULL = /hands are too full/i;
 export const handsFullText = (t) => HANDS_FULL.test(t || '');
 
-export async function equipBest(s, { priority = null, maxTries = 4 } = {}) {
+export async function equipBest(s, { priority = null, maxTries = 4, refresh = true,
+                                     beforeMutation = null, shouldCancel = null } = {}) {
   const c = s.need();
-  await s.pacer.submit('read', () => c.requestInventory());
-  await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+  if (refresh) {
+    await s.pacer.submit('read', () => c.requestInventory());
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+  }
   const broken = brokenSet(c);
   const ranked = weaponRanking(c, { priority });
   if (!ranked.length)
@@ -275,8 +305,15 @@ export async function equipBest(s, { priority = null, maxTries = 4 } = {}) {
   // too because it is not the broken message.
   const rejected = [];
   for (const cand of ranked.slice(0, maxTries)) {
+    if (typeof shouldCancel === 'function' && shouldCancel())
+      return { wielding: null, cancelled: true, rejected,
+               considered: ranked.map(x => x.name) };
     const before = c.evSeq;
-    await s.pacer.submit('use', () => c.use(cand.o.id));
+    await s.pacer.submit('use', () => {
+      if (typeof beforeMutation === 'function')
+        beforeMutation('use', { item_id: cand.o.id, expected_name: cand.name, role: 'weapon' });
+      return c.use(cand.o.id);
+    });
     // Wait for whichever comes first: the use-list moving, or the server saying why not.
     const ev = await c.waitFor({ since: before, kinds: ['equipment', 'message'], timeoutMs: 3000 });
     const texts = ev.events.filter(e => e.text).map(e => e.text);
@@ -448,11 +485,15 @@ export function armourOf(c) {
 // Same shape as equipBest and for the same reason: sending `use` and reporting what we
 // meant to wear is how a fleet ends up believing it is armoured. `equipped` here means
 // the id is in plUsing and the server said so, nothing weaker.
-export async function wearBest(s, { slots = ARMOUR_SLOTS } = {}) {
+export async function wearBest(s, { slots = ARMOUR_SLOTS, refresh = true,
+                                    beforeMutation = null, shouldCancel = null } = {}) {
   const c = s.need();
-  await s.pacer.submit('read', () => c.requestInventory());
-  await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+  if (refresh) {
+    await s.pacer.submit('read', () => c.requestInventory());
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+  }
   const have = armourOf(c);
+  const broken = brokenSet(c);
   const worn = [], skipped = [], rejected = [];
 
   // BARE IS AN OPTION, AND IT SCORES ZERO.
@@ -483,13 +524,21 @@ export async function wearBest(s, { slots = ARMOUR_SLOTS } = {}) {
   };
 
   for (const slot of slots) {
+    if (typeof shouldCancel === 'function' && shouldCancel())
+      return { worn, stripped, skipped, rejected, cancelled: true,
+               confirmed_by: equippedNow(c) ? 'the server\'s use list (BP_USE)' : null };
     const best = have[slot]?.[0];
     const onNow = wornInSlot(slot);
 
     // Wearing something that is worse than nothing: take it off, whether or not the
     // pack holds a replacement.
     if (onNow && onNow.score < 0 && !(best && best.score > onNow.score && best.score > 0)) {
-      await s.pacer.submit('use', () => c.unuse(onNow.o.id));
+      await s.pacer.submit('use', () => {
+        if (typeof beforeMutation === 'function')
+          beforeMutation('unuse', { item_id: onNow.o.id, expected_name: onNow.name,
+                                     role: 'armor' });
+        return c.unuse(onNow.o.id);
+      });
       await c.waitFor({ kinds: ['equipment'], timeoutMs: 3000 }).catch(() => {});
       const after = equippedNow(c);
       stripped.push({ slot, name: onNow.name, defense: onNow.kind.defense,
@@ -514,13 +563,29 @@ export async function wearBest(s, { slots = ARMOUR_SLOTS } = {}) {
       continue;
     }
     const before = c.evSeq;
-    await s.pacer.submit('use', () => c.use(best.o.id));
+    await s.pacer.submit('use', () => {
+      if (typeof beforeMutation === 'function')
+        beforeMutation('use', { item_id: best.o.id, expected_name: best.name, role: 'armor' });
+      return c.use(best.o.id);
+    });
     const ev = await c.waitFor({ since: before, kinds: ['equipment', 'message'], timeoutMs: 3000 })
                       .catch(() => ({ events: [] }));
     const texts = (ev.events || []).filter(e => e.text).map(e => e.text);
     const now = equippedNow(c);
     if (now && !now.has(best.o.id)) {
+      // ARMOUR BREAKS TOO, AND NOTHING WAS WRITING IT DOWN.
+      //
+      // equipBest condemns a weapon the moment the server refuses it as broken, which is
+      // what puts it on junkAndBroken's list and gets it dropped. wearBest read the same
+      // refusal — "You can't use the gold round shield--it's broken." — and only noted it
+      // in `rejected`, which nothing acts on. So a broken breastplate sat in the pack for
+      // ever: not renamed (the same trap as the weapons), refused every pass, occupying a
+      // slot, and reported by every audit as a character with no armour rather than a
+      // character carrying armour it cannot wear. Beaker had a dead leather AND a dead
+      // gold shield and read as unarmoured for three passes.
+      if (texts.some(brokenWeaponText)) broken.add(best.o.id);
       rejected.push({ slot, name: best.name, id: best.o.id,
+                      ...(texts.some(brokenWeaponText) ? { broken: true } : {}),
                       why: texts.find(handsFullText)
                         ? 'refused: that slot is already full, and not by this item — we checked'
                         : texts[0] || 'the server never added it to the use list, and said nothing' });
@@ -582,7 +647,10 @@ export async function inspectForBroken(s, ids, { retries = 1, timeoutMs = 3000 }
       desc = events.find(e => e.id === id)?.description ?? null;
     }
     if (desc == null) { out.unknown.push(id); continue; }
-    if (WEAPON_CONDITION.test(desc)) { broken.add(id); out.broken.push(id); }
+    // Both phrasings: weapons say "shattered by a powerful blow", armour and helms say
+    // "is useless" (armor.kod:24, helmet.kod:24). Checking only the first meant every
+    // ruined breastplate on a corpse field was picked up and carried.
+    if (WEAPON_CONDITION.test(desc) || ARMOUR_CONDITION.test(desc)) { broken.add(id); out.broken.push(id); }
     else out.sound.push(id);
   }
   return out;
@@ -602,9 +670,12 @@ export async function inspectForBroken(s, ids, { retries = 1, timeoutMs = 3000 }
 // Unconditional, because nothing on the wire says whether we are sitting — BP has no
 // posture field — and standing while already standing costs one packet and does nothing.
 // Guessing wrong in the other direction costs 15 mana and an afternoon.
-export async function standToAct(s) {
+export async function standToAct(s, { beforePacket = null } = {}) {
   const c = s.need();
-  await s.pacer.submit('stand', () => c.stand());
+  await s.pacer.submit('stand', () => {
+    if (typeof beforePacket === 'function') beforePacket('stand');
+    return c.stand();
+  });
   await new Promise(r => setTimeout(r, 400));
   return { stood: true };
 }
@@ -992,10 +1063,13 @@ export function weaponsOf(c) {
 export const VIGOR_MAX = 200;
 
 export async function eat(s, { maxItems = 4, stomach = null, upToVigor = null,
-                               maxWaste = 12 } = {}) {
+                               maxWaste = 12, refresh = true,
+                               beforeMutation = null, shouldCancel = null } = {}) {
   const c = s.need();
-  await s.pacer.submit('read', () => c.requestInventory());
-  await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+  if (refresh) {
+    await s.pacer.submit('read', () => c.requestInventory());
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+  }
 
   const vig = () => c.vitals()?.vigor?.value ?? null;
   const before = vig();
@@ -1011,6 +1085,9 @@ export async function eat(s, { maxItems = 4, stomach = null, upToVigor = null,
   const ate = [];
   let filling = 0, tooFull = false, wasteful = 0;
   for (const item of larder.slice(0, maxItems)) {
+    if (typeof shouldCancel === 'function' && shouldCancel())
+      return { ate, filling, tooFull, wasteful, cancelled: true,
+               vigor: { before, after: vig() } };
     // Stop once we have what we came for; the rest of the larder keeps, and stomach
     // room spent now is room unavailable during the fight.
     if (upToVigor != null && (vig() ?? 0) >= upToVigor) break;
@@ -1021,7 +1098,11 @@ export async function eat(s, { maxItems = 4, stomach = null, upToVigor = null,
     if ((vig() ?? 0) + item.food.nutrition - VIGOR_MAX > maxWaste) { wasteful++; continue; }
 
     const b = c.evSeq;
-    await s.pacer.submit('act', () => c.apply(item.o.id, c.selfId), 1050);
+    await s.pacer.submit('act', () => {
+      if (typeof beforeMutation === 'function')
+        beforeMutation('eat', { item_id: item.o.id, expected_name: item.name, role: 'food' });
+      return c.apply(item.o.id, c.selfId);
+    }, 1050);
     const ev = await c.waitFor({ since: b, kinds: ['message', 'stat'], timeoutMs: 2500 }).catch(() => ({ events: [] }));
     // "You are too full to eat" means the stomach is the binding constraint; stop
     // rather than spending the rest of the larder on refusals — and record what the
@@ -1169,7 +1250,9 @@ export async function returnToSpot(s, spot, { maxSteps = 20, tolerance = 12 } = 
 // comes back at any speed.
 export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAULT_REST_UNTIL,
                                      mana = 0,
-                                     maxSeconds = 120, abortOnDamage = true } = {}) {
+                                     maxSeconds = 120, abortOnDamage = true,
+                                     beforeMutation = null, beforeCleanup = null,
+                                     shouldCancel = null } = {}) {
   const c = s.need();
   const read = async () => {
     await s.pacer.submit('read', () => c.stats(1));
@@ -1181,46 +1264,75 @@ export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAUL
   const done = () => (vitalFrac(v, 'health') ?? 1) >= health && (vitalFrac(v, 'vigor') ?? 1) >= vigor
                   && (vitalFrac(v, 'mana') ?? 1) >= mana;
   if (done()) return { rested: false, note: 'already recovered', vitals: v };
+  if (typeof shouldCancel === 'function' && shouldCancel())
+    return { rested: false, cancelled: true, vitals: v };
 
-  await s.pacer.submit('rest', () => c.rest());
+  await s.pacer.submit('rest', () => {
+    if (typeof beforeMutation === 'function') beforeMutation('rest');
+    return c.rest();
+  });
   const t0 = Date.now();
   let stalled = 0, last = -1, interrupted = null;
+  let cleanupSkipped = null;
   // The best health seen SO FAR in this rest, not the health we sat down at: a rest
   // that climbs 12 -> 16 and is then hit back to 14 is being interrupted, and
   // comparing against the starting 12 would call that progress and sit through it.
   let peak = v?.health?.value ?? null;
-  while (Date.now() - t0 < maxSeconds * 1000) {
-    await sleep(3000);
-    v = await read();
-    const hp = v?.health?.value ?? null;
-    if (abortOnDamage && hp != null) {
-      if (peak == null || hp > peak) peak = hp;
-      else if (hp < peak) {
-        // Health only falls while resting if something is hitting us. Whatever the
-        // caller believed about this square, it is wrong NOW — hand that back rather
-        // than sitting out the remaining leash.
-        interrupted = `took ${peak - hp} damage while resting — something is hitting us`;
-        break;
+  try {
+    while (Date.now() - t0 < maxSeconds * 1000 &&
+           !(typeof shouldCancel === 'function' && shouldCancel())) {
+      await sleep(3000);
+      v = await read();
+      const hp = v?.health?.value ?? null;
+      if (abortOnDamage && hp != null) {
+        if (peak == null || hp > peak) peak = hp;
+        else if (hp < peak) {
+          // Health only falls while resting if something is hitting us. Whatever the
+          // caller believed about this square, it is wrong NOW — hand that back rather
+          // than sitting out the remaining leash.
+          interrupted = `took ${peak - hp} damage while resting — something is hitting us`;
+          break;
+        }
       }
+      if (done()) break;
+      // A room can prevent resting, and standing back up is silent too. If nothing has
+      // moved for three checks, say so rather than sitting for the full timeout.
+      // MANA COUNTS TOWARD "SOMETHING IS STILL MOVING" WHEN IT IS BEING WAITED ON. Without
+      // it, a character sitting for mana alone — health and vigor already at their
+      // ceilings, which is exactly the post-death case — reads as stalled after three
+      // checks and stands up nine seconds in, every time.
+      const now = (vitalFrac(v, 'health') ?? 0) + (vitalFrac(v, 'vigor') ?? 0)
+                + (mana > 0 ? (vitalFrac(v, 'mana') ?? 0) : 0);
+      if (Math.abs(now - last) < 0.001) { if (++stalled >= 3) break; } else stalled = 0;
+      last = now;
     }
-    if (done()) break;
-    // A room can prevent resting, and standing back up is silent too. If nothing has
-    // moved for three checks, say so rather than sitting for the full timeout.
-    // MANA COUNTS TOWARD "SOMETHING IS STILL MOVING" WHEN IT IS BEING WAITED ON. Without
-    // it, a character sitting for mana alone — health and vigor already at their
-    // ceilings, which is exactly the post-death case — reads as stalled after three
-    // checks and stands up nine seconds in, every time.
-    const now = (vitalFrac(v, 'health') ?? 0) + (vitalFrac(v, 'vigor') ?? 0)
-              + (mana > 0 ? (vitalFrac(v, 'mana') ?? 0) : 0);
-    if (Math.abs(now - last) < 0.001) { if (++stalled >= 3) break; } else stalled = 0;
-    last = now;
+  } finally {
+    // Standing is cleanup for a rest that already began. It is intentionally still
+    // sent after cancellation or a failed status read: leaving the character sitting
+    // would block both movement and combat after the owned job has stopped. RTS callers
+    // supply a separate cleanup authority hook: it ignores this job's cancellation bit,
+    // but still refuses when a keeper resumed or endpoint/room/ownership changed.
+    let cleanupAuthorized = false;
+    try {
+      await s.pacer.submit('rest', () => {
+        if (typeof beforeCleanup === 'function') beforeCleanup('cleanup-stand');
+        cleanupAuthorized = true;
+        return c.stand();
+      });
+    } catch (error) {
+      if (cleanupAuthorized || typeof beforeCleanup !== 'function' ||
+          !(typeof shouldCancel === 'function' && shouldCancel())) throw error;
+      cleanupSkipped = String(error?.message || error);
+    }
   }
-  await s.pacer.submit('rest', () => c.stand());
+  const cancelled = typeof shouldCancel === 'function' && shouldCancel();
   return {
     rested: true,
+    ...(cancelled ? { cancelled: true } : {}),
     seconds: Math.round((Date.now() - t0) / 1000),
     from: started, vitals: v,
     reached_target: done(),
+    ...(cleanupSkipped ? { cleanup_stand_skipped: cleanupSkipped } : {}),
     // Set when the rest was cut short by incoming damage. Callers should treat this
     // as "the square you trusted is not working", not as an ordinary short rest.
     interrupted,
@@ -1813,8 +1925,99 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
 
 // ---------------------------------------------------------------- commerce
 
+// SHOULD THIS ONE THING GO TO THE COUNTER? Four rules in a fixed order, pulled out as a
+// pure function because it is the decision that can lose a character its armour, and
+// because "which rule won" is the only useful thing to say when it gets one wrong.
+//
+// The order is the whole design:
+//
+//   1. WORN BEATS EVERYTHING. plUsing is the server's own answer, so nothing named on any
+//      list can sell the shield off your arm. This used to be an empty Set that was never
+//      filled, which made the guard decorative.
+//   2. THE LOADOUT'S FLOOR. Counted against the pack, so a floor of twelve protects twelve
+//      elderberry and releases the thirteenth.
+//   3. THE LOADOUT'S SELL LIST, which beats the name guards below. Those protect anything
+//      that LOOKS like equipment or money — right by default, and the reason a character
+//      carrying fifty-six sapphires it will never cast with could not shed them without
+//      editing a regex shared by twenty-one characters.
+//   4. THE NAME GUARDS, as before, for everything nobody has said anything about.
+//
+// A null loadout skips 2 and 3 entirely, which is what makes this an overlay: the answer
+// for a character with no loadout is the answer this function has always given.
+// WHO IT IS SAFE TO SELL TO, and why this is an allowlist rather than a check.
+//
+// `buys_anything: true` in the merchant index, and the `buy` affordance on the object,
+// both report a real property of the NPC and neither means it will pay you. Three kinds
+// of NPC answer to "buys anything" and only one of them is a merchant:
+//
+//   THE SCAM.  Most of them. Skivlat the Tos banker is the type: hand him goods and he
+//              takes them, thanks you, and gives nothing back. It is a trick played on
+//              new players, and the flags cannot tell it from a sale.
+//   THE VAULT. Two of them, one on the mainland (Barloque) and one on the island. They
+//              "buy" anything and sell it back for about a shilling — they are STORAGE,
+//              not a market, and storage that survives death, which is the only thing in
+//              the game that does. Worth using deliberately (see the note in CLAUDE.md);
+//              never worth selling into by accident.
+//   THE REAL ONE. Roq, the only NPC known to buy an unlimited quantity of anything.
+//              Izzio and the island vendor are close to it with rules of their own.
+//
+// So: an allowlist, and everything else is left alone. Being wrong about a buyer costs
+// the whole pack; being wrong about a walk costs a walk.
+export const SELL_TO = [
+  /\broq\b/i,          // buys anything, unlimited — the one real general buyer
+  /\bizzio\b/i,        // close to it, with rules of its own
+  /herbutte/i,         // Sparkling Stone Shop, Barloque — gems. Verified: paid 856.
+  /joguer/i,           // Joguer's Herbs and Roots, Barloque — mushrooms, herbs, elderberry
+  /quintor/i,          // Quintor's Smithy, Jasper — weapons and armour
+  /paddock|solomon|pietro/i,   // inns and grocers we have traded with
+];
+// NEVER. Named separately from "not on the allowlist" because these actively take goods.
+export const NEVER_SELL_TO = [
+  /skivlat|yevitan|setag|huital/i,   // bankers: they take it and thank you
+  /vault/i,                          // the two vaults: storage, and they resell at ~1sh
+];
+// Body armour only — a shield is not what keeps a character alive here (leather is +50
+// defense against a shield's 5 or 10), and shields are the piece the fleet has spares of.
+export const ARMOUR_BODY = /leather armor|chain mail|scale armor|plate armor|breastplate|\barmor\b|\barmour\b/i;
+
+export const trustedBuyer = (name) => {
+  const n = String(name || '');
+  if (!n || NEVER_SELL_TO.some(re => re.test(n))) return false;
+  return SELL_TO.some(re => re.test(n));
+};
+
+export function sellable({ name, worn, keepRe, loadout = null, pack = [], armoured = true }) {
+  if (worn) return { sell: false, why: 'the server lists it as worn or wielded' };
+  // NEVER SELL THE ARMOUR YOU ARE NOT WEARING IF YOU ARE NOT WEARING ANY.
+  //
+  // `worn` protects what is ON the character, and everything else read as a spare — so a
+  // character that salvaged leather, failed to put it on, and then made a town trip sold
+  // the very thing it needed. Beaker did exactly that: picked two leathers off a corpse
+  // field, wear_best was refused with no message, and the next trip turned both into
+  // coin, leaving it unarmoured with 3,495 in the bank.
+  //
+  // A refusal to wear is not proof the piece is worthless — the broken message is
+  // distinct and is condemned separately. Until this character is wearing SOMETHING, its
+  // spare armour is not spare.
+  if (!armoured && ARMOUR_BODY.test(name)) {
+    return { sell: false, why: 'this character has no body armour on, so this is not a spare' };
+  }
+  const mustKeep = keepTestFor(loadout, pack);
+  const kept = mustKeep?.(name);
+  if (kept) return { sell: false, why: `this character's loadout: ${kept}` };
+  const mustSell = sellTestFor(loadout);
+  if (mustSell?.(name)) return { sell: true, why: 'this character\'s loadout puts it on the sell list' };
+  if (keepRe.test(name)) return { sell: false, why: 'the keep list' };
+  if (weaponScore(name) > 0) return { sell: false, why: 'it is a weapon' };
+  return { sell: true, why: 'nothing protects it' };
+}
+
 // Sell everything a merchant will take, keeping what you are using.
-export async function sellAll(s, { merchant, keep = [], minPrice = 1 } = {}) {
+//
+// `loadout` is this character's own list, or null. See `sellable` above for the order the
+// rules apply in and why. A caller that passes null gets the behaviour this function has
+// always had, which is what every existing caller relies on.
+export async function sellAll(s, { merchant, keep = [], minPrice = 1, loadout = null } = {}) {
   const c = s.need();
   await s.pacer.submit('read', () => c.requestInventory());
   await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
@@ -1826,9 +2029,16 @@ export async function sellAll(s, { merchant, keep = [], minPrice = 1 } = {}) {
   // names happened to match `keep`. It is the server's use list now, so it is right by
   // construction rather than by a name pattern somebody has to maintain.
   const wielded = equippedNow(c) ?? new Set();
-  let items = c.inventory
-    .map(o => ({ o, name: c.rsc.get(o.nameRsc) }))
-    .filter(x => !keepRe.test(x.name) && !wielded.has(x.o.id) && weaponScore(x.name) === 0);
+  const pack = c.inventory.map(o => ({ o, name: c.rsc.get(o.nameRsc) }));
+
+  // Is this character wearing body armour at all? If not, nothing armour-shaped in the
+  // pack counts as a spare — see sellable.
+  const armoured = pack.some(x => wielded.has(x.o.id) && ARMOUR_BODY.test(x.name) && !/shield/i.test(x.name));
+
+  let items = pack.filter(x => sellable({
+    name: x.name, worn: wielded.has(x.o.id), keepRe, loadout, armoured,
+    pack: pack.map(y => ({ name: y.name, amount: y.o.amount || 1 })),
+  }).sell);
 
   // DO NOT SELL WHAT A CRewMATE IS SHORT OF. The merchant buys low and sells high, so
   // this round trip costs the fleet twice over, and the thing being round-tripped is
@@ -1841,6 +2051,7 @@ export async function sellAll(s, { merchant, keep = [], minPrice = 1 } = {}) {
   });
 
   if (!items.length) return { sold: [], kept_for_the_fleet: held,
+    ...(loadout ? { loadout: loadout.character } : {}),
     note: held.length
       ? 'nothing left to sell — what is in the pack is either yours to keep or wanted by another character'
       : 'nothing to sell that is not money, equipment you are wearing, or a weapon you are carrying' };

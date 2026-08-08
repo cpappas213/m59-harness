@@ -62,6 +62,58 @@ const ok = (name, cond, extra = '') => {
   ok('abortOnDamage:false keeps the blind behaviour', !r.interrupted);
 }
 
+// An owned RTS recovery may be cancelled after it has sat down. Cancellation must
+// stop further work but still stand as cleanup, or the character remains unable to
+// move or fight after the job reports that it stopped.
+{
+  let cancel = false;
+  const packets = [];
+  const c = {
+    vitals: () => ({ health: { value: 10, max: 20 },
+                     vigor: { value: 40, max: 200, scale_max: 200 } }),
+    stats: async () => {}, waitFor: async () => {},
+    rest: async () => { packets.push('rest'); cancel = true; },
+    stand: async () => { packets.push('stand'); },
+  };
+  const s = { need: () => c, pacer: { submit: async (_kind, fn) => fn() } };
+  const guarded = [];
+  const r = await restUntil(s, { health: 0.9, vigor: 0.9,
+    beforeMutation: packet => guarded.push(packet), shouldCancel: () => cancel });
+  ok('an owned recovery reports cancellation', r.cancelled === true, JSON.stringify(r));
+  ok('a cancelled recovery still stands as cleanup', packets.join(',') === 'rest,stand', packets.join(','));
+  ok('cleanup stand bypasses the cancelled mutation guard', guarded.join(',') === 'rest', guarded.join(','));
+}
+
+// The exception to cleanup is a keeper that resumed while the owned recovery was
+// unwinding. Sending the old controller's stand after that handoff can interrupt the
+// keeper's posture/action. The cleanup hook runs inside the pacer callback and must
+// suppress that packet while preserving cancellation telemetry.
+{
+  let cancel = false;
+  const packets = [];
+  const c = {
+    vitals: () => ({ health: { value: 10, max: 20 },
+                     vigor: { value: 40, max: 200, scale_max: 200 } }),
+    stats: async () => {}, waitFor: async () => {},
+    rest: async () => { packets.push('rest'); cancel = true; },
+    stand: async () => { packets.push('stand'); },
+  };
+  const s = { need: () => c, pacer: { submit: async (_kind, fn) => fn() } };
+  const r = await restUntil(s, { health: 0.9, vigor: 0.9,
+    shouldCancel: () => cancel,
+    beforeCleanup: packet => {
+      if (packet !== 'cleanup-stand') throw new Error(`unexpected cleanup packet ${packet}`);
+      throw new Error('RTS control refused while this character has an active keeper');
+    },
+  });
+  ok('cancelled recovery stays cancelled when cleanup authority is lost',
+     r.cancelled === true, JSON.stringify(r));
+  ok('a newly active keeper suppresses the old controller cleanup stand',
+     packets.join(',') === 'rest', packets.join(','));
+  ok('the skipped cleanup reason stays visible',
+     /active keeper/.test(r.cleanup_stand_skipped || ''), JSON.stringify(r));
+}
+
 // AFTER A DEATH, STAY IN AND REST UNTIL WHOLE.
 //
 // Scooter died twice inside forty minutes: the keeper escaped the Underworld, cleared

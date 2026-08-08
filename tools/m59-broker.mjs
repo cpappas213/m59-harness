@@ -49,6 +49,7 @@ import * as hitbook from './m59-hits.mjs';
 import * as transits from './m59-transits.mjs';
 import * as descriptions from './m59-describe.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
+import { loadoutFor, reconcile as reconcileLoadout } from './m59-loadout.mjs';
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
          POSTMORTEM_DIR, setPilotLookup } from './m59-autopilot.mjs';
@@ -68,6 +69,8 @@ import { inboxIfAny, dropInbox, sanitizeInbound, unwrapSpeech } from './m59-inbo
 import { localClients, soleClientAgent, createClientWatch,
          identifyClients, clientsHoldingRoster } from './m59-localclient.mjs';
 import { chatTools } from './m59-chat-tools.mjs';
+import { rtsSafeSpellRule, rtsSpellTargetAllowed, rtsJobReport,
+         rtsPacketAuthorityCheck, rtsCleanupAuthorityCheck } from './m59-rts-safety.mjs';
 
 const HOST = process.env.M59_HOST || '127.0.0.1';
 const PORT = Number(process.env.M59_PORT || 5959);
@@ -1703,10 +1706,11 @@ class Session {
   // longest walk, in series, purely because the reply is the only way to learn the
   // outcome. So: start it, return now, and let `status` and `fleet` carry the
   // result. One job at a time per session — the character has one body.
-  startJob(kind, label, fn) {
+  startJob(kind, label, fn, { controlToken = null } = {}) {
     if (this.job && !this.job.done) throw new Error(`${this.name} is busy: ${this.job.label}`);
     const generation = this.movementGeneration;
-    const job = { kind, label, startedAt: Date.now(), done: false, generation };
+    const job = { kind, label, startedAt: Date.now(), done: false, generation,
+                  ...(controlToken ? { controlToken } : {}) };
     this.job = job;
     fn(generation).then(r => { job.result = r; }, e => { job.error = e.message; })
         .finally(() => { job.done = true; job.finishedAt = Date.now(); });
@@ -1748,15 +1752,7 @@ class Session {
   }
 
   jobReport() {
-    const j = this.job;
-    if (!j) return undefined;
-    const secs = Math.round(((j.finishedAt || Date.now()) - j.startedAt) / 1000);
-    return j.done
-      ? { last_action: j.label, took_s: secs,
-          ...(j.error ? { failed: j.error }
-            : j.result?.cancelled ? { cancelled: true }
-            : { ok: true }) }
-      : { busy: j.label, running_for_s: secs, ...(j.cancelRequestedAt ? { stopping: true } : {}) };
+    return rtsJobReport(this.job);
   }
 
   async join({ account, password, character, host = HOST, port = PORT }) {
@@ -1984,6 +1980,13 @@ class Session {
     return this.world.snapshot(opts);
   }
 
+  // Raw cached perception for a renderer. Unlike view(), this never runs A* for
+  // every object and exit. Keep tactical validation on view(); keep frames fast here.
+  perception() {
+    this.need();
+    return this.world.perception();
+  }
+
   // WHAT IS WORTH WALKING AROUND, AND HOW WIDE A BERTH IT IS WORTH.
   //
   // Every number here is the monster's own, from `monster.kod`:
@@ -2048,7 +2051,7 @@ class Session {
   // attacks to vanish: TargetWithinSightAndRange (player.kod:4115) rejects anything
   // behind you at distance > 1, and the refusal message is about view, not range, so
   // it reads like a different problem.
-  async faceToward(target) {
+  async faceToward(target, { beforePacket = null } = {}) {
     const c = this.need();
     const me = c.self;
     if (!me || !target) return null;
@@ -2057,7 +2060,10 @@ class Session {
     // kod angle 0 is east and increases clockwise as rows grow downward, which is
     // exactly what atan2(dy, dx) gives in screen coordinates.
     const deg = ((Math.round(Math.atan2(dy, dx) * 180 / Math.PI)) % 360 + 360) % 360;
-    await this.pacer.submit('turn', () => c.face(deg));
+    await this.pacer.submit('turn', () => {
+      if (typeof beforePacket === 'function') beforePacket('turn');
+      return c.face(deg);
+    });
     return deg;
   }
 
@@ -2175,14 +2181,17 @@ class Session {
   //
   // `confirm: true` forces the read anyway, for the one caller that genuinely needs to
   // know whether a step happened rather than where we now are.
-  async step(col, row, { confirm = false } = {}) {
+  async step(col, row, { confirm = false, beforeMutation = null } = {}) {
     const c = this.need();
     const before = c.self ? { col: c.self.col, row: c.self.row } : null;
     // Turn to face the destination first. It costs nothing, it is what a player
     // does, and several things in this game care about facing.
     if (before && (before.col !== col || before.row !== row)) {
       const deg = (Math.atan2(row - before.row, col - before.col) * 180 / Math.PI + 360) % 360;
-      await this.pacer.submit('turn', () => c.face(deg));
+      await this.pacer.submit('turn', () => {
+        if (typeof beforeMutation === 'function') beforeMutation('turn', { col, row });
+        return c.face(deg);
+      });
     }
     const speed = this.moveSpeed();
     // PACE BY DISTANCE, NOT BY PACKET. A hop may now cover several squares, so a fixed
@@ -2196,7 +2205,10 @@ class Session {
     const gap = this._moveGapMs ?? MOVE_INTERVAL_MS;
     const dist = before ? Math.max(Math.abs(col - before.col), Math.abs(row - before.row)) : 1;
     this._moveGapMs = Math.round(1000 * dist / squaresPerSecond(speed));
-    await this.pacer.submit('move', () => c.moveToSquare(col, row, speed), gap);
+    await this.pacer.submit('move', () => {
+      if (typeof beforeMutation === 'function') beforeMutation('move', { col, row });
+      return c.moveToSquare(col, row, speed);
+    }, gap);
     // Predict, the way the real client does.
     c.predictSelf({ col, row });
     // AND RESYNC ON A CLOCK, AT MOST — BUT DO NOT STAND STILL FOR IT.
@@ -2366,6 +2378,7 @@ class Session {
     hardCap = 400,
     movementGeneration = this.movementGeneration,
     controlToken,
+    beforeMutation = null,
   } = {}) {
     const c = this.need();
     const geo = this.world.geometry;
@@ -2381,7 +2394,8 @@ class Session {
           return this.cancelledMovement({ steps: steps.length });
         const me = c.self;
         if (!me || (me.col === col && me.row === row)) break;
-        const r = await this.step(me.col + Math.sign(col - me.col), me.row + Math.sign(row - me.row));
+        const r = await this.step(me.col + Math.sign(col - me.col), me.row + Math.sign(row - me.row),
+                                  { beforeMutation });
         steps.push(r.position);
         if (r.left_room) return { arrived: false, left_room: true, steps: steps.length };
         if (!r.moved) return { arrived: false, blocked_at: r.position, steps: steps.length,
@@ -2405,7 +2419,7 @@ class Session {
       // else `step` is asked "where am I now" and prediction answers it; here it is asked
       // "did that work", and a predicted yes would report solid ground under a character
       // still standing off the floor — from which no route exists at all.
-      const r = await this.step(spot.col, spot.row, { confirm: true });
+      const r = await this.step(spot.col, spot.row, { confirm: true, beforeMutation });
       if (!r.moved) return { arrived: false, reason: 'could not step back onto solid ground',
                              position: r.position, note: 'the server accepted the move but nothing changed' };
     }
@@ -2460,7 +2474,7 @@ class Session {
         next = queue.shift(); hop++;
       }
       const was = c.self ? { col: c.self.col, row: c.self.row } : null;
-      const r = await this.step(next.col, next.row);
+      const r = await this.step(next.col, next.row, { beforeMutation });
       taken += hop;
       if (r.left_room)
         return { arrived: false, left_room: true, steps: taken, note: 'a step crossed the room edge' };
@@ -2900,8 +2914,15 @@ class Session {
   // own, so most of a kill's drops are already gettable from where you stand, and the
   // few that are not are not worth giving up the wall for. What is left behind is
   // reported rather than silently skipped.
-  async lootFloor({ only = null, ids = null, maxItems = 12, stayPut = false } = {}) {
+  async lootFloor({ only = null, ids = null, maxItems = 12, stayPut = false,
+                    movementGeneration = this.movementGeneration, controlToken = null,
+                    shouldCancel = null, explicitIdsOverride = true,
+                    beforeMutation = null } = {}) {
     const c = this.need();
+    const cancelled = () => typeof shouldCancel === 'function' && shouldCancel();
+    if (cancelled())
+      return { taken: [], refused: [], carrying: [], cancelled: true,
+               note: 'loot intent was cancelled before its first server request' };
     await this.pacer.submit('read', () => c.roomContents());
     await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 });
     const me0 = c.self;
@@ -2948,16 +2969,28 @@ class Session {
     // `ids` request is the caller overriding us on purpose. UNKNOWN is taken, not
     // skipped: a look that came back empty is not evidence of anything.
     const brokenSkipped = [];
-    if (!ids?.length && cands.length) {
-      const weaponish = cands.filter(o => skills.weaponScore(c.rsc.get(o.nameRsc) || '') > 0);
-      if (weaponish.length) {
-        const verdict = await skills.inspectForBroken(this, weaponish.map(o => o.id))
+    if ((!ids?.length || !explicitIdsOverride) && cands.length) {
+      // ARMOUR AND SHIELDS BREAK THE SAME WAY AND WERE NOT BEING ASKED ABOUT.
+      //
+      // This checked weapon-shaped names only, and the comment above explains why — that
+      // was the class whose brokenness we knew how to read. It is not: a broken shield
+      // refuses on the use path with the same sentence a broken mace does ("You can't use
+      // the gold round shield--it's broken."), and examining it answers the same way. So
+      // dead armour was picked up off every corpse field exactly as the dead maces were,
+      // and worse, it read as ARMOUR in every audit — a character carrying a shattered
+      // breastplate looks equipped until something tries to wear it.
+      const brokenish = cands.filter(o => {
+        const n = c.rsc.get(o.nameRsc) || '';
+        return skills.weaponScore(n) > 0 || !!skills.armourKind(n);
+      });
+      if (brokenish.length) {
+        const verdict = await skills.inspectForBroken(this, brokenish.map(o => o.id))
                                     .catch(() => ({ broken: [] }));
         const dead = new Set(verdict.broken || []);
         if (dead.size) {
           cands = cands.filter(o => {
             if (!dead.has(o.id)) return true;
-            brokenSkipped.push(c.rsc.get(o.nameRsc) || 'a weapon');
+            brokenSkipped.push(c.rsc.get(o.nameRsc) || 'a piece of gear');
             return false;
           });
         }
@@ -2965,6 +2998,7 @@ class Session {
     }
 
     const taken = [], refused = [];
+    let wasCancelled = false;
     for (const n of brokenSkipped)
       refused.push({ item: n, why: 'BROKEN — the server says it has been shattered. It cannot be ' +
                                    'wielded or sold, and its name does not say so, which is why the ' +
@@ -2973,6 +3007,7 @@ class Session {
       refused.push({ item: n, why: 'CURSED — it equips itself, cannot be removed without an ' +
                                    'uncurse spell, and makes you easier to hit. Leave it.' });
     for (const o of cands) {
+      if (cancelled()) { wasCancelled = true; break; }
       const name = c.rsc.get(o.nameRsc);
       const me = c.self;
       // UserGet measures MANHATTAN distance and refuses past 7, so only walk when
@@ -2986,20 +3021,33 @@ class Session {
         }
         const spot = this.world.approachSquare(o.col, o.row);
         if (!spot) { refused.push({ id: o.id, name, why: 'cannot reach it through the geometry' }); continue; }
-        const walk = await this.walkTo(spot.col, spot.row, { maxSteps: Math.max(30, spot.steps + 10) });
+        const walk = await this.walkTo(spot.col, spot.row, {
+          maxSteps: Math.max(30, spot.steps + 10), movementGeneration, controlToken,
+          beforeMutation: typeof beforeMutation === 'function'
+            ? (packet, detail) => beforeMutation(packet, { ...detail, target_id: o.id })
+            : null,
+        });
         if (!walk.arrived) { refused.push({ id: o.id, name, why: walk.reason || 'could not get there' }); continue; }
       }
+      if (cancelled()) { wasCancelled = true; break; }
       const before = c.evSeq;
-      await this.pacer.submit('get', () => c.get(o.id));
+      await this.pacer.submit('get', () => {
+        if (typeof beforeMutation === 'function') beforeMutation('get', { target_id: o.id });
+        return c.get(o.id);
+      });
       const ev = await c.waitFor({ since: before, kinds: ['got', 'message', 'vanished'], timeoutMs: 3000 });
       const got = ev.events.find(e => e.kind === 'got');
       if (got) taken.push({ id: o.id, name, amount: o.amount || undefined });
       else refused.push({ id: o.id, name, why: ev.events.filter(e => e.text).map(e => e.text).join('; ') || 'no reply' });
     }
-    await this.pacer.submit('read', () => c.requestInventory());
-    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+    if (!wasCancelled) {
+      await this.pacer.submit('read', () => c.requestInventory());
+      await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+    }
     return { taken, refused,
-             carrying: c.inventory.map(o => ({ id: o.id, name: c.rsc.get(o.nameRsc), amount: o.amount || undefined })) };
+             carrying: c.inventory.map(o => ({ id: o.id, name: c.rsc.get(o.nameRsc), amount: o.amount || undefined })),
+             ...(wasCancelled ? { cancelled: true,
+               note: 'loot intent stopped before the next paced item action' } : {}) };
   }
 
   // Offer one item to a merchant and either read the price or complete the sale.
@@ -3159,6 +3207,121 @@ const session = name => {
 
 const num = (v, d) => (v === undefined || v === null ? d : Number(v));
 
+// A Symbol cannot arrive through MCP JSON. It is an internal-only hook used by RTS
+// jobs to recheck their complete authority from inside the pacer's callback, in the
+// same synchronous turn as the actual mutating client call. The guard throws when
+// endpoint, keeper, room, ownership, or action state changed; true means an owned
+// cancellation and is translated to the stable cancellation result below.
+const RTS_MUTATION_GUARD = Symbol('rts-mutation-guard');
+const RTS_CANCELLED = 'M59_RTS_ACTION_CANCELLED';
+
+function beforeRtsMutation(args, packet, detail = null) {
+  const guard = args?.[RTS_MUTATION_GUARD];
+  if (typeof guard !== 'function' || !guard(packet, detail)) return;
+  const error = new Error(`RTS action cancelled before ${packet} packet`);
+  error.code = RTS_CANCELLED;
+  error.packet = packet;
+  throw error;
+}
+
+function rtsCancellationResult(error, extra = {}) {
+  if (error?.code !== RTS_CANCELLED) return null;
+  return {
+    ...extra,
+    cancelled: true,
+    note: `cancelled before the ${error.packet || 'next'} packet; no later mutating packet was sent`,
+  };
+}
+
+// Control tokens are short-lived ownership labels issued by the loopback RTS
+// gateway. They are deliberately opaque to the broker: equality is the only
+// authority they carry, and a token can cancel only the job that recorded it.
+function controlToken(value) {
+  const token = typeof value === 'string' ? value.trim() : '';
+  if (!/^[A-Za-z0-9._:-]{8,160}$/.test(token))
+    throw new Error('control_token must be an 8-160 character opaque identifier');
+  return token;
+}
+
+function requireLocalControlEndpoint(s, hostValue, portValue) {
+  const expectedHost = typeof hostValue === 'string' ? hostValue.trim().toLowerCase() : '';
+  const expectedPort = Number(portValue);
+  if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(expectedHost) ||
+      !Number.isInteger(expectedPort) || expectedPort < 1 || expectedPort > 65535)
+    throw new Error('RTS control requires an explicit loopback game server');
+  const actualHost = typeof s.credentials?.host === 'string'
+    ? s.credentials.host.trim().toLowerCase() : '';
+  const actualPort = Number(s.credentials?.port);
+  if (actualHost !== expectedHost || actualPort !== expectedPort)
+    throw new Error(`RTS control server mismatch: session is on ${actualHost || '?'}:${actualPort || '?'}`);
+  return { host: expectedHost, port: expectedPort };
+}
+
+function requireRtsKeeperInactive(s) {
+  const keeper = autopilotIfAny(s.name);
+  if (keeper?.running && !keeper.inert)
+    throw new Error('RTS control refused while this character has an active keeper; make it inert first');
+}
+
+function requireLocalControlSession(s, hostValue, portValue) {
+  const endpoint = requireLocalControlEndpoint(s, hostValue, portValue);
+  requireRtsKeeperInactive(s);
+  return endpoint;
+}
+
+function requireRtsRoom(s, expectedRoom, packet) {
+  const rooms = [s.world?.room?.num, s.client?.room?.id]
+    .filter(value => Number.isSafeInteger(value));
+  if (!rooms.length || rooms.some(value => value !== expectedRoom))
+    throw new Error(`RTS ${packet} authority lost: session is in room ` +
+      `${rooms.length ? [...new Set(rooms)].join('/') : '?'}, not ${expectedRoom}`);
+}
+
+function rtsPacketAuthority({ s, host, port, room, token, validate = null }) {
+  return (packet, detail = null) => rtsPacketAuthorityCheck({
+    packet, detail,
+    endpoint: () => requireLocalControlEndpoint(s, host, port),
+    keeper: () => requireRtsKeeperInactive(s),
+    room: () => requireRtsRoom(s, room, packet),
+    owner: () => {
+      if (!s.job || s.job.controlToken !== token)
+        throw new Error(`RTS ${packet} authority lost: control token no longer owns the active job`);
+    },
+    cancelled: () => s.job.cancelled === true || s.job.cancelRequestedAt != null ||
+      s.movementWasCancelled(s.job.generation, token),
+    validate,
+  });
+}
+
+// Cleanup after an owned recovery cancellation is deliberately different from a new
+// action: it may ignore that job's cancellation bit so it can stand the character back
+// up, but it may not ignore a changed endpoint, room, owner, or newly active keeper.
+function rtsCleanupAuthority({ s, host, port, room, token }) {
+  return packet => rtsCleanupAuthorityCheck({
+    packet,
+    endpoint: () => requireLocalControlEndpoint(s, host, port),
+    keeper: () => requireRtsKeeperInactive(s),
+    room: () => requireRtsRoom(s, room, packet),
+    owner: () => {
+      if (!s.job || s.job.controlToken !== token)
+        throw new Error(`RTS ${packet} cleanup authority lost: control token no longer owns the active job`);
+    },
+  });
+}
+
+const rtsMutationHook = guard => (packet, detail = null) =>
+  beforeRtsMutation({ [RTS_MUTATION_GUARD]: guard }, packet, detail);
+
+function rtsIdentity(c, value) {
+  if (!value) return null;
+  return { id: value.id, name_rsc: value.nameRsc, name: c.rsc.get(value.nameRsc) || '' };
+}
+
+function sameRtsIdentity(c, value, identity) {
+  return !!value && !!identity && value.id === identity.id &&
+    value.nameRsc === identity.name_rsc && (c.rsc.get(value.nameRsc) || '') === identity.name;
+}
+
 function resolveTarget(s, arg) {
   const c = s.need();
   if (arg === undefined || arg === null) throw new Error('need a target id or name');
@@ -3281,9 +3444,14 @@ const TOOLS = [
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       cached: { type: 'boolean', description: 'skip the server round-trip and report the last known state' },
+      projection: { type: 'string', enum: ['tactical', 'render'],
+        description: 'render returns raw cached positions without reachability/pathfinding; requires cached=true' },
       minimap: { type: 'boolean', description: 'default FALSE; set true for the room picture' } },
       required: ['agent'] },
     run: (a) => {
+      if (a.projection === 'render' && a.cached !== true)
+        throw new Error('projection=render is a cached renderer read; pass cached=true');
+      if (a.projection === 'render') return session(a.agent).perception();
       const opts = { includeMinimap: a.minimap === true };
       return a.cached ? session(a.agent).view(opts) : session(a.agent).refresh(opts);
     },
@@ -3777,19 +3945,57 @@ const TOOLS = [
       'legal targets.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' }, target: { type: ['string', 'number'] },
-      swings: { type: 'number', description: 'repeat this many times, one per second' } },
+      swings: { type: 'number', description: 'repeat this many times, one per second' },
+      stop_below: { type: 'number', description: 'optional health fraction; stop before the next swing at or below it' } },
       required: ['agent', 'target'] },
     run: async (a) => {
       const s = session(a.agent), c = s.need();
       const t = resolveTarget(s, a.target);
       const rounds = Math.max(1, Math.min(num(a.swings, 1), 20));
+      const requestedStop = a.stop_below == null ? null : Number(a.stop_below);
+      if (requestedStop !== null && (!Number.isFinite(requestedStop) ||
+          requestedStop < 0.05 || requestedStop > 0.95))
+        throw new Error('stop_below must be a health fraction from 0.05 through 0.95');
+      const stopBelow = requestedStop;
+      const healthFraction = () => {
+        const health = c.vitals()?.health;
+        const maximum = health?.max ?? health?.scale_max;
+        return Number.isFinite(health?.value) && Number.isFinite(maximum) && maximum > 0
+          ? health.value / maximum : null;
+      };
       const log = [];
+      let disengaged = false, wasCancelled = false;
       for (let i = 0; i < rounds; i++) {
+        if (s.job?.kind === 'attack' && s.job.cancelled) {
+          wasCancelled = true;
+          log.push({ note: 'attack intent cancelled after the preceding paced swing' });
+          break;
+        }
+        const health = healthFraction();
+        if (stopBelow !== null && health !== null && health <= stopBelow) {
+          disengaged = true;
+          log.push({ note: `stopped before swing ${i + 1}: health ${(health * 100).toFixed(0)}% ` +
+                           `reached the ${(stopBelow * 100).toFixed(0)}% RTS disengage floor` });
+          break;
+        }
         const o = c.room.objects.get(t.id);
         if (!o) { log.push({ swing: i + 1, result: 'target is no longer here' }); break; }
-        await s.faceToward(o);
-        const before = c.evSeq;
-        await s.pacer.submit('attack', () => c.attack(t.id), ATTACK_INTERVAL_MS);
+        let before = c.evSeq;
+        try {
+          await s.faceToward(o, {
+            beforePacket: packet => beforeRtsMutation(a, packet),
+          });
+          before = c.evSeq;
+          await s.pacer.submit('attack', () => {
+            beforeRtsMutation(a, 'attack');
+            return c.attack(t.id);
+          }, ATTACK_INTERVAL_MS);
+        } catch (error) {
+          if (!rtsCancellationResult(error)) throw error;
+          wasCancelled = true;
+          log.push({ note: 'attack intent cancelled before the next mutating packet' });
+          break;
+        }
         const { events } = await c.waitFor({ since: before, timeoutMs: 2500 });
         log.push({ swing: i + 1,
                    messages: events.filter(e => e.text).map(e => e.text),
@@ -3805,11 +4011,629 @@ const TOOLS = [
       // past: it looks like a miss and it is not a swing at all. Say what to do about it.
       const refused = log.some(e => e.messages?.some(skills.cannotSwingText));
       return { target: t.id, swings: log, vitals: c.vitals(),
+               ...(wasCancelled ? { cancelled: true } : {}),
+               ...(disengaged ? { disengaged: true, stop_below: stopBelow } : {}),
                ...(refused ? { could_not_swing: true,
                                note: 'the swings were refused, not missed. Usually you are still sitting ' +
                                      'down — send `rest` with stand:true and swing again. Hold, Dazzle, ' +
                                      'Blind and a DM freeze say the same thing and standing will not help ' +
                                      'those. `fight` handles this on its own.' } : {}) };
+    },
+  },
+  {
+    name: 'attack_intent',
+    description:
+      'Start an exact-id attack as a background session job and return immediately. This is the ' +
+      'RTS control seam: it validates that the id is attackable in the stated room before accepting, ' +
+      'then rechecks endpoint, keeper, room, exact non-player target, cancellation, and the multi-swing ' +
+      'health floor inside every turn/attack pacer callback. Object ids are generation-local; a ' +
+      'room mismatch is rejected before any packet is sent. Multi-swing RTS attacks also stop at ' +
+      '35% health. Use cancel_action to stop between swings.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      room: { type: 'number' },
+      target: { type: 'number' },
+      swings: { type: 'number', description: 'maximum paced swings, default 20' },
+      control_token: { type: 'string', description: 'opaque owner token required for cancellation' },
+      server_host: { type: 'string', description: 'exact loopback game host authorized by the gateway' },
+      server_port: { type: 'number', description: 'exact local game port authorized by the gateway' },
+    }, required: ['agent', 'room', 'target', 'control_token', 'server_host', 'server_port'] },
+    run: (a) => {
+      const s = session(a.agent), c = s.need();
+      const token = controlToken(a.control_token);
+      requireLocalControlSession(s, a.server_host, a.server_port);
+      const actualRoom = s.world?.room?.num ?? null;
+      if (actualRoom !== Number(a.room))
+        throw new Error(`stale attack intent: ${a.agent} is in room ${actualRoom}, not ${a.room}`);
+      const target = resolveTarget(s, Number(a.target));
+      const object = c.room.objects.get(target.id);
+      if (!object || !(object.flags & OF.ATTACKABLE))
+        throw new Error('stale attack intent: target is absent or no longer attackable');
+      // This seam is deliberately PvE-only. A gateway flag is not an authority boundary:
+      // the broker is the last process before the game packet and must fail closed too.
+      if (object.flags & OF.PLAYER)
+        throw new Error('RTS attack intents may not target players');
+      const swings = Math.max(1, Math.min(Math.trunc(num(a.swings, 20)), 20));
+      const expectedTarget = rtsIdentity(c, object);
+      const guard = rtsPacketAuthority({
+        s, host: a.server_host, port: a.server_port, room: actualRoom, token,
+        validate: packet => {
+          const current = c.room.objects.get(target.id);
+          if (!sameRtsIdentity(c, current, expectedTarget) || !(current.flags & OF.ATTACKABLE))
+            throw new Error(`RTS ${packet} refused: exact target ${target.id} is absent, changed, or not attackable`);
+          if (current.flags & OF.PLAYER)
+            throw new Error(`RTS ${packet} refused: target ${target.id} is now a player`);
+          if (swings > 1) {
+            const health = c.vitals()?.health;
+            const maximum = health?.max ?? health?.scale_max;
+            const fraction = Number.isFinite(health?.value) && Number.isFinite(maximum) && maximum > 0
+              ? health.value / maximum : null;
+            if (!(fraction > 0.35))
+              throw new Error(`RTS ${packet} refused: multi-swing health must remain above 35%`);
+          }
+        },
+      });
+      const job = s.startJob('attack', `attack ${target.id} in room ${actualRoom}`,
+        () => callTool('attack', { agent: a.agent, target: target.id, swings,
+                                   ...(swings > 1 ? { stop_below: 0.35 } : {}),
+                                   [RTS_MUTATION_GUARD]: guard }),
+        { controlToken: token });
+      return { accepted: true, agent: a.agent, room: actualRoom, target: target.id,
+               swings, ...(swings > 1 ? { stop_below: 0.35 } : {}),
+               control_token: token, started_at: job.startedAt };
+    },
+  },
+  {
+    name: 'move_intent',
+    description:
+      'Start a same-room RTS movement as a background session job and return immediately. The ' +
+      'stated room and destination square are revalidated against the local ROO geometry before ' +
+      'acceptance and endpoint, keeper, room, ownership, cancellation, and the next walkable step are ' +
+      'rechecked inside every turn/move pacer callback. Use cancel_action with the same control_token ' +
+      'to stop after the current step.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      room: { type: 'number' },
+      col: { type: 'number' },
+      row: { type: 'number' },
+      max_steps: { type: 'number', description: 'hard movement budget, default 120, maximum 400' },
+      control_token: { type: 'string', description: 'opaque owner token required for cancellation' },
+      server_host: { type: 'string', description: 'exact loopback game host authorized by the gateway' },
+      server_port: { type: 'number', description: 'exact local game port authorized by the gateway' },
+    }, required: ['agent', 'room', 'col', 'row', 'control_token', 'server_host', 'server_port'] },
+    run: (a) => {
+      const s = session(a.agent);
+      s.need();
+      const token = controlToken(a.control_token);
+      requireLocalControlSession(s, a.server_host, a.server_port);
+      const actualRoom = s.world?.room?.num ?? null;
+      const room = Number(a.room), col = Number(a.col), row = Number(a.row);
+      if (!Number.isSafeInteger(room) || actualRoom !== room)
+        throw new Error(`stale move intent: ${a.agent} is in room ${actualRoom}, not ${a.room}`);
+      if (!Number.isSafeInteger(col) || !Number.isSafeInteger(row))
+        throw new Error('move intent destination must be an integer col/row square');
+      const geometry = s.world?.geometry;
+      if (!geometry)
+        throw new Error(`move intent refused: room ${room} has no local ROO geometry`);
+      if (row < 1 || row > geometry.rows || col < 1 || col > geometry.cols ||
+          !geometry.walkable(row, col))
+        throw new Error(`move intent destination ${col},${row} is outside the walkable room floor`);
+      const maxSteps = Math.max(1, Math.min(400, Math.trunc(num(a.max_steps, 120))));
+      const guard = rtsPacketAuthority({
+        s, host: a.server_host, port: a.server_port, room, token,
+        validate: (packet, detail) => {
+          const currentGeometry = s.world?.geometry;
+          if (!currentGeometry || row < 1 || row > currentGeometry.rows ||
+              col < 1 || col > currentGeometry.cols || !currentGeometry.walkable(row, col))
+            throw new Error(`RTS ${packet} refused: destination ${col},${row} is no longer on the walkable floor`);
+          if (!detail || !Number.isSafeInteger(detail.col) || !Number.isSafeInteger(detail.row))
+            throw new Error(`RTS ${packet} refused: no exact next-step square accompanied the packet`);
+          if (detail.row < 1 || detail.row > currentGeometry.rows ||
+              detail.col < 1 || detail.col > currentGeometry.cols ||
+              !currentGeometry.walkable(detail.row, detail.col))
+            throw new Error(`RTS ${packet} refused: next step ${detail.col},${detail.row} is not walkable`);
+        },
+      });
+      const beforeMutation = rtsMutationHook(guard);
+      const job = s.startJob('move', `move to ${col},${row} in room ${actualRoom}`,
+        async movementGeneration => {
+          try {
+            return await s.walkTo(col, row, {
+              maxSteps, hardCap: 400, movementGeneration, controlToken: token, beforeMutation,
+            });
+          } catch (error) {
+            const stopped = rtsCancellationResult(error);
+            if (stopped) return stopped;
+            throw error;
+          }
+        }, { controlToken: token });
+      return { accepted: true, agent: a.agent, room: actualRoom,
+               destination: { col, row }, max_steps: maxSteps,
+               control_token: token, started_at: job.startedAt };
+    },
+  },
+  {
+    name: 'context_intent',
+    description:
+      'Start one typed RTS context action as a background session job and return immediately. ' +
+      'The allowlist covers posture, recovery, exact positioning, cached loadout/food, exact safe ' +
+      'inventory operations, safety-on, loot, and conservative spell casting. Room, object, shared ' +
+      'fail-closed safe-spell policy, keeper, and exact loopback server authority are all ' +
+      'rechecked here, at the ' +
+      'last process boundary before Meridian packets. Use cancel_action with the returned token.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      room: { type: 'number' },
+      action: { type: 'string', enum: [
+        'stand', 'rest_here', 'recover_here', 'grab_nearby', 'take', 'cast',
+        'approach', 'face', 'equip_best', 'wear_best', 'eat_best', 'prepare',
+        'item_use', 'item_unuse', 'item_eat', 'safety_on',
+      ] },
+      col: { type: 'number', description: 'rest_here/recover_here destination column' },
+      row: { type: 'number', description: 'rest_here/recover_here destination row' },
+      target: { type: 'number', description: 'take/approach/face object or optional cast target id' },
+      item: { type: 'number', description: 'exact cached inventory id for item_* actions' },
+      expected_item_name: { type: 'string', description: 'gateway-observed exact item name' },
+      targets: { type: 'array', items: { type: 'number' },
+                 description: 'gateway-derived gettable ids for grab_nearby' },
+      spell: { type: 'string', description: 'exact server-observed spell name' },
+      control_token: { type: 'string', description: 'opaque owner token required for cancellation' },
+      server_host: { type: 'string', description: 'exact loopback game host authorized by the gateway' },
+      server_port: { type: 'number', description: 'exact local game port authorized by the gateway' },
+    }, required: ['agent', 'room', 'action', 'control_token', 'server_host', 'server_port'] },
+    run: (a) => {
+      const s = session(a.agent), c = s.need();
+      const token = controlToken(a.control_token);
+      requireLocalControlSession(s, a.server_host, a.server_port);
+      const action = typeof a.action === 'string' ? a.action : '';
+      if (![
+        'stand', 'rest_here', 'recover_here', 'grab_nearby', 'take', 'cast',
+        'approach', 'face', 'equip_best', 'wear_best', 'eat_best', 'prepare',
+        'item_use', 'item_unuse', 'item_eat', 'safety_on',
+      ].includes(action))
+        throw new Error('unknown RTS context action');
+      const actualRoom = s.world?.room?.num ?? null;
+      const room = Number(a.room);
+      if (!Number.isSafeInteger(room) || actualRoom !== room)
+        throw new Error(`stale context intent: ${a.agent} is in room ${actualRoom}, not ${a.room}`);
+
+      let col = null, row = null, target = null, targets = [], spell = null;
+      let inventoryItem = null, inventoryName = null, inventoryIdentity = null;
+      let targetIdentity = null, spellIdentity = null, spellRule = null;
+      const floorIdentities = new Map();
+      if (action === 'rest_here' || action === 'recover_here') {
+        col = Number(a.col); row = Number(a.row);
+        if (!Number.isSafeInteger(col) || !Number.isSafeInteger(row))
+          throw new Error(`${action} destination must be an integer col/row square`);
+        const geometry = s.world?.geometry;
+        if (!geometry)
+          throw new Error(`${action} refused: room ${room} has no local ROO geometry`);
+        if (row < 1 || row > geometry.rows || col < 1 || col > geometry.cols ||
+            !geometry.walkable(row, col))
+          throw new Error(`${action} destination ${col},${row} is outside the walkable room floor`);
+      } else if (action === 'take' || action === 'grab_nearby') {
+        targets = action === 'take' ? [Number(a.target)]
+          : Array.isArray(a.targets) ? a.targets.map(Number) : [];
+        if (!targets.length || targets.length > 12 ||
+            targets.some(id => !Number.isSafeInteger(id) || id < 1) ||
+            new Set(targets).size !== targets.length)
+          throw new Error(`${action} requires 1-12 unique positive object ids`);
+        for (const id of targets) {
+          const object = c.room.objects.get(id);
+          if (!object || !(object.flags & OF.GETTABLE))
+            throw new Error(`stale ${action} intent: object ${id} is absent or no longer gettable`);
+          floorIdentities.set(id, rtsIdentity(c, object));
+          const me = c.self;
+          if (action === 'grab_nearby' && me && Number.isFinite(me.col) && Number.isFinite(me.row) &&
+              Number.isFinite(object.col) && Number.isFinite(object.row) &&
+              Math.abs(object.col - me.col) + Math.abs(object.row - me.row) > 7)
+            throw new Error(`stale grab_nearby intent: object ${id} is outside pickup range`);
+        }
+        target = action === 'take' ? targets[0] : null;
+      } else if (action === 'approach' || action === 'face') {
+        target = Number(a.target);
+        if (!Number.isSafeInteger(target) || target < 1)
+          throw new Error(`${action} requires a positive perceived target id`);
+        const object = c.room.objects.get(target);
+        if (!object || !Number.isFinite(object.col) || !Number.isFinite(object.row))
+          throw new Error(`stale ${action} intent: target ${target} is no longer perceived`);
+        targetIdentity = rtsIdentity(c, object);
+      } else if (action === 'item_use' || action === 'item_unuse' || action === 'item_eat') {
+        const item = Number(a.item);
+        if (!Number.isSafeInteger(item) || item < 1)
+          throw new Error(`${action} requires a positive cached inventory id`);
+        inventoryItem = (c.inventory || []).find(value => value.id === item) || null;
+        if (!inventoryItem)
+          throw new Error(`stale ${action} intent: inventory item ${item} is no longer carried`);
+        inventoryName = c.rsc.get(inventoryItem.nameRsc) || '';
+        inventoryIdentity = rtsIdentity(c, inventoryItem);
+        const expectedName = typeof a.expected_item_name === 'string' ? a.expected_item_name : '';
+        if (!expectedName || expectedName !== inventoryName)
+          throw new Error(`stale ${action} intent: item ${item} is now ${inventoryName || 'unnamed'}, ` +
+                          `not ${expectedName || 'a gateway-identified item'}`);
+        const gear = skills.weaponScore(inventoryName) > 0 || !!skills.armourKind(inventoryName);
+        const food = skills.larderOf(c).some(value => value.o.id === item);
+        const using = skills.equippedNow(c);
+        if (action === 'item_eat' && !food)
+          throw new Error(`item_eat refused: ${inventoryName || item} is not classified as known food`);
+        if ((action === 'item_use' || action === 'item_unuse') && !gear)
+          throw new Error(`${action} refused: ${inventoryName || item} is not classified as weapon or armour`);
+        if (action === 'item_use' && (skills.brokenSet(c).has(item) || CURSED_ITEMS.test(inventoryName)))
+          throw new Error(`item_use refused: ${inventoryName || item} is known broken or cursed`);
+        if ((action === 'item_use' || action === 'item_unuse') && c.usingAt == null)
+          throw new Error(`${action} refused until the server equipment list is known`);
+        if (action === 'item_use' && using?.has(item))
+          throw new Error(`item_use refused: ${inventoryName || item} is already equipped`);
+        if (action === 'item_unuse' && !using?.has(item))
+          throw new Error(`item_unuse refused: ${inventoryName || item} is not currently equipped`);
+      } else if (action === 'cast') {
+        const wanted = typeof a.spell === 'string' ? a.spell.trim() : '';
+        if (!wanted || wanted.length > 120 || /[\x00-\x1f\x7f]/.test(wanted))
+          throw new Error('cast requires an exact spell name');
+        const known = (Array.isArray(c.spells) ? c.spells : [])
+          .map(value => ({ value, name: c.rsc.get(value.nameRsc) }))
+          .find(value => typeof value.name === 'string' &&
+            value.name.toLowerCase() === wanted.toLowerCase());
+        if (!known)
+          throw new Error(`stale cast intent: ${a.agent} does not know the exact spell "${wanted}"`);
+        const count = Number(known.value.numTargets);
+        const rule = rtsSafeSpellRule(known.name, count);
+        if (!rule)
+          throw new Error(`${known.name} is not classified as safe for RTS casting`);
+        spellIdentity = {
+          ...rtsIdentity(c, known.value), targets: count,
+        };
+        spellRule = rule;
+        const hasTarget = a.target !== undefined && a.target !== null;
+        let targetObject = null;
+        if (hasTarget) {
+          target = Number(a.target);
+          if (!Number.isSafeInteger(target) || target < 1)
+            throw new Error('cast target must be a positive object id');
+          targetObject = target === c.selfId ? c.self : c.room.objects.get(target);
+        }
+        const targetIsPlayer = target === c.selfId ? true
+          : Number.isInteger(targetObject?.flags) ? !!(targetObject.flags & OF.PLAYER) : null;
+        if (!rtsSpellTargetAllowed(rule, {
+          targetId: hasTarget ? target : null,
+          selfId: Number.isSafeInteger(c.selfId) ? c.selfId : null,
+          targetIsPlayer,
+        })) {
+          if (rule.target_mode === 'none')
+            throw new Error(`${known.name} accepts no target`);
+          if (rule.target_mode === 'self')
+            throw new Error(`${known.name} may target only ${a.agent}'s own controlled character`);
+          if (!targetObject)
+            throw new Error(`stale cast intent: target ${target} is no longer perceived`);
+          throw new Error('RTS context casting may not target players or unknown object kinds');
+        }
+        if (targetObject) targetIdentity = rtsIdentity(c, targetObject);
+        spell = known.name;
+      }
+
+      const requireFloorItem = (id, packet, requireRange = false) => {
+        const identity = floorIdentities.get(id);
+        const current = c.room.objects.get(id);
+        if (!sameRtsIdentity(c, current, identity) || !(current.flags & OF.GETTABLE))
+          throw new Error(`RTS ${packet} refused: exact floor item ${id} is absent, changed, or not gettable`);
+        const name = c.rsc.get(current.nameRsc) || '';
+        if (CURSED_ITEMS.test(name))
+          throw new Error(`RTS ${packet} refused: ${name || id} is cursed`);
+        if (requireRange) {
+          const me = c.self;
+          if (!me || !Number.isFinite(me.col) || !Number.isFinite(me.row) ||
+              !Number.isFinite(current.col) || !Number.isFinite(current.row) ||
+              Math.abs(current.col - me.col) + Math.abs(current.row - me.row) > 7)
+            throw new Error(`RTS ${packet} refused: exact floor item ${id} is outside pickup range`);
+        }
+        return current;
+      };
+      const requireInventoryItem = (id, expectedName, expectedRole, packet, identity = null) => {
+        const current = (c.inventory || []).find(value => value.id === id) || null;
+        const name = current ? c.rsc.get(current.nameRsc) || '' : '';
+        if (!current || (identity && !sameRtsIdentity(c, current, identity)) || name !== expectedName)
+          throw new Error(`RTS ${packet} refused: exact inventory item ${id} is absent or changed`);
+        const weapon = skills.weaponScore(name) > 0;
+        const armour = !!skills.armourKind(name);
+        const food = skills.larderOf(c).some(value => value.o.id === id);
+        if (packet === 'eat') {
+          if (!food || (expectedRole && expectedRole !== 'food'))
+            throw new Error(`RTS eat refused: ${name || id} is not still classified as known food`);
+          return current;
+        }
+        if (packet !== 'use' && packet !== 'unuse') return current;
+        const classified = expectedRole === 'weapon' ? weapon
+          : expectedRole === 'armor' ? armour : weapon || armour;
+        if (!classified)
+          throw new Error(`RTS ${packet} refused: ${name || id} is not still classified as safe gear`);
+        if (packet === 'use' && (skills.brokenSet(c).has(id) || CURSED_ITEMS.test(name)))
+          throw new Error(`RTS use refused: ${name || id} is now known broken or cursed`);
+        if (c.usingAt == null)
+          throw new Error(`RTS ${packet} refused until the server equipment list is known`);
+        const using = skills.equippedNow(c);
+        if (packet === 'use' && using?.has(id))
+          throw new Error(`RTS use refused: ${name || id} is already equipped`);
+        if (packet === 'unuse' && !using?.has(id))
+          throw new Error(`RTS unuse refused: ${name || id} is no longer equipped`);
+        return current;
+      };
+      const validateContext = (packet, detail) => {
+        if (packet === 'move' && (!detail || !Number.isSafeInteger(detail.col) ||
+            !Number.isSafeInteger(detail.row)))
+          throw new Error('RTS move refused: no exact next-step square accompanied the packet');
+        if (detail && Number.isSafeInteger(detail.col) && Number.isSafeInteger(detail.row)) {
+          const geometry = s.world?.geometry;
+          if (!geometry || detail.row < 1 || detail.row > geometry.rows ||
+              detail.col < 1 || detail.col > geometry.cols ||
+              !geometry.walkable(detail.row, detail.col))
+            throw new Error(`RTS ${packet} refused: next step ${detail.col},${detail.row} is not walkable`);
+        }
+        if (action === 'rest_here' || action === 'recover_here') {
+          if (packet === 'rest' && (!c.self || c.self.col !== col || c.self.row !== row))
+            throw new Error(`RTS rest refused: character is no longer at ${col},${row}`);
+          return;
+        }
+        if (action === 'take' || action === 'grab_nearby') {
+          const id = Number(detail?.target_id ?? (action === 'take' ? target : NaN));
+          if (!Number.isSafeInteger(id) || !floorIdentities.has(id))
+            throw new Error(`RTS ${packet} refused: no exact floor-item identity accompanied the packet`);
+          requireFloorItem(id, packet, packet === 'get');
+          return;
+        }
+        if (action === 'approach' || action === 'face') {
+          const current = c.room.objects.get(target);
+          if (!sameRtsIdentity(c, current, targetIdentity) ||
+              !Number.isFinite(current.col) || !Number.isFinite(current.row))
+            throw new Error(`RTS ${packet} refused: exact target ${target} is absent or changed`);
+          return;
+        }
+        if (action === 'item_use' || action === 'item_unuse' || action === 'item_eat') {
+          requireInventoryItem(inventoryIdentity.id, inventoryIdentity.name, null,
+            action === 'item_eat' ? 'eat' : action === 'item_use' ? 'use' : 'unuse',
+            inventoryIdentity);
+          return;
+        }
+        if (action === 'cast') {
+          const currentSpell = (Array.isArray(c.spells) ? c.spells : [])
+            .find(value => value.id === spellIdentity.id);
+          const currentRule = currentSpell && sameRtsIdentity(c, currentSpell, spellIdentity) &&
+            Number(currentSpell.numTargets) === spellIdentity.targets
+            ? rtsSafeSpellRule(c.rsc.get(currentSpell.nameRsc), Number(currentSpell.numTargets)) : null;
+          if (!currentRule || currentRule.target_mode !== spellRule.target_mode)
+            throw new Error(`RTS ${packet} refused: exact spell ${spell} is absent, changed, or no longer safe`);
+          const currentTarget = target == null ? null
+            : target === c.selfId ? c.self : c.room.objects.get(target);
+          if (targetIdentity && !sameRtsIdentity(c, currentTarget, targetIdentity))
+            throw new Error(`RTS ${packet} refused: exact cast target ${target} is absent or changed`);
+          const targetIsPlayer = target === c.selfId ? true
+            : Number.isInteger(currentTarget?.flags) ? !!(currentTarget.flags & OF.PLAYER) : null;
+          if (!rtsSpellTargetAllowed(currentRule, {
+            targetId: target, selfId: Number.isSafeInteger(c.selfId) ? c.selfId : null,
+            targetIsPlayer,
+          }))
+            throw new Error(`RTS ${packet} refused: spell target policy no longer allows this target`);
+          return;
+        }
+        if (detail?.item_id != null) {
+          requireInventoryItem(Number(detail.item_id), String(detail.expected_name || ''),
+            detail.role || null, packet);
+          return;
+        }
+        if (['equip_best', 'wear_best', 'eat_best', 'prepare'].includes(action) &&
+            ['use', 'unuse', 'eat'].includes(packet))
+          throw new Error(`RTS ${packet} refused: no exact cached item identity accompanied the packet`);
+      };
+      const guard = rtsPacketAuthority({
+        s, host: a.server_host, port: a.server_port, room, token, validate: validateContext,
+      });
+      const beforeMutation = rtsMutationHook(guard);
+      const beforeCleanup = rtsCleanupAuthority({
+        s, host: a.server_host, port: a.server_port, room, token,
+      });
+      const cancelled = () => s.job?.controlToken === token &&
+        (s.job.cancelled === true || s.job.cancelRequestedAt != null);
+      const label = action === 'stand' ? `stand in room ${room}`
+        : action === 'rest_here' ? `rest at ${col},${row} in room ${room}`
+        : action === 'recover_here' ? `recover at ${col},${row} in room ${room}`
+        : action === 'take' ? `take ${target} in room ${room}`
+        : action === 'grab_nearby' ? `grab ${targets.length} nearby item(s) in room ${room}`
+        : action === 'approach' ? `approach ${target} in room ${room}`
+        : action === 'face' ? `face ${target} in room ${room}`
+        : action === 'equip_best' ? 'equip best cached weapon'
+        : action === 'wear_best' ? 'wear best cached armour'
+        : action === 'eat_best' ? 'eat the best cached food'
+        : action === 'prepare' ? 'prepare weapon, armour, and safety'
+        : action === 'safety_on' ? 'turn safety on'
+        : action.startsWith('item_') ? `${action.slice(5)} ${inventoryName || inventoryItem?.id}`
+        : `cast ${spell}${target == null ? '' : ` on ${target}`} in room ${room}`;
+      const job = s.startJob(`context:${action}`, label, async movementGeneration => {
+        try {
+          if (cancelled()) return { cancelled: true, note: 'cancelled before the first paced action' };
+          if (action === 'stand') {
+            return await callTool('rest', {
+              agent: a.agent, stand: true, [RTS_MUTATION_GUARD]: guard,
+            });
+          }
+          if (action === 'rest_here' || action === 'recover_here') {
+            const walk = await s.walkTo(col, row, {
+              maxSteps: 120, hardCap: 400, movementGeneration, controlToken: token,
+              beforeMutation,
+            });
+            if (!walk.arrived || cancelled())
+              return { walk, resting: false, ...(cancelled() ? { cancelled: true } : {}) };
+            if (action === 'rest_here') {
+              const rested = await callTool('rest', {
+                agent: a.agent, stand: false, [RTS_MUTATION_GUARD]: guard,
+              });
+              return { walk, ...rested };
+            }
+            const recovered = await skills.restUntil(s, {
+              health: 0.9, vigor: 0.9, maxSeconds: 120,
+              beforeMutation, beforeCleanup, shouldCancel: cancelled,
+            });
+            return { walk, recovery: recovered,
+                     ...(recovered.cancelled ? { cancelled: true } : {}) };
+          }
+          if (action === 'take' || action === 'grab_nearby')
+            return s.lootFloor({
+              ids: targets, maxItems: Math.min(12, targets.length),
+              movementGeneration, controlToken: token, shouldCancel: cancelled,
+              stayPut: action === 'grab_nearby',
+              explicitIdsOverride: action !== 'grab_nearby',
+              beforeMutation,
+            });
+          if (action === 'approach' || action === 'face') {
+            const distance = () => {
+              const me = c.self, object = c.room.objects.get(target);
+              return me && object ? Math.hypot(object.col - me.col, object.row - me.row) : Infinity;
+            };
+            let walk = null;
+            if (action === 'approach' && distance() > 1.5) {
+              const object = c.room.objects.get(target);
+              const spot = object ? s.world?.approachSquare(object.col, object.row) : null;
+              if (!spot) return { target, in_position: false,
+                                  reason: 'no reachable adjacent square for the current target' };
+              walk = await s.walkTo(spot.col, spot.row, {
+                maxSteps: Math.max(30, Math.min(400, (spot.steps || 0) + 10)), hardCap: 400,
+                movementGeneration, controlToken: token, beforeMutation,
+              });
+              if (cancelled()) return { target, walk, cancelled: true };
+            }
+            const object = c.room.objects.get(target);
+            if (!object) return { target, walk, reason: 'target left the room before facing' };
+            const facing = await s.faceToward(object, { beforePacket: beforeMutation });
+            const away = distance();
+            return { target, walk, facing_degrees: facing,
+                     distance: away === Infinity ? null : away,
+                     ...(action === 'approach' ? { in_position: away !== Infinity && away <= 1.5 } : {}) };
+          }
+
+          const gearOptions = { beforeMutation, shouldCancel: cancelled };
+          if (action === 'equip_best') return skills.equipBest(s, gearOptions);
+          if (action === 'wear_best') return skills.wearBest(s, gearOptions);
+          if (action === 'eat_best')
+            return skills.eat(s, { maxItems: 1, upToVigor: skills.VIGOR_MAX,
+                                   beforeMutation, shouldCancel: cancelled });
+
+          const setSafetyOn = async () => {
+            const before = c.evSeq;
+            await s.pacer.submit('safety', () => {
+              beforeMutation('safety');
+              return c.safety(true);
+            });
+            const observed = await c.waitFor({ since: before, timeoutMs: 3000 })
+              .catch(() => ({ events: [] }));
+            return { requested: true,
+                     server_said: (observed.events || []).filter(event => event.text)
+                       .map(event => String(event.text)) };
+          };
+          if (action === 'safety_on') return setSafetyOn();
+          if (action === 'prepare') {
+            const safety = await setSafetyOn();
+            if (cancelled()) return { safety, cancelled: true };
+            const weapon = await skills.equipBest(s, gearOptions);
+            if (cancelled() || weapon.cancelled)
+              return { safety, weapon, cancelled: true };
+            // equipBest just refreshed the same pack/use-list cache; reusing it avoids
+            // spending another request from the character's live packet budget.
+            const armour = await skills.wearBest(s, { ...gearOptions, refresh: false });
+            return { safety, weapon, armour,
+                     ...(armour.cancelled ? { cancelled: true } : {}) };
+          }
+          if (action === 'item_use' || action === 'item_unuse') {
+            const before = c.evSeq;
+            await s.pacer.submit('use', () => {
+              beforeMutation(action === 'item_use' ? 'use' : 'unuse');
+              return action === 'item_use' ? c.use(inventoryItem.id) : c.unuse(inventoryItem.id);
+            });
+            const observed = await c.waitFor({ since: before, kinds: ['equipment', 'message'],
+                                               timeoutMs: 3000 }).catch(() => ({ events: [] }));
+            return { item: inventoryItem.id, name: inventoryName,
+                     equipped: skills.equippedNow(c)?.has(inventoryItem.id) ?? null,
+                     messages: (observed.events || []).filter(event => event.text)
+                       .map(event => String(event.text)) };
+          }
+          if (action === 'item_eat') {
+            const before = c.evSeq;
+            await s.pacer.submit('act', () => {
+              beforeMutation('eat');
+              return c.apply(inventoryItem.id, c.selfId);
+            }, 1050);
+            const observed = await c.waitFor({ since: before,
+              kinds: ['message', 'stat', 'inventory'], timeoutMs: 3000 }).catch(() => ({ events: [] }));
+            return { item: inventoryItem.id, name: inventoryName,
+                     still_carried: (c.inventory || []).some(value => value.id === inventoryItem.id),
+                     messages: (observed.events || []).filter(event => event.text)
+                       .map(event => String(event.text)) };
+          }
+          return callTool('cast', {
+            agent: a.agent, spell, force: false,
+            ...(target == null ? {} : { target }),
+            [RTS_MUTATION_GUARD]: guard,
+          });
+        } catch (error) {
+          const stopped = rtsCancellationResult(error);
+          if (stopped) return stopped;
+          throw error;
+        }
+      }, { controlToken: token });
+      return {
+        accepted: true, agent: a.agent, room: actualRoom, action,
+        ...(['rest_here', 'recover_here'].includes(action) ? { destination: { col, row } } : {}),
+        ...(['take', 'approach', 'face'].includes(action) ? { target } : {}),
+        ...(action === 'grab_nearby' ? { targets } : {}),
+        ...(action === 'cast' ? { spell, ...(target == null ? {} : { target }) } : {}),
+        ...(action.startsWith('item_') ? { item: inventoryItem.id, name: inventoryName } : {}),
+        control_token: token, started_at: job.startedAt,
+      };
+    },
+  },
+  {
+    name: 'cancel_action',
+    description:
+      'Cancel the active background RTS action. An attack stops after its current paced swing; ' +
+      'movement, approach, recovery, and context loot stop after their current paced step/item. ' +
+      'Stand, rest, turn, equipment, food, safety, and cast recheck cancellation inside the pacer ' +
+      'immediately before each mutating packet; a packet ' +
+      'already submitted cannot be recalled. The token must ' +
+      'own that action, so this cannot stop unrelated travel or another controller\'s job. Nothing ' +
+      'is sent when no action is active. Cancellation remains available if a keeper has resumed, ' +
+      'because it removes this controller\'s authority; exact endpoint and token ownership still apply.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      control_token: { type: 'string', description: 'must own the active RTS action' },
+      server_host: { type: 'string', description: 'exact loopback game host authorized by the gateway' },
+      server_port: { type: 'number', description: 'exact local game port authorized by the gateway' },
+    }, required: ['agent', 'control_token', 'server_host', 'server_port'] },
+    run: (a) => {
+      const s = session(a.agent);
+      const token = controlToken(a.control_token);
+      // Cancellation is the one control call that remains valid after a keeper resumes:
+      // it removes the old controller's authority instead of exercising it. Endpoint
+      // equality and exact token ownership remain mandatory.
+      requireLocalControlEndpoint(s, a.server_host, a.server_port);
+      const job = s.job && !s.job.done ? s.job : null;
+      if (!job) return { cancelled: false, note: 'no background action is active' };
+      if (!job.controlToken || job.controlToken !== token)
+        throw new Error('control_token does not own the active background action');
+      if (job.kind === 'attack') {
+        job.cancelled = true;
+        job.cancelRequestedAt = Date.now();
+        return { cancelled: true, interrupted: { kind: job.kind, label: job.label },
+                 note: 'attack will stop after its current paced swing' };
+      }
+      if (job.kind === 'move' || job.kind === 'context:rest_here' ||
+          job.kind === 'context:recover_here' || job.kind === 'context:approach' ||
+          job.kind === 'context:grab_nearby' || job.kind === 'context:take')
+        return s.cancelMovement(token);
+      if (job.kind.startsWith('context:')) {
+        job.cancelled = true;
+        job.cancelRequestedAt = Date.now();
+        return { cancelled: true, interrupted: { kind: job.kind, label: job.label },
+                 note: 'the context action will stop before its next paced server operation; ' +
+                       'a packet already submitted cannot be recalled' };
+      }
+      throw new Error(`control_token owns unsupported action kind ${job.kind}`);
     },
   },
   {
@@ -4314,17 +5138,73 @@ const TOOLS = [
     description:
       'Sell everything a merchant will take, keeping your money and anything weapon-like. Quotes each ' +
       'item first and skips the ones the merchant refuses, so a refusal costs you nothing. Merchants only ' +
-      'deal in certain things — use the merchants tool to find one that wants what you are carrying.',
+      'deal in certain things — use the merchants tool to find one that wants what you are carrying.\n' +
+      'If this character has a LOADOUT (substrate/loadouts/<name>.json, written in the compendium\'s ' +
+      'planner) it is honoured: anything above its ceiling is sold, anything at or below its floor is ' +
+      'held back, and anything on its sell list goes even if the name looks like equipment. Pass ' +
+      'ignore_loadout to sell against the generic rules instead.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       merchant: { type: ['string', 'number'], description: 'the merchant, by id or name' },
       keep: { type: 'array', items: { type: 'string' }, description: 'name fragments to hold back' },
       min_price: { type: 'number', description: 'skip anything worth less than this, default 1' },
+      ignore_loadout: { type: 'boolean',
+        description: 'sell against the generic rules, ignoring this character\'s own list' },
     }, required: ['agent', 'merchant'] },
     run: async (a) => {
       const s = session(a.agent);
       const t = resolveTarget(s, a.merchant);
-      return skills.sellAll(s, { merchant: t, keep: a.keep || [], minPrice: num(a.min_price, 1) });
+      // BY CHARACTER NAME. `t1` is this checkout's word for a roster slot; the loadout
+      // belongs to the character and follows it across rosters.
+      const who = s.client?.me?.name;
+      return skills.sellAll(s, { merchant: t, keep: a.keep || [], minPrice: num(a.min_price, 1),
+                                 loadout: a.ignore_loadout || !who ? null : loadoutFor(who) });
+    },
+  },
+  {
+    name: 'loadout',
+    description:
+      'What this character is SUPPOSED to be carrying, and how far off it is.\n' +
+      'A loadout is one file per character — substrate/loadouts/<name>.json — written in the ' +
+      'compendium\'s planner (node tools/m59-compendium.mjs --open --to /planner/) or by hand. It names ' +
+      'the gear the character should get back to after a day of breaking things, floors and ceilings for ' +
+      'what it should carry, and what it should shed on sight.\n' +
+      'READ ONLY. The keeper already acts on this without being asked — this is for finding out what it ' +
+      'will do, and for deciding whether a trip to a shop is worth making. A character with no loadout ' +
+      'is not an error: it means the fleet-wide defaults apply, which is how every character behaved ' +
+      'before loadouts existed.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      character: { type: 'string',
+        description: 'read a loadout by character name instead, for somebody not in game' },
+    } },
+    run: async (a) => {
+      // BY NAME WHEN ASKED, otherwise the name of whoever the agent is holding. Not the
+      // agent handle: `t1` is this checkout's word for a roster slot.
+      const s = a.agent ? session(a.agent) : null;
+      const who = a.character || s?.client?.me?.name || null;
+      if (!who) throw new Error('need agent (in game) or character');
+      const l = loadoutFor(who);
+      if (!l) return { character: who, loadout: null,
+        note: 'no loadout for this character, so the fleet-wide defaults apply — the generic want ' +
+              'list in m59-outfit.mjs, REAGENT_TARGET in the keeper, and the name-based keep guard ' +
+              'in makeRoom. Write one in the compendium planner to change any of that for this ' +
+              'character alone.' };
+      // A LOADOUT WITH NOTHING TO COMPARE IT TO IS STILL WORTH RETURNING. Reconciling needs
+      // the pack, and a character out of game has none — say so rather than reporting it as
+      // short of everything, which is what an empty inventory would look like.
+      const c = s?.client;
+      if (!c?.me) return { character: who, loadout: l, against: null,
+                           note: 'not in game, so there is nothing to compare it against' };
+      await s.pacer.submit('read', () => c.requestInventory());
+      await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+      const items = (c.inventory || []).map(o => ({ name: c.rsc.get(o.nameRsc) || '',
+                                                    amount: o.amount || 1 }));
+      const worn = skills.equippedNow(c) ?? new Set();
+      const equipped = (c.inventory || []).filter(o => worn.has(o.id))
+        .map(o => ({ name: c.rsc.get(o.nameRsc) || '' }));
+      return { character: who, loadout: l,
+               against: reconcileLoadout(l, { items, equipped }) };
     },
   },
   {
@@ -4726,11 +5606,11 @@ const TOOLS = [
       }
 
       let targets = [];
+      let targetObject = null;
       if (a.target !== undefined) {
         const t = resolveTarget(s, a.target);
         targets = [t.id];
-        const o = c.room.objects.get(t.id);
-        if (o) await s.faceToward(o);
+        targetObject = c.room.objects.get(t.id) || null;
       } else if (mine.targets > 0) {
         return { cast: false, reason: `${mine.name} needs ${mine.targets} target(s) — pass one`,
                  note: 'target counts come from the server, in BP_SPELLS' };
@@ -4741,10 +5621,31 @@ const TOOLS = [
       // weapon forty times from an inn for nothing; the same call after standing took
       // mana 19 -> 4 immediately. See standToAct.
       const manaBefore = c.vitals()?.mana?.value ?? null;
-      await skills.standToAct(s).catch(() => null);
+      const beforeMutation = packet => beforeRtsMutation(a, packet);
+      try {
+        if (targetObject)
+          await s.faceToward(targetObject, { beforePacket: beforeMutation });
+        await skills.standToAct(s, { beforePacket: beforeMutation }).catch(error => {
+          if (error?.code === RTS_CANCELLED) throw error;
+          return null;
+        });
+      } catch (error) {
+        const cancelled = rtsCancellationResult(error, { cast: false });
+        if (cancelled) return cancelled;
+        throw error;
+      }
 
       const before = c.evSeq;
-      await s.pacer.submit('cast', () => c.cast(mine.id, targets), ATTACK_INTERVAL_MS);
+      try {
+        await s.pacer.submit('cast', () => {
+          beforeRtsMutation(a, 'cast');
+          return c.cast(mine.id, targets);
+        }, ATTACK_INTERVAL_MS);
+      } catch (error) {
+        const cancelled = rtsCancellationResult(error, { cast: false });
+        if (cancelled) return cancelled;
+        throw error;
+      }
       const unpriced = !info;
       const ev = await c.waitFor({ since: before, timeoutMs: 4000 });
       const messages = ev.events.filter(e => e.text).map(e => e.text);
@@ -4908,8 +5809,20 @@ const TOOLS = [
       const s = session(a.agent), c = s.need();
       await s.pacer.submit('read', () => c.requestInventory());
       await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+      // BROKEN IS A PROPERTY OF THE ITEM AND IT IS NOT IN THE NAME.
+      //
+      // A ruined leather armor is called "leather armor". The only record that it is
+      // useless is the keeper's own condemnation set, built when the server refused to
+      // wear it — and that set lives on the client, so every tool reading this list saw a
+      // perfectly good piece of armour. m59-outfit.mjs is name-based, so it reported Gonzo
+      // "already stocked" while Gonzo stood in the field wearing nothing but a mace,
+      // carrying a broken armour and a broken shield, with 3,022 shillings to replace them
+      // with. wear_best had it right all along and said so in the only words it had:
+      // "nothing of this kind in the pack".
+      const condemned = skills.brokenSet(c);
       return { items: c.inventory.map(o => ({ id: o.id, name: c.rsc.get(o.nameRsc),
-                                              amount: o.amount || undefined, can: affordances(o.flags) })),
+                                              amount: o.amount || undefined, can: affordances(o.flags),
+                                              broken: condemned.has(o.id) || undefined })),
                equipped: c.equipment().equipped.map(e => e.name ?? e.id),
                // HOW FULL, in the units the server actually refuses on. The ceiling is
                // 1700 + might*20 for weight and bulk alike; the load is added up from a
@@ -5027,7 +5940,10 @@ const TOOLS = [
       agent: { type: 'string' }, stand: { type: 'boolean' } }, required: ['agent'] },
     run: async (a) => {
       const s = session(a.agent), c = s.need();
-      await s.pacer.submit('rest', () => (a.stand ? c.stand() : c.rest()));
+      await s.pacer.submit('rest', () => {
+        beforeRtsMutation(a, a.stand ? 'stand' : 'rest');
+        return a.stand ? c.stand() : c.rest();
+      });
       await new Promise(r => setTimeout(r, 400));
       await s.pacer.submit('read', () => c.stats(1));
       await c.waitFor({ kinds: ['stat'], timeoutMs: 2000 });
@@ -6907,6 +7823,28 @@ const TOOLS = [
           // the figure is; a balance does not decay, but it also does not update while
           // the character is out in the woods.
           banked: s.bankKnown(),
+          // IS THIS CHARACTER RUNNING TO A LIST, AND IS IT KEEPING TO IT? Null means no
+          // loadout, which is the fleet-wide defaults and is not a fault. A summary rather
+          // than the list, because the row is read twenty-one at a time and the question
+          // it answers is "who needs a trip" — `loadout` (the MCP tool) gives the detail.
+          //
+          // Computed off the pack already in hand, so it costs nothing on the wire. That
+          // is the whole reason it is here rather than being asked for per character.
+          loadout: (() => {
+            // `name` in this loop is the AGENT HANDLE — the sessions map is keyed by it.
+            // A loadout is the character's, and reading it by handle would silently find
+            // nothing for every character in the fleet.
+            const l = c.me?.name ? loadoutFor(c.me.name) : null;
+            if (!l) return null;
+            const items = (c.inventory || []).map(o => ({ name: c.rsc.get(o.nameRsc) || '',
+                                                          amount: o.amount || 1 }));
+            const worn = skills.equippedNow(c) ?? new Set();
+            const r = reconcileLoadout(l, { items,
+              equipped: (c.inventory || []).filter(o => worn.has(o.id))
+                .map(o => ({ name: c.rsc.get(o.nameRsc) || '' })) });
+            return { ok: r.ok, short: r.buy.length, shed: r.sell.length,
+                     at_least: r.at_least || undefined, summary: r.summary };
+          })(),
           // WHERE IT HAS BEEN GETTING HURT, in the last ten minutes. On the fleet row
           // because the row is what a person actually reads, and because the number that
           // matters is comparative: one character losing health while `travelling` is a
@@ -7278,6 +8216,213 @@ function serveStdio() {
 // HTTP is what lets heterogeneous agents share ONE broker process, which is the
 // point of a broker: one resource table, one client per character, and every
 // agent a peer of every human on the same game port.
+const RTS_READ_SCHEMA = 'm59-broker-rts-read/v1';
+const RTS_READ_MAX_AGENTS = 40;
+const RTS_READ_MAX_BYTES = 8 * 1024 * 1024;
+const RTS_READ_MAX_INVENTORY_ITEMS = 512;
+const RTS_READ_FLEET_CACHE_MS = 1000;
+let rtsReadFleetCache = null;
+
+// The game endpoint is safe operational identity, not a credential. Publishing it
+// lets a write-capable loopback adapter prove that the sessions it is about to drive
+// really terminate at the explicitly allowed local test server. The prod broker is
+// itself on loopback, so the broker HTTP URL can never answer that question.
+function brokerGameEndpoints() {
+  const sessionGameServers = Object.create(null);
+  for (const [agent, s] of sessions) {
+    const host = typeof s.credentials?.host === 'string' ? s.credentials.host.trim() : '';
+    const port = Number(s.credentials?.port);
+    if (host && Number.isInteger(port) && port > 0 && port <= 65535)
+      sessionGameServers[agent] = { host, port };
+  }
+  const unique = [...new Map(Object.values(sessionGameServers)
+    .map(endpoint => [`${endpoint.host.toLowerCase()}:${endpoint.port}`, endpoint])).values()];
+  return {
+    game_server: unique.length === 1 ? unique[0] : null,
+    session_game_servers: sessionGameServers,
+  };
+}
+
+function brokerHealth() {
+  return {
+    ok: true,
+    pid: process.pid,
+    root: BROKER_ROOT,
+    fleet: FLEET || 'default',
+    state: STATE_FILE,
+    sessions: [...sessions.keys()],
+    tools: TOOLS.length,
+    ...brokerGameEndpoints(),
+  };
+}
+
+function brokerLoopbackRequest(req) {
+  const remote = req.socket?.remoteAddress || '';
+  if (remote !== '127.0.0.1' && remote !== '::1' && remote !== '::ffff:127.0.0.1') return false;
+  const rawHost = String(req.headers.host || '').trim().toLowerCase();
+  const host = rawHost.startsWith('[')
+    ? rawHost.slice(0, rawHost.indexOf(']') + 1)
+    : rawHost.split(':')[0];
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1' || host === '[::1]';
+}
+
+function brokerRtsReadAuthorized(req) {
+  const token = process.env.M59_RTS_READ_TOKEN || '';
+  return brokerLoopbackRequest(req) &&
+    (!token || req.headers.authorization === `Bearer ${token}`);
+}
+
+function cleanRtsReadAgent(value) {
+  const agent = String(value || '');
+  return /^[A-Za-z0-9_-]{1,64}$/.test(agent) ? agent : null;
+}
+
+async function brokerRtsFleetState(now = Date.now()) {
+  if (rtsReadFleetCache && now - rtsReadFleetCache.at <= RTS_READ_FLEET_CACHE_MS)
+    return rtsReadFleetCache.value;
+  // This is the fleet tool's in-memory implementation, not an MCP call. Its slower
+  // supervisory fields do not need a 10Hz refresh, so keep them for one second while
+  // positions, facing, vitals, objects and equipment below remain frame-current.
+  const value = await byName.get('fleet').run({});
+  rtsReadFleetCache = { at: now, value };
+  return value;
+}
+
+async function brokerRtsRead(url) {
+  const raw = [...url.searchParams.getAll('agent'),
+    ...(url.searchParams.get('agents') || '').split(',').filter(Boolean)];
+  const invalid = raw.find(value => !cleanRtsReadAgent(value));
+  if (invalid !== undefined) {
+    const error = new Error('RTS read agent names must be simple identifiers');
+    error.status = 400;
+    throw error;
+  }
+  const requested = [...new Set(raw.map(cleanRtsReadAgent))];
+  if (requested.length > RTS_READ_MAX_AGENTS) {
+    const error = new Error(`RTS reads are limited to ${RTS_READ_MAX_AGENTS} agents`);
+    error.status = 413;
+    throw error;
+  }
+
+  const fleet = await brokerRtsFleetState();
+  const rows = Array.isArray(fleet?.fleet) ? fleet.fleet : [];
+  const available = rows.map(row => cleanRtsReadAgent(row?.agent)).filter(Boolean);
+  const agents = requested.length ? requested.filter(agent => available.includes(agent)) : available;
+  if (!agents.length) {
+    const error = new Error('no requested agents are present in this broker fleet');
+    error.status = 404;
+    throw error;
+  }
+  if (agents.length > RTS_READ_MAX_AGENTS) {
+    const error = new Error(`RTS reads are limited to ${RTS_READ_MAX_AGENTS} agents`);
+    error.status = 413;
+    throw error;
+  }
+  const capturedAt = Date.now();
+  const selectedFleet = {
+    ...fleet,
+    agents: agents.length,
+    fleet: rows.filter(row => agents.includes(row?.agent)),
+  };
+
+  const looks = Object.create(null);
+  const equipment = Object.create(null);
+  const spells = Object.create(null);
+  const inventory = Object.create(null);
+  for (const agent of agents) {
+    const s = sessions.get(agent);
+    if (!s) {
+      looks[agent] = { error: 'agent session is absent' };
+      equipment[agent] = { error: 'agent session is absent' };
+      spells[agent] = { error: 'agent session is absent' };
+      inventory[agent] = { error: 'agent session is absent' };
+      continue;
+    }
+    // Every read below comes from the protocol client's cache. It submits nothing to the
+    // pacer and therefore cannot move, speak, fight, refresh inventory, or otherwise act.
+    try {
+      looks[agent] = s.perception();
+    } catch (error) {
+      looks[agent] = { error: String(error?.message || error).slice(0, 240) };
+    }
+    try {
+      equipment[agent] = s.need().equipment();
+    } catch (error) {
+      equipment[agent] = { error: String(error?.message || error).slice(0, 240) };
+    }
+    try {
+      const c = s.need();
+      spells[agent] = (Array.isArray(c.spells) ? c.spells : [])
+        .map(spell => ({
+          id: spell.id,
+          name: c.rsc.get(spell.nameRsc),
+          targets: spell.numTargets,
+          // BP_SPELLS uses a zero-based wire enum; every public Meridian school
+          // number is one-based (Kraanan=1 through Riija=6).
+          school: Number.isInteger(spell.school) ? spell.school + 1 : null,
+        }))
+        .filter(spell => rtsSafeSpellRule(spell.name, spell.targets));
+    } catch (error) {
+      spells[agent] = { error: String(error?.message || error).slice(0, 240) };
+    }
+    try {
+      const c = s.need();
+      const equipmentState = c.equipment();
+      const equipmentKnown = equipmentState.known === true;
+      const equippedIds = new Set((Array.isArray(equipmentState.equipped)
+        ? equipmentState.equipped : []).map(item => item.id));
+      const foodIds = new Set(skills.larderOf(c).map(item => item.o.id));
+      const brokenIds = skills.brokenSet(c);
+      inventory[agent] = (Array.isArray(c.inventory) ? c.inventory : [])
+        .slice(0, RTS_READ_MAX_INVENTORY_ITEMS)
+        .map(item => {
+          const name = c.rsc.get(item.nameRsc);
+          const armour = skills.armourKind(name);
+          const role = skills.weaponScore(name) > 0 ? 'weapon'
+            : armour?.slot === 'armour' ? 'armor'
+            : armour?.slot === 'shield' ? 'shield'
+            : armour?.slot === 'helm' ? 'helmet'
+            : foodIds.has(item.id) ? 'food'
+            : 'other';
+          const equipped = equipmentKnown ? equippedIds.has(item.id) : null;
+          const safeActions = [];
+          if (role === 'food') safeActions.push('eat');
+          else if (role !== 'other' && equipped !== null) {
+            if (equipped) safeActions.push('unuse');
+            else if (!brokenIds.has(item.id) && !CURSED_ITEMS.test(name)) safeActions.push('use');
+          }
+          return {
+            id: item.id,
+            name,
+            amount: Number.isSafeInteger(item.amount) && item.amount >= 1 ? item.amount : 1,
+            equipped,
+            role,
+            safe_actions: safeActions,
+          };
+        })
+        .filter(item => Number.isInteger(item.id) && typeof item.name === 'string' && item.name.trim());
+    } catch (error) {
+      inventory[agent] = { error: String(error?.message || error).slice(0, 240) };
+    }
+  }
+
+  return {
+    schema: RTS_READ_SCHEMA,
+    read_only: true,
+    observed_at: new Date(capturedAt).toISOString(),
+    sequence: `${capturedAt}-${process.pid}`,
+    // Keep the same identity shape as /health so command adapters can validate a
+    // single aggregate generation without a second race-prone lookup.
+    health: brokerHealth(),
+    fleet: selectedFleet,
+    agents,
+    looks,
+    equipment,
+    spells,
+    inventory,
+  };
+}
+
 function serveHttp(port) {
   const server = http.createServer(async (req, res) => {
     // A page for the human, on the same port everything else runs on. Read-only: it
@@ -7301,9 +8446,43 @@ function serveHttp(port) {
     }
     if (req.method === 'GET' && req.url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      return res.end(JSON.stringify({ ok: true, pid: process.pid, root: BROKER_ROOT,
-                                      fleet: FLEET || 'default', state: STATE_FILE,
-                                      sessions: [...sessions.keys()], tools: TOOLS.length }));
+      return res.end(JSON.stringify(brokerHealth()));
+    }
+    // One bounded, read-only renderer read from state this process already holds.
+    // The former path made one HTTP JSON-RPC request for fleet state and another for
+    // every character's cached look. At strategy-game frame rates, transport and JSON
+    // envelopes cost more than the reads. This endpoint crosses the process boundary
+    // once, never calls a tool that can send a Meridian packet, and is loopback-only
+    // even when the full MCP transport was deliberately bound to a LAN interface.
+    if (req.method === 'GET' &&
+        (req.url === '/rts/v1/read' || req.url.startsWith('/rts/v1/read?'))) {
+      if (!brokerRtsReadAuthorized(req)) {
+        const status = brokerLoopbackRequest(req) ? 401 : 403;
+        res.writeHead(status, { 'content-type': 'application/json; charset=utf-8',
+                                'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        return res.end(JSON.stringify({ error: status === 401 ? 'RTS read token required' :
+          'RTS broker reads are loopback-only', schema: RTS_READ_SCHEMA }));
+      }
+      try {
+        const value = await brokerRtsRead(new URL(req.url, 'http://127.0.0.1'));
+        const body = JSON.stringify(value);
+        if (Buffer.byteLength(body) > RTS_READ_MAX_BYTES) {
+          res.writeHead(507, { 'content-type': 'application/json; charset=utf-8',
+                               'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+          return res.end(JSON.stringify({ error: `RTS read exceeds ${RTS_READ_MAX_BYTES} bytes`,
+                                          schema: RTS_READ_SCHEMA }));
+        }
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8',
+                             'content-length': Buffer.byteLength(body),
+                             'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        return res.end(body);
+      } catch (error) {
+        res.writeHead(error.status || 503, { 'content-type': 'application/json; charset=utf-8',
+                                             'cache-control': 'no-store',
+                                             'x-content-type-options': 'nosniff' });
+        return res.end(JSON.stringify({ error: String(error?.message || error).slice(0, 240),
+                                        schema: RTS_READ_SCHEMA }));
+      }
     }
     if (req.method !== 'POST') { res.writeHead(405); return res.end(); }
     let body = '';

@@ -34,6 +34,12 @@ import * as uptime from './m59-uptime.mjs';
 import * as party from './m59-party.mjs';
 import { mayShareSpot } from './m59-party.mjs';
 import { CITY_INNS } from './m59-underworld.mjs';
+// WHAT THIS PARTICULAR CHARACTER IS SUPPOSED TO BE CARRYING, if anybody has said. Every
+// buy, sell, keep and drop rule below used to be one constant for twenty-one characters;
+// a loadout is that answer per character, written in the compendium's planner. It is an
+// OVERLAY — a character with no loadout behaves exactly as it did before this import
+// existed, and every call below is guarded on the null that says so.
+import { loadoutFor, keepTest, sellTest, dropRank, wantsOf, norm } from './m59-loadout.mjs';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 
 // Built by: node tools/m59-spawns.mjs
@@ -348,6 +354,45 @@ const BANKS = [
   { room: 54,  name: 'First Royal Bank of Tos' },
   { room: 376, name: 'The Royal Bank of Jasper' },
 ];
+
+// WHERE A FULL PACK IS ACTUALLY WORTH SOMETHING.
+//
+// Roq — RID_ASSHQ, room 110, "A shadowy corner" in Barloque — is the only NPC known to
+// buy an unlimited quantity of anything, and it is NOT IN THE MERCHANT INDEX: its class
+// is Assassin, it has no for-sale list, and `merchants show:Roq` returns nothing. So the
+// one general buyer in the world was invisible to every tool here while the fleet walked
+// through its room all week carrying 1,868 units of unsold loot.
+//
+// Measured on the first sale ever made to it: Floyd handed over ten stacks for 4,793
+// shillings and came away with its money, the armour on its back, its weapon, its food
+// and the elderberry a crewmate wanted. That is the shape a town trip should have.
+//
+// A bank is where MONEY goes; this is where GOODS go. Which one a trip aims at depends on
+// which threshold opened it — see bankRun.
+const MARKETS = [
+  { room: 110, name: 'A shadowy corner (Roq, Barloque)' },
+];
+
+// The bread. 103 is the one shelf in the world carrying cheese, meat pie, bread and
+// apples together (144/144/108/45), and it is a short hop from Roq — so the sell leg and
+// the eat leg are the same trip. Tos cheese at 112 for 30 vigor is cheaper per point,
+// but Barloque is where the selling happens and a second town is a second walk.
+const FOOD_SHOP = { room: 103, name: 'The Bhrama & Falcon, Barloque' };
+
+// AND THE REAGENTS ARE NEXT DOOR, WHICH IS WHY THE HERBS RAN OUT WITHIN SIGHT OF THEM.
+//
+// The bread shop is an inn and an inn sells bread. `restockReagents` buys elderberry and
+// herbs at whatever counter the trip happened to end at, and the two counters a town trip
+// ends at are a bank and Roq — a bank is a bank, and Roq stocks nothing. So the fleet
+// bought food and never once bought a reagent, and the two halves diverged in the way a
+// one-sided flow always does: over four passes elderberry went 368 -> 406 -> 534 while
+// herbs went 41 -> 33, because elderberry is what the hunting grounds drop and herbs are
+// what `create food` burns two of. Sixteen castable pairs left out of a 534-berry pile.
+//
+// Joguer stands in 104, ONE ROOM from the bread shop, and sells both (m59-merchants.mjs
+// who-sells herb). Barloque has the bread, the apothecary and Roq within a few rooms of
+// each other, which is why every town leg in this file already points at that town.
+const REAGENT_SHOP = { room: 104, name: 'Joguer the apothecary, Barloque' };
 
 export const MODES = ['survive', 'farm', 'idle'];
 
@@ -860,12 +905,59 @@ export class Autopilot {
     // No food and nothing to cook with is a want somebody else can answer directly.
     if (!skills.larderOf(c).length && (r.elderberry < 2 || r.herbs < 2)) wants.push('food');
     if (!skills.weaponsOf(c).length) wants.push('weapon');
+    // AND WHATEVER THIS CHARACTER'S OWN LIST ASKS FOR. Until now the board could only
+    // speak about elderberry and herbs, because they were the only two things with a
+    // target — so a caster short of forty mushrooms had no way to stop a crewmate selling
+    // them at a counter. A loadout gives every listed item a target, which is exactly what
+    // the board needs to protect it.
+    const l = this.loadout();
+    if (l) {
+      const mine = wantsOf(l, this.packAsItems());
+      for (const w of mine.wants) if (!wants.includes(w)) wants.push(w);
+      for (const [k, n] of mine.spare) if (!spare.has(k)) spare.set(k, n);
+    }
     skills.interest.declare(this.name ?? this.s.name, { wants, spare });
     // Kept for the party register too. The fleet-wide board is a broadcast — anyone may
     // read it — while a partner needs the same list addressed to it specifically, so
     // that "one of us is short" can become "both of us go to town" rather than each
     // discovering the same shortage separately twenty minutes apart.
     this.wantsNow = wants;
+  }
+
+  // ------------------------------------------------------------------ the loadout
+  //
+  // THIS CHARACTER'S OWN LIST, or null when nobody has written one — and null means "carry
+  // on exactly as before", which is why every caller guards on it rather than substituting
+  // a default. `loadoutFor` caches on the file's mtime, so this is a stat() on the common
+  // path and a parse only when somebody has just saved from the planner. That matters: it
+  // is called every pass, for every character.
+  //
+  // KEYED ON THE CHARACTER NAME, NOT THE AGENT HANDLE. `t1` is this machine's word for a
+  // slot in a roster; "Kermit" is the character, and the loadout follows the character
+  // across checkouts and re-rolls of the roster file.
+  loadout() {
+    const who = this.s.client?.me?.name;
+    return who ? loadoutFor(who) : null;
+  }
+
+  // The pack in the shape the loadout helpers read: {name, amount}. They are shared with
+  // the CLI, which sees inventories over the wire, so they speak display names rather than
+  // the client's resource ids.
+  packAsItems() {
+    const c = this.s.client;
+    if (!c) return [];
+    return (c.inventory || []).map(o => ({ name: c.rsc.get(o.nameRsc) || '', amount: o.amount || 1 }));
+  }
+
+  // WHICH WEAPON TO REACH FOR. An explicit `weapon_priority` over MCP still wins — that is
+  // somebody typing an instruction at this character right now — and below it sits the
+  // loadout's own preference order, which is the standing answer. Null falls through to
+  // ranking by proficiency, which is a feedback loop that only ever rewards what the
+  // character is already good at.
+  weaponPriorityNow() {
+    if (this.policy.weaponPriority) return this.policy.weaponPriority;
+    const l = this.loadout();
+    return l && l.gear.weapon.length ? l.gear.weapon : null;
   }
 
   // What `create food` eats: 2 ElderBerry and 2 Herbs, from OUR pack, and it refuses
@@ -999,7 +1091,7 @@ export class Autopilot {
            : 'full cost — it was cast and succeeded, so the weapon was refused on being handed over' });
       return false;
     }
-    const eq = await skills.equipBest(s).catch(() => null);
+    const eq = await skills.equipBest(s, { priority: this.weaponPriorityNow() }).catch(() => null);
     this.tally.weapons_conjured = (this.tally.weapons_conjured || 0) + 1;
     this.recordCast('create weapon', { ok: true, why, made: made.map(o => c.rsc.get(o.nameRsc)),
       mana_before: mana?.value ?? null, mana_after: c.vitals?.()?.mana?.value ?? null });
@@ -1018,7 +1110,7 @@ export class Autopilot {
     if (!c) return false;
     await this.wearArmourIfNeeded().catch(() => {});
     if (skills.weaponsOf(c).length) {
-      const eq = await skills.equipBest(this.s).catch(() => null);
+      const eq = await skills.equipBest(this.s, { priority: this.weaponPriorityNow() }).catch(() => null);
       if (eq?.wielding) return true;
     }
     return await this.makeWeapon('about to fight with nothing in hand').catch(() => false);
@@ -1081,6 +1173,18 @@ export class Autopilot {
     const vigor = v.vigor?.value ?? 0;
     const larder = skills.larderOf(s.client);
     const best = larder[0]?.food ?? null;
+    // AND THE SMALLEST, WHICH IS THE ONE THAT DECIDES WHETHER WE CAN EAT AT ALL.
+    //
+    // larderOf sorts by nutrition per unit of FILLING, so larder[0] is the most
+    // efficient item — not the smallest. Every stomach gate below asked "is there room
+    // for the best one", and when there was not, the character ate NOTHING and set out
+    // at the resting cap with a full pack. Eleven of twenty-one sat at exactly 80 vigor
+    // that way, each carrying 30 to 147 vigor of food, while a single edible mushroom
+    // (filling 5) would have gone down every time.
+    //
+    // `eat` already refuses anything that would overshoot 200, so gating on the smallest
+    // cannot waste a big item — it just stops one large loaf from vetoing the meal.
+    const smallest = larder.reduce((m, x) => (!m || x.food.filling < m.filling ? x.food : m), null);
 
     if (!best) {
       // MAKE SOME, IF WE CAN. Out of food used to be treated as purely a supply
@@ -1089,7 +1193,7 @@ export class Autopilot {
       // the two things it consumes. A cast is cheaper than a merchant, cheaper than
       // asking another character, and available in the field where the alternative
       // is a walk back through the rooms that keep killing them.
-      if (await this.cookSomething()) return true;   // spend this pass eating instead
+      if (await this.cookSomething()) return 'ate';  // spend this pass eating instead
       // Genuinely nothing to eat and nothing to make it from. Say it once and carry
       // on fighting at whatever vigor resting gives — refusing to fight would idle
       // the character for ever. fightFloor() has already dropped to the starved floor.
@@ -1121,17 +1225,17 @@ export class Autopilot {
             ate: e.ate, vigor: e.vigor, ceiling,
             stomach: Math.round(this.stomach.level), strategy: p.strategy });
           this.progress('ate to raise vigor');
-          return true;
+          return 'ate';
         }
         // Too full to make progress: waiting IS the strategy. Report the clock so
         // this does not read as a stall.
-        const wait = this.stomach.secondsUntilRoomFor(best.filling);
+        const wait = this.stomach.secondsUntilRoomFor(smallest.filling);
         this.note('waiting to get hungry', {
           vigor, ceiling, stomach: Math.round(this.stomach.level),
           room_for_next_in_s: wait, next: larder[0].name,
           why: 'the stomach drains 0.12/s and food is refused above 100 — vigor above ' +
                'the resting threshold of 80 can only come from eating' });
-        return true;
+        return 'waiting';
       }
 
       // At the ceiling. Waiting for stomach room before setting out is only worth it
@@ -1145,13 +1249,13 @@ export class Autopilot {
       // second, so an idle spent healing is not idle at all. Wait then, not otherwise.
       const wait = this.stomach.secondsUntilRoomFor(best.filling);
       const hurt = (v.health?.value ?? 0) < (v.health?.max ?? 0) * 0.95;
-      if (!this.stomach.roomFor(best.filling) && (hurt || wait <= 60)) {
+      if (!this.stomach.roomFor(smallest.filling) && (hurt || wait <= 60)) {
         this.note('topping off before setting out', {
           vigor, stomach: Math.round(this.stomach.level), room_for_next_in_s: wait,
           healing: hurt, why: hurt
             ? 'at this vigor health returns about a point a second, so the wait heals too'
             : 'the wait is short enough to be worth the top-up' });
-        return true;
+        return 'waiting';
       }
       this.climbing = false;
       this.note('setting out fed', { vigor, floor, ceiling,
@@ -1170,7 +1274,7 @@ export class Autopilot {
     // Stomach room is the throttle, so take all of it whenever it appears rather than
     // one item per pass — a pass is eight seconds and the room reappears on a clock
     // measured in minutes. `eat` declines anything that would overshoot 200.
-    if (ceiling && this.stomach.roomFor(best.filling)) {
+    if (ceiling && this.stomach.roomFor(smallest.filling)) {
       const e = await skills.eat(s, { stomach: this.stomach, upToVigor: ceiling })
                             .catch(() => ({ ate: [] }));
       if (e.ate?.length) {
@@ -5657,6 +5761,40 @@ export class Autopilot {
       // entire point. Give the square up now rather than resting into it again on the
       // next pass and waiting for observe() to reach the same conclusion a minute later.
       if (r.interrupted) { await this.restBroken(room, near).catch(() => {}); return; }
+
+      // AND A REST THAT GAINS NOTHING IS THE SAME EVIDENCE AS ONE THAT IS CUT SHORT.
+      //
+      // `interrupted` is set when a blow lands hard enough to break the rest, and that is
+      // the loud version of the square not working. The quiet version killed Waldorf.
+      //
+      // He held (7,41) in West Merchant Way — proven, six things in the room — and bled at
+      // 0.16 health a second, which is slow enough that no single blow ever tripped
+      // `interrupted`. Every pass rested, gained nothing, and fell through this `return`
+      // to rest again. restUntil reported it accurately each time: "nothing recovered for
+      // several checks — something may be preventing rest". His health trail is 20, 19,
+      // 20, 18 … 2, 1, and then twenty-five consecutive samples at 1 to 3 health, with the
+      // keeper resting and refusing to freeze in turn and never once leaving. He was at 3%
+      // health against a flee threshold of 0.7 — `fled_in_time` came out at 2.9% — and
+      // what finally killed him was a reconnect: the session dropped, the rejoin put him
+      // back at 1 health in a room with five giant rats, and he lasted 3.4 seconds.
+      //
+      // So the test is not "was a blow big enough to notice", it is "is sitting here
+      // working". A sheltered rest that ends no better than it started has answered that,
+      // and the answer means the same thing as an interruption: give the square up, let
+      // restBroken pick somewhere else. Being wrong costs a walk to the next corner, which
+      // is the trade this whole file already makes everywhere else about safe spots.
+      const after = r.vitals?.health;
+      const afterHp = after?.max ? after.value / after.max : null;
+      if (sheltered && r.reached_target !== true && afterHp != null && hp != null && afterHp <= hp) {
+        this.note('rested and gained nothing — giving the square up', {
+          health_before: Math.round(hp * 100) + '%', health_after: Math.round(afterHp * 100) + '%',
+          seconds: r.seconds, crowd: near.length, why: r.note,
+          note: 'a safe spot is what makes resting in a monster room possible, so a rest ' +
+                'that recovers nothing is the square failing quietly rather than loudly — ' +
+                'the same conclusion as `interrupted`, reached without waiting for a big hit' });
+        await this.restBroken(room, near).catch(() => {});
+        return;
+      }
       return;
     }
 
@@ -5742,6 +5880,35 @@ export class Autopilot {
 
     // 4. Work. Only in farm mode, and only on what we were told to hunt.
     if (this.mode === 'farm') {
+      // EAT FIRST — BEFORE THE ROOM, THE PREY, THE PACK OR THE WALL.
+      //
+      // provision() used to sit far below this, under the prey lookup, and every path that
+      // does not end in a fight returns before reaching it: a room that cannot spawn the
+      // quarry, a relocation, an empty room, a sanctuary, a roam, a full pack, and — the
+      // one that mattered most — the too-tired-to-start branch, which rests to 80 and
+      // returns. So a character only ate while standing in front of something it could
+      // kill, which is both the moment it is least free to stop and eat and a small
+      // fraction of the passes of a fleet that spends its day walking between grounds.
+      //
+      // That made a closed loop out of the two halves of the same system. The fight floor
+      // here is 180; resting stops dead at 80 (REST_VIGOR_CAP); only food crosses the gap.
+      // A character below its floor went to the rest branch, rested to 80, noted in its own
+      // journal that "resting alone stops at 80; if this does not clear, the character needs
+      // food" — and returned, every eight seconds, for hours, with the food in its pack.
+      // Measured with food in all twenty-one packs: over four minutes vigor fell on fifteen
+      // characters, rose on two by the +2 that resting alone gives, and seven sat at exactly
+      // the cap. Eating one loaf by hand moved the same character 80 -> 99 immediately.
+      //
+      // ONLY A MOUTHFUL ENDS THE PASS. provision() also returns "wait, the stomach is full"
+      // — a legitimate answer, and a disastrous one to honour here: the stomach drains 0.12
+      // a second, so a character below its floor with a full stomach would stand still for
+      // up to fourteen minutes rather than walk to its hunting ground. Waiting to get hungry
+      // is something to do WHILE travelling, so only a real meal is worth the pass. Nothing
+      // is lost by carrying on: the too-tired branch still refuses to start a fight below
+      // the floor, so this cannot send anyone into combat empty.
+      const plan = STRATEGIES[this.policy.strategy] || STRATEGIES.baseline;
+      if (await this.provision(plan, v) === 'ate') return;
+
       // NEVER STAND IN A ROOM THAT CANNOT PRODUCE THE PREY.
       //
       // This does not need to be discovered by waiting. The spawn table says up
@@ -5958,12 +6125,8 @@ export class Autopilot {
       }
       this.emptyPasses = 0;
 
-      // EAT BEFORE FIGHTING, if this pattern says to. Resting stops at the rest
-      // threshold of 80; everything above that has to come from food, and vigor is
-      // what sets the health regeneration rate — so a well-fed character recovers
-      // between fights several times faster than a merely rested one.
-      const plan = STRATEGIES[this.policy.strategy] || STRATEGIES.baseline;
-      if (await this.provision(plan, v)) return;   // still stocking up — do not engage
+      // (Provisioning ran further up, before the prey lookup. It was here, and being here
+      // meant it was skipped on every pass that found nothing to fight.)
 
       // ARMED? Both of this fleet's characters-can-fix-it-themselves problems are
       // checked in the same place and for the same reason: they are silent. An empty
@@ -6572,7 +6735,7 @@ export class Autopilot {
                                         preferId: swingAt,
                                         disengageAt: safe.fleeAt, loot: true,
                                         holdPosition: holding, reach: REACH,
-                                        weaponPriority: this.policy.weaponPriority });
+                                        weaponPriority: this.weaponPriorityNow() });
 
       // NOTHING IN REACH, AND WE ARE NOT GOING TO CHASE IT. fight() refuses to walk
       // while we are holding, which is correct and leaves the interesting half to us:
@@ -6720,7 +6883,7 @@ export class Autopilot {
                                        items: t.theirs.map(i => i.name + (i.amount > 1 ? ` x${i.amount}` : '')) });
         this.progress('someone gave us something');
         // Put it to use immediately — a donated sword is no help in the pack.
-        await skills.equipBest(s).catch(() => {});
+        await skills.equipBest(s, { priority: this.weaponPriorityNow() }).catch(() => {});
       } catch (e) { this.note('could not accept a gift', { why: e.message }); }
     }
 
@@ -6969,12 +7132,92 @@ export class Autopilot {
     const carried = (c.inventory || [])
       .filter(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))
       .reduce((t, o) => t + (o.amount || 1), 0);
-    if (carried <= above) {
+    // A FULL PACK IS ALSO A REASON TO GO TO TOWN, AND WITHOUT IT THE LOOP CANNOT START.
+    //
+    // The trip fired on money alone: carry more than bankAbove and go and deposit it.
+    // But the money comes from SELLING, selling happens in town, and the fleet had no
+    // way to get there — twenty-one characters sat between 0 and 491 shillings against
+    // a threshold of 500, hauling 1,864 units of mushroom, gem and tooth they could not
+    // convert. Rich enough to bank was the only door, and it was the door on the far
+    // side of the thing they needed to do.
+    //
+    // So a pack at or over its cap opens the same trip. The walk pays for itself the
+    // moment the goods are sold, which is the whole point of going.
+    const stacks = (c.inventory || []).length;
+    const cap = this.policy.maxCarry ?? 14;
+    const packFull = stacks >= cap;
+
+    // AND AN EMPTY LARDER IS THE THIRD REASON, FOR EXACTLY THE REASON THE PACK WAS THE
+    // SECOND: the food is in town and the only doors to town were money and a full pack.
+    //
+    // Everything needed to buy food already worked. restockReagents ranks a shop's menu by
+    // vigor per shilling and buys until the gap closes; buyFoodInTown walks the last hop to
+    // 103. Neither ever ran, because both hang off the end of a bank trip and the trip
+    // needs 500 shillings or fourteen stacks to start. The fleet settles at a 400-shilling
+    // walking float and six to twelve stacks, so neither door opens: measured this pass,
+    // THREE of twenty-one keepers had any spending recorded at all, while thirteen of
+    // twenty-one carried no food. The buying was never the problem; the arriving was.
+    //
+    // Casting is the cheaper route and stays the first one — but it needs 2 elderberry and
+    // 2 herbs in the same pack, and this fleet's reagents segregate by which room each
+    // character farms. Five passes running, the almoner has redistributed them and they
+    // have re-separated by the next. So the test is "no food AND no way to make any",
+    // which is precisely the state a shop fixes and nothing else in the field does.
+    //
+    // A hunger trip aims at the BREAD SHOP, not a bank. Sending it to a counter that sells
+    // no food is the same mistake as aiming a full pack at a banker — the one this file
+    // already records as leaving Camilla and Floyd standing at Jasper with sixteen stacks
+    // and nobody who would pay for any of it.
+    const reag = this.reagentCount();
+    const canCook = reag.elderberry >= 2 && reag.herbs >= 2;
+    // ENOUGH TO BUY SOMETHING AFTER THE FLOAT IS TAKEN OUT, AND NOT MORE OFTEN THAN THE
+    // SHELF CAN CHANGE.
+    //
+    // The first version of this asked only for 60 shillings, reasoning that the cheapest
+    // thing on that shelf is an apple at 45. That ignored the float: restockReagents keeps
+    // `hungryFloor` (100) back for the walk home and spends only what is above it, so a
+    // character holding 108 arrives with a budget of 8, buys nothing, walks back still
+    // starving, and sets off again on the very next pass. It is a closed loop with a walk
+    // across the world in it, and it ran: FIVE characters logged one town trip per keeper
+    // pass — t13 made 386 trips in 386 passes — until this was capped. The whole fleet's
+    // time went into it and the board still said "travelling", which is what it always
+    // says.
+    //
+    // So the test is what will be SPENDABLE on arrival, not what is in the purse, plus a
+    // cooldown so a shelf that had nothing affordable is not re-checked every eight
+    // seconds. Selling is what fixes a poor character, and the pack-full door already
+    // takes it to a market to do that.
+    const spendable = carried - (this.policy.hungryFloor ?? 100);
+    const FOOD_TRIP_COOLDOWN_MS = 300_000;
+    const triedRecently = Date.now() - (this.foodTripAt ?? 0) < FOOD_TRIP_COOLDOWN_MS;
+    // A BALANCE IS ALSO MONEY, PROVIDED SOMETHING GOES AND FETCHES IT.
+    //
+    // Requiring 60 spendable in HAND made the door useless to exactly the characters that
+    // needed it: eight of the eleven with no food and no way to cook were carrying 104-115
+    // against a 100 float, while holding thousands in the bank. They are not poor, they are
+    // illiquid — and withdrawForFood() is now the thing that fixes that, at a counter.
+    const balance = s.bankKnown?.()?.balance ?? 0;
+    const canFetch = balance >= 200;
+    const starving = !skills.larderOf(c).length && !canCook &&
+                     (spendable >= 60 || canFetch) && !triedRecently;
+    // Which counter first. With money in hand the bread shop is the whole trip; without
+    // it, the bank comes first and buyFoodInTown walks the last hop afterwards.
+    const needsCashFirst = starving && spendable < 60 && canFetch;
+    if (starving && !this.notedStarving) {
+      this.notedStarving = true;
+      this.note('out of food and cannot cook — going to town for some', {
+        purse: carried, reagents: reag, to: FOOD_SHOP.name,
+        why: 'resting stops at 80 vigor and everything above it has to be eaten; with no ' +
+             'food and not both reagents, a shop is the only source in reach' });
+    }
+    if (!starving) this.notedStarving = false;
+
+    if (carried <= above && !packFull && !starving) {
       // Say what we saw, occasionally. A threshold that never trips is indistinguishable
       // from one that is never checked, and that cost an eight-minute run to find out.
       if (carried > 0 && (!this.notedPurse || Date.now() - this.notedPurse > 120_000)) {
         this.notedPurse = Date.now();
-        this.note('carrying, but under the banking threshold', { carrying: carried, banks_at: above });
+        this.note('carrying, but under the banking threshold', { carrying: carried, banks_at: above, stacks, pack_cap: cap });
       }
       return false;
     }
@@ -6983,7 +7226,18 @@ export class Autopilot {
     // world.route() returns {found, hops:[...]}, NOT an array — taking .length off it
     // gives undefined, every bank scores Infinity, and the character stands in a field
     // with 5,840 shillings reporting that it cannot reach a bank seven hops away.
-    const options = BANKS
+    // A FULL PACK GOES TO THE MARKET; MONEY GOES TO THE BANK. Aiming a pack-driven trip
+    // at a bank is what left Camilla and Floyd standing at the Jasper counter with
+    // sixteen stacks each and nobody there who would pay for any of it — the banker
+    // being the one NPC that takes goods and gives nothing back.
+    // A full pack goes to the market, money goes to the bank, and an empty larder goes to
+    // the bread shop — but only when hunger is the ONLY reason. A character that is also
+    // rich or also full has business at the counter that pays, and buyFoodInTown runs at
+    // the end of that trip anyway, so it gets both out of one walk.
+    const destinations = needsCashFirst ? BANKS
+                       : (starving && !packFull && carried <= above ? [FOOD_SHOP]
+                       : (packFull && carried <= above ? MARKETS : BANKS));
+    const options = destinations
       .map(b => { const r = s.world?.route?.(b.room);
                   return { ...b, hops: r?.found ? r.hops.length : Infinity }; })
       .sort((x, y) => x.hops - y.hops);
@@ -6991,15 +7245,21 @@ export class Autopilot {
     if (!Number.isFinite(target.hops)) {
       if (!this.warnedNoBank) {
         this.warnedNoBank = true;
-        this.note('cannot reach a bank', { carrying: carried, tried: options.map(o => o.name) });
+        this.note("cannot reach a market or bank", { carrying: carried, stacks, tried: options.map(o => o.name) });
       }
       return false;
     }
 
     this.doing = 'travelling';
-    this.note('going to the bank', {
+    // Stamp the attempt, not the success — the cooldown exists to stop a walk that buys
+    // nothing from repeating, and "bought nothing" is the case that would otherwise never
+    // set it.
+    if (starving) this.foodTripAt = Date.now();
+    this.note(starving && !packFull && carried <= above ? 'going to town for food' : 'going to the bank', {
       carrying: carried, to: target.name, hops: target.hops, keeping: this.policy.walkingMoney ?? 400,
-      why: 'everything carried is dropped on death and usually unrecoverable; a balance is not' });
+      why: starving && !packFull && carried <= above
+        ? 'no food and not both reagents, so the only vigor above the resting cap is bought'
+        : 'everything carried is dropped on death and usually unrecoverable; a balance is not' });
     if ((await this.leaveHold('walking to the bank')).refused) return true;
     const r = await this.travel(target.room, { maxHops: Math.max(12, target.hops + 4) })
                     .catch(e => ({ arrived: false, reason: e.message }));
@@ -7010,9 +7270,215 @@ export class Autopilot {
       this.noProgress('could not reach the bank');
       return true;                                   // the pass was spent walking either way
     }
+    // A TOWN TRIP IS THE ONLY TIME SELLING IS FREE, AND IT WAS BEING WASTED.
+    //
+    // Selling lived in exactly one place — makeRoom(), reached when
+    // `inventory.length >= policy.maxCarry`. maxCarry defaults to 40 and the game's pack
+    // holds about fourteen STACKS, so the condition is unreachable and the keeper has
+    // never sold anything. Measured across the fleet: 1,864 units of mushroom, gem and
+    // tooth being carried, Floyd alone hauling 311, every one of them saleable and none
+    // of it wanted by anybody.
+    //
+    // The walk to the bank is already paid for, so the order is sell, bank, restock:
+    // sell first so the proceeds are bankable and spendable, bank the surplus so death
+    // cannot take it, and buy food and reagents last with the float that is left.
+    await this.sellInTown().catch(() => {});
     await this.bankSurplus().catch(() => {});
+    await this.withdrawForFood().catch(() => {});
+    await this.restockInTown().catch(() => {});
+    // AND THE WHOLE POINT OF THE MONEY IS FOOD, SO GO AND GET SOME.
+    //
+    // restockInTown buys where the trip ENDED, and the two destinations sell nothing
+    // edible: Roq deals in everything but stocks nothing, and a bank is a bank. So the
+    // sell leg ran, the buy leg did not, and the fleet got rich and hungry at the same
+    // time — 67,669 shillings banked with twenty of twenty-one characters under 100
+    // vigor, which is the resting cap doing all the work.
+    //
+    // Roq is in Barloque and so is the bread: 103 The Bhrama & Falcon is a short hop,
+    // and it is the one shelf carrying cheese, meat pie, bread and apples together.
+    await this.buyFoodInTown().catch(() => {});
+    // One more hop, for the ingredients rather than the meal. Cheaper per vigor point than
+    // bread and it is what keeps the character fed in the FIELD, where no shop is.
+    await this.buyReagentsInTown().catch(() => {});
     this.progress('banked the takings');
     return true;
+  }
+
+  // The reagent half, at the counter that actually stocks them. Runs after the food leg
+  // because a character with nothing to eat now needs bread now; reagents are for the next
+  // hour. Both are one trip and the walk between them is a single room.
+  async buyReagentsInTown() {
+    const s = this.s, c = s.need();
+    const want = this.policy.reagentTarget ?? REAGENT_TARGET;
+    const have = this.reagentCount();
+    // Only the shortfall that stops a cast. Being deep in elderberry and out of herbs is
+    // the normal state here, and it is exactly as unable to cook as having neither.
+    if (have.elderberry >= want && have.herbs >= want) return;
+    if (s.world?.room?.num !== REAGENT_SHOP.room) {
+      const r = await this.travel(REAGENT_SHOP.room, { maxHops: 12 })
+                          .catch(e => ({ arrived: false, reason: e.message }));
+      if (!r?.arrived) return this.note('could not reach the apothecary', {
+        to: REAGENT_SHOP.name, have, want, why: r?.reason });
+    }
+    const seller = [...c.room.objects.values()].find(o => affordances(o.flags).includes('buy'));
+    if (!seller) return this.note('nobody selling at the apothecary', { room: REAGENT_SHOP.name });
+    const got = await this.restockReagents(seller).catch(() => null);
+    if (got?.length) this.note('bought reagents in town', {
+      at: REAGENT_SHOP.name, bought: got, had: have, target: want });
+  }
+
+  // THE MONEY ONLY EVER FLOWED ONE WAY, AND THE FLEET STARVED ON TOP OF A FORTUNE.
+  //
+  // bankSurplus deposits and there was no counterpart anywhere in this file — every
+  // `withdraw` in it is a combat retreat. So a character's purse could only fall: it banks
+  // down to the float, spends on the way, and the float is never topped back up. Measured
+  // this pass: 78,508 shillings banked across the fleet, most characters carrying 104-115
+  // in hand, ELEVEN of twenty-one with no food and no way to cook any, and EIGHT of those
+  // too poor to buy a 45-shilling apple while their own accounts held thousands.
+  //
+  // bankSurplus already holds food money back when it happens to be at a counter with the
+  // money in hand, and that is the cheap case. This is the other one: the money is already
+  // gone, and the only way to spend it is to ask for it back.
+  //
+  // Deliberately AFTER bankSurplus. The two cannot fight — bankSurplus keeps `FLOAT +
+  // foodMoney` and returns without depositing when it is under that, so by the time this
+  // runs the purse is either already sufficient (and `need` is met, so this does nothing)
+  // or genuinely short. Taking the food money out after banking the surplus is one round
+  // trip at the counter we are already standing at.
+  async withdrawForFood() {
+    const s = this.s, c = s.need();
+    const room = s.world?.room;
+    if (!room) return;
+    const teller = [...c.room.objects.values()]
+      .find(o => /bank/i.test(c.rsc.get(o.nameRsc) || '') ||
+                 affordances(o.flags).includes('bank'));
+    if (!teller && !/bank/i.test(room.name || '')) return;      // only where a counter is
+
+    // WHAT IT IS SHORT OF IS FOOD, NOT VIGOR — AND THE FIRST VERSION OF THIS ASKED ABOUT
+    // VIGOR AND SO NEVER FIRED ONCE.
+    //
+    // Measured after shipping it: zero withdrawals, and the fleet's banked total went UP,
+    // 78,508 to 79,330. `shortBy` was `fightAboveVigor - vigor - larder`, which is the gap
+    // a character wants to eat RIGHT NOW — and a character at 190 vigor with an empty pack
+    // scores zero and walks away from the counter. That is the same "hungry now" versus
+    // "cannot eat" confusion already fixed twice in restockReagents, made a third time.
+    //
+    // An empty pack is short by the climb it cannot pay for: resting cap to fight floor.
+    // Vigor being high today says nothing about it, because vigor is spent at about thirty
+    // a minute of swinging and only ever rests back to 80.
+    const v0 = c.vitals?.();
+    const vg = v0?.vigor;
+    const vigorMax = vg?.scale_max ?? 200;
+    const larder = skills.larderOf(c).reduce((t, f) => t + (f.food?.nutrition ?? 0) * (f.o.amount || 1), 0);
+    const floorVigor = (this.policy.fightAboveVigor ?? 140);
+    const shortBy = Math.max(
+      // the climb the pack has to be able to pay for, whenever it cannot pay for any of it
+      larder <= 0 ? Math.max(0, floorVigor - REST_VIGOR_CAP * vigorMax) : 0,
+      Math.max(0, floorVigor - (vg?.value ?? 0) - larder));
+    if (shortBy <= 20) return;                                   // fed enough to not bother
+
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+    const carried = c.inventory.find(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))?.amount ?? 0;
+
+    // The same arithmetic bankSurplus uses to decide what to hold back, so the two agree
+    // on what food costs: ~4.5 shillings a vigor point at the Barloque shelf, plus the
+    // 100 restockReagents refuses to spend below.
+    const want = Math.min(900, Math.round(shortBy * 4.5) + (this.policy.hungryFloor ?? 100));
+    if (carried >= want) return;
+
+    // NEVER ASK FOR MORE THAN IS THERE. A bank refuses an over-withdrawal outright rather
+    // than paying out the balance — that is what left Zoot walking two counters and coming
+    // away with nothing while holding 813 (see m59-outfit.mjs). The balance is only known
+    // when a banker has said it aloud, so when it is unknown ask for the gap and let the
+    // counter refuse; that costs a sentence, not a trip.
+    // The balance lives on the SESSION, not the keeper — bankKnown() reads the bankbook
+    // that catches what a banker said aloud, because there is no packet for a balance.
+    const known = s.bankKnown?.()?.balance ?? null;
+    const ask = known == null ? want - carried : Math.min(want - carried, known);
+    if (ask <= 0) return;
+
+    this.doing = 'trading';
+    const r = await s.pacer.submit('bank', () => c.withdraw(ask))
+                    .then(() => c.waitFor({ kinds: ['message'], timeoutMs: 3000 }))
+                    .then(ev => ({ said: ev.events?.filter(e => e.text).map(e => e.text).slice(0, 2) }))
+                    .catch(e => ({ error: e.message }));
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+    const now = c.inventory.find(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))?.amount ?? carried;
+    // Read the purse rather than trusting the ask: a withdrawal reports the amount handed
+    // over, not the new balance, and an over-withdrawal is refused with a sentence.
+    this.note(now > carried ? 'withdrew money for food' : 'asked for food money and got none', {
+      asked_for: ask, purse_before: carried, purse_now: now, short_by: shortBy,
+      balance_known: known, said: r.said, why: r.error,
+      because: 'resting stops at 80 vigor and everything above it has to be bought or ' +
+               'cooked; a balance buys nothing while it is in the bank' });
+    if (now > carried) this.progress('withdrew food money');
+  }
+
+  // The food half of a town trip. Only worth the hop when there is actually a gap to
+  // fill: vigor above the resting cap has to be EATEN, and everything below it comes
+  // back for free by sitting down.
+  async buyFoodInTown() {
+    const s = this.s, c = s.need();
+    const vg = c.vitals?.()?.vigor;
+    // larderOf already carries the food table — nutrition per item, best value first.
+    const carried = skills.larderOf(c)
+      .reduce((t, f) => t + (f.food?.nutrition ?? 0) * (f.o.amount || 1), 0);
+    const want = (this.policy.fightAboveVigor ?? 140) - (vg?.value ?? 0) - carried;
+    if (want <= 20) return;                       // enough in hand or already topped up
+    if (s.world?.room?.num !== FOOD_SHOP.room) {
+      const r = await this.travel(FOOD_SHOP.room, { maxHops: 12 })
+                          .catch(e => ({ arrived: false, reason: e.message }));
+      if (!r?.arrived) return this.note('could not reach the bread shop', { to: FOOD_SHOP.name, short_by: want });
+    }
+    const seller = [...c.room.objects.values()].find(o => affordances(o.flags).includes('buy'));
+    if (!seller) return;
+    const got = await this.restockReagents(seller).catch(() => null);
+    if (got?.length) this.note('bought food in town', { at: FOOD_SHOP.name, bought: got, was_short: want });
+  }
+
+  // SELL WHAT NOBODY IS SHORT OF. `sellable` already consults this character's own
+  // loadout, and sellAll already refuses to sell anything a crewmate has declared a want
+  // for — but nothing was passing the loadout in, so a character's own list could not
+  // protect its reagents and the fleet register was doing all the work alone. Both are
+  // consulted now: either one saying "keep" is enough, which is what makes it safe to
+  // sell everything else.
+  async sellInTown() {
+    const s = this.s, c = s.need();
+    // "BUYS ANYTHING" IS USUALLY A TRICK, AND IT NEARLY COST THE FLEET EVERYTHING.
+    //
+    // The merchant index reports `buys_anything: true` for the bankers, and the affordance
+    // flags say `buy`. Both are true and neither means what it looks like: Skivlat TAKES
+    // whatever you hand over, says thank you, and gives you nothing. It is a trick played
+    // on new players, and this keeper was one town trip away from doing it to twenty-one
+    // characters carrying 1,864 units of loot between them.
+    //
+    // So a sale is made only to a merchant on the trusted list. Anyone else is left alone
+    // however generous their flags look — being wrong about a buyer costs the whole pack,
+    // and being wrong about a walk costs a walk. See SELL_TO in m59-skills.mjs.
+    const buyer = [...c.room.objects.values()]
+      .find(o => affordances(o.flags).includes('buy') && skills.trustedBuyer(c.rsc.get(o.nameRsc)));
+    if (!buyer) return;
+    this.doing = 'trading';
+    const r = await skills.sellAll(s, { merchant: buyer.id, loadout: this.loadout() })
+                          .catch(e => ({ error: e.message }));
+    if (r.error) return this.note('could not sell in town', { why: r.error });
+    if (r.sold?.length) {
+      this.tally.sold = (this.tally.sold || 0) + r.sold.length;
+      this.note('sold in town', { to: c.rsc.get(buyer.nameRsc), items: r.sold.length,
+        earned: r.total_received, kept_for_the_fleet: r.kept_for_the_fleet?.map(k => k.name) });
+    }
+  }
+
+  // AND SPEND IT ON THE TWO THINGS THAT RUN OUT. restockReagents buys elderberry, herbs
+  // and food, and until now was reachable only from makeRoom for the same dead reason.
+  async restockInTown() {
+    const s = this.s, c = s.need();
+    const seller = [...c.room.objects.values()].find(o => affordances(o.flags).includes('buy'));
+    if (!seller) return;
+    const got = await this.restockReagents(seller).catch(() => null);
+    if (got?.length) this.note('restocked in town', { bought: got });
   }
 
   // BANK THE MONEY BEFORE GOING BACK OUT.
@@ -7045,9 +7511,33 @@ export class Autopilot {
     await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
     const purse = c.inventory.find(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''));
     const carried = purse?.amount ?? 0;
-    if (carried <= FLOAT) return;
 
-    const put = carried - FLOAT;
+    // DO NOT BANK THE MONEY YOU ARE ABOUT TO SPEND ON FOOD.
+    //
+    // The float is 400 and restockReagents will not spend below a 100 reserve, so a
+    // character walks out of the bank able to spend 300 — and then banks down to the
+    // float again next trip. Meanwhile an apple is 45, a loaf 108 and a cheese 144. The
+    // result was a fleet holding 67,669 shillings between them with twenty of twenty-one
+    // characters stuck at the resting cap: rich, hungry, and each half of that caused by
+    // the other. Statler had 82 in its purse against 852 in its account.
+    //
+    // Withdrawing it back would be a second trip. Keeping it is free — this is the one
+    // moment the money is in hand and the shop is one hop away, so hold back what the
+    // food actually costs and bank the rest.
+    const vg = c.vitals?.()?.vigor;
+    const larder = skills.larderOf(c).reduce((t, f) => t + (f.food?.nutrition ?? 0) * (f.o.amount || 1), 0);
+    const shortBy = Math.max(0, (this.policy.fightAboveVigor ?? 140) - (vg?.value ?? 0) - larder);
+    // Roughly 4.5 shillings a vigor point at the Barloque shelf, plus the 100 reserve
+    // restockReagents keeps. Capped so a badly-fed character cannot refuse to bank at all.
+    const foodMoney = shortBy > 20 ? Math.min(900, Math.round(shortBy * 4.5) + 100) : 0;
+    const keep = FLOAT + foodMoney;
+    if (carried <= keep) {
+      if (foodMoney) this.note('keeping the food money back rather than banking it', {
+        carrying: carried, float: FLOAT, for_food: foodMoney, short_by: shortBy });
+      return;
+    }
+
+    const put = carried - keep;
     this.doing = 'trading';
     // The client speaks to the teller directly; there is no skills wrapper for this.
     const r = await s.pacer.submit('bank', () => c.deposit(put))
@@ -7055,7 +7545,7 @@ export class Autopilot {
                     .then(ev => ({ said: ev.events?.filter(e => e.text).map(e => e.text).slice(0, 2) }))
                     .catch(e => ({ error: e.message }));
     this.note(r.error ? 'could not bank' : 'banked the surplus', {
-      deposited: r.error ? undefined : put, kept: FLOAT, why: r.error, said: r.said,
+      deposited: r.error ? undefined : put, kept: keep, float: FLOAT, for_food: foodMoney, why: r.error, said: r.said,
       because: 'money in hand is lost on death; money in the bank is not' });
     if (!r.error) { this.tally.banked = (this.tally.banked || 0) + put; this.progress('banked money'); }
   }
@@ -7248,12 +7738,12 @@ export class Autopilot {
     await s.pacer.submit('read', () => c.requestInventory());
     await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
 
-    let eq = await skills.equipBest(s).catch(() => null);
+    let eq = await skills.equipBest(s, { priority: this.weaponPriorityNow() }).catch(() => null);
     // Before asking a stranger for a blade, try the one we can make. Charity is slow,
     // uncertain, and costs another player something; the spell costs 15 mana.
     if (!eq?.wielding && await this.makeWeapon('the alternative was begging a stranger for a blade')
                                   .catch(() => false))
-      eq = await skills.equipBest(s).catch(() => eq);
+      eq = await skills.equipBest(s, { priority: this.weaponPriorityNow() }).catch(() => eq);
     const armed = !!eq?.wielding;
     const where = c.rsc.get(c.roomNameRsc) || 'somewhere';
     const hurt = /hurt|heal|flask/i.test(reason || '');
@@ -7299,8 +7789,43 @@ export class Autopilot {
     const want = this.policy.reagentTarget ?? REAGENT_TARGET;
     const have = this.reagentCount();
     const need = { elderberry: Math.max(0, want - have.elderberry), herb: Math.max(0, want - have.herbs) };
-    if (!need.elderberry && !need.herb) {
-      this.declinedPurchase('already at the reagent target', { have, target: want });
+
+    // WHAT THIS CHARACTER ASKED FOR, WHICH MAY BE NEITHER OF THOSE TWO.
+    //
+    // `need` is keyed by shareKind, which knows about elderberry and herbs and nothing
+    // else — the two the whole fleet turns on, and for a long time the only two anything
+    // could be short of. A caster whose spells eat mushrooms and orc teeth had no way to
+    // say so, and the shop filter below would step over them at a counter that stocked
+    // them.
+    //
+    // So the loadout's own floors are folded in under the ITEM NAME, and the filter tries
+    // shareKind first and the name second. Both halves stay: a character with no loadout
+    // gets exactly the two-reagent behaviour it had, and one with a loadout gets the two
+    // plus whatever else it named. The loadout WINS on elderberry and herbs when it
+    // mentions them, because a per-character floor is a decision and REAGENT_TARGET is a
+    // default.
+    const loadout = this.loadout();
+    const askedFor = {};
+    if (loadout) {
+      const pack = this.packAsItems();
+      for (const entry of loadout.carry) {
+        if (entry.min <= 0) continue;
+        const held = pack.filter(i => norm(i.name) === norm(entry.item))
+                         .reduce((t, i) => t + i.amount, 0);
+        const short = Math.max(0, entry.min - held);
+        const kind = skills.shareKind(entry.item);
+        if (kind) need[kind] = short; else askedFor[norm(entry.item)] = short;
+      }
+    }
+    const shortOf = (name) => {
+      const k = skills.shareKind(name);
+      if (k && need[k] > 0) return need[k];
+      return askedFor[norm(name)] || 0;
+    };
+
+    if (!need.elderberry && !need.herb && !Object.values(askedFor).some(n => n > 0)) {
+      this.declinedPurchase('already at the reagent target', { have, target: want,
+        ...(loadout ? { from_loadout: loadout.carry.length + ' item(s) listed' } : {}) });
       return [];
     }
     const purse = (c.inventory || []).filter(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))
@@ -7316,7 +7841,19 @@ export class Autopilot {
     // and weigh nothing, so when it is hungry the reserve drops to what a trip home
     // actually costs and the rest is spendable. A character that cannot eat cannot earn,
     // and the float it was guarding buys nothing at all if it dies holding it.
-    const hungryNow = (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
+    // AN EMPTY PACK COUNTS AS HUNGRY, BECAUSE THE TRIP THAT GOT HERE SAYS SO.
+    //
+    // bankRun now walks a character to the bread shop for having no food and no way to
+    // cook. Both gates below then asked a different question — is it hungry RIGHT NOW —
+    // and the two disagree exactly where it matters: a character at 200 vigor with an
+    // empty pack is not hungry, and is one fight away from being stuck at the resting cap
+    // with no way back up. Nine of them walked to The Bhrama & Falcon on the new door and
+    // stood in it buying nothing, which is a longer way to fail than never setting off.
+    //
+    // So "hungry" here means "cannot eat", not "wants to eat now".
+    const emptyLarder = !skills.larderOf(c).length;
+    const hungryNow = emptyLarder ||
+                      (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
     const fullFloor = this.policy.walkingMoney ?? 400;
     const floor = hungryNow ? Math.min(fullFloor, this.policy.hungryFloor ?? 100) : fullFloor;
     if (purse <= floor) {
@@ -7362,10 +7899,9 @@ export class Autopilot {
     let spend = 0;
     const affordable = it => (it.cost ?? 0) > 0 && (it.cost ?? 0) <= budget - spend;
 
-    const reagents = (shop.items || []).filter(it => {
-      const k = skills.shareKind(it.name);
-      return k && need[k] > 0 && affordable(it);
-    });
+    // shortOf() asks shareKind first and the loadout's own item names second, so this is
+    // the two-reagent filter it always was plus whatever this character listed.
+    const reagents = (shop.items || []).filter(it => shortOf(it.name) > 0 && affordable(it));
     for (const it of reagents) spend += it.cost;
 
     // What eating everything already in the pack would be worth, so a character with a
@@ -7379,9 +7915,29 @@ export class Autopilot {
     const vg = c.vitals?.()?.vigor;
     const vigorNow = vg?.value ?? null;
     const vigorMax = vg?.scale_max ?? 200;
-    let gap = hungry && vigorNow !== null
-      ? Math.max(0, ((this.policy.vigorWant ?? 0.9) * vigorMax) - vigorNow - carried)
+    // BUY A RESERVE, NOT ONLY A TOP-UP.
+    //
+    // The gap is "how far below the vigor I want am I", which is the right question for a
+    // character passing a counter and the wrong one for a character that came here because
+    // its pack is empty: at 200 vigor that arithmetic is zero or negative, so the fullest
+    // character in the fleet buys nothing and walks back out with nothing to eat. Vigor is
+    // spent at about thirty a minute of swinging and resting only ever returns it to 80,
+    // so food in the pack is the only thing standing between a full character and the cap.
+    //
+    // The reserve is the climb the pack has to be able to pay for: from the resting cap up
+    // to this character's own fight floor. Anything less and the next trip is immediate.
+    //
+    // REST_VIGOR_CAP IS A FRACTION (0.4), NOT A VIGOR. Everything else in this block is in
+    // points — vigorNow, carried, nutrition — so it has to be scaled before it can be
+    // subtracted from one. Written raw it reads as 140 - 0.4 and asks for a reserve of 139
+    // points, which is most of the bar and would have every character buying out the shelf.
+    const restCap = REST_VIGOR_CAP * vigorMax;                     // 0.4 of 200 = 80
+    const reserve = emptyLarder
+      ? Math.max(0, (this.policy.fightAboveVigor ?? 140) - restCap - carried)
       : 0;
+    let gap = Math.max(reserve, hungry && vigorNow !== null
+      ? Math.max(0, ((this.policy.vigorWant ?? 0.9) * vigorMax) - vigorNow - carried)
+      : 0);
 
     const food = [];
     if (gap > 0) {
@@ -7399,11 +7955,14 @@ export class Autopilot {
       // WHICH of the two it was matters, and both look like "bought nothing" from the
       // outside: a merchant that stocks no reagents at all is a routing problem, while
       // one whose prices are above the float is a money problem.
-      const stocked = (shop.items || []).some(it => skills.shareKind(it.name));
-      this.declinedPurchase(stocked ? 'reagents here cost more than the purse can spare'
-                                    : 'this merchant does not stock elderberry or herbs',
+      // Asked with shortOf, so a character whose list is mushrooms is not told the shop
+      // stocks nothing when it is standing in front of a pile of them.
+      const stocked = (shop.items || []).some(it => shortOf(it.name) > 0);
+      this.declinedPurchase(stocked ? 'what this character is short of costs more here than the purse can spare'
+                                    : 'this merchant stocks nothing on this character\'s list',
         { spendable: purse - floor, need,
-          offered: (shop.items || []).filter(it => skills.shareKind(it.name))
+          ...(Object.keys(askedFor).length ? { also_wanted: askedFor } : {}),
+          offered: (shop.items || []).filter(it => shortOf(it.name) > 0)
                                      .map(it => `${it.name} @${it.cost}`).slice(0, 6) });
       return [];
     }
@@ -7429,9 +7988,18 @@ export class Autopilot {
   async makeRoom() {
     this.doing = 'trading';
     const s = this.s, c = s.need();
-    const buyer = [...c.room.objects.values()].find(o => affordances(o.flags).includes('buy'));
+    // THE SAME GUARD AS sellInTown, AND IT WAS MISSING HERE. makeRoom is reached far more
+    // often than the town trip — any pass with a full pack standing next to anything that
+    // reports `buy` — so leaving it unguarded meant the fix was decorative. Skivlat takes
+    // goods and gives nothing; see SELL_TO in m59-skills.mjs.
+    const buyer = [...c.room.objects.values()]
+      .find(o => affordances(o.flags).includes('buy') && skills.trustedBuyer(c.rsc.get(o.nameRsc)));
     if (buyer) {
-      const sold = await skills.sellAll(s, { merchant: buyer.id }).catch(e => ({ error: e.message }));
+      // THE LOADOUT DECIDES WHAT LEAVES THE PACK, WHERE IT HAS AN OPINION. sellAll's own
+      // guards — money, worn gear, anything a crewmate is short of — still apply; this adds
+      // this character's floors and its sell list on top.
+      const sold = await skills.sellAll(s, { merchant: buyer.id, loadout: this.loadout() })
+                               .catch(e => ({ error: e.message }));
       // WE ARE STANDING AT A SHOP WITH MONEY IN HAND. Restocking reagents here costs
       // nothing extra — the walk is already paid for — and it is the one time buying
       // from a vendor is not simply losing the spread to them.
@@ -7514,16 +8082,37 @@ export class Autopilot {
       if (!k) return false;
       return (k === 'elderberry' ? r.elderberry : r.herbs) <= target;   // still short ourselves
     };
+    // AND WHAT THIS CHARACTER SAID, WHICH OUTRANKS ALL OF IT IN BOTH DIRECTIONS. `dropRank`
+    // returns -1 for something on the sell list (go before anything else, including
+    // sell-fodder nobody named), 3 for something the loadout protects (go last, after even
+    // a crewmate's reagents), and NULL for anything it has no opinion about — which is the
+    // whole overlay: an unmentioned item keeps the ranking it has always had.
+    //
+    // It is given the pack, so a floor of twelve elderberry protects twelve and not the
+    // thirteenth. A rank that could not count would either hoard the surplus for ever or
+    // shed the character's last cast.
+    const mineToo = dropRank(this.loadout(), this.packAsItems());
     const rank = o => {
       const name = c.rsc.get(o.nameRsc) || '';
+      const said = mineToo?.(name);
+      if (said !== null && said !== undefined) return said;
       if (mine(name)) return 2;                                          // ours, keep longest
       if (skills.interest.anyoneWants(name, { except: me })) return 1;    // somebody's, keep
       return 0;                                                          // sell-fodder, goes first
     };
+    // THE NAME-BASED VALUE GUARD IS AN APPROXIMATION AND THE LOADOUT IS NOT, so a loadout
+    // that puts something on the sell list gets past it. That is the point: `keep` protects
+    // "emerald" for everyone, and a character carrying fifty-six sapphires it will never
+    // cast with needs a way to say so — which was previously only possible by editing a
+    // regex shared by twenty-one characters.
+    const overrideSell = sellTest(this.loadout());
     const junk = (c.inventory || [])
-      .filter(o => !worn.has(o.id)
-                   && !keep.test(c.rsc.get(o.nameRsc) || '')
-                   && !this.wontDrop?.has(o.id))
+      .filter(o => {
+        const name = c.rsc.get(o.nameRsc) || '';
+        if (worn.has(o.id) || this.wontDrop?.has(o.id)) return false;
+        if (overrideSell?.(name)) return true;
+        return !keep.test(name);
+      })
       .sort((a, b) => rank(a) - rank(b) || (b.amount || 1) - (a.amount || 1));
     if (!junk.length) {
       return { ok: false, did: 'nothing safe to drop',

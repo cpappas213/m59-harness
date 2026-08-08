@@ -26,6 +26,10 @@ import { loadSpawns } from './m59-spawns.mjs';
 // What makes a farmer worth visiting. Not kills alone — a character killing things it
 // outlevels produces nothing anyone wants — but kills PLUS a full pack, which is the
 // only observable proxy for "there is more on the floor than it can pick up".
+// Leather armour at Quintor's Smithy, Jasper — the cheapest body armour found anywhere
+// (Marion is 640, Cor Noth 800). It is the price of being able to kit yourself.
+const LEATHER_COST = 480;
+
 export function farmersWorthVisiting(fleet, { minKills = 3, fullAt = 0.75 } = {}) {
   return (fleet || [])
     .filter(r => r.in_game !== false)
@@ -33,13 +37,35 @@ export function farmersWorthVisiting(fleet, { minKills = 3, fullAt = 0.75 } = {}
       const cap = r.max_carry ?? 14;
       const full = (r.carrying ?? 0) / cap;
       const vigor = Number(String(r.vigor_of ?? '0/200').split('/')[0]) || 0;
-      return { ...r, full, vigor,
+      // DO NOT HARVEST A CHARACTER THAT CANNOT KIT ITSELF.
+      //
+      // The runner keeps the sale proceeds, which is right when the runner is the
+      // fragile one — but a farmer is chosen on pack fullness alone, and a full pack is
+      // what a PRODUCTIVE character has. So the fleet's best earners that happened to
+      // be broke were being emptied by richer runners and stayed broke: Beaker and
+      // Animal sat at 378 and 188 shillings with no body armour for several passes,
+      // both at 13 of 14 items, while Fozzie held 9,100 in the bank.
+      //
+      // A character with no body armour and not enough coin to buy any needs its own
+      // loot more than the fleet needs it redistributed. Leather is 480 at Jasper, the
+      // cheapest in the world, so that is the line: under it and unarmoured, you are
+      // left alone to cash your own pack.
+      // ONLY ON POSITIVE EVIDENCE. The first cut read a MISSING purse as an empty one,
+      // so any caller whose rows do not carry money — every test fixture, and any
+      // reduced listing — had all of its farmers condemned as too poor and no run was
+      // ever planned. Absent is not broke: exclude only when the row actually says so.
+      const knowsMoney = r.purse != null || r.banked != null;
+      const knowsKit = r.equipped_count != null;
+      const coin = (r.purse ?? 0) + (r.banked?.balance ?? 0);
+      const tooPoorToKit = knowsMoney && knowsKit &&
+                           r.equipped_count < 3 && coin < LEATHER_COST;
+      return { ...r, full, vigor, tooPoorToKit,
         // A farmer still worth supplying is one that can keep going. One that is out
         // of vigor is not a farmer, it is the next thing needing rescue.
         productive: (r.autopilot?.kills ?? r.kills ?? 0) >= minKills && vigor >= 60,
         overflowing: full >= fullAt };
     })
-    .filter(r => r.productive && r.overflowing)
+    .filter(r => r.productive && r.overflowing && !r.tooPoorToKit)
     .sort((a, b) => b.full - a.full);
 }
 

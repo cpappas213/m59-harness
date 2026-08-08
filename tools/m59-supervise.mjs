@@ -41,6 +41,15 @@ const ONCE = !!arg('once', false);
 const DRY = !!arg('dry-run', false);
 const GRADUATE_AT = Number(arg('graduate', 30));
 const EVERY_MS = Number(arg('every', 60)) * 1000;
+// FLY SOLO. Room assignment is still done in twos — that is what spreads the fleet
+// across the generators instead of stacking it — but neither character is told the other
+// is its partner, so nobody waits for anybody and nobody holds fire for a mate.
+//
+// This exists because unpairing the fleet by hand does not survive: the round below
+// re-pairs whatever it finds unpaired, so a fleet set solo at the console is back in
+// parties inside twenty minutes. Measured over the hour after the first split, solo ran
+// 1 death and +14 max health against 14 deaths and +3 for the paired hour before it.
+const SOLO = !!arg('solo', false);
 
 let id = 0;
 async function call(name, args = {}) {
@@ -133,7 +142,7 @@ const VALLEY_ORDERS = {
   fight_above_vigor: 180,       // set out near the 200 ceiling, not at the 140 floor
   rest_below: 0.75,             // break off early; there is a partner to carry it
   flee_below: 0.35,
-  max_carry: 40,
+  max_carry: 14,   // the pack holds about 14 STACKS; 40 is unreachable, see m59-autopilot sellInTown
   roam: false,                  // stay in the assigned room; the partner is there
   use_safe_spots: true,
   hold_resume_above: 0.9,
@@ -227,7 +236,7 @@ const LOWLAND_ORDERS = {
   fight_above_vigor: 140,
   rest_below: 0.8,
   flee_below: 0.45,
-  max_carry: 40,
+  max_carry: 14,   // the pack holds about 14 STACKS; 40 is unreachable, see m59-autopilot sellInTown
   roam: false,                  // see LOWLANDS — the twin room next door is a worse fight
   use_safe_spots: true,
   hold_resume_above: 0.9,
@@ -363,7 +372,7 @@ async function deploy(a, b, room, name, hunt, base = VALLEY_ORDERS) {
     // minutes. The stops had no matching starts, which is exactly what that ledger is
     // for. Falling back to "farm where you stand" is worse than the intended orders and
     // enormously better than nothing.
-    const gave = await orders(me.agent, room, hunt, mate.agent, base)
+    const gave = await orders(me.agent, room, hunt, SOLO ? null : mate.agent, base)
                          .then(() => true)
                          .catch(e => { out.push(`${me.character}: ${e.message}`); return false; });
     if (!gave) {
@@ -525,7 +534,7 @@ async function round(n) {
     if (lowOdd) console.log(`   ${lowOdd.character} is the odd low-level one this round`);
     for (const p of assignRooms(lowPairs, LOWLANDS)) {
       const [a, b] = p.pair;
-      const settled = (x, y) => x.room_num === p.room && x.partner === y.agent;
+      const settled = (x, y) => x.room_num === p.room && (SOLO ? !x.partner : x.partner === y.agent);
       if (settled(a, b) && settled(b, a)) continue;
       if (DRY) { console.log(`   would send ${a.character} + ${b.character} -> ${p.name} (${p.room})`); continue; }
       console.log(`   outfitting ${a.character} + ${b.character} (low)`);
@@ -550,7 +559,7 @@ async function round(n) {
     // ALREADY IN PLACE, TOGETHER, AND PAIRED WITH EACH OTHER. Anything less than all
     // three and it is re-deployed: a character in the right room with the wrong partner
     // is not in a party, it is standing next to someone.
-    const settled = (x, y) => x.room_num === p.room && x.partner === y.agent;
+    const settled = (x, y) => x.room_num === p.room && (SOLO ? !x.partner : x.partner === y.agent);
     if (settled(a, b) && settled(b, a)) continue;
     if (DRY) { console.log(`   would send ${a.character} + ${b.character} -> ${p.name} (${p.room})`); continue; }
     // GEAR BEFORE GOING. Sending an unarmoured pair at a level-50 creature is the one

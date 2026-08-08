@@ -90,6 +90,26 @@ and your next command would act on another. Every `/m59*` command runs it first 
 reason. If it reports a mismatch, stop: that is the failure that once took down a live
 46-session broker while every step reported success.
 
+`m59-which.mjs` answers for **one** fleet — the one the next command would touch. When
+the question is *which fleets does this machine have at all*, ask the other one:
+
+```bash
+node tools/m59-fleets.mjs           # every roster here: slots, server, who is holding it
+node tools/m59-fleets.mjs --json    # the same, for a launcher
+```
+
+A roster file **is** the credential store, so "the fleets with local credentials" is
+exactly "the roster files under `substrate/`". It lists every one of them — named and
+unnamed — with its slot names, the game server all its credentials agree on, whether a
+broker is holding it and on which loopback HTTP port, and whether it is eligible for
+local control. It never prints an account, a password or a character name, and it never
+starts a broker. A broker is matched to a roster by the **state path** that broker's own
+`/health` reports, never by fleet label: two checkouts can each hold a fleet called
+`prod` and they are not the same characters.
+
+`maps/m59-boswars`'s commander client is the first consumer — its main menu offers what
+this reports rather than only what somebody typed on a command line.
+
 ## Running the broker as a service
 
 ```bash
@@ -358,6 +378,33 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   random, so three or four work at any moment and each has a fixed, known
   destination. An unlit one is silent, which is why the old code read a working
   pentagram as a dead one. `node tools/m59-underworld.mjs` prints the table.
+
+- **"BUYS ANYTHING" IS USUALLY A ROBBERY, AND BOTH THE FLAGS AND THE INDEX SAY IT
+  CHEERFULLY.** `substrate/m59-merchants.json` reports `buys_anything: true` for the
+  bankers, and the object's affordances include `buy`. Both are accurate and neither
+  means it will pay you. **Skivlat takes what you hand him, says thank you, and gives
+  nothing back** — it is a trick played on new players, and nothing on the wire
+  distinguishes it from a sale. This nearly emptied the fleet: a town-selling change
+  was one trip away from handing twenty-one packs, 1,864 units of mushroom, gem and
+  tooth, to a banker for nothing.
+
+  Three different NPCs answer to "buys anything" and only one is a market:
+
+  - **Roq** — the only NPC known to buy an unlimited quantity of anything. It is the
+    Barloque assassin (`assassin.kod`, `Assassin is BarloqueTown`) and it is **not in
+    the merchant index at all**, which is why nothing has ever sold to it. **Izzio** and
+    the island vendor are close to it with rules of their own.
+  - **The two vaults**, one mainland (Barloque) and one on the island. They "buy"
+    anything and sell it back for about a shilling. They are **storage, not a market** —
+    and storage that SURVIVES DEATH, which is the only thing in the game that does. That
+    makes them the right tool for holding something the fleet will need later rather
+    than dropping it on the next corpse, and for one character to leave something where
+    another can collect it. Never sell into one by accident.
+  - **Everyone else claiming it** — assume the robbery.
+
+  So selling is an ALLOWLIST, not a check: `SELL_TO` and `NEVER_SELL_TO` in
+  `m59-skills.mjs`, via `trustedBuyer()`. Being wrong about a buyer costs the whole
+  pack; being wrong about a walk costs a walk.
 
 - **A BANK BALANCE IS PROSE, IT IS SENT ONCE, AND A WITHDRAWAL DOES NOT STATE IT.**
   There is no packet for the balance. The banker says it out loud — `Lm_bnkr_balance`,
@@ -641,6 +688,89 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   that level — which every character here does for weaponcraft, via *mace fighting* and
   *slash*.
 
+- **EVERY BUY, SELL, KEEP AND DROP RULE USED TO BE ONE CONSTANT FOR TWENTY-ONE CHARACTERS.**
+  `WANTS` in `m59-outfit.mjs` (a mace, leather, a shield). `KEEP` in `m59-reagents.mjs`.
+  The `keep` regex in `makeRoom`. `REAGENT_TARGET` in the keeper. So a caster that needs
+  forty mushrooms and a fighter that needs none were told the same number, and the only way
+  to change it for one character was to edit a tool and restart the broker — which logs out
+  the fleet.
+
+  A **loadout** is that answer per character: `substrate/loadouts/<character>.json`, written
+  in the compendium's planner (`P` on the fleet terminal, or
+  `node tools/m59-compendium.mjs --open --to /planner/`) and read by the keeper every pass.
+  `node tools/m59-loadout.mjs <name> --check` says what a character is short of; the
+  `loadout` MCP tool says the same thing to an agent.
+
+  **IT IS AN OVERLAY, NOT A REPLACEMENT, and that is the property to preserve.** Silence
+  means "carry on as before" — every helper returns `null` for an absent or empty loadout,
+  and `null` means "the behaviour that was already there", never "protects nothing". A
+  loadout saying only "twenty-four elderberry" must not start a character selling its
+  armour. `m59-loadout-test.mjs` pins that directly: with no loadout, `skills.sellable`
+  gives exactly its pre-loadout answer.
+
+  Four things about it that read backwards:
+
+  - **A NAMED WANT IS NOT SATISFIED BY THE FAMILY.** The fleet default says "a mace" and
+    means "some weapon" — its fallback is `/sword|axe|hammer|mace/`, because one answer for
+    twenty-one characters cannot be fussier. A loadout says "short sword", and a character
+    holding a mace *is* missing it. The first version widened the loadout's fallback to the
+    slot's family and thereby made every loadout mean what the default meant: Kermit, whose
+    list says short sword and whose pack held a mace, reported `already stocked`.
+  - **A FLOOR PROTECTS THE STACK UP TO THE FLOOR, so the keep test has to be able to count.**
+    Twelve elderberry under a floor of twelve are all protected and the thirteenth is not.
+    Asked without a pack it protects the whole stack, which is the safe direction.
+  - **A CEILING BELOW A FLOOR IS A LOOP, NOT A PREFERENCE** — buy up to the floor, sell down
+    to the ceiling, pay the vendor spread on every lap, for ever. `normalise` raises the
+    ceiling and says so rather than honouring a pair that cannot both be satisfied.
+  - **THE SELL LIST BEATS THE NAME GUARD, deliberately.** `keep` protects anything that
+    *looks* like equipment or money, which is right by default and is why a character
+    carrying fifty-six sapphires it will never cast with could not shed them without editing
+    a regex twenty-one characters share. Worn still beats everything: `plUsing` is the
+    server's own answer and no list can sell the shield off your arm.
+
+  Keyed on the **character name**, never the agent handle — `t1` is this checkout's word for
+  a roster slot, and a loadout follows the character. `loadoutFor` caches on mtime, so the
+  per-pass cost is a `stat()`.
+
+- **THE PLANNER IS THE ONLY PAGE IN THE COMPENDIUM THAT CAN WRITE, and it looks like the
+  game because it is editing the game's own four screens.** `compendium/planner/` rebuilds
+  the client's right-hand panel — inventory, spells, skills, stats, same order, same stat
+  bars, same stack counts in the corner of each cell — and everything in it is editable.
+  It deliberately ignores the site's light/dark theme: the point is that it looks like the
+  thing next to it on the desktop.
+
+  `node tools/m59-planner-data.mjs` writes `compendium/data/planner.json`, which is what it
+  reads: 22 skills with their requisite stat and level, 150 spells with school and level,
+  202 items with weight, value and sprite, and the constants `PlayerCanLearn` runs on.
+
+  **THE LEARNING ARITHMETIC HAS ONE HOME**, `compendium/tools/learn.mjs`, imported by
+  `m59-loadout.mjs` and inlined into `assets/learn.js` by the page's build — the same trick
+  `creatures.mjs` uses for `calc.mjs`, and for the same reason. Three things about it:
+
+  - **`POINTS_SLOPE` (7), `MIN_NEEDED_TO_ADVANCE` (75) and `piMaxLearnPoints` (16) are not
+    in `koddb.json`** — the builder folds `.khd` includes and not a class's own `constants:`
+    block. They are read out of the source tree with the line they came from, and stay
+    `null` when it is absent: an invented cost curve reads as authoritative, which is worse
+    than none. Anchor the regexes with `^[ \t]*`, not `^\s*` — `\s` matches a newline, so a
+    declaration preceded by a blank line cites the wrong line, which is the one kind of
+    wrong a citation must never be.
+  - **THERE ARE SEVEN TRACKS, NOT SIX.** `iNeed` sums `GetLevelLearnPoints` over the six
+    schools *and* over `iWeapon`, the highest `viSkill_level` of any skill known
+    (`player.kod:10813`). A planner costing only the schools understates every build that
+    has learned a proficiency.
+  - **LEVEL 50 IS A SENTINEL AND IT IS FREE.** assess, thrust and kick declare
+    `viSkill_level = 50` on a six-entry table — "granted, not sold", since `GetValue`
+    doubles per level and 250·2⁵⁰ is nobody's price. `Nth(vlLevelPoints, 50)` falls off the
+    end and returns NIL (`blakserv/list.c:178`), so that track contributes **nothing** —
+    and because `iWeapon` is a MAX, knowing thrust *hides* the proficiency levels the
+    character would otherwise be charged for. Clamping to the last entry is the natural
+    thing to write and is wrong in the expensive direction.
+
+  Two discounts sit outside the formula and are worth a factor of three: when the level
+  below holds fewer than three abilities you cannot reach 297 at all, so `iNeed` is divided
+  by 3 (prev level 1) or multiplied by 2/3 (prev level 2), `player.kod:10915`. That is why
+  Faren level 2 costs Kermit 43 and Kraanan level 2 costs 129.
+
 - **Attach to the broker, do not spawn a second one.** `m59-broker.mjs` with no
   arguments serves stdio MCP *and* resumes a fleet. With one already running,
   the second is refused the lock, comes up healthy and **empty**, and answers
@@ -683,6 +813,9 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-describe-test.mjs` (52) and
   `node tools/m59-party-test.mjs` (57) and
   `node tools/m59-hits-test.mjs` (41) and
+  `node tools/m59-loadout-test.mjs` (109 — the loadout format, the learning arithmetic, and
+  the composed sell decision, against scratch directories; it sets `M59_LOADOUT_DIR` so it
+  never reads the real one, which a live keeper is reading every pass) and
   `node tools/m59-economy-test.mjs` (61 — the Economy and Skills boards, and the one
   tab bar all five boards share) and
   `node tools/m59-backup-test.mjs` (42 — backing the rosters up and putting them back,

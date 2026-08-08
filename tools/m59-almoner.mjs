@@ -152,39 +152,80 @@ for (const r of live) {
 const CASTABLE = 2;
 const needy = held.filter(h => !h.has_food && (h.eb < CASTABLE || h.hb < CASTABLE))
                   .sort((a, b) => (a.eb + a.hb) - (b.eb + b.hb));
-// A donor must be able to give a full share of BOTH and still keep its own margin.
-const donors = held.filter(h => h.eb >= AMOUNT + KEEP_BACK && h.hb >= AMOUNT + KEEP_BACK)
-                   .sort((a, b) => (b.eb + b.hb) - (a.eb + a.hb));
+// A DONOR IS A DONOR OF ONE REAGENT, NOT OF BOTH — AND REQUIRING BOTH MEANT NOBODY WAS.
+//
+// This used to ask for a full share of elderberry AND herbs from the same character. That
+// reads as prudence and is actually the bug: what the fleet holds is not a shortage of
+// reagents, it is a SEGREGATION of them. Measured across twenty-one characters: 374
+// elderberries and 499 herbs in the packs — 187 castings' worth — and eleven characters
+// held only elderberry, nine only herbs, one both. So the both-hands test found zero
+// donors and this printed "the fleet is genuinely short" while standing on the surplus.
+//
+// Nothing about the hand-over needs one character to carry both. Two deliveries from two
+// donors leave the recipient exactly as able to cast as one delivery would, and a fleet
+// that splits its reagents by where it hunts will always look like this.
+const KINDS = [{ kind: 'elderberry', field: 'eb' }, { kind: 'herbs', field: 'hb' }];
+const donorsOf = k => held.filter(h => h[k.field] >= AMOUNT + KEEP_BACK)
+                          .sort((a, b) => b[k.field] - a[k.field]);
+const pool = new Map(KINDS.map(k => [k.kind, donorsOf(k)]));
+const anyDonor = [...new Set([...pool.values()].flat())];
 
-console.log(`${needy.length} character(s) cannot cast create food; ${donors.length} can spare a share`);
+console.log(`${needy.length} character(s) cannot cast create food; ` +
+  KINDS.map(k => `${pool.get(k.kind).length} can spare ${k.kind}`).join(', '));
 if (!needy.length) { console.log('nothing to do'); process.exit(0); }
-if (!donors.length) { console.log('nobody has a surplus — the fleet is genuinely short'); process.exit(0); }
+if (!anyDonor.length) { console.log('nobody has a surplus — the fleet is genuinely short'); process.exit(0); }
 
 // Give each donor a fair number of recipients rather than draining the richest one,
 // and PREFER A DONOR ALREADY IN THE RECIPIENT'S ROOM — the giver travels, and a walk
 // across the world through monster rooms is the expensive and failure-prone part of
 // this. Somebody standing next to the person who needs it should be the one to give.
-const capacity = new Map(donors.map(d => [d.agent,
-  Math.max(1, Math.floor(Math.min(d.eb - KEEP_BACK, d.hb - KEEP_BACK) / AMOUNT))]));
+// Capacity is counted per reagent, because that is now what a share is.
+const capacity = new Map();
+for (const k of KINDS)
+  for (const d of pool.get(k.kind))
+    capacity.set(`${d.agent}/${k.kind}`, Math.max(1, Math.floor((d[k.field] - KEEP_BACK) / AMOUNT)));
+const cap = (d, kind) => capacity.get(`${d.agent}/${kind}`) || 0;
+
 const plan = [];
 for (const n of needy) {
-  // Same room first — that is a hand-over with no walk at all. Otherwise the donor
-  // with the most left to give, which spreads the trips instead of sending one
-  // character on eight round trips across the world: each of those is minutes of
-  // walking through monster rooms, they are the part that fails, and serialising them
-  // through one character means one bad route stalls every remaining delivery.
-  const able = donors.filter(d => (capacity.get(d.agent) || 0) > 0);
-  const pick = able.find(d => d.room === n.room)
-            || able.sort((a, b) => (capacity.get(b.agent) || 0) - (capacity.get(a.agent) || 0))[0];
-  if (!pick) { console.log(`  ${n.character}: nobody left with a share to give`); continue; }
-  capacity.set(pick.agent, capacity.get(pick.agent) - 1);
-  plan.push({ from: pick, to: n, sameRoom: pick.room === n.room });
+  // What this one is actually short of. A character with plenty of herbs and no
+  // elderberry needs one delivery, not two.
+  const short = KINDS.filter(k => n[k.field] < CASTABLE);
+  // ONE DONOR IF ONE WILL DO. `supply what=reagents` hands over both kinds in a single
+  // trip, so a donor holding both closes the whole gap with one walk — which is the case
+  // this tool was originally written for and is still the cheapest when it exists.
+  const both = short.length > 1
+    ? held.filter(d => d.agent !== n.agent && short.every(k => cap(d, k.kind) > 0))
+    : [];
+  const pickFrom = (list) => list.find(d => d.room === n.room) || list[0];
+  const one = pickFrom(both.sort((a, b) => (b.eb + b.hb) - (a.eb + a.hb)));
+  if (one) {
+    for (const k of short) capacity.set(`${one.agent}/${k.kind}`, cap(one, k.kind) - 1);
+    plan.push({ from: one, to: n, kinds: short.map(k => k.kind), sameRoom: one.room === n.room });
+    continue;
+  }
+  for (const k of short) {
+    const able = pool.get(k.kind).filter(d => d.agent !== n.agent && cap(d, k.kind) > 0);
+    const pick = pickFrom(able.sort((a, b) => cap(b, k.kind) - cap(a, k.kind)));
+    if (!pick) { console.log(`  ${n.character}: nobody left with ${k.kind} to give`); continue; }
+    capacity.set(`${pick.agent}/${k.kind}`, cap(pick, k.kind) - 1);
+    plan.push({ from: pick, to: n, kinds: [k.kind], sameRoom: pick.room === n.room });
+  }
 }
 
 for (const p of plan)
-  console.log(`  ${p.from.character} -> ${p.to.character} (${AMOUNT} of each)` +
+  console.log(`  ${p.from.character} -> ${p.to.character} (${AMOUNT} ${p.kinds.join(' + ')})` +
               (p.sameRoom ? '  [same room — no walk]' : `  [walk: ${p.from.room} -> ${p.to.room}]`));
 if (DRY) { console.log('\ndry run — nothing handed over'); process.exit(0); }
+
+// COOK ONCE, AFTER THE LAST DELIVERY THIS ONE IS WAITING ON. A recipient short of both
+// reagents now gets two hand-overs from two donors, and casting after the first spends an
+// errand on a spell that fails silently for want of the other half. Count down instead,
+// and only cast for a recipient whose deliveries all landed — a partial resupply is a
+// character to leave stocked for the next pass, not one to make cast and fail.
+const owed = new Map();
+for (const p of plan) owed.set(p.to.agent, (owed.get(p.to.agent) || 0) + 1);
+const missed = new Set();
 
 for (const p of plan) {
   try {
@@ -217,7 +258,16 @@ for (const p of plan) {
     const ok = r.supplied === true && (r.receiver_carrying ?? 0) > 0;
     console.log(`  ${p.from.character} -> ${p.to.character}: ` +
                 (ok ? 'delivered' : 'NOT delivered') + ' ' + JSON.stringify(r).slice(0, 160));
-    if (!ok) continue;
+    owed.set(p.to.agent, (owed.get(p.to.agent) || 1) - 1);
+    if (!ok) { missed.add(p.to.agent); continue; }
+    if (owed.get(p.to.agent) > 0) {
+      console.log(`    ${p.to.character}: still waiting on another reagent — cooking after that one`);
+      continue;
+    }
+    if (missed.has(p.to.agent)) {
+      console.log(`    ${p.to.character}: one of its deliveries failed, so not asking it to cast yet`);
+      continue;
+    }
 
     // COOK, EAT, THEN AIM HIGHER. Handing over reagents changes nothing on its own —
     // the character has to spend them, and then be told that 80 vigor is no longer

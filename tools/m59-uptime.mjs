@@ -22,10 +22,22 @@
 import { appendFileSync, readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { fleetName } from './m59-fleetpath.mjs';
 
 const HERE = dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+const SUBSTRATE = join(HERE, '..', 'substrate');
+// Runtime ownership is per fleet just like rosters and ledgers. Keep the historic
+// production/default filenames for compatibility, but never let an isolated named
+// test broker recover, overwrite, or unlink production's active marker. That mistake
+// makes a healthy production broker look crashed merely because a local lab starts.
+let UPTIME_FLEET = '';
+try { UPTIME_FLEET = fleetName(); } catch { /* invalid fleet is rejected by its caller */ }
+const ISOLATED_RUNTIME = UPTIME_FLEET && UPTIME_FLEET.toLowerCase() !== 'prod';
+const runtimeFile = name => ISOLATED_RUNTIME
+  ? join(SUBSTRATE, 'fleets', `${UPTIME_FLEET}.${name}`)
+  : join(SUBSTRATE, name);
 export const UPTIME_FILE = process.env.M59_UPTIME_FILE ||
-  join(HERE, '..', 'substrate', 'keeper-uptime.jsonl');
+  runtimeFile('keeper-uptime.jsonl');
 
 // How long after a keeper comes back a death still counts as belonging to the outage.
 // A character that has been standing still under attack for two minutes is usually
@@ -121,7 +133,7 @@ export function outageAround(agent, at, ledger = readLedger()) {
 // and it is the difference between "it crashed sometime today" and "it crashed at
 // 21:47, during which these four deaths happened".
 export const ACTIVE_FILE = process.env.M59_ACTIVE_FILE ||
-  join(HERE, '..', 'substrate', 'keeper-active.json');
+  runtimeFile('keeper-active.json');
 export const BEAT_MS = 30_000;
 
 let beatTimer = null;

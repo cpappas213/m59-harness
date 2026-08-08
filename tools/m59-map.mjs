@@ -430,8 +430,28 @@ export function codeExits(roomNum) {
   }));
 }
 
-export function findPath(map, fromNum, toNum) {
-  if (fromNum === toNum) return { found: true, hops: [] };
+// ROOMS TO WALK AROUND WHEN THERE IS ANY OTHER WAY, MEASURED RATHER THAN GUESSED.
+//
+// Deep Woods of Ileria is not the deadliest room because the fleet hunts there. Of the
+// fleet's 24 recorded deaths, 8 are in 534 — and SIX OF THOSE EIGHT happened with the
+// keeper `travelling`, against eight travelling deaths in the whole world. So three
+// quarters of every death this fleet has suffered in transit happened in one room, which
+// is the room every route between the hunting grounds and town happens to cross.
+//
+// It is a corridor, not a destination: Piggy walked into it at 42 of 43 health and was
+// dead four samples later, with FOUR living trees and two spiders on her and ten threats
+// counted at once. Nothing about that is a hunting decision — she was passing through on
+// the way somewhere else, and the room she was passing through chose the fight.
+//
+// Checked before adding it: 534 is NOT a cut vertex. Valley -> bread shop, Source of the
+// Ille -> bread shop and Valley -> Jasper bank all still connect with it removed, so
+// avoiding it costs hops rather than reachability.
+export const AVOID_IN_TRANSIT = new Set([534]);
+
+// The search itself. Unchanged except that it can be told to pretend some rooms are not
+// there — `avoid` is consulted for rooms we would PASS THROUGH, never for where we are or
+// where we are going.
+function bfsPath(map, fromNum, toNum, avoid) {
   const seen = new Set([fromNum]);
   const q = [[fromNum, []]];
   while (q.length) {
@@ -445,10 +465,32 @@ export function findPath(map, fromNum, toNum) {
       const next = [...sofar, hop];
       if (ex.to === toNum) return { found: true, hops: next };
       seen.add(ex.to);
+      if (avoid?.has(ex.to)) continue;         // reachable, just not walked THROUGH
       q.push([ex.to, next]);
     }
   }
   return { found: false, hops: [], reason: `no route from ${fromNum} to ${toNum} in the graph` };
+}
+
+// TRY THE SAFER WAY FIRST, THEN THE ONLY WAY.
+//
+// Two passes rather than edge weights, deliberately. A weighted search is the textbook
+// answer and it changes the route for every pair in the world at once; this changes a
+// route only when a hazard-free one exists, and falls back to exactly the path it would
+// have returned before. So the worst case is today's behaviour, which is the property
+// worth having in the most load-bearing function in the repository.
+export function findPath(map, fromNum, toNum, { avoid = AVOID_IN_TRANSIT } = {}) {
+  if (fromNum === toNum) return { found: true, hops: [] };
+  // Never avoid where we are or where we are going: a character standing IN a hazard has
+  // to be able to leave it, and one sent to it has to be able to arrive.
+  const skip = avoid && avoid.size
+    ? new Set([...avoid].filter(r => r !== fromNum && r !== toNum))
+    : null;
+  if (skip?.size) {
+    const safer = bfsPath(map, fromNum, toNum, skip);
+    if (safer.found) return safer;
+  }
+  return bfsPath(map, fromNum, toNum, null);
 }
 
 // Name or number in, room number out. Agents think in names.

@@ -48,6 +48,8 @@
 // a partner standing there can cover it instead.
 import { loadMerchants } from './m59-merchants.mjs';
 import { BANKERS, accountOf } from './m59-bank.mjs';
+import { loadoutFor } from './m59-loadout.mjs';
+import { armourKind, armourScore } from './m59-skills.mjs';
 
 const arg = (name, def = null) => {
   const i = process.argv.indexOf('--' + name);
@@ -87,10 +89,13 @@ async function call(name, args = {}) {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// WHAT A CHARACTER GOING TO THE VALLEY NEEDS. One line each so the list is the
-// argument: a mace because these characters' proficiency is in mace fighting, leather
-// because it is the only armour with positive defence and no spell penalty, a shield
-// because it is the cheapest defence in the game at 160.
+// WHAT A CHARACTER GOING TO THE VALLEY NEEDS, WHEN NOBODY HAS SAID OTHERWISE. One line
+// each so the list is the argument: a mace because these characters' proficiency is in
+// mace fighting, leather because it is the only armour with positive defence and no spell
+// penalty, a shield because it is the cheapest defence in the game at 160.
+//
+// This is the FLEET default and it is one answer for twenty-one characters. A character
+// with a loadout gets its own list instead — see wantsFor below.
 const WANTS = [
   { slot: 'armour', re: /leather (armor|armour)/i,  fallback: /armor|armour|mail/i, what: 'leather armour' },
   { slot: 'shield', re: /metal shield/i,            fallback: /shield/i,            what: 'a shield' },
@@ -102,10 +107,76 @@ const carries = (items, re) => items.some(i => re.test(nameOf(i)));
 const purseOf = (items) => items.filter(i => /shilling/i.test(nameOf(i)))
                                 .reduce((t, i) => t + (i.amount || 1), 0);
 
+// THIS CHARACTER'S OWN GEAR LIST, TURNED INTO THE SAME SHAPE THE SHOP LOOP ALREADY READS.
+//
+// A NAMED WANT IS SATISFIED BY THE NAME; A GENERIC ONE IS SATISFIED BY THE FAMILY. That
+// difference is the whole value of a loadout and it is easy to lose. The fleet default
+// says "a mace" and means "some weapon" — its fallback is `/sword|axe|hammer|mace/`,
+// because one answer for twenty-one characters cannot be fussier than that. A loadout
+// says "short sword", and a character holding a mace IS missing it: getting back to the
+// named weapon after a day of breaking things is the thing the list exists for.
+//
+// The first version widened the loadout's fallback to the slot's family, and the effect
+// was to make every loadout mean exactly what the fleet default meant: Kermit, whose list
+// says short sword and whose pack holds a mace, reported "already stocked".
+//
+// So the fallback here is the OTHER LISTED CHOICES and nothing else. A preference order is
+// still a preference — a character holding its second choice is not missing its gear, and
+// buying it a third is how an errand wastes a trip.
+//
+// Escaped, because an item name is data and `\bmace\b` is not: unescaped, "wizard's staff
+// (+1)" is a regex with a group and a quantifier in it, and would match nothing while
+// looking like it should.
+const rx = (s) => new RegExp(String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+
+export function wantsFor(loadout) {
+  if (!loadout) return WANTS;
+  const out = [];
+  const add = (slot, list) => {
+    if (!list || !list.length) return;
+    out.push({ slot, re: rx(list[0]),
+               fallback: new RegExp(list.map(n => rx(n).source).join('|'), 'i'),
+               what: list[0] });
+  };
+  add('weapon', loadout.gear.weapon);
+  for (const [slot, list] of Object.entries(loadout.gear.slots)) add(slot, list);
+  // A loadout that says nothing about gear is not a loadout that wants none — it simply
+  // has no opinion, and the fleet default is the standing one.
+  return out.length ? out : WANTS;
+}
+
 // What is this character missing? Read the PACK for what it owns; wearing is a
 // separate question and wear_best answers it afterwards.
-function missingFor(items) {
-  return WANTS.filter(w => !carries(items, w.re) && !carries(items, w.fallback));
+// A BROKEN PIECE IS NOT STOCK, AND IT IS SPELLED EXACTLY LIKE STOCK.
+//
+// "This leather armor is useless. It has been torn into several pieces" — and it is still
+// called "leather armor" on every list. So a name-based stock check counts it, reports
+// `already stocked`, and the character goes back out bare: wear_best condemns it into the
+// keeper's broken set and then truthfully answers "nothing of this kind in the pack",
+// which is a sentence about a pack that visibly contains one. Gonzo ran that way with
+// 3,022 shillings and a broken armour and shield, and every report said armour: owned.
+//
+// The `inventory` tool now carries the keeper's own verdict on each row, so this asks the
+// one thing that knows rather than re-deriving it from the description.
+// AND ARMOUR THE WEARER WILL REFUSE IS NOT STOCK EITHER, FOR THE SAME REASON A BROKEN
+// PIECE IS NOT.
+//
+// Both halves of this had to be fixed or the tool contradicts itself: the buy path now
+// declines chain and plate (they score below bare skin, see the note at the shop loop),
+// but `missingFor` still counted the chain armor Floyd was already carrying as a filled
+// armour slot — so he reported "already stocked" at a smith that had leather on the shelf,
+// twice, while walking around in a shield and nothing else.
+//
+// "Stocked" has to mean the same thing here as it does to wear_best, or the character is
+// told it owns armour by one half of the tool and refused it by the other.
+const usable = (items) => (items || []).filter(i => {
+  if (i.broken) return false;
+  const k = armourKind(nameOf(i));
+  return !k || armourScore(k) > 0;
+});
+function missingFor(items, wants = WANTS) {
+  const have = usable(items);
+  return wants.filter(w => !carries(have, w.re) && !carries(have, w.fallback));
 }
 
 // --------------------------------------------------------------- what to learn
@@ -188,9 +259,42 @@ async function knows(agent, name, { refresh = false } = {}) {
 
 async function outfit(row) {
   const who = row.character || row.agent;
+
+  // TRY TO WEAR IT BEFORE ASKING WHETHER IT IS OWNED — BECAUSE BROKEN IS ONLY DISCOVERED
+  // BY TRYING.
+  //
+  // A ruined piece is called "leather armor" like any other, and the only record that it
+  // is useless is the keeper's condemnation set, which is built when the SERVER refuses to
+  // wear it and is rebuilt from empty on every broker restart. So straight after a restart
+  // — which is most of the time, since the fleet restarts often — a character carrying
+  // nothing but a broken armour reads as fully stocked, this returns "already stocked",
+  // and it goes back out bare.
+  //
+  // That is why re-kitting has needed a human in the loop all session: the supervisor runs
+  // this tool on a timer, it reported "already stocked" for Rowlf, and only a hand-run
+  // `wear_best` — which condemns the piece — made a second run buy anything. Gear breaks
+  // here about once a pass, so a check that cannot see broken gear is the check that
+  // matters least.
+  //
+  // Doing it first costs one call and turns a two-step into one: the refusal happens, the
+  // item is condemned, and the `inventory` read below carries `broken` on the row. It is
+  // also worth doing on its own account — owning is not wearing, and a character that
+  // simply forgot to put its armour on is fixed here without buying anything.
+  if (!DRY && WANT_GEAR) {
+    await call('wear_best', { agent: row.agent }).catch(() => null);
+    await call('equip_best', { agent: row.agent }).catch(() => null);
+  }
+
   const inv0 = await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }));
   let items = inv0.items || [];
-  const missing = WANT_GEAR ? missingFor(items) : [];
+  // THIS CHARACTER'S OWN LIST IF IT HAS ONE, keyed on the character name rather than the
+  // agent handle — `t1` is this machine's word for a roster slot, "Kermit" is who it is.
+  // Null falls through to the fleet default, which is what every character got before.
+  // `row.character`, not `who` — `who` falls back to the agent handle for a character that
+  // is not in game, and a loadout is looked up by the character's name.
+  const loadout = row.character ? loadoutFor(row.character) : null;
+  const wants = wantsFor(loadout);
+  const missing = WANT_GEAR ? missingFor(items, wants) : [];
 
   // WHAT IT DOES NOT KNOW YET. Asked before anybody walks anywhere: a character that
   // already has the skill costs a whole trip to find that out at the shop, and the shop
@@ -322,7 +426,41 @@ async function outfit(row) {
     // pretend otherwise. A character whose account we have never heard a banker state
     // still gets a try at the nearest bank of either kind; being wrong there costs a
     // walk, and being sure is not on offer.
-    const bill = toLearn.reduce((t, a) => t + (a.price ?? 0), 0);
+    // AND GEAR NEEDS THE BANK TOO — THE REASON IT DIDN'T WAS AN ASSUMPTION, NOT A PRICE.
+    //
+    // This used to bill only for skills, on the grounds quoted above: a smith usually has
+    // a bank in the same town, so a gear errand could sort its money out on arrival. The
+    // first half is true and the second never happened — nothing walks to that bank. Gonzo
+    // was driven to the Royal Blacksmith of Barloque carrying 453 shillings, with 2,622 in
+    // the bank, and leather armour costs 480. He came back with nothing, and the run
+    // printed no line at all to say why, because "could not afford it" was not a case it
+    // had. Piggy is now in the same state, and the fleet keeps producing them: armour
+    // breaks, gets condemned, and the replacement is a 480 purchase against a purse the
+    // walking-money rule holds at a few hundred.
+    //
+    // A gear bill cannot be exact — the shop list is only read on arrival, and WANTS has
+    // no prices in it — so this is a FLOOR, not a quote: below it the errand is at real
+    // risk of arriving unable to buy, and a detour past a bank costs a walk while arriving
+    // broke costs the whole trip. The withdrawal that follows is sized by WITHDRAW anyway.
+    //
+    // 2000 BECAUSE THE PRICE IS NOT 480, AND THE SPREAD IS ALMOST FOURFOLD.
+    //
+    // 480 is Jasper's, and it is the figure every report in this repository quotes. The
+    // prices actually paid for one leather armor, all of them observed live: 480 at Quintor
+    // in Jasper, 640 at Colhorr, 800 at Rook's, and 1800 from Fehr'loi Qan in Barloque. A
+    // smith is chosen by how far away it is (`priceAll` sorts on hops, whatever its name
+    // suggests) and not by what it charges, so the floor has to clear the DEAREST counter
+    // the router might pick, not the cheapest one on record.
+    //
+    // At 700 this failed twice, the same way both times: the withdrawal is sized from the
+    // floor, so Lew walked to Fehr'loi Qan with 1000 and Rowlf with 1676, and both came
+    // home still bare while holding thousands in the bank. Over-withdrawing at a cheap
+    // smith costs nothing that matters — the surplus is banked on the next town trip, and
+    // the only real exposure is carrying it until then, which is a fraction of what going
+    // unarmoured costs when armour here breaks about once a pass.
+    const GEAR_FLOOR = 2000;
+    const bill = toLearn.length ? toLearn.reduce((t, a) => t + (a.price ?? 0), 0)
+               : (missing.length ? GEAR_FLOOR : 0);
     if (bill > 0) {
       const have = purseOf((await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || []);
       if (have < bill) {
@@ -337,7 +475,26 @@ async function outfit(row) {
         if (!routed.length) log.push(`short ${bill - have}sh and no bank reachable`);
         for (const b of routed.slice(0, 2)) {
           if (!(await goTo(row.agent, b.room)).ok) continue;
-          const want = Math.max(WITHDRAW, bill - have + 200);   // margin: the trip back is free, a second trip is not
+          // ASK FOR WHAT IS THERE. A BANK REFUSES AN OVER-WITHDRAWAL, IT DOES NOT PAY OUT
+          // THE BALANCE.
+          //
+          // This asked for WITHDRAW (1000) flat, with a margin on top, because the trip
+          // back is free and a second trip is not. That is right for a rich character and
+          // it is a total refusal for everybody else: Zoot has 813 banked, was asked for
+          // 1000 at Yevitan and then at Skivlat, and both "handed over nothing" — so the
+          // errand walked two banks, collected two refusals, reached Rook and came back
+          // STILL MISSING leather armour with 813 shillings sitting in the account the
+          // whole time. Nothing errored; the log line for a refusal and for an empty
+          // account are the same sentence.
+          //
+          // The balance is only known when a banker has said it out loud (see the bank
+          // trap in CLAUDE.md — there is no packet for it), so when it is unknown this
+          // still asks for the full amount, which is the old behaviour and the only thing
+          // available. When it IS known, never ask for more than it.
+          const balance = row.banked?.balance ?? null;
+          const want = Math.min(Math.max(WITHDRAW, bill - have + 200),
+                                balance == null ? Infinity : balance);
+          if (want <= 0) { log.push(`nothing banked at ${b.banker} to draw on`); continue; }
           await call('bank', { agent: row.agent, action: 'withdraw', amount: want }).catch(() => null);
           await sleep(800);
           const now = purseOf((await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || []);
@@ -460,7 +617,30 @@ async function outfit(row) {
     for (const w of missing) {
       // Prefer the exact thing asked for; fall back to the same slot if the shop has
       // no leather but does have something wearable.
-      const pick = (re) => stock.filter(i => re.test(nameOf(i)))
+      // DO NOT BUY ARMOUR THE WEARER WILL REFUSE — THE FALLBACK BOUGHT THE WORST PIECE IN
+      // THE GAME AT THE HIGHEST PRICE PAID ALL SESSION.
+      //
+      // The armour want is "leather armor" with a fallback of /armor|armour|mail/, so when
+      // a smith has no leather the fallback takes anything armour-shaped. Floyd withdrew
+      // 1800 at Yevitan and bought CHAIN ARMOR at 1800 from Fehr'loi Qan — and `wear_best`
+      // then refused it, verbatim: "the best in the pack is no better than bare skin, so it
+      // stays off", score -30. He walked home with an empty purse, no armour, and a
+      // heavy thing he will carry for ever.
+      //
+      // This is the heavy-armour trap in CLAUDE.md arriving through the buy path rather
+      // than the wear path: viDefense_base is +50 for leather and -50 for chain, and a
+      // character fighting from a safe spot intends to be hit zero times, which absorption
+      // does nothing about. wear_best has always known this; the shopping did not, and the
+      // two disagreeing costs real money every time a smith is out of leather.
+      //
+      // So the same ranking decides both. Anything scoring at or below bare skin is not a
+      // fallback, it is a purchase to regret — better to report the slot unfilled and let
+      // the next candidate smith or the next trip supply leather.
+      const wearable = (i) => {
+        const k = armourKind(nameOf(i));
+        return !k || armourScore(k) > 0;      // not armour at all, or armour worth wearing
+      };
+      const pick = (re) => stock.filter(i => re.test(nameOf(i)) && wearable(i))
                                 .sort((a, b) => (a.cost ?? a.price ?? 9e9) - (b.cost ?? b.price ?? 9e9))[0];
       const opt = pick(w.re) || pick(w.fallback);
       if (!opt) { log.push(`${w.what}: not sold here`); continue; }
@@ -527,7 +707,7 @@ async function outfit(row) {
     }
 
     items = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
-    const still = WANT_GEAR ? missingFor(items).map(w => w.what) : [];
+    const still = WANT_GEAR ? missingFor(items, wants).map(w => w.what) : [];
     return `${who}: ${log.join(', ')}` + (still.length ? ` — STILL MISSING ${still.join(', ')}` : '');
   } finally {
     // Put the orders back exactly as they were, including the strategy and the room
