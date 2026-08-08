@@ -120,12 +120,29 @@ __pycache__/
 # Supervisor single-instance lock — machine state, one per broker port.
 /substrate/supervise-*.pid
 
-# THE CHECKPOINT SERIES, not the checkpoint.
+# THE CHARACTER SHEETS, AND THE CHECKPOINT SERIES UNDER THEM.
 #
-# substrate/sheets/<Character>.json IS committed, deliberately: it is a character export
-# for a server we do not run and cannot snapshot (see m59-sheet.mjs), and a backup that
-# exists only on the machine that made it is the failure this tool was written to fix.
-# Twenty-one small files that change slowly are worth their place in the history.
+# This rule REVERSES an earlier decision, and the earlier reasoning is kept because it was
+# not wrong — it was answering a question that now has a better answer.
 #
-# The timestamped series underneath is not — `--checkpoint` writes 21 more every run.
+# It said: substrate/sheets/<Character>.json IS committed, deliberately, because it is a
+# character export for a server we do not run and cannot snapshot (see m59-sheet.mjs), and
+# a backup that exists only on the machine that made it is the failure the tool was written
+# to fix. Git was the off-machine copy.
+#
+# What changed is that the sheets are no longer only on the machine that made them:
+# tools/m59-backup.mjs copies them to every configured destination, hashes them, and reads
+# them back. So git is not the last line of defence any more, and what it was contributing
+# instead was noise — twenty-one files that rewrite themselves every time the fleet moves
+# or a backup runs `--checkpoint`, turning every `git status` during live work into a wall
+# of modified sheets that has to be read past to find the real changes.
+#
+# THIS RULE ALONE CHANGES NOTHING FOR THE FILES ALREADY IN THE INDEX. .gitignore governs
+# UNTRACKED files, so anything git is already tracking keeps being tracked and keeps
+# showing as modified. Untracking them is `git rm --cached`, which is a commit that removes
+# them from the tree — a separate, deliberate act, not a side effect of this line.
+/substrate/sheets/
+#
+# The timestamped series underneath was already excluded — `--checkpoint` writes 21 more
+# every run — and stays excluded by the rule above.
 /substrate/sheets/checkpoints/
