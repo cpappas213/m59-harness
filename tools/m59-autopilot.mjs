@@ -144,6 +144,19 @@ const WATCHDOG_BLOCKED_MS = Number(process.env.M59_WATCHDOG_BLOCKED_MS || 3_000)
 // should not disagree about what it is.
 const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
 
+// RESTING AT A WALL PART-WAY THROUGH A JOURNEY — 'ab' | 'observe' | 'off'.
+//
+//   ab       half the journeys hold, half walk on, decided per journey. The experiment.
+//   observe  decide and write down what would have happened; change nothing.
+//   off      the behaviour that existed before any of this.
+//
+// It defaults to the experiment because the fleet is where the question is: 61% of the
+// damage it takes and eight of thirteen deaths in a day happen while travelling, and
+// nothing offline can say whether stopping at a wall helps. Settable live per character
+// over the `autopilot` tool (`travel_hold`), which is the kill switch — it needs no
+// restart, and a restart is the one thing that costs a fleet more deaths.
+const TRAVEL_HOLD_MODE = process.env.M59_TRAVEL_HOLD || 'ab';
+
 // HOW LONG A KEEPER STAYS INERT WITHOUT ANYBODY SAYING SO AGAIN.
 //
 // Every caller that holds a keeper pairs the hold with a revive, and the pairing is the
@@ -1620,7 +1633,7 @@ export class Autopilot {
           this.hold.proven = false;
           this.book.failed(this.hold.room, {
             col: this.hold.col, row: this.hold.row, damage: lost, attackers: company,
-            settledMs });
+            settledMs, source: this.hold.source ?? 'fight' });
           this.book.save();
           this.note('THIS IS NOT A SAFE SPOT', {
             where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
@@ -1649,7 +1662,8 @@ export class Autopilot {
             this.hold.provenAt = now;
             this.book.held(this.hold.room, {
               col: this.hold.col, row: this.hold.row, x: this.hold.x, y: this.hold.y,
-              seconds: this.hold.quietMs / 1000, attackers: this.hold.mostAttackers });
+              seconds: this.hold.quietMs / 1000, attackers: this.hold.mostAttackers,
+              source: this.hold.source ?? 'fight' });
             this.book.save();
             this.note('this safe spot works', {
               where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
@@ -1753,7 +1767,12 @@ export class Autopilot {
 
   // Go and stand somewhere defensible, preferring somewhere we have already proved —
   // and somewhere the fight can actually be brought to.
-  async takeSafeSpot(why, quarry = null) {
+  // `source` is what will be written into the safe-spot book alongside any verdict this
+  // hold produces — 'fight' by default, 'travel' when the hold is a pause part-way through
+  // a journey. A failure still discredits the square permanently either way: a blow that
+  // got through is a bad square however we came to be standing on it. The tag is so the
+  // travel-only rejections can be told apart afterwards without reconstructing anything.
+  async takeSafeSpot(why, quarry = null, { source = 'fight' } = {}) {
     const s = this.s, c = s.client;
     const room = s.world?.room, geo = s.world?.geometry, me = c?.self;
     if (!geo || !me || !room) return { took: false, why: 'no geometry for this room' };
@@ -1883,6 +1902,7 @@ export class Autopilot {
     const known = this.book.get(room.num, spot.col, spot.row);
     const trusted = !!known?.held && !this.book.discredited(known);
     this.hold = {
+      source,
       room: room.num, col: spot.col, row: spot.row,
       x: now?.x ?? null, y: now?.y ?? null,
       takenAt: Date.now(), quietMs: 0, damageWhileIdle: 0, failures: 0, mostAttackers: 0,
@@ -3283,8 +3303,190 @@ export class Autopilot {
   // the ten call sites keep their own `.catch(...)` exactly as they were, and the arrival
   // frame is written in a `finally` — a journey that THREW is the case where knowing
   // where it stopped matters most.
+  // ------------------------------------------------- resting at walls while travelling
+  //
+  // THE EXPERIMENT. 61% of all the damage this fleet takes happens while travelling, and
+  // eight of thirteen deaths in a day were `travelling` while not one was `fighting`. A
+  // safe spot is the only place outside a town where health comes back without a fight,
+  // so the question is whether stopping at one mid-journey is worth the seconds it costs.
+  //
+  // It is a QUESTION and not an improvement, which is why it ships as an A/B rather than
+  // as a change. Standing still in a hostile room is not obviously safer than walking
+  // through it: the hold costs exposure, the spot is a geometric guess that has never been
+  // stood on (the safe-spot book covers 29 rooms the fleet FIGHTS in, and none of the ones
+  // it walks through), and at the resting cap of 80 vigor a 15-point top-up costs 87
+  // seconds — as long as an entire p90 journey.
+  //
+  // RANDOMISED PER JOURNEY, NOT PER CHARACTER. The characters differ by max health, by
+  // hunting ground and by strategy, and with twenty-one of them a split by character would
+  // be confounded by all three. Per journey, every character contributes to both arms and
+  // the confounders cancel. The arm is derived from the journey's own id so it is stable,
+  // reproducible from the record, and not re-rolled if the decision is asked twice.
+  // THE LOW BIT OF FNV-1a IS NOT RANDOM, and taking it was a real bug caught by the test
+  // rather than by reading.
+  //
+  // FNV-1a finishes with `h = h * 16777619`. That constant is ODD, and the low bit of a
+  // product with an odd number is the low bit of the other operand — so the final low bit
+  // is just (running hash) XOR (last character), and nothing else in the seed reaches it.
+  // Measured: seeds differing only in their last character alternated arms exactly with
+  // that character's parity, and forty seeds from one character all landed in one arm.
+  //
+  // In production the seed ends in a millisecond timestamp, so the split would have looked
+  // fine — 50/50, because `Date.now() % 2` is a decent coin. That is what makes it
+  // dangerous: the experiment would have been randomising on one bit of the clock, the
+  // character and pass number would have contributed NOTHING, and any later change to the
+  // seed's tail could have frozen every journey into a single arm without the split
+  // looking any different until the deaths came in.
+  //
+  // So: avalanche the accumulator before taking a bit (fmix32, the MurmurHash3 finaliser),
+  // which makes every input bit reach every output bit.
+  travelArmFor(seed) {
+    let h = 2166136261;
+    for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619); }
+    h ^= h >>> 16; h = Math.imul(h, 2246822507);
+    h ^= h >>> 13; h = Math.imul(h, 3266489909);
+    h ^= h >>> 16;
+    return ((h >>> 0) & 1) ? 'hold' : 'walk';
+  }
+
+  // Is this a moment where a hold is even the question? Cheap, and asked at every hop
+  // boundary in BOTH arms — the control has to log the counterfactual or the comparison is
+  // between "journeys where we held" and "all journeys", which is not a comparison.
+  travelHoldCandidate(at) {
+    const c = this.s.client;
+    const v = c?.vitals?.();
+    const hp = v?.health, vig = v?.vigor?.value ?? null;
+    if (!hp?.max) return { candidate: false, why: 'health unreadable' };
+    const frac = hp.value / hp.max;
+    const below = this.policy.travelHoldBelow ?? 0.75;
+    // ARRIVING HURT IS FINE — the destination is somebody's decision and there is usually
+    // a reason to be there. Only the rooms in the MIDDLE are ours to stop in.
+    if (!(at.remaining > 0)) return { candidate: false, why: 'last room of the journey' };
+    if (frac >= below) return { candidate: false, why: `healthy enough (${Math.round(frac * 100)}%)`, frac };
+    // VIGOR GATES IT, and this is the part that is easy to leave out. Health comes back at
+    // a rate set by vigor (player.kod:5611): at 80 it is ~6s a point and a useful top-up
+    // costs longer than the whole journey, so holding at the resting cap buys almost
+    // nothing and pays full price in exposure.
+    const minVigor = this.policy.travelHoldVigor ?? 100;
+    if (vig != null && vig < minVigor)
+      return { candidate: false, why: `vigor ${vig} — too tired for the points to come`, frac, vigor: vig };
+    // Something already swinging at us is a fight or a flight, and the ordinary pass
+    // decides both far better than a hold does.
+    const inReach = this.inReachOfUs();
+    if (inReach.length)
+      return { candidate: false, why: `${inReach.length} already in reach — this is a fight, not a pause`, frac };
+    return { candidate: true, frac, vigor: vig, health: hp.value, max: hp.max };
+  }
+
+  // The hook body. Runs at every interior hop boundary of every journey.
+  async travelHold(at, arm) {
+    const mode = this.policy.travelHold ?? TRAVEL_HOLD_MODE;
+    if (mode === 'off') return;
+    const look = this.travelHoldCandidate(at);
+    if (!look.candidate) return;
+
+    // A spot is looked for in BOTH arms. Whether one exists is a fact about the room, not
+    // about the arm, and the control arm's record is worth nothing without it: "we would
+    // have held here" and "there was nowhere to hold" are the two different answers this
+    // experiment is trying to tell apart.
+    const geo = this.s.world?.geometry, me = this.s.client?.self;
+    let spot = null;
+    if (geo && me) {
+      try {
+        // `this.book`, the keeper's own handle on the safe-spot book. Reading it here means
+        // a square the book has already discredited is never offered to travel either.
+        //
+        // Writing back happens too, through the ordinary hold machinery, and a square that
+        // fails under a travel hold is discredited PERMANENTLY — a blow that got through is
+        // a bad square however we came to be standing on it, and being wrong about a bad
+        // square costs a character while being wrong about a good one costs a walk to the
+        // next corner. The verdict is tagged `failed_by.travel` so the travel-only
+        // rejections can be fished back out. See docs/m59-safe-travel-plan.md.
+        spot = nearestSafeSpot(geo, me, { book: this.book, room: at.room?.num ?? null,
+                                          within: this.policy.travelHoldWithin ?? 10 });
+      } catch { spot = null; }
+    }
+
+    const base = { journey: at.journey, arm, room: at.room?.num ?? null, room_name: at.room?.name ?? null,
+                   hops_done: at.hops_done, remaining: at.remaining,
+                   health: look.health, max: look.max, vigor: look.vigor,
+                   spot: spot ? { col: spot.col, row: spot.row, steps: spot.steps_away,
+                                  proven: !!spot.proven, back_cover: spot.back_cover ?? null } : null };
+
+    // THE CONTROL ARM STOPS HERE, having written down exactly what the other arm would
+    // have done. That record is the whole comparison.
+    if (arm === 'walk' || mode === 'observe' || !spot) {
+      this.ledgerEvent('travel_pause', { ...base, did: spot ? 'walked on' : 'walked on — no spot here',
+        why: !spot ? 'nothing in this room scored as a wall'
+           : mode === 'observe' ? 'observing only'
+           : 'control arm — walked on to measure against holding' });
+      return;
+    }
+
+    // ---- the treatment arm
+    const budget = this.policy.travelHoldBudgetMs ?? 180_000;
+    this.travelHeldMs ??= 0;
+    if (this.travelHeldMs >= budget) {
+      this.ledgerEvent('travel_pause', { ...base, did: 'walked on — out of holding budget',
+        held_so_far_ms: this.travelHeldMs,
+        why: 'a journey that keeps stopping is a journey that never arrives' });
+      return;
+    }
+
+    const t0 = Date.now();
+    const hpBefore = look.health;
+    const took = await this.takeSafeSpot('resting at a wall part-way through a journey', null,
+                                          { source: 'travel' })
+      .catch(e => ({ took: false, why: e.message }));
+    if (!took?.took) {
+      this.ledgerEvent('travel_pause', { ...base, did: 'could not take the spot', why: took?.why ?? 'unknown' });
+      return;
+    }
+    // restUntil polls every 3s and aborts on damage, which is exactly the behaviour wanted
+    // here: a wall that is being hit is not a wall, and walking on is the better of two
+    // bad options once that is known.
+    const rest = await skills.restUntil(this.s, {
+      health: this.policy.travelHoldTo ?? 0.9,
+      vigor: REST_VIGOR_CAP,
+      maxSeconds: Math.round(Math.min(90_000, budget - this.travelHeldMs) / 1000),
+    }).catch(e => ({ error: e.message }));
+    const heldMs = Date.now() - t0;
+    this.travelHeldMs += heldMs;
+    const hpAfter = this.s.client?.vitals?.()?.health?.value ?? null;
+
+    // LEAVING IS FORCED, and it has to be. `leaveHold` refuses a DISCRETIONARY departure
+    // below the rest threshold, which is right for roaming and would be catastrophic here:
+    // the character would be pinned at a wall in the middle of nowhere by the very rule
+    // meant to protect it, with the rest of the journey still to walk. Continuing a
+    // journey somebody asked for is not discretionary.
+    const left = await this.leaveHold('carrying on with the journey', { force: true })
+                           .catch(e => ({ refused: true, why: e.message }));
+
+    this.ledgerEvent('travel_hold', {
+      ...base, did: 'held a wall and rested',
+      held_ms: heldMs, health_after: hpAfter,
+      gained: hpAfter != null && hpBefore != null ? hpAfter - hpBefore : null,
+      rested: rest?.reason ?? rest?.why ?? rest?.error ?? null,
+      hit_while_held: rest?.interrupted_by_damage ?? null,
+      left_ok: !left?.refused,
+      why: 'safe spots are the only place outside a town where health comes back without a fight',
+    });
+    this.note('rested at a wall mid-journey', {
+      room: at.room?.name, held_s: Math.round(heldMs / 1000),
+      health: `${hpBefore} -> ${hpAfter}`, spot: `${spot.col},${spot.row}`,
+      proven: !!spot.proven, remaining_hops: at.remaining,
+    });
+  }
+
   async travel(room, opts) {
     this.recordFrame('setting off');
+    // One arm per journey, fixed before the first step so it cannot drift mid-route.
+    const arm = this.travelArmFor(`${this.s.name}-${this.passes}-${Date.now()}`);
+    this.travelHeldMs = 0;
+    const startedAt = Date.now();
+    const v0 = this.s.client?.vitals?.()?.health;
+    const hpStart = v0?.value ?? null, hpMax = v0?.max ?? null;
+    let legs = 0;
     try {
       // A FRAME PER ROOM, NOT PER JOURNEY.
       //
@@ -3297,15 +3499,42 @@ export class Autopilot {
       //
       // So the hop hook writes one too, and between them the record has both: the
       // watchdog's clock and the journey's geography.
+      // PUBLISHED ON THE KEEPER FOR AS LONG AS THE JOURNEY LASTS, so that a death can be
+      // attributed to the arm that was running when it happened. Deaths are the outcome
+      // this experiment is measured on and they are rare — one per 1,180 journeys — so an
+      // unattributable death is a real loss of power, not a rounding error.
+      this.travelArm = { arm, since: Date.now(), to: room };
       return await this.s.travel(room, {
         ...opts,
         onHop: async (at) => {
+          legs++;
           this.recordFrame(`travelling — ${at.hops_done + 1} room(s) in, ${at.remaining} to go`);
+          await this.travelHold(at, arm).catch(e => this.note('travel hold failed', { why: e.message }));
           if (opts?.onHop) await opts.onHop(at);
         },
       });
     } finally {
       this.recordFrame('arrived');
+      const v1 = this.s.client?.vitals?.()?.health;
+      // ONE ROW PER JOURNEY — the denominator. Deaths per journey is the measurement, and
+      // without the journeys written down there is nothing to divide by.
+      //
+      // Damage is recorded too and is NOT the outcome. The hypothesis players state is
+      // that fighting from a wall means you take MORE damage and die LESS — so a fix that
+      // works is expected to look worse on damage, and judging it on damage would reject
+      // exactly the intervention worth having. It is here as a mechanism check: if the
+      // treatment arm is not taking more damage, the holds are not doing anything.
+      this.ledgerEvent('travel_journey', {
+        arm, to: room, legs,
+        ms: Date.now() - startedAt,
+        held_ms: this.travelHeldMs ?? 0,
+        hp_start: hpStart, hp_end: v1?.value ?? null, hp_max: hpMax ?? v1?.max ?? null,
+        // Whether this journey ended in a death is not knowable here — the keeper is still
+        // alive to write this line. It is joined afterwards, from the postmortem's own
+        // `travel_arm`, which is why that field exists.
+      });
+      this.travelArm = null;
+      this.travelHeldMs = 0;
     }
   }
 
@@ -5002,6 +5231,16 @@ export class Autopilot {
           // once per pass, so a death in a pass it already interrupted means the
           // interrupt was not enough, while a death in a pass it never touched means it
           // never got the chance.
+          // WHICH ARM OF THE TRAVEL EXPERIMENT WAS RUNNING, or null if the character was
+          // not on a journey. This is the numerator: deaths are the only outcome that
+          // experiment is judged on, because the mechanism it is testing is expected to
+          // INCREASE damage taken while reducing deaths, and a death that cannot be
+          // attributed to an arm is a death that cannot be counted.
+          travel_arm: this.travelArm
+            ? { arm: this.travelArm.arm, to: this.travelArm.to,
+                into_journey_ms: Date.now() - this.travelArm.since,
+                held_ms: this.travelHeldMs ?? 0 }
+            : null,
           watchdog: (() => {
             const w = this.watch;
             if (!w) return { running: false, why: 'no watchdog on this keeper' };
@@ -5069,7 +5308,8 @@ export class Autopilot {
           // whatever it had done before.
           this.book.failed(diedHolding.room, {
             col: diedHolding.col, row: diedHolding.row,
-            damage: diedHolding.proven ? 99 : 1, attackers: diedHolding.mostAttackers });
+            damage: diedHolding.proven ? 99 : 1, attackers: diedHolding.mostAttackers,
+            source: diedHolding.source ?? 'fight' });
           this.book.save();
         }
         // THE FULL RECORD, WRITTEN BEFORE ANYTHING ELSE HAPPENS. Everything below this
@@ -5875,8 +6115,34 @@ export class Autopilot {
           return;
         }
       }
-      // Nowhere to go. Say what is actually needed rather than looping silently — the
-      // interest board is what the almoner and the quartermaster read.
+      // EAT BEFORE DECLARING YOURSELF TRAPPED — IT IS USUALLY THE WHOLE PROBLEM.
+      //
+      // "Cannot fight" here almost always means BELOW THE FIGHT FLOOR rather than hurt:
+      // the floor is 180 and sixteen of twenty-one characters sit under it at any moment,
+      // median vigor 148. So a character at full health, in a room full of its own prey,
+      // with food in its pack, declares itself trapped and waits for a rescue that is
+      // sitting in its own inventory. Rizzo did exactly that — 46 of 46 health, vigor 141,
+      // three fleet-mates and four fungus beasts in the room — and stalled for seventeen
+      // minutes.
+      //
+      // The comment above this branch already names the loop, in Animal's case: refuse
+      // every fight for want of vigor, flee every room, earn nothing, and therefore never
+      // get the food that would have let it fight. Eating is the one move that opens it
+      // from inside the wilderness, and the escape path already reaches for it AFTER a
+      // successful walk (`gotOut` calls cookSomething) — which is precisely the case that
+      // did not need it.
+      //
+      // So try the pack first, and only then say nobody can help. If it eats, the next
+      // pass re-decides with more vigor and the fight gate may simply open.
+      const plan0 = STRATEGIES[this.policy.strategy] || STRATEGIES.baseline;
+      if (await this.provision(plan0, v).catch(() => false) === 'ate') {
+        this.note('ate rather than reporting myself trapped', {
+          why: 'could not fight, rest or leave — and "cannot fight" here is usually vigor ' +
+               'below the fight floor, which food fixes and a rescue does not' });
+        return;
+      }
+      // Nowhere to go and nothing to eat. Say what is actually needed rather than looping
+      // silently — the interest board is what the almoner and the quartermaster read.
       this.declareInterest();
       this.noProgress('trapped: cannot fight, cannot rest, cannot leave — needs food or a rescue');
       return;
@@ -7383,7 +7649,8 @@ export class Autopilot {
     // Evidence first, while we still know which square failed.
     if (this.hold && near.length) {
       this.book.failed(this.hold.room, {
-        col: this.hold.col, row: this.hold.row, damage: 1, attackers: near.length });
+        col: this.hold.col, row: this.hold.row, damage: 1, attackers: near.length,
+        source: this.hold.source ?? 'fight' });
       this.book.save();
       this.note('THIS IS NOT A SAFE SPOT', {
         where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
