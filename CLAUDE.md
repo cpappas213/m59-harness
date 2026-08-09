@@ -896,6 +896,33 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   corner. `settled_ms`/`min_settled_ms` are recorded on every real failure so the width
   can be argued from the record rather than from intuition; widen it only against those.
 
+- **A PLANNED TRIP ACCEPTS THE RISK OF DEATH, AND ABANDONING ONE IS NOT AN OPTION. THE WAY
+  OUT OF AN ATTACK DURING TRAVEL IS ALWAYS THROUGH.** When a journey is planned the risk is
+  taken at that moment; a character being attacked on the way does not get to reconsider it.
+  It completes the journey AS FAST AS POSSIBLE WHILE BEING ATTACKED. It does not stop to
+  fight, it does not turn back, and nothing else may cancel the trip on its behalf.
+
+  This is doctrine, not an optimisation, and it is written down because the obvious-looking
+  fixes all violate it. Two were tried here on one afternoon and both were reverted: giving
+  the character back to its keeper when health dropped below a threshold (that ends the
+  trip), and putting a timeout on the errand's calls so a "hung" leg could be retried (that
+  was a fix for a hang which, on inspection, had never happened). A trip that is abandoned
+  costs the character its armour money AND leaves it wherever it stopped, which is usually
+  worse than the room it was walking to.
+
+  **AND `ms_since_moved` IS ABOUT THE KEEPER, NOT THE CHARACTER — it is what made both of
+  those look justified.** A post-mortem showing `doing: "stalled"` with eight minutes since
+  it last moved reads exactly like a character standing still being eaten. It was not: the
+  frames put that character in three different rooms over the same span. The field measures
+  when the KEEPER last moved it, and during an errand the keeper is inert by design, so the
+  number climbs while the errand walks. `watchdog.stood_down_for` on the same record says so
+  outright, and `pass_blocked_ms` was 5.6 seconds rather than the eight minutes the other
+  field implied. Read those three together or the instrument will invent a stall for you.
+
+  What actually happened is what the doctrine describes: an errand walked a character at 1
+  of 49 health through rooms holding six to nine things, and it died going through. That is
+  an accepted outcome of a planned trip, not a defect to engineer around.
+
 - **SOLDIERS ARE NOT SPAWNED BY ROOMS, THEY ARE SUMMONED BY FLAGPOLES — AND A NEUTRAL
   FLAGPOLE SUMMONS NOTHING.** `substrate/m59-spawns.json` lists one huntable soldier in the
   whole world (a rebel soldier in the Sewers of Jasper) and that is not an omission: troops
