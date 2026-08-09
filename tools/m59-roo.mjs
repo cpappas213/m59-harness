@@ -967,10 +967,18 @@ export function parseRooWalls(buf, version) {
     const n = buf.readUInt16LE(q); q += 2;
     for (let i = 0; i < n && q + 13 <= buf.length; i++) {
       sidedefs.push({
-        serverId: buf.readInt16LE(q),
-        normalType: buf.readInt16LE(q + 2),
-        aboveType: buf.readInt16LE(q + 4),
-        belowType: buf.readInt16LE(q + 6),
+        // WORDs in bsp.h, exactly like the sector fields, and the same trap:
+        // resource ids run to 60003, so a signed read turns every wall texture
+        // at or above 32768 negative. Nothing in this repository could see it —
+        // canCrossWall only tests these against zero, and a negative is just
+        // as truthy — but m59-mb, which renders the ids, found 12 of its 22
+        // "missing" wall textures were files on disk under the id plus
+        // 0x10000. Its boundary normalisation stays (it guards older
+        // checkouts); the truth now leaves here unsigned.
+        serverId: buf.readUInt16LE(q),
+        normalType: buf.readUInt16LE(q + 2),
+        aboveType: buf.readUInt16LE(q + 4),
+        belowType: buf.readUInt16LE(q + 6),
         flags: buf.readInt32LE(q + 8),
         speed: buf.readUInt8(q + 12),
       });
