@@ -896,6 +896,67 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   corner. `settled_ms`/`min_settled_ms` are recorded on every real failure so the width
   can be argued from the record rather than from intuition; widen it only against those.
 
+- **SOLDIERS ARE NOT SPAWNED BY ROOMS, THEY ARE SUMMONED BY FLAGPOLES — AND A NEUTRAL
+  FLAGPOLE SUMMONS NOTHING.** `substrate/m59-spawns.json` lists one huntable soldier in the
+  whole world (a rebel soldier in the Sewers of Jasper) and that is not an omission: troops
+  have no room spawn table. `flag.kod` generates them on a timer from the flagpole object —
+  `FACTION_DUKE -> &DukeTroop`, `FACTION_PRINCESS -> &PrincessTroop`, rebel likewise — and
+  the function returns immediately `if piFaction = FACTION_NEUTRAL`. Troop availability is a
+  property of the TERRITORY GAME, not of the map: it depends on which flagpoles players have
+  claimed, and it changes without warning.
+
+  Setting `hunt` to a soldier when none are present is therefore not a harmless miss. The
+  keeper finds nothing, roams looking for it, and roams somewhere it has no business being —
+  which sent Sweetums out of Ileria into the Decaying City of Brax, where six narthyl worms
+  killed it, and left three others stalled on "no safe wall here and nowhere better to go".
+
+  **The flagpoles are already under the fleet's feet.** Thirty-one rooms declare
+  `viFlag_row`/`viFlag_col` and thirty are rooms this fleet already hunts in or walks
+  through — 534 Deep Woods of Ileria, 544 Valley of Ileria, 562 the sandy shores, 583
+  Outskirts of Barloque, 586 Main gate to Tos, 596 Outskirts of Tos, plus 535, 545, 552,
+  556, 557, 576, 584, 585, 587, 593, 603 and the four town rooms. They are the paths BETWEEN
+  the towns, which is where the territory game is played. Nothing needs to travel somewhere
+  new to find troops; the flagpole beside it needs to be claimed.
+
+  **All three factions match the word `soldier`** — `soldier of the Princess' army`,
+  `soldier of the Duke's army`, `rebel soldier` — so one substring catches them all and
+  naming a faction would miss two thirds.
+
+  Worth the trouble for what they carry: `troop.kod` creates a `Mace` or `ShortSword`, a
+  `LeatherArmor`, `ChainArmor` or `ScaleArmor`, and a shield on every soldier, and drops
+  them on death. Leather costs 480 to 1800 at a smith and this fleet has repeatedly been
+  unable to afford it. `wear_best` will refuse the chain and scale — negative defence here,
+  see ARMOUR in m59-skills.mjs — so only the leather and shields are worth collecting.
+
+  They are barely more dangerous than the current prey: level 50, difficulty 2, so
+  `3*viLevel + 60*viDifficulty` is 270 against a fungus beast's 210. The necromancer troop
+  is the exception at level 60, difficulty 4 -> 420.
+
+- **THE GRAVEYARD OF TOS IS OPEN THIRTY-FIVE MINUTES IN EVERY TWO HOURS, AND THE CLOCK IS
+  ARITHMETIC ON THE WALL CLOCK.** `tosgrave.kod` holds
+  `plMonsters = [[&Zombie, 85], [&Skeleton, 15]]` and gates creation on
+  `iHour = Send(SYS,@GetHour); if iHour < 5 or iHour > 21` — outside that window
+  `TryCreateMonster` returns without propagating and the room generates nothing at all. A
+  fleet parked there by day is standing in an empty field.
+
+  The hour needs no packet. `system.kod` derives it from real time and says so in its own
+  comment: `iTime = GetTime() - 5*HOUR`, `iMinutes = (iTime mod (2*HOUR))/60` ("our day is 2
+  hours long now"), `piHour = iMinutes/5`. A game day is TWO REAL HOURS, a game hour is FIVE
+  REAL MINUTES, and the undead window is 35 real minutes in every 120.
+  `BP_LIGHT_AMBIENT` (220) is pushed by the server on every light change and this client does
+  not parse it; it would corroborate the clock but is not needed to compute it.
+  `tools/m59-nightshift.mjs` is that arithmetic.
+
+  **A window that short is shorter than the walk to it.** Re-tasking the fleet at the edge
+  put one character in room 70 and killed zero undead; the other twenty spent the window
+  walking from Ileria. The shift sets off with a lead (default 20 minutes), which costs the
+  tail of the day shift and is the cheap end to spend.
+
+  The prey is a real step up — zombie level 55 difficulty 4 (405), skeleton level 75
+  difficulty 5 (525), against 210 — and worth it, because nine characters are stuck at 50
+  and a level-50 fungus beast cannot advance them (the rule is STRICTLY greater). It is also
+  roughly twice the incoming hit rate, so armour stops being optional.
+
 - **A creature's LEVEL is not how dangerous it is.** Level sets hit points and what
   the kill pays; what it hits you *with* is `viDifficulty`, via
   `GetAttackAbility = 3*viLevel + 60*viDifficulty` (`monster.kod`). A fungus beast is
