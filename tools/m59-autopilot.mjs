@@ -7691,8 +7691,9 @@ export class Autopilot {
       if (!r?.arrived) return this.note('could not reach the apothecary', {
         to: REAGENT_SHOP.name, have, want, why: r?.reason });
     }
-    const seller = [...c.room.objects.values()].find(o => affordances(o.flags).includes('buy'));
-    if (!seller) return this.note('nobody selling at the apothecary', { room: REAGENT_SHOP.name });
+    const pick = await this.sellerHere({ want: /elder\s?berry|^herbs?$/i }).catch(() => null);
+    if (!pick) return this.note('nobody at the apothecary opened a reagent list', { room: REAGENT_SHOP.name });
+    const seller = pick.seller;
     const got = await this.restockReagents(seller).catch(() => null);
     if (got?.length) this.note('bought reagents in town', {
       at: REAGENT_SHOP.name, bought: got, had: have, target: want });
@@ -7787,6 +7788,44 @@ export class Autopilot {
     if (now > carried) this.progress('withdrew food money');
   }
 
+  // A ROOM CAN HOLD TWO MERCHANTS AND ONLY ONE OF THEM SELLS ANYTHING.
+  //
+  // Every buying path here picked the FIRST object carrying a `buy` affordance and
+  // committed to it. The Bhrama & Falcon holds two: `Parrin Aragone`, who opens no shop
+  // list at all, and `Meidei` the bartender, who sells wheel of cheese at 144, meat pie at
+  // 144 and a loaf of bread at 108. Parrin is first in the room's object list.
+  //
+  // So every character that walked to the bread shop asked the wrong one, got nothing back,
+  // and filed `the merchant never opened a shop list` — 87 times in one day, against 214
+  // purchases of which every single one was a reagent and NOT ONE was food. The fleet went
+  // from four characters without food to eighteen and its median vigor from 164 to 81 while
+  // standing in a room with bread in it.
+  //
+  // The affordance is a property of the OBJECT, not evidence that it trades: it means "you
+  // may try to buy from this", and the only proof is a list with something on it. So this
+  // asks each candidate in turn and takes the first that actually answers, which costs one
+  // extra call in the room where it matters and none where the first merchant is the right
+  // one. `want` lets a caller insist on a merchant stocking a particular kind — the food
+  // leg does not want the reagent counter and vice versa.
+  async sellerHere({ want = null, trusted = false } = {}) {
+    const c = this.s.need();
+    const cands = [...(c.room?.objects?.values() ?? [])]
+      .filter(o => affordances(o.flags).includes('buy'))
+      .filter(o => !trusted || skills.trustedBuyer(c.rsc.get(o.nameRsc)));
+    for (const o of cands) {
+      const before = c.evSeq;
+      await this.s.pacer.submit('buy', () => c.buy(o.id)).catch(() => {});
+      const ev = await c.waitFor({ since: before, kinds: ['shop', 'message'], timeoutMs: 4000 })
+                        .catch(() => ({ events: [] }));
+      const shop = ev.events?.find(e => e.kind === 'shop');
+      const items = shop?.items ?? [];
+      if (!items.length) continue;
+      if (want && !items.some(i => want.test(String(i.name ?? '')))) continue;
+      return { seller: o, items };
+    }
+    return null;
+  }
+
   // The food half of a town trip. Only worth the hop when there is actually a gap to
   // fill: vigor above the resting cap has to be EATEN, and everything below it comes
   // back for free by sitting down.
@@ -7828,10 +7867,15 @@ export class Autopilot {
           note: 'the route exists and the last hop is a door; three refusals in a row is ' +
                 'about this room rather than about the map' });
     }
-    const seller = [...c.room.objects.values()].find(o => affordances(o.flags).includes('buy'));
-    if (!seller) return;
-    const got = await this.restockReagents(seller).catch(() => null);
-    if (got?.length) this.note('bought food in town', { at: FOOD_SHOP.name, bought: got, was_short: want });
+    // The one that actually sells FOOD, not merely the first that can be bought from.
+    const pick = await this.sellerHere({ want: /cheese|pie|bread|apple|grape|mushroom|stew|drumstick/i })
+                        .catch(() => null);
+    if (!pick) return this.note('nobody in the bread shop opened a food list', {
+      at: FOOD_SHOP.name, short_by: want,
+      note: 'the room can hold more than one merchant and only one of them trades' });
+    const got = await this.restockReagents(pick.seller).catch(() => null);
+    if (got?.length) this.note('bought food in town', { at: FOOD_SHOP.name, bought: got, was_short: want,
+                                                        from: c.rsc.get(pick.seller.nameRsc) });
   }
 
   // SELL WHAT NOBODY IS SHORT OF. `sellable` already consults this character's own
