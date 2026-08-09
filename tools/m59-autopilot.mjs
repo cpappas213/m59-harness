@@ -8182,8 +8182,16 @@ export class Autopilot {
   // and food, and until now was reachable only from makeRoom for the same dead reason.
   async restockInTown() {
     const s = this.s, c = s.need();
-    const seller = [...c.room.objects.values()].find(o => affordances(o.flags).includes('buy'));
-    if (!seller) return;
+    // ASK THE ONE THAT ACTUALLY TRADES. This took the first object flagged `buy` and
+    // committed to it, which is how the fleet spent a day asking Parrin Aragone for bread
+    // in a room where Meidei was selling it. The same mistake is cheaper here — this runs
+    // wherever a town trip happened to end, usually a bank or Roq, and neither stocks a
+    // reagent — but it is still the single largest decline in the ledger: "the merchant
+    // never opened a shop list", 269 times in six hours, which reads like a broken shop
+    // and is a wrong question.
+    const pick = await this.sellerHere().catch(() => null);
+    if (!pick) return;
+    const seller = pick.seller;
     const got = await this.restockReagents(seller).catch(() => null);
     if (got?.length) this.note('restocked in town', { bought: got });
   }
