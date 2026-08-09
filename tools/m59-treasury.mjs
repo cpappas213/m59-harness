@@ -296,18 +296,31 @@ for (const p of plan) {
     // 576 to 108 — most of the width of the world. A timeout shorter than the walk turns
     // every long delivery into a failure that looks like a routing problem, and the coin
     // is left on the donor with nothing saying so.
-    let r = await call('supply', { from: p.from.agent, to: p.to.agent,
-                                   what: [{ id: p.from.coin, amount: p.amount }],
-                                   who_travels: 'from' }, 900_000);
-    // Same fallback as the almoner, for the same reason: a blocked edge is directional
-    // and about the room being LEFT, so the reverse trip is a different question. The
-    // poorer character also has less to lose by moving.
-    if (r?.supplied !== true && /could not get there|no floor|boundary|not in the room/i.test(JSON.stringify(r))) {
-      console.log(`    ${p.from.character} could not get there — sending ${p.to.character} instead`);
+    // THREE ATTEMPTS, ALTERNATING WHO WALKS — and retry on ANY failure, not only on the
+    // ones that name a routing problem.
+    //
+    // The old fallback matched "could not get there|no floor|boundary", which is the
+    // almoner's list and covers a blocked edge. It does not cover the two failures that
+    // actually happened: `fetch failed` (the call itself died mid-walk) and "the offer
+    // never reached them" (the hand-over handshake timed out). Two of five deliveries were
+    // lost that way in one run, each carrying ~800 shillings to a character that could not
+    // replace its armour without it.
+    //
+    // Alternating the walker is the almoner's insight and worth keeping: a blocked edge is
+    // DIRECTIONAL and about the room being left, so the reverse trip is a different
+    // question with a different answer — and the poorer character has less to lose by
+    // moving than the donor mid-hunt.
+    let r = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const who = attempt % 2 === 0 ? 'from' : 'to';
       r = await call('supply', { from: p.from.agent, to: p.to.agent,
                                  what: [{ id: p.from.coin, amount: p.amount }],
-                                 who_travels: 'to' }, 900_000)
+                                 who_travels: who }, 900_000)
             .catch(e => ({ supplied: false, reason: e.message }));
+      if (r?.supplied === true) break;
+      if (attempt < 2)
+        console.log(`    attempt ${attempt + 1} failed (${String(r?.reason ?? 'no reason').slice(0, 60)})` +
+                    ` — retrying with ${who === 'from' ? p.to.character : p.from.character} walking`);
     }
     // VERIFY AGAINST THE PURSE, NOT AGAINST THE REPLY. `supplied: true` says the offer was
     // accepted; what matters is how much arrived, and a partial hand-over reports the same
