@@ -235,39 +235,9 @@ const BANK_ROOMS = (CATALOGUE?.merchants ?? [])
 // flag. Used for both legs of the errand — the bank and the shop — because a trip that
 // gives up on the first refusal is how the supervisor spent cycle after cycle walking
 // characters at the same refused exit in Marion, learning nothing between attempts.
-// AN ERRAND HOLDS THE KEEPER, AND A HELD KEEPER CANNOT DEFEND ITSELF.
-//
-// This is the cost of the hold, and it is paid in characters. `stop` makes the keeper
-// INERT: by design it "keeps looking and keeps recording, and stops moving, swinging,
-// speaking and trading — something else is driving now". While an errand walks a character
-// across the world, that something else is this file, and this file does not fight.
-//
-// Floyd died of it. Held for an outfitting trip, it was found in The King's Way at 1 of 49
-// health with `doing: "stalled"`, 8.3 minutes since it last moved and 108 minutes since it
-// last swung, `fled_in_time` 2% — standing still while a black spider killed it. Beaker and
-// Sweetums went the same way in the same hour. The errand had walked them into monster
-// rooms with their defences switched off and then kept walking.
-//
-// So the walk gives the character back the moment it is losing. Abandoning an errand costs
-// a trip; not abandoning it costs the character, its pack and the money the trip was for.
-// The keeper knows how to flee, rest and re-arm — it simply has to be allowed to.
-const ABANDON_BELOW = 0.55;
-async function healthOf(agent) {
-  const st = await call('status', { agent, brief: true }).catch(() => null);
-  const h = st?.vitals?.health;
-  return (h && h.max) ? h.value / h.max : null;
-}
-
 async function goTo(agent, room, tries = 3) {
   let why = null;
   for (let i = 0; i < tries; i++) {
-    // Checked BEFORE each leg rather than only at the end: a character that is already
-    // hurt should not be marched another twenty hops with nothing watching.
-    const hp = await healthOf(agent);
-    if (hp !== null && hp < ABANDON_BELOW)
-      return { ok: false, abandoned: true,
-               why: `health ${Math.round(hp * 100)}% — giving the character back to its keeper ` +
-                    `rather than walking it any further while it cannot fight or flee` };
     const t = await call('travel', { agent, to: room, max_hops: 20 })
                     .catch(e => ({ arrived: false, why: e.message }));
     if (t.arrived) return { ok: true, why: null };
