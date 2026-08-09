@@ -75,26 +75,9 @@ const LEARN = (arg('learn', null) === true || arg('learn', null) == null)
 const WANT_GEAR = !LEARN.length || !!arg('gear', false);
 
 let id = 0;
-// A CALL WITH NO TIMEOUT IS HOW AN ERRAND BECOMES A STALL.
-//
-// Every call here was un-timed. A `travel` that hangs therefore blocks this file for ever,
-// and while it is blocked the character it is driving stands still — the keeper is inert
-// for the errand, so it does not fight, flee or rest, and nothing is walking it either.
-//
-// That is what killed Floyd. Its post-mortem reads `doing: "stalled"`, 8.3 minutes since it
-// last moved, 108 minutes since it last swung, `fled_in_time` 2% — motionless in The King's
-// Way at 1 of 49 health while a black spider finished it. The errand had not gone wrong in
-// any way this file could see: it was simply still waiting for a reply.
-//
-// The answer is not to give up on the trip — the trip is the point, and a character that
-// needs armour still needs it. The answer is that a leg must always END, so goTo can try
-// again and the character keeps moving. Generous, because travel really is a multi-hop walk
-// across the world: minutes are normal, for ever is not.
-const CALL_TIMEOUT_MS = Number(arg('call-timeout', 240000));
-async function call(name, args = {}, timeoutMs = CALL_TIMEOUT_MS) {
+async function call(name, args = {}) {
   const r = await fetch(URL, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    signal: AbortSignal.timeout(timeoutMs),
     body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method: 'tools/call',
                            params: { name, arguments: args } }),
   });
@@ -255,11 +238,8 @@ const BANK_ROOMS = (CATALOGUE?.merchants ?? [])
 async function goTo(agent, room, tries = 3) {
   let why = null;
   for (let i = 0; i < tries; i++) {
-    // A timed-out leg is a RETRY, not a failure: the walk is resumed on the next pass and
-    // the character keeps moving rather than standing in whatever room it stopped in.
     const t = await call('travel', { agent, to: room, max_hops: 20 })
-                    .catch(e => ({ arrived: false, why: /abort|timeout/i.test(e.message)
-                      ? 'that leg took longer than the call timeout — trying again' : e.message }));
+                    .catch(e => ({ arrived: false, why: e.message }));
     if (t.arrived) return { ok: true, why: null };
     const stuck = (t.log || []).filter(h => !h.ok).slice(-1)[0];
     why = stuck ? `${stuck.from} -> ${stuck.to}: ${stuck.also_tried?.[0]?.why ?? 'refused'}`
