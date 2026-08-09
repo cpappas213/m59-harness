@@ -136,6 +136,51 @@ if (!needy.length) { console.log('nothing to do'); process.exit(0); }
 // decided before setting off rather than "take out a round number and see".
 const BANKS = [{ room: 54, name: 'First Royal Bank of Tos' },
                { room: 376, name: 'The Royal Bank of Jasper' }];
+// HOLD THE CHARACTER STILL WHILE THE ERRAND RUNS.
+//
+// This is why the bank leg kept failing. The tool travelled a donor to the counter and
+// then asked for money — and never stopped the keeper, which is running its own eight-
+// second pass and simply walked the character off again. The withdrawal then fired
+// wherever it happened to be standing and the banker answered, verbatim, "You can't check
+// any balance here!" — reported by this tool as "the counter gave nothing", which reads
+// like an empty account and was a character in the wrong room.
+//
+// m59-outfit.mjs has stopped the keeper around its errands from the beginning, for exactly
+// this reason: anything that drives a character has to be serialised against everything
+// else that drives one. `stop` is inert rather than hard, so the keeper keeps looking,
+// keeps recording, and keeps its death record — it just stops steering.
+const holding = new Set();
+async function hold(agent, why) {
+  if (holding.has(agent)) return;
+  await call('autopilot', { agent, action: 'stop', why }, 60000).catch(() => {});
+  holding.add(agent);
+}
+async function releaseAll() {
+  for (const agent of holding)
+    await call('autopilot', { agent, action: 'revive', why: 'treasury errand finished' }, 60000).catch(() => {});
+  holding.clear();
+}
+// PUT EVERY CHARACTER BACK EVEN IF THIS DIES PART-WAY — AND DO NOT RUN IT UNDER A
+// SHORTER TIMEOUT THAN THE WALK.
+//
+// A held keeper gives itself up after INERT_MAX_MS (fifteen minutes), which is the safety
+// net and not an acceptable outcome: fifteen minutes of a character standing still is
+// worse than the money it was waiting for. The handler below releases on a signal, but it
+// is asynchronous and a signal is not — killed hard enough, it loses the race.
+//
+// That happened on the first run with holds: an external `timeout 560` fired mid-delivery
+// and four keepers were left stopped until they were revived by hand. So the rule is that
+// this tool owns its own clock — the deliveries are cross-world walks and can take ten
+// minutes — and anything wrapping it must not cut it short.
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    // Fire the releases and give them a moment; exiting immediately would abandon the
+    // characters this function exists to protect.
+    releaseAll().finally(() => process.exit(1));
+    setTimeout(() => process.exit(1), 15_000).unref();
+  });
+}
+
 async function fetchFromBank(needTotal) {
   // The richest ACCOUNT, not the richest purse. Keeping a reserve banked is the same
   // instinct as the hand float: a donor that empties its account cannot re-arm itself
@@ -148,6 +193,7 @@ async function fetchFromBank(needTotal) {
   const take = Math.min(MAX * 2, cand.banked - RESERVE, Math.max(500, needTotal));
   const bank = BANKS[0];
   console.log(`fetching ${take}sh: ${cand.character} has ${cand.banked} banked — going to ${bank.name}`);
+  await hold(cand.agent, 'treasury: fetching money for characters that cannot re-arm');
   let at = cand.room;
   for (let i = 0; i < 3 && at !== bank.room; i++) {
     const t = await call('travel', { agent: cand.agent, to: bank.room }, 300000).catch(() => ({}));
@@ -217,6 +263,10 @@ if (!APPLY) { console.log('\nplan only — pass --apply to hand it over'); proce
 
 for (const p of plan) {
   try {
+    // Both ends: the walker must not wander off mid-route, and the receiver must be where
+    // the walker is going when it arrives.
+    await hold(p.from.agent, 'treasury: handing money to a character that cannot re-arm');
+    await hold(p.to.agent, 'treasury: waiting for money to re-arm with');
     // THE PARTIAL STACK IS THE WHOLE POINT. A bare id means the entire purse; {id, amount}
     // means the loan. See the broker's own note on this — a character that lends
     // everything has moved the problem rather than solved it.
@@ -250,3 +300,9 @@ for (const p of plan) {
     console.log(`  ${p.from.character} -> ${p.to.character}: FAILED ${e.message}`);
   }
 }
+
+// Everybody back to work. This is the line that matters most in the file: a tool that
+// leaves keepers stopped has taken characters out of the fleet more effectively than any
+// amount of money puts them back.
+await releaseAll();
+console.log('keepers released');
