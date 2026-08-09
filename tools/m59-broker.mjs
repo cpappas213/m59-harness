@@ -437,6 +437,23 @@ function rememberAutopilot(agent, config) {
 // would write the entry straight back.
 function forgetAgent(agent) { forgotten.add(agent); fleetState.delete(agent); saveFleetState(); }
 
+// WHICH CHARACTERS ARE THIS FLEET'S, for anything that reads a directory keyed by
+// character name — `substrate/postmortems/`, `substrate/abilities/`, `substrate/hits/`.
+// Those directories are shared by every fleet this machine has ever run, so the boards
+// summed two populations until they were told; see m59-fleetscope.mjs.
+//
+// Read from BOTH the live sessions and the roster, unioned. Sessions alone would drop a
+// character that is logged out right now — and a character that has just died is exactly
+// the one a deaths board is about. The roster alone would miss one joined by hand this
+// session. Returns null when neither knows anything, which every caller renders as "not
+// filtered" rather than as "nobody".
+function fleetCharacters() {
+  const names = new Set();
+  for (const s of sessions.values()) if (s?.client?.me?.name) names.add(s.client.me.name);
+  for (const e of fleetState.values()) if (e?.credentials?.character) names.add(e.credentials.character);
+  return names.size ? names : null;
+}
+
 // MAKE EVERY CHARACTER LISTEN, from the moment it is in game.
 //
 // The conversational machinery was all present and none of it was switched on. The
@@ -3086,10 +3103,26 @@ class Session {
   // hop rather than trusting the whole route up front matters because a conditional
   // edge exit's destination depends on where along the boundary we crossed, so the
   // room we actually land in is not always the one the plan named.
+  // `onHop` IS A PAUSE POINT, NOT AN ABORT. It is awaited once per room, after arriving
+  // and before choosing the next exit, and whatever it does the journey continues
+  // afterwards.
+  //
+  // That asymmetry is the whole design and it is easy to get backwards. A journey is 3
+  // rooms at the median and 10 at p90, and a character that gives up in the middle of one
+  // is not safe — it is stranded in a worse room than either end, with the same walk still
+  // to do and less health to do it with. Travel in this game is dangerous and there is no
+  // version of it that is not; the only thing worth doing between rooms is stopping
+  // somewhere defensible until you can go on. So the hook may take as long as it likes and
+  // its return value is ignored: cancellation stays the caller's business, through
+  // `cancelMovement`, which this loop already honours at the top of every iteration.
+  //
+  // It is awaited AFTER the arrival settle, so the room contents have landed and anything
+  // deciding where to stand is looking at a room it can actually see.
   async travel(toRoomNum, {
     maxHops = 25,
     movementGeneration = this.movementGeneration,
     controlToken,
+    onHop = null,
   } = {}) {
     const log = [];
     // TIME EXPOSED, PER MAP. See m59-transits.mjs for why this is the number worth having
@@ -3178,10 +3211,45 @@ class Session {
         return this.cancelledMovement({ log });
       await this.pacer.submit('read', () => this.client.roomContents());
       await this.client.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 });
+
+      // THE PAUSE POINT. One per room, with the room already visible.
+      //
+      // A p90 journey is ten of these, so this is the difference between one 87-second
+      // await nothing can reach into and ten 9-second ones with a decision between each.
+      // Whatever it does, we carry on afterwards — see the note on `onHop` above for why
+      // stopping in the middle is not the safer option it looks like.
+      //
+      // It cannot break the journey by throwing, either. A hook that fails is a hook with
+      // a bug in it, and a character halfway between two towns is the worst possible place
+      // to discover one; the failure is logged against the hop and the walk continues.
+      if (onHop) {
+        const room = this.world.room;
+        try {
+          await onHop({
+            room: room ? { num: room.num, name: room.name } : null,
+            hop: i, hops_done: log.length, destination: toRoomNum,
+            remaining: Math.max(0, (this.world.route(toRoomNum)?.hops?.length ?? 0)),
+            journey: journeyId,
+          });
+        } catch (e) {
+          log.push({ from: room?.name ?? null, onhop_failed: e.message,
+                     note: 'the between-rooms hook threw; the journey carried on regardless' });
+        }
+        // The hook can take minutes — holding a wall until health comes back is the whole
+        // point of it — so re-check cancellation before committing to another room rather
+        // than trusting the check at the top of the next iteration to be soon enough.
+        if (this.movementWasCancelled(movementGeneration, controlToken))
+          return this.cancelledMovement({ log });
+      }
+
       // The next room's clock starts once we have actually landed and can see. The settle
       // above is charged to arriving, not to the room we just left — otherwise every
       // room's time would carry the previous one's tail and the worst room would always
       // look like whichever came after the real problem.
+      //
+      // AND AFTER THE HOOK, not before it: a hold at a wall is time spent in the room we
+      // are standing in, but it is not time the ROUTE cost, and charging it to the room
+      // would make every room a character rested in look like the slowest map in the game.
       enteredAt = Date.now();
     }
     return { arrived: false, log, reason: 'gave up after ' + maxHops + ' hops' };
@@ -5359,6 +5427,11 @@ const TOOLS = [
       break_out_via_logoff: { type: 'boolean',
         description: 'reconnect before stepping off a crowded safe spot, default true. The entry ' +
           'grace period means the swarm has to notice you one at a time instead of all at once' },
+      travel_hold: { type: 'string', enum: ['ab', 'observe', 'off'],
+        description: 'resting at a safe wall part-way through a journey. "ab" runs the experiment ' +
+          '(half of journeys hold, half walk on, decided per journey); "observe" writes down what it ' +
+          'would have done and changes nothing; "off" is the behaviour from before it existed. This ' +
+          'is the kill switch for that experiment and takes effect on the next hop — no restart.' },
       full_journal: { type: 'boolean', description: 'return the whole journal, not just the tail' },
     }, required: ['agent', 'action'] },
     run: (a) => {
@@ -5416,6 +5489,7 @@ const TOOLS = [
       if (a.weapon_priority !== undefined)
         p.policy.weaponPriority = Array.isArray(a.weapon_priority) && a.weapon_priority.length
           ? a.weapon_priority.map(String) : null;
+      if (a.travel_hold !== undefined) p.policy.travelHold = String(a.travel_hold);
       if (a.drop_junk !== undefined) p.policy.dropJunk = !!a.drop_junk;
       if (a.roam !== undefined) p.policy.roam = !!a.roam;
       if (a.assigned_room !== undefined)
@@ -7889,6 +7963,26 @@ const TOOLS = [
           // refuse() in m59-autopilot.mjs for why the prose version was a liability.
           refusals: st?.refusals ?? [],
           waiting_on: st?.waiting_on ?? null,
+          // HOW MANY TIMES THIS CHARACTER HAS DIED, WHICH THE LEDGER DETECTS DEATHS BY.
+          //
+          // m59-ledger.mjs's recordSample reads `r.deaths` off this row and files a `died`
+          // event when the count moves. The row never carried the field, so every sample
+          // recorded `deaths: null`, the comparison never fired, and the ledger's primary
+          // death record silently stopped: 80 `died` events on the 6th, 20 on the 7th, 13
+          // on the 8th, and ZERO on the 9th while postmortems were still being written for
+          // every one of them.
+          //
+          // It is exactly the shape of the kills_30m bug already recorded in CLAUDE.md —
+          // recordSample never wrote the field, `?? null` made it look like an answer, and
+          // nothing downstream could tell "no deaths" from "not reported". Deaths survived
+          // only because m59-uptime.mjs and the postmortem files keep their own copies,
+          // which is why the count there (32) and the count in the ledger (0 today)
+          // disagreed without either looking wrong.
+          deaths: st?.did?.deaths ?? 0,
+          // Same reason, and it is the pair to the above: the ledger's own note says a
+          // quantity with two homes in this repository ends up with two answers, so the
+          // row should carry the keeper's figure rather than leaving a reader to guess.
+          kills: st?.did?.kills ?? 0,
           deaths_in_safe_spot: st?.did?.deaths_in_safe_spot ?? 0,
           deaths_in_proven_safe_spot: st?.did?.deaths_in_proven_safe_spot ?? 0,
           mulligans: st?.did?.mulligans ?? 0,
@@ -8843,10 +8937,16 @@ function serveDashboard(port) {
     if (url.pathname === '/deaths' || url.pathname === '/tougher' || url.pathname === '/skills') {
       try {
         const hours = Number(url.searchParams.get('hours')) || 168;
+        // WHICH CHARACTERS THIS BOARD IS ABOUT. These three read directories keyed by
+        // character name, which any second fleet on this machine also writes into — so
+        // without this they sum two populations and say nothing about it. This broker is
+        // serving the page and already holds the roster, so the answer is free and exact:
+        // no probing, no fleet label, just the names it is logged in as.
+        const characters = fleetCharacters();
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-        return res.end(url.pathname === '/deaths' ? renderDeaths({ hours })
-                     : url.pathname === '/skills' ? renderSkills({ hours })
-                     : renderTougher({ hours }));
+        return res.end(url.pathname === '/deaths' ? renderDeaths({ hours, characters })
+                     : url.pathname === '/skills' ? renderSkills({ hours, characters })
+                     : renderTougher({ hours, characters }));
       } catch (e) {
         res.writeHead(500, { 'content-type': 'text/plain' });
         return res.end(`${url.pathname} failed: ` + e.message);
@@ -8871,7 +8971,7 @@ function serveDashboard(port) {
         .then(out => out?.fleet ?? null, () => null)
         .then(live => {
           res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-          res.end(renderEconomy({ hours, live }));
+          res.end(renderEconomy({ hours, live, characters: fleetCharacters() }));
         })
         .catch(e => {
           res.writeHead(500, { 'content-type': 'text/plain' });
