@@ -3286,7 +3286,24 @@ export class Autopilot {
   async travel(room, opts) {
     this.recordFrame('setting off');
     try {
-      return await this.s.travel(room, opts);   // the SESSION's travel, not this wrapper
+      // A FRAME PER ROOM, NOT PER JOURNEY.
+      //
+      // 'setting off' and 'arrived' bracket the whole thing, which tells you when the
+      // blindness started and nothing about what happened inside it. Camilla's last frame
+      // read `why: "setting off"` 17.8 seconds before she died. The watchdog fixed the
+      // record's cadence — a frame at least every 8s — but a timer frame says only what
+      // the vitals were; it cannot say which room the character was in, because the pass
+      // is the only thing that knows where it has got to.
+      //
+      // So the hop hook writes one too, and between them the record has both: the
+      // watchdog's clock and the journey's geography.
+      return await this.s.travel(room, {
+        ...opts,
+        onHop: async (at) => {
+          this.recordFrame(`travelling — ${at.hops_done + 1} room(s) in, ${at.remaining} to go`);
+          if (opts?.onHop) await opts.onHop(at);
+        },
+      });
     } finally {
       this.recordFrame('arrived');
     }
@@ -4972,6 +4989,38 @@ export class Autopilot {
           // The two questions worth asking of any death.
           fled_in_time: at && at.max ? (at.health / at.max) : null,
           had_flasks: this.hadFlasks ?? null,
+          // DID THE HANDBRAKE FIRE, AND WAS IT EVEN ALLOWED TO?
+          //
+          // Without this a death is unreadable in the one way that decides what to do
+          // about it. Four travelling deaths in a day spent several samples below the
+          // flee line before dying, and nothing on disk could say whether the watchdog
+          // interrupted and the character died anyway, whether it never fired, or whether
+          // it stood down because an errand owned the character — three different faults
+          // with three different fixes, all rendering identically as "died travelling".
+          //
+          // `interrupted_this_pass` is the one that matters: the watchdog fires at most
+          // once per pass, so a death in a pass it already interrupted means the
+          // interrupt was not enough, while a death in a pass it never touched means it
+          // never got the chance.
+          watchdog: (() => {
+            const w = this.watch;
+            if (!w) return { running: false, why: 'no watchdog on this keeper' };
+            return {
+              running: true,
+              interrupts_total: w.interrupts ?? 0,
+              interrupted_this_pass: w.interruptedPass === this.passes,
+              frames_written: w.frames ?? 0,
+              // How long the pass that died had been inside one await. This is the
+              // number the whole watchdog exists for, and it was only ever visible live.
+              pass_blocked_ms: this.passStartedAt ? Date.now() - this.passStartedAt : 0,
+              longest_block_ms: w.longest_block_ms ?? 0,
+              ms_since_frame: this.lastFrameAt ? Date.now() - this.lastFrameAt : null,
+              // The watchdog returns early while something else is driving, so an errand
+              // death is one it was never allowed to act on. Recorded rather than
+              // inferred from `during_keeper_outage`, which means something else.
+              stood_down_for: this.inert ? (this.inert.why ?? 'inert') : null,
+            };
+          })(),
           // WHAT WAS ON THE FLOOR WHEN WE FELL, so something can decide whether the walk
           // back is worth making. Dying drops the whole inventory, and until now nothing
           // recorded what that was — so a recovery errand had to treat every death site
@@ -7749,10 +7798,35 @@ export class Autopilot {
       .reduce((t, f) => t + (f.food?.nutrition ?? 0) * (f.o.amount || 1), 0);
     const want = (this.policy.fightAboveVigor ?? 140) - (vg?.value ?? 0) - carried;
     if (want <= 20) return;                       // enough in hand or already topped up
+    // TRY THE DOOR MORE THAN ONCE — IT IS THE DOOR, NOT THE ROUTE.
+    //
+    // The fleet went from four characters without food to eighteen, and median vigor from
+    // 164 to 81, while buying 214 things — every one of them a reagent and not one of them
+    // food. The buying logic was fine. `travel(103)` was simply failing, and this gave up
+    // on the first attempt and filed a note nobody reads.
+    //
+    // The route is not the problem: `map` finds it in two hops and the last one is a `go`
+    // through a door. Walked by hand the same trip succeeds — the character reached North
+    // Barloque, then stepped into The Bhrama & Falcon on the next call. It is the known
+    // Meridian door behaviour: a door needs the EXACT square, the arrival square and the
+    // departure square deliberately do not line up, and a single attempt is a coin toss.
+    // The earlier 108/110 investigation measured the same thing at 52-69% per attempt.
+    //
+    // So three attempts, which turns a coin toss into a near-certainty, and the failure
+    // note now says how many were made — a note reading "could not reach" after one try
+    // and after three are different facts about the world.
     if (s.world?.room?.num !== FOOD_SHOP.room) {
-      const r = await this.travel(FOOD_SHOP.room, { maxHops: 12 })
-                          .catch(e => ({ arrived: false, reason: e.message }));
-      if (!r?.arrived) return this.note('could not reach the bread shop', { to: FOOD_SHOP.name, short_by: want });
+      let got = null;
+      for (let i = 0; i < 3 && s.world?.room?.num !== FOOD_SHOP.room; i++) {
+        got = await this.travel(FOOD_SHOP.room, { maxHops: 12 })
+                        .catch(e => ({ arrived: false, reason: e.message }));
+        if (got?.arrived) break;
+      }
+      if (s.world?.room?.num !== FOOD_SHOP.room)
+        return this.note('could not reach the bread shop', {
+          to: FOOD_SHOP.name, short_by: want, attempts: 3, why: got?.reason,
+          note: 'the route exists and the last hop is a door; three refusals in a row is ' +
+                'about this room rather than about the map' });
     }
     const seller = [...c.room.objects.values()].find(o => affordances(o.flags).includes('buy'));
     if (!seller) return;
@@ -8150,8 +8224,28 @@ export class Autopilot {
       return askedFor[norm(name)] || 0;
     };
 
-    if (!need.elderberry && !need.herb && !Object.values(askedFor).some(n => n > 0)) {
-      this.declinedPurchase('already at the reagent target', { have, target: want,
+    // "AT THE REAGENT TARGET" IS NOT A REASON TO WALK PAST THE BREAD.
+    //
+    // This returned whenever the two reagents were stocked, and everything below it —
+    // including the entire food-buying half of this function — is downstream of that
+    // return. So a character with sixty herbs and no dinner declined at the counter
+    // selling dinner, and the ledger recorded it as `already at the reagent target`,
+    // which is true and is not the question that was being asked.
+    //
+    // Silent until I made it worse. Raising the herb target to 60 (see
+    // REAGENT_TARGET_BY_KIND) is what pushed the fleet over the line: characters now top
+    // up herbs at Joguer's, arrive at the bread shop already satisfied, and take this
+    // return. Measured over one day afterwards — 214 purchases, ALL of them reagents (185
+    // herbs, 32 elderberry) and NOT ONE item of food, while seventeen of twenty-one
+    // carried nothing to eat and the fleet's median vigor fell from 164 to 81.
+    //
+    // The two wants are independent and the test has to be too. `buyFoodInTown` walks to
+    // 103 specifically to buy food, and this is the function it calls to do it.
+    const wantsFood = !skills.larderOf(c).length ||
+                      (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
+    if (!need.elderberry && !need.herb && !wantsFood &&
+        !Object.values(askedFor).some(n => n > 0)) {
+      this.declinedPurchase('already at the reagent target and not hungry', { have, target: want,
         ...(loadout ? { from_loadout: loadout.carry.length + ' item(s) listed' } : {}) });
       return [];
     }
