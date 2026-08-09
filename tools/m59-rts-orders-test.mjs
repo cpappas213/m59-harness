@@ -9,6 +9,7 @@ import {
   dispatchCancelOrder,
   dispatchContextOrder,
   dispatchMoveOrder,
+  dispatchTravelOrder,
   parseControlServer,
 } from './m59-rts-gateway.mjs';
 
@@ -160,6 +161,42 @@ await assert.rejects(() => dispatchMoveOrder(reader, {
   type: 'move', generation, order_id: 'blocked-move-1',
   orders: [{ agent: 't1', room: 200, col: 2, row: 2 }],
 }, { now, sceneStore }), /not on the walkable/);
+
+// Travel: the world-graph walk, dispatched to the keeper's own `travel` tool.
+// The route is the keeper's business; what the gateway answers for is shape,
+// generation, one order per agent, and that background is FORCED — a gateway
+// request that blocks for a nine-minute walk is a timeout wearing a success's
+// clothing.
+const beforeTravel = calls.length;
+const travelled = await dispatchTravelOrder(reader, {
+  type: 'travel', generation, order_id: 'group-travel-01',
+  orders: [{ agent: 't1', to: 'Marion' }, { agent: 't2', to: 205, max_hops: 40 }],
+}, { now });
+assert.equal(travelled.accepted, true);
+assert.equal(travelled.accepted_count, 2);
+assert.deepEqual(calls.slice(beforeTravel).map(call => call.name), ['travel', 'travel']);
+const travelArgs = withoutControlToken(calls[beforeTravel].args);
+assert.deepEqual(travelArgs.rest,
+  { agent: 't1', to: 'Marion', max_hops: 25, background: true });
+const travelArgs2 = withoutControlToken(calls[beforeTravel + 1].args);
+assert.deepEqual(travelArgs2.rest,
+  { agent: 't2', to: 205, max_hops: 40, background: true });
+await assert.rejects(() => dispatchTravelOrder(reader, {
+  type: 'travel', generation, order_id: 'typed-travel-01',
+  orders: [{ agent: 't1', to: -3 }],
+}, { now }), /room name or positive integer room number/);
+await assert.rejects(() => dispatchTravelOrder(reader, {
+  type: 'travel', generation, order_id: 'typed-travel-02',
+  orders: [{ agent: 't1', to: 'Marion', max_hops: 500 }],
+}, { now }), /max_hops \(1-60\)/);
+await assert.rejects(() => dispatchTravelOrder(reader, {
+  type: 'travel', generation, order_id: 'typed-travel-03',
+  orders: [{ agent: 't1', to: 'Marion', walk_fast: true }],
+}, { now }), /travel order contains unsupported field: walk_fast/);
+await assert.rejects(() => dispatchTravelOrder(reader, {
+  type: 'travel', generation: `${now - 3000}-1234`, order_id: 'stale-travel-1',
+  orders: [{ agent: 't1', to: 'Marion' }],
+}, { now }), /stale/);
 
 const floorItems = Array.from({ length: 14 }, (_, index) => ({
   id: 1001 + index, name: `loot ${index + 1}`, is_player: false,

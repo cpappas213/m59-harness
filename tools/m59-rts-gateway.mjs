@@ -663,6 +663,64 @@ export async function dispatchMoveOrder(reader, body, { now = Date.now(), sceneS
   };
 }
 
+// CROSS-ROOM TRAVEL, THROUGH THE KEEPER'S OWN MACHINERY.
+//
+// `move` is one room's floor; travel is the world graph — hop by hop, picking
+// the right exit mechanism per hop, which is exactly what the broker's `travel`
+// tool already does and nothing at this boundary should reimplement. This order
+// exists because a map client (m59-mb's Warband world map) needs "walk to
+// Marion" as a single accountable request, and the alternative was the same
+// bypass trading had to take: straight to the broker, with no generation stamp
+// and no token. Travel is one-packet-shaped — start the walk, watch the spool —
+// so unlike trading it fits this gateway as it is.
+//
+// What is deliberately NOT validated here: the route. The keeper replans per
+// hop and the world graph is its business; a destination this gateway cannot
+// see may still be one the keeper can reach. What IS validated is the shape,
+// the generation, and that the agent is one this gateway controls — the same
+// three things every other order answers for. `background` is forced on: a
+// gateway request that blocks for a nine-minute walk is a timeout wearing a
+// success's clothing.
+export async function dispatchTravelOrder(reader, body, { now = Date.now() } = {}) {
+  if (!reader.ordersEnabled) throw orderError(403, 'RTS gateway orders are disabled');
+  batch(body, 'travel');
+  const id = orderId(body);
+  const { brokerPid } = generationInfo(body, now);
+  for (const order of body.orders)
+    assertExactKeys(order, ['agent', 'to', 'max_hops'], 'travel order');
+  const normalized = body.orders.map(order => ({
+    agent: cleanAgent(order?.agent),
+    to: order?.to,
+    maxHops: order?.max_hops === undefined ? 25 : order.max_hops,
+  }));
+  if (normalized.some(order => !order.agent ||
+      !(exactInteger(order.to) && order.to >= 1 ||
+        typeof order.to === 'string' && order.to.trim().length >= 1 && order.to.length <= 80) ||
+      !exactInteger(order.maxHops) || order.maxHops < 1 || order.maxHops > 60))
+    throw orderError(400,
+      'travel orders require a string agent, a room name or positive integer room number, and max_hops (1-60)');
+  uniqueAgents(normalized, 'travel');
+
+  const state = await reader.controlState(normalized.map(order => order.agent));
+  if (state.health.pid !== brokerPid)
+    throw orderError(409, 'broker restarted after this snapshot generation');
+
+  const dispatch = await settledDispatch(reader, 'travel', normalized, order => ({
+    agent: order.agent,
+    to: typeof order.to === 'string' ? order.to.trim() : order.to,
+    max_hops: order.maxHops,
+    background: true,
+    control_token: issuedControlToken(reader, id, order.agent),
+  }));
+  return {
+    schema: RTS_SCHEMA,
+    ...dispatch,
+    order_id: id,
+    generation: body.generation,
+    accepted_at: new Date(now).toISOString(),
+  };
+}
+
 export async function dispatchContextOrder(reader, body, { now = Date.now(), sceneStore = null } = {}) {
   if (!reader.ordersEnabled) throw orderError(403, 'RTS gateway orders are disabled');
   batch(body, 'context', ['type', 'action', 'generation', 'order_id', 'orders']);
@@ -926,9 +984,10 @@ export async function dispatchCancelOrder(reader, body, { now = Date.now() } = {
 export function dispatchControlOrder(reader, body, options = {}) {
   if (body?.type === 'attack') return dispatchAttackOrder(reader, body, options);
   if (body?.type === 'move') return dispatchMoveOrder(reader, body, options);
+  if (body?.type === 'travel') return dispatchTravelOrder(reader, body, options);
   if (body?.type === 'context') return dispatchContextOrder(reader, body, options);
   if (body?.type === 'cancel') return dispatchCancelOrder(reader, body, options);
-  throw orderError(400, 'order type must be attack, move, context, or cancel');
+  throw orderError(400, 'order type must be attack, move, travel, context, or cancel');
 }
 
 export class OrderDedupe {
