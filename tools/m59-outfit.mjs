@@ -302,7 +302,25 @@ async function outfit(row) {
   // is not in game, and a loadout is looked up by the character's name.
   const loadout = row.character ? loadoutFor(row.character) : null;
   const wants = wantsFor(loadout);
-  const missing = WANT_GEAR ? missingFor(items, wants) : [];
+  // DEFENCE FIRST, WHATEVER ORDER THE LIST CAME IN.
+  //
+  // The header of this file states the principle — "a weapon changes how fast something
+  // dies; armour changes whether you are still standing when it does" — and the fleet
+  // default WANTS is written armour, shield, weapon to match. A LOADOUT is not: its order
+  // is whatever somebody typed into the planner, and wantsFor preserves it.
+  //
+  // Kermit paid for that exactly. It reached Rook with 835 shillings, bought the mace its
+  // loadout listed first for 100, and was then 65 SHORT of the 800 leather — so it walked
+  // away armed and bare, having spent on the cheap half the money that would have
+  // armoured it. With one purse and two wants, the order IS the decision.
+  //
+  // Sorted here rather than in wantsFor, so a loadout keeps meaning what it says about
+  // WHICH items are wanted and only the sequence of spending is imposed.
+  const SLOT_ORDER = { armour: 0, shield: 1, weapon: 2 };
+  const missing = WANT_GEAR
+    ? missingFor(items, wants).sort((a, b) =>
+        (SLOT_ORDER[a.slot] ?? 9) - (SLOT_ORDER[b.slot] ?? 9))
+    : [];
 
   // WHAT IT DOES NOT KNOW YET. Asked before anybody walks anywhere: a character that
   // already has the skill costs a whole trip to find that out at the shop, and the shop

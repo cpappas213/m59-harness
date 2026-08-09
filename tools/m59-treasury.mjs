@@ -98,12 +98,29 @@ for (const r of rows) {
     agent: r.agent, character: r.character, room: r.room_num,
     purse: purseOf(inv.items), coin: coinIdOf(inv.items),
     banked: r.banked?.balance ?? 0,
-    // Being unarmoured is what makes a thin purse urgent rather than merely untidy.
-    // The board does not say so directly, so this is the honest proxy: two worn items
-    // or fewer on a character that should have armour, a shield and a weapon.
-    equipped: r.equipped_count ?? null,
   });
 }
+
+// WHO IS ACTUALLY FIGHTING IN NOTHING — the question this tool exists to answer, and the
+// one it was not asking.
+//
+// The first version ranked by poverty alone and funded whoever had least. That is a
+// reasonable-sounding rule and it delivered 799 and 996 shillings to two characters who
+// already had armour, while the three walking around without any kept 103, 106 and 110.
+// Being poor is uncomfortable; being poor AND unarmoured is the thing that kills a
+// character and costs it the pack it needed to get rich with.
+//
+// `equipment` is the server's own use list — plUsing — and is the only authoritative
+// answer to "is this character wearing armour". It costs one call each and is worth it:
+// the board carries no equipped count, and the proxy this used before (`r.equipped_count`)
+// does not exist on the row, so it was `null` for everybody and the sort never saw it.
+const ARMOUR = /leather (armor|armour)|chain|plate|mail|robe/i;
+for (const h of held) {
+  const eq = await call('equipment', { agent: h.agent }).catch(() => ({ equipped: [] }));
+  h.armoured = (eq.equipped || []).some(x => ARMOUR.test(String(x?.name ?? x ?? '')));
+}
+const bare = held.filter(h => !h.armoured).map(h => h.character);
+console.log(`fighting without body armour: ${bare.length ? bare.join(', ') : 'nobody'}`);
 
 const totalPurse = held.reduce((t, h) => t + h.purse, 0);
 const totalBank  = held.reduce((t, h) => t + h.banked, 0);
@@ -112,8 +129,12 @@ console.log(`fleet holds ${totalPurse} in hand and ${totalBank} banked ` +
 
 // WHO CANNOT SHOP. Purse plus balance, because a character with money in a bank can get
 // at it on its own and does not need a donor — the outfitter withdraws.
+// UNARMOURED FIRST, THEN POOREST. A character with no armour and 106 shillings outranks
+// one with armour and 90: the first cannot fix itself and the second is merely broke.
 const needy = held.filter(h => h.purse + h.banked < NEED)
-                  .sort((a, b) => (a.purse + a.banked) - (b.purse + b.banked));
+                  .sort((a, b) => (a.armoured === b.armoured)
+                    ? (a.purse + a.banked) - (b.purse + b.banked)
+                    : (a.armoured ? 1 : -1));
 // WHO CAN SPARE IT, from money already in hand. Sorted richest first so the fewest
 // hand-overs are made: each one is a walk, and a walk is the part that fails.
 const donors = held.filter(h => h.purse - KEEP >= 100 && h.coin != null)
