@@ -172,6 +172,12 @@ const TRAVEL_HOLD_MODE = process.env.M59_TRAVEL_HOLD || 'ab';
 // Fifteen minutes is longer than any errand here: the slowest is a cross-town outfit run
 // at three or four. An errand still going at fifteen has already failed.
 const INERT_MAX_MS = 15 * 60_000;
+// THE LONGEST AN OUTSIDE HOLDER MAY MARK A CHARACTER HANDS-OFF IN ONE ASK. Matched to
+// INERT_MAX_MS on purpose: both answer the same question — how long may something else
+// hold a character before this repository takes it back — and two different answers to
+// that would be two different opinions about when a fleet is unattended. A holder that
+// needs longer EXTENDS, which is cheap and proves it is still there.
+const BUSY_MAX_MS = INERT_MAX_MS;
 
 // Where to eat to when no strategy names a target. Resting stops awarding vigor at 80 of
 // 200 (REST_VIGOR_CAP), and the death rate falls roughly thirtyfold once a character is
@@ -4973,9 +4979,20 @@ export class Autopilot {
                                              'faculty first, so that "busy" has an owner and a lease' };
     if (by && held.by !== by)
       return { busy: null, refused: `${held.by} holds this character, not ${by}` };
-    this.busy = { by: held.by, kind, label, detail,
-                  at: Date.now(), until: Date.now() + Math.max(1_000, leaseMs) };
-    this.note('declared busy', { by: held.by, kind, label, lease_ms: leaseMs,
+    // A CEILING, BECAUSE THE LEASE IS THE ONLY THING PROTECTING THE FLEET FROM A BOT THAT
+    // STOPPED ANSWERING. A holder asks for the window its errand expects and extends as it
+    // goes — that is the intended shape and it is why the number varies — but "an hour"
+    // from a process that then crashed is an hour of a character every stall detector
+    // steps politely over. Clamped rather than refused, and SAID SO, because refusing
+    // would leave the errand unannounced, which is the worse of the two.
+    const asked = Math.max(1_000, leaseMs);
+    const ms = Math.min(BUSY_MAX_MS, asked);
+    const at = (this.busy && this.busy.by === held.by) ? this.busy.at : Date.now();
+    this.busy = { by: held.by, kind, label, detail, at, until: Date.now() + ms };
+    this.note('declared busy', { by: held.by, kind, label, lease_ms: ms,
+      asked_for_ms: asked !== ms ? asked : undefined,
+      clamped: asked !== ms ? `asked for ${Math.round(asked / 60000)}m, capped at ` +
+                              `${Math.round(BUSY_MAX_MS / 60000)}m` : undefined,
       note: 'stall detectors should step over this character until it is freed or the lease lapses' });
     return { busy: this.busyStatus() };
   }

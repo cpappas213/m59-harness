@@ -152,6 +152,18 @@ autopilot action=busy  by=<who> kind=crate-check label="checking the crate"
 autopilot action=free  by=<who>
 ```
 
+**`busy` is a WINDOW THE HOLDER ESTIMATES, and it extends as the work goes.** A flat lease
+is wrong in both directions: too short and a supervisor round walks in halfway through a
+trip across the world, too long and a thirty-second errand blocks the unstick round for
+ten minutes. So a holder asks for what its remaining work expects — padded, because a leg
+that goes *slightly* wrong is the ordinary case and is exactly when being interrupted
+costs the whole errand — and re-declares before each step with only what is left. The
+harness caps one ask at `BUSY_MAX_MS`, which is `INERT_MAX_MS` (15 min) on purpose: both
+answer "how long may something else hold a character before this repository takes it
+back", and two answers to that would be two opinions about when a fleet is unattended.
+The cap **clamps and says so** rather than refusing, because a refused declaration leaves
+the errand unannounced, which is the worse of the two.
+
 Both are **leased and fail back to the keeper**, checked on read rather than on a timer,
 so a bot that dies leaves nothing owned and nothing marked busy. Only the holder may
 declare or clear `busy`; an operator with no name may always clear it, which is what the
