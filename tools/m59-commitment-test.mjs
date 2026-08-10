@@ -22,7 +22,7 @@
 //   silently becomes "no" for exactly as long as it takes somebody to restart the fleet.
 
 import { describeCommitment, commitmentOf, stepSelection, firstSelectable, allCommitted,
-         commitmentRank } from './m59-commitment.mjs';
+         commitmentRank, isTakeable, heldBy } from './m59-commitment.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -197,6 +197,86 @@ console.log('\nthe cursor steps over them');
      allCommitted([busy('a', E), free('b')]) === false);
   ok('an empty fleet is not all committed', allCommitted([]) === false);
   ok('and does not move a cursor it does not have', stepSelection([], 0, 1) === 0);
+}
+
+// ---------------------------------------------------------------- an outside owner
+//
+// OWNING A CHARACTER AND BEING BUSY WITH IT ARE DIFFERENT FACTS, and getting them the
+// same way round is the failure this whole section exists for. A directional bot claims
+// `work` and `movement` on every character it manages, for its whole run. If that alone
+// counted as a commitment then the bot's own "leave committed characters alone" rule
+// refuses every character it just claimed, the board greys the entire fleet, and the
+// unstick round — which is the harness's job and must keep running — steps over keepers
+// that have genuinely stopped.
+{
+  const HELD = { by: 'dum/castle-crate@pid-1234', faculties: ['work', 'movement'], at: 111 };
+
+  const owned = describeCommitment({ held: HELD });
+  ok('a character a bot merely owns still reports who is driving',
+     heldBy(owned)?.by === HELD.by);
+  ok('and names the faculties it actually holds',
+     JSON.stringify(heldBy(owned)?.faculties) === '["work","movement"]');
+  ok('and is STILL TAKEABLE, because steering is not an operation', isTakeable(owned) === true);
+  ok('but is not invisible — a bot quietly running nine characters gets a row',
+     owned?.kind === 'bot' && /is steering/.test(owned.label));
+
+  // The other half: the holder says an operation is in flight.
+  const working = describeCommitment({
+    held: HELD, busy: { by: HELD.by, kind: 'crate-check', label: 'checking the crate', at: 222 } });
+  ok('a declared operation is not takeable', isTakeable(working) === false);
+  ok('and says who and what', working.kind === 'bot' && /crate-check|checking the crate/.test(working.label));
+  ok('and carries the owner as well as the operation', heldBy(working)?.by === HELD.by);
+  ok('and keeps its own start time, not the claim\'s', working.since === 222);
+  // The reason this matters, stated where somebody changing it will read it: an external
+  // errand walks a character with its keeper inert BY DESIGN, so ms_since_moved — which
+  // measures the keeper — climbs while the character is moving perfectly well.
+  ok('and explains why a stall reading here is not a stall',
+     /is the errand walking/.test(working.detail));
+
+  // A bot-held character that is ALSO doing something the harness knows about.
+  const both = describeCommitment({ held: HELD, errand: { kind: 'lootrun', farmer: 'someone' } });
+  ok('the harness\'s own errand still wins over bare ownership', both.kind === 'errand');
+  ok('and the owner rides along on it', heldBy(both)?.by === HELD.by);
+  ok('and an errand is not takeable either', isTakeable(both) === false);
+
+  // Nothing at all.
+  ok('no owner and no commitment is still null', describeCommitment({}) === null);
+  ok('and null is takeable', isTakeable(null) === true);
+  ok('and heldBy of nothing is null', heldBy(null) === null);
+
+  // The ranking: an operation in flight outranks everything, because it is the only one
+  // nothing inside the harness can see for itself.
+  ok('a declared operation ranks above the harness\'s own errand',
+     commitmentRank(working) < commitmentRank(both));
+  ok('and a partner still ranks last',
+     commitmentRank(describeCommitment({ partner: 'someone' })) > commitmentRank(both));
+}
+
+// ---------------------------------------------------------------- the board, with a bot on it
+//
+// THE REGRESSION THIS SECTION EXISTS TO CATCH. Every cursor helper used to ask
+// `!commitmentOf(row)`, which was the same question as "is this takeable" for exactly as
+// long as the only commitments were operations. A bot that merely OWNS characters broke
+// that equivalence: running a doctrine over the whole fleet would have greyed every row
+// and frozen the terminal, which is the "looks like a dead keyboard" failure the module's
+// own note is about — reintroduced by the feature meant to make bots visible.
+{
+  const held = (name, by = 'dum/x@pid-1') => ({
+    agent: name, ap: { committed: describeCommitment({ held: { by, faculties: ['work'] } }) } });
+  const working = (name, by = 'dum/x@pid-1') => ({
+    agent: name, ap: { committed: describeCommitment({
+      held: { by, faculties: ['work'] }, busy: { by, kind: 'crate-check', at: 1 } }) } });
+  const idle = (name) => ({ agent: name, ap: { committed: null } });
+
+  const wholeFleetOnADoctrine = [held('a'), held('b'), held('c')];
+  ok('a fleet a bot is steering is NOT all committed', allCommitted(wholeFleetOnADoctrine) === false);
+  ok('and the cursor still moves through it', stepSelection(wholeFleetOnADoctrine, 0, 1) === 1);
+  ok('and opens on the first row', firstSelectable(wholeFleetOnADoctrine) === 0);
+
+  // But the one that is actually mid-operation is stepped over, which is the point.
+  const mixed = [held('a'), working('b'), idle('c')];
+  ok('and steps over the one with an operation in flight', stepSelection(mixed, 0, 1) === 2);
+  ok('which the override still reaches', stepSelection(mixed, 0, 1, { override: true }) === 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

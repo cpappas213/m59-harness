@@ -39,6 +39,17 @@ const PORT = Number(arg('port', 8901));
 const RPC = `http://127.0.0.1:${PORT}/`;
 const ONCE = !!arg('once', false);
 const DRY = !!arg('dry-run', false);
+// `--dry-run` STOPS AT THE PROCESS BOUNDARY UNLESS YOU CARRY IT ACROSS, AND IT DID NOT.
+//
+// Three of this file's rounds are not calls, they are `spawn`s: reclaim, the almoner and
+// outfit are separate tools with their own errand loops. `DRY` guarded every branch in
+// THIS process and none of them, so `--dry-run` printed "would send X + Y" for the
+// deploys while three subprocesses walked characters across the world for real. Every
+// line of the output looked like a dry run.
+//
+// Found by running it: a `--once --dry-run` round on the live fleet dispatched a reclaim
+// and an almoner. All three tools already parse `--dry-run` — nobody had passed it.
+const DRY_ARGS = DRY ? ['--dry-run'] : [];
 const GRADUATE_AT = Number(arg('graduate', 30));
 const EVERY_MS = Number(arg('every', 60)) * 1000;
 // FLY SOLO. Room assignment is still done in twos — that is what spreads the fleet
@@ -90,11 +101,114 @@ const stamp = () => new Date().toISOString().slice(11, 19);
 // them, where the old rooms have hundreds — 95 discredited squares at the Tos gate
 // alone — and a room with no usable squares left is a room the keeper has to fight in
 // the open in, which is where the fleet has been dying.
-const VALLEY = [
-  { room: 544, name: 'Valley of Ileria',                  hunt: 'fungus beast', share: 65, cap: 10 },
-  { room: 563, name: 'Source of the River Ille',          hunt: 'fungus beast', share: 70, cap: 7 },
-  { room: 562, name: 'The sandy shores of the Great Ocean', hunt: 'fungus beast', share: 50, cap: 6 },
+// THE VALLEY IS NOW A DEAD END, AND THAT IS AN ARITHMETIC FACT RATHER THAN A PREFERENCE.
+//
+// Everything above is still true about how SAFE a fungus beast is. It stopped being the
+// right answer for a different reason: AdvancementCheck only rolls when the creature's
+// level is STRICTLY GREATER than base max health, and this fleet is at 47-50. A level-50
+// fungus beast pays a level-50 character exactly nothing, for ever. Ten characters sat at
+// the cap killing steadily and gaining not one point — the failure `yieldCheck` exists to
+// name, and the board reads `hunting: fungus beast` the whole time it is happening.
+//
+// Castle Victoria is the cheapest ground that is strictly above 50 without being absurd:
+//
+//   38 Castle Victoria      skeleton         level 75, rating 525, 40% of a cap of 10
+//   39 Upstairs             battered skeleton level 60, rating 420, 60% of a cap of 10
+//
+// Both also generate zombies (55), which still pay a character at 50. 39 is the gentler
+// room and carries the denser prey, which is why it takes the weaker half of the fleet.
+//
+// WHAT IS NEXT DOOR IS THE REASON maxThreatOver IS 28 AND NOT MORE. 40 The Throne Room is
+// tusked skeleton (100) and ghost (200); 41 Underbasement is narthyl worm (120). At 28 a
+// character of 47 may take a skeleton (47+28 = 75, and 75 is not > 75) while every one of
+// those neighbours stays refused at any max health in this fleet. Raising it further to
+// "make travel smoother" opens all three. Do not.
+// 39 IS THE PRIMARY AND IT IS LISTED TWICE ON PURPOSE. `assignRooms` is a round robin —
+// `rooms[i % rooms.length]` — so weighting a room means repeating it, not scoring it.
+// Two entries to one puts roughly two thirds of the fleet Upstairs.
+//
+// Upstairs is the better room on every axis that matters here, which is not obvious
+// because 38's prey is the higher level:
+//
+//   39 battered skeleton  level 60, rating 420, 60% of the table
+//   38 skeleton           level 75, rating 525, 40% of the table
+//
+// Advancement is strictly-greater-than max health, and the whole fleet is 47-50 — so a
+// level-60 battered skeleton pays EVERY character here exactly as reliably as a level-75
+// skeleton does. The extra fifteen levels buy nothing at all in advancement terms while
+// costing a hundred points of attack rating. Denser prey, softer fight, same payout.
+// 38 keeps a third of the fleet because its table is the only source of skeleton-tier
+// loot, not because it advances anyone faster.
+// PULLED OUT OF THE CASTLE, AND THIS IS AN EQUIPMENT RUN RATHER THAN AN ADVANCEMENT ONE.
+//
+// Room 27 is orc (level 45, rating 495) and spider (level 50, rating 390), 50/50, cap 10.
+// Say the cost plainly: advancement is strictly-greater-than max health, so an orc pays
+// NOBODY here and a spider pays only the nine characters still under 50. The twelve at 50
+// gain no max health in this room at all. The castle's battered skeleton (60) paid all
+// twenty-one and this does not.
+//
+// What it buys instead is armour, and seventeen of twenty-one are bare. Orc drops leather
+// at 5% a roll over about two rolls — ~10% a kill, the best rate of anything this fleet is
+// allowed to fight — and spider adds leather 2% + chain 1%. Both sit UNDER the castle's
+// rating band (495/390 against 420/525), and it is one room instead of two, which is what
+// the transit deaths were being paid for.
+// Both entries are the SAME ROOM. The table is 50/50 and the two creatures pay for
+// different things — orc is the leather, spider is the only one of the pair that still
+// advances anybody — so the round robin splits the fleet between them rather than putting
+// twenty-one characters on one half of one spawn table.
+// ROOM 27 WAS ASKED FOR AND CANNOT BE WALKED TO. Recording that here because it looks
+// like a perfectly ordinary room and the failure is silent: the keeper reports
+// "cannot reach anywhere that generates orc", then ROAMS looking for it, which is the
+// exact path that put Sweetums in the Decaying City of Brax.
+//
+// Ugol's Warren — 27, 2500, 2501, 2502, 2506, 2508, 2509 — is a CLOSED CLUSTER in this
+// map. Every edge into any of them comes from another one of them. The single edge that
+// crosses the boundary is 27 -> 587 (Western border of the Twisted Wood) and it is
+// OUTBOUND ONLY: 587's own exits are 576, 586 and 597 and none of them is 27. That is
+// the "exits are not doors and they are not 1:1" rule in its purest form — you can leave
+// the cave into the woods and you cannot enter the cave from them. `m59-codeexits.json`
+// holds three source rooms and none of them reaches the warren either.
+//
+// The same is true of the forest rooms 4, 6 and 26 (Deep Dark Woods of Tos/Marion,
+// Forests of Meridian): no edgeExits in either direction and no code exit into them.
+//
+// So this is the reachable version of the same idea — woods, spiders, nothing in either
+// table rating above 390, and both are what CLAUDE.md already names as the places to take
+// spiders from. Spider is level 50, so it still advances everyone under 50 and drops
+// leather 2% + chain 1% a roll.
+// HUNTING "spider" COSTS 70% OF EVERY KILL, BECAUSE THE MATCHER IS A SUBSTRING.
+//
+// `findCreature` is `name.includes(needle)` (m59-skills.mjs), so the word "spider" names
+// four creatures and only one of them is the prey:
+//
+//   spider        L50   <- what we want
+//   baby spider   L25   <- pays nobody, and room 574 is 75% of them
+//   black spider  L75
+//   queen spider  L165
+//
+// 574 Main gate to Cor Noth sits on the route to Farol, so a character crossing it finds
+// something matching its hunt, decides this room will do, and settles. Measured over three
+// passes: 44 of 87 kills, then 36 of 85, then 71 of 128 were baby spiders. The paying rate
+// fell to 30% while the board read a healthy "hunting: spider" throughout. Evicting the
+// characters by hand fixed it for exactly one pass and they drifted back with company.
+//
+// "living tree" matches ONE creature in the whole index. Same level 50, same attack rating
+// 390 — identical fight — and it drops Snack at 30% against spider's 16%, which matters
+// because food has been this fleet's binding constraint all week. What it gives up is
+// spider's LeatherArmor 2% / ChainArmor 1%; that is a real loss, and it was already being
+// multiplied by a 30% paying rate, so the fleet was barely collecting it.
+//
+// 536 is listed twice because living tree is 30% of its table against 15% of 556's.
+const CAVE = [
+  { room: 536, name: 'Forest of Farol',      hunt: 'living tree', share: 30, cap: 12 },
+  { room: 536, name: 'Forest of Farol',      hunt: 'living tree', share: 30, cap: 12 },
+  { room: 556, name: 'Deep Forest of Farol', hunt: 'living tree', share: 15, cap: 16 },
 ];
+
+// `hunt` is matched as a SUBSTRING (findCreature, m59-skills.mjs), so the single word
+// "skeleton" is what names both the skeleton in 38 and the battered skeleton in 39 — and
+// it would equally name the tusked skeleton in 40. That is safe only because the level
+// gate above refuses it; the hunt string is not doing that work and must not be trusted to.
 
 // WHERE THE UNGRADUATED GO, AND WHY THEY NEEDED ANYWHERE AT ALL.
 //
@@ -146,6 +260,23 @@ const VALLEY_ORDERS = {
   roam: false,                  // stay in the assigned room; the partner is there
   use_safe_spots: true,
   hold_resume_above: 0.9,
+  // THE CEILING IS PART OF THE ORDERS, because the room is worthless without it. Sending
+  // a character to Castle Victoria at the default 6 walks it the whole way there and then
+  // refuses every skeleton in it — a keeper standing in the right room declining to swing,
+  // which on the board is indistinguishable from a room that will not spawn. See CASTLE
+  // above for why this number is 28 and not larger.
+  // BACK TO THE DEFAULT NOW THE CASTLE IS ABANDONED. 28 existed to admit a level-75
+  // skeleton to a character of 47 and nothing else; the cave tops out at a level-50
+  // spider, which clears a ceiling of 6 for every character here. Leaving it at 28 would
+  // keep the fleet willing to trade blows with things three times its weight all the way
+  // through the transit rooms, which is what the ceiling is for in the first place.
+  max_threat_over: 6,
+  // BLUNT FIRST AGAINST BONE. Default (null) ranks weapons by the character's own
+  // proficiency, which only ever rewards what it is already best at — so a fleet that
+  // learned fencing keeps swinging swords at skeletons for ever. Naming the fragments
+  // overrides that. "anything is better than punching" is already the floor: this is a
+  // PREFERENCE ORDER, not a filter, and a character holding only a sword still wields it.
+  weapon_priority: ['mace', 'hammer'],
 };
 
 const inTown = n => /Raza|Mausoleum|Museum|Marion|Tos|Barloque|Jasper|Cornoth|inn/i.test(n || '');
@@ -179,11 +310,29 @@ const inTown = n => /Raza|Mausoleum|Museum|Marion|Tos|Barloque|Jasper|Cornoth|in
 // prey becomes reachable rather than until this one stops paying, so a character does
 // not sit on worthless prey waiting for a promotion.
 export function fallbackHunt(level) {
+  // EACH BOUND IS THE CREATURE'S OWN LEVEL, NOT ONE BELOW IT, AND THE OFF-BY-ONE WAS THE
+  // WHOLE PLATEAU. AdvancementCheck rolls only when monster level > base max health, so
+  // the band that ends at the creature's level is exactly the band it still pays. The old
+  // table ran fungus beast (L50) up to 58: every character from 50 to 58 was handed prey
+  // that could not advance it by definition, and ten of them sat there for a week killing
+  // steadily and gaining nothing. `< 59` looks like deliberate headroom and is the bug.
+  // THE GROUND WINS OVER THE LEVEL TABLE, because the two can disagree and the character
+  // is standing in the ground. A restart that loses the hunt was being handed prey chosen
+  // purely by level — 'zombie' for anyone at 50 — while `assigned_room` still said Forest
+  // of Farol, which generates spider, living tree and centipede and NO zombies. The keeper
+  // then reports "cannot reach anywhere that generates zombie" and roams looking for it.
+  // Three characters drifted that way within one round of this being introduced.
+  //
+  // So: if the fleet's own hunting ground can advance this character, hunt what IT holds.
+  // The level table below is only for a character that ground cannot pay.
   const l = Number(level) || 0;
+  const here = CAVE.find(g => g.level == null || g.level > l) ?? CAVE[0];
+  if (here?.hunt) return here.hunt;
   if (l < 30) return 'giant rat';          // L30
-  if (l < 59) return 'fungus beast';       // L50
-  if (l < 74) return 'battered skeleton';  // L60
-  if (l < 89) return 'skeleton';           // L75
+  if (l < 50) return 'fungus beast';       // L50 — gentlest thing in the game, rating 210
+  if (l < 55) return 'zombie';             // L55
+  if (l < 60) return 'battered skeleton';  // L60
+  if (l < 75) return 'skeleton';           // L75
   return 'troll';                          // L90
 }
 
@@ -221,7 +370,7 @@ export function pairUp(rows) {
 // Spread the pairs over the rooms rather than stacking them: each room caps its
 // generator (10, 7 and 6), and two pairs in one room halve each other's supply while
 // sharing all of the danger.
-export function assignRooms(pairs, rooms = VALLEY) {
+export function assignRooms(pairs, rooms = CAVE) {
   return pairs.map((p, i) => ({ pair: p, ...rooms[i % rooms.length] }));
 }
 
@@ -317,6 +466,11 @@ const KEEP_ACROSS_RESTART = {
   partner: 'partner', bankAbove: 'bank_above', restBelow: 'rest_below',
   fleeBelow: 'flee_below', maxCarry: 'max_carry', weaponPriority: 'weapon_priority',
   dropJunk: 'drop_junk', strategy: 'strategy',
+  // The stall restart fires every 90s, so anything missing from this map has a half-life
+  // of about a minute. Leaving maxThreatOver out would have quietly walked the whole fleet
+  // back down to a ceiling of 6 while it stood in a castle full of level-75 skeletons —
+  // still assigned to the right room, still hunting the right word, and earning nothing.
+  maxThreatOver: 'max_threat_over',
 };
 
 function carriedPolicy(st) {
@@ -395,7 +549,52 @@ async function deploy(a, b, room, name, hunt, base = VALLEY_ORDERS) {
 
 async function round(n) {
   const f = await call('fleet', {});
-  const rows = (f.fleet || []).filter(r => r.in_game !== false);
+  const all = (f.fleet || []).filter(r => r.in_game !== false);
+
+  // ---------------------------------------------------------------- THE BOUNDARY
+  //
+  // WHAT THIS FILE OWNS AND WHAT IT MUST NOT TOUCH, and the split is by CLOCK rather
+  // than by importance. The keeper decides at one second, this decides at sixty, and a
+  // directional bot decides over minutes. Anything that has to be right within a second
+  // stays with the keeper; anything with no single right answer belongs to whoever the
+  // operator pointed at the fleet.
+  //
+  //   UNSTICK      ours, always. A keeper that has stalled cannot restart itself, and
+  //                the three refusals below — no safe wall, waiting for casting mana —
+  //                need knowledge of keeper internals that has no business leaving this
+  //                repository. It runs on bot-held characters too.
+  //   PAIR /       theirs, when a bot holds `work` or `movement`. Two writers on the
+  //   GRADUATE /   same policy fields on different cadences does not produce a winner;
+  //   DEPLOY       it produces a character whose orders oscillate while both logs look
+  //                correct. So a held character is stepped over here rather than raced.
+  //   BUSY         nobody's. An operation is in flight and even the unstick round stands
+  //                off, because the keeper is inert BY DESIGN while an external errand
+  //                walks and `ms_since_moved` measures the keeper, not the character.
+  //
+  // Both readings come off the fleet row's `committed`, which is one answer computed in
+  // one place (m59-commitment.mjs) rather than this file's guess about who is driving.
+  const heldBy = r => r.committed?.held_by?.by ?? null;
+  const midOperation = r => !!r.committed && r.committed.takeable !== true &&
+                            r.committed.kind === 'bot';
+
+  const busyRows = all.filter(midOperation);
+  if (busyRows.length)
+    console.log(`   standing off ${busyRows.length}: ` +
+      busyRows.map(r => `${r.character} (${r.committed.label})`).join(', ') +
+      ' — an operation is in flight and its keeper is inert on purpose');
+
+  // `rows` is what the DIRECTIONAL rounds below may act on. The unstick round
+  // deliberately reads `all` instead, minus the ones mid-operation.
+  const rows = all.filter(r => !heldBy(r) && !midOperation(r));
+  const unstickable = all.filter(r => !midOperation(r));
+  const bots = new Map();
+  for (const r of all.filter(heldBy)) {
+    if (midOperation(r)) continue;
+    bots.set(heldBy(r), (bots.get(heldBy(r)) ?? 0) + 1);
+  }
+  for (const [by, count] of bots)
+    console.log(`   leaving ${count} character(s) to ${by} — it holds work/movement on them, ` +
+                'and two writers on the same policy fields oscillate quietly');
   const hist = {};
   for (const r of rows) if (r.level) hist[r.level] = (hist[r.level] || 0) + 1;
   // STAND DOWN WHILE THE FLEET IS PARKING.
@@ -413,7 +612,12 @@ async function round(n) {
   //
   // So: one parked character stands the whole round down. The update is measured in
   // minutes and this runs every ninety seconds, so nothing is lost by waiting.
-  const parking = rows.filter(r => r.parked);
+  //
+  // AGAINST `all`, NOT `rows`. An update stops the whole broker, so a bot-held character
+  // parking for it is every bit as much a reason to stand down as one of ours — and this
+  // is the one round where "not mine to touch" is the wrong reading, because the thing
+  // being waited for is not a decision about that character at all.
+  const parking = all.filter(r => r.parked);
   if (parking.length) {
     const ready = parking.filter(r => r.parked.ready).length;
     console.log(`   standing down: ${parking.length} character(s) are parking for a fleet update ` +
@@ -422,12 +626,19 @@ async function round(n) {
   }
 
   const ready = rows.filter(r => (r.level ?? 0) >= GRADUATE_AT);
-  console.log(`${stamp()} [${n}] ${rows.length} in game  ready=${ready.length} (>=${GRADUATE_AT}hp)  ` +
+  console.log(`${stamp()} [${n}] ${all.length} in game, ${rows.length} mine  ` +
+              `ready=${ready.length} (>=${GRADUATE_AT}hp)  ` +
               `stalled=${f.stalled_count ?? '?'}  ${JSON.stringify(hist)}`);
 
   // 1. UNSTICK. Before anything else: a stalled keeper cannot be paired or moved, and
   // restarting it is what clears the set of rooms it gave up routing to.
-  for (const r of rows.filter(r => r.stalled && r.stalled !== false)) {
+  //
+  // OVER `unstickable`, WHICH INCLUDES THE BOT-HELD ONES. This is the harness's half of
+  // the split and it does not hand over: a directional bot decides where a character goes
+  // and what it kills, and has neither the clock nor the keeper internals to tell a
+  // deliberate refusal from a stall. Only an operation IN FLIGHT is excluded, and that is
+  // because the keeper is inert on purpose for the length of it.
+  for (const r of unstickable.filter(r => r.stalled && r.stalled !== false)) {
     const why = JSON.stringify(r.stalled).slice(0, 90);
     const reason = String(r.stalled?.why ?? r.stalled);
     // A DELIBERATE REFUSAL IS NOT A STALL, and restarting it is actively harmful.
@@ -524,7 +735,7 @@ async function round(n) {
   //
   // Characters already standing in their assigned room with the right partner are
   // skipped below, so this costs nothing for the ones that are already right.
-  const alreadyThere = new Set(VALLEY.map(v => v.room));
+  const alreadyThere = new Set(CAVE.map(v => v.room));
 
   // THE UNGRADUATED GET A ROOM TOO, and until now they did not.
   //
@@ -598,7 +809,12 @@ async function round(n) {
 async function reconcilePartners() {
   const out = [];
   const f = await call('fleet', {}).catch(() => null);
-  const rows = (f?.fleet || []).filter(r => r.character);
+  // ITS OWN FLEET READ, SO IT NEEDS ITS OWN COPY OF THE BOUNDARY. Clearing a one-sided
+  // pairing is a write to `partner`, which is an order field — so on a character a bot
+  // holds `work` on, this is the second writer, and the symptom of getting it wrong is
+  // not an error but a partner setting that flickers between two processes that each
+  // log success.
+  const rows = (f?.fleet || []).filter(r => r.character && !r.committed?.held_by);
   if (!rows.length) return out;
   for (const r of rows) {
     if (!r.partner || r.partner_ok) continue;
@@ -677,7 +893,7 @@ async function reclaimDrops() {
   try {
     await new Promise(res => {
       const p = spawn(process.execPath, [script, '--sites', String(RECLAIM_SITES),
-                                         '--port', String(PORT)], { stdio: 'inherit' });
+                                         '--port', String(PORT), ...DRY_ARGS], { stdio: 'inherit' });
       p.on('exit', res);
       // SIGTERM rather than the default kill, so the errand's own signal handler runs and
       // revives its couriers. That is the whole reason it has one.
@@ -703,7 +919,7 @@ async function spreadReagents(rows) {
   try {
     await new Promise(res => {
       const p = spawn(process.execPath, [script, '--amount', String(ALMONER_SHARE),
-                                         '--port', String(PORT)], { stdio: 'inherit' });
+                                         '--port', String(PORT), ...DRY_ARGS], { stdio: 'inherit' });
       p.on('exit', res);
       setTimeout(() => { try { p.kill(); } catch {} res(); }, 8 * 60 * 1000);
     });
@@ -732,7 +948,7 @@ async function outfitPair(a, b) {
   try {
     await new Promise(res => {
       const p = spawn(process.execPath, [script, '--agents', `${a.agent},${b.agent}`,
-                                         '--port', String(PORT)], { stdio: 'inherit' });
+                                         '--port', String(PORT), ...DRY_ARGS], { stdio: 'inherit' });
       p.on('exit', res);
       setTimeout(() => { try { p.kill(); } catch {} res(); }, 8 * 60 * 1000);
     });

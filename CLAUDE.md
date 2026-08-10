@@ -66,6 +66,102 @@ Properties → Launch Options.
 connection per character. That is expected, and is how `m59-fleet.mjs spec`
 works; use `--proxy` when you do not want it.
 
+## The boundary: what this repository decides, and what it does not
+
+Behaviour is split across three repositories and **the split is by CLOCK, not by
+importance**. Anything that has to be right within a second stays here. Anything with no
+single right answer, that can be re-decided in five minutes, belongs to whoever the
+operator pointed at the fleet.
+
+| | decides at | owner | examples |
+|---|---|---|---|
+| identity, mortality, survival, recovery | **1s** | **this repository, always** | am I dead; something is hitting me; sit down while I am hurt and safe; get out of the Underworld |
+| unstick a stalled keeper | 60s | **this repository** | `m59-supervise.mjs`. Telling a deliberate refusal from a stall needs keeper internals, and it runs on bot-held characters too |
+| work, movement, economy, social | minutes | **a bot**, when one is attached | what to hunt; which room; which errands to stop for; when to bank |
+
+`meridian59-dum-bot` is the deterministic driver of the third row and
+`meridian59-llm-bot` is the hands-on one. Neither may take the first row silently: the
+four protected faculties are refused unless the **roster** consents
+(`PROTECTED_FACULTIES`, `may_yield`), because an unattended character — one whose bot
+crashed, was `Ctrl-C`'d, or was never started — must still run from a fight it is losing.
+
+`node tools/m59-unattended-test.mjs` (44) is the guard, and it is the cheapest insurance
+here: with nothing attached, every faculty answers `keeper`, a bot asking for all eight
+gets only the directional four, an expired lease is the keeper's again, and the override
+takes a character back from a bot rather than letting its next heartbeat reclaim it.
+**It should fail the day somebody moves a survival decision out of this repository.**
+
+### The three moments the keeper asks about — `m59-playbook.mjs`
+
+The table above is about *standing* decisions. There are also **moments** where the
+keeper has no opinion and should not invent one, and where the fleet's director might.
+A **playbook** is that answer, declared per character in
+`substrate/playbooks/<character>.json`:
+
+| trigger | why the keeper cannot answer it |
+|---|---|
+| `attacked_by_player` | the keeper is **structurally blind** to this. `inReachOfUs()` filters `OF.PLAYER` out — correctly, since without it the retaliation branch picked a *fleetmate* 131 times in one sample — so a stranger standing over a character was not merely unanswered, it was unobserved. A monster and a player are not the same problem: a monster does not follow you to another town, does not wait, and does not come back tomorrow |
+| `died` | recovering is `mortality` and is unchanged. What the *fleet* does about it — whether somebody rich re-arms the corpse, whether the room comes off the list — is not answerable from inside one character |
+| `improved` | max health **is** the level, and a kill only pays when the creature's level is strictly above it. A gain can make the current prey worthless, and the keeper's answer to that is to carry on hunting it, reporting kills, indefinitely |
+
+**THE KEEPER ASKS, IT DOES NOT CALL.** A playbook is a table this process already holds,
+read from disk and cached on mtime, consulted with a synchronous function call. There is
+no network round trip and there must never be one — the first trigger is precisely the
+moment a thirty-second round trip is worth nothing. `ask_for_orders` is the one verb that
+waits; it is bounded, opt-in per trigger, and validation refuses more than 5s of it on
+`attacked_by_player` because the answer would arrive after the fight.
+
+Three properties, each of which is easy to undo:
+
+- **Silence means the behaviour that was already there, never paralysis.** With no
+  playbook, `decide` returns null and the ordinary survival ladder runs exactly as
+  before. A playbook ADDS a response; **there is deliberately no verb for standing
+  still**, and none for suppressing the floor.
+- **The verbs are a closed set** — `nothing, retreat, leave_room, logoff, say, tell,
+  ask_for_orders, stand_down`. A bot may not hand the keeper a tool call or a script. An
+  unrecognised verb falls through to the next rule and is reported, never guessed at.
+- **An unknown condition never holds**, so a typo disables its rule rather than promoting
+  it to unconditional — and `validate()` names the fields that trigger actually knows.
+
+The two outward verbs put text in front of real people on a shared server, so the message
+must be a **literal written in the playbook**; anything template-shaped is refused,
+because text assembled at the moment is how a fleet says something nobody chose.
+
+`node tools/m59-playbook-test.mjs` (37) pins all of it against fixtures — which is the
+point, since testing these for real means arranging a player attack, a death and a level
+gain on a live shared server.
+
+### Owning a character and being busy with it are different facts
+
+This is the distinction the whole split runs on, and conflating it deadlocks the bot that
+asked for it.
+
+- **`claim`** — a bot holds `work`/`movement` on a character for its whole run. The board
+  shows `held_by`, and the character stays **takeable**: a bot steering nine characters
+  must not grey nine rows, and `m59-supervise.mjs`'s unstick round must keep running on
+  them.
+- **`busy`** — the holder says an operation is *in flight*. This is the one that makes
+  everything step over the character, and it exists because **an external errand walks a
+  character with its keeper inert by design**: `ms_since_moved` measures the KEEPER, so it
+  climbs while the character is moving perfectly well, and every stall detector in the
+  fleet reads it as standing still and restarts the keeper out from under the errand.
+
+```bash
+autopilot action=claim faculties=[work,movement] by=<who> lease_ms=120000
+autopilot action=busy  by=<who> kind=crate-check label="checking the crate"
+autopilot action=free  by=<who>
+```
+
+Both are **leased and fail back to the keeper**, checked on read rather than on a timer,
+so a bot that dies leaves nothing owned and nothing marked busy. Only the holder may
+declare or clear `busy`; an operator with no name may always clear it, which is what the
+fleet board's override key does — and that override drops the **claim** as well, or the
+bot's next heartbeat quietly takes the character back thirty seconds later.
+
+Consumers ask `isTakeable(committed)`, never `!committed`. Those were the same question
+for exactly as long as the only commitments were operations; `m59-commitment.mjs` has the
+argument and `m59-commitment-test.mjs` (71) pins the regression.
+
 ## Which fleet — check this before you touch anything
 
 A fleet is a named roster, one per server, and **passing the wrong one operates on the
@@ -755,6 +851,48 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   the moment somebody edits the list — a line claiming the gear came from Kermit, over a list
   Kermit never had, is worse than no line.
 
+- **A KEEPER EARNING NOTHING LOOKS EXACTLY LIKE A HEALTHY ONE, AND THE CHECK THAT SAYS SO
+  WAS UNREACHABLE FOR A YEAR.** `noProgress()` fires when nothing WORKS. `yieldCheck()` fires
+  when everything works and none of it is worth anything — the keeper kills something every
+  pass, so `progress()` fires, so the stall detector never trips, and the board reads
+  `hunting: giant rat` for as long as you leave it.
+
+  It never ran. The guard was `if (purpose !== 'advance') return null`, **`null` means "no
+  opinion"**, and `policy.purpose` was not in the `autopilot` tool's schema — so every keeper
+  in the fleet ran at `purpose: null` and the audit was off. Both halves are fixed: `purpose`
+  and `goals` are settable over MCP, and an **unrecognised** purpose is now reported as such
+  rather than silently disabling the check.
+
+  There are two, and the second exists because **advancement is not the only reason to be
+  out**. Ten characters are at max health 50 and a level-50 fungus beast cannot advance them
+  (the rule is strictly greater) — which does not make their day worthless, it makes it a
+  different job:
+
+  | `purpose` | asks | from |
+  |---|---|---|
+  | `advance` | can this creature still raise what `goals` names? | the spawn index |
+  | `equip` | does this creature drop anything this character is still short of? | **the loadout** |
+
+  `equip` reads the gear gap rather than a constant, because "what this character needs" is
+  exactly what a loadout is for and a second definition would drift from the first. Three
+  things it does deliberately:
+
+  - **A missing loadout is not an empty one.** Everywhere else in the keeper a null loadout
+    means "carry on as before"; here it means the question cannot be asked, because the list
+    *is* the loadout. Reporting a gap of zero would read as "finished".
+  - **FINISHED AND FUTILE ARE BOTH "NOT PAYING" AND ONLY ONE IS BAD NEWS.** A character whose
+    list is complete renders as `list complete, nothing left to fetch` and wants re-tasking;
+    one grinding prey that can never drop what it needs renders as `PAYS NOTHING`.
+  - **A treasure share is not a per-kill chance.** The table is rolled `1 + level/55 +
+    random(0, difficulty/3)` times, so `per_roll_percent` is one roll's share; carried gear
+    (`per_kill_percent`) is the real thing. They are kept under separate names so nobody
+    averages the two columns.
+
+  And the reason this needed the spawn work first: **every faction troop is `TID_NONE`** —
+  the treasure table honestly says they drop nothing, because their gear is `plUsing` dropped
+  by `DropEquipment` on a roll the extractor never saw. Asked "does a soldier drop leather"
+  from `loot` alone, the answer was a confident no.
+
 - **THE PLANNER IS THE ONLY PAGE IN THE COMPENDIUM THAT CAN WRITE, and it looks like the
   game because it is editing the game's own four screens.** `compendium/planner/` rebuilds
   the client's right-hand panel — inventory, spells, skills, stats, same order, same stat
@@ -824,7 +962,16 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-ledger-test.mjs` (25) and
   `node tools/m59-escape-test.mjs` (70) and
   `node tools/m59-combat-test.mjs` (383) and
-  `node tools/m59-commitment-test.mjs` (49) and
+  `node tools/m59-playbook-test.mjs` (37 — the three moments, the closed verb set, and
+  the two rules that fail in the dangerous direction if inverted: silence means carry on,
+  and an unknown condition never holds) and
+  `node tools/m59-commitment-test.mjs` (71 — what counts as being spoken for, and the
+  distinction between a bot OWNING a character and being mid-operation on it) and
+  `node tools/m59-unattended-test.mjs` (44 — **the contract test for the carve-out**: with
+  no bot attached every faculty answers `keeper`, a bot asking for all eight gets only the
+  directional four, an expired lease is the keeper's again, and the override takes a
+  character back rather than letting the next heartbeat reclaim it. It should fail the day
+  somebody moves a survival decision out of this repository) and
   `node tools/m59-deaths-test.mjs` (82) and
   `node tools/m59-stream-test.mjs` (54) and
   `node tools/m59-ability-test.mjs` (44) and
@@ -949,15 +1096,64 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `soldier of the Duke's army`, `rebel soldier` — so one substring catches them all and
   naming a faction would miss two thirds.
 
-  Worth the trouble for what they carry: `troop.kod` creates a `Mace` or `ShortSword`, a
-  `LeatherArmor`, `ChainArmor` or `ScaleArmor`, and a shield on every soldier, and drops
-  them on death. Leather costs 480 to 1800 at a smith and this fleet has repeatedly been
-  unable to afford it. `wear_best` will refuse the chain and scale — negative defence here,
-  see ARMOUR in m59-skills.mjs — so only the leather and shields are worth collecting.
+  **THEY ARE NOT LEVEL 50, AND THIS ENTRY USED TO SAY THEY WERE.** It read the declared
+  `viLevel = 50 / viDifficulty = 2` off `duketr.kod` and concluded they were "barely more
+  dangerous than the current prey" at a rating of 270 against a fungus beast's 210. That
+  is wrong, and it is wrong in the direction that sends a fleet somewhere it cannot come
+  back from. `FactionTroop.Constructor` (`troop.kod:215`) calls `SetEquipment`, which
+  **overwrites both numbers at the moment of creation**:
 
-  They are barely more dangerous than the current prey: level 50, difficulty 2, so
-  `3*viLevel + 60*viDifficulty` is 270 against a fungus beast's 210. The necromancer troop
-  is the exception at level 60, difficulty 4 -> 420.
+  | roll | | sets |
+  |---|---|---|
+  | weapon — Longsword 35%, Axe 20%, Hammer 10%, Mace 10%, ShortSword 15%, Scimitar 10% | `+1..+4` | `viDifficulty = piBaseDifficulty + bonus` |
+  | armour — Leather 35%, Chain 35%, Scale 30% | `+20/+50/+75` | `viLevel = piBaseLevel + bonus` |
+  | gauntlets, 19% (`if iRandomNumber < 20`) | | `viLevel +20` **and** `viDifficulty +1` |
+
+  So a soldier is level **70–145**, difficulty **3–7**, attack rating **390–855, mean 572**
+  — between a zombie (405) and a groundworm (600), and *harder than the graveyard night
+  shift rather than easier*. The necromancer troop is 540–1005. **The level bonus comes
+  from the armour**, so the 30% carrying the best prize are also the worst to meet.
+
+  The death record always agreed: faction soldiers were present at 241 of the 403 attended
+  deaths on disk, which is not what a rating of 270 looks like. `m59-spawns.mjs` now
+  computes the range (`rolledTroopStats`, and `rolled` on the creature row); the top-level
+  `level`/`difficulty`/`attack_rating` carry the **worst** case, because every consumer of
+  those is a safety gate. Ask `rolled.level.min` for the floor.
+
+  **THEY ARE ABOVE THE BAND FOR EVERY CHARACTER THIS FLEET HAS EVER HAD.** `refuseEngagement`
+  refuses anything whose level exceeds `max_health + maxThreatOver` (6). The weakest possible
+  soldier is level 70; the strongest character here is 50. There is no roll of the dice that
+  produces a soldier a level-50 character may fight, and raising `maxThreatOver` to 95 to
+  permit it would permit everything else in the world too.
+
+  And what they carry is worth less than it looks. **`EQUIPMENT_DROP_PERCENT = 20`**
+  (`troop.kod:33`), rolled per item, and what does not drop is `Delete`d — so any body
+  armour is 1 kill in 5, and *leather specifically* is `0.35 × 0.20` = **7%, about fourteen
+  soldiers per leather**. **The shield never drops at all**: `AND (NOT
+  IsClass(oUsedItem,vcShieldClass))`, commented *"Don't drop the shield! It's a
+  quest/special item!"* (`troop.kod:1043`). This entry claimed a shield on every soldier
+  and that they dropped on death; both were wrong.
+
+  **SO DO NOT FARM SOLDIERS FOR ARMOUR — THE SPIDER AND THE ORC ARE BOTH BETTER AND BOTH
+  FIGHTABLE.** Every creature in the world that drops body armour, by how dangerous it is:
+
+  | | level | rating | per kill | in the band? |
+  |---|---|---|---|---|
+  | **spider** | 50 | **390** | leather 2% + chain 1% per roll, ~1.5 rolls -> **~4.5%** | **yes** |
+  | zombie | 55 | 405 | chain 1%/roll | no |
+  | **orc** | 45 | **495** | leather 5%/roll, ~2 rolls -> **~10%** | **yes** |
+  | troll | 100 | 750 | scale 3%/roll | no |
+  | faction soldier | 70–145 | 572 mean | **20%** — best rate in the game | **NO, never** |
+
+  The soldier has by far the best drop rate and is the only one on the list a character
+  here may not fight. The orc beats it on leather anyway (10% against 7%) at a lower
+  rating. **A fungus beast drops no armour at all**, which is why a fleet farming them can
+  grind for a week and stay bare.
+
+  Take spiders from **536 Forest of Farol** (70%, cap 12) or **556 Deep Forest of Farol**
+  (55%, cap 16) — nothing in either table rates above 390. **Not 596 Outskirts of Tos**
+  (groundworm, 600), **not 597 The Twisted Wood** (troll, 750), and **not 35 The Spider
+  Nest**, where the queen rates 1035.
 
 - **THE GRAVEYARD OF TOS IS OPEN THIRTY-FIVE MINUTES IN EVERY TWO HOURS, AND THE CLOCK IS
   ARITHMETIC ON THE WALL CLOCK.** `tosgrave.kod` holds
@@ -992,12 +1188,37 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   the *safer* fight, and the `prey` band, which sorts on level alone, will not offer
   it. `tools/m59-supervise.mjs` documents the full arithmetic.
 
-- **Heavy armour is worse here.** Each piece carries `viDefense_base` (how often you
-  are hit) and `viDamage_base` (a flat absorb). They pull opposite ways: leather is
-  +50/0, plate is -200/6 with a -30 spell modifier. On a scale where a monster's whole
-  attack rating is ~210, -200 is enormous — and a character fighting from a safe spot
-  intends to be hit zero times, which absorption does nothing about. `wear_best` ranks
-  on that, so it buys leather over plate deliberately. See `ARMOUR` in `m59-skills.mjs`.
+- **Heavy armour is worse here — BUT BARE IS WORSE THAN ALL OF IT, AND THAT IS A
+  DIFFERENT QUESTION.** Each piece carries `viDefense_base` (how often you are hit) and
+  `viDamage_base` (absorption). They pull opposite ways: leather is +50/0, plate is
+  -200/6 with a -30 spell modifier. On a scale where a monster's whole attack rating is
+  ~210, -200 is enormous — and a character fighting from a safe spot intends to be hit
+  zero times, which absorption does nothing about. `wear_best` ranks on that, so it buys
+  leather over plate deliberately.
+
+  What that ranking was also doing, wrongly, was **refusing to wear anything at all**
+  when the only armour in the pack scored below zero — leaving fourteen of twenty-one
+  characters bare while carrying chain or scale. Bare skin is not the neutral baseline
+  the score treats it as: it has no defence bonus **and** no absorption. Worked against
+  this fleet (agility 45, base max health 50, block 90, so `iDefense` = 345,
+  `player.kod:4320`), expected damage per fungus-beast swing is **bare 1.34, chain 1.18,
+  leather 1.17, scale 0.71** — bare is last. So there is now a **floor**: with the slot
+  EMPTY, the best available piece is worn provided it absorbs something, it is reported
+  as `floor: true` rather than silently, and a negative piece is no longer stripped down
+  to skin when nothing better exists.
+
+  Two things the arithmetic depends on, both of which cut against absorption and are
+  priced in above. It is `random(reduce/3, reduce)`, not the face value, and it is
+  bounded to `damage-1` (`defmod.kod:108`) — **a blow always lands for at least 1**.
+
+  **And the hit chance is `offense * 55 / defence` BOUNDED TO [10,95]** (`battler.kod:331`).
+  That bound is why "more defence" is not always the answer: against anything that pins
+  us at 95% — a faction soldier at 572 does, leather or not — extra defence buys
+  *literally nothing* and absorption is the only thing still working. Against a fungus
+  beast the bound does not bind and leather wins. `ABSORB_IS_WORTH` (10) was deliberately
+  **not** raised, because anything over 25 flips leather-versus-scale fleet-wide as a side
+  effect, and that question turns on block, on shields, and on the spell modifier the
+  create-food loop runs on. See `ARMOUR` and `absorbsSomething` in `m59-skills.mjs`.
 - The compendium's sprites are not committed. `python tools/pull-client-assets.py`
   decodes them from a local client. Do not commit `compendium/assets/img/`.
 - Do not commit anything a running fleet writes — `fleet-state.json`,

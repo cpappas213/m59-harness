@@ -158,3 +158,20 @@ __pycache__/
 # writeLoadout renames a .tmp into place so a keeper never reads half a file; the .tmp
 # exists for milliseconds and must never be committed.
 /substrate/loadouts/*.tmp
+
+# PLAYBOOKS ARE NOT COMMITTED, AND THAT IS THE ONE PLACE THEY DIFFER FROM LOADOUTS.
+#
+# substrate/playbooks/<character>.json says what to do when a player attacks, when the
+# character dies, and when it improves. A loadout is a shopping list; this is a response
+# to other people, and two things in it are not like a plan:
+#
+#   * `say` and `tell` carry LITERAL TEXT SENT TO STRANGERS on a shared server,
+#     attributable to whoever owns the account. Committing it publishes what the fleet
+#     will say, to whom, and under exactly what conditions;
+#   * `logoff` publishes when the fleet runs and for how long, which is precisely the
+#     thing somebody who wanted to grief it would read first.
+#
+# So it stays on the machine that owns the roster. If a playbook is ever worth sharing,
+# share the SHAPE — doctrines in meridian59-dum-bot are written to be public and address
+# characters by role.
+/substrate/playbooks/

@@ -33,13 +33,17 @@ import { recordEvent } from './m59-ledger.mjs';
 import * as uptime from './m59-uptime.mjs';
 import * as party from './m59-party.mjs';
 import { mayShareSpot } from './m59-party.mjs';
+// The pre-registered table the keeper consults at the three moments it has no opinion
+// about. A LOOKUP, never a request — see the note above checkAttackedByPlayer().
+import * as playbook from './m59-playbook.mjs';
 import { CITY_INNS } from './m59-underworld.mjs';
 // WHAT THIS PARTICULAR CHARACTER IS SUPPOSED TO BE CARRYING, if anybody has said. Every
 // buy, sell, keep and drop rule below used to be one constant for twenty-one characters;
 // a loadout is that answer per character, written in the compendium's planner. It is an
 // OVERLAY — a character with no loadout behaves exactly as it did before this import
 // existed, and every call below is guarded on the null that says so.
-import { loadoutFor, keepTest, sellTest, dropRank, wantsOf, norm } from './m59-loadout.mjs';
+import { loadoutFor, keepTest, sellTest, dropRank, wantsOf, norm,
+         reconcile, equipYield } from './m59-loadout.mjs';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 
 // Built by: node tools/m59-spawns.mjs
@@ -201,6 +205,13 @@ const EAT_TO_AT_LEAST = 120;
 //
 // Unknown difficulty means unknown danger, and unknown is NOT gentle.
 const GENTLE_RATING = 210;                 // a fungus beast: level 50, difficulty 1
+
+// WHAT A KEEPER CAN BE OUT THERE FOR, and the list is closed on purpose — anything not on
+// it is reported as unrecognised rather than quietly skipping the yield check. `advance`
+// asks whether the prey can still raise what we are trying to raise; `equip` asks whether
+// it can still drop what we are still short of. A character at the level cap doing the
+// second is working, not stalled, and the board has to be able to tell them apart.
+const YIELD_PURPOSES = ['advance', 'equip'];
 function ratingOfCreature(name) {
   const all = loadSpawns(SPAWN_FILE)?.creatures;
   const q = String(name || '').toLowerCase();
@@ -3060,9 +3071,15 @@ export class Autopilot {
       // This string is what the fleet board renders, and it is where the afternoon of
       // worthless grinding would have been visible had there been anything to see.
       const y = this.yieldCheck();
-      return y && !y.paying
-        ? `hunting: ${this.policy.hunt} — PAYS NOTHING for ${this.policy.purpose}`
-        : `hunting: ${this.policy.hunt}`;
+      if (!y || y.paying) return `hunting: ${this.policy.hunt}`;
+      // FINISHED IS NOT THE SAME FAILURE AS FUTILE, and rendering them with one string
+      // would undo the point of the check. A character whose list is complete has done
+      // what it was sent to do and wants re-tasking; one grinding prey that can never
+      // drop what it needs is burning an afternoon. Both are "not paying"; only the
+      // second is bad news.
+      return y.done
+        ? `hunting: ${this.policy.hunt} — list complete, nothing left to fetch`
+        : `hunting: ${this.policy.hunt} — PAYS NOTHING for ${this.policy.purpose}`;
     }
     return this.stalledSince ? `stuck: ${this.stalledWhy}` : 'waiting';
   }
@@ -3561,6 +3578,231 @@ export class Autopilot {
       Math.hypot(o.col - me.col, o.row - me.row) <= REACH);
   }
 
+  // ------------------------------------------------------- the moments we ask about
+  //
+  // THREE PLACES WHERE THE KEEPER HAS NO OPINION AND SHOULD NOT INVENT ONE. Each asks a
+  // PLAYBOOK the fleet's director wrote in advance — `m59-playbook.mjs`, read from disk
+  // and cached on mtime, consulted with a synchronous function call and no network.
+  //
+  // The lookup is deliberately not a request. The first of the three is a player
+  // attacking us, which is exactly the moment a thirty-second round trip is worth
+  // nothing; so the answer is written down beforehand and read in microseconds. `ask for
+  // orders` is the one verb that waits, and it exists so the escape hatch is explicit
+  // rather than being the default nobody noticed they had chosen.
+  //
+  // NOTHING DECLARED MEANS THE BEHAVIOUR THAT WAS ALREADY THERE. `decide` returns null
+  // and every one of these returns without acting, which for an attack means the ordinary
+  // survival ladder — flee when losing, rest when hurt and safe. There is no verb for
+  // standing still and there must not be one.
+
+  /**
+   * A PLAYER IS HITTING US, AND UNTIL NOW NOTHING IN HERE COULD SEE IT.
+   *
+   * `inReachOfUs()` filters `OF.PLAYER` out, which is right and stays right: without it
+   * the retaliation branch chose a FLEETMATE 131 times out of a sample, and a fleet that
+   * hits back at players on a shared server is a different kind of project. But the
+   * filter meant a stranger standing over a character was not merely unanswered, it was
+   * unobserved — the keeper read the damage as coming from the room and applied the same
+   * ladder it applies to a giant rat.
+   *
+   * A monster and a player are not the same problem. A monster does not follow you to
+   * another town, does not wait, and does not come back tomorrow.
+   *
+   * THE EVIDENCE IS TWO FACTS TOGETHER, because either alone is ordinary. A stranger
+   * standing near us is a Tuesday on `prod`; losing health next to one is not. So this
+   * fires on an attackable non-fleetmate player within reach AND health that has gone
+   * down since the last look — and it is deliberately cheap enough to ask every pass.
+   */
+  async checkAttackedByPlayer() {
+    const c = this.s?.client, me = c?.self;
+    if (!me || !c?.room) return null;
+    const hp = c.vitals?.()?.health;
+    const now = hp?.value ?? null;
+    const before = this.lastSeenHealth ?? null;
+    this.lastSeenHealth = now;
+    if (now == null || before == null || now >= before) return null;
+
+    const strangers = [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.PLAYER) && (o.flags & OF.ATTACKABLE) &&
+      Math.hypot(o.col - me.col, o.row - me.row) <= REACH &&
+      // A FLEETMATE IS NOT AN ATTACKER. `party.knownCharacters()` is every character
+      // whose keeper has reported this run — and a keeper that has not had a pass yet is
+      // ABSENT from it, so this can call one of ours a stranger for a few seconds after a
+      // restart. That is why the playbook's answers are withdraw-and-wait rather than
+      // anything that hits back: being wrong here must cost a walk, not a fight.
+      !party.isFleetmate(c.rsc.get(o.nameRsc)));
+    if (!strangers.length) return null;
+
+    const pb = playbook.playbookFor(this.who());
+    const facts = {
+      who: c.rsc.get(strangers[0].nameRsc) ?? null,
+      health_pct: pct(hp), room: this.s.world?.room?.num ?? null,
+      attackers: strangers.length,
+      // `this.hold` is the square we have claimed; `proven` is whether it has been stood
+      // in and held. A playbook that wants the difference asks holdWorks() — this is the
+      // weaker "we are on a wall at all", which is the one that matters against a player,
+      // because a wall proven against monsters is no wall at all against somebody who can
+      // walk round it.
+      in_safe_spot: !!this.hold,
+    };
+    const action = playbook.decide('attacked_by_player', pb, facts);
+    // RECORDED WHETHER OR NOT ANYTHING WAS DECLARED. A fleet being picked on by one
+    // player, with nobody having written a playbook, is exactly the thing that should be
+    // visible afterwards — and with no note it looks like a run of bad luck with monsters.
+    this.note('a player is attacking us', {
+      ...facts, lost: before - now,
+      declared: action ? `${action.verb}` : null,
+      why: action ? action.why
+                  : 'no playbook covers this, so the ordinary survival ladder applies — ' +
+                    'which treats this exactly as it treats a giant rat',
+    });
+    if (!action) return null;
+    return this.runPlaybook('attacked_by_player', action, facts);
+  }
+
+  /**
+   * EXECUTE ONE PLAYBOOK VERB. The closed set from m59-playbook.mjs and nothing else —
+   * a bot may not hand the keeper an arbitrary act, which is the whole reason the verbs
+   * are a vocabulary rather than a tool call.
+   *
+   * Every branch reports what it did, because a playbook that fires and achieves nothing
+   * is indistinguishable from one that was never consulted.
+   */
+  async runPlaybook(trigger, action, facts = {}) {
+    const done = (what, extra = {}) => {
+      this.tally.playbook = (this.tally.playbook || 0) + 1;
+      this.note('playbook', { trigger, verb: action.verb, rule: action.rule,
+                              why: action.why, did: what, ...extra });
+      return { trigger, ...action, did: what };
+    };
+    try {
+      switch (action.verb) {
+        case 'nothing':
+          return done('nothing, deliberately');
+
+        case 'retreat':
+          await this.retreatToSafety({ because: `playbook: ${trigger}` });
+          return done('retreated to a wall');
+
+        case 'leave_room':
+          await this.retreatToSafety({ because: `playbook: ${trigger}`, leaveRoom: true });
+          return done('left the room');
+
+        case 'logoff': {
+          // THE ANSWER TO A GRIEFER, AND THE HALF THAT MATTERS IS THE WAITING. Logging
+          // off and straight back on hands the character back to whoever was hitting it.
+          // So the stay-off window is published for the broker's rejoin sweep to honour —
+          // otherwise the sweep, which exists to put back characters that fall out, would
+          // put this one back in forty-five seconds and read the next drop as contention.
+          const s = Number(action.args.stay_off_s) || 0;
+          this.stayOffUntil = Date.now() + s * 1000;
+          this.goInert(`playbook: ${trigger} — staying off for ${s}s`, { maxMs: (s + 60) * 1000 });
+          const out = await this.breakOut(`playbook: ${trigger}`).catch(e => ({ did: false, why: e.message }));
+          return done(out?.did ? `logged off for ${s}s` : `could not log off (${out?.why ?? 'refused'})`,
+                      { stay_off_s: s, until: this.stayOffUntil });
+        }
+
+        case 'say':
+        case 'tell': {
+          // A LITERAL SOMEBODY CHOSE, SENT VERBATIM. `prod` has real players on it and
+          // anything said is attributable to whoever owns the account, so the text comes
+          // out of the playbook exactly as written — never assembled here, and never from
+          // anything the world said back to us. m59-playbook.mjs refuses a message that
+          // looks like a template for this reason.
+          const text = String(action.args.message ?? '');
+          if (!text) return done('nothing — no message was written');
+          const c = this.s.client;
+          if (action.verb === 'say') await this.s.pacer.submit('say', () => c.say(text));
+          else {
+            const to = this.findByName(action.args.to);
+            if (!to) return done(`nobody here called ${action.args.to}`);
+            await this.s.pacer.submit('say', () => c.tell(to.id, text));
+          }
+          return done(`said it`, { to: action.args.to ?? 'the room' });
+        }
+
+        case 'stand_down':
+          this.goInert(`playbook: ${trigger}`);
+          return done('stood down and waited to be told');
+
+        case 'ask_for_orders': {
+          // THE ONE VERB THAT BLOCKS, and its cost is stated where it is paid. The
+          // character is marked busy so nothing restarts its keeper while it waits, the
+          // wait is bounded by the playbook (and capped hard by validation), and if
+          // nobody answers the keeper carries on exactly as it would have.
+          const waitS = Math.min(30, Number(action.args.wait_s) || 0);
+          const held = this.heldStatus();
+          if (!held) return done('nobody is holding this character, so there is nobody to ask');
+          this.declareBusy({ by: held.by, kind: `asked:${trigger}`,
+                             label: `waiting for orders about ${trigger}`,
+                             leaseMs: (waitS + 30) * 1000 });
+          this.pendingQuestion = { trigger, facts, at: Date.now(), by: held.by };
+          const until = Date.now() + waitS * 1000;
+          while (Date.now() < until && this.pendingQuestion) await sleep(500);
+          const answered = !this.pendingQuestion;
+          this.pendingQuestion = null;
+          this.freeBusy({ by: held.by });
+          return done(answered ? `${held.by} answered` : `${held.by} did not answer in ${waitS}s`,
+                      { waited_s: waitS, answered });
+        }
+
+        default:
+          // Unreachable through `decide`, which skips verbs it does not know. Here for
+          // the day somebody calls this directly.
+          return done(`nothing — "${action.verb}" is not a verb this keeper executes`);
+      }
+    } catch (e) {
+      return done(`failed: ${e.message}`);
+    }
+  }
+
+  /**
+   * ASK THE PLAYBOOK ABOUT WHATEVER JUST HAPPENED — one call, from one place in the pass.
+   *
+   * The two queued triggers fire here rather than where they are detected, and for the
+   * same reason in both cases: the moment of detection is the wrong moment to act. A
+   * death is noticed inside the death handling, with the character in the Underworld,
+   * where a playbook that walked it anywhere would be arguing with the escape; an
+   * improvement is noticed while reading the event ring mid-fight. Queuing them costs one
+   * pass and buys a keeper that is somewhere coherent when the action runs.
+   *
+   * Attacked-by-player is NOT queued, because its whole value is being immediate.
+   */
+  async consultPlaybook() {
+    const pb = playbook.playbookFor(this.who());
+
+    // Cleared before the await in every branch, so a slow action cannot make the same
+    // event fire twice on the next pass.
+    if (this.pendingDeath) {
+      const facts = this.pendingDeath; this.pendingDeath = null;
+      const action = playbook.decide('died', pb, facts);
+      if (action) await this.runPlaybook('died', action, facts);
+    }
+    if (this.pendingImprovement) {
+      const facts = this.pendingImprovement; this.pendingImprovement = null;
+      const action = playbook.decide('improved', pb, facts);
+      if (action) await this.runPlaybook('improved', action, facts);
+    }
+    // A DELIBERATE LOGOFF IS NOT A DROP, and the keeper has to stop driving for the
+    // window it asked for or it walks straight back into whoever it left.
+    if (this.stayOffUntil && Date.now() < this.stayOffUntil) return;
+    if (this.stayOffUntil) {
+      this.stayOffUntil = null;
+      this.note('stay-off window is over', { why: 'the playbook logged this character off ' +
+        'and the wait it asked for has elapsed' });
+    }
+    await this.checkAttackedByPlayer();
+  }
+
+  /** An object in this room whose name matches, for `tell`. */
+  findByName(name) {
+    const c = this.s?.client;
+    if (!c?.room || !name) return null;
+    const want = String(name).toLowerCase();
+    return [...c.room.objects.values()]
+      .find(o => (c.rsc.get(o.nameRsc) || '').toLowerCase() === want) ?? null;
+  }
+
   // IS THIS THING TOO DANGEROUS TO SWING AT — asked of ONE creature, by name.
   //
   // capBlockers answers this for a whole room and only when the room is at cap, so the
@@ -3844,16 +4086,39 @@ export class Autopilot {
   // index, vitals not read yet. Null means "no opinion", never "fine".
   yieldCheck() {
     const { purpose, goals, hunt } = this.policy;
-    if (purpose !== 'advance' || !hunt) return null;
-    if (!goals?.length)
-      return { paying: false, why: 'purpose is `advance` but no goals are set, so nothing ' +
-                                   'can be checked — set policy.goals or clear policy.purpose' };
+    if (!purpose || !hunt) return null;
+    // AN UNRECOGNISED PURPOSE IS REPORTED, NOT IGNORED.
+    //
+    // This read `if (purpose !== 'advance') return null`, so every other value — a typo, a
+    // purpose added later, or `equip` before it existed — silently turned the check OFF
+    // and rendered as an ordinary healthy row. That is the exact failure this function was
+    // written to catch, reachable by misspelling one word.
+    if (!YIELD_PURPOSES.includes(purpose))
+      return { paying: false, purpose,
+               why: `\`${purpose}\` is not a purpose this keeper knows how to check ` +
+                    `(${YIELD_PURPOSES.join(', ')}), so nothing is being measured`,
+               hint: 'a purpose nobody recognises must not read the same as a purpose ' +
+                     'being served — fix the spelling or clear policy.purpose' };
+
     const spawns = loadSpawns(SPAWN_FILE);
     if (!spawns) return null;
     const needle = String(hunt).toLowerCase();
     const c = Object.values(spawns.creatures)
       .find(x => x.name.toLowerCase().includes(needle) || x.cls.toLowerCase() === needle);
     if (!c) return null;
+
+    // FARMING TO CLOSE THE GEAR GAP IS A REAL JOB, AND IT OUTLIVES ADVANCEMENT.
+    //
+    // Ten characters here are at max health 50, and a level-50 fungus beast cannot advance
+    // any of them — the rule is strictly greater. That does not make their day worthless:
+    // they are out for gear and coin. `equip` is how a keeper says so, and it is checked
+    // rather than merely declared, because "farming for kit" is otherwise an excuse that
+    // can never be wrong. See equipYield in m59-loadout.mjs.
+    if (purpose === 'equip') return this.equipCheck(c);
+
+    if (!goals?.length)
+      return { paying: false, why: 'purpose is `advance` but no goals are set, so nothing ' +
+                                   'can be checked — set policy.goals or clear policy.purpose' };
     const maxHealth = this.s.client?.vitals?.()?.health?.max ?? 0;
     if (!maxHealth) return null;
     // Stamina only moves the hit-point CEILING. Unknown is reported as unknown rather
@@ -3876,6 +4141,42 @@ export class Autopilot {
             'tool; nothing in here will re-target it for you.',
       ...(known ? {} : { caveat: 'stamina unknown, so the hit-point ceiling was not checked' }),
     };
+  }
+
+  // The `equip` half of yieldCheck. Costs a stat() and some arithmetic — no request — so
+  // it is safe on the path that renders the board every few seconds.
+  equipCheck(creature) {
+    const l = this.loadout();
+    // NO LOADOUT IS NOT AN EMPTY LOADOUT. Everywhere else in this file a missing loadout
+    // means "carry on as before" and is answered with null; here it means the question
+    // cannot be asked at all, because the list of what this character needs IS the
+    // loadout. Saying so beats reporting a gap of zero, which would read as "finished".
+    if (!l)
+      return { paying: false, purpose: 'equip',
+               why: 'purpose is `equip` but this character has no loadout, so there is no ' +
+                    'list of what it is short of',
+               hint: 'write one in the planner (P on the fleet terminal), or clear ' +
+                     'policy.purpose if it is out here for coin rather than kit' };
+    const plan = reconcile(l, { items: this.packAsItems(), equipped: this.equippedNames() });
+    const y = equipYield(plan, creature);
+    if (!y) return null;
+    return { paying: !!y.pays, purpose: 'equip', creature: y.creature,
+             ...(y.pays ? { for: y.for } : {}),
+             ...(y.done ? { done: true } : {}),
+             ...(y.why ? { why: y.why } : {}),
+             ...(y.short_of ? { short_of: y.short_of } : {}),
+             ...(y.hint ? { hint: y.hint } : {}) };
+  }
+
+  // What the SERVER says is worn, in the shape reconcile() reads. The use list is the
+  // authority — see wearArmourIfNeeded — because a pack holding leather and a character
+  // fighting in its shirt look identical from the inventory alone.
+  equippedNames() {
+    const c = this.s.client;
+    const using = skills.equippedNow(c);
+    if (!c || !using) return [];
+    return (c.inventory || []).filter(o => using.has(o.id))
+      .map(o => ({ name: c.rsc.get(o.nameRsc) || '' }));
   }
 
   // Something useful happened; clear the stall.
@@ -4597,6 +4898,15 @@ export class Autopilot {
         now: max, room: room?.name,
         why: 'the server announced a maximum-health gain — the one thing being farmed',
       });
+      // MAX HEALTH IS THE LEVEL, SO A GAIN CAN INVALIDATE THE REASON WE ARE STANDING
+      // HERE. Advancement needs the creature's level STRICTLY above base max health, so
+      // the prey that was paying a minute ago may now be worth nothing — and the keeper's
+      // own answer to that is to carry on hunting it, reporting kills, indefinitely.
+      // Which monster to switch to is a directional decision and belongs to whoever is
+      // directing; this is where they get told the question has been asked.
+      this.pendingImprovement = { what: 'max_health', from: max == null ? null : max - 1, to: max,
+                                  hunting: this.policy?.hunt ?? null,
+                                  room: room?.num ?? null };
     }
     this.toughSeen = high;
     // A gain nothing claimed within the window is written with its cause left null. Done
@@ -4615,7 +4925,77 @@ export class Autopilot {
       inert: this.inertStatus(),
       parked: this.parkStatus(),
       partner: this.policy?.partner ?? null,
+      // THE TWO HALVES OF "SOMETHING OUTSIDE IS DRIVING THIS", kept apart on purpose —
+      // see the long note in m59-commitment.mjs. `held` is ownership and is takeable;
+      // `busy` is an operation in flight and is not.
+      held: this.heldStatus(),
+      busy: this.busyStatus(),
     });
+  }
+
+  // ------------------------------------------------------------------- outside owners
+  //
+  // WHO IS DRIVING, derived from the faculty claims rather than stored a second time. A
+  // second field would be a second answer, and the two would disagree the first time a
+  // lease expired — `facultyOwner` already drops an expired claim on read, so deriving it
+  // means the ownership line goes away exactly when the ownership does.
+  heldStatus() {
+    const held = [];
+    let by = null, at = null;
+    for (const f of Autopilot.FACULTIES) {
+      const c = this.claims?.get(f);
+      if (!c || c.until <= Date.now()) continue;
+      held.push(f); by ??= c.owner; at ??= c.at ?? null;
+    }
+    return held.length ? { by, faculties: held, at } : null;
+  }
+
+  /**
+   * A CLAIM HOLDER SAYS IT IS MID-OPERATION.
+   *
+   * This is the field that was missing, and its absence had a specific cost: an external
+   * errand walks a character with the keeper inert by design, so every stall detector in
+   * the fleet reads `ms_since_moved` — which measures the KEEPER — as a character standing
+   * still, and restarts it out from under the errand. There was no way to say "this is
+   * supposed to look like that."
+   *
+   * IT IS LEASED, like the claim it rides on, and for the same reason: a bot that dies
+   * mid-errand must not leave a character marked busy for ever, with every supervisor in
+   * the fleet politely stepping over a keeper that has genuinely stopped. An expired busy
+   * is not busy, checked on read rather than on a timer so there is no window.
+   *
+   * ONLY THE HOLDER MAY SET IT. Being able to mark somebody else's character hands-off is
+   * the same authority as taking it.
+   */
+  declareBusy({ by = null, kind = null, label = null, detail = null, leaseMs = 300_000 } = {}) {
+    const held = this.heldStatus();
+    if (!held) return { busy: null, refused: 'nothing is claimed on this character — claim a ' +
+                                             'faculty first, so that "busy" has an owner and a lease' };
+    if (by && held.by !== by)
+      return { busy: null, refused: `${held.by} holds this character, not ${by}` };
+    this.busy = { by: held.by, kind, label, detail,
+                  at: Date.now(), until: Date.now() + Math.max(1_000, leaseMs) };
+    this.note('declared busy', { by: held.by, kind, label, lease_ms: leaseMs,
+      note: 'stall detectors should step over this character until it is freed or the lease lapses' });
+    return { busy: this.busyStatus() };
+  }
+
+  freeBusy({ by = null } = {}) {
+    if (!this.busy) return { busy: null, was: null };
+    // A null `by` is an operator taking it back, which is always allowed — the same rule
+    // releaseFaculties uses for a bot that is gone.
+    if (by && this.busy.by !== by) return { busy: this.busyStatus(), refused: `${this.busy.by} owns it` };
+    const was = this.busyStatus();
+    this.busy = null;
+    this.note('no longer busy', { was: was?.label ?? was?.kind ?? null, by });
+    return { busy: null, was };
+  }
+
+  busyStatus() {
+    if (!this.busy) return null;
+    if (this.busy.until <= Date.now()) { this.busy = null; return null; }
+    return { ...this.busy, for_s: Math.round((Date.now() - this.busy.at) / 1000),
+             expires_in_ms: this.busy.until - Date.now() };
   }
 
   // RELEASE IT, whatever is holding it. The override key on the fleet board is the only
@@ -4637,6 +5017,16 @@ export class Autopilot {
       undone.push(`unpaired from ${this.policy.partner}`);
       party.unpair(this.name ?? this.s?.name);
       this.policy.partner = null;
+    }
+    // THE OVERRIDE KEY HAS TO REACH THE OUTSIDE OWNERS TOO, or it stops being an override.
+    // Both are dropped, not just `busy`: leaving the claim in place means the bot's next
+    // heartbeat renews a character an operator has just taken back, and the row goes grey
+    // again within thirty seconds with nothing to show why.
+    if (this.busy) { undone.push(`cancelled ${this.busy.by}'s operation`); this.busy = null; }
+    const held = this.heldStatus();
+    if (held) {
+      undone.push(`took ${held.faculties.join(', ')} back from ${held.by}`);
+      this.releaseFaculties({ faculties: null, by: null });
     }
     if (this.inert) { undone.push('revived the keeper'); this.revive(why); }
     return { released: !!was, was, undone };
@@ -4711,8 +5101,15 @@ export class Autopilot {
                'the roster must name it in may_yield' });
         continue;
       }
+      // `at` is when this owner FIRST took it, not when the lease was last pushed out. A
+      // heartbeat every thirty seconds would otherwise make every claim look ten seconds
+      // old for ever, and "who has been driving this character for the last two hours" is
+      // the question the board is actually asked.
+      const prev = this.claims?.get(f);
       (this.claims ??= new Map()).set(f, {
-        owner: by || 'unnamed', until: Date.now() + Math.max(1_000, leaseMs), why });
+        owner: by || 'unnamed', until: Date.now() + Math.max(1_000, leaseMs), why,
+        at: (prev && prev.owner === (by || 'unnamed') && prev.until > Date.now())
+              ? (prev.at ?? Date.now()) : Date.now() });
       granted.push(f);
     }
     if (granted.length) this.note('faculties claimed', {
@@ -5368,6 +5765,34 @@ export class Autopilot {
         const file = this.writePostMortem(pm);
         this.lastDeath.post_mortem = file;
         this.lastPostMortem = pm;
+        // WHAT THE FLEET DOES ABOUT A DEATH IS NOT A ONE-SECOND DECISION AND THE KEEPER
+        // CANNOT MAKE IT. Getting back out of the Underworld is `mortality` and stays
+        // here, unchanged. Whether somebody rich re-arms this character, whether the room
+        // is now off the list, whether anyone is told — none of that is answerable from
+        // inside one character, and today nothing asks.
+        //
+        // Queued rather than run here: this branch is inside the death handling, the
+        // character is in the Underworld, and a playbook that walked it somewhere would be
+        // arguing with the escape. It fires on the next ordinary pass.
+        this.pendingDeath = {
+          killed_by: this.lastDeath.killed_by?.[0] ?? null,
+          // THE ONE DISTINCTION A FLEET MOST LIKELY WANTS TO ACT ON DIFFERENTLY, and it
+          // is read off the ARTICLE rather than off a field, because there is no field.
+          // `system.kod` broadcasts `### X was just killed by a troll.` for a creature and
+          // `### X was just killed by Yorick.` for a person — the parser strips the
+          // article, so the raw text is the only place the difference survives.
+          //
+          // A HEURISTIC, AND LABELLED AS ONE. A proper noun with no article is the
+          // signature, and it is not proof: it is wrong about anything the game names
+          // without an article. So the playbook gets the reading and the record keeps the
+          // sentence, and nothing here reports it as though the server said it.
+          was_killed_by_player: bcast?.text
+            ? !/killed by (?:an?|the)\s/i.test(bcast.text) : null,
+          killed_by_player_is_a_guess: !!bcast?.text,
+          room: this.lastDeath.room_num ?? null,
+          purse_lost: this.lastDeath.purse ?? null,
+          level: this.s.client?.vitals?.()?.health?.max ?? null,
+        };
         // ON THE FEED TOO, beside the kills, and only now — after the broadcast has had
         // its couple of seconds. Recording it any earlier would put the 51%-accurate
         // guess on the live feed while the authoritative answer arrived a moment later
@@ -5660,6 +6085,20 @@ export class Autopilot {
       this.noProgress(`unarmed — ${manaNow} mana, needs 15 to make one`);
       return;
     }
+
+    // 1.9 THE THREE MOMENTS THE FLEET'S DIRECTOR MAY HAVE AN OPINION ABOUT.
+    //
+    //     ABOVE the danger ladder, because a player attacking us is the one case where
+    //     the ladder is answering the wrong question — it will flee to a wall, which
+    //     works on a monster and does nothing at all about somebody who can follow. And
+    //     BELOW identity, mortality and the unarmed gate, which are not anybody's to
+    //     redirect.
+    //
+    //     Free when nothing is declared: playbookFor is a stat() against an mtime cache,
+    //     decide() is a loop over a list that is usually absent, and every one of these
+    //     returns null in that case — leaving the ladder below to run exactly as it did
+    //     before this existed.
+    await this.consultPlaybook();
 
     // 2. In danger. "Something attackable is adjacent and we are hurt" is the only
     //    threat signal available — the protocol does not say who is targeting us.

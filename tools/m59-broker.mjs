@@ -5338,7 +5338,9 @@ const TOOLS = [
       agent: { type: 'string' },
       action: { type: 'string',
                 enum: ['start', 'stop', 'inert', 'revive', 'status', 'list', 'park', 'unpark', 'release',
-                       'claim', 'heartbeat', 'yield'] },
+                       'claim', 'heartbeat', 'yield', 'busy', 'free'] },
+      kind: { type: 'string', description: 'busy: what sort of operation, e.g. "crate-check"' },
+      label: { type: 'string', description: 'busy: one short phrase for the board' },
       // PER-FACULTY OWNERSHIP. `inert` is the whole character; these are halves of one.
       // A bot claims `work`/`movement`/`economy` and the keeper keeps everything that
       // decides on a one-second clock. See Autopilot.claimFaculties.
@@ -5364,6 +5366,28 @@ const TOOLS = [
       rest_below: { type: 'number', description: 'rest when a vital drops under this fraction, default 0.7' },
       flee_below: { type: 'number', description: 'withdraw under this fraction, default 0.4' },
       max_carry: { type: 'number', description: 'stop farming at this many items, default 14' },
+      // HOW FAR ABOVE ITS OWN LEVEL THIS CHARACTER MAY FIGHT, and it was unreachable.
+      //
+      // `refuseEngagement` and `capBlockers` both gate on `max_health + maxThreatOver`
+      // with a default of 6, and nothing in this schema set it — so the ceiling was a
+      // constant for every character in every fleet, exactly as `purpose` was a constant
+      // null for a year. The failure is silent in the expensive direction: a keeper told
+      // to hunt something above the band walks the whole way there and then declines to
+      // swing, which on the board is indistinguishable from a room that will not spawn.
+      //
+      // It is the ONE knob that trades survival for advancement, so raise it deliberately
+      // and against a named creature. Advancement is strictly greater than max health, so
+      // a fleet at 50 gains nothing from a level-50 fungus beast and must go up to move at
+      // all — but the neighbours of the room it goes up into are what the gate is for.
+      // Castle Victoria is the worked example: 28 admits a skeleton (75) for a character
+      // at max health 47 while still refusing the tusked skeleton (100) one room away.
+      max_threat_over: { type: 'number',
+        description: 'fight creatures up to max_health + this many levels, default 6. RAISES ' +
+          'THE ENGAGEMENT CEILING — the character stops refusing things above its own level, ' +
+          'which is how a fleet stuck at its max health finds prey that can still advance it ' +
+          '(a kill only pays above your max health). Check what else spawns in the target ' +
+          'room AND its neighbours before raising it: the same number that admits your prey ' +
+          'admits everything below it, and roaming is how a character meets the rest' },
       weapon_priority: { type: 'array', items: { type: 'string' },
         description: 'name fragments, best first — e.g. ["axe","mace"]. Default (null) ranks by ' +
                      'the character\'s proficiency in each weapon\'s own skill, which only ever ' +
@@ -5386,6 +5410,28 @@ const TOOLS = [
           'time, as each character wakes in a town and walks to the best room it knows. Set this ' +
           'and it goes here instead. Still refused if the room cannot generate the prey. ' +
           'null clears it. `spread` sets these for a whole fleet at once' },
+      // WHY THIS CHARACTER IS OUT HERE, AND IT IS AUDITED RATHER THAN TAKEN ON TRUST.
+      //
+      // policy.purpose existed for a year and was unreachable: nothing in this schema set
+      // it, so every keeper in the fleet ran with `purpose: null` and yieldCheck — the one
+      // check that catches a keeper working hard and gaining nothing — never ran once.
+      //
+      // NOTE this is NOT the `prey` tool's `purpose` (advance/money/items), which ranks
+      // candidate prey before you pick one. This one audits the prey you already picked.
+      purpose: { type: ['string', 'null'], enum: ['advance', 'equip', null],
+        description: 'WHAT THIS RUN IS FOR, checked every pass against what the prey can ' +
+          'actually yield. `advance` needs `goals` and asks whether the creature can still ' +
+          'raise them — a kill only pays when the creature is at or ABOVE your max health, ' +
+          'so ten characters at 50 gain nothing from a level-50 fungus beast. `equip` reads ' +
+          "this character's LOADOUT and asks whether the creature drops anything it is " +
+          'still short of, which is how farming for kit stays a real job after advancement ' +
+          'stops. Either way a keeper that is earning nothing says so on the board instead ' +
+          'of looking healthy. null means no opinion is offered.' },
+      goals: { type: 'array', items: { type: 'object' },
+        description: 'for purpose:"advance" — what to raise, e.g. [{"kind":"hp"}] or ' +
+          '[{"kind":"skill","name":"slash"}]. Empty with purpose:"advance" is reported as ' +
+          'uncheckable rather than passing silently. Ignored by purpose:"equip", which ' +
+          'takes its list from the loadout instead' },
       roam_limit: { type: 'number', description: 'how many rooms it may wander before stopping, default 6' },
       decide_ms: { type: 'number', description:
         'HOW OFTEN THE KEEPER RE-DECIDES, default 1000. This is nearly free: the server pushes the ' +
@@ -5461,6 +5507,15 @@ const TOOLS = [
         return p.releaseFaculties({ faculties: a.faculties ?? null, by: a.by });
       if (a.action === 'heartbeat')
         return p.heartbeatFaculties({ by: a.by, leaseMs: num(a.lease_ms, 120_000) });
+      // OWNING A CHARACTER AND BEING BUSY WITH IT ARE DIFFERENT FACTS. A claim says who is
+      // steering and leaves the character takeable; `busy` says an operation is IN FLIGHT
+      // and is what makes every stall detector in the fleet step over it. Without it an
+      // external errand — which walks a character with its keeper inert by design — reads
+      // as a character standing still, because `ms_since_moved` measures the keeper.
+      if (a.action === 'busy')
+        return p.declareBusy({ by: a.by, kind: a.kind, label: a.label, detail: a.why,
+                               leaseMs: num(a.lease_ms, 300_000) });
+      if (a.action === 'free') return p.freeBusy({ by: a.by });
       // PARK IS NOT STOP, AND THE DIFFERENCE IS THE WHOLE POINT. A stopped keeper is a
       // character held still in whatever was happening to it; a parked one is awake,
       // still defends itself, still flees, and is deliberately getting behind a wall so
@@ -5484,6 +5539,12 @@ const TOOLS = [
       if (a.rest_below !== undefined) p.policy.restBelow = Number(a.rest_below);
       if (a.flee_below !== undefined) p.policy.fleeBelow = Number(a.flee_below);
       if (a.max_carry !== undefined) p.policy.maxCarry = Number(a.max_carry);
+      // Floored at 0, never at 6: 0 is the legitimate "fight nothing above my own level",
+      // and coercing a bad value up to the default would quietly hand back a WIDER band
+      // than was asked for, which is the wrong direction for the one gate that decides
+      // what a character is allowed to be hit by.
+      if (a.max_threat_over !== undefined)
+        p.policy.maxThreatOver = Math.max(0, Number(a.max_threat_over) || 0);
       // An empty list means "go back to ranking by proficiency", which is null internally.
       // Treating [] as an empty priority list would rank every weapon equally instead.
       if (a.weapon_priority !== undefined)
@@ -5496,6 +5557,10 @@ const TOOLS = [
         p.policy.assignedRoom = a.assigned_room == null ? null : Number(a.assigned_room);
       if (a.bank_above !== undefined)
         p.policy.bankAbove = a.bank_above == null ? null : Number(a.bank_above);
+      // An explicit null CLEARS the purpose — "stop auditing this" is a thing somebody
+      // needs to be able to say, and it is not the same as leaving the field out.
+      if (a.purpose !== undefined) p.policy.purpose = a.purpose == null ? null : String(a.purpose);
+      if (a.goals !== undefined) p.policy.goals = Array.isArray(a.goals) ? a.goals : [];
       if (a.roam_limit !== undefined) p.policy.roamLimit = Number(a.roam_limit);
       if (a.decide_ms !== undefined) p.policy.decideMs = Math.max(250, Number(a.decide_ms));
       if (a.resync_ms !== undefined) p.policy.resyncMs = Math.max(1000, Number(a.resync_ms));

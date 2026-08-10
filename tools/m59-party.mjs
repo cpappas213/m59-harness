@@ -101,6 +101,22 @@ export function report(agent, patch = {}) {
   return r;
 }
 
+// WHO IS US — and it is this map's keys because `report` is called with `this.s.name`,
+// the CHARACTER name, once a pass by every keeper in the broker.
+//
+// The question it answers is "is that player a fleetmate or a stranger", which nothing
+// could ask before. It matters because the keeper is deliberately blind to players
+// (`inReachOfUs` filters OF_PLAYER, and it should — this fleet must not start swinging at
+// people on a shared server), so a stranger standing over a character was, until now,
+// indistinguishable from a fleetmate standing next to one: invisible.
+//
+// SILENCE IS NOT PROOF OF A STRANGER. Every keeper reports on its own clock, so a
+// character whose keeper has not yet had a pass is absent from this map — which is why
+// the caller wants corroborating evidence before it treats anyone as hostile, and why
+// this returns the set rather than a verdict.
+export const knownCharacters = () => new Set(roster.keys());
+export const isFleetmate = (name) => !!name && roster.has(name);
+
 // The partner's record, or null if there is no partner or the reading is stale.
 export function mateOf(agent) {
   const p = partnerOf(agent);

@@ -20,14 +20,43 @@
 // making the keeper inert, so an errand is nearly always ALSO 'driven' — and the board
 // has one line to say what is going on. Most specific first.
 //
+//   bot      a NAMED PROCESS OUTSIDE THIS REPOSITORY says it is mid-operation on this
+//            character right now. First because it is the most specific claim anything
+//            can make and because it is the one nothing in here can see for itself; see
+//            the note on `held` below for why this is not the same as "a bot owns it".
 //   errand   this character was dispatched somewhere: a loot run, a provisioning cast,
 //            a signet ring to hand back. It is travelling on the fleet's business.
 //   driven   something else has the controls. `supply` holds both ends of a trade this
 //            way, and so does the almoner. The keeper is awake and is not steering.
 //   parked   getting behind a wall because a fleet update is about to stop everything.
 //   partner  a standing arrangement rather than a journey: two keepers agreeing to fight
-//            the same creature. Weakest of the four, and the only one that persists.
-const ORDER = ['errand', 'driven', 'parked', 'partner'];
+//            the same creature. Weakest of the five, and the only one that persists.
+const ORDER = ['bot', 'errand', 'driven', 'parked', 'partner'];
+
+// OWNING A CHARACTER AND BEING BUSY WITH IT ARE DIFFERENT FACTS, AND CONFLATING THEM
+// DEADLOCKS THE BOT THAT ASKED FOR THIS.
+//
+// A directional bot claims `work` and `movement` on every character it manages and holds
+// them for its whole run. If that alone rendered as a commitment, three things break at
+// once: the bot's own "leave committed characters alone" rule refuses every character it
+// just claimed, the fleet board greys the entire fleet, and `m59-supervise.mjs` — whose
+// unstick round is the harness's job and must keep running — steps over a keeper that
+// really has stalled.
+//
+// So ownership is `held_by`, which rides on WHATEVER commitment comes back (including
+// none), and is an answer to "who is driving this" rather than to "may I take it".
+// Being mid-operation is `busy`, which the holder declares and retracts, and which is
+// the thing that reads as hands-off.
+//
+// The distinction is not theoretical: it is exactly the case that produced this. A crate
+// errand walks a character out of its room for three minutes with the keeper inert by
+// design, so `ms_since_moved` — which measures the KEEPER — climbs while the character
+// is moving perfectly well, and every stall detector in the fleet reads it as stuck.
+function botLabel(b) {
+  if (!b) return null;
+  const who = b.by ? String(b.by).split('@')[0] : 'a bot';
+  return `${who}: ${b.label || b.kind || 'working'}`;
+}
 
 // Human words for the errand kinds the keeper dispatches. An unknown kind is reported as
 // itself rather than dropped — a new errand type must show up on the board the day it is
@@ -58,26 +87,63 @@ function errandLabel(e) {
 // running for forty minutes is a different thing from one that started ten seconds ago,
 // and the board should be able to say so.
 export function describeCommitment({ errand = null, inert = null, parked = null,
-                                     partner = null } = {}) {
+                                     partner = null, busy = null, held = null } = {}) {
+  // `held_by` rides on every answer, including the null one, so "who is driving this
+  // character" is answerable without first asking "is it busy". Those are the two halves
+  // of the question and only one of them means hands-off.
+  const owner = held?.by
+    ? { by: held.by, faculties: held.faculties ?? [], since: held.at ?? null }
+    : null;
+  const withOwner = c => (c && owner) ? { ...c, held_by: owner } : (c ?? (owner ? {
+    // HELD, NOT BUSY, NOT OTHERWISE COMMITTED. This is a real state and it needs a row on
+    // the board — a bot quietly steering nine characters should not be invisible — but it
+    // must NOT read as a commitment, so it is the one answer that carries `takeable`.
+    kind: 'bot', label: `${String(owner.by).split('@')[0]} is steering`, since: owner.since,
+    takeable: true,
+    detail: `holds ${owner.faculties.join(', ') || 'nothing'}; the keeper has the rest and ` +
+            `takes these back when the lease lapses. Not an operation — nothing is mid-flight`,
+    held_by: owner,
+  } : null));
+
+  if (busy && !busy.done)
+    return withOwner({ kind: 'bot', label: botLabel(busy), since: busy.at ?? null,
+                       detail: busy.detail ||
+                         'a process outside the harness says it is mid-operation on this ' +
+                         'character; its keeper is inert on purpose, so a stall reading here ' +
+                         'is the errand walking, not a character standing still' });
   if (errand && !errand.done)
-    return { kind: 'errand', label: errandLabel(errand), since: errand.at ?? null,
+    return withOwner({ kind: 'errand', label: errandLabel(errand), since: errand.at ?? null,
              detail: errand.kind === 'signet'
                ? 'a returned ring pays ten times its value to a character under 30 max health'
-               : 'dispatched by the fleet; taking it abandons the other end' };
+               : 'dispatched by the fleet; taking it abandons the other end' });
   if (inert)
-    return { kind: 'driven', label: inert.why || 'something else is driving',
+    return withOwner({ kind: 'driven', label: inert.why || 'something else is driving',
              since: null,
-             detail: 'the keeper is awake and is not steering — usually a two-sided trade' };
+             detail: 'the keeper is awake and is not steering — usually a two-sided trade' });
   if (parked)
-    return { kind: 'parked', label: parked.ready ? 'parked, ready for a fleet update'
+    return withOwner({ kind: 'parked', label: parked.ready ? 'parked, ready for a fleet update'
                                                  : 'parking for a fleet update',
              since: null,
-             detail: 'an update is waiting on this character to get somewhere survivable' };
+             detail: 'an update is waiting on this character to get somewhere survivable' });
   if (partner)
-    return { kind: 'partner', label: `fighting alongside ${partner}`, since: null,
-             detail: 'both advance from one kill; a partner alone will not start a fight' };
-  return null;
+    return withOwner({ kind: 'partner', label: `fighting alongside ${partner}`, since: null,
+             detail: 'both advance from one kill; a partner alone will not start a fight' });
+  return withOwner(null);
 }
+
+/**
+ * MAY I REDIRECT THIS CHARACTER? — the question every caller of the above is really
+ * asking, answered once so that five callers do not each get it slightly wrong.
+ *
+ * The subtle case is the whole reason this function exists: a character a bot merely
+ * OWNS is takeable (the bot is steering it, not mid-operation on it), while the same
+ * character with `busy` declared is not. A consumer testing `if (committed)` gets that
+ * backwards and greys a fleet somebody is quietly running perfectly well.
+ */
+export const isTakeable = (c) => !c || c.takeable === true;
+
+/** Who is driving, whatever else is true — null when it is the keeper. */
+export const heldBy = (c) => c?.held_by ?? null;
 
 // THE TERMINAL'S SIDE, and it deliberately does not require a broker that knows about any
 // of this. `ap.committed` is what a current keeper publishes; the three fields under it
@@ -116,12 +182,21 @@ export const commitmentRank = (c) => (c ? ORDER.indexOf(c.kind) : ORDER.length);
 //
 // No wrapping, because the list does not wrap today and a cursor that jumps from the
 // bottom to the top while skipping rows is genuinely hard to follow.
+//
+// THE TEST IS `isTakeable`, NOT "has a commitment", AND THE DIFFERENCE ARRIVED WITH BOTS.
+// Every one of these used to read `!commitmentOf(row)`, which was the same question while
+// the only commitments were operations. It stopped being the same question the moment a
+// character could report an OWNER without an operation: a bot steering nine characters
+// would have greyed nine rows and, with a doctrine on the whole fleet, frozen the board
+// entirely — the exact "looks like a dead keyboard" failure the note above is about.
+const takeableRow = (r) => isTakeable(commitmentOf(r));
+
 export function stepSelection(rows, from, delta, { override = false } = {}) {
   if (!rows?.length) return 0;
   const start = Math.max(0, Math.min(rows.length - 1, from | 0));
   if (override) return Math.max(0, Math.min(rows.length - 1, start + delta));
   for (let i = start + delta; i >= 0 && i < rows.length; i += delta)
-    if (!commitmentOf(rows[i])) return i;
+    if (takeableRow(rows[i])) return i;
   return start;
 }
 
@@ -130,10 +205,10 @@ export function stepSelection(rows, from, delta, { override = false } = {}) {
 export function firstSelectable(rows, { override = false } = {}) {
   if (!rows?.length) return 0;
   if (override) return 0;
-  const i = rows.findIndex(r => !commitmentOf(r));
+  const i = rows.findIndex(takeableRow);
   return i < 0 ? 0 : i;
 }
 
 // True when the cursor cannot move at all without the override — the case the status line
 // has to explain rather than leave looking like a broken key.
-export const allCommitted = (rows) => !!rows?.length && rows.every(r => !!commitmentOf(r));
+export const allCommitted = (rows) => !!rows?.length && !rows.some(takeableRow);

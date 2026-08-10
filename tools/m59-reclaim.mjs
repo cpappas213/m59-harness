@@ -38,6 +38,7 @@
 // travelling, killed by baby spiders and giant rats. A character that cannot survive the
 // walk must not be sent on it — and the fleet's own dead are proof of what the walk costs.
 import { readFileSync } from 'node:fs';
+import { isTakeable } from './m59-commitment.mjs';
 
 const argv = process.argv.slice(2);
 const arg = (n, d = null) => {
@@ -243,8 +244,21 @@ if (!deaths.length) { console.error('no death sites on record'); process.exit(1)
 
 const f = await call('fleet', {}, 120_000).catch(() => null);
 const fleet = (f?.fleet || []).filter(r => r.character && r.room_num != null);
+// A COURIER THE FLEET IS ALREADY USING IS NOT A COURIER. This checked nothing at all,
+// so a character halfway through a loot run, holding one end of a supply trade, or being
+// driven by a bot was a perfectly good candidate for a second errand across the map —
+// and the first one ends silently, with the other end still waiting.
+//
+// `takeable` rather than `!committed`, because owning a character and being busy with it
+// are different facts: a bot steering nine characters must not empty the courier pool,
+// while one with an operation in flight must be off it. See m59-commitment.mjs.
 const couriers = fleet.filter(r => r.has_weapon
+  && isTakeable(r.committed)
   && pctOf(r.health) >= MIN_HEALTH_PCT && Number(r.vigor || 0) >= MIN_VIGOR);
+const spokenFor = fleet.filter(r => !isTakeable(r.committed));
+if (spokenFor.length)
+  console.log(`not asking ${spokenFor.length} character(s) the fleet is already using: ` +
+              spokenFor.map(r => `${r.character} (${r.committed.label})`).join(', '));
 
 console.log(`${deaths.length} recorded death sites; trying the newest ${SITES}` +
             `${DRY ? ' (dry run)' : ''}`);
