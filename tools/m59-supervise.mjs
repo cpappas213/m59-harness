@@ -4,6 +4,7 @@
 //   node tools/m59-supervise.mjs                 # run it, every 60s, until stopped
 //   node tools/m59-supervise.mjs --once          # one round and exit
 //   node tools/m59-supervise.mjs --graduate 30   # the level at which the valley starts
+//   node tools/m59-supervise.mjs --deploy        # opt into legacy pairing/room deployment
 //   node tools/m59-supervise.mjs --dry-run
 //
 // A keeper knows about one character and the room it is standing in. Three things are
@@ -39,6 +40,11 @@ const PORT = Number(arg('port', 8901));
 const RPC = `http://127.0.0.1:${PORT}/`;
 const ONCE = !!arg('once', false);
 const DRY = !!arg('dry-run', false);
+// DIRECTIONAL PLACEMENT MOVED TO DUM. The supervisor keeps its 60-second keeper-internal
+// unstick work, but no longer pairs, graduates or assigns rooms unless an operator asks
+// for the legacy deployment explicitly. This default matters most when DUM is down: a
+// lapsed bot lease must not silently turn the old room-spreading writer back on.
+const DEPLOY = !!arg('deploy', false);
 // `--dry-run` STOPS AT THE PROCESS BOUNDARY UNLESS YOU CARRY IT ACROSS, AND IT DID NOT.
 //
 // Three of this file's rounds are not calls, they are `spawn`s: reclaim, the almoner and
@@ -464,6 +470,10 @@ async function travelTo(agent, room, { tries = 3, hops = 20 } = {}) {
 const KEEP_ACROSS_RESTART = {
   assignedRoom: 'assigned_room', roam: 'roam', roamLimit: 'roam_limit',
   partner: 'partner', bankAbove: 'bank_above', restBelow: 'rest_below',
+  walkingMoney: 'walking_money', sellAtLoad: 'sell_at_load',
+  sellWhenBroke: 'sell_when_broke', sellWhenBrokeUnder: 'sell_when_broke_under',
+  sellWhenBrokeStacks: 'sell_when_broke_stacks',
+  maxBotsPerSafeSpot: 'max_bots_per_safe_spot',
   fleeBelow: 'flee_below', maxCarry: 'max_carry', weaponPriority: 'weapon_priority',
   dropJunk: 'drop_junk', strategy: 'strategy',
   // The stall restart fires every 90s, so anything missing from this map has a half-life
@@ -720,6 +730,12 @@ async function round(n) {
   // in a pack.
   await reclaimDrops();
   await spreadReagents(rows);
+
+  if (!DEPLOY) {
+    console.log('   directional pairing/room deployment is off — enable the DUM spread strategy, ' +
+                'or pass --deploy to opt into the legacy supervisor plan');
+    return rows;
+  }
 
   // 2. GRADUATE EVERYONE WHO IS READY, including those already out there.
   //

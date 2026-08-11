@@ -5410,6 +5410,19 @@ const TOOLS = [
           'time, as each character wakes in a town and walks to the best room it knows. Set this ' +
           'and it goes here instead. Still refused if the room cannot generate the prey. ' +
           'null clears it. `spread` sets these for a whole fleet at once' },
+      max_bots_per_safe_spot: { type: ['number', 'null'],
+        description: 'maximum bots sharing one safe square when a fleet spread strategy is enabled. ' +
+          'Default null means no occupancy-based spreading; 3 reproduces the historical keeper cap' },
+      walking_money: { type: 'number',
+        description: 'shillings retained in hand when banking surplus, default 400' },
+      sell_at_load: { type: 'number',
+        description: 'go sell when weight or bulk reaches this fraction, default 0.85' },
+      sell_when_broke: { type: 'boolean',
+        description: 'also sell a useful-sized pack when cash-poor and no timed window is open' },
+      sell_when_broke_under: { type: 'number',
+        description: 'cash-plus-bank threshold for sell_when_broke, default 500' },
+      sell_when_broke_stacks: { type: 'number',
+        description: 'minimum non-money stacks for sell_when_broke, default 8' },
       // WHY THIS CHARACTER IS OUT HERE, AND IT IS AUDITED RATHER THAN TAKEN ON TRUST.
       //
       // policy.purpose existed for a year and was unreachable: nothing in this schema set
@@ -5555,8 +5568,20 @@ const TOOLS = [
       if (a.roam !== undefined) p.policy.roam = !!a.roam;
       if (a.assigned_room !== undefined)
         p.policy.assignedRoom = a.assigned_room == null ? null : Number(a.assigned_room);
+      if (a.max_bots_per_safe_spot !== undefined)
+        p.policy.maxBotsPerSafeSpot = a.max_bots_per_safe_spot == null
+          ? null : Math.max(1, Math.floor(Number(a.max_bots_per_safe_spot) || 1));
       if (a.bank_above !== undefined)
         p.policy.bankAbove = a.bank_above == null ? null : Number(a.bank_above);
+      if (a.walking_money !== undefined)
+        p.policy.walkingMoney = Math.max(0, Number(a.walking_money) || 0);
+      if (a.sell_at_load !== undefined)
+        p.policy.sellAtLoad = Math.max(0, Math.min(1, Number(a.sell_at_load) || 0));
+      if (a.sell_when_broke !== undefined) p.policy.sellWhenBroke = !!a.sell_when_broke;
+      if (a.sell_when_broke_under !== undefined)
+        p.policy.sellWhenBrokeUnder = Math.max(0, Number(a.sell_when_broke_under) || 0);
+      if (a.sell_when_broke_stacks !== undefined)
+        p.policy.sellWhenBrokeStacks = Math.max(0, Math.floor(Number(a.sell_when_broke_stacks) || 0));
       // An explicit null CLEARS the purpose — "stop auditing this" is a thing somebody
       // needs to be able to say, and it is not the same as leaving the field out.
       if (a.purpose !== undefined) p.policy.purpose = a.purpose == null ? null : String(a.purpose);

@@ -697,6 +697,12 @@ export class Autopilot {
       breakOutViaLogoff: true,
       // How many monsters camped on us make leaving worth a reconnect.
       breakOutAbove: 2,
+      // FLEET PLACEMENT, NOT COMBAT SAFETY. null means no occupancy limit: several
+      // keepers may choose the same top-ranked wall. A directional bot may set a
+      // positive number when its independently enabled spread strategy wants every
+      // wall filled before another keeper shares one. Keeping this null by default is
+      // what makes room/wall spreading opt-in rather than an always-on keeper tactic.
+      maxBotsPerSafeSpot: null,
       // HOW MANY TIMES A SESSION TO STOP AND ACTUALLY TEST A SPOT.
       //
       // Proof used to arrive only by accident: a character that swings every pass
@@ -1927,14 +1933,20 @@ export class Autopilot {
     // Cheap because the expensive part is per-candidate pathfinding inside
     // nearestSafeSpot, and a re-run only happens when the first pass rejected everything
     // — which in an uncrowded room never occurs.
-    let spot = null, shareCap = 1;
-    for (; shareCap <= SPOT_SHARE_CAP; shareCap++) {
+    const configuredShareCap = Number.isFinite(this.policy.maxBotsPerSafeSpot) &&
+      this.policy.maxBotsPerSafeSpot > 0
+      ? Math.max(1, Math.floor(this.policy.maxBotsPerSafeSpot)) : null;
+    // With spreading off there is one unbounded search. With it on, retain the existing
+    // fair fill: try one per wall, then two, up to the configured maximum.
+    let spot = null, shareCap = configuredShareCap == null ? Infinity : 1;
+    for (; configuredShareCap == null || shareCap <= configuredShareCap; shareCap++) {
       for (const k of Object.keys(spotStats)) delete spotStats[k];   // stats describe the LAST attempt
       spot = this.searchSafeSpot(geo, me, room, {
         within, quarryReach, los, quarry, barren, stats: spotStats, shareCap });
       if (spot) break;
+      if (configuredShareCap == null) break;
     }
-    if (spot && shareCap > 1)
+    if (spot && Number.isFinite(shareCap) && shareCap > 1)
       this.note('sharing a wall rather than standing in the open', {
         with: spotOccupancy(this.s.name, room.num, spot.col, spot.row), at: { col: spot.col, row: spot.row },
         why: `every wall in this room already had ${shareCap - 1} on it, and two to a wall ` +
@@ -10006,6 +10018,9 @@ export function spotTakenByAnother(agent, room, col, row, cap = 1) {
 // How deep the stacking is allowed to get before a wall stops being worth sharing. Four
 // on one square is the pile-up this register exists to prevent; three is the point where
 // the wall covers less than it costs.
+// The value the opt-in spread strategy inherits. It is exported as data rather than
+// wired into takeSafeSpot: strategy off means unlimited, strategy on with no override
+// reproduces the historical cap of three bots per wall.
 export const SPOT_SHARE_CAP = 3;
 export const claimedSpotList = () =>
   [...claimedSpots.entries()].flatMap(([k, who]) => [...who].map(agent => ({ at: k, agent })));

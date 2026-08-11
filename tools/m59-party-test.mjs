@@ -115,6 +115,8 @@ party.resetParties();
   ok('cap 3 opens them again', SQ.every(([c, r]) => spotTakenByAnother('z', 700, c, r, 3) === null));
 
   ok('the share cap stops the pile-up this register exists to prevent', SPOT_SHARE_CAP === 3);
+  ok('an unbounded cap leaves occupancy out of safe-wall selection',
+     SQ.every(([c, r]) => spotTakenByAnother('free', 700, c, r, Infinity) === null));
 
   // The default is unchanged, so nothing that has not opted in behaves differently.
   ok('the default cap is still one', spotTakenByAnother('z', 700, 10, 10) !== null);
