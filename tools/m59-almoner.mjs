@@ -164,8 +164,32 @@ const needy = held.filter(h => !h.has_food && (h.eb < CASTABLE || h.hb < CASTABL
 // Nothing about the hand-over needs one character to carry both. Two deliveries from two
 // donors leave the recipient exactly as able to cast as one delivery would, and a fleet
 // that splits its reagents by where it hunts will always look like this.
-const KINDS = [{ kind: 'elderberry', field: 'eb' }, { kind: 'herbs', field: 'hb' }];
-const donorsOf = k => held.filter(h => h[k.field] >= AMOUNT + KEEP_BACK)
+// AND THE KEEP-BACK HAS TO BE PAIRABLE, FOR EXACTLY THE SAME REASON.
+//
+// The comment above fixed "a donor must hold both halves". The identical mistake was
+// still one level down in the threshold: `AMOUNT + KEEP_BACK` is a FLAT 20 per reagent,
+// and a reagent you cannot pair buys you nothing. Measured the morning this was found —
+// every one of twenty-one characters unable to cast, and the tool printing "nobody has a
+// surplus, the fleet is genuinely short" over it:
+//
+//   Statler   1 elderberry, 26 herbs   ->  0 castings, withholding 20 herbs
+//   Sweetums  1 elderberry, 23 herbs   ->  0 castings, withholding 20 herbs
+//   Piggy    15 elderberry,  1 herb    ->  0 castings, withholding 15 elderberry
+//
+// A character's own castings are bounded by min(eb, hb), so what it can USE of one half is
+// capped by how much it holds of the other. Everything above that is dead weight it is
+// guarding from a fleet that cannot cook. So the keep-back is capped by the pair.
+//
+// The honest counter-argument is that a character might loot the missing half later and
+// want the buffer back. Under the prey this fleet actually farms it will not — skeleton,
+// battered skeleton and zombie drop NEITHER half (see m59-reagents.mjs) — and the almoner
+// runs every supervisor round, so herbs can move back the moment elderberry appears.
+// Guarding against a drop that cannot happen, at the cost of a fleet pinned at the resting
+// cap, is the wrong side of that trade.
+const KINDS = [{ kind: 'elderberry', field: 'eb', pair: 'hb' },
+               { kind: 'herbs',      field: 'hb', pair: 'eb' }];
+const keepFor = (h, k) => Math.min(KEEP_BACK, h[k.pair] ?? 0);
+const donorsOf = k => held.filter(h => h[k.field] >= AMOUNT + keepFor(h, k))
                           .sort((a, b) => b[k.field] - a[k.field]);
 const pool = new Map(KINDS.map(k => [k.kind, donorsOf(k)]));
 const anyDonor = [...new Set([...pool.values()].flat())];
@@ -183,7 +207,10 @@ if (!anyDonor.length) { console.log('nobody has a surplus — the fleet is genui
 const capacity = new Map();
 for (const k of KINDS)
   for (const d of pool.get(k.kind))
-    capacity.set(`${d.agent}/${k.kind}`, Math.max(1, Math.floor((d[k.field] - KEEP_BACK) / AMOUNT)));
+    // Same pairable keep-back the donor test uses. A flat KEEP_BACK here would let a
+    // character qualify as a donor and then be credited with zero shares to give.
+    capacity.set(`${d.agent}/${k.kind}`,
+                 Math.max(1, Math.floor((d[k.field] - keepFor(d, k)) / AMOUNT)));
 const cap = (d, kind) => capacity.get(`${d.agent}/${kind}`) || 0;
 
 const plan = [];
