@@ -76,8 +76,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // SIGTERM. Reviving something already awake is free, so over-reviving costs nothing and
 // under-reviving costs a character.
 const madeInert = new Set();
+// A BUSY DECLARATION OUTLIVES THIS PROCESS UNLESS SOMEBODY CLEARS IT, so it is tracked and
+// released on exactly the same paths as `inert` — normal return, throw, SIGINT/SIGTERM.
+// Only the holder may clear its own busy, which is why the name is a constant rather than
+// something assembled per call: a mismatched `by` leaves the character marked in flight
+// until an operator overrides it by hand.
+const BUSY_BY = 'm59-reagents';
+const madeBusy = new Set();
 
 async function reviveAll(why) {
+  for (const agent of [...madeBusy]) {
+    try {
+      await call('autopilot', { agent, action: 'free', by: BUSY_BY }, 30_000);
+      madeBusy.delete(agent);
+    } catch { /* the lease expires on its own; never let this stop the revive below */ }
+  }
   for (const agent of [...madeInert]) {
     try {
       await call('autopilot', { agent, action: 'revive', why }, 30_000);
@@ -229,6 +242,32 @@ async function stockUp(row) {
                             why: 'reagent trip: selling junk to buy elderberry and herbs' })
               .catch(() => {});
   madeInert.add(row.agent);          // so every exit path can put it back
+
+  // INERT STOPS THE KEEPER. IT DOES NOT STOP A BOT, AND THAT IS WHY THIS TRIP KEPT FAILING.
+  //
+  // `inert` is a statement about the keeper — it stands down and this errand drives. A bot
+  // attached to the fleet is a DIFFERENT driver holding `movement`, and nothing about going
+  // inert tells it to stand off. So with dum steering, this errand walked a character
+  // toward an apothecary while the bot walked it back to the hunting room, and the trip
+  // reported `could not reach any of 373, 53, 104` — measured on prod: two characters
+  // completed in forty minutes while the bot held work, movement and economy on the fleet.
+  //
+  // `busy` is the verb for this and it already exists: a claim says who is steering and
+  // leaves the character takeable, `busy` says an operation is IN FLIGHT and is what makes
+  // everything else step over it. See the commitment note in CLAUDE.md — this errand is
+  // exactly the case it was written for, "an external errand walks a character with its
+  // keeper inert by design".
+  //
+  // THE WINDOW IS AN ESTIMATE THAT EXTENDS, NOT A NUMBER SOMEBODY GUESSED. A trip is up to
+  // three shops at eight attempts each, plus a bank leg, plus selling and buying — several
+  // minutes when it goes well and longest exactly when it is going badly, which is when
+  // being interrupted costs the whole errand. So ask for a padded window; the harness
+  // clamps it to BUSY_MAX_MS and says so rather than refusing.
+  await call('autopilot', { agent: row.agent, action: 'busy', by: BUSY_BY,
+                            kind: 'reagent-trip', label: 'buying elderberry and herbs',
+                            why: 'walking to an apothecary, selling junk and restocking both halves',
+                            lease_ms: 10 * 60_000 }, 30_000).catch(() => {});
+  madeBusy.add(row.agent);
   try {
     const where = async () => {
       const st = await call('status', { agent: row.agent, brief: true }, 60_000).catch(() => null);
@@ -447,6 +486,11 @@ async function stockUp(row) {
     // The same invariant every errand in this repo needed and each learned by finding
     // characters standing in towns with nothing driving them: whoever this stopped is
     // driving again before we return, on every path out including a throw.
+    // Clear `busy` FIRST. It is what everything else steps over, so leaving it set on a
+    // character whose keeper is already driving again is the one combination that reads as
+    // healthy from every angle while the fleet ignores it.
+    await call('autopilot', { agent: row.agent, action: 'free', by: BUSY_BY }, 30_000)
+            .then(() => madeBusy.delete(row.agent)).catch(() => {});
     const ok = await call('autopilot', { agent: row.agent, action: 'revive',
                                          why: 'reagent trip finished' })
                      .then(() => true).catch(() => false);

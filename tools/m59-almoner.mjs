@@ -91,7 +91,36 @@ for (let i = 0; i < 4 && !f; i++) {
     return null;
   });
 }
-const live = (f.fleet || []).filter(x => x.in_game !== false);
+// A HANDOVER HOLDS BOTH ENDS INERT, AND AN INERT KEEPER CANNOT FLEE OR REST.
+//
+// This filtered on `in_game` alone, so a character was eligible for an exchange at any
+// health at all. Measured on prod the morning this was added: Fozzie was held inert for a
+// supply exchange at 4 of 52 in a battered-skeleton room and Piggy at 3 of 49, and both
+// were still LOSING health while held — Piggy went 9 -> 3 -> 1 before an operator took it
+// back and rested it to 31. Nothing was wrong with the exchange; it simply has no opinion
+// about whether the character can afford to stand still for it.
+//
+// Survival decides at one second and belongs to this repository, always — a reagent
+// delivery is minutes of work that can wait for the next round, and the next round is
+// sixty seconds away. So anyone under half health sits this one out, on both ends: a
+// donor because it has to walk, and a recipient because it is held just the same.
+//
+// Deliberately NOT the keeper's flee threshold (0.35). That one asks "should I run from
+// this fight"; this asks "can I afford to be unable to run at all", and the honest answer
+// is a wider margin — the whole point is that the character has no way to react while the
+// exchange is in flight.
+const HURT_BELOW = Number(arg('hurt-below', 0.5));
+const pctOf = (r) => {
+  const m = /^(\d+)\s*\/\s*(\d+)/.exec(String(r.health ?? ''));
+  return m ? Number(m[1]) / Number(m[2]) : null;
+};
+const inGame = (f.fleet || []).filter(x => x.in_game !== false);
+const hurt = inGame.filter(x => { const p = pctOf(x); return p !== null && p < HURT_BELOW; });
+const live = inGame.filter(x => !hurt.includes(x));
+if (hurt.length)
+  console.log(`  ${hurt.length} sitting this round out below ${Math.round(HURT_BELOW * 100)}% health ` +
+              `(a handover holds them inert, and an inert keeper cannot flee): ` +
+              hurt.map(h => `${h.character} ${h.health}`).join(', '));
 
 // ------------------------------------------------------------------ the rings, first
 //
