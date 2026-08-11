@@ -449,6 +449,7 @@ const FOOD_SHOP = { room: 103, name: 'The Bhrama & Falcon, Barloque' };
 // who-sells herb). Barloque has the bread, the apothecary and Roq within a few rooms of
 // each other, which is why every town leg in this file already points at that town.
 const REAGENT_SHOP = { room: 104, name: 'Joguer the apothecary, Barloque' };
+const BARLOQUE_VAULT = { room: 114, name: "Obert Cair'bre's vault, North Barloque" };
 
 export const MODES = ['survive', 'farm', 'idle'];
 
@@ -552,6 +553,9 @@ export class Autopilot {
       // Stop farming when carrying this many things, so the character does not spend
       // an hour filling up and dropping the overflow.
       maxCarry: 14,
+      // Items a directional strategy is accumulating. The keeper treats these as
+      // collection stock rather than food or loot and stores them during Barloque loops.
+      vaultItems: [],
       // WHICH WEAPON TO REACH FOR. null ranks by the character's proficiency in each
       // weapon's own skill (m59-skills.mjs weaponRanking). A list of name fragments
       // overrides it — ['axe'] trains the axe on a character who would otherwise wield
@@ -948,7 +952,7 @@ export class Autopilot {
     // out for it would idle the character for ever. Fall back to what resting can
     // deliver, and COUNT it: this is the food supply failing, not a fighting decision,
     // and it should show up as a supply number rather than as a quiet slowdown.
-    if (!skills.larderOf(this.s.client).length) {
+    if (!this.larder(this.s.client).length) {
       this.vigor.starved_passes++;
       return Math.min(want, STARVED_FIGHT_VIGOR);
     }
@@ -970,7 +974,7 @@ export class Autopilot {
       else if (have > want) spare.set(kind, have - want);
     }
     // No food and nothing to cook with is a want somebody else can answer directly.
-    if (!skills.larderOf(c).length && (r.elderberry < 2 || r.herbs < 2)) wants.push('food');
+    if (!this.larder(c).length && (r.elderberry < 2 || r.herbs < 2)) wants.push('food');
     if (!skills.weaponsOf(c).length) wants.push('weapon');
     // AND WHATEVER THIS CHARACTER'S OWN LIST ASKS FOR. Until now the board could only
     // speak about elderberry and herbs, because they were the only two things with a
@@ -1238,7 +1242,7 @@ export class Autopilot {
 
     const s = this.s;
     const vigor = v.vigor?.value ?? 0;
-    const larder = skills.larderOf(s.client);
+    const larder = this.larder(s.client);
     const best = larder[0]?.food ?? null;
     // AND THE SMALLEST, WHICH IS THE ONE THAT DECIDES WHETHER WE CAN EAT AT ALL.
     //
@@ -1284,7 +1288,8 @@ export class Autopilot {
     if (this.climbing) {
       this.doing = 'recovering';
       if (vigor < (ceiling || floor)) {
-        const e = await skills.eat(s, { stomach: this.stomach, upToVigor: ceiling || undefined })
+        const e = await skills.eat(s, { stomach: this.stomach, upToVigor: ceiling || undefined,
+                                       exclude: this.policy.vaultItems })
                               .catch(() => ({ ate: [] }));
         if (e.ate?.length) {
           this.tally.meals = (this.tally.meals || 0) + 1;
@@ -1342,7 +1347,8 @@ export class Autopilot {
     // one item per pass — a pass is eight seconds and the room reappears on a clock
     // measured in minutes. `eat` declines anything that would overshoot 200.
     if (ceiling && this.stomach.roomFor(smallest.filling)) {
-      const e = await skills.eat(s, { stomach: this.stomach, upToVigor: ceiling })
+      const e = await skills.eat(s, { stomach: this.stomach, upToVigor: ceiling,
+                                     exclude: this.policy.vaultItems })
                             .catch(() => ({ ate: [] }));
       if (e.ate?.length) {
         this.tally.meals = (this.tally.meals || 0) + 1;
@@ -1855,6 +1861,13 @@ export class Autopilot {
       next: 'choose a wall on this side, hit the quarry, and pull it there',
     });
     return { arrived: true, room: room.num, position: { col: me.col, row: me.row } };
+  }
+
+  // The keeper's usable larder excludes collection items. Centralising the filter is
+  // what keeps hunger, gifting, town-trip decisions and the actual eat call in agreement.
+  larder(c = this.s.client) {
+    return skills.larderOf(c).filter(item =>
+      !skills.itemIsProtected(item.name, this.policy.vaultItems));
   }
 
   // Go and stand somewhere defensible, preferring somewhere we have already proved —
@@ -2476,7 +2489,7 @@ export class Autopilot {
     if (this.noTownUntil && Date.now() < this.noTownUntil) return false;   // searched recently
     const v = c?.vitals?.();
     const vig = v?.vigor?.value ?? 0;
-    const fed = skills.larderOf(c).length > 0;
+    const fed = this.larder(c).length > 0;
     if (vig > 140 && fed) { this.fledInARow = 0; return false; }
     if (this.sanctuary()) { this.fledInARow = 0; return false; }   // already somewhere safe
 
@@ -2933,7 +2946,7 @@ export class Autopilot {
   // and the farmer is not going anywhere.
   async payFarmer(e) {
     const s = this.s, c = s.need();
-    const larder = skills.larderOf(c);
+    const larder = this.larder(c);
     if (!larder.length) return { gave: [], why: 'carrying no food' };
     const them = [...c.room.objects.values()]
       .find(o => (o.flags & OF.PLAYER) &&
@@ -6660,7 +6673,7 @@ export class Autopilot {
     // So the floor only applies while it is achievable. With an empty larder, the honest
     // ceiling is what resting can deliver, and a tired character fighting badly beats a
     // rested one fighting nothing.
-    const larder = skills.larderOf(c).length;
+    const larder = this.larder(c).length;
     const floor = (this.policy.fightAboveVigor ?? 0) / 200;
     const reachable = larder > 0 || floor <= REST_VIGOR_CAP;
     const tooTiredToFight = reachable && vig !== null && vig < floor;
@@ -7022,6 +7035,7 @@ export class Autopilot {
     // Standing in a bank? Put the takings away before anything can take them.
     await this.bankSurplus().catch(() => {});
     // Carrying enough that it is worth WALKING to one? Go. See bankRun().
+    if (await this.vaultRunIfPassing().catch(() => false)) return;
     if (await this.bankRun().catch(() => false)) return;
 
     // Someone else is standing here and we can mend them: do that first. It costs a
@@ -8451,7 +8465,7 @@ export class Autopilot {
     // illiquid — and withdrawForFood() is now the thing that fixes that, at a counter.
     const balance = s.bankKnown?.()?.balance ?? 0;
     const canFetch = balance >= 200;
-    const starving = !skills.larderOf(c).length && !canCook &&
+    const starving = !this.larder(c).length && !canCook &&
                      (spendable >= 60 || canFetch) && !triedRecently;
     // Which counter first. With money in hand the bread shop is the whole trip; without
     // it, the bank comes first and buyFoodInTown walks the last hop afterwards.
@@ -8601,7 +8615,57 @@ export class Autopilot {
     // One more hop, for the ingredients rather than the meal. Cheaper per vigor point than
     // bread and it is what keeps the character fed in the FIELD, where no shop is.
     await this.buyReagentsInTown().catch(() => {});
+    await this.vaultRunIfPassing().catch(() => {});
     this.progress('banked the takings');
+    return true;
+  }
+
+  // A DETOUR, NOT A NEW ERRAND. The accumulation strategy does not pull a working
+  // character out of the field merely because it found one mushroom. It waits until
+  // the keeper is already within four room hops of the mainland vault, which covers the
+  // ordinary Barloque food/reagent loop, then stores every protected stack at once.
+  async vaultRunIfPassing() {
+    const wanted = Array.isArray(this.policy.vaultItems)
+      ? this.policy.vaultItems.map(String).filter(Boolean) : [];
+    if (!wanted.length) return false;
+    const c = this.s.client;
+    if (!c || !(c.inventory || []).some(o => skills.itemIsProtected(c.rsc.get(o.nameRsc), wanted)))
+      return false;
+    if (Date.now() - (this.vaultTripAt ?? 0) < 300_000) return false;
+    const route = this.s.world?.route?.(BARLOQUE_VAULT.room);
+    if (!route?.found || route.hops.length > 4) return false;
+    this.vaultTripAt = Date.now();
+    this.doing = 'travelling';
+    if (this.s.world?.room?.num !== BARLOQUE_VAULT.room) {
+      const walked = await this.travel(BARLOQUE_VAULT.room, {
+        maxHops: Math.max(6, (route?.hops?.length ?? 2) + 3),
+      }).catch(e => ({ arrived: false, reason: e.message }));
+      if (!walked.arrived) {
+        this.note('could not reach the Barloque vault', { protected: wanted,
+          why: walked.reason || 'the short town route did not complete' });
+        return true;
+      }
+    }
+    const vaultman = [...c.room.objects.values()].find(o =>
+      /obert cair|vaultman/i.test(c.rsc.get(o.nameRsc) || '') &&
+      affordances(o.flags).includes('buy'));
+    if (!vaultman) {
+      this.note('the Barloque vaultman was not at his counter', { room: BARLOQUE_VAULT.room,
+        protected: wanted, why: 'deposit packets are never aimed at an inferred NPC' });
+      return true;
+    }
+    this.doing = 'trading';
+    const result = await skills.depositInVault(this.s, { vaultman: vaultman.id, items: wanted })
+      .catch(e => ({ deposited: [], error: e.message }));
+    if (result.deposited?.length) {
+      this.tally.vaulted = (this.tally.vaulted || 0) +
+        result.deposited.reduce((n, item) => n + item.amount, 0);
+      this.note('stored protected items in the Barloque vault', {
+        deposited: result.deposited, said: result.said,
+        why: 'the town loop was already passing within four rooms of the vault' });
+      this.progress('vaulted collection items');
+    } else this.note('the vault accepted none of the protected items', {
+      protected: wanted, refused: result.refused, said: result.said, why: result.error });
     return true;
   }
 
@@ -8673,7 +8737,7 @@ export class Autopilot {
     const v0 = c.vitals?.();
     const vg = v0?.vigor;
     const vigorMax = vg?.scale_max ?? 200;
-    const larder = skills.larderOf(c).reduce((t, f) => t + (f.food?.nutrition ?? 0) * (f.o.amount || 1), 0);
+    const larder = this.larder(c).reduce((t, f) => t + (f.food?.nutrition ?? 0) * (f.o.amount || 1), 0);
     const floorVigor = (this.policy.fightAboveVigor ?? 140);
     const shortBy = Math.max(
       // the climb the pack has to be able to pay for, whenever it cannot pay for any of it
@@ -8765,7 +8829,7 @@ export class Autopilot {
     const s = this.s, c = s.need();
     const vg = c.vitals?.()?.vigor;
     // larderOf already carries the food table — nutrition per item, best value first.
-    const carried = skills.larderOf(c)
+    const carried = this.larder(c)
       .reduce((t, f) => t + (f.food?.nutrition ?? 0) * (f.o.amount || 1), 0);
     const want = (this.policy.fightAboveVigor ?? 140) - (vg?.value ?? 0) - carried;
     if (want <= 20) return;                       // enough in hand or already topped up
@@ -8833,7 +8897,8 @@ export class Autopilot {
       .find(o => affordances(o.flags).includes('buy') && skills.trustedBuyer(c.rsc.get(o.nameRsc)));
     if (!buyer) return;
     this.doing = 'trading';
-    const r = await skills.sellAll(s, { merchant: buyer.id, loadout: this.loadout() })
+    const r = await skills.sellAll(s, { merchant: buyer.id, loadout: this.loadout(),
+                                       protect: this.policy.vaultItems })
                           .catch(e => ({ error: e.message }));
     if (r.error) return this.note('could not sell in town', { why: r.error });
     if (r.sold?.length) {
@@ -8905,7 +8970,7 @@ export class Autopilot {
     // moment the money is in hand and the shop is one hop away, so hold back what the
     // food actually costs and bank the rest.
     const vg = c.vitals?.()?.vigor;
-    const larder = skills.larderOf(c).reduce((t, f) => t + (f.food?.nutrition ?? 0) * (f.o.amount || 1), 0);
+    const larder = this.larder(c).reduce((t, f) => t + (f.food?.nutrition ?? 0) * (f.o.amount || 1), 0);
     const shortBy = Math.max(0, (this.policy.fightAboveVigor ?? 140) - (vg?.value ?? 0) - larder);
     // Roughly 4.5 shillings a vigor point at the Barloque shelf, plus the 100 reserve
     // restockReagents keeps. Capped so a badly-fed character cannot refuse to bank at all.
@@ -9225,7 +9290,7 @@ export class Autopilot {
     //
     // The two wants are independent and the test has to be too. `buyFoodInTown` walks to
     // 103 specifically to buy food, and this is the function it calls to do it.
-    const wantsFood = !skills.larderOf(c).length ||
+    const wantsFood = !this.larder(c).length ||
                       (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
     if (!need.elderberry && !need.herb && !wantsFood &&
         !Object.values(askedFor).some(n => n > 0)) {
@@ -9256,7 +9321,7 @@ export class Autopilot {
     // stood in it buying nothing, which is a longer way to fail than never setting off.
     //
     // So "hungry" here means "cannot eat", not "wants to eat now".
-    const emptyLarder = !skills.larderOf(c).length;
+    const emptyLarder = !this.larder(c).length;
     const hungryNow = emptyLarder ||
                       (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
     const fullFloor = this.policy.walkingMoney ?? 400;
@@ -9403,7 +9468,8 @@ export class Autopilot {
       // THE LOADOUT DECIDES WHAT LEAVES THE PACK, WHERE IT HAS AN OPINION. sellAll's own
       // guards — money, worn gear, anything a crewmate is short of — still apply; this adds
       // this character's floors and its sell list on top.
-      const sold = await skills.sellAll(s, { merchant: buyer.id, loadout: this.loadout() })
+      const sold = await skills.sellAll(s, { merchant: buyer.id, loadout: this.loadout(),
+                                            protect: this.policy.vaultItems })
                                .catch(e => ({ error: e.message }));
       // WE ARE STANDING AT A SHOP WITH MONEY IN HAND. Restocking reagents here costs
       // nothing extra — the walk is already paid for — and it is the one time buying
@@ -9514,7 +9580,8 @@ export class Autopilot {
     const junk = (c.inventory || [])
       .filter(o => {
         const name = c.rsc.get(o.nameRsc) || '';
-        if (worn.has(o.id) || this.wontDrop?.has(o.id)) return false;
+        if (worn.has(o.id) || this.wontDrop?.has(o.id) ||
+            skills.itemIsProtected(name, this.policy.vaultItems)) return false;
         if (overrideSell?.(name)) return true;
         return !keep.test(name);
       })

@@ -69,6 +69,8 @@ export const BP = {
   REQ_LOOK: 116, REQ_INVENTORY: 117, REQ_DROP: 118, REQ_HIDE: 119,
   REQ_OFFER: 120, ACCEPT_OFFER: 121, CANCEL_OFFER: 122, REQ_COUNTEROFFER: 123,
   REQ_BUY: 124, REQ_BUY_ITEMS: 125, CHANGE_DESCRIPTION: 126,
+  REQ_DEPOSIT: 230, WITHDRAWAL_LIST: 231, REQ_WITHDRAWAL: 232,
+  REQ_WITHDRAWAL_ITEMS: 233,
   // world state
   PLAYER: 130, STAT: 131, STAT_GROUP: 132, STAT_GROUPS: 133,
   ROOM_CONTENTS: 134, OBJECT_CONTENTS: 135, PLAYERS: 136,
@@ -869,6 +871,13 @@ export class M59Client {
   // buy as a count-prefixed id list.
   buyItems(sellerId, ids) {
     this.send(BP.REQ_BUY_ITEMS, u32(objId(sellerId)), encodeIdList([].concat(ids)));
+  }
+
+  // BP_REQ_DEPOSIT is the vault/banker one-shot deposit path. Unlike a merchant
+  // offer it has no counteroffer and no accept: the server moves accepted items
+  // before returning from the request. Stacked items still need an explicit amount.
+  depositItems(vaultmanId, items) {
+    this.send(BP.REQ_DEPOSIT, u32(objId(vaultmanId)), encodeIdList([].concat(items)));
   }
 
   // BP_REQ_CAST {4,OBJECT spell} {2,LIST_OBJ_PARM targets}. A spell with no

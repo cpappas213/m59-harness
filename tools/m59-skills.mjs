@@ -971,6 +971,29 @@ export function larderOf(c) {
     .sort((a, b) => (b.food.nutrition / b.food.filling) - (a.food.nutrition / a.food.filling));
 }
 
+// DISPLAY NAMES AND COMPILED CLASS NAMES DISAGREE ABOUT PUNCTUATION AND PLURALS.
+// Strategy settings are written as ordinary names ("inky cap mushrooms") while the
+// inventory says "Inky-cap mushroom". Use one conservative matcher everywhere an
+// accumulated item must be protected; a protection that works for eating but misses
+// selling is not protection.
+const ITEM_IRREGULAR = { teeth: 'tooth', feet: 'foot', mice: 'mouse', geese: 'goose',
+  leaves: 'leaf', knives: 'knife', wolves: 'wolf' };
+const itemWord = word => ITEM_IRREGULAR[word]
+  ?? (word.endsWith('ies') && word.length > 4 ? `${word.slice(0, -3)}y`
+    : /(?:ses|xes|hes)$/.test(word) ? word.slice(0, -2)
+    : word.endsWith('s') && !word.endsWith('ss') && word.length > 3 ? word.slice(0, -1)
+    : word);
+export const itemNameKey = name => String(name || '').toLowerCase()
+  .split(/[^a-z0-9]+/).filter(Boolean).map(itemWord).join('');
+export function itemNameMatches(name, wanted) {
+  const have = itemNameKey(name), ask = itemNameKey(wanted);
+  if (!have || !ask) return false;
+  return have === ask || (Math.min(have.length, ask.length) >= 4 &&
+    (have.includes(ask) || ask.includes(have)));
+}
+export const itemIsProtected = (name, wanted = []) =>
+  [].concat(wanted || []).some(item => itemNameMatches(name, item));
+
 // WHAT THE FLEET WANTS, so that nothing another character needs is ever sold to an NPC.
 //
 // A merchant buys low and sells high. A herb sold by one character and bought back by
@@ -1064,6 +1087,7 @@ export const VIGOR_MAX = 200;
 
 export async function eat(s, { maxItems = 4, stomach = null, upToVigor = null,
                                maxWaste = 12, refresh = true,
+                               exclude = [],
                                beforeMutation = null, shouldCancel = null } = {}) {
   const c = s.need();
   if (refresh) {
@@ -1075,7 +1099,7 @@ export async function eat(s, { maxItems = 4, stomach = null, upToVigor = null,
   const before = vig();
 
   // Best nutrition per unit of filling first — the stomach is what runs out.
-  const larder = larderOf(c);
+  const larder = larderOf(c).filter(item => !itemIsProtected(item.name, exclude));
 
   if (!larder.length)
     return { ate: [], filling: 0, vigor: before, reason: 'carrying no food',
@@ -2017,7 +2041,8 @@ export function sellable({ name, worn, keepRe, loadout = null, pack = [], armour
 // `loadout` is this character's own list, or null. See `sellable` above for the order the
 // rules apply in and why. A caller that passes null gets the behaviour this function has
 // always had, which is what every existing caller relies on.
-export async function sellAll(s, { merchant, keep = [], minPrice = 1, loadout = null } = {}) {
+export async function sellAll(s, { merchant, keep = [], protect = [], minPrice = 1,
+                                   loadout = null } = {}) {
   const c = s.need();
   await s.pacer.submit('read', () => c.requestInventory());
   await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
@@ -2039,6 +2064,7 @@ export async function sellAll(s, { merchant, keep = [], minPrice = 1, loadout = 
     name: x.name, worn: wielded.has(x.o.id), keepRe, loadout, armoured,
     pack: pack.map(y => ({ name: y.name, amount: y.o.amount || 1 })),
   }).sell);
+  items = items.filter(x => !itemIsProtected(x.name, protect));
 
   // DO NOT SELL WHAT A CRewMATE IS SHORT OF. The merchant buys low and sells high, so
   // this round trip costs the fleet twice over, and the thing being round-tripped is
@@ -2072,6 +2098,45 @@ export async function sellAll(s, { merchant, keep = [], minPrice = 1, loadout = 
   }
   return { sold, refused, total_received: total, kept_for_the_fleet: held,
            note: refused.length ? 'refusals are usually "this merchant does not deal in that" — check merchants for who does' : undefined };
+}
+
+// Deposit matching inventory into a VAULTMAN in one server transaction. Success is
+// established by the post-request inventory delta because this protocol deliberately
+// sends no OFFERED/ACCEPT result. A refusal remains visible with the server's messages.
+export async function depositInVault(s, { vaultman, items = [] } = {}) {
+  const c = s.need();
+  const wanted = [...new Set([].concat(items || []).map(String).map(x => x.trim()).filter(Boolean))];
+  if (!wanted.length) return { deposited: [], protected: [], reason: 'no protected items configured' };
+  await s.pacer.submit('read', () => c.requestInventory());
+  await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+  const before = (c.inventory || []).filter(o => itemIsProtected(c.rsc.get(o.nameRsc) || '', wanted));
+  if (!before.length) return { deposited: [], protected: wanted, reason: 'none of the protected items are carried' };
+
+  const quantities = new Map(before.map(o => [o.id, o.amount || 1]));
+  const names = new Map(before.map(o => [o.id, c.rsc.get(o.nameRsc) || 'unknown item']));
+  const specs = before.map(o => o.amount != null ? { id: o.id, amount: o.amount } : o.id);
+  const since = c.evSeq;
+  await s.pacer.submit('trade', () => c.depositItems(vaultman, specs));
+  const response = await c.waitFor({ since, kinds: ['message'], timeoutMs: 2500 })
+    .catch(() => ({ events: [] }));
+  await s.pacer.submit('read', () => c.requestInventory());
+  await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
+
+  const deposited = [];
+  for (const o of before) {
+    const left = (c.inventory || []).find(now => now.id === o.id)?.amount ??
+      ((c.inventory || []).some(now => now.id === o.id) ? 1 : 0);
+    const amount = Math.max(0, (quantities.get(o.id) || 0) - left);
+    if (amount) deposited.push({ name: names.get(o.id), amount });
+  }
+  return {
+    deposited,
+    protected: wanted,
+    refused: before.filter(o => !deposited.some(d => d.name === names.get(o.id)))
+      .map(o => names.get(o.id)),
+    said: (response.events || []).filter(e => e.text).map(e => e.text).slice(0, 4),
+    verified: deposited.length > 0,
+  };
 }
 
 // ------------------------------------------------------- returning signet rings

@@ -55,7 +55,8 @@ import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRA
          POSTMORTEM_DIR, setPilotLookup } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
-import { loadSpawns, huntingGrounds, roomThreats, preyFor, scorePrey, PURPOSES } from './m59-spawns.mjs';
+import { loadSpawns, huntingGrounds, roomThreats, preyFor, scorePrey, PURPOSES,
+         knownDrops, whoDrops } from './m59-spawns.mjs';
 import { safeSpots, safeSpotBook } from './m59-safespots.mjs';
 import { planRuns, planProvisioning } from './m59-lootrun.mjs';
 import { planCharacter, STAT_ORDER, STAT_PRESETS } from './m59-newchar.mjs';
@@ -5366,6 +5367,8 @@ const TOOLS = [
       rest_below: { type: 'number', description: 'rest when a vital drops under this fraction, default 0.7' },
       flee_below: { type: 'number', description: 'withdraw under this fraction, default 0.4' },
       max_carry: { type: 'number', description: 'stop farming at this many items, default 14' },
+      vault_items: { type: 'array', items: { type: 'string' },
+        description: 'item names to protect from eating/selling/gifting/dropping and deposit at the Barloque vault during town loops' },
       // HOW FAR ABOVE ITS OWN LEVEL THIS CHARACTER MAY FIGHT, and it was unreachable.
       //
       // `refuseEngagement` and `capBlockers` both gate on `max_health + maxThreatOver`
@@ -5552,6 +5555,11 @@ const TOOLS = [
       if (a.rest_below !== undefined) p.policy.restBelow = Number(a.rest_below);
       if (a.flee_below !== undefined) p.policy.fleeBelow = Number(a.flee_below);
       if (a.max_carry !== undefined) p.policy.maxCarry = Number(a.max_carry);
+      if (a.vault_items !== undefined) {
+        if (!Array.isArray(a.vault_items) || a.vault_items.some(v => typeof v !== 'string'))
+          throw new Error('vault_items must be a list of item names');
+        p.policy.vaultItems = [...new Set(a.vault_items.map(v => v.trim()).filter(Boolean))].slice(0, 24);
+      }
       // Floored at 0, never at 6: 0 is the legitimate "fight nothing above my own level",
       // and coercing a bad value up to the default would quietly hand back a WIDER band
       // than was asked for, which is the wrong direction for the one gate that decides
@@ -7413,6 +7421,25 @@ const TOOLS = [
               'eight surrounding squares a monster can stand on — in the open it is eight — but ' +
               '`tested` is worth more than any of the scores.',
       };
+    },
+  },
+  {
+    name: 'drop_sources',
+    description:
+      'COMPENDIUM DROP LOOKUP for collection strategies and interfaces. With no item, lists every ' +
+      'known monster-drop item. With an item name, returns the creatures whose treasure tables can ' +
+      'produce it, best chance first. This is static source-derived metadata and sends no game packet.',
+    schema: { type: 'object', properties: {
+      item: { type: 'string', description: 'ordinary item name; punctuation and plurals are tolerated' },
+      limit: { type: 'number', description: 'maximum sources returned, default 24' },
+    } },
+    run: async a => {
+      const spawns = loadSpawns(SPAWN_FILE);
+      if (!spawns) throw new Error('no spawn index - build it with: node tools/m59-spawns.mjs');
+      if (!a.item) return { items: knownDrops(spawns), source: 'compendium treasure tables' };
+      const sources = whoDrops(spawns, a.item).slice(0, Math.max(1, num(a.limit, 24)));
+      return { item: a.item, sources,
+        note: sources.length ? undefined : 'no monster treasure table matched this item name' };
     },
   },
   {
