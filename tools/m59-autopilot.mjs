@@ -59,6 +59,33 @@ const SAFESPOT_FILE = process.env.M59_SAFESPOT_FILE ||
 export const POSTMORTEM_DIR = process.env.M59_POSTMORTEM_DIR ||
   new URL('../substrate/postmortems', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 
+// MONSTER-FREE RETREATS THAT ARE NOT TRUE SANCTUARIES.
+//
+// Castle Victoria's nearest useful recovery room is its front step. Room 2 has no
+// monster generator, so crossing the door ends a monster chase and makes ordinary
+// resting practical. It has no NO_COMBAT/NO_PK/sanctuary flag, however: another player
+// can still kill somebody there. Keep that distinction in the data and in every journal
+// entry rather than quietly upgrading "no monsters spawn" into "nothing can hurt us".
+//
+// Upstairs (39) reaches it through base Castle Victoria (38). A working wall remains
+// better than either trip; retreatToSafety checks that before consulting this table.
+export const PREFERRED_QUIET_RETREATS = Object.freeze({
+  38: Object.freeze({ room: 2, name: 'Outside Castle Victoria' }),
+  39: Object.freeze({ room: 2, name: 'Outside Castle Victoria' }),
+});
+
+function preferredQuietRetreat(world, { maxHops = Infinity } = {}) {
+  const from = Number(world?.room?.num);
+  const pref = PREFERRED_QUIET_RETREATS[from];
+  if (!pref) return null;
+  const route = world?.route?.(pref.room);
+  if (!route?.found) return null;
+  const hops = route.hops?.length ?? Infinity;
+  if (hops > maxHops) return null;
+  return { ...pref, hops, preferred: true, isInn: false,
+           safety: 'no monsters spawn here', playerSafe: false };
+}
+
 // A ROOM ASSIGNMENT IS A DESTINATION, NOT A TIE-BREAKER.
 //
 // The old farm loop only consulted preyRooms() when the current room could not spawn
@@ -2531,6 +2558,12 @@ export class Autopilot {
   nearestSanctuary({ maxHops = 3 } = {}) {
     const s = this.s;
     const here = s.world?.room?.num;
+    // A deliberately named exception before the generic search. Outside Castle
+    // Victoria has no spawn-index row at all (because it spawns nothing), so it cannot
+    // emerge from `quiet` below. It is the right short retreat from either floor of the
+    // castle, but not a true player-safe inn; the returned metadata preserves that fact.
+    const preferred = preferredQuietRetreat(s.world, { maxHops });
+    if (preferred) return preferred;
     const spawns = loadSpawns(SPAWN_FILE)?.rooms || {};
     const inns = Object.values(CITY_INNS).map(x => x.inn).filter(n => n !== here);
     const quiet = Object.keys(spawns)
@@ -2546,7 +2579,9 @@ export class Autopilot {
       // Strictly closer wins; at equal distance the inn wins, because only an inn can
       // actually fix the thing that drove us out — food, and a safe place to eat it.
       if (!best || hops < best.hops || (hops === best.hops && isInn && !best.isInn))
-        best = { room, hops, isInn };
+        best = { room, hops, isInn, preferred: false,
+                 safety: isInn ? 'true sanctuary' : 'no huntable monsters spawn here',
+                 playerSafe: isInn };
     }
     return best;
   }
@@ -2576,17 +2611,23 @@ export class Autopilot {
       return false;
     }
     this.doing = 'travelling';
-    this.note('going to town', {
+    this.note(best.preferred ? 'going to a monster-free retreat' : 'going to town', {
       fled_in_a_row: this.fledInARow, vigor: vig, has_food: fed,
       to_room: best.room, hops: best.hops,
-      why: 'fled more than twice with neither the vigor nor the food to fight — the ' +
-           'wilderness cannot fix that, and a town can: resting is safe there and the ' +
-           'counters sell bread, which is the only way past the resting cap of 80' });
+      safety: best.safety, player_safe: best.playerSafe,
+      why: best.preferred
+        ? 'fled more than twice; Outside Castle Victoria has no monster spawns and is ' +
+          'close enough to rest in, though another player can still attack there'
+        : 'fled more than twice with neither the vigor nor the food to fight — the ' +
+          'wilderness cannot fix that, and a town can: resting is safe there and the ' +
+          'counters sell bread, which is the only way past the resting cap of 80' });
     const t = await this.travel(best.room, { maxHops: 6 }).catch(e => ({ arrived: false, reason: e.message }));
     this.fledInARow = 0;
     if (!t.arrived) { this.noProgress('could not reach town: ' + (t.reason || 'refused')); return false; }
-    this.progress('reached town to resupply');
-    await this.hibernate('resting in town after being driven out of the wilderness').catch(() => {});
+    this.progress(best.preferred ? 'reached a monster-free retreat' : 'reached town to resupply');
+    await this.hibernate(best.preferred
+      ? 'resting outside Castle Victoria after being driven out'
+      : 'resting in town after being driven out of the wilderness').catch(() => {});
     return true;
   }
 
@@ -6310,6 +6351,7 @@ export class Autopilot {
         this.doing = 'travelling';
         this.note('going somewhere safe to recover', {
           to_room: safe.room, hops: safe.hops,
+          safety: safe.safety, player_safe: safe.playerSafe,
           health: v?.health?.pct ?? null, mana: v?.mana?.pct ?? null, vigor: vigorOf(v),
           why: 'just came back from the dead with nothing on us. Resting in a room that ' +
                'spawns is the thing that turns a recovery into the next death' });
@@ -10529,13 +10571,14 @@ export class Autopilot {
   // `withdraw()` is a LOCAL move — to a wall, a few squares. It is the right answer
   // when a safe spot stopped working and the wrong one here: a few squares away from
   // six centipedes is still inside their vision (4-6 squares) and well inside a chase.
-  // So this leaves the room entirely and goes to an inn, which is a sanctuary — the
-  // Brownestone and its siblings carry ROOM_NO_COMBAT and ROOM_SANCTUARY, so arriving
-  // is the end of the fight rather than a pause in it.
+  // So this leaves the room entirely and goes to a refuge. Usually that is an inn, which
+  // carries ROOM_NO_COMBAT and ROOM_SANCTUARY. Castle Victoria has a much shorter useful
+  // answer: its front step spawns no monsters. That ends the monster fight and permits a
+  // rest, but does NOT protect against another player.
   //
-  // The destination is the nearest CITY_INNS entry the router will accept. If travel
-  // cannot get us there we fall back to the local withdraw, because a wall we can
-  // reach beats an inn we cannot.
+  // A configured quiet retreat wins for its own rooms, then the nearest CITY_INNS entry
+  // the router will accept. If travel cannot get us there we fall back to the local
+  // withdraw, because a wall we can reach beats a refuge we cannot.
   async retreatToSafety(why = {}) {
     const s = this.s, c = s.client;
     const here = s.world?.room?.num ?? null;
@@ -10565,7 +10608,18 @@ export class Autopilot {
       return { arrived: true, held_spot: true };
     }
 
-    // Already in one? Then we are safe and this is a no-op worth saying out loud.
+    // Outside Castle Victoria is safe from its monsters, not from players. Treat being
+    // there as a completed retreat without laundering it into a true sanctuary.
+    const inQuietRetreat = Object.values(PREFERRED_QUIET_RETREATS)
+      .some(x => x.room === here);
+    if (inQuietRetreat) {
+      this.note('already in a monster-free retreat', {
+        room: here, player_safe: false, ...why,
+        safety: 'no monsters spawn here; another player can still attack' });
+      return { arrived: true, already: true, room: here, player_safe: false };
+    }
+
+    // Already in a true sanctuary? Then we are safe and this is a no-op worth saying.
     if (here != null && inns.some(i => i.inn === here)) {
       this.note('already in a sanctuary', { room: here, ...why });
       return { arrived: true, already: true };
@@ -10575,12 +10629,20 @@ export class Autopilot {
     // possibly across the world, through everything in between, at the health that made
     // it flee. So rank by actual hops and take the closest; anything unroutable sorts
     // last and is skipped.
-    const ranked = inns
+    const rankedInns = inns
       .map(i => ({ ...i, hops: s.world?.route?.(i.inn)?.hops?.length ?? Infinity }))
       .filter(i => Number.isFinite(i.hops))
-      .sort((a, b) => a.hops - b.hops);
+      .sort((a, b) => a.hops - b.hops)
+      .map(i => ({ ...i, preferred: false, safety: 'true sanctuary', playerSafe: true }));
+    // This explicit exception wins over a farther inn. From upstairs the route is
+    // 39 -> 38 -> 2; from base Castle Victoria it is the door straight to room 2.
+    const quiet = preferredQuietRetreat(s.world, { maxHops: 6 });
+    const ranked = [
+      ...(quiet ? [{ city: null, inn: quiet.room, innName: quiet.name, ...quiet }] : []),
+      ...rankedInns.filter(i => i.inn !== quiet?.room),
+    ];
     if (!ranked.length) {
-      this.note('no inn is routable from here — falling back to a local wall', why);
+      this.note('no refuge is routable from here — falling back to a local wall', why);
       await this.withdraw(this.inReachOfUs() ?? []).catch(() => {});
       return { arrived: false, fell_back: true, no_route: true };
     }
@@ -10589,20 +10651,28 @@ export class Autopilot {
     for (const dest of ranked.slice(0, 2)) {
       this.note('running all the way to safety', {
         to: dest.innName, room: dest.inn, hops: dest.hops, ...why,
+        safety: dest.safety,
+        player_safe: dest.playerSafe,
+        ...(dest.playerSafe === false
+          ? { pvp_note: 'another player can still attack here; the safety is specifically that no monsters spawn' }
+          : {}),
         health: (() => { const h = c?.vitals?.()?.health; return h?.max ? Math.round(100 * h.value / h.max) + '%' : null; })(),
         why_not_local: 'a few squares from a crowd is still inside its vision and its chase — ' +
-                       'an inn is a sanctuary and ends the fight',
+                       (dest.preferred
+                         ? 'crossing the Castle Victoria door leaves every monster behind'
+                         : 'an inn is a sanctuary and ends the fight'),
       });
       const r = await this.travel(dest.inn, { reason: 'retreat' }).catch(e => ({ arrived: false, error: String(e) }));
       if (r?.arrived) {
-        this.progress('reached safety at ' + dest.innName);
+        this.progress(`reached ${dest.preferred ? 'monster-free retreat' : 'safety'} at ${dest.innName}`);
         this.fledInARow = 0;
-        return { arrived: true, at: dest.innName, room: dest.inn, hops: dest.hops };
+        return { arrived: true, at: dest.innName, room: dest.inn, hops: dest.hops,
+                 preferred: dest.preferred, player_safe: dest.playerSafe };
       }
     }
     // Nothing reachable. A wall here is better than nothing, so fall through to the
     // behaviour that at least gets our back covered.
-    this.note('could not reach any inn — falling back to a local wall', why);
+    this.note('could not reach any refuge — falling back to a local wall', why);
     await this.withdraw(this.inReachOfUs() ?? []).catch(() => {});
     return { arrived: false, fell_back: true };
   }

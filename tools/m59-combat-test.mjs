@@ -1429,6 +1429,60 @@ console.log('\ntelling a crash from a clean shutdown');
 }
 
 
+// CASTLE VICTORIA'S FRONT STEP IS A QUIET RETREAT, NOT A TRUE SANCTUARY.
+//
+// Nothing spawns in room 2, so it is the shortest room change that ends a fight in
+// either floor of Castle Victoria. Its flags do not prevent PvP, and the result must
+// continue to say so. A proven wall is better still because it costs no door crossing.
+console.log('\nCastle Victoria recovery retreat');
+{
+  const keeperAt = (room, hops) => {
+    const k = Object.create(Autopilot.prototype);
+    k.s = {
+      world: {
+        room: { num: room },
+        route: to => to === 2 ? { found: true, hops: Array.from({ length: hops }, () => ({})) }
+                              : { found: false },
+      },
+      client: { vitals: () => ({ health: { value: 10, max: 50 } }) },
+    };
+    return k;
+  };
+
+  const base = keeperAt(38, 1).nearestSanctuary({ maxHops: 3 });
+  ok('base Castle Victoria prefers its front step', base?.room === 2 && base?.hops === 1);
+  ok('the front step is explicitly not player-safe',
+     base?.preferred === true && base?.playerSafe === false && /no monsters/i.test(base?.safety));
+
+  const upstairs = keeperAt(39, 2).nearestSanctuary({ maxHops: 3 });
+  ok('upstairs Castle Victoria uses the same retreat through the base floor',
+     upstairs?.room === 2 && upstairs?.hops === 2);
+
+  const runner = keeperAt(38, 1);
+  const travelled = [], notes = [];
+  runner.note = (what, detail) => notes.push({ what, detail });
+  runner.travel = async room => { travelled.push(room); return { arrived: true }; };
+  runner.progress = () => {};
+  runner.inReachOfUs = () => [];
+  runner.withdraw = async () => {};
+  const escaped = await runner.retreatToSafety({ because: 'test' });
+  ok('combat retreat actually travels to Outside Castle Victoria',
+     travelled[0] === 2 && escaped?.room === 2);
+  ok('the retreat journal preserves the PvP warning',
+     notes.some(n => n.detail?.player_safe === false && /another player/i.test(n.detail?.pvp_note)));
+
+  const walled = keeperAt(38, 1);
+  let leftWall = false;
+  walled.hold = { col: 4, row: 5 };
+  walled.holdWorks = () => true;
+  walled.note = () => {};
+  walled.travel = async () => { leftWall = true; return { arrived: true }; };
+  const stayed = await walled.retreatToSafety({ because: 'test' });
+  ok('a proven nearby wall still outranks the room retreat',
+     stayed?.held_spot === true && leftWall === false);
+}
+
+
 // FLEEING TWICE IS A SUPPLY PROBLEM WEARING A TACTICS PROBLEM'S CLOTHES.
 //
 // Animal: 168 flees, 2 kills. The supervisor graduates a pair with fight_above_vigor 180
