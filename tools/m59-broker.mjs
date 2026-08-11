@@ -32,6 +32,7 @@
 
 import http from 'node:http';
 import os from 'node:os';
+import { randomBytes } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -65,6 +66,9 @@ import { renderDashboard } from './m59-dashboard.mjs';
 import { renderDeaths, renderTougher, deathReportJSON } from './m59-deaths-page.mjs';
 import { renderEconomy } from './m59-economy-page.mjs';
 import { renderSkills } from './m59-skills-page.mjs';
+import { renderStatsBoard } from './m59-stats-page.mjs';
+import { renderDumBoard, renderHarnessBoard } from './m59-observability-page.mjs';
+import { strategyStatsReport } from './m59-strategy-stats.mjs';
 import { renderHero, startScript } from './m59-hero-page.mjs';
 import { inboxIfAny, dropInbox, sanitizeInbound, unwrapSpeech } from './m59-inbox.mjs';
 import { localClients, soleClientAgent, createClientWatch,
@@ -73,6 +77,12 @@ import { chatTools } from './m59-chat-tools.mjs';
 import { rtsSafeSpellRule, rtsSpellTargetAllowed, rtsJobReport,
          rtsPacketAuthorityCheck, rtsCleanupAuthorityCheck,
          requireRtsLocalCaller } from './m59-rts-safety.mjs';
+import { COMMANDER_SCHEMA, COMMERCE_SCHEMA, COMMANDER_FACULTIES,
+         COMMANDER_DEFAULT_TTL_MS, CommerceQuoteStore, CommanderLeaseStore,
+         bindCommerceOfferEcho, canonicalCommerceItems, canonicalCommerceProvenance,
+         commerceItemsEqual, commanderSettings,
+         exactRtsRoomBinding, fleetIdentity, leaseTiming, quoteTiming, redactControlArgs,
+         resolveCommerceInventoryOrigins, tradeFingerprint } from './m59-rts-command.mjs';
 
 const HOST = process.env.M59_HOST || '127.0.0.1';
 const PORT = Number(process.env.M59_PORT || 5959);
@@ -346,6 +356,15 @@ const { fleet: FLEET, stateFile: STATE_FILE } = (() => {
   try { return resolveFleet(); }
   catch (e) { console.error(`[state] ${e.message}`); process.exit(2); }
 })();
+
+// Short-lived process-local capabilities.  A restart invalidates every commander
+// and quote rather than attempting to resurrect authority from disk.  In particular,
+// none of these records contains a roster password or is written beside the roster.
+const commanderLeases = new CommanderLeaseStore();
+const commerceQuotes = new CommerceQuoteStore({
+  ttlMs: Number(process.env.M59_RTS_COMMERCE_QUOTE_TTL_MS || 15_000),
+});
+const COMMANDER_FLEET = fleetIdentity(FLEET);
 
 // Which checkout this broker belongs to. Reported by /health so a tool can tell
 // one broker from another BEFORE acting on it. More than one checkout can be
@@ -1725,11 +1744,12 @@ class Session {
   // longest walk, in series, purely because the reply is the only way to learn the
   // outcome. So: start it, return now, and let `status` and `fleet` carry the
   // result. One job at a time per session — the character has one body.
-  startJob(kind, label, fn, { controlToken = null } = {}) {
+  startJob(kind, label, fn, { controlToken = null, leaseToken = null } = {}) {
     if (this.job && !this.job.done) throw new Error(`${this.name} is busy: ${this.job.label}`);
     const generation = this.movementGeneration;
     const job = { kind, label, startedAt: Date.now(), done: false, generation,
-                  ...(controlToken ? { controlToken } : {}) };
+                  ...(controlToken ? { controlToken } : {}),
+                  ...(leaseToken ? { leaseToken } : {}) };
     this.job = job;
     fn(generation).then(r => { job.result = r; }, e => { job.error = e.message; })
         .finally(() => { job.done = true; job.finishedAt = Date.now(); });
@@ -3360,38 +3380,75 @@ function requireControlEndpoint(s, hostValue, portValue) {
   return { host: expectedHost, port: expectedPort };
 }
 
-function requireRtsKeeperInactive(s) {
-  const keeper = autopilotIfAny(s.name);
-  if (keeper?.running && !keeper.inert)
-    throw new Error('RTS control refused while this character has an active keeper; make it inert first');
+function exactRosterAuthority(s, { agent = s?.name, character, host, port } = {}) {
+  if (!s || s.name !== agent) throw new Error('RTS roster authority agent mismatch');
+  const entry = fleetState.get(agent);
+  const saved = entry?.credentials;
+  if (!saved) throw new Error(`${agent} is not present in the selected fleet roster`);
+  const wantedCharacter = typeof character === 'string' ? character : saved.character;
+  if (!wantedCharacter || saved.character !== wantedCharacter)
+    throw new Error(`RTS roster authority character mismatch for ${agent}`);
+  const expectedHost = String(host ?? saved.host ?? HOST).trim().toLowerCase();
+  const expectedPort = Number(port ?? saved.port ?? PORT);
+  if (String(saved.host ?? HOST).trim().toLowerCase() !== expectedHost ||
+      Number(saved.port ?? PORT) !== expectedPort)
+    throw new Error(`RTS roster authority endpoint mismatch for ${agent}`);
+  const liveName = s.client?.me?.name;
+  if (liveName && liveName !== wantedCharacter)
+    throw new Error(`RTS live character mismatch for ${agent}: ${liveName}`);
+  return { agent, character: wantedCharacter, host: expectedHost, port: expectedPort };
 }
 
-// The entry check for every RTS control tool: local caller, exact endpoint, and no
-// keeper already driving this character.
-function requireControlSession(s, caller, hostValue, portValue) {
+function requireCommanderLease(s, leaseToken, faculties = COMMANDER_FACULTIES) {
+  const record = commanderLeases.require(leaseToken);
+  if (record.fleet !== COMMANDER_FLEET || record.brokerPid !== process.pid)
+    throw new Error('commander lease belongs to a different broker generation or fleet');
+  const row = record.agents.find(value => value.agent === s.name);
+  if (!row) throw new Error(`commander lease does not include ${s.name}`);
+  exactRosterAuthority(s, row);
+  requireControlEndpoint(s, record.server.host, record.server.port);
+  const keeper = autopilotIfAny(s.name);
+  if (!keeper?.running)
+    throw new Error(`commander lease lost the running keeper for ${s.name}; fail-back and survival telemetry are unavailable`);
+  for (const faculty of faculties) {
+    const owner = keeper.facultyOwner(faculty);
+    if (owner !== record.owner)
+      throw new Error(`commander lease lost ${faculty} for ${s.name}; owner is ${owner}`);
+  }
+  return { record, row };
+}
+
+// The entry check for every RTS control tool: local caller, exact endpoint, and a
+// deliberately acquired commander lease. Ordinary orders never claim a keeper.
+function requireControlSession(s, caller, hostValue, portValue, leaseToken) {
   requireRtsLocalCaller(caller);
   const endpoint = requireControlEndpoint(s, hostValue, portValue);
-  requireRtsKeeperInactive(s);
-  return endpoint;
+  const lease = requireCommanderLease(s, leaseToken);
+  return { ...endpoint, lease };
 }
 
-function requireRtsRoom(s, expectedRoom, packet) {
-  const rooms = [s.world?.room?.num, s.client?.room?.id]
-    .filter(value => Number.isSafeInteger(value));
-  if (!rooms.length || rooms.some(value => value !== expectedRoom))
-    throw new Error(`RTS ${packet} authority lost: session is in room ` +
-      `${rooms.length ? [...new Set(rooms)].join('/') : '?'}, not ${expectedRoom}`);
+function requireRtsRoom(s, expectedRoom, packet, expectedRoomObjectId = null) {
+  return exactRtsRoomBinding({
+    expectedRoomNum: expectedRoom,
+    actualRoomNum: s.world?.room?.num,
+    roomObjectId: s.client?.room?.id,
+    expectedRoomObjectId,
+    packet,
+  });
 }
 
-function rtsPacketAuthority({ s, host, port, room, token, validate = null }) {
+function rtsPacketAuthority({ s, host, port, room, roomObjectId = null,
+                              token, leaseToken, validate = null }) {
   return (packet, detail = null) => rtsPacketAuthorityCheck({
     packet, detail,
     endpoint: () => requireControlEndpoint(s, host, port),
-    keeper: () => requireRtsKeeperInactive(s),
-    room: () => requireRtsRoom(s, room, packet),
+    keeper: () => requireCommanderLease(s, leaseToken),
+    room: () => requireRtsRoom(s, room, packet, roomObjectId),
     owner: () => {
       if (!s.job || s.job.controlToken !== token)
         throw new Error(`RTS ${packet} authority lost: control token no longer owns the active job`);
+      if (s.job.leaseToken !== leaseToken)
+        throw new Error(`RTS ${packet} authority lost: commander lease no longer owns the active job`);
     },
     cancelled: () => s.job.cancelled === true || s.job.cancelRequestedAt != null ||
       s.movementWasCancelled(s.job.generation, token),
@@ -3402,21 +3459,325 @@ function rtsPacketAuthority({ s, host, port, room, token, validate = null }) {
 // Cleanup after an owned recovery cancellation is deliberately different from a new
 // action: it may ignore that job's cancellation bit so it can stand the character back
 // up, but it may not ignore a changed endpoint, room, owner, or newly active keeper.
-function rtsCleanupAuthority({ s, host, port, room, token }) {
+function rtsCleanupAuthority({ s, host, port, room, roomObjectId = null, token, leaseToken }) {
   return packet => rtsCleanupAuthorityCheck({
     packet,
     endpoint: () => requireControlEndpoint(s, host, port),
-    keeper: () => requireRtsKeeperInactive(s),
-    room: () => requireRtsRoom(s, room, packet),
+    keeper: () => requireCommanderLease(s, leaseToken),
+    room: () => requireRtsRoom(s, room, packet, roomObjectId),
     owner: () => {
       if (!s.job || s.job.controlToken !== token)
         throw new Error(`RTS ${packet} cleanup authority lost: control token no longer owns the active job`);
+      if (s.job.leaseToken !== leaseToken)
+        throw new Error(`RTS ${packet} cleanup authority lost: commander lease no longer owns the active job`);
     },
   });
 }
 
 const rtsMutationHook = guard => (packet, detail = null) =>
   beforeRtsMutation({ [RTS_MUTATION_GUARD]: guard }, packet, detail);
+
+function commanderAuth(a, caller) {
+  requireRtsLocalCaller(caller);
+  if (fleetIdentity(a.fleet) !== COMMANDER_FLEET)
+    throw new Error(`commander request names fleet ${fleetIdentity(a.fleet)}, not ${COMMANDER_FLEET}`);
+  if (Number(a.broker_pid) !== process.pid)
+    throw new Error(`commander request names broker pid ${a.broker_pid}, not ${process.pid}`);
+  const host = String(a.server_host || '').trim().toLowerCase();
+  const port = Number(a.server_port);
+  if (!/^[a-z0-9.\-]{1,255}$/.test(host) || !Number.isInteger(port) || port < 1 || port > 65535)
+    throw new Error('commander request requires an exact game server host and port');
+  return { host, port };
+}
+
+function commanderRows(value) {
+  if (!Array.isArray(value) || !value.length) throw new Error('commander request needs agents');
+  const seen = new Set();
+  return value.map(row => {
+    const agent = typeof row?.agent === 'string' ? row.agent.trim() : '';
+    const character = typeof row?.character === 'string' ? row.character.trim() : '';
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(agent) || !character)
+      throw new Error('each commander agent needs an exact agent and character');
+    if (seen.has(agent)) throw new Error(`duplicate commander agent ${agent}`);
+    seen.add(agent);
+    return { agent, character };
+  });
+}
+
+function commanderKeeperState(agent) {
+  const p = autopilotIfAny(agent);
+  if (!p) return { keeper_state: 'none', faculties: Object.fromEntries(COMMANDER_FACULTIES.map(f => [f, 'unheld'])) };
+  return {
+    keeper_state: p.inert ? 'inert' : p.running ? 'running' : 'stopped',
+    faculties: p.facultyStatus(),
+  };
+}
+
+function commanderLeaseView(record, rows = null) {
+  const now = Date.now();
+  const active = !record.releasedAt && record.expiresAt > now;
+  return {
+    schema: COMMANDER_SCHEMA,
+    state: record.releasedAt ? 'released' : active ? 'active' : 'expired',
+    fleet: record.fleet,
+    broker_pid: record.brokerPid,
+    server: record.server,
+    owner: record.clientOwner ?? record.owner,
+    faculties: [...record.faculties],
+    ...leaseTiming(record, now),
+    agents: rows ?? record.agents.map(row => ({
+      agent: row.agent, character: row.character, granted: active,
+      ...commanderKeeperState(row.agent),
+    })),
+  };
+}
+
+function releaseCommanderClaims(record, agents = record.agents) {
+  const outcomes = [];
+  for (const row of agents) {
+    const p = autopilotIfAny(row.agent);
+    const released = p
+      ? p.releaseFaculties({ faculties: COMMANDER_FACULTIES, by: record.owner }).released
+      : [];
+    p?.freeBusy({ by: record.owner });
+    outcomes.push({ agent: row.agent, character: row.character, released,
+                    ...commanderKeeperState(row.agent) });
+  }
+  return outcomes;
+}
+
+function commerceActor(a, caller) {
+  requireRtsLocalCaller(caller);
+  if (fleetIdentity(a.fleet) !== COMMANDER_FLEET)
+    throw new Error(`commerce request names fleet ${fleetIdentity(a.fleet)}, not ${COMMANDER_FLEET}`);
+  const s = sessions.get(a.agent);
+  if (!s) throw new Error(`no live session for ${a.agent}`);
+  const c = s.need();
+  const endpoint = requireControlEndpoint(s, a.server_host, a.server_port);
+  const roster = exactRosterAuthority(s, {
+    agent: a.agent, character: a.character, host: endpoint.host, port: endpoint.port,
+  });
+  const room = Number(a.room);
+  if (!Number.isSafeInteger(room)) throw new Error('commerce request needs an exact integer room');
+  const roomBinding = requireRtsRoom(s, room, 'commerce');
+  const lease = requireCommanderLease(s, a.lease_token);
+  return { s, c, endpoint, roster, room,
+           roomObjectId: roomBinding.room_object_id, lease: lease.record };
+}
+
+function commerceTarget(c, expected, { flags = 0, player = null, label = 'target' } = {}) {
+  const id = Number(expected?.id);
+  const name = typeof expected?.name === 'string' ? expected.name.trim() : '';
+  if (!Number.isSafeInteger(id) || id <= 0 || !name)
+    throw new Error(`commerce ${label} needs an exact id and name`);
+  const object = c.room?.objects?.get(id);
+  if (!object || (c.rsc.get(object.nameRsc) || '') !== name)
+    throw new Error(`commerce ${label} ${id} is absent or changed`);
+  if (flags && (object.flags & flags) !== flags)
+    throw new Error(`commerce ${label} ${id} no longer has the required affordance`);
+  if (player === true && !(object.flags & OF.PLAYER))
+    throw new Error(`commerce ${label} ${id} is not a player`);
+  if (player === false && (object.flags & OF.PLAYER))
+    throw new Error(`commerce ${label} ${id} is a player, not a merchant`);
+  return { object, view: { id, name } };
+}
+
+const heldAmount = item => Number.isSafeInteger(item?.amount) && item.amount > 0 ? item.amount : 1;
+
+function exactInventoryItems(c, requested) {
+  const items = canonicalCommerceItems(requested);
+  return items.map(item => {
+    const held = (c.inventory || []).find(value => value.id === item.id);
+    const name = held ? (c.rsc.get(held.nameRsc) || '') : '';
+    const available = heldAmount(held);
+    if (!held || name !== item.name || available < item.quantity)
+      throw new Error(`inventory item ${item.id} is absent, changed, or has fewer than ${item.quantity}`);
+    return { ...item, available_quantity: available, raw: held };
+  });
+}
+
+function purseAmount(c) {
+  return (c.inventory || [])
+    .filter(item => /shilling/i.test(c.rsc.get(item.nameRsc) || ''))
+    .reduce((sum, item) => sum + heldAmount(item), 0);
+}
+
+function inventoryNameTotals(c) {
+  const totals = new Map();
+  for (const item of c.inventory || []) {
+    const name = c.rsc.get(item.nameRsc) || '';
+    if (name) totals.set(name, (totals.get(name) || 0) + heldAmount(item));
+  }
+  return totals;
+}
+
+function inventoryIdAmount(c, id, name) {
+  const item = (c.inventory || []).find(value => value.id === id);
+  return item && (c.rsc.get(item.nameRsc) || '') === name ? heldAmount(item) : 0;
+}
+
+function expectedTradeNameDeltas(trade) {
+  const deltas = new Map();
+  for (const item of trade?.ours || [])
+    deltas.set(item.name, (deltas.get(item.name) || 0) - item.quantity);
+  for (const item of trade?.theirs || [])
+    deltas.set(item.name, (deltas.get(item.name) || 0) + item.quantity);
+  return deltas;
+}
+
+function verifyNameDeltas(before, after, expected) {
+  const failures = [];
+  for (const [name, delta] of expected) {
+    const actual = (after.get(name) || 0) - (before.get(name) || 0);
+    if (actual !== delta) failures.push(`${name}: expected ${delta >= 0 ? '+' : ''}${delta}, observed ${actual >= 0 ? '+' : ''}${actual}`);
+  }
+  return failures;
+}
+
+function commerceTradeView(c) {
+  const trade = c.trade;
+  if (!trade) return null;
+  const map = items => canonicalCommerceItems((items || []).map(item => ({
+    id: item.id, name: item.name || '', quantity: item.amount || 1,
+  })));
+  const view = {
+    revision: Number(trade.revision),
+    role: trade.role || null,
+    counterparty: Number.isSafeInteger(trade.withId)
+      ? { id: trade.withId, name: trade.withName || '' } : null,
+    ours: map(trade.ours),
+    theirs: map(trade.theirs),
+    may_accept: trade.mayAccept === true,
+    updated_at_ms: Number(trade.updatedAt) || null,
+  };
+  return { ...view, fingerprint: tradeFingerprint(view) };
+}
+
+function commerceCatalogView(c) {
+  const list = c.buyList;
+  if (!list?.seller || !Array.isArray(list.items)) return null;
+  const merchant = {
+    id: list.seller.id,
+    name: c.rsc.get(list.seller.nameRsc) || '',
+  };
+  return {
+    merchant,
+    items: list.items.map(item => ({
+      id: item.id,
+      name: c.rsc.get(item.nameRsc) || '',
+      available_quantity: Number.isSafeInteger(item.amount) && item.amount > 0 ? item.amount : null,
+      max_quantity: Number.isSafeInteger(item.amount) && item.amount > 0 ? item.amount : null,
+      unit_price: Number(item.cost),
+      currency: 'shillings',
+    })).filter(item => Number.isSafeInteger(item.id) && item.name &&
+                       Number.isSafeInteger(item.unit_price) && item.unit_price >= 0),
+  };
+}
+
+function commerceAffordances(c) {
+  const buy = [], sell = [], offer = [];
+  for (const object of c.room?.objects?.values?.() || []) {
+    if (object.id === c.selfId) continue;
+    const row = { id: object.id, name: c.rsc.get(object.nameRsc) || '' };
+    if (!row.name) continue;
+    if (object.flags & OF.BUYABLE) buy.push(row);
+    if ((object.flags & OF.OFFERABLE) && !(object.flags & OF.PLAYER)) sell.push(row);
+    if ((object.flags & OF.OFFERABLE) && (object.flags & OF.PLAYER)) offer.push(row);
+  }
+  return { buy, sell, offer };
+}
+
+function commercePacketCheck(actor, a, packet, validate = null) {
+  requireControlEndpoint(actor.s, a.server_host, a.server_port);
+  requireCommanderLease(actor.s, a.lease_token);
+  requireRtsRoom(actor.s, actor.room, packet, actor.roomObjectId);
+  exactRosterAuthority(actor.s, {
+    agent: a.agent, character: a.character,
+    host: actor.endpoint.host, port: actor.endpoint.port,
+  });
+  if (typeof validate === 'function') validate(packet);
+}
+
+// Cancel only the exact trade generation we observed.  Some successful cancel
+// packets do not produce OFFER_CANCELED for this client, so after waiting we may
+// clear that one stale cache entry locally.  We never clear if either side,
+// revision, or counterparty changed while the cancel was in flight.
+async function cancelExactCommerceTrade(c, s, { packet, beforePacket, timeoutMs = 2000 }) {
+  const opened = commerceTradeView(c);
+  if (!opened) return { trade_cleared: true, trade_ended_observed: false, stale_cache_cleared: false };
+  const fingerprint = opened.fingerprint;
+  const since = c.evSeq;
+  await s.pacer.submit('trade', () => {
+    beforePacket(packet);
+    const exact = commerceTradeView(c);
+    if (!exact || exact.fingerprint !== fingerprint)
+      throw new Error('trade changed before exact cleanup cancel packet');
+    return c.cancelOffer();
+  });
+  const ended = await c.waitFor({ since, kinds: ['trade-ended'], timeoutMs });
+  if (!c.trade) return {
+    trade_cleared: true,
+    trade_ended_observed: !ended.timedOut,
+    stale_cache_cleared: false,
+  };
+  const exact = commerceTradeView(c);
+  if (!exact || exact.fingerprint !== fingerprint)
+    throw new Error('trade changed while exact cleanup cancel was awaiting confirmation');
+  c.trade = null;
+  c.pendingOfferTo = null;
+  c.tradeRevision++;
+  return { trade_cleared: true, trade_ended_observed: false, stale_cache_cleared: true };
+}
+
+async function queryCommerceCatalog(actor, a, merchantExpected) {
+  const { s, c } = actor;
+  const merchant = commerceTarget(c, merchantExpected,
+    { flags: OF.BUYABLE, player: false, label: 'merchant' });
+  const before = c.evSeq;
+  await s.pacer.submit('buy', () => {
+    commercePacketCheck(actor, a, 'buy-list', () =>
+      commerceTarget(c, merchant.view, { flags: OF.BUYABLE, player: false, label: 'merchant' }));
+    return c.buy(merchant.view.id);
+  });
+  const reply = await c.waitFor({ since: before, kinds: ['shop', 'message'], timeoutMs: 4000 });
+  const shop = reply.events.find(event => event.kind === 'shop');
+  const catalog = commerceCatalogView(c);
+  if (!shop || !catalog || catalog.merchant.id !== merchant.view.id ||
+      catalog.merchant.name !== merchant.view.name)
+    throw new Error('merchant did not return an exact catalog');
+  return catalog;
+}
+
+function commerceActorView(actor) {
+  return {
+    agent: actor.roster.agent,
+    character: actor.roster.character,
+    fleet: COMMANDER_FLEET,
+    room: actor.room,
+    room_object_id: actor.roomObjectId,
+    server: actor.endpoint,
+    lease_id: actor.lease.leaseId,
+  };
+}
+
+function commercePrepared(record, actor, claims) {
+  return {
+    schema: COMMERCE_SCHEMA,
+    phase: 'prepared',
+    kind: claims.kind,
+    agent: actor.roster.agent,
+    actor: commerceActorView(actor),
+    target: claims.target ?? null,
+    items: claims.items ?? [],
+    trade: claims.trade ?? null,
+    price: claims.price,
+    ...quoteTiming(record),
+  };
+}
+
+function commerceControlToken() {
+  return controlToken(`commerce:${randomBytes(18).toString('base64url')}`);
+}
 
 function rtsIdentity(c, value) {
   if (!value) return null;
@@ -4127,6 +4488,175 @@ const TOOLS = [
     },
   },
   {
+    name: 'commander_lease',
+    description:
+      'Explicitly acquire, heartbeat, release, or inspect the short RTS commander lease. ' +
+      'Acquisition is the ONLY operation that takes work/movement/economy/social from a keeper; ' +
+      'ordinary orders never seize agents. The capability is pinned to this fleet, broker pid, ' +
+      'game endpoint, and exact roster characters. Heartbeats are bounded and a missed heartbeat ' +
+      'fails back to the keeper. Survival, recovery, mortality, and identity remain with it.',
+    schema: { type: 'object', properties: {
+      action: { type: 'string', enum: ['acquire', 'heartbeat', 'release', 'status'] },
+      fleet: { type: 'string' },
+      broker_pid: { type: 'number' },
+      server_host: { type: 'string' },
+      server_port: { type: 'number' },
+      agents: { type: 'array', items: { type: 'object', properties: {
+        agent: { type: 'string' }, character: { type: 'string' },
+      }, required: ['agent', 'character'] } },
+      owner: { type: 'string', description: 'short UI/controller label for telemetry' },
+      lease_token: { type: 'string', description: 'required after acquire' },
+      lease_ms: { type: 'number', description: '5000-30000; default 20000' },
+    }, required: ['action', 'fleet', 'broker_pid', 'server_host', 'server_port'] },
+    run: (a, caller) => {
+      const endpoint = commanderAuth(a, caller);
+      if (a.action === 'status') {
+        if (a.lease_token) {
+          const record = commanderLeases.records.get(a.lease_token);
+          if (!record) throw new Error('unknown commander lease token');
+          return commanderLeaseView(record);
+        }
+        commanderLeases.cleanup();
+        return {
+          schema: COMMANDER_SCHEMA,
+          ...commanderSettings(process.env, COMMANDER_FLEET),
+          broker_pid: process.pid,
+          leases: [...commanderLeases.records.values()]
+            .filter(record => !record.releasedAt && record.expiresAt > Date.now())
+            .map(record => commanderLeaseView(record)),
+        };
+      }
+
+      const requested = commanderRows(a.agents);
+      if (a.action === 'acquire') {
+        const outcomes = [], candidates = [];
+        for (const row of requested) {
+          try {
+            const s = sessions.get(row.agent);
+            if (!s) throw new Error('agent session is absent');
+            s.need();
+            exactRosterAuthority(s, { ...row, ...endpoint });
+            requireControlEndpoint(s, endpoint.host, endpoint.port);
+            if (pilotOf(row.agent)) throw new Error('agent is being played by a local Meridian client');
+            if (s.job && !s.job.done) throw new Error(`agent is busy: ${s.job.label}`);
+            const held = commanderLeases.activeForAgent(row.agent);
+            if (held) throw new Error(`agent is already held by lease ${held.leaseId}`);
+            const p = autopilotIfAny(row.agent);
+            if (!p) throw new Error('agent has no keeper to preserve survival/telemetry and fail back to');
+            if (!p.running) throw new Error('keeper is stopped; start it before acquiring commander control');
+            if (p?.inert) throw new Error(`keeper is already inert: ${p.inert.why || 'another controller holds it'}`);
+            const foreign = COMMANDER_FACULTIES
+              .map(faculty => ({ faculty, owner: p.facultyOwner(faculty) }))
+              .find(value => value.owner !== 'keeper');
+            if (foreign) throw new Error(`${foreign.faculty} is already held by ${foreign.owner}`);
+            candidates.push({ ...row, host: endpoint.host, port: endpoint.port });
+            outcomes.push({ agent: row.agent, character: row.character, granted: true });
+          } catch (error) {
+            outcomes.push({ agent: row.agent, character: row.character, granted: false,
+                            blocked_reason: String(error?.message || error) });
+          }
+        }
+        if (!candidates.length) return {
+          schema: COMMANDER_SCHEMA, state: 'refused', fleet: COMMANDER_FLEET,
+          broker_pid: process.pid, server: endpoint, faculties: [...COMMANDER_FACULTIES],
+          agents: outcomes,
+        };
+        const record = commanderLeases.issue({
+          fleet: COMMANDER_FLEET,
+          brokerPid: process.pid,
+          server: endpoint,
+          agents: candidates,
+          owner: 'pending',
+          clientOwner: typeof a.owner === 'string' ? a.owner.slice(0, 80) : 'strategy-ui',
+        }, a.lease_ms ?? COMMANDER_DEFAULT_TTL_MS);
+        record.owner = `commander:${process.pid}:${record.leaseId}`;
+        const leaseMs = Math.max(1_000, record.expiresAt - Date.now());
+        const actuallyGranted = [];
+        for (const row of [...record.agents]) {
+          const p = autopilotIfAny(row.agent);
+          if (!p?.running) {
+            const out = outcomes.find(value => value.agent === row.agent);
+            Object.assign(out, { granted: false, blocked_reason: 'running keeper vanished during acquisition' });
+            continue;
+          }
+          const claimed = p.claimFaculties({
+            faculties: COMMANDER_FACULTIES, by: record.owner, leaseMs,
+            why: `RTS commander lease ${record.leaseId}`, mayYield: fleetMayYield(),
+          });
+          if (claimed.granted.length === COMMANDER_FACULTIES.length) {
+            actuallyGranted.push(row);
+            continue;
+          }
+          p.releaseFaculties({ faculties: COMMANDER_FACULTIES, by: record.owner });
+          const out = outcomes.find(value => value.agent === row.agent);
+          Object.assign(out, { granted: false, blocked_reason: 'keeper refused directional faculty claim' });
+        }
+        record.agents = actuallyGranted;
+        if (!record.agents.length) {
+          commanderLeases.release(record.token);
+          return { ...commanderLeaseView(record, outcomes), state: 'refused' };
+        }
+        for (const out of outcomes) Object.assign(out, commanderKeeperState(out.agent));
+        return {
+          ...commanderLeaseView(record, outcomes),
+          owner: record.clientOwner,
+          lease_token: record.token,
+        };
+      }
+
+      const record = commanderLeases.require(a.lease_token,
+        { allowExpired: a.action === 'release' });
+      if (record.fleet !== COMMANDER_FLEET || record.brokerPid !== process.pid ||
+          record.server.host !== endpoint.host || record.server.port !== endpoint.port)
+        throw new Error('commander lease authority does not match fleet, broker, or server');
+      const expected = record.agents.map(row => `${row.agent}\0${row.character}`).sort();
+      const echoed = requested.map(row => `${row.agent}\0${row.character}`).sort();
+      if (JSON.stringify(expected) !== JSON.stringify(echoed))
+        throw new Error('commander agents do not exactly match the leased roster set');
+
+      if (a.action === 'release') {
+        const outcomes = releaseCommanderClaims(record);
+        if (!record.releasedAt) commanderLeases.release(record.token);
+        return { ...commanderLeaseView(record, outcomes), owner: record.clientOwner };
+      }
+      if (a.action !== 'heartbeat') throw new Error(`unknown commander lease action ${a.action}`);
+
+      const outcomes = [], retained = [];
+      for (const row of record.agents) {
+        try {
+          const s = sessions.get(row.agent);
+          if (!s) throw new Error('agent session is absent');
+          s.need();
+          exactRosterAuthority(s, row);
+          requireControlEndpoint(s, record.server.host, record.server.port);
+          const p = autopilotIfAny(row.agent);
+          if (!p?.running) throw new Error('running keeper is no longer available for fail-back');
+          for (const faculty of COMMANDER_FACULTIES)
+            if (p.facultyOwner(faculty) !== record.owner)
+              throw new Error(`${faculty} is no longer owned by this commander`);
+          retained.push(row);
+          outcomes.push({ agent: row.agent, character: row.character, granted: true });
+        } catch (error) {
+          releaseCommanderClaims(record, [row]);
+          outcomes.push({ agent: row.agent, character: row.character, granted: false,
+                          blocked_reason: String(error?.message || error) });
+        }
+      }
+      record.agents = retained;
+      if (!retained.length) {
+        commanderLeases.release(record.token);
+        return { ...commanderLeaseView(record, outcomes), owner: record.clientOwner };
+      }
+      commanderLeases.renew(record.token, a.lease_ms ?? COMMANDER_DEFAULT_TTL_MS);
+      const leaseMs = record.expiresAt - Date.now();
+      for (const row of retained)
+        autopilotIfAny(row.agent)?.heartbeatFaculties({ by: record.owner, leaseMs });
+      for (const out of outcomes) Object.assign(out, commanderKeeperState(out.agent));
+      return { ...commanderLeaseView(record, outcomes), owner: record.clientOwner,
+               lease_token: record.token };
+    },
+  },
+  {
     name: 'attack_intent',
     description:
       'Start an exact-id attack as a background session job and return immediately. This is the ' +
@@ -4141,16 +4671,16 @@ const TOOLS = [
       target: { type: 'number' },
       swings: { type: 'number', description: 'maximum paced swings, default 20' },
       control_token: { type: 'string', description: 'opaque owner token required for cancellation' },
+      lease_token: { type: 'string', description: 'active commander lease that owns this exact agent' },
       server_host: { type: 'string', description: 'exact game host authorized by the gateway; must equal this session\'s own' },
       server_port: { type: 'number', description: 'exact game port authorized by the gateway; must equal this session\'s own' },
-    }, required: ['agent', 'room', 'target', 'control_token', 'server_host', 'server_port'] },
+    }, required: ['agent', 'room', 'target', 'control_token', 'lease_token', 'server_host', 'server_port'] },
     run: (a, caller) => {
       const s = session(a.agent), c = s.need();
       const token = controlToken(a.control_token);
-      requireControlSession(s, caller, a.server_host, a.server_port);
-      const actualRoom = s.world?.room?.num ?? null;
-      if (actualRoom !== Number(a.room))
-        throw new Error(`stale attack intent: ${a.agent} is in room ${actualRoom}, not ${a.room}`);
+      requireControlSession(s, caller, a.server_host, a.server_port, a.lease_token);
+      const roomBinding = requireRtsRoom(s, Number(a.room), 'attack-intent');
+      const actualRoom = roomBinding.room_num;
       const target = resolveTarget(s, Number(a.target));
       const object = c.room.objects.get(target.id);
       if (!object || !(object.flags & OF.ATTACKABLE))
@@ -4163,6 +4693,8 @@ const TOOLS = [
       const expectedTarget = rtsIdentity(c, object);
       const guard = rtsPacketAuthority({
         s, host: a.server_host, port: a.server_port, room: actualRoom, token,
+        roomObjectId: roomBinding.room_object_id,
+        leaseToken: a.lease_token,
         validate: packet => {
           const current = c.room.objects.get(target.id);
           if (!sameRtsIdentity(c, current, expectedTarget) || !(current.flags & OF.ATTACKABLE))
@@ -4183,10 +4715,10 @@ const TOOLS = [
         () => callTool('attack', { agent: a.agent, target: target.id, swings,
                                    ...(swings > 1 ? { stop_below: 0.35 } : {}),
                                    [RTS_MUTATION_GUARD]: guard }),
-        { controlToken: token });
+        { controlToken: token, leaseToken: a.lease_token });
       return { accepted: true, agent: a.agent, room: actualRoom, target: target.id,
                swings, ...(swings > 1 ? { stop_below: 0.35 } : {}),
-               control_token: token, started_at: job.startedAt };
+               control_token: token, lease_token: a.lease_token, started_at: job.startedAt };
     },
   },
   {
@@ -4204,18 +4736,18 @@ const TOOLS = [
       row: { type: 'number' },
       max_steps: { type: 'number', description: 'hard movement budget, default 120, maximum 400' },
       control_token: { type: 'string', description: 'opaque owner token required for cancellation' },
+      lease_token: { type: 'string', description: 'active commander lease that owns this exact agent' },
       server_host: { type: 'string', description: 'exact game host authorized by the gateway; must equal this session\'s own' },
       server_port: { type: 'number', description: 'exact game port authorized by the gateway; must equal this session\'s own' },
-    }, required: ['agent', 'room', 'col', 'row', 'control_token', 'server_host', 'server_port'] },
+    }, required: ['agent', 'room', 'col', 'row', 'control_token', 'lease_token', 'server_host', 'server_port'] },
     run: (a, caller) => {
       const s = session(a.agent);
       s.need();
       const token = controlToken(a.control_token);
-      requireControlSession(s, caller, a.server_host, a.server_port);
-      const actualRoom = s.world?.room?.num ?? null;
+      requireControlSession(s, caller, a.server_host, a.server_port, a.lease_token);
       const room = Number(a.room), col = Number(a.col), row = Number(a.row);
-      if (!Number.isSafeInteger(room) || actualRoom !== room)
-        throw new Error(`stale move intent: ${a.agent} is in room ${actualRoom}, not ${a.room}`);
+      const roomBinding = requireRtsRoom(s, room, 'move-intent');
+      const actualRoom = roomBinding.room_num;
       if (!Number.isSafeInteger(col) || !Number.isSafeInteger(row))
         throw new Error('move intent destination must be an integer col/row square');
       const geometry = s.world?.geometry;
@@ -4227,6 +4759,8 @@ const TOOLS = [
       const maxSteps = Math.max(1, Math.min(400, Math.trunc(num(a.max_steps, 120))));
       const guard = rtsPacketAuthority({
         s, host: a.server_host, port: a.server_port, room, token,
+        roomObjectId: roomBinding.room_object_id,
+        leaseToken: a.lease_token,
         validate: (packet, detail) => {
           const currentGeometry = s.world?.geometry;
           if (!currentGeometry || row < 1 || row > currentGeometry.rows ||
@@ -4252,10 +4786,10 @@ const TOOLS = [
             if (stopped) return stopped;
             throw error;
           }
-        }, { controlToken: token });
+        }, { controlToken: token, leaseToken: a.lease_token });
       return { accepted: true, agent: a.agent, room: actualRoom,
                destination: { col, row }, max_steps: maxSteps,
-               control_token: token, started_at: job.startedAt };
+               control_token: token, lease_token: a.lease_token, started_at: job.startedAt };
     },
   },
   {
@@ -4284,13 +4818,14 @@ const TOOLS = [
                  description: 'gateway-derived gettable ids for grab_nearby' },
       spell: { type: 'string', description: 'exact server-observed spell name' },
       control_token: { type: 'string', description: 'opaque owner token required for cancellation' },
+      lease_token: { type: 'string', description: 'active commander lease that owns this exact agent' },
       server_host: { type: 'string', description: 'exact game host authorized by the gateway; must equal this session\'s own' },
       server_port: { type: 'number', description: 'exact game port authorized by the gateway; must equal this session\'s own' },
-    }, required: ['agent', 'room', 'action', 'control_token', 'server_host', 'server_port'] },
+    }, required: ['agent', 'room', 'action', 'control_token', 'lease_token', 'server_host', 'server_port'] },
     run: (a, caller) => {
       const s = session(a.agent), c = s.need();
       const token = controlToken(a.control_token);
-      requireControlSession(s, caller, a.server_host, a.server_port);
+      requireControlSession(s, caller, a.server_host, a.server_port, a.lease_token);
       const action = typeof a.action === 'string' ? a.action : '';
       if (![
         'stand', 'rest_here', 'recover_here', 'grab_nearby', 'take', 'cast',
@@ -4298,10 +4833,9 @@ const TOOLS = [
         'item_use', 'item_unuse', 'item_eat', 'safety_on',
       ].includes(action))
         throw new Error('unknown RTS context action');
-      const actualRoom = s.world?.room?.num ?? null;
       const room = Number(a.room);
-      if (!Number.isSafeInteger(room) || actualRoom !== room)
-        throw new Error(`stale context intent: ${a.agent} is in room ${actualRoom}, not ${a.room}`);
+      const roomBinding = requireRtsRoom(s, room, 'context-intent');
+      const actualRoom = roomBinding.room_num;
 
       let col = null, row = null, target = null, targets = [], spell = null;
       let inventoryItem = null, inventoryName = null, inventoryIdentity = null;
@@ -4530,11 +5064,15 @@ const TOOLS = [
           throw new Error(`RTS ${packet} refused: no exact cached item identity accompanied the packet`);
       };
       const guard = rtsPacketAuthority({
-        s, host: a.server_host, port: a.server_port, room, token, validate: validateContext,
+        s, host: a.server_host, port: a.server_port, room, token,
+        roomObjectId: roomBinding.room_object_id,
+        leaseToken: a.lease_token, validate: validateContext,
       });
       const beforeMutation = rtsMutationHook(guard);
       const beforeCleanup = rtsCleanupAuthority({
         s, host: a.server_host, port: a.server_port, room, token,
+        roomObjectId: roomBinding.room_object_id,
+        leaseToken: a.lease_token,
       });
       const cancelled = () => s.job?.controlToken === token &&
         (s.job.cancelled === true || s.job.cancelRequestedAt != null);
@@ -4682,7 +5220,7 @@ const TOOLS = [
           if (stopped) return stopped;
           throw error;
         }
-      }, { controlToken: token });
+      }, { controlToken: token, leaseToken: a.lease_token });
       return {
         accepted: true, agent: a.agent, room: actualRoom, action,
         ...(['rest_here', 'recover_here'].includes(action) ? { destination: { col, row } } : {}),
@@ -4690,7 +5228,7 @@ const TOOLS = [
         ...(action === 'grab_nearby' ? { targets } : {}),
         ...(action === 'cast' ? { spell, ...(target == null ? {} : { target }) } : {}),
         ...(action.startsWith('item_') ? { item: inventoryItem.id, name: inventoryName } : {}),
-        control_token: token, started_at: job.startedAt,
+        control_token: token, lease_token: a.lease_token, started_at: job.startedAt,
       };
     },
   },
@@ -4708,9 +5246,10 @@ const TOOLS = [
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       control_token: { type: 'string', description: 'must own the active RTS action' },
+      lease_token: { type: 'string', description: 'the commander lease recorded on that action' },
       server_host: { type: 'string', description: 'exact game host authorized by the gateway; must equal this session\'s own' },
       server_port: { type: 'number', description: 'exact game port authorized by the gateway; must equal this session\'s own' },
-    }, required: ['agent', 'control_token', 'server_host', 'server_port'] },
+    }, required: ['agent', 'control_token', 'lease_token', 'server_host', 'server_port'] },
     run: (a, caller) => {
       const s = session(a.agent);
       const token = controlToken(a.control_token);
@@ -4723,6 +5262,8 @@ const TOOLS = [
       if (!job) return { cancelled: false, note: 'no background action is active' };
       if (!job.controlToken || job.controlToken !== token)
         throw new Error('control_token does not own the active background action');
+      if (!job.leaseToken || job.leaseToken !== a.lease_token)
+        throw new Error('lease_token does not own the active background action');
       if (job.kind === 'attack') {
         job.cancelled = true;
         job.cancelRequestedAt = Date.now();
@@ -4740,7 +5281,511 @@ const TOOLS = [
                  note: 'the context action will stop before its next paced server operation; ' +
                        'a packet already submitted cannot be recalled' };
       }
+      if (job.kind.startsWith('commerce:')) {
+        job.cancelled = true;
+        job.cancelRequestedAt = Date.now();
+        return { cancelled: true, interrupted: { kind: job.kind, label: job.label },
+                 note: 'commerce action will stop before its next paced packet; an open offer is cancelled by its owned cleanup path' };
+      }
       throw new Error(`control_token owns unsupported action kind ${job.kind}`);
+    },
+  },
+  {
+    name: 'commerce_status',
+    description:
+      'Return cached purse, merchant/player affordances, last catalog, and the exact current trade ' +
+      'state. This sends no Meridian packet. Trade revision plus both item sets are the authority ' +
+      'a later prepare must echo.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' }, fleet: { type: 'string' }, character: { type: 'string' },
+      room: { type: 'number' }, server_host: { type: 'string' }, server_port: { type: 'number' },
+      lease_token: { type: 'string' },
+    }, required: ['agent', 'fleet', 'character', 'room', 'server_host', 'server_port', 'lease_token'] },
+    run: (a, caller) => {
+      const actor = commerceActor(a, caller);
+      return {
+        schema: COMMERCE_SCHEMA,
+        phase: 'status',
+        agent: a.agent,
+        actor: commerceActorView(actor),
+        purse: { amount: purseAmount(actor.c), currency: 'shillings' },
+        affordances: commerceAffordances(actor.c),
+        catalog: commerceCatalogView(actor.c),
+        trade: commerceTradeView(actor.c),
+        observed_at_ms: Date.now(),
+        refresh: 'cached_no_packet',
+      };
+    },
+  },
+  {
+    name: 'commerce_catalog',
+    description:
+      'Ask one exact merchant for its current catalog without buying. This is the on-demand browse ' +
+      'phase native UI needs before it can name seller-side item ids. It still requires the live ' +
+      'commander lease and rechecks authority inside the paced buy-list packet.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' }, fleet: { type: 'string' }, character: { type: 'string' },
+      room: { type: 'number' }, server_host: { type: 'string' }, server_port: { type: 'number' },
+      lease_token: { type: 'string' },
+      merchant: { type: 'object', properties: { id: { type: 'number' }, name: { type: 'string' } },
+                  required: ['id', 'name'] },
+    }, required: ['agent', 'fleet', 'character', 'room', 'server_host', 'server_port',
+                  'lease_token', 'merchant'] },
+    run: async (a, caller) => {
+      const actor = commerceActor(a, caller);
+      if (actor.s.job && !actor.s.job.done) throw new Error(`${a.agent} is busy: ${actor.s.job.label}`);
+      const catalog = await queryCommerceCatalog(actor, a, a.merchant);
+      return {
+        schema: COMMERCE_SCHEMA,
+        phase: 'catalog',
+        agent: a.agent,
+        actor: commerceActorView(actor),
+        ...catalog,
+        observed_at_ms: Date.now(),
+        refresh: 'on_demand_meridian_query',
+      };
+    },
+  },
+  {
+    name: 'commerce_prepare',
+    description:
+      'Prepare, but do not commit, an exact buy, sell, outgoing offer, empty counter, accept, or ' +
+      'trade cancellation. Returns a short-lived single-use quote token. Sell briefly opens the ' +
+      'merchant offer only to obtain its counter-price, then cancels before returning. Player-trade ' +
+      'operations fingerprint the revision and BOTH sides; any drift makes commit fail closed.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' }, fleet: { type: 'string' }, character: { type: 'string' },
+      room: { type: 'number' }, server_host: { type: 'string' }, server_port: { type: 'number' },
+      lease_token: { type: 'string' },
+      kind: { type: 'string', enum: ['buy', 'sell', 'offer', 'trade_counter_empty',
+                                     'trade_accept', 'trade_cancel'] },
+      merchant: { type: 'object' }, counterparty: { type: 'object' }, item: { type: 'object' },
+      quantity: { type: 'number' }, items: { type: 'array', items: { type: 'object' } },
+      expected_trade_revision: { type: 'number' },
+      expected_ours: { type: 'array', items: { type: 'object' } },
+      expected_theirs: { type: 'array', items: { type: 'object' } },
+      expected_may_accept: { type: 'boolean' },
+    }, required: ['agent', 'fleet', 'character', 'room', 'server_host', 'server_port',
+                  'lease_token', 'kind'] },
+    run: async (a, caller) => {
+      const actor = commerceActor(a, caller);
+      const { s, c } = actor;
+      if (s.job && !s.job.done) throw new Error(`${a.agent} is busy: ${s.job.label}`);
+      const base = {
+        kind: a.kind,
+        actor: commerceActorView(actor),
+        lease_id: actor.lease.leaseId,
+      };
+      let claims;
+
+      if (a.kind === 'buy') {
+        if (c.trade) throw new Error('cannot prepare a purchase while a trade is open');
+        const catalog = await queryCommerceCatalog(actor, a, a.merchant);
+        const itemId = Number(a.item?.id), itemName = String(a.item?.name || '').trim();
+        const line = catalog.items.find(value => value.id === itemId && value.name === itemName);
+        if (!line) throw new Error('selected catalog item is absent or changed');
+        const quantity = Number(a.quantity);
+        if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 9999)
+          throw new Error('buy quantity must be an integer from 1 to 9999');
+        if (line.max_quantity != null && quantity > line.max_quantity)
+          throw new Error(`merchant reports only ${line.max_quantity} available`);
+        const total = line.unit_price * quantity;
+        if (!Number.isSafeInteger(total) || total < 0) throw new Error('purchase total is out of range');
+        if (purseAmount(c) < total) throw new Error(`purchase costs ${total} shillings but purse holds ${purseAmount(c)}`);
+        claims = {
+          ...base,
+          target: { role: 'merchant', ...catalog.merchant },
+          items: [{ id: line.id, name: line.name, requested_quantity: quantity,
+                    quoted_quantity: quantity, available_quantity: line.available_quantity,
+                    max_quantity: line.max_quantity, unit_price: line.unit_price,
+                    total_price: total, currency: 'shillings' }],
+          price: { currency: 'shillings', unit_price: line.unit_price, total_price: total },
+        };
+      } else if (a.kind === 'sell') {
+        if (c.trade) throw new Error('cannot quote a sale while another trade is open');
+        const merchant = commerceTarget(c, a.merchant,
+          { flags: OF.OFFERABLE, player: false, label: 'merchant' });
+        const held = exactInventoryItems(c, a.items);
+        canonicalCommerceProvenance(held);
+        const offered = held.map(item => ({ id: item.id, amount: item.quantity }));
+        const before = c.evSeq;
+        await s.pacer.submit('trade', () => {
+          commercePacketCheck(actor, a, 'sell-quote-offer', () => {
+            commerceTarget(c, merchant.view, { flags: OF.OFFERABLE, player: false, label: 'merchant' });
+            exactInventoryItems(c, held);
+          });
+          return c.offer(merchant.view.id, offered);
+        });
+        let trade = null;
+        try {
+          const reply = await c.waitFor({ since: before, kinds: ['countered', 'trade-ended'], timeoutMs: 8000 });
+          if (!reply.events.some(event => event.kind === 'countered'))
+            throw new Error('merchant did not counteroffer');
+          trade = commerceTradeView(c);
+          if (!trade || trade.counterparty?.id !== merchant.view.id ||
+              trade.counterparty?.name !== merchant.view.name)
+            throw new Error('merchant quote changed the exact offered items');
+          c.trade.inventoryBindings = bindCommerceOfferEcho(held, trade.ours);
+          if (!trade.theirs.length || trade.theirs.some(item => !/shilling/i.test(item.name)))
+            throw new Error('merchant counteroffer was not an exact shilling price');
+        } finally {
+          if (c.trade) await cancelExactCommerceTrade(c, s, {
+            packet: 'sell-quote-cancel',
+            beforePacket: packet => commercePacketCheck(actor, a, packet),
+          });
+        }
+        const total = trade.theirs.reduce((sum, item) => sum + item.quantity, 0);
+        claims = {
+          ...base,
+          target: { role: 'merchant', ...merchant.view },
+          items: held.map(item => ({ id: item.id, name: item.name,
+            requested_quantity: item.quantity, quoted_quantity: item.quantity,
+            available_quantity: item.available_quantity, max_quantity: item.available_quantity,
+            unit_price: held.length === 1 && total % item.quantity === 0 ? total / item.quantity : null,
+            total_price: held.length === 1 ? total : null, currency: 'shillings' })),
+          price: { currency: 'shillings', unit_price: held.length === 1 && total % held[0].quantity === 0
+            ? total / held[0].quantity : null, total_price: total },
+        };
+      } else if (a.kind === 'offer') {
+        if (c.trade) throw new Error('cannot prepare an offer while another trade is open');
+        const target = commerceTarget(c, a.counterparty,
+          { flags: OF.OFFERABLE, player: true, label: 'counterparty' });
+        if (target.view.id === c.selfId) throw new Error('cannot offer to yourself');
+        const held = exactInventoryItems(c, a.items);
+        canonicalCommerceProvenance(held);
+        claims = {
+          ...base,
+          target: { role: 'player', ...target.view },
+          items: held.map(item => ({ id: item.id, name: item.name,
+            requested_quantity: item.quantity, quoted_quantity: item.quantity,
+            available_quantity: item.available_quantity, max_quantity: item.available_quantity,
+            unit_price: null, total_price: null, currency: null })),
+          trade: { revision: null, role: 'offerer', counterparty: target.view,
+                   ours: held.map(({ id, name, quantity }) => ({ id, name, quantity })),
+                   theirs: [], may_accept: false },
+          price: { currency: null, unit_price: null, total_price: 0 },
+        };
+      } else if (['trade_counter_empty', 'trade_accept', 'trade_cancel'].includes(a.kind)) {
+        const trade = commerceTradeView(c);
+        if (!trade) throw new Error('no player trade is open');
+        if (!trade.counterparty) throw new Error('open trade has no exact counterparty identity');
+        commerceTarget(c, a.counterparty,
+          { flags: OF.OFFERABLE, player: true, label: 'counterparty' });
+        if (Number(a.expected_trade_revision) !== trade.revision ||
+            a.expected_may_accept !== trade.may_accept ||
+            !commerceItemsEqual(a.expected_ours, trade.ours) ||
+            !commerceItemsEqual(a.expected_theirs, trade.theirs))
+          throw new Error('trade preview is stale; revision or one side of the offer changed');
+        if (trade.counterparty.id !== Number(a.counterparty.id) ||
+            trade.counterparty.name !== String(a.counterparty.name || '').trim())
+          throw new Error('trade counterparty changed');
+        if (a.kind === 'trade_counter_empty' && (trade.role !== 'recipient' || trade.may_accept))
+          throw new Error('empty counter is legal only for a fresh incoming offer');
+        if (a.kind === 'trade_accept' && !trade.may_accept)
+          throw new Error('trade cannot be accepted before a counteroffer');
+        const outgoingInventoryItems = a.kind === 'trade_accept'
+          ? resolveCommerceInventoryOrigins(trade.ours, c.trade?.inventoryBindings)
+          : [];
+        if (a.kind === 'trade_accept') exactInventoryItems(c, outgoingInventoryItems);
+        claims = {
+          ...base,
+          target: { role: 'player', ...trade.counterparty },
+          items: [],
+          trade: { ...trade, fingerprint: undefined },
+          trade_fingerprint: trade.fingerprint,
+          ...(a.kind === 'trade_accept' ? { outgoing_inventory_items: outgoingInventoryItems } : {}),
+          price: { currency: 'mixed', unit_price: null, total_price: null },
+        };
+      } else {
+        throw new Error(`unknown commerce kind ${a.kind}`);
+      }
+
+      const quote = commerceQuotes.issue(claims);
+      return commercePrepared(quote, actor, claims);
+    },
+  },
+  {
+    name: 'commerce_commit',
+    description:
+      'Consume one prepared quote exactly once and start a cancelable background commit. Endpoint, ' +
+      'commander lease, roster character, room, item identities/quantities, merchant price, and both ' +
+      'player-trade sides are revalidated in the final pacer callback. Outgoing offers remain open; ' +
+      'they are NEVER auto-accepted, especially when a value-bearing counter arrives.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' }, fleet: { type: 'string' }, character: { type: 'string' },
+      room: { type: 'number' }, server_host: { type: 'string' }, server_port: { type: 'number' },
+      lease_token: { type: 'string' }, quote_token: { type: 'string' },
+    }, required: ['agent', 'fleet', 'character', 'room', 'server_host', 'server_port',
+                  'lease_token', 'quote_token'] },
+    run: (a, caller) => {
+      const actor = commerceActor(a, caller);
+      const { s, c } = actor;
+      if (s.job && !s.job.done) throw new Error(`${a.agent} is busy: ${s.job.label}`);
+      const quote = commerceQuotes.consume(a.quote_token, claims => {
+        if (claims.lease_id !== actor.lease.leaseId || claims.actor.agent !== a.agent ||
+            claims.actor.character !== a.character || claims.actor.fleet !== COMMANDER_FLEET ||
+            claims.actor.room !== actor.room || claims.actor.room_object_id !== actor.roomObjectId ||
+            claims.actor.server.host !== actor.endpoint.host ||
+            claims.actor.server.port !== actor.endpoint.port)
+          throw new Error('commerce quote authority does not exactly match actor, lease, room, roster, or server');
+      });
+      const claims = quote.claims;
+      const token = commerceControlToken();
+      const guard = rtsPacketAuthority({
+        s, host: actor.endpoint.host, port: actor.endpoint.port, room: actor.room,
+        roomObjectId: actor.roomObjectId,
+        token, leaseToken: a.lease_token,
+      });
+      const beforeMutation = rtsMutationHook(guard);
+      const beforeCleanup = rtsCleanupAuthority({
+        s, host: actor.endpoint.host, port: actor.endpoint.port, room: actor.room,
+        roomObjectId: actor.roomObjectId,
+        token, leaseToken: a.lease_token,
+      });
+      const cleanupTrade = async () => {
+        if (!c.trade) return null;
+        return cancelExactCommerceTrade(c, s, {
+          packet: 'trade-cancel',
+          beforePacket: beforeCleanup,
+        });
+      };
+      const targetExpected = claims.target ? { id: claims.target.id, name: claims.target.name } : null;
+      const requested = (claims.items || []).map(item => ({
+        id: item.id, name: item.name, quantity: item.quoted_quantity,
+      }));
+      const job = s.startJob(`commerce:${claims.kind}`,
+        `${claims.kind} quote ${quote.quoteId} in room ${actor.room}`, async () => {
+          let leaveTradeOpen = false;
+          try {
+            if (claims.kind === 'buy') {
+              const before = c.evSeq;
+              await s.pacer.submit('buy', () => {
+                beforeMutation('buy-list');
+                commerceTarget(c, targetExpected, { flags: OF.BUYABLE, player: false, label: 'merchant' });
+                return c.buy(targetExpected.id);
+              });
+              const reply = await c.waitFor({ since: before, kinds: ['shop', 'message'], timeoutMs: 4000 });
+              if (!reply.events.some(event => event.kind === 'shop')) throw new Error('merchant catalog refresh timed out');
+              const catalog = commerceCatalogView(c);
+              const wanted = claims.items[0];
+              const line = catalog?.items?.find(item => item.id === wanted.id && item.name === wanted.name);
+              if (!catalog || catalog.merchant.id !== targetExpected.id ||
+                  catalog.merchant.name !== targetExpected.name || !line ||
+                  line.unit_price !== claims.price.unit_price ||
+                  (line.max_quantity != null && wanted.quoted_quantity > line.max_quantity) ||
+                  purseAmount(c) < claims.price.total_price)
+                throw new Error('purchase quote changed before commit');
+              const purseBefore = purseAmount(c);
+              const namesBefore = inventoryNameTotals(c);
+              const actionSince = c.evSeq;
+              await s.pacer.submit('buy', () => {
+                beforeMutation('buy-items');
+                commerceTarget(c, targetExpected, { flags: OF.BUYABLE, player: false, label: 'merchant' });
+                const current = commerceCatalogView(c)?.items?.find(item => item.id === wanted.id && item.name === wanted.name);
+                if (!current || current.unit_price !== claims.price.unit_price || purseAmount(c) < claims.price.total_price)
+                  throw new Error('purchase quote changed at final packet');
+                return c.buyItems(targetExpected.id, [{ id: wanted.id, amount: wanted.quoted_quantity }]);
+              });
+              const observed = await c.waitFor({ since: actionSince, kinds: ['got', 'message'], timeoutMs: 4000 });
+              const inventorySince = c.evSeq;
+              await s.pacer.submit('read', () => { beforeCleanup('inventory-read'); return c.requestInventory(); });
+              const refreshed = await c.waitFor({ since: inventorySince, kinds: ['inventory'], timeoutMs: 4000 });
+              const namesAfter = inventoryNameTotals(c);
+              const gained = (namesAfter.get(wanted.name) || 0) - (namesBefore.get(wanted.name) || 0);
+              const spent = purseBefore - purseAmount(c);
+              const verified = !refreshed.timedOut &&
+                refreshed.events.some(event => event.kind === 'inventory') &&
+                gained === wanted.quoted_quantity && spent === claims.price.total_price;
+              if (!verified) return {
+                committed: false, verification_failed: true, kind: claims.kind,
+                quote_id: quote.quoteId, target: claims.target, items: claims.items,
+                price: claims.price, evidence: { inventory_refreshed: !refreshed.timedOut,
+                  gained_quantity: gained, purse_spent: spent },
+                messages: observed.events.filter(event => event.text).map(event => event.text),
+              };
+              return { committed: true, kind: claims.kind, quote_id: quote.quoteId,
+                       target: claims.target, items: claims.items, price: claims.price,
+                       evidence: { gained_quantity: gained, purse_spent: spent },
+                       messages: observed.events.filter(event => event.text).map(event => event.text) };
+            }
+
+            if (claims.kind === 'sell' || claims.kind === 'offer') {
+              const isPlayer = claims.kind === 'offer';
+              canonicalCommerceProvenance(requested);
+              const before = c.evSeq;
+              await s.pacer.submit('trade', () => {
+                beforeMutation('offer');
+                commerceTarget(c, targetExpected,
+                  { flags: OF.OFFERABLE, player: isPlayer, label: isPlayer ? 'counterparty' : 'merchant' });
+                exactInventoryItems(c, requested);
+                if (c.trade) throw new Error('another trade opened before offer packet');
+                return c.offer(targetExpected.id,
+                  requested.map(item => ({ id: item.id, amount: item.quantity })));
+              });
+              const reply = await c.waitFor({ since: before,
+                kinds: claims.kind === 'sell' ? ['countered', 'trade-ended'] : ['offer-sent', 'trade-ended'],
+                timeoutMs: claims.kind === 'sell' ? 8000 : 4000 });
+              const trade = commerceTradeView(c);
+              if (!trade || trade.counterparty?.id !== targetExpected.id ||
+                  trade.counterparty?.name !== targetExpected.name)
+                throw new Error('server did not preserve the exact offered item set');
+              c.trade.inventoryBindings = bindCommerceOfferEcho(requested, trade.ours);
+              if (claims.kind === 'offer') {
+                if (!reply.events.some(event => event.kind === 'offer-sent'))
+                  throw new Error('outgoing offer was not confirmed');
+                leaveTradeOpen = true;
+                return { committed: true, kind: claims.kind, quote_id: quote.quoteId,
+                         state: 'awaiting_other_party', trade };
+              }
+              if (!reply.events.some(event => event.kind === 'countered') ||
+                  trade.theirs.some(item => !/shilling/i.test(item.name)) ||
+                  trade.theirs.reduce((sum, item) => sum + item.quantity, 0) !== claims.price.total_price)
+                throw new Error('merchant price changed before accept');
+              const fingerprint = trade.fingerprint;
+              const purseBefore = purseAmount(c);
+              const itemAmountsBefore = new Map(requested.map(item =>
+                [item.id, inventoryIdAmount(c, item.id, item.name)]));
+              const acceptSince = c.evSeq;
+              await s.pacer.submit('trade', () => {
+                beforeMutation('accept-offer');
+                const current = commerceTradeView(c);
+                if (!current || current.fingerprint !== fingerprint)
+                  throw new Error('merchant offer changed at final accept packet');
+                exactInventoryItems(c, requested);
+                return c.acceptOffer();
+              });
+              await new Promise(resolve => setTimeout(resolve, 1400));
+              const inventorySince = c.evSeq;
+              await s.pacer.submit('read', () => { beforeCleanup('inventory-read'); return c.requestInventory(); });
+              const refreshed = await c.waitFor({ since: inventorySince, kinds: ['inventory'], timeoutMs: 4000 });
+              const itemFailures = requested.filter(item =>
+                inventoryIdAmount(c, item.id, item.name) !== itemAmountsBefore.get(item.id) - item.quantity)
+                .map(item => item.id);
+              const received = purseAmount(c) - purseBefore;
+              const verified = !refreshed.timedOut &&
+                refreshed.events.some(event => event.kind === 'inventory') &&
+                !itemFailures.length && received === claims.price.total_price;
+              if (!verified) return {
+                committed: false, verification_failed: true, kind: claims.kind,
+                quote_id: quote.quoteId, target: claims.target, items: claims.items,
+                price: claims.price, evidence: { inventory_refreshed: !refreshed.timedOut,
+                  item_failures: itemFailures, purse_received: received },
+              };
+              // The accepting client receives no trade-ended packet on success. Clear
+              // the stale table only AFTER inventory and value deltas proved transfer.
+              c.trade = null; c.pendingOfferTo = null; c.tradeRevision++;
+              return { committed: true, kind: claims.kind, quote_id: quote.quoteId,
+                       target: claims.target, items: claims.items, price: claims.price,
+                       evidence: { item_failures: [], purse_received: received } };
+            }
+
+            const current = commerceTradeView(c);
+            if (!current || current.fingerprint !== claims.trade_fingerprint)
+              throw new Error('player trade changed after prepare');
+            commerceTarget(c, targetExpected,
+              { flags: OF.OFFERABLE, player: true, label: 'counterparty' });
+            if (claims.kind === 'trade_counter_empty') {
+              const since = c.evSeq;
+              await s.pacer.submit('trade', () => {
+                beforeMutation('counter-empty');
+                const exact = commerceTradeView(c);
+                if (!exact || exact.fingerprint !== claims.trade_fingerprint ||
+                    exact.role !== 'recipient' || exact.may_accept)
+                  throw new Error('incoming offer changed at empty-counter packet');
+                return c.counterOffer([]);
+              });
+              const reply = await c.waitFor({ since, kinds: ['counter-sent', 'trade-ended'], timeoutMs: 4000 });
+              const countered = commerceTradeView(c);
+              if (!reply.events.some(event => event.kind === 'counter-sent') || !countered ||
+                  countered.ours.length ||
+                  !commerceItemsEqual(countered.theirs, claims.trade.theirs) ||
+                  countered.counterparty?.id !== claims.trade.counterparty?.id ||
+                  countered.counterparty?.name !== claims.trade.counterparty?.name)
+                throw new Error('empty counter was not confirmed with both offer sides unchanged');
+              c.trade.inventoryBindings = [];
+              leaveTradeOpen = true;
+              return { committed: true, kind: claims.kind, quote_id: quote.quoteId,
+                       state: 'awaiting_other_party', trade: countered };
+            }
+            if (claims.kind === 'trade_accept') {
+              const since = c.evSeq;
+              const outgoingInventoryItems = canonicalCommerceProvenance(
+                claims.outgoing_inventory_items || []);
+              exactInventoryItems(c, outgoingInventoryItems);
+              const beforeNames = inventoryNameTotals(c);
+              const beforeOutgoing = new Map(outgoingInventoryItems.map(item =>
+                [item.id, inventoryIdAmount(c, item.id, item.name)]));
+              const expectedDeltas = expectedTradeNameDeltas(claims.trade);
+              await s.pacer.submit('trade', () => {
+                beforeMutation('accept-offer');
+                const exact = commerceTradeView(c);
+                if (!exact || exact.fingerprint !== claims.trade_fingerprint || !exact.may_accept)
+                  throw new Error('player trade changed at final accept packet');
+                exactInventoryItems(c, outgoingInventoryItems);
+                return c.acceptOffer();
+              });
+              await new Promise(resolve => setTimeout(resolve, 1400));
+              const inventorySince = c.evSeq;
+              await s.pacer.submit('read', () => { beforeCleanup('inventory-read'); return c.requestInventory(); });
+              const refreshed = await c.waitFor({ since: inventorySince, kinds: ['inventory'], timeoutMs: 4000 });
+              const nameFailures = verifyNameDeltas(beforeNames, inventoryNameTotals(c), expectedDeltas);
+              const outgoingFailures = outgoingInventoryItems.filter(item =>
+                inventoryIdAmount(c, item.id, item.name) !== beforeOutgoing.get(item.id) - item.quantity)
+                .map(item => item.id);
+              const verified = !refreshed.timedOut &&
+                refreshed.events.some(event => event.kind === 'inventory') &&
+                !nameFailures.length && !outgoingFailures.length;
+              if (!verified) return {
+                committed: false, verification_failed: true, kind: claims.kind,
+                quote_id: quote.quoteId, accepted_trade: claims.trade,
+                evidence: { inventory_refreshed: !refreshed.timedOut,
+                  name_failures: nameFailures, outgoing_failures: outgoingFailures },
+              };
+              c.trade = null; c.pendingOfferTo = null; c.tradeRevision++;
+              return { committed: true, kind: claims.kind, quote_id: quote.quoteId,
+                       accepted_trade: claims.trade,
+                       evidence: { name_failures: [], outgoing_failures: [] } };
+            }
+            if (claims.kind === 'trade_cancel') {
+              const since = c.evSeq;
+              await s.pacer.submit('trade', () => {
+                beforeMutation('trade-cancel');
+                const exact = commerceTradeView(c);
+                if (!exact || exact.fingerprint !== claims.trade_fingerprint)
+                  throw new Error('player trade changed at final cancel packet');
+                return c.cancelOffer();
+              });
+              const ended = await c.waitFor({ since, kinds: ['trade-ended'], timeoutMs: 3000 });
+              if (ended.timedOut || c.trade) return {
+                committed: false, verification_failed: true, kind: claims.kind,
+                quote_id: quote.quoteId, evidence: { trade_cleared: !c.trade,
+                  trade_ended_observed: !ended.timedOut },
+              };
+              return { committed: true, kind: claims.kind, quote_id: quote.quoteId, state: 'cancelled' };
+            }
+            throw new Error(`unsupported commerce quote kind ${claims.kind}`);
+          } catch (error) {
+            if (!leaveTradeOpen && c.trade && ['sell', 'offer'].includes(claims.kind)) {
+              try { await cleanupTrade(); } catch (cleanupError) {
+                error.message += `; offer cleanup failed: ${cleanupError.message}`;
+              }
+            }
+            const stopped = rtsCancellationResult(error, { kind: claims.kind, quote_id: quote.quoteId });
+            if (stopped) return stopped;
+            throw error;
+          }
+        }, { controlToken: token, leaseToken: a.lease_token });
+      return {
+        schema: COMMERCE_SCHEMA,
+        phase: 'committing',
+        accepted: true,
+        agent: a.agent,
+        kind: claims.kind,
+        quote_id: quote.quoteId,
+        control_token: token,
+        lease_token: a.lease_token,
+        started_at_ms: job.startedAt,
+      };
     },
   },
   {
@@ -5369,6 +6414,13 @@ const TOOLS = [
       max_carry: { type: 'number', description: 'stop farming at this many items, default 14' },
       vault_items: { type: 'array', items: { type: 'string' },
         description: 'item names to protect from eating/selling/gifting/dropping and deposit at the Barloque vault during town loops' },
+      strategy_stats: { type: ['object', 'null'], properties: {
+        enabled: { type: 'boolean' }, retention_hours: { type: 'number' },
+        default_window_hours: { type: 'number' }, crate_check: { type: 'boolean' },
+        travel: { type: 'boolean' }, fighting: { type: 'boolean' },
+        trading: { type: 'boolean' }, vault_accumulation: { type: 'boolean' },
+        create_food: { type: 'boolean' },
+      }, description: 'opt-in rotating strategy detail recorder. null disables it; lightweight counters remain on' },
       // HOW FAR ABOVE ITS OWN LEVEL THIS CHARACTER MAY FIGHT, and it was unreachable.
       //
       // `refuseEngagement` and `capBlockers` both gate on `max_health + maxThreatOver`
@@ -5559,6 +6611,22 @@ const TOOLS = [
         if (!Array.isArray(a.vault_items) || a.vault_items.some(v => typeof v !== 'string'))
           throw new Error('vault_items must be a list of item names');
         p.policy.vaultItems = [...new Set(a.vault_items.map(v => v.trim()).filter(Boolean))].slice(0, 24);
+      }
+      if (a.strategy_stats !== undefined) {
+        if (a.strategy_stats == null) p.policy.strategyStats = null;
+        else {
+          const value = a.strategy_stats;
+          const bools = ['crate_check', 'travel', 'fighting', 'trading', 'vault_accumulation', 'create_food'];
+          if (typeof value !== 'object' || Array.isArray(value) || typeof value.enabled !== 'boolean' ||
+              bools.some(key => typeof value[key] !== 'boolean'))
+            throw new Error('strategy_stats needs enabled and six boolean category switches');
+          p.policy.strategyStats = {
+            enabled: value.enabled,
+            retention_hours: Math.max(1, Math.min(168, Number(value.retention_hours) || 24)),
+            default_window_hours: Math.max(0.25, Math.min(168, Number(value.default_window_hours) || 2)),
+            ...Object.fromEntries(bools.map(key => [key, value[key]])),
+          };
+        }
       }
       // Floored at 0, never at 6: 0 is the legitimate "fight nothing above my own level",
       // and coercing a bad value up to the default would quietly hand back a WIDER band
@@ -5807,6 +6875,7 @@ const TOOLS = [
       spell: { type: 'string', description: 'spell name, partial is fine' },
       target: { type: ['string', 'number'], description: 'who or what to aim it at' },
       force: { type: 'boolean', description: 'send it even if the affordability check says no' },
+      observe_created: { type: 'boolean', description: 'read inventory before and after and return positive item deltas; used by opt-in production stats' },
     }, required: ['agent', 'spell'] },
     run: async (a) => {
       const s = session(a.agent), c = s.need();
@@ -5853,6 +6922,14 @@ const TOOLS = [
       // weapon forty times from an inn for nothing; the same call after standing took
       // mana 19 -> 4 immediately. See standToAct.
       const manaBefore = c.vitals()?.mana?.value ?? null;
+      let inventoryBefore = null;
+      if (a.observe_created) {
+        await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+        await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+        inventoryBefore = (c.inventory || []).map(item => ({
+          name: c.rsc.get(item.nameRsc) || 'unknown item', amount: item.amount || 1,
+        }));
+      }
       const beforeMutation = packet => beforeRtsMutation(a, packet);
       try {
         if (targetObject)
@@ -5888,6 +6965,23 @@ const TOOLS = [
       // the full price. That is the only way to tell those three apart from out here, and
       // without it "cast: true" meant nothing more than "the packet went out".
       const manaAfter = c.vitals()?.mana?.value ?? null;
+      let created = undefined;
+      if (a.observe_created) {
+        await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+        await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+        const amounts = rows => {
+          const out = new Map();
+          for (const item of rows) out.set(item.name, (out.get(item.name) || 0) + (item.amount || 1));
+          return out;
+        };
+        const beforeItems = amounts(inventoryBefore || []);
+        created = [...amounts((c.inventory || []).map(item => ({
+          name: c.rsc.get(item.nameRsc) || 'unknown item', amount: item.amount || 1,
+        })))].flatMap(([name, amount]) => {
+          const delta = amount - (beforeItems.get(name) || 0);
+          return delta > 0 ? [{ name, amount: delta }] : [];
+        });
+      }
       const spent = manaBefore != null && manaAfter != null ? manaBefore - manaAfter : null;
       const cost = info?.mana ?? null;
       const reading = spent == null ? null
@@ -5899,6 +6993,7 @@ const TOOLS = [
       return {
         cast: true, spell: mine.name, targets,
         messages,
+        ...(created ? { created } : {}),
         mana_spent: spent, what_the_mana_says: reading,
         vitals: c.vitals(),
         ...(unpriced ? { costs_unknown: true,
@@ -8447,13 +9542,14 @@ async function callTool(name, args, caller) {
   // whether it threw. Reconstructing "what did this agent actually do" from the
   // event stream alone is guesswork; the call order is the other half.
   const rec = args?.agent ? sessions.get(args.agent)?.recorder : null;
+  const recordedArgs = redactControlArgs(args);
   const t0 = Date.now();
   try {
     const out = await t.run(args || {}, caller);
-    rec?.line('call', { tool: name, args, ms: Date.now() - t0 });
+    rec?.line('call', { tool: name, args: recordedArgs, ms: Date.now() - t0 });
     return out;
   } catch (e) {
-    rec?.line('call', { tool: name, args, ms: Date.now() - t0, error: e.message });
+    rec?.line('call', { tool: name, args: recordedArgs, ms: Date.now() - t0, error: e.message });
     throw e;
   }
 }
@@ -8564,6 +9660,7 @@ function brokerHealth() {
     state: STATE_FILE,
     sessions: [...sessions.keys()],
     tools: TOOLS.length,
+    commander: { ...commanderSettings(process.env, COMMANDER_FLEET), broker_pid: process.pid },
     ...brokerGameEndpoints(),
   };
 }
@@ -8641,6 +9738,8 @@ async function brokerRtsRead(url) {
   const equipment = Object.create(null);
   const spells = Object.create(null);
   const inventory = Object.create(null);
+  const control = Object.create(null);
+  const commerce = Object.create(null);
   for (const agent of agents) {
     const s = sessions.get(agent);
     if (!s) {
@@ -8648,6 +9747,8 @@ async function brokerRtsRead(url) {
       equipment[agent] = { error: 'agent session is absent' };
       spells[agent] = { error: 'agent session is absent' };
       inventory[agent] = { error: 'agent session is absent' };
+      control[agent] = { lease_state: 'blocked', blocked_reason: 'agent session is absent' };
+      commerce[agent] = { error: 'agent session is absent' };
       continue;
     }
     // Every read below comes from the protocol client's cache. It submits nothing to the
@@ -8716,6 +9817,45 @@ async function brokerRtsRead(url) {
     } catch (error) {
       inventory[agent] = { error: String(error?.message || error).slice(0, 240) };
     }
+    try {
+      const settings = commanderSettings(process.env, COMMANDER_FLEET);
+      const lease = commanderLeases.activeForAgent(agent);
+      const keeper = commanderKeeperState(agent);
+      let blocked = null;
+      if (!settings.enabled) blocked = 'commander is unavailable';
+      else if (piloted.has(agent)) blocked = 'agent is being played by a local Meridian client';
+      else if (!autopilotIfAny(agent)) blocked = 'agent has no keeper for survival telemetry/fail-back';
+      else if (!autopilotIfAny(agent)?.running) blocked = 'keeper is stopped';
+      else if (autopilotIfAny(agent)?.inert) blocked = 'keeper is already inert for another controller';
+      control[agent] = {
+        lease_state: lease ? 'active' : blocked ? 'blocked' : 'available',
+        lease_id: lease?.leaseId ?? null,
+        owner: lease?.clientOwner ?? null,
+        expires_at_ms: lease?.expiresAt ?? null,
+        expires_in_ms: lease ? Math.max(0, lease.expiresAt - capturedAt) : 0,
+        leased_faculties: lease ? [...COMMANDER_FACULTIES] : [],
+        ...keeper,
+        blocked_reason: blocked,
+      };
+    } catch (error) {
+      control[agent] = { lease_state: 'blocked', blocked_reason: String(error?.message || error).slice(0, 240) };
+    }
+    try {
+      const c = s.need();
+      const catalog = commerceCatalogView(c);
+      const merchantPresent = catalog && c.room?.objects?.get(catalog.merchant.id) &&
+        (c.rsc.get(c.room.objects.get(catalog.merchant.id).nameRsc) || '') === catalog.merchant.name;
+      commerce[agent] = {
+        purse: { amount: purseAmount(c), currency: 'shillings' },
+        affordances: commerceAffordances(c),
+        catalog: merchantPresent ? catalog : null,
+        trade: commerceTradeView(c),
+        observed_at_ms: capturedAt,
+        refresh: 'cached_no_packet',
+      };
+    } catch (error) {
+      commerce[agent] = { error: String(error?.message || error).slice(0, 240) };
+    }
   }
 
   return {
@@ -8732,6 +9872,14 @@ async function brokerRtsRead(url) {
     equipment,
     spells,
     inventory,
+    commander: {
+      ...commanderSettings(process.env, COMMANDER_FLEET),
+      broker_pid: process.pid,
+      faculties: [...COMMANDER_FACULTIES],
+      heartbeat_default_ms: Math.floor(COMMANDER_DEFAULT_TTL_MS / 3),
+    },
+    control,
+    commerce,
   };
 }
 
@@ -9050,6 +10198,58 @@ function serveDashboard(port) {
     if (url.pathname === '/deaths/report') {
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
       return res.end(JSON.stringify(deathReportJSON(url.searchParams.get('file'))));
+    }
+    // THE ONE BOARD WITH NO CLOCK ON IT. Attributes are fixed at creation and never move,
+    // so there is no window to pass and nothing to be stale — it reads the character sheets
+    // and needs neither the ledger nor a live session. Filtered by the roster for the same
+    // reason the three below are: substrate/sheets/ is keyed by character name and a second
+    // fleet on this machine writes into it too.
+    if (url.pathname === '/stats') {
+      try {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        return res.end(renderStatsBoard({ characters: fleetCharacters() }));
+      } catch (e) {
+        res.writeHead(500, { 'content-type': 'text/plain' });
+        return res.end('/stats failed: ' + e.message);
+      }
+    }
+    // THE TWO AUTOMATION CLOCKS. DUM is a separate process and deliberately exposes
+    // only a loopback observability endpoint; the dashboard fetches it server-side so
+    // the LAN-readable page does not widen DUM's control surface. Harness activity is
+    // already on the free in-memory fleet board and sends no packets to the game.
+    if (url.pathname === '/dum') {
+      const base = (process.env.M59_DUM_CONTROL_URL || 'http://127.0.0.1:8916').replace(/\/+$/, '');
+      const hours = Math.max(0.25, Math.min(168, Number(url.searchParams.get('hours')) || 2));
+      fetch(`${base}/observability?hours=${encodeURIComponent(hours)}`, { cache: 'no-store', signal: AbortSignal.timeout(4000) })
+        .then(async response => {
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok || !body.metrics)
+            throw new Error(body.error || `DUM returned HTTP ${response.status}`);
+          return body;
+        })
+        .then(body => {
+          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+          res.end(renderDumBoard({ metrics: body.metrics, details: body.details, hours }));
+        })
+        .catch(error => {
+          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+          res.end(renderDumBoard({ error: error.message }));
+        });
+      return;
+    }
+    if (url.pathname === '/harness') {
+      const hours = Math.max(0.25, Math.min(168, Number(url.searchParams.get('hours')) || 2));
+      const tool = TOOLS.find(t => t.name === 'fleet');
+      Promise.resolve(tool ? tool.run({}) : null)
+        .then(out => {
+          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+          res.end(renderHarnessBoard({ fleet: out?.fleet ?? [], details: strategyStatsReport({ hours }), hours }));
+        })
+        .catch(error => {
+          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+          res.end(renderHarnessBoard({ error: error.message }));
+        });
+      return;
     }
     if (url.pathname === '/deaths' || url.pathname === '/tougher' || url.pathname === '/skills') {
       try {

@@ -1563,11 +1563,31 @@ console.log('\nan unreachable vigor floor stops applying');
   const k = mk();
 
   const soldier = k.refuseEngagement("soldier of the Princess' army");
-  ok('an unrecognised creature is refused', !!soldier);
-  ok('and says the spawn table has no row for it',
-     /no row for this name/.test(soldier?.why ?? ''), soldier?.why);
+  ok('a faction soldier is refused', !!soldier);
+  // IT USED TO BE REFUSED FOR NOT EXISTING, AND NOW IT IS REFUSED FOR BEING DANGEROUS.
+  //
+  // This assertion read `/no row for this name/`, and it passed for a year because the
+  // spawn index genuinely had no entry for the Duke's or the Princess' soldiers — they
+  // are summoned by flagpoles, and the index was built from room spawn tables only. So
+  // the thing that killed Waldorf was being turned away as if it were a typo.
+  //
+  // Both readings refuse, which is why nothing looked wrong. They are not the same
+  // safety: "unrecognised" collapses the moment somebody adds the row, or hunts a name
+  // that happens to match, whereas 855 is a number that stays true and that a raised
+  // `maxThreatOver` has to argue with explicitly. The declared level 50 / difficulty 2
+  // is overwritten at creation by SetEquipment (troop.kod:531) — see TROOP_ROLLS.
+  ok('and now says WHY, with the rolled rating rather than "never heard of it"',
+     /attack rating 855/.test(soldier?.why ?? '') && !/no row for this name/.test(soldier?.why ?? ''),
+     soldier?.why);
   ok('the same refusal capBlockers makes, from one place',
      k.refuseEngagement("soldier of the Duke's army") !== null);
+  // The unrecognised path still has to work — it is the one that catches a creature
+  // nobody has extracted yet, and it must not have been quietly deleted along with its
+  // only previous test case.
+  const unknown = k.refuseEngagement('grue of the unlit corridor');
+  ok('a genuinely unknown creature is still refused', !!unknown);
+  ok('and still says the spawn table has no row for it',
+     /no row for this name/.test(unknown?.why ?? ''), unknown?.why);
 
   // The rule must not become "refuse everything", which would be the other failure —
   // ignoring what is chewing on you is how the Qor characters died.
@@ -1749,6 +1769,54 @@ console.log('\nan unreachable vigor floor stops applying');
   ok('Robin and Statler died in the south-west of room 108',
      /south-west/.test(bearingIn(58, 2, 71, 50) ?? ''), bearingIn(58, 2, 71, 50));
   ok('no geometry means no bearing', bearingIn(5, 5, null, null) === null);
+}
+
+// ------------------------------------------------------- what the run is FOR, audited
+//
+// yieldCheck is the one question the stall detector structurally cannot ask: not "is
+// anything working" but "is any of it worth anything". A keeper grinding worthless prey
+// kills something every pass, so progress() fires and nothing ever trips.
+//
+// It had a hole big enough to drive the fleet through. The guard was
+// `if (purpose !== 'advance') return null`, and `null` means NO OPINION — so every value
+// except one silently switched the check off. Since `purpose` was not settable over MCP
+// either, every keeper in the fleet ran at `purpose: null` and this never ran once.
+{
+  console.log('\nwhat the run is for');
+  const mk = (policy = {}) => {
+    const k = new Autopilot({ name: 't9', world: { room: { num: 544 } },
+      client: { selfId: 9, room: { objects: new Map() }, rsc: { get: r => r },
+                // Deliberately no `me`, so loadout() returns null and the test cannot be
+                // perturbed by a real loadout file on the machine running it.
+                vitals: () => ({ health: { value: 50, max: 50 } }) } }, {});
+    Object.assign(k.policy, { hunt: 'fungus beast' }, policy);
+    return k;
+  };
+
+  ok('no purpose is still no opinion — the pre-existing behaviour',
+     mk({ purpose: null }).yieldCheck() === null);
+  ok('and neither is a purpose with nothing being hunted',
+     mk({ purpose: 'advance', hunt: null }).yieldCheck() === null);
+
+  // A TYPO MUST NOT READ AS A PURPOSE BEING SERVED. This is the whole failure mode in
+  // miniature: one misspelled word and the audit goes quiet while the row looks healthy.
+  const typo = mk({ purpose: 'aquire' }).yieldCheck();
+  ok('an unrecognised purpose is reported rather than skipped', typo?.paying === false);
+  ok('and names both the bad value and the ones that work',
+     /aquire/.test(typo?.why ?? '') && /advance/.test(typo?.why ?? '') &&
+     /equip/.test(typo?.why ?? ''), typo?.why);
+
+  // `equip` takes its list from the loadout, so no loadout is not an empty gap — it is a
+  // question that cannot be asked. Reporting zero shortfalls would read as "finished".
+  const noList = mk({ purpose: 'equip' }).yieldCheck();
+  ok('equip without a loadout says the list is missing', noList?.paying === false);
+  ok('and does not claim the character is done',
+     noList?.done !== true && /no loadout/.test(noList?.why ?? ''), noList?.why);
+
+  // advance still behaves exactly as it did, including refusing to guess with no goals.
+  const noGoals = mk({ purpose: 'advance', goals: [] }).yieldCheck();
+  ok('advance with no goals still reports itself uncheckable',
+     noGoals?.paying === false && /no goals are set/.test(noGoals?.why ?? ''), noGoals?.why);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

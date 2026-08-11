@@ -38,7 +38,7 @@ import { proficiencyFor as profFor } from './m59-skills.mjs';
 // the filesystem. This server accepts one over a socket; it does not get to invent its own
 // rule for that.
 import { readLoadout, writeLoadout, listLoadouts, loadoutPath, slugOf, normalise, LOADOUT_DIR,
-         applyGearToAll } from './m59-loadout.mjs';
+         applyInventoryToAll } from './m59-loadout.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(HERE, '..');
@@ -476,48 +476,71 @@ export function createServer() {
       });
     }
 
-    // ONE PLAN'S GEAR, GIVEN TO EVERY CHARACTER IN THE FLEET.
+    // ONE SHARED INVENTORY PLAN, GIVEN TO SELECTED CHARACTERS OR THE WHOLE FLEET.
     //
-    // The gear half is the part of a loadout that is about how the fleet plays rather than
-    // about one character, and it was the only part somebody had to type twenty-one times.
-    // This copies it and NOTHING ELSE — every other field of every loadout it touches is
-    // left as it was found, which is what makes it safe against characters already planned
-    // by hand.
+    // Gear and the desired carry list are the parts that can be shared. This copies those
+    // and NOTHING ELSE — schools, skills, sell/keep rules, purse settings and notes are left
+    // as found, which is what makes it safe against characters already planned by hand.
     //
-    // WHO THE FLEET IS COMES FROM THE BROKER, NOT FROM THE PAGE. The page's list is who it
-    // thought was in game when it loaded, and this writes a file per character. With no
-    // broker there is no fleet, and the loadouts saved on this machine are a DIFFERENT set
-    // of characters — refused rather than quietly substituted.
+    // WHO THE WHOLE FLEET IS COMES FROM THE BROKER, NOT FROM THE PAGE. An explicit checked
+    // subset is different: it is a list of named loadouts, just like /_loadout above, and can
+    // include one saved locally whose character is not logged in.
     //
     // It plans by default; `apply: true` is a second call, after somebody has read the
     // first. Both are the same function in m59-loadout.mjs, so the preview cannot describe
     // a write that would not happen.
-    if (url.pathname === '/_gear-to-fleet' && req.method === 'POST') {
+    if ((url.pathname === '/_inventory-to-fleet' || url.pathname === '/_gear-to-fleet') &&
+        req.method === 'POST') {
       return readBody(req, res, async (raw) => {
-        let fleet;
-        try { fleet = await broker('fleet', {}); }
-        catch (e) {
-          res.writeHead(502, JSONH);
-          return res.end(JSON.stringify({ error:
-            `the broker on ${BROKER_PORT} is not answering (${e.message}) — and "the whole fleet" ` +
-            'is a live question. The loadouts saved here are a different set of characters, so they ' +
-            'are not substituted for it.' }));
+        let fleet = { fleet: [] };
+        if (!Array.isArray(raw?.targets)) {
+          try { fleet = await broker('fleet', {}); }
+          catch (e) {
+            res.writeHead(502, JSONH);
+            return res.end(JSON.stringify({ error:
+              `the broker on ${BROKER_PORT} is not answering (${e.message}) — and "the whole fleet" ` +
+              'is a live question. The loadouts saved here are a different set of characters, so they ' +
+              'are not substituted for it.' }));
+          }
         }
-        const characters = (fleet.fleet || []).filter(r => r.character)
+        let characters = (fleet.fleet || []).filter(r => r.character)
           .map(r => ({ character: r.character, agent: r.agent }));
+        if (Array.isArray(raw?.targets)) {
+          const seen = new Set();
+          characters = [];
+          for (const target of raw.targets) {
+            const character = String(target?.character ?? '').trim();
+            if (/[\\/]|\.\./.test(character) || !slugOf(character)) {
+              res.writeHead(400, JSONH);
+              return res.end(JSON.stringify({ error: `"${character}" is not a usable character name` }));
+            }
+            const key = character.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            characters.push({ character, agent: target?.agent ?? null });
+          }
+        }
         if (!characters.length) {
           res.writeHead(409, JSONH);
           return res.end(JSON.stringify({ error:
-            'the broker answered, but no character in the fleet has a name yet — a resume writes the ' +
-            'name back on the first successful login, so this is what an empty or booting fleet looks like' }));
+            Array.isArray(raw?.targets) ? 'select at least one character'
+              : 'the broker answered, but no character in the fleet has a name yet — a resume writes the ' +
+                'name back on the first successful login, so this is what an empty or booting fleet looks like' }));
         }
         try {
-          const out = applyGearToAll(raw?.gear, characters, {
+          const shared = {};
+          if (Object.prototype.hasOwnProperty.call(raw ?? {}, 'gear')) shared.gear = raw.gear;
+          if (Object.prototype.hasOwnProperty.call(raw ?? {}, 'carry')) shared.carry = raw.carry;
+          const out = applyInventoryToAll(shared, characters, {
             from: raw?.from ?? null,
             apply: raw?.apply === true,
             allowEmpty: raw?.allow_empty === true,
           });
-          return json(res, { ok: true, ...out });
+          return json(res, {
+            ok: true,
+            scope: Array.isArray(raw?.targets) ? 'selected' : 'fleet',
+            ...out,
+          });
         } catch (e) {
           res.writeHead(400, JSONH);
           return res.end(JSON.stringify({ error: e.message }));

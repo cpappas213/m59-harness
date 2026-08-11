@@ -6,7 +6,7 @@
 <title>Planner — Meridian 59 Compendium</title>
 <meta name="description" content="Plan a character, then hand the fleet a list of what it should be carrying.">
 <link rel="stylesheet" href="../assets/style.css">
-<link rel="stylesheet" href="../assets/planner.css">
+<link rel="stylesheet" href="../assets/statpane.css"><link rel="stylesheet" href="../assets/planner.css">
 <script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 </head>
 <body>
@@ -25,15 +25,16 @@ carrying, and hand that back to the fleet. The panel is the client's own — the
 tabs in the same order — and everything in it is editable.</p>
 
 <div class="pl-bar">
-  <label>Character
-    <select id="plChar" aria-label="Which character to plan"></select>
-  </label>
+  <fieldset class="pl-characters">
+    <legend>Characters</legend>
+    <div id="plChars" class="pl-character-list" aria-label="Characters to plan"></div>
+  </fieldset>
   <label>Name <input type="text" id="plName" size="14" autocomplete="off" spellcheck="false"></label>
   <span class="grow"></span>
   <button type="button" class="btn" id="plImport">Import a file…</button>
   <input type="file" id="plFile" accept="application/json,.json" hidden>
   <button type="button" class="btn" id="plExport">Export</button>
-  <button type="button" class="btn" id="plGearFleet" title="Give every character in the fleet this weapon and armour preference. Only the gear — every other part of their loadouts is left alone.">Apply gear to fleet</button>
+  <button type="button" class="btn" id="plGearFleet" title="Give every character in the fleet this gear and desired carry list. Schools, skills and all other loadout rules are left alone.">Apply gear + carry to fleet</button>
   <button type="button" class="btn primary" id="plSave">Save to the fleet</button>
   <span class="pl-msg" id="plMsg" role="status"></span>
 </div>
@@ -69,7 +70,7 @@ tabs in the same order — and everything in it is editable.</p>
 
   <div class="pl-side">
     <section id="plFleetBox" hidden>
-      <h2>Give the whole fleet this gear</h2>
+      <h2 id="plFleetTitle">Give the whole fleet this gear and carry list</h2>
       <div id="plFleet"></div>
     </section>
 
@@ -98,12 +99,13 @@ tabs in the same order — and everything in it is editable.</p>
       every pass: it stops selling what the list protects, sheds what the list says to shed,
       tops up to the minimums when it is standing at a counter anyway, and reaches for the
       weapon named here rather than whichever one it happens to be best with. Nothing the
-      list is silent about changes — a loadout adds rules, it does not replace them.</p>
-      <p class="pl-note"><strong>Apply gear to fleet</strong> writes the <em>gear</em> half of
-      this plan — the weapon and armour preference — into every character's loadout, and
-      changes nothing else in any of them: carry lists, schools, sell and keep lists and purse
-      floors are left exactly as they are. It says what it would do first and needs a second
-      press. It is the same thing as
+      list is silent about changes — a loadout adds rules, it does not replace them. With
+      several characters checked, this becomes <strong>Apply gear + carry to selected</strong>
+      and uses the same preview-before-write flow as the whole-fleet action.</p>
+      <p class="pl-note"><strong>Apply gear + carry to fleet</strong> writes the gear and the
+      desired inventory from this plan into every character's loadout. Schools, skills, sell
+      and keep lists, purse floors, notes and every other field are left exactly as they are.
+      It says what it would do first and needs a second press. It is the same thing as
       <code>node tools/m59-loadout.mjs &lt;name&gt; --gear-to-fleet --apply</code>, and it does
       not save the rest of what you have edited here — that is what Save is for.</p>
       <p class="pl-note"><strong>Export</strong> downloads the same file. Drop it in that
@@ -127,6 +129,6 @@ server actually runs — not a community estimate.
 </footer>
 <script>window.M59_REL="..";</script>
 <script src="../assets/site.js"></script>
-<script src="../assets/learn.js"></script><script src="../assets/planner.js"></script>
+<script src="../assets/statpane.js"></script><script src="../assets/learn.js"></script><script src="../assets/planner.js"></script>
 </body>
 </html>

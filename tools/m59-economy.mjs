@@ -173,7 +173,12 @@ export function series(samples, { buckets = 48 } = {}) {
 
 // ------------------------------------------------------------------ the whole picture
 
-export function economy({ sinceMs = 24 * 3600 * 1000, live = null } = {}) {
+// `characters` scopes this to one fleet. The LEDGER is already per-fleet (see
+// ledgerDirFor) but `bankedCharacters()` reads `substrate/banks/`, which every fleet on
+// this machine writes into — so without this a second fleet's balances would be summed
+// into the fleet total. That directory happens to be clean today; the bug is one local
+// test server away, and the boards next to this one were already wrong the same way.
+export function economy({ sinceMs = 24 * 3600 * 1000, live = null, characters = null } = {}) {
   const { samples, events } = readLedger({ sinceMs });
   const sampled = fromSamples(samples);
   const cast = fromCasts(events);
@@ -181,10 +186,11 @@ export function economy({ sinceMs = 24 * 3600 * 1000, live = null } = {}) {
 
   // Every character anybody has heard of, from any of the four records. A character with
   // a bank balance and no sample this window is still a character with money.
-  const names = new Set([
+  let names = new Set([
     ...sampled.purse.keys(), ...sampled.reagents.keys(), ...cast.keys(),
     ...liveRows.purse.keys(), ...liveRows.reagents.keys(), ...bankedCharacters(),
   ]);
+  if (characters) names = new Set([...names].filter(n => characters.has(n)));
 
   const rows = [...names].map(character => {
     const p = liveRows.purse.get(character) ?? sampled.purse.get(character) ?? null;
@@ -267,8 +273,15 @@ if (isMain) {
   const argv = process.argv.slice(2);
   const arg = (n, d) => { const i = argv.indexOf('--' + n);
                           return i < 0 ? d : (argv[i + 1] ?? true); };
-  const e = economy({ sinceMs: Number(arg('hours', 24)) * 3600 * 1000 });
-  if (argv.includes('--json')) { console.log(JSON.stringify(e, null, 2)); process.exit(0); }
+  // Scoped to the fleet the broker is holding, so a second fleet's balances are not summed
+  // into this one's total. --all-fleets puts it back. See m59-fleetscope.mjs.
+  const { fleetScope, scopeLine } = await import('./m59-fleetscope.mjs');
+  const scope = await fleetScope({ argv, allFleets: argv.includes('--all-fleets') });
+  const e = economy({ sinceMs: Number(arg('hours', 24)) * 3600 * 1000,
+                      characters: scope.characters });
+  if (argv.includes('--json')) { console.log(JSON.stringify({ ...e, scope: { fleet: scope.fleet, from: scope.from } }, null, 2)); process.exit(0); }
+  console.log(scopeLine(scope));
+  console.log();
 
   const age = (t) => (t ? `${Math.round((Date.now() - t) / 60000)}m` : '—');
   console.log('character     purse    banked  read      elder  herbs  casts  seen');

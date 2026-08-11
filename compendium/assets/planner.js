@@ -21,6 +21,13 @@
   if (!root) return;
   var rel = window.M59_REL || '..';
   var LEARN = window.M59Learn || null;
+  // statpane.js, generated from compendium/tools/statpane.mjs by the build that generated
+  // this page — the same file the fleet's /stats board imports in node. It owns the six
+  // stats in the client's order and the three derived numbers this page shows in the stats
+  // footer, so that the planner and the board cannot disagree about either. There is no
+  // fallback on purpose: a second copy of the order or of `101 + stamina` is the whole
+  // failure this arrangement exists to prevent.
+  var SP = window.M59StatPane;
 
   // ------------------------------------------------------------------ state
 
@@ -32,6 +39,9 @@
   var FILTER = 'reagent';
   var QUERY = '';
   var SERVED = false;      // is the harness serving this, i.e. can we save?
+  var CHOICES = {};        // checkbox value -> character source
+  var ACTIVE_KEY = null;   // the single character whose full plan is currently loaded
+  var LOAD_SEQ = 0;        // ignores a character read superseded by another selection
 
   // The loadout being edited, in the on-disk shape. Kept in exactly that shape so what the
   // page shows and what the file contains cannot drift apart.
@@ -82,9 +92,38 @@
     return null;
   }
 
+  function checkedChoices() {
+    var box = el('plChars');
+    if (!box) return [];
+    return Array.prototype.map.call(box.querySelectorAll('input[type="checkbox"]:checked'),
+      function (input) { return CHOICES[input.value]; }).filter(Boolean);
+  }
+
+  function multipleCharacters() { return checkedChoices().length > 1; }
+
+  // A multi-character plan has one shared, meaningful surface: gear and desired inventory.
+  // Schools, skills and attributes describe one character, so the UI refuses those tabs
+  // instead of showing the first checked character as though it represented the group.
+  function syncSelectionMode() {
+    var selected = checkedChoices(), multi = selected.length > 1;
+    if (multi) TAB = 'inventory';
+    ['inventory', 'spells', 'skills', 'stats'].forEach(function (t) {
+      var b = el('tab-' + t), p = el('pane-' + t), off = multi && t !== 'inventory';
+      if (!b) return;
+      b.disabled = off;
+      b.setAttribute('aria-disabled', String(off));
+      b.setAttribute('aria-selected', String(t === TAB));
+      if (p) p.hidden = t !== TAB;
+      b.title = off ? 'Choose one character to plan ' + t : '';
+    });
+    el('plName').disabled = multi;
+    el('plSave').textContent = multi ? 'Apply gear + carry to selected' : 'Save to the fleet';
+  }
+
   // ------------------------------------------------------------------ tabs
 
   function selectTab(id) {
+    if (multipleCharacters() && id !== 'inventory') return;
     TAB = id;
     ['inventory', 'spells', 'skills', 'stats'].forEach(function (t) {
       var b = el('tab-' + t), p = el('pane-' + t);
@@ -124,11 +163,11 @@
     });
     el('plGridEmpty').hidden = L.carry.length > 0;
 
-    // WEIGHT AND BULK ARE BOTH BOUNDED BY 1700 + might*20 (player.kod:10456), so a list that
+    // WEIGHT AND BULK ARE BOTH BOUNDED BY THE SAME CAP (player.kod:10456), so a list that
     // fits by weight can still be refused for bulk. Both are shown, and the might it is
-    // measured against is the character's own.
-    var might = (L.plan.stats && L.plan.stats.might) || (OBS && OBS.attributes && OBS.attributes.might) || 0;
-    var cap = 1700 + might * 20;
+    // measured against is the character's own. The arithmetic is statpane.mjs's.
+    var might = effectiveStats().might;
+    var cap = SP.carryCapacity(might);
     var w = 0, b = 0, unknown = 0;
     L.carry.forEach(function (c) {
       var it = BY_ITEM[norm(c.item)];
@@ -140,7 +179,9 @@
       + '<span' + (b > cap ? ' class="over"' : '') + '>bulk ' + b + ' / ' + cap + '</span>'
       + '<span>' + L.carry.length + ' kind(s)</span>'
       + (unknown ? '<span>' + unknown + ' not in the catalogue, not counted</span>' : '')
-      + (might ? '' : '<span>no might known, so the cap is the floor of 1700</span>');
+      // NULL, not falsy: a build planned with 0 might is a real (terrible) build whose cap
+      // genuinely is 1700, and it must not be reported as a character nobody has read.
+      + (might == null ? '<span>no might known, so the cap is the floor of 1700</span>' : '');
   }
 
   // ------------------------------------------------------------------ spells pane
@@ -322,7 +363,7 @@
 
   // ------------------------------------------------------------------ stats pane
 
-  var STAT_ORDER = ['might', 'intellect', 'stamina', 'agility', 'mysticism', 'aim'];
+  var STAT_ORDER = SP.STAT_ORDER;
 
   function renderStats() {
     var wrap = el('plStats');
@@ -345,7 +386,7 @@
           + 'fixed at creation and never move.' : '');
       // The ceiling is the server's own `hard_cap`, which it sends with every attribute.
       // 70 is only the fallback for a build nobody has observed.
-      var cap = (OBS && OBS.attribute_caps && OBS.attribute_caps[k]) || 70;
+      var cap = (OBS && OBS.attribute_caps && OBS.attribute_caps[k]) || SP.HARD_CAP_FALLBACK;
       bar.innerHTML = '<i style="width:' + Math.max(0, Math.min(100, v / cap * 100)) + '%"></i>'
         + '<b>' + v + '</b>'
         + '<input type="range" min="0" max="' + cap + '" step="1" value="' + v
@@ -358,18 +399,28 @@
       wrap.appendChild(kk); wrap.appendChild(bar);
     });
 
-    var sta = (L.plan.stats && L.plan.stats.stamina) != null ? L.plan.stats.stamina
-      : (obs ? obs.stamina : null);
-    var total = STAT_ORDER.reduce(function (t, k) {
+    // The footer is statpane.mjs's, not this page's — the same three numbers the fleet's
+    // /stats board prints under its own panes, from the same function. It is handed the
+    // EFFECTIVE build: planned where a slider has been moved, observed everywhere else,
+    // which is what the bars above are drawn from too.
+    el('plStatFoot').innerHTML = SP.statFoot(effectiveStats());
+  }
+
+  // Planned over observed, per stat. A plan that names three attributes describes a re-roll
+  // of those three and the same character everywhere else, so the arithmetic has to see
+  // both — and everything that computes against a build (the carry cap, the mana pool, the
+  // footer) has to see the same merge or the page will contradict itself between tabs.
+  function effectiveStats() {
+    var obs = (OBS && OBS.attributes) || null;
+    var out = {};
+    STAT_ORDER.forEach(function (k) {
       var planned = L.plan.stats ? L.plan.stats[k] : null;
-      var v = planned != null ? planned : (obs ? obs[k] : 0);
-      return t + (v || 0);
-    }, 0);
-    el('plStatFoot').innerHTML =
-      '<span>max health ceiling ' + (sta == null ? '—' : 101 + sta) + ' (101 + stamina)</span>'
-      + '<span>' + total + ' points spent</span>'
-      + '<span>carry ' + (1700 + ((L.plan.stats && L.plan.stats.might) != null
-        ? L.plan.stats.might : (obs ? obs.might : 0) || 0) * 20) + '</span>';
+      // NULL, NOT ZERO, for a stat nobody has read. Zero is a real roll — `create automated`
+      // produces one and the character is capped at 102 max health for ever — so a blank
+      // build must not report a ceiling of 101 as though it had rolled nothing.
+      out[k] = planned != null ? planned : (obs && obs[k] != null ? obs[k] : null);
+    });
+    return out;
   }
 
   // ------------------------------------------------------------------ the editor column
@@ -908,6 +959,7 @@
   }
 
   function save() {
+    if (multipleCharacters()) { sharedToCharacters('selected', false); return; }
     var j = currentLoadout();
     if (!j.character) { say('give it a name first', 'bad'); return; }
     if (!SERVED) {
@@ -937,16 +989,14 @@
 
   // ------------------------------------------------------------------ the fleet, all at once
   //
-  // ONE PLAN'S GEAR, GIVEN TO EVERYBODY. The gear half is the only part of a loadout that is
-  // about how the fleet plays rather than about one character — a carry list, a school plan
-  // and a purse floor are all one character's business, but "fight with a short sword and
-  // wear leather" is a decision about all of them, and saying it twenty-one times is how it
-  // ends up said twenty-one slightly different ways.
+  // ONE SHARED INVENTORY PLAN, GIVEN TO A GROUP. Gear and the desired carry list can be an
+  // answer for several characters; schools, skills, stats and purse rules cannot. The same
+  // preview/write path serves the checked subset and the whole live fleet.
   //
   // IT PLANS FIRST AND ALWAYS. The first press asks the server what it would do and shows
   // the answer per character; the second one writes. That is not politeness — this writes a
-  // file per character, and the fleet-wide write nobody read first is the one that turns up
-  // later as twenty characters carrying something nobody chose.
+  // file per character, and the group write nobody read first is the one that turns up later
+  // as twenty characters carrying something nobody chose.
 
   function gearEmpty(g) {
     if (!g) return true;
@@ -955,38 +1005,52 @@
     return !Object.keys(slots).some(function (s) { return slots[s] && slots[s].length; });
   }
 
-  function gearToFleet(apply) {
+  function sharedPayload(j) {
+    var body = { carry: j.carry || [] };
+    // An empty gear section is ordinary silence, but the carry list is the desired inventory
+    // itself: an empty one deliberately means no shared carry rules. The preview spells that
+    // out before the second press writes anything.
+    if (!gearEmpty(j.gear)) body.gear = j.gear;
+    return body;
+  }
+
+  function sharedToCharacters(scope, apply) {
     if (!SERVED) {
       say('nothing is listening — this one needs the harness serving the page ' +
           '(node tools/m59-compendium.mjs --open --to /planner/)', 'bad');
       return;
     }
     var j = currentLoadout();
-    // Refused here as well as on the server, and for the same reason: an empty gear list is
-    // not an instruction to strip the fleet, it is a loadout nobody has filled in yet.
-    if (gearEmpty(j.gear)) {
-      say('there is no gear on this plan — add a weapon or a piece of armour above first', 'bad');
+    var body = sharedPayload(j);
+    if (!body.gear && !body.carry.length) {
+      say('there is no gear or carry list on this plan — add something above first', 'bad');
       return;
     }
+    body.from = j.character || null;
+    body.apply = !!apply;
+    if (scope === 'selected') body.targets = checkedChoices().map(function (c) {
+      return { character: c.character, agent: c.agent || null };
+    });
     say(apply ? 'writing…' : 'asking what that would do…');
-    fetch(rel + '/_gear-to-fleet', {
+    fetch(rel + '/_inventory-to-fleet', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ gear: j.gear, from: j.character || null, apply: !!apply }),
+      body: JSON.stringify(body),
     }).then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }); })
       .then(function (res) {
         if (!res.ok) { el('plFleetBox').hidden = true; say(res.b.error || 'refused', 'bad'); return; }
-        renderFleetPlan(res.b);
+        renderFleetPlan(res.b, scope);
         if (!res.b.applied) {
           say(res.b.counts.changed
             ? 'nothing written yet — ' + res.b.counts.changed + ' of ' + res.b.counts.total
               + ' would change'
-            : 'every character in the fleet already asks for this gear', 'good');
+            : (scope === 'selected' ? 'the selected characters' : 'every character in the fleet')
+              + ' already ask for this gear and carry list', 'good');
           return;
         }
-        say(res.b.counts.changed + ' of ' + res.b.counts.total + ' given this gear'
+        say(res.b.counts.changed + ' of ' + res.b.counts.total + ' given this gear and carry list'
             + (res.b.counts.failed ? ', ' + res.b.counts.failed + ' refused' : ''),
             res.b.counts.failed ? 'bad' : 'good');
-        // The select says which characters have a loadout, and some of them have one now
+        // The checkbox labels say which characters have a loadout, and some have one now
         // that did not a moment ago. The files are already written either way, so a failure
         // here is a stale label rather than a lost write — said, not swallowed.
         refreshChoices().catch(function (e) {
@@ -996,37 +1060,50 @@
       .catch(function (e) { say('could not reach the fleet: ' + e.message, 'bad'); });
   }
 
-  function renderFleetPlan(b) {
+  function renderFleetPlan(b, scope) {
     var box = el('plFleetBox'), out = el('plFleet');
     box.hidden = false;
+    el('plFleetTitle').textContent = scope === 'selected'
+      ? 'Give the selected characters this gear and carry list'
+      : 'Give the whole fleet this gear and carry list';
     var lines = [];
-    if (b.gear.weapon.length) lines.push('weapon — ' + b.gear.weapon.join(' then '));
-    Object.keys(b.gear.slots).forEach(function (s) {
+    if (b.gear && b.gear.weapon.length) lines.push('weapon — ' + b.gear.weapon.join(' then '));
+    Object.keys((b.gear && b.gear.slots) || {}).forEach(function (s) {
       lines.push(s + ' — ' + b.gear.slots[s].join(' then '));
     });
+    if (b.carry) lines.push('carry — ' + (b.carry.length
+      ? b.carry.map(function (c) {
+        return c.item + ' ' + c.min + (c.max === null ? '+' : '–' + c.max);
+      }).join(', ')
+      : 'nothing'));
     var mine = norm(el('plName').value || L.character);
 
     var rows = b.rows.map(function (r) {
       var cls = r.error ? 'bad' : r.changed ? 'changed' : 'same';
+      var changed = [];
+      if (r.gear_changed) changed.push('gear');
+      if (r.carry_changed) changed.push('carry list');
       var what = r.error ? 'refused'
         : !r.changed ? 'already asks for this'
         : r.created ? (b.applied ? 'new loadout written' : 'would get its first loadout')
-        : (b.applied ? 'gear replaced' : 'would be changed');
+        : (b.applied ? changed.join(' + ') + ' replaced' : 'would change ' + changed.join(' + '));
+      var beforeGear = r.before && r.before.gear;
       var was = r.error ? r.error
-        : r.before && (r.before.weapon.length || Object.keys(r.before.slots).length)
-          ? 'was ' + (r.before.weapon[0] || Object.keys(r.before.slots).map(function (s) {
-              return r.before.slots[s][0];
-            }).join(', ') || 'nothing')
-          : r.had ? 'had no gear on it' : 'no loadout yet';
+        : r.before
+          ? 'had ' + (beforeGear && (beforeGear.weapon.length || Object.keys(beforeGear.slots).length)
+            ? (beforeGear.weapon[0] || Object.keys(beforeGear.slots).map(function (s) {
+                return beforeGear.slots[s][0];
+              }).join(', ') || 'no gear')
+            : 'no gear') + ', ' + r.before.carry.length + ' carry item(s)'
+          : 'no loadout yet';
       return '<tr class="' + cls + '"><td>' + esc(r.character)
         + (norm(r.character) === mine ? ' <em>(this one)</em>' : '')
         + '</td><td>' + esc(what) + '</td><td class="muted">' + esc(was) + '</td></tr>';
     }).join('');
 
     out.innerHTML =
-      '<p class="hint">Only the gear. Carry lists, schools, sell and keep lists and purse floors '
-      + 'stay exactly as they are in every one of these files — including this character\'s, whose '
-      + 'other edits are still unsaved until you press Save.</p>'
+      '<p class="hint">Only gear and the desired carry list are shared. Schools, skills, sell and '
+      + 'keep lists, purse floors, notes and every other field stay exactly as they are.</p>'
       + '<p class="pl-note"><strong>' + lines.map(esc).join('<br>') + '</strong></p>'
       + (b.problems && b.problems.length
         ? '<ul class="pl-problems">' + b.problems.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul>'
@@ -1039,77 +1116,148 @@
           + '<button type="button" class="btn" id="plFleetCancel">Cancel</button>') + '</p>';
 
     var go = el('plFleetGo');
-    if (go) go.onclick = function () { gearToFleet(true); };
+    if (go) go.onclick = function () { sharedToCharacters(scope, true); };
     var cancel = el('plFleetCancel') || el('plFleetClose');
     if (cancel) cancel.onclick = function () { box.hidden = true; say(''); };
   }
 
   // ------------------------------------------------------------------ boot
 
-  function fillCharacterSelect(choices) {
-    var s = el('plChar');
-    s.innerHTML = '';
-    // A PLACEHOLDER FIRST, ALWAYS. A select defaults to its first option, and `change` does
-    // not fire on that — so listing the fleet straight away left the box reading
-    // "Kermit (t1)" beside an empty panel that was nobody's. The control has to be able to
-    // say "nothing yet", because that is the true state on arrival.
-    var ph = document.createElement('option');
-    ph.value = ''; ph.textContent = '— nobody loaded —';
-    s.appendChild(ph);
-    choices.forEach(function (group) {
+  function fillCharacterChecks(choices) {
+    var box = el('plChars');
+    var checked = {};
+    Array.prototype.forEach.call(box.querySelectorAll('input[type="checkbox"]:checked'),
+      function (input) { checked[input.value] = true; });
+    box.innerHTML = '';
+    CHOICES = {};
+    choices.forEach(function (group, gi) {
       if (!group.rows.length) return;
-      var g = document.createElement('optgroup');
-      g.label = group.label;
-      group.rows.forEach(function (r) {
-        var o = document.createElement('option');
-        o.value = r.value; o.textContent = r.text;
-        g.appendChild(o);
+      var wrap = document.createElement('div');
+      wrap.className = 'pl-char-group';
+      var title = document.createElement('strong');
+      title.textContent = group.label;
+      var checks = document.createElement('div');
+      checks.className = 'pl-char-checks';
+      group.rows.forEach(function (r, ri) {
+        CHOICES[r.value] = r;
+        var label = document.createElement('label');
+        label.className = 'pl-char-check';
+        var input = document.createElement('input');
+        input.type = 'checkbox'; input.value = r.value;
+        input.id = 'plChar-' + gi + '-' + ri;
+        input.checked = !!checked[r.value];
+        input.onchange = characterChecksChanged;
+        var text = document.createElement('span');
+        text.textContent = r.text; text.title = r.text;
+        label.appendChild(input); label.appendChild(text); checks.appendChild(label);
       });
-      s.appendChild(g);
+      wrap.appendChild(title); wrap.appendChild(checks); box.appendChild(wrap);
     });
-    var o = document.createElement('option');
-    o.value = '__new__'; o.textContent = 'A new character…';
-    s.appendChild(o);
+    if (!box.children.length) {
+      var empty = document.createElement('p');
+      empty.className = 'pl-character-empty';
+      empty.textContent = 'No fleet characters are available. Name a new plan or import a file.';
+      box.appendChild(empty);
+    }
+    syncSelectionMode();
   }
 
   // WHO THERE IS TO PLAN FOR, re-read rather than assumed. Also the page's one test for
   // whether the harness is serving it. Called again after a fleet-wide write, because
-  // characters that had no loadout a moment ago have one now and the select says so.
+  // characters that had no loadout a moment ago have one now and the checkbox label says so.
   function refreshChoices() {
     return fetch(rel + '/_loadouts').then(function (r) {
       if (!r.ok) throw new Error('not the harness');
       return r.json();
     }).then(function (b) {
-      var was = el('plChar').value;
-      fillCharacterSelect([
-        { label: 'In the fleet', rows: (b.fleet || []).map(function (r) {
-          return { value: 'agent:' + r.agent, text: r.character + ' (' + r.agent + ')'
-            + (r.loadout ? ' — has a loadout' : '') };
-        }) },
-        { label: 'Saved loadouts', rows: (b.loadouts || []).map(function (r) {
-          return { value: 'loadout:' + r.character, text: r.character };
-        }) },
+      var inFleet = {};
+      var fleetRows = (b.fleet || []).map(function (r) {
+        inFleet[norm(r.character)] = true;
+        return {
+          value: 'agent:' + r.agent, character: r.character, agent: r.agent, source: 'agent',
+          text: r.character + ' (' + r.agent + ')' + (r.loadout ? ' — has a loadout' : ''),
+        };
+      });
+      var savedRows = (b.loadouts || []).filter(function (r) {
+        return !inFleet[norm(r.character)];
+      }).map(function (r) {
+        return {
+          value: 'loadout:' + r.character, character: r.character, agent: null, source: 'loadout',
+          text: r.character,
+        };
+      });
+      fillCharacterChecks([
+        { label: 'In the fleet', rows: fleetRows },
+        { label: 'Saved only', rows: savedRows },
       ]);
-      // Refilling a select resets it to the placeholder, which would say nobody is loaded
-      // while a whole character is on the page.
-      if (was && Array.prototype.some.call(el('plChar').options, function (o) { return o.value === was; }))
-        el('plChar').value = was;
       return b;
     });
   }
 
-  function loadAgent(agent) {
+  function loadAgent(agent, key, group) {
+    var ticket = ++LOAD_SEQ;
     say('reading ' + agent + '…');
     return fetch(rel + '/_planner?agent=' + encodeURIComponent(agent))
       .then(function (r) { return r.json(); })
       .then(function (j) {
+        if (ticket !== LOAD_SEQ) return;
         if (j.error) { say(j.error, 'bad'); return; }
+        ACTIVE_KEY = key || ('agent:' + agent);
+        if (group) j.observed = null;
+        syncSelectionMode();
         adopt(j);
-        say(j.loadout
+        say(group ? checkedChoices().length + ' characters selected — editing shared gear and carry'
+          : j.loadout
           ? 'loaded ' + j.observed.character + ' and the loadout it already has'
           : 'loaded ' + j.observed.character + ' — no loadout yet, so this is a fresh one', 'good');
       })
       .catch(function (e) { say('could not read ' + agent + ': ' + e.message, 'bad'); });
+  }
+
+  function loadSaved(choice, group) {
+    var ticket = ++LOAD_SEQ;
+    say('reading ' + choice.character + '…');
+    return fetch(rel + '/_loadout?character=' + encodeURIComponent(choice.character))
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }); })
+      .then(function (res) {
+        if (ticket !== LOAD_SEQ) return;
+        if (!res.ok) { say(res.b.error || 'could not read that loadout', 'bad'); return; }
+        ACTIVE_KEY = choice.value;
+        syncSelectionMode();
+        adopt({ loadout: res.b.loadout, character: res.b.loadout.character, observed: null });
+        say(group ? checkedChoices().length + ' characters selected — editing shared gear and carry'
+          : 'loaded the saved loadout for ' + choice.character, 'good');
+      })
+      .catch(function (e) { say('could not read ' + choice.character + ': ' + e.message, 'bad'); });
+  }
+
+  function loadChoice(choice, group) {
+    return choice.source === 'agent'
+      ? loadAgent(choice.agent, choice.value, group)
+      : loadSaved(choice, group);
+  }
+
+  function characterChecksChanged() {
+    var selected = checkedChoices();
+    ++LOAD_SEQ;
+    syncSelectionMode();
+    el('plFleetBox').hidden = true;
+    if (!selected.length) {
+      ACTIVE_KEY = null; OBS = null; L = blank(''); el('plName').value = '';
+      renderAll(); say('name a new plan, import one, or select a character');
+      return;
+    }
+    if (selected.length === 1) { loadChoice(selected[0], false); return; }
+
+    // Keep unsaved inventory edits when the character they came from remains checked.
+    // Otherwise seed the shared editor from the first checked character.
+    if (ACTIVE_KEY && selected.some(function (c) { return c.value === ACTIVE_KEY; }) && L.character) {
+      OBS = null;
+      renderAll();
+      say(selected.length + ' characters selected — editing shared gear and carry', 'good');
+      return;
+    }
+    loadChoice(selected[0], true);
   }
 
   fetch(rel + '/data/planner.json').then(function (r) { return r.json(); }).then(function (j) {
@@ -1126,7 +1274,7 @@
     });
     el('plExport').onclick = exportFile;
     el('plSave').onclick = save;
-    el('plGearFleet').onclick = function () { gearToFleet(false); };
+    el('plGearFleet').onclick = function () { sharedToCharacters('fleet', false); };
     el('plImport').onclick = function () { el('plFile').click(); };
     el('plFile').onchange = function (e) {
       var f = e.target.files && e.target.files[0];
@@ -1140,18 +1288,6 @@
       e.target.value = '';
     };
     el('plName').oninput = function () { L.character = el('plName').value; renderProblems(); };
-    el('plChar').onchange = function () {
-      var v = el('plChar').value;
-      if (!v) return;
-      if (v === '__new__') { OBS = null; L = blank(''); el('plName').value = ''; renderAll(); say(''); return; }
-      if (v.indexOf('agent:') === 0) loadAgent(v.slice(6));
-      else if (v.indexOf('loadout:') === 0) {
-        fetch(rel + '/_loadout?character=' + encodeURIComponent(v.slice(8)))
-          .then(function (r) { return r.json(); })
-          .then(function (b) { adopt({ loadout: b.loadout, character: b.loadout.character, observed: null }); })
-          .catch(function (e) { say(e.message, 'bad'); });
-      }
-    };
 
     // Is the harness serving us? /_loadouts is its endpoint and nothing else answers it, so
     // a 404 here is the honest signal that Save cannot work — which the page then says
@@ -1161,14 +1297,18 @@
       var agent = cookieAgent();
       if (agent) {
         var opt = 'agent:' + agent;
-        if (Array.prototype.some.call(el('plChar').options, function (o) { return o.value === opt; }))
-          el('plChar').value = opt;
-        return loadAgent(agent);
+        var input = Array.prototype.find.call(el('plChars').querySelectorAll('input[type="checkbox"]'),
+          function (c) { return c.value === opt; });
+        if (input) {
+          input.checked = true;
+          syncSelectionMode();
+          return loadChoice(CHOICES[opt], false);
+        }
       }
       say('pick a character, or press C on one in the fleet terminal to arrive with it loaded');
     }).catch(function () {
       SERVED = false;
-      fillCharacterSelect([]);
+      fillCharacterChecks([]);
       say('opened as a static page — plan freely and Export; Save needs the harness serving this ' +
           '(node tools/m59-compendium.mjs --open --to /planner/)');
     });

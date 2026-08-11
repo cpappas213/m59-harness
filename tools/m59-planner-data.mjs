@@ -38,6 +38,8 @@ import path from 'node:path';
 import { loadImages, descendants, ivar, nameOf, descOf, humanize,
          iconFor, ownMessage, findMessage, parseConsPairs, cleanText } from
        '../compendium/tools/lib.mjs';
+// The stats pane's own table. See the stats section below.
+import { STATS } from '../compendium/tools/statpane.mjs';
 
 const arg = (n, d = null) => {
   const i = process.argv.indexOf('--' + n);
@@ -58,16 +60,10 @@ const spellFile = JSON.parse(readFileSync(SPELLS, 'utf8'));
 
 // ---------------------------------------------------------------- stats
 
-// The five a player rolls, plus the two derived ones the planner has to show. Named as
-// the kod names them, because every lookup below keys off that spelling.
-const STATS = {
-  might:     { label: 'Might',     blurb: 'Melee damage, and what heavy weapons key off.' },
-  intellect: { label: 'Intellect', blurb: 'How fast every skill and spell improves, and how many school levels a character can learn in its lifetime.' },
-  stamina:   { label: 'Stamina',   blurb: 'Maximum health is 101 + stamina, fixed at creation and never moved.' },
-  agility:   { label: 'Agility',   blurb: 'Avoiding blows, and what most combat skills key off.' },
-  mysticism: { label: 'Mysticism', blurb: 'Mana pool and spellcasting.' },
-  aim:       { label: 'Aim',       blurb: 'Ranged accuracy, and what the precision weapon skills key off.' },
-};
+// The six a player rolls, named as the kod names them, because every lookup below keys off
+// that spelling. Out of compendium/tools/statpane.mjs rather than declared here: the
+// planner's stats pane and the fleet's /stats board both draw from that file, and a label
+// or an order that lived in two places would eventually be two different panes.
 
 // ------------------------------------------------- skills and their requisite stat
 

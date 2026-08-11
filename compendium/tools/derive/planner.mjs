@@ -22,6 +22,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, esc } from '../lib.mjs';
+// The stats pane's stylesheet, written out as an asset below. The pane itself is inlined
+// from the same file for the browser, and imported from it in node by the fleet's board.
+import { PANE_CSS } from '../statpane.mjs';
 
 export const meta = {
   id: 'planner', title: 'Planner', dir: 'planner', order: 2, nav: true,
@@ -76,15 +79,16 @@ carrying, and hand that back to the fleet. The panel is the client's own — the
 tabs in the same order — and everything in it is editable.</p>
 
 <div class="pl-bar">
-  <label>Character
-    <select id="plChar" aria-label="Which character to plan"></select>
-  </label>
+  <fieldset class="pl-characters">
+    <legend>Characters</legend>
+    <div id="plChars" class="pl-character-list" aria-label="Characters to plan"></div>
+  </fieldset>
   <label>Name <input type="text" id="plName" size="14" autocomplete="off" spellcheck="false"></label>
   <span class="grow"></span>
   <button type="button" class="btn" id="plImport">Import a file…</button>
   <input type="file" id="plFile" accept="application/json,.json" hidden>
   <button type="button" class="btn" id="plExport">Export</button>
-  <button type="button" class="btn" id="plGearFleet" title="Give every character in the fleet this weapon and armour preference. Only the gear — every other part of their loadouts is left alone.">Apply gear to fleet</button>
+  <button type="button" class="btn" id="plGearFleet" title="Give every character in the fleet this gear and desired carry list. Schools, skills and all other loadout rules are left alone.">Apply gear + carry to fleet</button>
   <button type="button" class="btn primary" id="plSave">Save to the fleet</button>
   <span class="pl-msg" id="plMsg" role="status"></span>
 </div>
@@ -120,7 +124,7 @@ tabs in the same order — and everything in it is editable.</p>
 
   <div class="pl-side">
     <section id="plFleetBox" hidden>
-      <h2>Give the whole fleet this gear</h2>
+      <h2 id="plFleetTitle">Give the whole fleet this gear and carry list</h2>
       <div id="plFleet"></div>
     </section>
 
@@ -149,12 +153,13 @@ tabs in the same order — and everything in it is editable.</p>
       every pass: it stops selling what the list protects, sheds what the list says to shed,
       tops up to the minimums when it is standing at a counter anyway, and reaches for the
       weapon named here rather than whichever one it happens to be best with. Nothing the
-      list is silent about changes — a loadout adds rules, it does not replace them.</p>
-      <p class="pl-note"><strong>Apply gear to fleet</strong> writes the <em>gear</em> half of
-      this plan — the weapon and armour preference — into every character's loadout, and
-      changes nothing else in any of them: carry lists, schools, sell and keep lists and purse
-      floors are left exactly as they are. It says what it would do first and needs a second
-      press. It is the same thing as
+      list is silent about changes — a loadout adds rules, it does not replace them. With
+      several characters checked, this becomes <strong>Apply gear + carry to selected</strong>
+      and uses the same preview-before-write flow as the whole-fleet action.</p>
+      <p class="pl-note"><strong>Apply gear + carry to fleet</strong> writes the gear and the
+      desired inventory from this plan into every character's loadout. Schools, skills, sell
+      and keep lists, purse floors, notes and every other field are left exactly as they are.
+      It says what it would do first and needs a second press. It is the same thing as
       <code>node tools/m59-loadout.mjs &lt;name&gt; --gear-to-fleet --apply</code>, and it does
       not save the rest of what you have edited here — that is what Save is for.</p>
       <p class="pl-note"><strong>Export</strong> downloads the same file. Drop it in that
@@ -182,11 +187,32 @@ tabs in the same order — and everything in it is editable.</p>
   const browserLearn = '// GENERATED from tools/learn.mjs by tools/derive/planner.mjs — do not edit.\n'
     + `(function(){\n${learnSrc}\nwindow.M59Learn={learnCost,canLearn,trackPoints,levelPointsAt};\n})();\n`;
 
+  // THE STATS PANE, WHICH THE FLEET'S OWN /stats BOARD ALSO DRAWS. Same arrangement as
+  // learn.mjs above, and the same reason: the planner draws this pane so somebody can
+  // describe a build and the board draws it read-only so somebody can see which builds the
+  // fleet has, and the two must not come to look different or to disagree about what
+  // 101 + stamina is. `tools/m59-stats-page.mjs` imports the identical file in node.
+  //
+  // The CSS travels with it, as a stylesheet rather than a string in the bundle: the
+  // planner's own additions — the tab strip, the draggable bar, the hatching for a PLANNED
+  // value — stay in planner.css, which is loaded after this and can therefore override it.
+  const paneSrc = fs.readFileSync(path.join(ROOT, 'tools', 'statpane.mjs'), 'utf8')
+    .replace(/^export /gm, '');
+  const browserPane = '// GENERATED from tools/statpane.mjs by tools/derive/planner.mjs — do not edit.\n'
+    + `(function(){\n${paneSrc}\nwindow.M59StatPane={STAT_ORDER,STATS,HARD_CAP_FALLBACK,`
+    + `healthCeiling,carryCapacity,pointsSpent,statsKey,sameStats,statBars,statFoot,statPane};\n})();\n`;
   return {
     indexHtml, pages: [],
-    // learn.js first: planner.js reads window.M59Learn at boot.
-    scripts: ['learn.js', 'planner.js'],
-    styles: ['planner.css'],
-    files: { 'assets/learn.js': browserLearn },
+    // statpane.js and learn.js first: planner.js reads window.M59StatPane and window.M59Learn.
+    scripts: ['statpane.js', 'learn.js', 'planner.js'],
+    // statpane.css first: planner.css adds the editable half on top of it.
+    styles: ['statpane.css', 'planner.css'],
+    files: {
+      'assets/learn.js': browserLearn,
+      'assets/statpane.js': browserPane,
+      'assets/statpane.css':
+        '/* GENERATED from tools/statpane.mjs by tools/derive/planner.mjs — do not edit. */\n'
+        + PANE_CSS,
+    },
   };
 }

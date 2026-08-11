@@ -19,7 +19,8 @@
 // when things are already broken.
 import { stdin, stdout, env, exit, argv } from 'node:process';
 import { spawn } from 'node:child_process';
-import { readFileSync, openSync } from 'node:fs';
+import net from 'node:net';
+import { readFileSync, openSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveFleet } from './m59-fleetpath.mjs';
@@ -227,7 +228,8 @@ function listView() {
       ? c.bold(c.yellow('X')) + c.dim(' TAKE ') + c.yellow(cur.character ?? cur.agent) +
         c.dim(' off ' + cut(curHeld.label ?? 'fleet work', 24))
       : c.bold(c.yellow('X')) + c.dim(' leave override');
-  L.push(c.dim('  ↑↓/jk move · ⏎ open · L launch · C compendium · P plan · ') + xSays +
+  L.push(c.dim('  ↑↓/jk move · ⏎ open · L launch · ') + c.cyan('S swarm') + c.dim(' · ') +
+         c.cyan('B board') + c.dim(' · C compendium · P plan · ') + xSays +
          c.dim(' · r refresh · q quit'));
   if (S.status) L.push('  ' + S.status);
   if (S.lastError) L.push('  ' + c.red(S.lastError));
@@ -298,6 +300,8 @@ function heroView() {
   for (const e of (a.recent || []).slice(-8)) L.push('   ' + c.dim(cut(e.what, 74)));
   L.push('');
   L.push(c.dim('  ⏎/q back · ') + c.bold(c.yellow('L')) + c.dim(' LAUNCH the client as this character · ') +
+         c.bold(c.cyan('S')) + c.dim(' SWARM — launch and the fleet follows · ') +
+         c.bold(c.cyan('B')) + c.dim(` BOARD — the whole ${FLEET_LABEL} fleet in the commander · `) +
          (held ? c.bold(c.yellow('X')) + c.dim(' take it off ' + cut(held.label ?? 'fleet work', 22)) + c.dim(' · ') : '') +
          c.dim('r refresh'));
   if (S.status) L.push('  ' + S.status);
@@ -329,7 +333,43 @@ const fail = (e) => { S.status = c.red('launch failed: ' + (e?.message ?? e)); d
 // which is the exact failure L already had once.
 const oops = (e) => { S.status = c.red('failed: ' + (e?.message ?? e)); draw(); };
 
-async function launch(row) {
+// The 5961 shim. Swarm launches go through it so the broker keeps its own view of the
+// leader — and, more importantly, so the proxy can read the leader's REQ_ATTACK and tell
+// the swarm what to focus on. Nothing else in the system can see that.
+const PROXY_PORT = Number(env.M59_PROXY_PORT || 5961);
+
+// Start the proxy if it is not already up, and wait until it is actually accepting — a
+// client launched at a port nothing is listening on sits at a dead login screen, which
+// reads as "the swarm key did nothing".
+async function ensureProxy(host, port) {
+  const listening = await new Promise(res => {
+    const s = net.connect(PROXY_PORT, '127.0.0.1');
+    s.once('connect', () => { s.destroy(); res(true); });
+    s.once('error', () => res(false));
+    setTimeout(() => { s.destroy(); res(false); }, 800);
+  });
+  if (listening) return { started: false, ok: true };
+  const proxy = join(REPO, 'tools', 'm59-proxy.mjs');
+  // --observe: forward and rewrite, inject nothing. A swarm only needs to WATCH the
+  // leader; taking over its stream buys nothing and risks the operator's own session.
+  const child = spawn(process.execPath,
+    [proxy, '--listen', String(PROXY_PORT), '--server', `${host}:${port}`, '--observe'],
+    { stdio: 'ignore', detached: false, windowsHide: true });
+  child.unref();
+  for (let i = 0; i < 20; i++) {
+    const up = await new Promise(res => {
+      const s = net.connect(PROXY_PORT, '127.0.0.1');
+      s.once('connect', () => { s.destroy(); res(true); });
+      s.once('error', () => res(false));
+      setTimeout(() => { s.destroy(); res(false); }, 300);
+    });
+    if (up) return { started: true, ok: true };
+    await new Promise(r => setTimeout(r, 250));
+  }
+  return { started: true, ok: false };
+}
+
+async function launch(row, { viaProxy = false } = {}) {
   const creds = rosterFor(row.agent);
   if (!creds) { S.status = c.red('no credentials on file for ' + row.agent); return; }
   const exe = env.M59_CLIENT_EXE ||
@@ -345,8 +385,22 @@ async function launch(row) {
   //
   // The environment stays as the fallback for a roster written before host and port
   // were recorded.
-  const host = creds.host || env.M59_HOST || '127.0.0.1';
-  const port = String(creds.port || env.M59_PORT || '5959');
+  const realHost = creds.host || env.M59_HOST || '127.0.0.1';
+  const realPort = String(creds.port || env.M59_PORT || '5959');
+  // A swarm launch points the client at the proxy instead of the game server. Same
+  // credentials, same everything else — the only difference is who is in the middle.
+  let host = realHost, port = realPort;
+  if (viaProxy) {
+    const p = await ensureProxy(realHost, realPort);
+    if (!p.ok) {
+      S.status = c.red(`proxy would not come up on ${PROXY_PORT} — launching direct, ` +
+                       `the swarm will not be able to see this character`);
+      draw();
+    } else {
+      host = '127.0.0.1'; port = String(PROXY_PORT);
+      S.status = c.dim(p.started ? `started the proxy on ${PROXY_PORT}… ` : `proxy already up… `);
+    }
+  }
   const inject = join(REPO, 'tools', 'm59-inject.ps1');
   // LAUNCH IT FROM ITS OWN DIRECTORY. The client resolves `resource\` relative to the
   // working directory, so started from the repo it cannot find the module DLLs it is
@@ -440,6 +494,105 @@ async function launch(row) {
     S.status += ' ' + c.red('· broker not told to watch (' + r.__error + ') — `pilot claim` by hand');
     draw();
   }
+}
+
+// S — LAUNCH AS THE SWARM LEADER. The same launch as L, plus handing the rest of the
+// fleet over to whatever is running the swarm.
+//
+// IT DOES NOT START A PROXY, and that is the interesting part. The obvious design routes
+// the leader through `m59-proxy.mjs` so the broker can still see it — the server allows
+// one connection per character, so an ordinary login takes the broker's. But `L` already
+// injects `m59agent.dll`, which exists expressly to drive a client "without a proxy in
+// the path", and it already answers `pos` with `{room,x,y,angle}` read from the client's
+// own player struct (m59agent.c:169). That is the CLIENT's own room id, so it changes the
+// instant a new map loads: the swarm follows through doors with no proxy, no rewritten
+// security stream, and no guessing which exit somebody took.
+//
+// WHAT IT HANDS OVER, AND WHAT IT KEEPS. `movement` and `work` go to the swarm — where to
+// stand and what to hit are exactly what following a leader means. `survival`, `mortality`
+// and `recovery` STAY WITH THE KEEPER, so a follower walked into something it cannot beat
+// still breaks off and still walks itself out of the Underworld. A swarm is a decision
+// about work, never about whether a character may die.
+async function swarm(row) {
+  // THROUGH THE PROXY, ALWAYS. It is what lets the broker keep seeing this character
+  // once the client takes the connection, and it is the only thing in the system that can
+  // read the operator REQ_ATTACK and tell the swarm what to focus fire on.
+  await launch(row, { viaProxy: true });
+  const others = S.rows.filter(x => x.agent !== row.agent && x.in_game !== false);
+  let took = 0, failed = [];
+  for (const o of others) {
+    const res = await call('autopilot', {
+      agent: o.agent, action: 'claim',
+      faculties: ['movement', 'work'],
+      by: `swarm/${row.agent}@terminal`,
+      // Leases fail BACK to the keeper rather than open, so a swarm whose driver dies
+      // returns each character to the thing that knows how to keep it alive.
+      lease_ms: 120000,
+    }, 6000);
+    if (res?.__error) failed.push(o.agent); else took++;
+  }
+  S.status += ' ' + c.bold(c.cyan(`· SWARM: ${took} following ${row.character ?? row.agent}`)) +
+    (failed.length ? c.red(` · ${failed.length} refused (${failed.slice(0, 3).join(',')})`) : '') +
+    c.dim(' · movement+work only; the keeper keeps the survival floor');
+}
+
+// ------------------------------------------------------------- the commander
+//
+// B — ALL OF THEM AT ONCE, ON A BOARD.
+//
+// `L` gives you one character in the real client, and that is the one thing it cannot
+// scale: twenty-one windows is not a view of a fleet. `maps/m59-boswars` is a Bos Wars
+// build converted into a Meridian 59 commander — an RTS board that reads this same
+// broker's RTS endpoints and draws the whole roster at once — and this is the key that
+// opens it already pointed at the fleet this terminal is showing.
+//
+// WHICH FLEET IS THE ENTIRE POINT OF THE KEY. Opened by hand, the commander discovers
+// every roster this machine holds and asks you to pick one, so picking wrong opens a
+// board of characters nobody is watching — and a board of the wrong fleet looks exactly
+// like a board that works. The label goes through, so the two are never a different
+// fleet. The broker port goes with it for the same reason: this terminal may be talking
+// to a broker the commander's own discovery would not have looked on.
+//
+// IT IS A SEPARATE REPOSITORY AND IT MAY NOT BE HERE. The harness has to keep working
+// for someone who cloned it on its own, so this reports what is missing rather than
+// depending on it. `M59_BOSWARS` names it when it does not live beside us.
+//
+// NOT `-Yes`. The commander's menu confirms before it would start a server or a broker,
+// and a keypress in a full-screen app is the worst place for that decision to be made
+// silently. If this terminal is drawing characters then a broker is already holding
+// this fleet and the prompt never appears; if it is not, being asked is correct.
+const BOSWARS = env.M59_BOSWARS || join(REPO, '..', 'm59-boswars');
+
+function commander() {
+  const menu = join(BOSWARS, 'm59.ps1');
+  if (!existsSync(menu)) {
+    S.status = c.red('no commander beside this checkout') +
+      c.dim(` · looked for ${menu} · it is its own repository (maps/m59-boswars);` +
+            ' set M59_BOSWARS if it lives elsewhere');
+    return;
+  }
+  // The label becomes a command-line argument. resolveFleet() already refuses anything
+  // that is not a name, and 'default' is the only other thing it can produce — so this
+  // can only trip if that changes, and stopping here beats passing it on.
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(FLEET_LABEL)) {
+    S.status = c.red(`refusing to hand ${JSON.stringify(FLEET_LABEL)} over as a fleet name`);
+    return;
+  }
+  const args = ['/c', 'start', '', 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                '-NoExit', '-File', menu, '-Choice', FLEET_LABEL];
+  // Only when it is not the port the commander would have tried anyway, so this key
+  // still works against a boswars checkout that predates the parameter.
+  if (PORT !== '8901') args.push('-BrokerPort', PORT);
+  // A WINDOW OF ITS OWN, because this one is a full-screen app. The menu prints which
+  // fleets it found and whether this one is COMMAND or SPECTATE, then the launcher
+  // prints twenty seconds of gateway and client startup — none of which can land here
+  // without taking the board apart. `cmd /c start` is what makes a console; `-NoExit`
+  // keeps it after a failure, which is the only time you need to read it.
+  const child = spawn('cmd', args, { cwd: BOSWARS, stdio: 'ignore' });
+  child.unref();
+  child.on('error', e => { S.status = c.red('could not open the commander: ' + e.message); draw(); });
+  S.status = c.green(`opening the commander on ${FLEET_LABEL}…`) + ' ' +
+    c.dim('· its own window · it says COMMAND or SPECTATE before it connects · Start Game there');
 }
 
 // The same path the L key takes, without the terminal:
@@ -570,6 +723,9 @@ function onKey(str, key) {
       loadHero(S.hero).then(draw);
     } else if (str === 'X' || str === 'x') override(S.rows[S.sel]).then(draw, oops);
     else if (str === 'L' || str === 'l') launch(S.rows[S.sel]).then(draw, fail);
+    else if (str === 'S' || str === 's') swarm(S.rows[S.sel]).then(draw, fail);
+    // B is about the FLEET, not the row under the cursor — the board draws all of them.
+    else if (str === 'B' || str === 'b') commander();
     else if (str === 'C' || str === 'c') compendium(S.rows[S.sel]);
     else if (str === 'P' || str === 'p') compendium(S.rows[S.sel], '/planner/');
     else if (str === 'r') { S.status = c.dim('refreshing…'); refresh().then(draw); }
@@ -578,6 +734,8 @@ function onKey(str, key) {
       S.view = 'list'; S.detail = null; S.status = '';
     } else if (str === 'X' || str === 'x') override(S.hero).then(draw, oops);
     else if (str === 'L' || str === 'l') launch(S.hero).then(draw, fail);
+    else if (str === 'S' || str === 's') swarm(S.hero).then(draw, fail);
+    else if (str === 'B' || str === 'b') commander();
     else if (str === 'C' || str === 'c') compendium(S.hero);
     else if (str === 'P' || str === 'p') compendium(S.hero, '/planner/');
     else if (str === 'r') { refresh().then(() => { S.hero = S.rows.find(r => r.agent === S.hero.agent) ?? S.hero; draw(); }); }

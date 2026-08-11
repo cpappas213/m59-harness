@@ -38,6 +38,13 @@ import net from 'node:net';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
 import { parseRoomContents, objId } from './m59-parse.mjs';
+import { writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Where the leader's live state is published for the swarm to read. Under substrate/
+// because it is per-machine live state, not something to commit.
+const LEADER_FILE = join(dirname(fileURLToPath(import.meta.url)), '..', 'substrate', 'swarm-leader.json');
 
 const HEADER = 7;                 // len(2) + security(2) + len(2) + epoch(1)
 
@@ -206,6 +213,34 @@ export class ProxySession extends EventEmitter {
   // to another room left us injecting against the room they used to be in, and
   // BP_REQ_MOVE with the wrong room id is dropped without comment (NEXT-STEPS trap 5).
   // The symptom is the worst kind: everything reports success and nothing moves.
+  // THE SWARM'S ONE SOURCE OF "WHAT IS THE LEADER FIGHTING".
+  //
+  // Debounced to a file rather than emitted, because the consumer is another process:
+  // DUM ticks on its own clock and either side can restart. A file is the only interface
+  // where neither restart loses the answer, and where a reader arriving late still gets
+  // the last known target rather than nothing.
+  //
+  // `at` is written so a stale target can be recognised as stale. A leader that has
+  // stopped swinging is a leader with no target, and a swarm that keeps piling onto a
+  // corpse because the last packet said so is worse than one that stands still.
+  noteLeaderTarget(target, how) {
+    if (target === this.lastTarget && Date.now() - (this.lastTargetAt ?? 0) < 1000) return;
+    this.lastTarget = target;
+    this.lastTargetAt = Date.now();
+    try {
+      writeFileSync(LEADER_FILE, JSON.stringify({
+        target, how, at: this.lastTargetAt,
+        // `knownRoom` is the OBJECT id of the room, which is what BP_ROOM_CONTENTS carries
+        // and what this proxy learns off the wire — not the room NUMBER the map speaks.
+        // Named for what it is so nobody joins it to a room table by accident.
+        room_object_id: this.knownRoom ?? null,
+        player_object_id: this.playerId ?? null,
+        note: 'written by m59-proxy from the leader\'s own REQ_ATTACK — the only place ' +
+              'in the system that can see what a human is swinging at',
+      }, null, 2));
+    } catch { /* the swarm degrades to following without focus fire; not worth dying over */ }
+  }
+
   learn(payload) {
     // IS THERE A HUMAN DRIVING THIS?
     //
@@ -245,6 +280,22 @@ export class ProxySession extends EventEmitter {
     this.stats.fromClient++;
     this.lastEpoch = epoch;
     if (this.inGame) this.learn(payload);
+    // WHAT THE OPERATOR IS SWINGING AT, READ OFF THE WIRE.
+    //
+    // A swarm has to know its leader's target and there is no other way to learn it: the
+    // client emits no attack event a bystander could parse, the server tells observers
+    // nothing about who is hitting what, and the injected agent DLL reports position only.
+    // But the attack itself is a CLIENT-TO-SERVER packet and every one of them passes
+    // through here — so the one place in the system that can see the target is this one.
+    //
+    //   REQ_ATTACK 103 / REQ_SHOOT 104: [op][info u8][target u32 LE]  (m59-client.mjs:857)
+    //
+    // Written to a file rather than pushed anywhere, because the reader is a different
+    // process on a different clock and a file is the only interface that survives either
+    // of them restarting. Position comes from the same place for the same reason.
+    if (this.inGame && (payload[0] === 103 || payload[0] === 104) && payload.length >= 6) {
+      this.noteLeaderTarget(payload.readUInt32LE(2), payload[0] === 104 ? 'shoot' : 'attack');
+    }
     // PASSTHROUGH UNTIL WE HAVE ACTUALLY INJECTED SOMETHING.
     //
     // While we have injected nothing, the client's own security values are correct

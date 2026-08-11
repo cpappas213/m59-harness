@@ -115,6 +115,12 @@ export function ledgerDirFor(name, env = process.env) {
               : join(REPO, 'substrate', 'history');
 }
 
+export function strategyStatsDirFor(name, env = process.env) {
+  if (env.M59_STRATEGY_STATS_DIR) return env.M59_STRATEGY_STATS_DIR;
+  return name ? join(REPO, 'substrate', 'strategy-stats', name)
+              : join(REPO, 'substrate', 'strategy-stats', 'default');
+}
+
 // The lock is named after the roster it guards, so a named fleet and the unnamed one
 // can be held at once without either believing it owns the other. Anything cleaning up
 // a lock must derive it the same way, or it deletes the wrong checkout's claim.
@@ -133,5 +139,6 @@ export function resolveFleet(argv = process.argv.slice(2), env = process.env) {
     stateFile: stateFileFor(name, env),
     lockFile: lockFileFor(name, env),
     ledgerDir: ledgerDirFor(name, env),
+    strategyStatsDir: strategyStatsDirFor(name, env),
   };
 }

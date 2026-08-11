@@ -86,6 +86,19 @@ assert.deepEqual(rtsJobReport({ ...baseJob, result: { recovery: { cancelled: tru
   'nested recovery cancellation is promoted to ACTION telemetry');
 assert.deepEqual(rtsJobReport({ ...baseJob, error: 'ordinary failure' }, 5000),
   { last_action: 'fixture action', took_s: 4, failed: 'ordinary failure' });
+assert.deepEqual(rtsJobReport({ ...baseJob,
+  result: { committed: false, verification_failed: true } }, 5000),
+  { last_action: 'fixture action', took_s: 4,
+    failed: 'server outcome could not be verified; no success was claimed' },
+  'ambiguous economic silence is never promoted to ok telemetry');
+assert.deepEqual(rtsJobReport({ ...baseJob, kind: 'commerce:buy', cancelled: true,
+  result: { kind: 'buy', quote_id: 'quote-visible-id', committed: true,
+    evidence: { gained_quantity: 2, purse_spent: 12 } } }, 5000), {
+  last_action: 'fixture action', took_s: 4, cancelled: true,
+  commerce_result: { kind: 'buy', quote_id: 'quote-visible-id', committed: true,
+    verification_failed: false, state: null,
+    evidence: { gained_quantity: 2, purse_spent: 12 } },
+}, 'a late cancellation does not hide evidence that an economic packet already committed');
 assert.deepEqual(rtsJobReport({ ...baseJob, done: false, finishedAt: undefined,
   cancelled: true }, 5000),
   { busy: 'fixture action', running_for_s: 4, stopping: true });

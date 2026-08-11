@@ -31,6 +31,8 @@ import { inboxIfAny } from './m59-inbox.mjs';
 import { describeCommitment } from './m59-commitment.mjs';
 import * as tougher from './m59-tougher.mjs';
 import { recordEvent } from './m59-ledger.mjs';
+import { detailSettings, recordStrategyStat, saveVaultSnapshot }
+  from './m59-strategy-stats.mjs';
 import * as uptime from './m59-uptime.mjs';
 import * as party from './m59-party.mjs';
 import { mayShareSpot } from './m59-party.mjs';
@@ -556,6 +558,9 @@ export class Autopilot {
       // Items a directional strategy is accumulating. The keeper treats these as
       // collection stock rather than food or loot and stores them during Barloque loops.
       vaultItems: [],
+      // Opt-in detailed, short-lived activity records. DUM owns this object and leaves
+      // it null unless the independent Detailed strategy stats strategy is checked.
+      strategyStats: null,
       // WHICH WEAPON TO REACH FOR. null ranks by the character's proficiency in each
       // weapon's own skill (m59-skills.mjs weaponRanking). A list of name fragments
       // overrides it — ['axe'] trains the axe on a character who would otherwise wield
@@ -2465,20 +2470,44 @@ export class Autopilot {
   // Extracted from townTripIfCornered because the post-death recovery asks the identical
   // question — where is the nearest place I can sit down safely — and a second copy of
   // this would be a second place for the hop limit to drift.
+  // AN INN IS NOT IN THE SPAWN INDEX, WHICH IS WHY THIS NEVER SENT ANYBODY TO ONE.
+  //
+  // The candidate list was built from `Object.keys(spawns.rooms)` — every room the spawn
+  // index KNOWS ABOUT — then filtered down to those with nothing huntable. A room that
+  // generates nothing at all has no entry in that index, so every inn in the world was
+  // invisible to it. What survived the filter was outdoor rooms that happen to carry only
+  // non-huntable spawns, and those are neighbours of the wilderness rather than refuges.
+  //
+  // Measured: a character fled the Graveyard of Tos at 2 health and set off for the
+  // Twisted Wood — which holds trolls at attack rating 750 — while Familiars, the Tos inn,
+  // sat two rooms away and was never a candidate. The route to a distant "safe" room is
+  // the part that kills, because a planned trip is not reconsidered and goes THROUGH
+  // whatever is on the way.
+  //
+  // `CITY_INNS` is the answer and was already imported into this file. Inns are real
+  // sanctuaries: nothing spawns, resting is safe, and the counters sell the bread that is
+  // the only way past the vigor cap of 80 — which is the whole reason this function is
+  // called. They are listed FIRST and win ties, so a refuge is preferred over a merely
+  // quiet field at the same distance.
   nearestSanctuary({ maxHops = 3 } = {}) {
     const s = this.s;
     const here = s.world?.room?.num;
     const spawns = loadSpawns(SPAWN_FILE)?.rooms || {};
-    const safeRooms = Object.keys(spawns)
+    const inns = Object.values(CITY_INNS).map(x => x.inn).filter(n => n !== here);
+    const quiet = Object.keys(spawns)
       .filter(n => !(spawns[n] || []).some(x => x.huntable))
-      .map(Number).filter(n => n !== here);
+      .map(Number).filter(n => n !== here && !inns.includes(n));
     let best = null;
-    for (const room of safeRooms) {
+    for (const room of [...inns, ...quiet]) {
       const r = s.world?.route?.(room);
       if (!r?.found) continue;
       const hops = r.hops.length;
       if (hops > maxHops) continue;           // further than that is its own expedition
-      if (!best || hops < best.hops) best = { room, hops };
+      const isInn = inns.includes(room);
+      // Strictly closer wins; at equal distance the inn wins, because only an inn can
+      // actually fix the thing that drove us out — food, and a safe place to eat it.
+      if (!best || hops < best.hops || (hops === best.hops && isInn && !best.isInn))
+        best = { room, hops, isInn };
     }
     return best;
   }
@@ -3612,6 +3641,7 @@ export class Autopilot {
     }).catch(e => ({ error: e.message }));
     const heldMs = Date.now() - t0;
     this.travelHeldMs += heldMs;
+    this.travelSafeStops = (this.travelSafeStops ?? 0) + 1;
     const hpAfter = this.s.client?.vitals?.()?.health?.value ?? null;
 
     // LEAVING IS FORCED, and it has to be. `leaveHold` refuses a DISCRETIONARY departure
@@ -3643,10 +3673,28 @@ export class Autopilot {
     // One arm per journey, fixed before the first step so it cannot drift mid-route.
     const arm = this.travelArmFor(`${this.s.name}-${this.passes}-${Date.now()}`);
     this.travelHeldMs = 0;
+    this.travelSafeStops = 0;
     const startedAt = Date.now();
     const v0 = this.s.client?.vitals?.()?.health;
     const hpStart = v0?.value ?? null, hpMax = v0?.max ?? null;
+    const detailed = detailSettings(this.policy, 'travel');
+    const journeyDamageStart = this.hitDamageTotal();
+    const maps = [];
+    let map = detailed ? {
+      room: this.s.world?.room?.num ?? null, name: this.s.world?.room?.name ?? null,
+      started_at: startedAt, damage_at_start: journeyDamageStart, health_start: hpStart,
+    } : null;
+    const closeMap = (at = Date.now()) => {
+      if (!map) return;
+      const hp = this.s.client?.vitals?.()?.health?.value ?? null;
+      const damageAtEnd = this.hitDamageTotal();
+      maps.push({ room: map.room, name: map.name, duration_ms: Math.max(0, at - map.started_at),
+        damage: Math.max(0, damageAtEnd - map.damage_at_start),
+        health_start: map.health_start, health_end: hp });
+      map = null;
+    };
     let legs = 0;
+    let outcome = null;
     try {
       // A FRAME PER ROOM, NOT PER JOURNEY.
       //
@@ -3664,16 +3712,24 @@ export class Autopilot {
       // this experiment is measured on and they are rare — one per 1,180 journeys — so an
       // unattributable death is a real loss of power, not a rounding error.
       this.travelArm = { arm, since: Date.now(), to: room };
-      return await this.s.travel(room, {
+      outcome = await this.s.travel(room, {
         ...opts,
         onHop: async (at) => {
           legs++;
+          if (detailed) {
+            closeMap();
+            const hp = this.s.client?.vitals?.()?.health?.value ?? null;
+            map = { room: at.room?.num ?? null, name: at.room?.name ?? null,
+              started_at: Date.now(), damage_at_start: this.hitDamageTotal(), health_start: hp };
+          }
           this.recordFrame(`travelling — ${at.hops_done + 1} room(s) in, ${at.remaining} to go`);
           await this.travelHold(at, arm).catch(e => this.note('travel hold failed', { why: e.message }));
           if (opts?.onHop) await opts.onHop(at);
         },
       });
+      return outcome;
     } finally {
+      if (detailed) closeMap();
       this.recordFrame('arrived');
       const v1 = this.s.client?.vitals?.()?.health;
       // ONE ROW PER JOURNEY — the denominator. Deaths per journey is the measurement, and
@@ -3693,8 +3749,17 @@ export class Autopilot {
         // alive to write this line. It is joined afterwards, from the postmortem's own
         // `travel_arm`, which is why that field exists.
       });
+      this.detailEvent('travel', 'trip', {
+        to: room, arrived: outcome?.arrived ?? false, reason: outcome?.reason ?? null,
+        duration_ms: Date.now() - startedAt, legs,
+        damage: Math.max(0, this.hitDamageTotal() - journeyDamageStart),
+        safe_spot_stops: this.travelSafeStops ?? 0, safe_spot_ms: this.travelHeldMs ?? 0,
+        health_start: hpStart, health_end: v1?.value ?? null,
+        health_max: hpMax ?? v1?.max ?? null, maps,
+      });
       this.travelArm = null;
       this.travelHeldMs = 0;
+      this.travelSafeStops = 0;
     }
   }
 
@@ -4699,6 +4764,7 @@ export class Autopilot {
     const by = this.spending.by_kind[k] || (this.spending.by_kind[k] = { items: 0, spent: 0 });
     by.items++; by.spent += price;
     this.spending.bought.push({ at: Date.now(), what, cost: price, kind: k, from, why });
+    this.tradeFact({ spent: price, bought: [{ what, cost: price, item_kind: k, from }] });
     if (this.spending.bought.length > 60)
       this.spending.bought.splice(0, this.spending.bought.length - 60);
     // `item_kind`, NOT `kind`. The ledger record has a `kind` of its own — the event
@@ -5432,6 +5498,14 @@ export class Autopilot {
     // A hard stop leaves nothing behind to revive, so clear this rather than letting a
     // later start() see a stale hold and report a revive that did not happen.
     this.inert = null;
+    if (this.detailFight) {
+      const fight = this.detailFight;
+      this.detailFight = null;
+      this.detailEvent('fighting', 'session', {
+        ...fight, ended_at: Date.now(), stopped: why ?? 'keeper stopped',
+        safe_spot_pct: fight.duration_ms ? +(100 * fight.safe_spot_ms / fight.duration_ms).toFixed(1) : null,
+      });
+    }
     // Everything learned about which squares hold, before this keeper goes away.
     this.book.save();
     // The character is about to be left standing exactly where it is, in whatever room
@@ -5446,6 +5520,7 @@ export class Autopilot {
   spend(ms) {
     const k = this.doing || 'stalled';
     this.time[k] = (this.time[k] || 0) + ms / 1000;
+    this.captureDetailedActivity(k, ms);
     // WHAT THE PASS TURNED OUT TO BE, kept after the reset.
     //
     // `doing` is set part-way through a pass and cleared here at the end of it, so
@@ -5456,6 +5531,52 @@ export class Autopilot {
     // to "what was it doing" for a frame taken before the next one decides anything.
     this.lastDoing = k;
     this.doing = null;
+  }
+
+  captureDetailedActivity(kind, ms) {
+    const room = this.s.world?.room;
+    const damageNow = this.hitDamageTotal();
+    const damage = Math.max(0, damageNow - (this.passDamageStart ?? damageNow));
+
+    if (kind === 'fighting' && detailSettings(this.policy, 'fighting')) {
+      const safe = !!(this.hold && this.holdWorks());
+      this.detailFight ??= {
+        started_at: this.passStartedAt ?? Date.now() - ms,
+        duration_ms: 0, safe_spot_ms: 0, damage: 0,
+        target: this.policy.hunt ?? null, maps: [],
+      };
+      const fight = this.detailFight;
+      fight.duration_ms += ms;
+      if (safe) fight.safe_spot_ms += ms;
+      fight.damage += damage;
+      let map = fight.maps.at(-1);
+      if (!map || map.room !== room?.num || map.from_safe_spot !== safe) {
+        map = { room: room?.num ?? null, name: room?.name ?? null,
+          duration_ms: 0, damage: 0, from_safe_spot: safe };
+        fight.maps.push(map);
+      }
+      map.duration_ms += ms;
+      map.damage += damage;
+    } else if (this.detailFight) {
+      const fight = this.detailFight;
+      this.detailFight = null;
+      this.detailEvent('fighting', 'session', {
+        ...fight, ended_at: Date.now(),
+        safe_spot_pct: fight.duration_ms ? +(100 * fight.safe_spot_ms / fight.duration_ms).toFixed(1) : null,
+      });
+    }
+
+    if (kind === 'trading' && detailSettings(this.policy, 'trading')) {
+      const trade = this.passTrade ?? {};
+      this.detailEvent('trading', 'session', {
+        started_at: this.passStartedAt ?? Date.now() - ms,
+        ended_at: Date.now(), duration_ms: ms,
+        room: room?.num ?? null, room_name: room?.name ?? null,
+        damage, purse_before: this.passPurseStart ?? null, purse_after: this.purseNow(),
+        earned: trade.earned ?? 0, spent: trade.spent ?? 0, banked: trade.banked ?? 0,
+        sold: trade.sold ?? [], bought: trade.bought ?? [], deposited: trade.deposited ?? [],
+      });
+    }
   }
 
   get activeSeconds() {
@@ -5592,6 +5713,9 @@ export class Autopilot {
         // on its own timer and this is the only way it can tell "the keeper is between
         // passes" from "the keeper has been inside one await for ninety seconds".
         this.passStartedAt = began;
+        this.passDamageStart = this.hitDamageTotal();
+        this.passPurseStart = this.purseNow();
+        this.passTrade = { earned: 0, spent: 0, banked: 0, sold: [], bought: [], deposited: [] };
         try {
           await this.pass();
           this.spend(Date.now() - began);
@@ -8385,6 +8509,80 @@ export class Autopilot {
   // No return leg is needed. A bank is a town room and generates no prey, so the
   // relocation in farm() sends the character back to its assignedRoom on the next pass
   // — the same mechanism that used to scatter the fleet, working for us.
+  // SHOULD THIS CHARACTER BREAK OFF AND GO AND SELL? ONE FUNCTION, ONE ANSWER, AND A
+  // POLICY CAN REPLACE EITHER THE NUMBERS OR THE WHOLE JUDGEMENT.
+  //
+  // This used to be four expressions inlined in bankRun(), which meant the only way to
+  // change "when do we sell" was to edit the keeper — and the numbers were wrong for this
+  // fleet in a way nobody could override: `purse + bank < 500` with four spare stacks sent
+  // twenty characters to the same NPC at once, each carrying about ninety shillings of
+  // mushroom, during a window they should have been farming.
+  //
+  // The seam matters more than the defaults. Whoever owns `economy` — DUM, an LLM bot, or
+  // an operator setting policy by hand — supplies its own thresholds, and can supply a
+  // whole different rule by handing in `policy.shouldSell`, a function of the same shape.
+  // The keeper keeps only the part that is a fact about the character rather than a
+  // judgement about the fleet: a pack too heavy to pick up what it kills has stopped
+  // earning, and that is true whatever anyone is saving for.
+  //
+  // Call it between tasks — after a kill, before setting off, at the top of a town errand.
+  // It reads state and decides; it walks nobody.
+  checkIfShouldSell({ windowOpen = false } = {}) {
+    const c = this.s.client;
+    if (!c) return { sell: false, trigger: null, why: 'no client' };
+
+    // An outside owner may replace the entire judgement.
+    if (typeof this.policy.shouldSell === 'function') {
+      const r = this.policy.shouldSell({ autopilot: this, client: c, windowOpen });
+      if (r && typeof r === 'object') return { trigger: 'policy', ...r };
+    }
+
+    const inv = c.inventory || [];
+    const stacks = inv.length;
+    const carried = inv.filter(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))
+                       .reduce((t, o) => t + (o.amount || 1), 0);
+    const banked = this.s.bankKnown?.()?.balance ?? 0;
+
+    // FULL IS A WEIGHT, NOT A COUNT. Measured in one pass: eleven stacks at 4% of capacity
+    // against six stacks at 87%. `weight_max = 1700 + might*20` (player.kod:10456); weight
+    // and bulk share the formula and either can bind, so the fuller of the two decides.
+    const cap = skills.carryCapacity(c);
+    const frac = (v, max) => (max > 0 && Number.isFinite(v) ? v / max : 0);
+    const fullness = cap?.known && cap.load
+      ? Math.max(frac(cap.load.weight, cap.weight_max), frac(cap.load.bulk, cap.bulk_max)) : 0;
+
+    // An inexact load is a LOWER bound — carryCapacity withholds room_for rather than
+    // guess. "Make room" is the safe reading; "there is room" is how items get deleted.
+    if (cap?.known && cap.load?.exact === false)
+      return { sell: true, trigger: 'unweighable',
+               why: 'the pack holds something not in the weight table, so its load is a ' +
+                    'lower bound — treat that as make room, never as there is room' };
+
+    const at = this.policy.sellAtLoad ?? 0.85;
+    if (fullness >= at)
+      return { sell: true, trigger: 'load', fullness,
+               why: `pack is ${Math.round(fullness * 100)}% of capacity` };
+    if (stacks >= (this.policy.maxCarry ?? 14))
+      return { sell: true, trigger: 'stacks', stacks, why: `${stacks} stacks, at the pack ceiling` };
+
+    // POVERTY IS A JUDGEMENT AND IS OFF UNLESS ASKED FOR. It also never outranks an open
+    // window: a round trip to a market is most of a 35-minute shift, and the shift is the
+    // thing the money was going to buy readiness for.
+    if (this.policy.sellWhenBroke === true && !windowOpen) {
+      const money = carried + banked;
+      const spare = inv.filter(o => !/shilling/i.test(c.rsc.get(o.nameRsc) || '')).length;
+      const under = this.policy.sellWhenBrokeUnder ?? 500;
+      const need = this.policy.sellWhenBrokeStacks ?? 8;
+      if (money < under && spare >= need)
+        return { sell: true, trigger: 'broke', money, spare,
+                 why: `${money} to its name and ${spare} stacks aboard, and nothing is spawning` };
+    }
+    return { sell: false, trigger: null, fullness,
+             why: windowOpen && fullness < at
+               ? `${Math.round(fullness * 100)}% loaded and the window is open — the shift is worth more`
+               : `${Math.round(fullness * 100)}% loaded, nothing to do` };
+  }
+
   async bankRun() {
     const above = this.policy.bankAbove;
     if (!above) return false;                       // 0 or null turns the trips off
@@ -8410,9 +8608,30 @@ export class Autopilot {
     //
     // So a pack at or over its cap opens the same trip. The walk pays for itself the
     // moment the goods are sold, which is the whole point of going.
+    // FULL IS A WEIGHT, NOT A COUNT OF STACKS, AND THE TWO DISAGREE COMPLETELY.
+    //
+    // Measured across the fleet in one pass: Kermit held ELEVEN stacks at 99 of 2400 —
+    // four per cent loaded — while Statler held SIX at 2084 of 2400, nearly full. Counting
+    // stacks sent the empty character to market and left the loaded one in the field, which
+    // is exactly backwards, and it is why the fleet was seen queueing at Roq with almost
+    // nothing to sell.
+    //
+    // The server gives the real numbers: `weight_max = 1700 + might * 20` (player.kod:10456)
+    // and an exact `load`, both weight and bulk. Either can bind, so the fuller of the two
+    // decides. The stack cap is kept as a ceiling — the pack does hold about fourteen — but
+    // it is now the second test rather than the only one.
     const stacks = (c.inventory || []).length;
     const cap = this.policy.maxCarry ?? 14;
-    const packFull = stacks >= cap;
+    // `carryCapacity` is the one place that knows the formula, and it REFUSES to guess:
+    // when an item is not in the weight table the load it returns is a lower bound and
+    // `room_for` comes back null. Reading it as "there is room" is the failure direction,
+    // so an inexact load is treated as a reason to go and sell rather than a reason to
+    // carry on — the same rule that file states for making room.
+    // ONE DEFINITION, ASKED HERE. `checkIfShouldSell` above owns both the thresholds and
+    // the override seam; duplicating the arithmetic at the call site is how a quantity in
+    // this repository ends up with two answers.
+    const sellCall = this.checkIfShouldSell();
+    const packFull = sellCall.sell && sellCall.trigger !== 'broke';
 
     // AND AN EMPTY LARDER IS THE THIRD REASON, FOR EXACTLY THE REASON THE PACK WAS THE
     // SECOND: the food is in town and the only doors to town were money and a full pack.
@@ -8504,7 +8723,21 @@ export class Autopilot {
     // the trip is still the right call for a character that cannot replace its armour.
     const spare = (c.inventory || [])
       .filter(o => !/shilling/i.test(c.rsc.get(o.nameRsc) || '')).length;
-    const brokeWithGoods = tooPoorToReplaceGear && spare >= 4 && !soldRecently && !starving;
+    // OFF BY DEFAULT NOW, AND THE POLICY LIVES IN DUM.
+    //
+    // `spare >= 4` is four stacks — four kinds of mushroom clears it — and `< 500` catches
+    // most of the fleet the moment a moot or a hand-out moves money around. Both were true
+    // for nearly everyone at once, so twenty characters set off for the same NPC carrying
+    // almost nothing. The trip is not wrong in principle; the threshold made it fire when
+    // there was nothing worth selling, and it competed with the thing the fleet was
+    // actually for, which is being ready for the next window.
+    //
+    // Selling when the pack is genuinely HEAVY is now the default, above. Selling because
+    // a character is poor is a judgement about what the fleet is saving for, which is
+    // exactly the kind of decision that belongs in a doctrine rather than in the keeper —
+    // see `market` in meridian59-dum-bot. `sell_when_broke: true` restores the old
+    // behaviour for anyone who wants it.
+    const brokeWithGoods = sellCall.trigger === 'broke' && !soldRecently && !starving;
     if (brokeWithGoods && !this.notedBroke) {
       this.notedBroke = true;
       this.note('out of money with a pack worth selling — going to market', {
@@ -8620,10 +8853,63 @@ export class Autopilot {
     return true;
   }
 
+  detailEvent(category, event, detail = {}) {
+    const settings = detailSettings(this.policy, category);
+    const who = this.s.client?.me?.name;
+    if (!settings || !who) return null;
+    try { return recordStrategyStat(who, category, event,
+      { agent: this.name ?? this.s.name ?? undefined, ...detail }, settings); }
+    catch { return null; }
+  }
+
+  hitDamageTotal() {
+    try { return (this.s.hitBook?.()?.segments ?? []).reduce((n, row) => n + (Number(row.lost) || 0), 0); }
+    catch { return 0; }
+  }
+
+  purseNow() {
+    const c = this.s.client;
+    return (c?.inventory ?? []).filter(item => /shilling/i.test(c.rsc.get(item.nameRsc) || ''))
+      .reduce((n, item) => n + (Number(item.amount) || 1), 0);
+  }
+
+  tradeFact(fact = {}) {
+    this.passTrade ??= { earned: 0, spent: 0, banked: 0, sold: [], bought: [], deposited: [] };
+    for (const key of ['earned', 'spent', 'banked'])
+      this.passTrade[key] += Number(fact[key]) || 0;
+    for (const key of ['sold', 'bought', 'deposited'])
+      if (fact[key]) this.passTrade[key].push(...[].concat(fact[key]));
+  }
+
   // A DETOUR, NOT A NEW ERRAND. The accumulation strategy does not pull a working
   // character out of the field merely because it found one mushroom. It waits until
   // the keeper is already within four room hops of the mainland vault, which covers the
   // ordinary Barloque food/reagent loop, then stores every protected stack at once.
+  async refreshVaultCache(vaultman) {
+    const settings = detailSettings(this.policy, 'vault_accumulation');
+    if (!settings) return null;
+    const c = this.s.need();
+    const since = c.evSeq;
+    await this.s.pacer.submit('buy', () => c.buy(vaultman.id ?? vaultman));
+    const response = await c.waitFor({ since, kinds: ['shop', 'message'], timeoutMs: 4000 })
+      .catch(() => ({ events: [] }));
+    const shop = response.events?.find(event => event.kind === 'shop');
+    if (!shop) {
+      this.detailEvent('vault_accumulation', 'snapshot-failed', {
+        why: 'the vaultman did not open a buy list after the deposit',
+        messages: response.events?.filter(event => event.text).map(event => event.text).slice(0, 4),
+      });
+      return null;
+    }
+    const snapshot = { at: Date.now(), vaultman: shop.seller ?? null,
+      items: (shop.items ?? []).map(item => ({ name: item.name, amount: item.amount ?? 1,
+        cost: item.cost ?? null })) };
+    const who = c.me?.name;
+    saveVaultSnapshot(who, snapshot);
+    this.detailEvent('vault_accumulation', 'snapshot', snapshot);
+    return snapshot;
+  }
+
   async vaultRunIfPassing() {
     const wanted = Array.isArray(this.policy.vaultItems)
       ? this.policy.vaultItems.map(String).filter(Boolean) : [];
@@ -8657,6 +8943,11 @@ export class Autopilot {
     this.doing = 'trading';
     const result = await skills.depositInVault(this.s, { vaultman: vaultman.id, items: wanted })
       .catch(e => ({ deposited: [], error: e.message }));
+    if (result.deposited?.length) this.tradeFact({ deposited: result.deposited });
+    this.detailEvent('vault_accumulation', 'deposit', {
+      deposited: result.deposited ?? [], refused: result.refused ?? [],
+      messages: result.said ?? [], error: result.error ?? null,
+    });
     if (result.deposited?.length) {
       this.tally.vaulted = (this.tally.vaulted || 0) +
         result.deposited.reduce((n, item) => n + item.amount, 0);
@@ -8666,6 +8957,9 @@ export class Autopilot {
       this.progress('vaulted collection items');
     } else this.note('the vault accepted none of the protected items', {
       protected: wanted, refused: result.refused, said: result.said, why: result.error });
+    await this.refreshVaultCache(vaultman).catch(error => this.note('could not refresh the vault cache', {
+      why: error.message, after: result.deposited ?? [],
+    }));
     return true;
   }
 
@@ -8903,6 +9197,7 @@ export class Autopilot {
     if (r.error) return this.note('could not sell in town', { why: r.error });
     if (r.sold?.length) {
       this.tally.sold = (this.tally.sold || 0) + r.sold.length;
+      this.tradeFact({ earned: r.total_received, sold: r.sold });
       this.note('sold in town', { to: c.rsc.get(buyer.nameRsc), items: r.sold.length,
         earned: r.total_received, kept_for_the_fleet: r.kept_for_the_fleet?.map(k => k.name) });
     }
@@ -8992,7 +9287,11 @@ export class Autopilot {
     this.note(r.error ? 'could not bank' : 'banked the surplus', {
       deposited: r.error ? undefined : put, kept: keep, float: FLOAT, for_food: foodMoney, why: r.error, said: r.said,
       because: 'money in hand is lost on death; money in the bank is not' });
-    if (!r.error) { this.tally.banked = (this.tally.banked || 0) + put; this.progress('banked money'); }
+    if (!r.error) {
+      this.tally.banked = (this.tally.banked || 0) + put;
+      this.tradeFact({ banked: put });
+      this.progress('banked money');
+    }
   }
 
   // LOG OFF RATHER THAN DIE.
@@ -9476,6 +9775,7 @@ export class Autopilot {
       // from a vendor is not simply losing the spread to them.
       const bought = await this.restockReagents(buyer).catch(() => null);
       if (!sold.error && sold.sold?.length) {
+        this.tradeFact({ earned: sold.total_received, sold: sold.sold });
         return { ok: true, did: 'sold to ' + c.rsc.get(buyer.nameRsc),
                  detail: { earned: sold.total_received, sold: sold.sold.length,
                            kept_for_the_fleet: sold.kept_for_the_fleet?.length || undefined,

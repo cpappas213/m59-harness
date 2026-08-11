@@ -841,6 +841,39 @@ console.log('\n--- provisioning does not propose what it cannot reach ---');
      same.jobs.map(j => j.service).join(', '));
 }
 
+// -------------------------------------------------- who judged the square
+//
+// A failure is permanent whichever activity found it out — a square that let a blow
+// through is a bad square whether the character was fighting from it or resting at it
+// part-way through a journey, and the conservative direction is the cheap one. But the two
+// are not the same evidence: a travel hold is taken in a room nobody chose, with whatever
+// followed you through the door, on a wall derived from geometry nobody has stood on. So
+// the judge is written down and the travel-only rejections stay fishable.
+console.log('\nprovenance of a verdict');
+{
+  const b = new SafeSpotBook(BOOK);
+  b.held(544, { col: 5, row: 5, seconds: 12, attackers: 2, source: 'fight' });
+  b.held(544, { col: 5, row: 5, seconds: 12, attackers: 2, source: 'fight' });
+  b.failed(544, { col: 5, row: 5, damage: 3, attackers: 1, source: 'travel' });
+  const rec = b.list(544).find(r => r.col === 5);
+
+  ok('A TRAVEL FAILURE STILL DISCREDITS THE SQUARE — permanently, and on purpose',
+     b.discredited(rec) && rec.verdict === 'does not work');
+  ok('the most recent judge is named', rec.failed_via === 'travel' && rec.held_via === 'fight');
+  ok('and every judge is counted, so one travel failure against two fight holds is legible',
+     rec.failed_by.travel === 1 && rec.held_by.fight === 2);
+  ok('THE TRAVEL-ONLY REJECTIONS CAN BE FISHED OUT, which is the whole reason for the tag',
+     [rec].filter(r => b.discredited(r) && r.failed_by && !r.failed_by.fight).length === 1);
+
+  b.failed(544, { col: 9, row: 9, damage: 1, attackers: 1 });
+  const untagged = b.list(544).find(r => r.col === 9);
+  ok('an untagged failure — every record written before this existed — still reads exactly ' +
+     'as it did, rather than defaulting into anybody\'s pile',
+     untagged.failed === 1 && untagged.failed_via === undefined && untagged.failed_by === undefined);
+  ok('and it is still discredited, because that never depended on knowing who judged it',
+     b.discredited(untagged));
+}
+
 try { unlinkSync(BOOK); } catch { /* never written */ }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -53,7 +53,9 @@ node_modules/
 # road is normal in this game and is not a fault — and two minutes inside one room is a
 # slow crossing rather than a dangerous map. One server's characters and their journeys.
 /substrate/transits/
+/substrate/strategy-stats/
 /substrate/*.log
+/substrate/*.err
 # Which process m59-service.mjs last started, per fleet. Runtime state, and wrong the
 # moment it is read on any other machine.
 /substrate/*.pid

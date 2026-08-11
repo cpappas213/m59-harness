@@ -101,11 +101,26 @@ export function rtsJobReport(job, now = Date.now()) {
   }
   const cancelled = job.cancelled === true || job.cancelRequestedAt != null ||
     job.result?.cancelled === true || job.result?.recovery?.cancelled === true;
+  const commerceResult = typeof job.kind === 'string' && job.kind.startsWith('commerce:') && job.result
+    ? {
+        commerce_result: {
+          kind: job.result.kind ?? job.kind.slice('commerce:'.length),
+          quote_id: job.result.quote_id ?? null,
+          committed: job.result.committed === true,
+          verification_failed: job.result.verification_failed === true,
+          state: job.result.state ?? null,
+          evidence: job.result.evidence ?? null,
+        },
+      }
+    : {};
   return {
     last_action: job.label,
     took_s: elapsed,
     ...(cancelled ? { cancelled: true }
       : job.error ? { failed: job.error }
+      : job.result?.verification_failed === true || job.result?.committed === false
+        ? { failed: 'server outcome could not be verified; no success was claimed' }
       : { ok: true }),
+    ...commerceResult,
   };
 }

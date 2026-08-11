@@ -449,6 +449,45 @@ export const ARMOUR = [
 
 export const ARMOUR_SLOTS = ['armour', 'shield', 'helm'];
 
+// AN EMPTY SLOT IS NOT A NEUTRAL BASELINE, AND `score` ASKS THE WRONG QUESTION ABOUT ONE.
+//
+// armourScore is `defence + absorb * ABSORB_IS_WORTH` — a comparison against bare skin
+// that prices one point of absorption at ten of defence. That is a fair ranking BETWEEN
+// two pieces and the wrong test for whether to wear anything at all, because the two
+// numbers do not degrade alike. Defence only sets the chance to be hit, and that chance
+// is `offense * 55 / defence` BOUNDED TO [10,95] (battler.kod:331). Against anything
+// hitting hard enough to pin us at 95%, more defence buys literally nothing, while
+// absorption keeps working on every blow that lands.
+//
+// Worked against this fleet rather than argued: agility 45, base max health 50, block 90,
+// no dodge or parry, so `iDefense = block + agility*4 + maxhp*3/2` = 345 (player.kod:4320).
+// Against a fungus beast — offense 210, damage ~4 — the expected damage per enemy swing:
+//
+//     bare     33.5% x 4.0 = 1.34          chain    39.2% x 3.0 = 1.18
+//     leather  29.2% x 4.0 = 1.17          scale    47.1% x 1.5 = 0.71
+//
+// Every one of them beats bare. And that is with absorption valued HONESTLY: it is
+// `random(reduce/3, reduce)` bounded to `damage-1` (defmod.kod:108), so it is worth less
+// than its face value and can never take a hit to zero. Bare skin has no defence bonus
+// and no absorption; there is nothing in the table it is better than.
+//
+// So the floor is: WITH THE SLOT EMPTY, wear the best thing in the pack as long as it
+// absorbs something. The ranking is untouched — leather still beats chain, and a
+// positively-scoring piece still wins outright. This only decides what happens when the
+// alternative is skin.
+//
+// DELIBERATELY NOT A RE-WEIGHTING OF ABSORB_IS_WORTH. Raising it past 25 flips
+// leather-versus-scale for the whole fleet as a side effect, and the numbers above make
+// that a genuinely open question rather than a settled one — it turns on block ability,
+// on whether a shield is held, and on the spell modifier (-20 on scale) that this fleet's
+// create food and create weapon run on. That one wants a measurement, not a constant.
+//
+// The condition is `absorb > 0` rather than a name list because it is the property that
+// makes the trade real. Nothing currently in ARMOUR has negative defence and no
+// absorption — the shape that WOULD be worse than bare — and this keeps the floor honest
+// if something like it is ever added.
+export const absorbsSomething = (kind) => (kind?.absorb ?? 0) > 0;
+
 // What a name is, or null. Longest-pattern-first matters: "simple helm" must not be
 // read as the plain "helm", which is a different and better item.
 export function armourKind(name) {
@@ -530,9 +569,12 @@ export async function wearBest(s, { slots = ARMOUR_SLOTS, refresh = true,
     const best = have[slot]?.[0];
     const onNow = wornInSlot(slot);
 
-    // Wearing something that is worse than nothing: take it off, whether or not the
-    // pack holds a replacement.
-    if (onNow && onNow.score < 0 && !(best && best.score > onNow.score && best.score > 0)) {
+    // Wearing something that is worse than nothing: take it off. But STRIPPING DOWN TO
+    // BARE IS NOT AN IMPROVEMENT — see absorbsSomething. A negative piece comes off only
+    // when something better is going on in its place, or when it is the one shape that
+    // really is worse than skin: negative defence buying no absorption at all.
+    const swapAvailable = !!(best && best.score > onNow?.score && best.score > 0);
+    if (onNow && onNow.score < 0 && !swapAvailable && !absorbsSomething(onNow.kind)) {
       await s.pacer.submit('use', () => {
         if (typeof beforeMutation === 'function')
           beforeMutation('unuse', { item_id: onNow.o.id, expected_name: onNow.name,
@@ -550,9 +592,18 @@ export async function wearBest(s, { slots = ARMOUR_SLOTS, refresh = true,
     }
 
     if (!best) { skipped.push({ slot, why: 'nothing of this kind in the pack' }); continue; }
-    if (best.score <= 0) {
+    // THE FLOOR. A piece that loses to bare skin on score is still worn when the slot is
+    // EMPTY and it absorbs something, because the thing it is being compared against
+    // absorbs nothing and dodges nothing. Fourteen of twenty-one characters were walking
+    // around with no body armour at all while carrying chain or scale they had been told
+    // to leave off.
+    const floored = best.score <= 0 && !onNow && absorbsSomething(best.kind);
+    if (best.score <= 0 && !floored) {
       skipped.push({ slot, name: best.name, score: best.score,
-                     why: 'the best in the pack is no better than bare skin, so it stays off' });
+                     why: onNow
+                       ? 'the best in the pack is no better than what is already on'
+                       : 'the best in the pack is no better than bare skin, and absorbs ' +
+                         'nothing to trade for it, so it stays off' });
       continue;
     }
     // Already wearing it: the use list is the authority, and re-using is refused
@@ -592,7 +643,13 @@ export async function wearBest(s, { slots = ARMOUR_SLOTS, refresh = true,
       continue;
     }
     worn.push({ slot, name: best.name, defense: best.kind.defense, absorb: best.kind.absorb,
-                verified: !!now });
+                verified: !!now,
+                // Said out loud, because "wearing scale" and "wearing scale ON PURPOSE,
+                // having nothing better" are different states and one of them is a
+                // shopping list. A silent floor reads as an endorsement.
+                ...(floored ? { floor: true, score: best.score,
+                                why: `scores ${best.score} against bare skin but absorbs ` +
+                                     `${best.kind.absorb} and the slot was empty` } : {}) });
   }
 
   const total = worn.reduce((t, w) => t + (w.defense ?? 0), 0);

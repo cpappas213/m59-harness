@@ -19,6 +19,174 @@
 // thing in it, not of the thing you meant to hunt.
 import { readFileSync, writeFileSync } from 'node:fs';
 
+// A CREATURE'S DECLARED LEVEL IS NOT ALWAYS THE LEVEL YOU FIGHT.
+//
+// Everything downstream reads viLevel and viDifficulty off the class and treats them as
+// facts about the thing that will hit you. For faction troops they are not. Every troop
+// runs `FactionTroop.Constructor` (troop.kod:215), which calls `SetEquipment`, and that
+// method OVERWRITES both from two random rolls made at the moment of creation:
+//
+//     viDifficulty = piBaseDifficulty + iBonusModifier    % from the WEAPON roll
+//     viLevel      = piBaseLevel      + iBonusModifier    % from the ARMOUR roll
+//
+// and then a gauntlet roll adds +20 level and +1 difficulty on top of that. No subclass
+// overrides either method, so it applies to all four.
+//
+// So "soldier of the Duke's army" — declared level 50, difficulty 2, rating 270 — is
+// really anywhere from 70/3 (rating 390) to 145/7 (rating 855), averaging about
+// 101/4.5 for a rating of 572.
+//
+// THAT DIFFERENCE IS THE WHOLE ARGUMENT FOR GOING THERE. 270 puts a soldier just above a
+// fungus beast's 210 and reads as a soft target you could farm for its armour; 572 puts
+// it between a zombie (405) and a groundworm (600), harder than the graveyard night
+// shift rather than easier. CLAUDE.md carried the 270 reading and concluded they were
+// "barely more dangerous than the current prey" — and the death record disagrees, with
+// faction soldiers present at 241 of the 403 attended deaths on disk.
+//
+// THE LEVEL BONUS COMES FROM THE ARMOUR, which is the thing you would be farming one for.
+// The 30% wearing scale are +75 levels; the soldier carrying the best prize is the one
+// you least want to meet.
+//
+// Recorded as a RANGE, with the top-level level/difficulty/attack_rating carrying the
+// WORST case — every consumer of those three is either a safety gate (refuseEngagement,
+// capBlockers) or a room-danger ranking, and for those, guessing low is the expensive
+// direction. Anything asking the opposite question — "is this worth killing at all",
+// which wants the floor — should read `rolled.level.min` instead of the top-level number.
+const TROOP_ROLLS = {
+  cite: 'kod/object/active/holder/nomoveon/battler/monster/troop.kod:531',
+  // random(1,100) over a weapon, whose iBonusModifier becomes the DIFFICULTY bonus.
+  difficulty: [
+    { p: 35, d: 3, what: 'Longsword' },
+    { p: 20, d: 2, what: 'Axe' },
+    { p: 10, d: 2, what: 'Hammer' },
+    { p: 10, d: 1, what: 'Mace' },
+    { p: 15, d: 1, what: 'ShortSword' },
+    { p: 10, d: 4, what: 'Scimitar' },
+  ],
+  // A SECOND random(1,100), over armour, and this one sets the LEVEL.
+  level: [
+    { p: 35, d: 20, what: 'LeatherArmor' },
+    { p: 35, d: 50, what: 'ChainArmor' },
+    { p: 30, d: 75, what: 'ScaleArmor' },
+  ],
+  // `if iRandomNumber < 20` against random(1,100) is 1..19 — NINETEEN percent, not the
+  // twenty it reads as. Kept exact because it is the only roll that moves both numbers.
+  both: [
+    { p: 19, level: 20, difficulty: 1, what: 'Gauntlet' },
+    { p: 81, level: 0,  difficulty: 0, what: 'bare arms' },
+  ],
+};
+
+// WHAT A SOLDIER ACTUALLY LEAVES BEHIND, WHICH THE TREASURE TABLE DOES NOT KNOW.
+//
+// Every troop resolves to `TID_NONE` — `notres.kod`, the treasure type that drops
+// nothing — so `loot` on these rows is empty and truthful and completely misleading.
+// Their gear is not treasure: it is the contents of `plUsing`, dropped by `DropEquipment`
+// (troop.kod:1040) on a SEPARATE roll the treasure extractor never sees.
+//
+// Three things about that roll decide whether farming one is worth the walk:
+//
+//   * `EQUIPMENT_DROP_PERCENT = 20`, rolled PER ITEM (troop.kod:33). One kill in five
+//     yields any given piece it was carrying.
+//   * What does not drop is `Delete`d, not left on the corpse. There is no second chance.
+//   * **THE SHIELD NEVER DROPS.** `AND (NOT IsClass(oUsedItem,vcShieldClass))`, commented
+//     "Don't drop the shield! It's a quest/special item!". Every soldier carries one and
+//     none of them can ever be collected, which is the opposite of what CLAUDE.md said.
+//
+// So the number that matters is carried% x 20%: leather is 35% x 20% = SEVEN PERCENT, or
+// about fourteen soldiers per leather armour — each of which rates a mean 572.
+const TROOP_DROPS = {
+  cite: 'kod/object/active/holder/nomoveon/battler/monster/troop.kod:1040',
+  per_item_percent: 20,
+  carried: [
+    { item: 'Longsword',    slot: 'weapon',  carried_percent: 35 },
+    { item: 'Axe',          slot: 'weapon',  carried_percent: 20 },
+    { item: 'ShortSword',   slot: 'weapon',  carried_percent: 15 },
+    { item: 'Hammer',       slot: 'weapon',  carried_percent: 10 },
+    { item: 'Mace',         slot: 'weapon',  carried_percent: 10 },
+    { item: 'Scimitar',     slot: 'weapon',  carried_percent: 10 },
+    { item: 'LeatherArmor', slot: 'armour',  carried_percent: 35 },
+    { item: 'ChainArmor',   slot: 'armour',  carried_percent: 35 },
+    { item: 'ScaleArmor',   slot: 'armour',  carried_percent: 30 },
+    { item: 'Gauntlet',     slot: 'gauntlet', carried_percent: 19 },
+    // Listed rather than omitted, with the reason. A shield absent from the table looks
+    // like an oversight; a shield present at 0% is a finding.
+    { item: 'Shield',       slot: 'shield',  carried_percent: 100, never_drops: true },
+  ],
+};
+
+/** The per-kill drop chance of each thing a troop carries. */
+export function troopDrops() {
+  return {
+    how: 'equipment',
+    cite: TROOP_DROPS.cite,
+    per_item_percent: TROOP_DROPS.per_item_percent,
+    note: 'carried gear dropped on a separate per-item roll, NOT from a treasure table ' +
+          '(these classes are TID_NONE). What does not drop is deleted. Shields never drop.',
+    items: TROOP_DROPS.carried.map(c => ({
+      ...c,
+      per_kill_percent: c.never_drops
+        ? 0 : round1(c.carried_percent * TROOP_DROPS.per_item_percent / 100),
+    })),
+  };
+}
+
+const round1 = (n) => Math.round(n * 10) / 10;
+
+/** Declared base in, {level, difficulty, attack_rating} each as {min, mean, max}. */
+export function rolledTroopStats(base) {
+  const span = (rows, key) => ({
+    min:  Math.min(...rows.map(r => r[key])),
+    max:  Math.max(...rows.map(r => r[key])),
+    // The rolls are independent, and level and difficulty each enter GetAttackAbility
+    // linearly, so summing the per-roll means gives the mean of the total exactly.
+    mean: rows.reduce((a, r) => a + r.p * r[key], 0) / 100,
+  });
+  const wep = span(TROOP_ROLLS.difficulty, 'd');
+  const arm = span(TROOP_ROLLS.level, 'd');
+  const gL  = span(TROOP_ROLLS.both, 'level');
+  const gD  = span(TROOP_ROLLS.both, 'difficulty');
+
+  const level = { min:  base.level + arm.min + gL.min,
+                  mean: round1(base.level + arm.mean + gL.mean),
+                  max:  base.level + arm.max + gL.max };
+  const difficulty = { min:  base.difficulty + wep.min + gD.min,
+                       mean: round1(base.difficulty + wep.mean + gD.mean),
+                       max:  base.difficulty + wep.max + gD.max };
+  const rate = (l, d) => 3 * l + 60 * d;
+  return {
+    level, difficulty,
+    attack_rating: { min:  rate(level.min, difficulty.min),
+                     mean: round1(rate(level.mean, difficulty.mean)),
+                     max:  rate(level.max, difficulty.max) },
+    // Kept so a reader can see how far off the declared reading was, rather than having
+    // to take it on trust that overwriting the class properties was the right call.
+    declared: { level: base.level, difficulty: base.difficulty,
+                attack_rating: rate(base.level, base.difficulty) },
+    why: 'FactionTroop.Constructor calls SetEquipment, which sets viLevel from the armour ' +
+         'roll and viDifficulty from the weapon roll; gauntlets add +20/+1 again',
+    cite: TROOP_ROLLS.cite,
+  };
+}
+
+// CLASS NAMES ARE CASE-INSENSITIVE IN KOD, AND A Map LOOKUP IS NOT.
+//
+// `crnthtwn.kod` declares CorNothTown; `cngrocer.kod` says `is CornothTown`. The compiler
+// sees one class. A case-sensitive walk stops at the first hop — silently, and in the
+// direction that looks like a legitimate "no, it does not descend from that" — which is
+// exactly how m59-merchants.mjs reported a stationary merchant as a wanderer for months.
+function descendsFrom(cls, ancestor, parentOf) {
+  const want = String(ancestor).toLowerCase();
+  let cur = String(cls || '').toLowerCase();
+  // Bounded rather than tracking a visited set: the kod tree is a tree, and a cycle here
+  // would mean the class graph itself is broken. Depth 24 clears the deepest real chain.
+  for (let i = 0; i < 24 && cur; i++) {
+    if (cur === want) return true;
+    cur = String(parentOf.get(cur) || '').toLowerCase();
+  }
+  return false;
+}
+
 // Room keys in spawns.json are kod class names — "OutdoorsF7" — and the map records
 // the same string as `cls`, so this join is exact. (The creature PAGES cite the .roo
 // basename instead; different key, same rooms.)
@@ -72,6 +240,10 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
     const disp = m._res?.[m.vrName]?.[0] || m.class;
     info.set(m.class.toLowerCase(), {
       name: disp,
+      // The map is keyed lowercase so the case-insensitive class chain can be walked,
+      // but the FILE'S OWN SPELLING is what gets published — a `cls` of "duketroop"
+      // matches nothing a reader can grep for in the kod tree.
+      cls: m.class,
       level: m.viLevel != null ? Number(m.viLevel) : null,
       karma: m.viKarma != null ? Number(m.viKarma) : null,
       // DIFFICULTY, WHICH IS WHAT ACTUALLY DECIDES HOW HARD A THING HITS YOU.
@@ -85,6 +257,24 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
       // level will not offer it while happily offering the things that kill us.
       difficulty: m.viDifficulty != null ? Number(m.viDifficulty) : null,
     });
+  }
+
+  // WHAT THE CLASS DECLARES IS NOT WHAT THE CONSTRUCTOR LEAVES BEHIND — see TROOP_ROLLS.
+  // Applied here, once, so that `creatures`, `rooms` and `danger` cannot disagree about
+  // how hard a soldier hits: a quantity with two homes in this repository has always
+  // ended up with two answers.
+  const parentOf = new Map();
+  for (const m of mons) if (m.class) parentOf.set(m.class.toLowerCase(), m.parent || '');
+  for (const [cls, meta] of info) {
+    if (!descendsFrom(cls, 'FactionTroop', parentOf)) continue;
+    // A troop that declares neither number has nothing to re-roll FROM. Leaving it null
+    // keeps it in the "unrecognised, therefore refused" bucket, which is the safe one.
+    if (meta.level == null || meta.difficulty == null) continue;
+    meta.rolled = rolledTroopStats({ level: meta.level, difficulty: meta.difficulty });
+    meta.level = meta.rolled.level.max;
+    meta.difficulty = meta.rolled.difficulty.max;
+    // Their gear is not treasure and the treasure table says so by saying nothing.
+    meta.equipment_drops = troopDrops();
   }
 
   const creatures = {};                 // display name (lower) -> { ..., sites }
@@ -111,14 +301,56 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
                                       // a shopkeeper, a guard, a set piece. Quintor the
                                       // blacksmith is a `create`, which is why "does this
                                       // room spawn anything" said YES about a smithy.
-                                      how: e.how, huntable: e.how === 'generator' });
+                                      how: e.how, huntable: e.how === 'generator',
+                                      ...(meta.rolled ? { rolled: meta.rolled } : {}) });
     }
     creatures[meta.name.toLowerCase()] = { name: meta.name, cls, level: meta.level,
                                            difficulty: meta.difficulty,
                                            attack_rating: attackRating(meta),
                                            karma: meta.karma, sites,
+                                           ...(meta.rolled ? { rolled: meta.rolled } : {}),
+                                           ...(meta.equipment_drops
+                                                 ? { equipment_drops: meta.equipment_drops } : {}),
                                            ...(loot.has(cls.toLowerCase())
                                                  ? { loot: loot.get(cls.toLowerCase()) } : {}) };
+  }
+
+  // TROOPS ARE SUMMONED BY FLAGPOLES, NOT GENERATED BY ROOMS, so `byMonster` — which is
+  // built entirely from room spawn tables — has no entry for the Duke's or the Princess'
+  // soldiers at all. Two of the three things a fleet standing outside Tos will meet were
+  // therefore absent from this index, and a name with no row is one `refuseEngagement`
+  // answers with "nothing is known about it".
+  //
+  // That refusal was right, for the wrong reason, and the wrong reason is load-bearing:
+  // it made the two commonest faction soldiers indistinguishable from a typo. They are
+  // now here with their real rolled numbers, so the same gate refuses them for being
+  // rated 855, which is a judgement somebody can argue with, raise a band against, or
+  // decide to accept. `sites` is empty because they genuinely have none — availability
+  // is a property of the territory game, not of the map — and huntingGrounds walks
+  // `sites`, so nothing will route to them by accident.
+  for (const [cls, meta] of info) {
+    if (!meta.rolled) continue;
+    // FactionTroop ITSELF is abstract — it is the class that defines the roll, and the
+    // thing every real soldier inherits it from. Nothing ever creates one, so injecting
+    // it published a level-175 creature called "faction troop" that cannot be met.
+    if (cls === 'factiontroop') continue;
+    const key = meta.name.toLowerCase();
+    if (creatures[key]) continue;
+    creatures[key] = { name: meta.name, cls: meta.cls, level: meta.level, difficulty: meta.difficulty,
+                       attack_rating: attackRating(meta), karma: meta.karma, sites: [],
+                       rolled: meta.rolled,
+                       ...(meta.equipment_drops
+                             ? { equipment_drops: meta.equipment_drops } : {}),
+                       summoned_by: {
+                         how: 'flagpole',
+                         cite: 'kod/object/active/holder/nomoveon/flag.kod:771',
+                         note: 'generated on a timer by a claimed flagpole, and a flagpole ' +
+                               'at FACTION_NEUTRAL generates nothing. Whether any exist is ' +
+                               'decided by which flagpoles players currently hold, so this ' +
+                               'creature can be absent from the world entirely.',
+                       },
+                       ...(loot.has(cls.toLowerCase())
+                             ? { loot: loot.get(cls.toLowerCase()) } : {}) };
   }
 
   // Precompute the danger of each room once: the toughest thing its table can

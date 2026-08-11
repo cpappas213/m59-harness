@@ -55,8 +55,8 @@ const spread = (values) => `<span class="spread" title="${values.join(', ')}">${
   values.map((v, i) => `<i class="${i === 0 ? 'top' : ''}" style="height:${
     Math.max(1, Math.round(22 * Math.min(1, v / ABILITY_MAX)))}px"></i>`).join('')}</span>`;
 
-export function renderSkills({ hours = 168 } = {}) {
-  const f = fleetAbilities({ sinceMs: hours * 3600 * 1000 });
+export function renderSkills({ hours = 168, characters = null } = {}) {
+  const f = fleetAbilities({ sinceMs: hours * 3600 * 1000, characters });
 
   const FACETS = {
     gained: {

@@ -1,9 +1,10 @@
 // THE PARTS EVERY BOARD SHARES, IN ONE PLACE, BECAUSE THE NAV IS THE THING THAT ROTS.
 //
-// There are five pages now — Fleet, Post mortems, Tougher, Economy, Skills — and each
-// one carries a tab bar naming the other four. Written per page that is five copies of
+// There are eight pages now — Fleet, DUM bot, Harness, Post mortems, Tougher, Economy,
+// Skills, Stats — and each one carries a tab bar naming the other seven. Written per page
+// that is eight copies of
 // one list, and the failure is not that they look different: it is that a page added to
-// four of them is INVISIBLE from the fifth, and nothing errors. The fleet board and the
+// seven of them is INVISIBLE from the eighth, and nothing errors. The fleet board and the
 // deaths page had already drifted into two separate copies of the same `<nav>` before
 // this file existed.
 //
@@ -39,10 +40,13 @@ export const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-GB')
 // itself still gets a working nav.
 export const TABS = [
   { key: 'fleet', href: '/', label: 'Fleet' },
+  { key: 'dum', href: '/dum', label: 'DUM bot' },
+  { key: 'harness', href: '/harness', label: 'Harness' },
   { key: 'deaths', href: '/deaths', label: 'Post mortems' },
   { key: 'tougher', href: '/tougher', label: 'Tougher' },
   { key: 'economy', href: '/economy', label: 'Economy' },
   { key: 'skills', href: '/skills', label: 'Skills' },
+  { key: 'stats', href: '/stats', label: 'Stats' },
 ];
 
 export const NAV = (here) => `

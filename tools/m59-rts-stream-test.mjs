@@ -61,9 +61,9 @@ for await (const chunk of socket) {
 }
 
 assert.equal(frames.length, 3);
-assert.match(frames[0].payload, /^M59RTS\t6\t1\t/);
-assert.match(frames[1].payload, /^M59RTS\t6\t2\t/);
-assert.match(frames[2].payload, /^M59RTS\t6\t3\t/);
+assert.match(frames[0].payload, /^M59RTS\t7\t1\t/);
+assert.match(frames[1].payload, /^M59RTS\t7\t2\t/);
+assert.match(frames[2].payload, /^M59RTS\t7\t3\t/);
 assert.equal(hub.timing().effective_ms, 50,
   'the native newest-generation channel unlocks the aggregate 50ms cadence');
 assert.ok(frames[2].at - frames[0].at < 250,

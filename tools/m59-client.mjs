@@ -224,6 +224,11 @@ export class M59Client {
     this.spells = [];
     this.skills = [];
     this.trade = null;               // the open offer, if any
+    // A trade is a tiny state machine whose dangerous edge is ACCEPT.  A monotonic
+    // revision lets an RTS confirmation bind both sides of the table and refuse if a
+    // counteroffer changed between the user's preview and the final packet.
+    this.tradeRevision = 0;
+    this.pendingOfferTo = null;
     this.playersOnline = new Map();                 // object id -> {name, flags}
     this.statsById = new Map();                     // stat number -> value/text
     this.events = [];                               // recent world events, newest last
@@ -896,7 +901,15 @@ export class M59Client {
   // {id, amount} to offer part of a stack — which is how money gets split.
   //
   // Only BP_REQ_OFFER is subject to the packet throttle; the other three are not.
-  offer(toId, items)    { this.send(BP.REQ_OFFER, u32(objId(toId)), encodeIdList([].concat(items))); }
+  offer(toId, items)    {
+    const id = objId(toId);
+    const target = this.room?.objects?.get(id);
+    this.pendingOfferTo = {
+      id,
+      name: target ? (this.rsc.get(target.nameRsc) || '') : '',
+    };
+    this.send(BP.REQ_OFFER, u32(id), encodeIdList([].concat(items)));
+  }
   counterOffer(items = []) { this.send(BP.REQ_COUNTEROFFER, encodeIdList([].concat(items))); }
   acceptOffer()         { this.send(BP.ACCEPT_OFFER); }
   cancelOffer()         { this.send(BP.CANCEL_OFFER); }
@@ -1311,7 +1324,8 @@ export class M59Client {
         this.emit('shop', {
           seller: describeObject(res.seller, this.lookup),
           sellerId: res.seller.id,
-          items: res.items.map(o => ({ id: o.id, name: this.rsc.get(o.nameRsc), cost: o.cost })),
+          items: res.items.map(o => ({ id: o.id, name: this.rsc.get(o.nameRsc), cost: o.cost,
+                                      amount: o.amount || undefined })),
         });
         break;
       }
@@ -1325,6 +1339,8 @@ export class M59Client {
         const res = parseOffer(body);
         if (!this.check('OFFER', res)) break;
         this.trade = {
+          revision: ++this.tradeRevision,
+          updatedAt: Date.now(),
           role: 'recipient',
           withId: res.from.id,
           withName: this.rsc.get(res.from.nameRsc),
@@ -1344,7 +1360,11 @@ export class M59Client {
         const res = parseOfferItems(body);
         if (!this.check('OFFERED', res)) break;
         this.trade = { ...(this.trade || { role: 'offerer' }), role: this.trade?.role || 'offerer',
+                       revision: ++this.tradeRevision, updatedAt: Date.now(),
+                       withId: this.trade?.withId ?? this.pendingOfferTo?.id,
+                       withName: this.trade?.withName ?? this.pendingOfferTo?.name,
                        ours: res.items.map(o => ({ id: o.id, name: this.rsc.get(o.nameRsc), amount: o.amount || undefined })) };
+        this.pendingOfferTo = null;
         this.emit('offer-sent', { ours: this.trade.ours });
         break;
       }
@@ -1355,7 +1375,7 @@ export class M59Client {
       case BP.COUNTEROFFER: {
         const res = parseOfferItems(body);
         if (!this.check('COUNTEROFFER', res)) break;
-        this.trade = { ...(this.trade || {}),
+        this.trade = { ...(this.trade || {}), revision: ++this.tradeRevision, updatedAt: Date.now(),
                        theirs: res.items.map(o => ({ id: o.id, name: this.rsc.get(o.nameRsc), amount: o.amount || undefined })),
                        mayAccept: true };
         this.emit('countered', { theirs: this.trade.theirs, may_accept: true });
@@ -1365,7 +1385,7 @@ export class M59Client {
       case BP.COUNTEROFFERED: {
         const res = parseOfferItems(body);
         if (!this.check('COUNTEROFFERED', res)) break;
-        this.trade = { ...(this.trade || {}),
+        this.trade = { ...(this.trade || {}), revision: ++this.tradeRevision, updatedAt: Date.now(),
                        ours: res.items.map(o => ({ id: o.id, name: this.rsc.get(o.nameRsc), amount: o.amount || undefined })) };
         this.emit('counter-sent', { ours: this.trade.ours });
         break;
@@ -1377,7 +1397,9 @@ export class M59Client {
       // inventory to find out which.
       case BP.OFFER_CANCELED: {
         const was = this.trade;
+        this.tradeRevision++;
         this.trade = null;
+        this.pendingOfferTo = null;
         this.emit('trade-ended', { was,
           note: 'the server sends this both when a trade is cancelled and to the other side when one completes — compare inventory to tell which' });
         break;

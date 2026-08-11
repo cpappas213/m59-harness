@@ -75,6 +75,7 @@ try {
   assert.deepEqual(health.sessions, []);
   assert.equal(health.game_server, null);
   assert.deepEqual(health.session_game_servers, {});
+  assert.equal(health.commander.authority, 'authenticated-enabled-loopback-gateway');
 
   const listed = await fetch(url, {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -86,20 +87,35 @@ try {
   const moveIntent = tools.find(tool => tool.name === 'move_intent');
   const contextIntent = tools.find(tool => tool.name === 'context_intent');
   const cancelAction = tools.find(tool => tool.name === 'cancel_action');
+  const commanderLease = tools.find(tool => tool.name === 'commander_lease');
+  const commerceStatus = tools.find(tool => tool.name === 'commerce_status');
+  const commerceCatalog = tools.find(tool => tool.name === 'commerce_catalog');
+  const commercePrepare = tools.find(tool => tool.name === 'commerce_prepare');
+  const commerceCommit = tools.find(tool => tool.name === 'commerce_commit');
   assert.deepEqual(attackIntent.inputSchema.required,
-    ['agent', 'room', 'target', 'control_token', 'server_host', 'server_port']);
+    ['agent', 'room', 'target', 'control_token', 'lease_token', 'server_host', 'server_port']);
   assert.deepEqual(moveIntent.inputSchema.required,
-    ['agent', 'room', 'col', 'row', 'control_token', 'server_host', 'server_port']);
+    ['agent', 'room', 'col', 'row', 'control_token', 'lease_token', 'server_host', 'server_port']);
   assert.deepEqual(contextIntent.inputSchema.required,
-    ['agent', 'room', 'action', 'control_token', 'server_host', 'server_port']);
+    ['agent', 'room', 'action', 'control_token', 'lease_token', 'server_host', 'server_port']);
   assert.deepEqual(contextIntent.inputSchema.properties.action.enum,
     ['stand', 'rest_here', 'recover_here', 'grab_nearby', 'take', 'cast',
       'approach', 'face', 'equip_best', 'wear_best', 'eat_best', 'prepare',
       'item_use', 'item_unuse', 'item_eat', 'safety_on']);
   assert.deepEqual(cancelAction.inputSchema.required,
-    ['agent', 'control_token', 'server_host', 'server_port']);
+    ['agent', 'control_token', 'lease_token', 'server_host', 'server_port']);
   assert.match(cancelAction.description, /inside the pacer immediately before each mutating packet/,
     'cancel contract states the final pre-packet recheck boundary');
+  assert.deepEqual(commanderLease.inputSchema.properties.action.enum,
+    ['acquire', 'heartbeat', 'release', 'status']);
+  assert.deepEqual(commanderLease.inputSchema.required,
+    ['action', 'fleet', 'broker_pid', 'server_host', 'server_port']);
+  assert.ok(!commanderLease.inputSchema.properties.command_auth,
+    'broker lease acquisition relies on the authenticated gateway boundary, not a second secret');
+  for (const tool of [commerceStatus, commerceCatalog, commercePrepare, commerceCommit])
+    assert.ok(tool.inputSchema.required.includes('lease_token'));
+  assert.deepEqual(commercePrepare.inputSchema.properties.kind.enum,
+    ['buy', 'sell', 'offer', 'trade_counter_empty', 'trade_accept', 'trade_cancel']);
 
   const source = readFileSync(broker, 'utf8');
   const aggregateStart = source.indexOf('async function brokerRtsRead(url)');
@@ -129,6 +145,12 @@ try {
     'aggregate spell and inventory rows never issue Meridian requests');
   assert.match(aggregateSource, /filter[(]spell => rtsSafeSpellRule[(]spell[.]name, spell[.]targets[)][)]/,
     'broker aggregate exposes only spells admitted by the shared fail-closed policy');
+  assert.match(aggregateSource, /control\[agent\]/,
+    'aggregate carries per-agent commander lease/keeper telemetry');
+  assert.match(aggregateSource, /commerce\[agent\]/,
+    'aggregate carries cached purse/catalog/trade telemetry');
+  assert.doesNotMatch(aggregateSource, /lease_token|quote_token|control_token/,
+    'aggregate never publishes capability tokens');
   const contextStart = source.indexOf("name: 'context_intent'");
   const contextEnd = source.indexOf("name: 'cancel_action'", contextStart);
   assert.ok(contextStart >= 0 && contextEnd > contextStart,
@@ -172,7 +194,7 @@ try {
     'the final attack callback repeats the broker PvE-only rule');
 
   const cancelSource = source.slice(contextEnd,
-    source.indexOf("name: 'shop'", contextEnd));
+    source.indexOf("name: 'commerce_status'", contextEnd));
   assert.match(cancelSource, /requireControlEndpoint[(]s,/,
     'owned cancellation retains exact endpoint verification');
   assert.match(cancelSource, /requireRtsLocalCaller[(]caller[)]/,

@@ -3,7 +3,7 @@
 //
 //   node tools/m59-reagents.mjs --dry-run     who would go where, and with what to sell
 //   node tools/m59-reagents.mjs               do it
-//   node tools/m59-reagents.mjs --want 20     elderberry to come away with, default 12
+//   node tools/m59-reagents.mjs --want 20     of EACH half to come away with, default 12
 //   node tools/m59-reagents.mjs --agents t3,t7
 //
 // WHY. Vigor is the variable the whole fleet turns on: resting stops paying at 80 of 200
@@ -39,7 +39,8 @@ const PORT = Number(arg('port', 8901));
 const RPC = `http://127.0.0.1:${PORT}/`;
 const DRY = !!arg('dry-run', false);
 const ONLY = arg('agents', null);
-const WANT = Number(arg('want', 12));          // elderberry to come away with
+const REVIVE_ONLY = !!arg('revive-only', false);
+const WANT = Number(arg("want", 12));          // of each half to come away with
 const SHORT_BELOW = Number(arg('below', 6));   // who counts as short
 
 let id = 0;
@@ -141,10 +142,27 @@ const purseOf = items => countOf(items, /shilling/);
 
 // Rooms with a counter that sells ElderBerry, nearest by ROUTE. Asked per character
 // because "nearest" is a fact about where it is standing, not about the map.
+// HERB SELLERS ONLY. This asked for elderberry sellers AND herb sellers and pooled them,
+// which was right when both halves had to be bought. It is now actively wrong, because the
+// two lists are NOT the same shop list:
+//
+//   sells herbs:      1014, 1004, 104 (Joguer), 373 (Zhieu B'hob), 202 (Morrigan), 53 (Frisconar)
+//   sells elderberry: those, PLUS 151 — Solomon, CornothGrocer, who sells NO herbs at all
+//
+// 151 is often the nearest counter, so pooling put it at the front of the queue and seven
+// characters walked to the one shop in the world that could not sell them the thing they
+// were short of. They each bought elderberry instead and the trip reported numbers going
+// up. Ask only for what we are actually here to buy.
+//
+// STILL THE RIGHT LIST NOW THAT BOTH HALVES ARE BOUGHT AGAIN (see the buy step: the undead
+// the fleet farms drop no elderberry either). Every herb seller above ALSO sells
+// elderberry, so asking for herb sellers is exactly "counters that stock both halves", and
+// 151 — the one that can only ever supply half a casting — stays correctly excluded. Do
+// not re-pool the two lists to "widen" the search; that is the bug described above.
 async function reagentShopsFor(agent) {
   const seen = new Map();
-  for (const what of ['elderberry', 'herb']) {
-    const m = await call('merchants', { agent, sells: what }, 60_000).catch(() => ({ matches: [] }));
+  {
+    const m = await call('merchants', { agent, sells: 'herb' }, 60_000).catch(() => ({ matches: [] }));
     for (const x of m.matches || []) if (x.room != null) seen.set(x.room, x);
   }
   const priced = [];
@@ -153,6 +171,21 @@ async function reagentShopsFor(agent) {
     if (rt?.route?.found) priced.push({ room, hops: rt.route.hops.length });
   }
   return priced.sort((a, b) => a.hops - b.hops).map(p => p.room);
+}
+
+// Walk one character to one room and report where it actually ended up. Same rule as the
+// shop loop below and for the same reason: travel is resumable and a failed hop is normal,
+// so judge it on whether the room CHANGED, never on whether the call claimed it arrived.
+async function goTo(agent, room, where) {
+  let at = await where(), stuck = 0;
+  for (let i = 0; i < 8 && at !== room && stuck < 2; i++) {
+    await call('travel', { agent, to: room, max_hops: 20 }).catch(() => ({}));
+    const now = await where();
+    if (now === room) return now;
+    if (now === at) stuck++; else { stuck = 0; at = now; }
+    await sleep(1200);
+  }
+  return at;
 }
 
 async function stockUp(row) {
@@ -223,9 +256,10 @@ async function stockUp(row) {
     // silent no-op — it is a rejection — but from outside it looked exactly like a
     // merchant that would not buy.
     const look = await call('look', { agent: row.agent }, 60_000).catch(() => ({ objects: [] }));
-    const seller = (look.objects || []).find(o => (o.can || []).includes('buy'))
-                ?? (look.objects || []).find(o => /apothecar|grocer|merchant|innkeep/i.test(o.name || ''));
+    let seller = (look.objects || []).find(o => (o.can || []).includes('buy'))
+              ?? (look.objects || []).find(o => /apothecar|grocer|merchant|innkeep/i.test(o.name || ''));
     if (!seller) return `${who}: reached ${arrived} but found nobody at the counter`;
+    let bankNote = '';
 
     // SELL, THEN BUY. The money to buy with is the money the selling just made — these
     // characters have been stripped by repeated deaths and carry almost nothing.
@@ -236,7 +270,64 @@ async function stockUp(row) {
                    .catch(e => ({ error: e.message }));
 
     const inv1 = await call('inventory', { agent: row.agent }, 60_000).catch(() => ({ items: [] }));
-    const purse1 = purseOf(inv1.items);
+    let purse1 = purseOf(inv1.items);
+
+    // THE MONEY IS USUALLY IN THE BANK, AND SELLING JUNK DOES NOT ALWAYS REACH IT.
+    //
+    // `bankSurplus` in the keeper only ever DEPOSITS — it keeps a 400 float and banks the
+    // rest, and nothing anywhere withdraws for food. So a character that has spent its
+    // float stays broke for as long as its loot is unprofitable, while its account grows.
+    // Measured the morning this was added: 30,360 shillings banked across the fleet, and
+    // Kermit walked to Joguer's counter with FOUR shillings and bought nothing. Statler
+    // (2sh against 3,953 banked) and Animal (2sh against 1,426) did the same. The trip
+    // reported success each time — "spent 0sh" is not an error.
+    //
+    // Jasper, Tos and Barloque share one account (BANK_BASIC, see CLAUDE.md), so either
+    // counter below serves any of the three towns; Ko'catan's is a different account and
+    // is deliberately not here. 54 is next door to the Tos apothecary at 53 and 376 is a
+    // few steps from the Jasper merchant at 373, which is why the extra legs are cheap.
+    //
+    // Ask for no more than the banker actually holds. A balance is only known when one was
+    // said out loud (there is no packet for it), so an unknown balance still asks — that
+    // is the only thing available — but a KNOWN one caps the request, because asking 1000
+    // of an account holding 813 is refused outright and reads exactly like an empty
+    // account. That cost `m59-outfit.mjs` two walked banks and a bare character.
+    const BANKS = [54, 376];
+    const needMoney = 260;   // ~16 of each half at the Barloque shelf, with room to spare
+    if (purse1 < needMoney) {
+      const balance = row.banked?.balance ?? null;
+      if (balance === 0) {
+        bankNote = ` [nothing banked to draw on]`;
+      } else {
+        const back = arrived;
+        let got = null;
+        for (const bank of BANKS) {
+          const at = await goTo(row.agent, bank, where);
+          if (at !== bank) continue;
+          const want = Math.min(900, balance == null ? 900 : balance);
+          if (want <= 0) break;
+          await call('bank', { agent: row.agent, action: 'withdraw', amount: want }).catch(() => null);
+          await sleep(800);
+          const p = purseOf((await call('inventory', { agent: row.agent }, 60_000)
+                               .catch(() => ({ items: [] }))).items || []);
+          got = p - purse1;
+          if (p > purse1) { purse1 = p; break; }
+        }
+        bankNote = got > 0 ? ` [withdrew ${got}sh]`
+                 : got === null ? ` [could not reach a bank]`
+                 : ` [the banker handed over nothing]`;
+        // BACK TO THE COUNTER, and the seller id is re-read there rather than reused:
+        // object ids are per-room and the one found before the bank trip names something
+        // in a room this character is no longer standing in.
+        if (await goTo(row.agent, back, where) !== back)
+          return `${who}: withdrew at the bank but could not get back to ${back}${bankNote}`;
+        const look2 = await call('look', { agent: row.agent }, 60_000).catch(() => ({ objects: [] }));
+        const s2 = (look2.objects || []).find(o => (o.can || []).includes('buy'))
+                ?? (look2.objects || []).find(o => /apothecar|grocer|merchant|innkeep/i.test(o.name || ''));
+        if (!s2) return `${who}: back at ${back} but found nobody at the counter${bankNote}`;
+        seller = s2;
+      }
+    }
 
     const stock = await call('shop', { agent: row.agent, seller: seller.id }, 60_000)
                         .catch(e => ({ error: e.message }));
@@ -245,12 +336,83 @@ async function stockUp(row) {
     if (!wanted.length)
       return `${who}: ${arrived} sells no elderberry or herbs after all (had ${purse1}sh)`;
 
-    // Buy elderberry first — it is the scarce half of the recipe and the one the fleet
-    // runs out of. Herbs are usually abundant and cheap.
-    wanted.sort((a, b) => (/elder/i.test(a.name) ? 0 : 1) - (/elder/i.test(b.name) ? 0 : 1));
+    // BUY WHICHEVER HALF THIS CHARACTER IS ACTUALLY SHORT OF, MEASURED NOW.
+    //
+    // This used to buy elderberry first, on the stated grounds that it "is the scarce half
+    // of the recipe and the one the fleet runs out of". That was true when it was written
+    // and has inverted completely: measured across all twenty-one characters the fleet
+    // holds 1739 elderberry and 38 HERBS. Gonzo alone carries 237 elderberry and not one
+    // herb, and cannot cast a single create food.
+    //
+    // A casting is 2 + 2, so the number of castings a character has is min(elder, herb) / 2
+    // and the only useful purchase is the SMALLER pile. Buying the larger one reads as a
+    // successful restock — the purse moves, the count climbs, the run reports numbers going
+    // up — while the castings available stay at zero, which is exactly what happened.
+    // HERBS FIRST, AND NOT MERELY BECAUSE THEY ARE THE SMALLER PILE TODAY.
+    //
+    // The two halves of the recipe have completely different supply. ElderBerry is on the
+    // skeleton and battered-skeleton loot tables the fleet now farms all day, so it
+    // arrives free and forever; Herbs are on neither and can ONLY be bought. Measured
+    // across the fleet the day this changed: 1771 elderberry against 47 herbs, with
+    // seventeen characters holding hundreds of the former and none of the latter.
+    //
+    // So this is not "buy whichever is lower" — that rule would start buying elderberry
+    // again the moment a character's herbs briefly overtook it, spending money on the
+    // one input that restocks itself. Buy the half the world will not give us.
+    // SORTING IS NOT CHOOSING, and that distinction cost the fleet about 1200 shillings.
+    //
+    // The first version of this put herbs at the front of `wanted` and left the loop below
+    // alone — and that loop pushes EVERY entry of `wanted` on every iteration, so ordering
+    // changed which id went in first and nothing else. Both reagents were still bought.
+    // Measured on the run that exposed it: Zoot spent 252sh and came away with elderberry
+    // 108 -> 115 and herbs 0; Beaker spent 72sh for elderberry 124 -> 126 and herbs 0.
+    // The report read like a successful restock in both cases.
+    //
+    // So filter, do not sort. Buy an explicit quantity of each half by ITS OWN id, never
+    // by ordering a list that the loop below pushes in its entirety.
+    //
+    // CORRECTION, 2026-08-11: everything above this line is still the right method and its
+    // premise has expired. "ElderBerry is on the skeleton and battered-skeleton loot tables
+    // the fleet now farms all day, so it arrives free and forever" is FALSE, and the fleet
+    // was starving on it. Read out of `substrate/m59-spawns.json` the day this changed:
+    //
+    //   skeleton          TID_TOUGH      RedMushroom BlueMushroom Snack Emerald Sapphire
+    //                                    Diamond BlueDragonScale Ruby InkyCap MartyrScroll
+    //   battered skeleton TID_SKELETON2  Mushroom RedMushroom Snack Money NeruditeArrow
+    //                                    Emerald Sapphire InkyCap Knightshield ...
+    //   zombie            TID_ZOMBIE     RedMushroom Waterskin Flask Arsenic Money ...
+    //
+    // No ElderBerry on any of the three. It was on the FUNGUS BEAST (TID_MEDIUM, 30%),
+    // which is what the fleet farmed when that comment was written — and graduating from
+    // fungus beasts to undead cut off the supply silently, because nothing in the fleet
+    // measures where a reagent comes from. Result on the morning this was found: elderberry
+    // 0 for Kermit, Beaker, Zoot and Gonzo, 1 for Robin, 2 for Clifford; six characters
+    // unable to cast create food at all; the almoner reporting "nobody left with elderberry
+    // to give"; 811 cast_declined for Gonzo alone; and seven characters pinned at the
+    // resting cap of 80 vigor with no way past it.
+    //
+    // So the rule is neither "always buy elderberry" nor "never" — both are a guess about a
+    // loot table that changes whenever the fleet changes prey. BUY WHAT THIS CHARACTER IS
+    // ACTUALLY SHORT OF, MEASURED IN ITS OWN PACK, for each half independently. When the
+    // prey does drop elderberry the count stays above WANT on its own and this spends
+    // nothing on it, which is the behaviour the comment above was protecting.
+    const hb0 = countOf(inv0.items, /herb/);
+    const perReagent = [
+      { what: 'herbs',      have: hb0, offers: wanted.filter(o => /herb/i.test(o.name || '')) },
+      { what: 'elderberry', have: eb0, offers: wanted.filter(o => /elder/i.test(o.name || '')) },
+    ];
+    const short = perReagent.filter(r => r.have < WANT && r.offers.length);
+    if (!short.length) {
+      const missing = perReagent.filter(r => r.have < WANT).map(r => r.what);
+      return missing.length
+        ? `${who}: ${arrived} sells no ${missing.join(' or ')} after all — bought nothing, purse still ${purse1}sh`
+        : `${who}: already holds ${WANT}+ of both halves — bought nothing, purse still ${purse1}sh`;
+    }
     const buyIds = [];
-    const need = Math.max(0, WANT - eb0);
-    for (let i = 0; i < need && i < 40; i++) for (const o of wanted) buyIds.push(o.id);
+    for (const r of short) {
+      const need = Math.max(0, WANT - r.have);
+      for (let i = 0; i < need && i < 40; i++) for (const o of r.offers) buyIds.push(o.id);
+    }
     const bought = await call('shop', { agent: row.agent, seller: seller.id, buy_ids: buyIds.slice(0, 60) },
                               180_000).catch(e => ({ error: e.message }));
 
@@ -261,10 +423,22 @@ async function stockUp(row) {
     // REPORT WHAT THE PURSE DID, not what the buy was asked to do. A purchase that does
     // not register is silent — the counter simply takes nothing — so the money is the
     // only honest witness.
+    // SAY WHEN THE TRIP LEFT THE CHARACTER UNABLE TO CAST ANYWAY.
+    //
+    // A casting is 2 + 2, so the number of castings is min(elder, herb)/2 and a trip that
+    // fills one half and not the other has bought nothing usable. That is not a rare edge:
+    // Animal went to 373, spent every one of its 400 shillings, came away with elderberry
+    // 4 -> 14 and herbs STILL 0 — the counter offered no herbs that trip — and the line
+    // read like a successful restock because it only ever named what went up. The early
+    // return above covers "this shop sells neither"; this covers the worse case, where
+    // one half was bought and the trip still ends with zero castings.
+    const castings = Math.floor(Math.min(eb2, hb2) / 2);
+    const dry = castings === 0
+      ? `  *** STILL CANNOT CAST — ${eb2 ? 'no herbs' : 'no elderberry'} at this counter ***` : '';
     return `${who}: at ${arrived}, sold ${sellable.length} kind(s) ` +
-           `(${purse0} -> ${purse1}sh), spent ${purse1 - purse2}sh, ` +
-           `elderberry ${eb0} -> ${eb2}, herbs now ${hb2}` +
-           (bought?.error ? ` [buy said: ${String(bought.error).slice(0, 50)}]` : '');
+           `(${purse0} -> ${purse1}sh)${bankNote}, spent ${purse1 - purse2}sh, ` +
+           `elderberry ${eb0} -> ${eb2}, herbs now ${hb2}, ${castings} casting(s)` +
+           (bought?.error ? ` [buy said: ${String(bought.error).slice(0, 50)}]` : '') + dry;
   } finally {
     // The same invariant every errand in this repo needed and each learned by finding
     // characters standing in towns with nothing driving them: whoever this stopped is
@@ -286,12 +460,52 @@ const only = ONLY && ONLY !== true ? String(ONLY).split(',').map(s => s.trim()) 
 const candidates = [];
 for (const r of f.fleet.filter(x => x.character && x.room_num != null)) {
   if (only && !only.includes(r.agent)) continue;
-  const eb = r.reagents?.elderberry ?? 0;
-  if (!only && eb >= SHORT_BELOW) continue;
+  // SHORT MEANS SHORT OF A CASTING, NOT SHORT OF A PLANT. `create food` costs 2 elderberry
+  // AND 2 herbs, so what a character has is min(elder, herb) — and selecting on elderberry
+  // alone hid the entire shortage: seventeen characters sitting on hundreds of elderberry
+  // and zero herbs were all "well stocked" and never sent, while the four this did send
+  // were picked for being low on the plentiful half.
+  // Selection is on min(elder, herb) — BOTH HALVES HAVE TO BE BOUGHT AGAIN. This said
+  // "HERBS ALONE ... elderberry drops from the prey and herbs do not", which was true of
+  // fungus beasts and is false of the undead the fleet farms now; the buy step above has
+  // the loot tables. Selecting on herbs alone while elderberry was the empty half sent
+  // nobody: a character with 12 herbs and 0 elderberry has no castings and looked stocked.
+  const hb = r.reagents?.herb ?? r.reagents?.herbs ?? 0;
+  const eb = r.reagents?.elder ?? r.reagents?.elderberry ?? 0;
+  if (!only && Math.min(hb, eb) >= SHORT_BELOW) continue;
   candidates.push(r);
 }
 
-console.log(`${candidates.length} character(s) under ${SHORT_BELOW} elderberry` +
+// THE FLAG THE WARNING BELOW TELLS YOU TO RUN, WHICH DID NOT EXIST.
+//
+// `--revive-only` appeared exactly once in this file — inside the message recommending
+// it. Unknown flags are ignored here, so an operator following that advice re-ran the
+// ENTIRE errand: six more characters walked to shops and about 350 shillings went on
+// elderberry, while the output still looked like a repair job. A tool that names a flag
+// in its own error text has promised that flag exists.
+//
+// It restarts every keeper this repository can see as farming, which is the same repair
+// `reviveAll` does at the end of a real run, without moving anybody or spending anything.
+if (REVIVE_ONLY) {
+  let fixed = 0;
+  for (const r of (f.fleet || [])) {
+    if (!/inert|no keeper|stopped/i.test(String(r.activity || ''))) continue;
+    const st = await call('autopilot', { agent: r.agent, action: 'status' }, 30_000).catch(() => null);
+    const p = st?.policy || {};
+    await call('autopilot', { agent: r.agent, action: 'start', mode: 'farm',
+                              hunt: p.hunt || undefined,
+                              assigned_room: p.assignedRoom ?? undefined },
+               60_000).catch(() => {});
+    console.log(`  revived ${r.character || r.agent} (was: ${String(r.activity).slice(0, 60)})`);
+    fixed++;
+  }
+  console.log(fixed ? `${fixed} keeper(s) restarted — nobody moved, nothing bought`
+                    : 'no stopped keepers to revive');
+  process.exit(0);
+}
+
+console.log(`${candidates.length} character(s) with fewer than ${SHORT_BELOW} of either half ` +
+            `(a casting is 2 elderberry + 2 herbs, so the smaller pile is the count)` +
             `${DRY ? ' (dry run)' : ''}`);
 for (const row of candidates) {
   try { console.log('  ' + await stockUp(row)); }

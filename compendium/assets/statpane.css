@@ -1,0 +1,56 @@
+/* GENERATED from tools/statpane.mjs by tools/derive/planner.mjs — do not edit. */
+
+:root {
+  --m59-panel: #9c9c9c;
+  --m59-panel-lit: #b4b4b4;
+  --m59-panel-dim: #6e6e6e;
+  --m59-trough: #5c1414;
+  --m59-fill: #18a018;
+  --m59-edge: #c8a028;
+  --m59-ink: #1c1c1c;
+  --m59-ink-dim: #4a4a4a;
+  --m59-say: #800080;      /* the client's own message colour */
+}
+
+/* The panel's noise. The client's is a bitmap; this is the same idea at the same
+ * amplitude, inlined so the page has no extra request and works from a file:// copy. */
+.m59 {
+  --m59-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='64' height='64' filter='url(%23n)' opacity='0.16'/%3E%3C/svg%3E");
+}
+
+.m59 {
+  background: var(--m59-noise), var(--m59-panel);
+  border: 2px solid;
+  border-color: var(--m59-panel-lit) var(--m59-panel-dim) var(--m59-panel-dim) var(--m59-panel-lit);
+  padding: 3px;
+  color: var(--m59-ink);
+  font: 13px/1.35 "Segoe UI", Tahoma, "DejaVu Sans", sans-serif;
+  min-width: 0;
+}
+.m59 * { box-sizing: border-box; }
+
+/* ---- stat bars */
+
+.m59-bars { display: grid; grid-template-columns: max-content 1fr; gap: 3px 8px; align-items: center; }
+.m59-bars > .k { font-size: 13px; color: var(--m59-ink); }
+.m59-bar {
+  position: relative; height: 17px; background: var(--m59-trough);
+  border: 1px solid var(--m59-edge); overflow: hidden;
+}
+.m59-bar > i { display: block; height: 100%; background: var(--m59-fill); }
+.m59-bar > b {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end;
+  padding-right: 5px; font-weight: 400; font-size: 11px; color: #fff;
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
+}
+/* Where the value came from. A number read off a real character and one somebody typed
+ * must not render identically — that is the whole rule this site is built on. Every bar on
+ * the fleet's own board is observed; on the planner most of them are not. */
+.m59-bar.observed { border-color: #e8e8e8; }
+
+/* The pane's own footer line. */
+.m59-foot {
+  margin-top: 4px; padding-top: 3px; border-top: 1px solid var(--m59-panel-dim);
+  font-size: 11px; color: var(--m59-ink-dim); display: flex; gap: 10px; flex-wrap: wrap;
+}
+.m59-foot .over { color: #7a1010; font-weight: 600; }

@@ -84,6 +84,39 @@ const snapshot = buildRtsSnapshot({
         role: 'weapon', safe_actions: ['use'] },
     ]],
   ]),
+  commander: { enabled: true, authority: 'authenticated-enabled-loopback-gateway',
+    heartbeat_default_ms: 6666, lease_token: 'must-not-leak-lease' },
+  control: new Map([
+    ['t1', { lease_state: 'active', lease_id: 'lease-1', owner: 'boswars-native',
+      expires_at_ms: 1786083620000, expires_in_ms: 20000,
+      leased_faculties: ['work', 'movement', 'economy', 'social'], keeper_state: 'inert',
+      lease_token: 'must-not-leak-control-lease' }],
+    ['t2', { lease_state: 'blocked', leased_faculties: [], keeper_state: 'running',
+      blocked_reason: 'local client holds character' }],
+  ]),
+  commerce: new Map([
+    ['t1', {
+      purse: { amount: 275, currency: 'shillings' },
+      affordances: {
+        buy: [{ id: 910, name: 'Rook' }], sell: [{ id: 911, name: 'Qerti' }],
+        offer: [{ id: 912, name: 'Friendly Player' }],
+      },
+      catalog: { merchant: { id: 910, name: 'Rook' }, items: [
+        { id: 920, name: 'bread', available_quantity: 12, max_quantity: 12,
+          unit_price: 4, currency: 'shillings' },
+      ] },
+      trade: { revision: 7, role: 'recipient',
+        counterparty: { id: 912, name: 'Friendly Player' },
+        ours: [{ id: 701, name: 'mace', quantity: 1 }],
+        theirs: [{ id: 930, name: 'ruby', quantity: 2 }], may_accept: true,
+        updated_at_ms: 1786083600000, fingerprint: 'must-not-leak-fingerprint' },
+      observed_at_ms: 1786083600000, refresh: 'cached_no_packet',
+      quote_token: 'must-not-leak-quote', lease_token: 'must-not-leak-commerce-lease',
+    }],
+    ['t2', { purse: { amount: 0, currency: 'shillings' },
+      affordances: { buy: [], sell: [], offer: [] }, catalog: null, trade: null,
+      observed_at_ms: 1786083600000, refresh: 'cached_no_packet' }],
+  ]),
   observedAt: '2026-08-07T00:00:00.000Z',
   sequence: 'fixture-1',
 });
@@ -141,10 +174,30 @@ assert.equal(snapshot.rooms[0].entities[0].x, 800);
 assert.equal(snapshot.rooms[0].entities[0].appearance_revision, 21);
 assert.equal(snapshot.rooms[0].entities[0].appearance.icon_resource, 'rat.bgf');
 assert.equal(snapshot.rooms[0].entities[0].appearance.animation.period, 1200);
-assert.doesNotMatch(JSON.stringify(snapshot), /must-not-leak|password/i);
+assert.doesNotMatch(JSON.stringify(snapshot), /must-not-leak|password|lease_token|quote_token|fingerprint/i);
+assert.deepEqual(snapshot.commander, {
+  enabled: true, authority: 'authenticated-enabled-loopback-gateway', heartbeat_ms: 6666,
+});
+assert.deepEqual(snapshot.control.t1, {
+  lease_state: 'active', lease_id: 'lease-1', owner: 'boswars-native',
+  expires_at_ms: 1786083620000, expires_in_ms: 20000,
+  faculties: ['work', 'movement', 'economy', 'social'], keeper_state: 'inert', blocked_reason: null,
+});
+assert.equal(snapshot.commerce.t1.catalog.items[0].unit_price, 4);
+assert.deepEqual(snapshot.commerce.t1.trade.theirs,
+  [{ id: 930, name: 'ruby', quantity: 2 }]);
 
 const native = toNativeSnapshot(snapshot);
-assert.match(native, /^M59RTS\t6\tfixture-1\t/);
+assert.match(native, /^M59RTS\t7\tfixture-1\t/);
+assert.match(native, /\nCOMMANDER\t1\tauthenticated-enabled-loopback-gateway\t6666\n/);
+assert.match(native, /\nCONTROL\tt1\tactive\tlease-1\tboswars-native\t1786083620000\t20000\twork%2Cmovement%2Ceconomy%2Csocial\tinert\t\n/);
+assert.match(native, /\nCOMMERCE\tt1\t275\tshillings\n/);
+assert.match(native, /\nCOMMERCE_TARGET\tt1\t200\t910\tRook\t1\t0\t0\n/);
+assert.match(native, /\nCATALOG\tt1\t910\tRook\t1786083600000\n/);
+assert.match(native, /\nCATALOG_ITEM\tt1\t910\t920\tbread\t12\t12\t4\tshillings\n/);
+assert.match(native, /\nTRADE\tt1\t7\trecipient\t912\tFriendly%20Player\t1\t1786083600000\n/);
+assert.match(native, /\nTRADE_ITEM\tt1\ttheirs\t930\truby\t2\n/);
+assert.doesNotMatch(native, /must-not-leak|lease_token|quote_token|fingerprint/i);
 assert.match(native, /\nAGENT\tt1\tKermit\t200\tMarion\tmarion\.roo\t3\t501\t10\t11\teast\t90\t30\t30/);
 const nativeAgent = native.split('\n').find(line => line.startsWith('AGENT\tt1\t'));
 assert.equal(nativeAgent.split('\t').length, 23, 'native v2+ keeps exactly three equipment AGENT fields');
@@ -167,15 +220,15 @@ assert.deepEqual(nativeItems, [
   'ITEM\tt1\t705\todd%20stone\t1\t\tother\t',
 ]);
 assert.equal(nativeItems[0].split('\t').length, 8,
-  'native v6 ITEM has a fixed eight-field shape');
+  'native v7 preserves the v6 ITEM eight-field shape');
 assert.match(native, /\nITEM\tt2\t706\tdagger\t1\t\tweapon\t\n/,
   'unknown equipment state remains empty and grants no use action');
 assert.match(native, /\nACTION\tt1\tgrab%20nearby%20in%20room%20200\t4\t1\t\t\n/);
 const nativeAction = native.split('\n').find(line => line.startsWith('ACTION\tt1\t'));
 assert.equal(nativeAction.split('\t').length, 7,
-  'native v6 ACTION has a fixed seven-field shape');
+  'native v7 preserves the v6 ACTION seven-field shape');
 assert.match(native, /\nACTION\tt2\tcast%20blink\t2\t\t\tnot%20enough%20mana\n/,
-  'native v6 preserves a cached failed job outcome without inventing booleans');
+  'native v7 preserves a cached failed job outcome without inventing booleans');
 const selfAppearance = native.split('\n').find(line => line.startsWith('APPEARANCE\t200\t501\t'));
 assert.equal(selfAppearance.split('\t').length, 31, 'native v3 APPEARANCE has a fixed field count');
 assert.deepEqual(selfAppearance.split('\t').slice(1, 10),
@@ -269,4 +322,4 @@ const refreshed = await reader.snapshot(['t1']);
 assert.equal(refreshed.agents[0].equipment.fresh_ms, 100,
   'the next generation observes the completed background refresh');
 
-console.log('m59 RTS native v6 inventory/actions, spells, appearance, and equipment cache passed');
+console.log('m59 RTS native v7 commander/commerce, inventory/actions, appearance, and cache passed');

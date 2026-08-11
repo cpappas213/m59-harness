@@ -7,8 +7,8 @@
 //   node tools/m59-loadout.mjs --check-all          # the whole fleet, one line each
 //   node tools/m59-loadout.mjs Kermit --init        # write a starter file from the sheet
 //   node tools/m59-loadout.mjs Kermit --json        # the file, normalised
-//   node tools/m59-loadout.mjs Kermit --gear-to-fleet          # ...says what it WOULD do
-//   node tools/m59-loadout.mjs Kermit --gear-to-fleet --apply  # give everyone that gear
+//   node tools/m59-loadout.mjs Kermit --gear-to-fleet          # preview shared gear + carry
+//   node tools/m59-loadout.mjs Kermit --gear-to-fleet --apply  # give both to the whole fleet
 //
 // WHY THIS EXISTS. Every buy, sell, keep and drop decision in this repository was a
 // constant somewhere in a tool: WANTS in m59-outfit.mjs, KEEP in m59-reagents.mjs, the
@@ -312,6 +312,8 @@ const cloneGear = (g) => ({
   from: g?.from ?? null,
 });
 
+const cloneCarry = (carry) => (carry ?? []).map(c => ({ ...c }));
+
 export const gearIsEmpty = (gear) =>
   !(gear?.weapon?.length) && !Object.values(gear?.slots ?? {}).some(v => v?.length);
 
@@ -328,11 +330,133 @@ export function sameGear(a, b) {
   return key(a) === key(b);
 }
 
+// Carry-list order is useful to a reader, so reordering it is a real edit just as
+// reordering a gear preference is. `weight` and `kind` are derived catalogue annotations,
+// not instructions to the keeper, and are deliberately not compared.
+export function sameCarry(a, b) {
+  const key = (carry) => JSON.stringify((carry ?? []).map(c => [
+    norm(c?.item), Number(c?.min ?? 0), c?.max == null ? null : Number(c.max),
+    c?.match ?? 'exact', c?.why ?? null,
+  ]));
+  return key(a) === key(b);
+}
+
 // Run a gear stanza through the same normalise() everything else goes through, so a
 // fleet-wide write cannot mean something a single save would not.
 export function normaliseGear(gear) {
   const { loadout, problems } = normalise({ character: 'x', gear }, { character: 'x' });
   return { gear: loadout.gear, problems };
+}
+
+// Gear and carry go through the same normaliser as a one-character save. Presence matters:
+// an omitted section means "leave this section alone"; an explicitly supplied empty
+// section means "clear it" and requires allowEmpty when the entire shared plan is empty.
+export function normaliseFleetInventory(raw = {}) {
+  const has = (key) => Object.prototype.hasOwnProperty.call(raw, key);
+  const sections = { gear: has('gear'), carry: has('carry') };
+  const src = { character: 'x' };
+  if (sections.gear) src.gear = raw.gear;
+  if (sections.carry) src.carry = raw.carry;
+  const { loadout, problems } = normalise(src, { character: 'x' });
+  return {
+    sections,
+    gear: sections.gear ? loadout.gear : null,
+    carry: sections.carry ? loadout.carry : null,
+    problems,
+  };
+}
+
+// Plan and apply are the same function, called twice. `characters` is
+// [{character, agent}] or plain names; the caller decides whether that is a checked subset
+// or the live fleet. Nothing here asks a broker because this layer only knows about files.
+export function applyInventoryToAll(raw, characters,
+                                    { from = null, apply = false, allowEmpty = false } = {}) {
+  const want = normaliseFleetInventory(raw);
+  if (!want.sections.gear && !want.sections.carry)
+    throw new Error('no gear or carry list was supplied - nothing to apply');
+  if ((!want.sections.gear || gearIsEmpty(want.gear)) &&
+      (!want.sections.carry || !want.carry.length) && !allowEmpty)
+    throw new Error('this plan has no gear or carry list on it - nothing to apply. Empty shared ' +
+                    'inventory is not an instruction to clear every selected loadout.');
+
+  const stamp = from
+    ? `${String(from).slice(0, 120)}${apply ? `, ${new Date().toISOString().slice(0, 16).replace('T', ' ')}` : ''}`
+    : null;
+  const rows = [];
+  for (const c of characters ?? []) {
+    const character = String((typeof c === 'string' ? c : c?.character) ?? '').trim();
+    const agent = typeof c === 'string' ? null : (c?.agent ?? null);
+    const row = {
+      character, agent, had: false, created: false, changed: false,
+      gear_changed: false, carry_changed: false,
+      before: null, after: null, path: null, error: null,
+    };
+    rows.push(row);
+
+    if (!slugOf(character)) { row.error = 'not a usable character name'; continue; }
+
+    let existing = null;
+    try { existing = readLoadout(character); }
+    catch (e) {
+      // A file that will not parse is left alone. Replacing it with only the shared fields
+      // would erase rules nobody can currently inspect and make the loss look intentional.
+      row.error = `${loadoutPath(character)} could not be read (${e.message}) - left alone`;
+      continue;
+    }
+    if (existing && norm(existing.loadout.character) !== norm(character)) {
+      row.error = `${path.basename(existing.path)} holds "${existing.loadout.character}", not ` +
+                  `"${character}" - two names that differ only by punctuation share one file`;
+      continue;
+    }
+
+    const beforeGear = existing ? cloneGear(existing.loadout.gear) : cloneGear(null);
+    const beforeCarry = existing ? cloneCarry(existing.loadout.carry) : [];
+    row.had = !!existing;
+    row.created = !existing;
+    row.before = existing ? { gear: beforeGear, carry: beforeCarry } : null;
+    row.gear_changed = want.sections.gear && (!existing || !sameGear(beforeGear, want.gear));
+    row.carry_changed = want.sections.carry && (!existing || !sameCarry(beforeCarry, want.carry));
+    row.changed = !existing || row.gear_changed || row.carry_changed;
+
+    const afterGear = want.sections.gear && row.gear_changed
+      ? { ...cloneGear(want.gear), from: stamp }
+      : beforeGear;
+    const afterCarry = want.sections.carry ? cloneCarry(want.carry) : beforeCarry;
+    row.after = { gear: afterGear, carry: afterCarry };
+    if (!apply || !row.changed) { if (existing) row.path = existing.path; continue; }
+
+    const next = existing ? { ...existing.loadout } : blank(character, agent);
+    if (want.sections.gear && row.gear_changed) next.gear = afterGear;
+    if (want.sections.carry) next.carry = afterCarry;
+    if (!next.agent && agent) next.agent = agent;
+    try {
+      const out = writeLoadout(character, next);
+      row.path = out.path;
+      row.after = { gear: cloneGear(out.loadout.gear), carry: cloneCarry(out.loadout.carry) };
+    } catch (e) {
+      row.error = e.message;
+      row.changed = false;
+      row.gear_changed = false;
+      row.carry_changed = false;
+    }
+  }
+
+  return {
+    applied: !!apply,
+    gear: want.gear ? cloneGear(want.gear) : null,
+    carry: want.carry ? cloneCarry(want.carry) : null,
+    sections: want.sections,
+    from: from ?? null,
+    problems: want.problems,
+    rows,
+    counts: {
+      total: rows.length,
+      changed: rows.filter(r => r.changed && !r.error).length,
+      unchanged: rows.filter(r => !r.changed && !r.error).length,
+      created: rows.filter(r => r.created && !r.error).length,
+      failed: rows.filter(r => r.error).length,
+    },
+  };
 }
 
 // PLANNING AND APPLYING ARE THE SAME FUNCTION, called twice. A preview computed by different
@@ -596,6 +720,85 @@ export function reconcile(loadout, { items = [], equipped = [] } = {}) {
   };
 }
 
+// ------------------------------------------------------- is this run closing the gap?
+//
+// THE EQUIPMENT HALF OF yieldCheck, AND THE REASON IT HAS TO EXIST AT ALL.
+//
+// `purpose: 'advance'` asks whether the thing being killed can still raise what the
+// character is trying to raise, and says so out loud when it cannot — because a keeper
+// grinding worthless prey looks EXACTLY like a healthy one: it kills something every
+// pass, so progress() fires, so the stall detector never trips.
+//
+// Equipment farming has that same shape and none of that protection. Ten characters here
+// are at max health 50 and a level-50 fungus beast cannot advance them, so they farm for
+// gear and coin instead — which is a perfectly good reason to be out, and one the board
+// had no way to distinguish from a keeper achieving nothing. Worse, `yieldCheck` returned
+// null for any purpose other than 'advance', so declaring `equip` would have PROTECTED the
+// run by switching the instrument off rather than by pointing it at the right question.
+//
+// So this is the right question: is what we are killing able to drop what this character
+// is still short of? Two ways for the answer to be no, and they need different words —
+// **nothing left to want** is finished, **wanting things this creature never drops** is
+// the afternoon of worthless grinding wearing a different hat.
+//
+// It reads the loadout gap rather than a constant, because "what this character needs" is
+// exactly what a loadout is for, and a second definition of it would drift from the first.
+
+// Kod class names ("LeatherArmor") against display names ("leather armour"). Fold case,
+// punctuation and the two spellings of armour; everything in these tables is one word or
+// two, so this is enough and a fuzzy match would be worse than none.
+const dropKey = (s) => String(s ?? '').toLowerCase()
+  .replace(/[^a-z0-9]/g, '').replace(/armour/g, 'armor');
+
+/** Everything a creature row says it can leave behind, however it says it. */
+export function droppablesOf(creature) {
+  const out = [];
+  // Carried gear, dropped per item on its own roll. This is a real per-kill probability.
+  for (const i of creature?.equipment_drops?.items ?? [])
+    if ((i.per_kill_percent ?? 0) > 0)
+      out.push({ item: i.item, how: 'equipment', per_kill_percent: i.per_kill_percent });
+  // A TREASURE SHARE IS NOT A PER-KILL CHANCE and must not be rendered as one: the table
+  // is rolled `1 + level/55 + random(0, difficulty/3)` times, so `per_roll_percent` is one
+  // roll's share. Carried under its own name so nobody averages the two columns together.
+  for (const i of creature?.loot?.items ?? [])
+    out.push({ item: i.item, how: 'treasure', per_roll_percent: i.per_roll_percent });
+  return out;
+}
+
+/**
+ * `plan` is a reconcile() result; `creature` is a row from the spawn index.
+ * Returns null when it cannot know — never "fine".
+ */
+export function equipYield(plan, creature) {
+  if (!plan || !creature) return null;
+  const short = plan.buy ?? [];
+  if (!short.length)
+    return { pays: false, done: true, creature: creature.name,
+             why: 'this character already has everything on its list, so an equipment ' +
+                  'run has nothing left to fetch' };
+
+  const droppable = droppablesOf(creature);
+  const byKey = new Map(droppable.map(d => [dropKey(d.item), d]));
+  const hits = [];
+  for (const b of short) {
+    const d = byKey.get(dropKey(b.item));
+    if (d) hits.push({ item: b.item, short: b.short ?? 1, gear: !!b.gear, ...d });
+  }
+  if (hits.length) return { pays: true, creature: creature.name, for: hits };
+
+  return {
+    pays: false, creature: creature.name,
+    short_of: short.map(b => b.item),
+    drops: droppable.length ? droppable.map(d => d.item) : null,
+    why: droppable.length
+      ? `${creature.name} drops none of the ${short.length} thing(s) this character is short of`
+      : `${creature.name} has neither an equipment drop nor a treasure table — it leaves ` +
+        'nothing behind at all',
+    hint: 'this keeper is working and fetching nothing. Re-target it, or clear ' +
+          '`purpose` if it is out there for coin rather than for kit.',
+  };
+}
+
 // THE ORDER TO GIVE THINGS UP IN WHEN THE BAGS ARE FULL. Lowest first. Returns null when
 // the loadout has nothing to say about a pack, so the keeper's own ranking stands.
 export function dropRank(loadout, items = []) {
@@ -747,7 +950,7 @@ if (import.meta.filename === process.argv[1]) {
     process.exit(0);
   }
 
-  // The planner's "Apply gear to fleet" button, on the command line. Plans by default and
+  // The planner's "Apply gear + carry to fleet" button, on the command line. Plans by default and
   // needs --apply, for the same reason m59-restore.mjs does: it writes one file per
   // character, and a fleet-wide write that happens before you have read what it would do is
   // one you find out about from the keeper.
@@ -766,21 +969,25 @@ if (import.meta.filename === process.argv[1]) {
       .map(r => ({ character: r.character, agent: r.agent }));
     let res;
     try {
-      res = applyGearToAll(rec.loadout.gear, chars,
-                           { from: rec.loadout.character, apply: flag('apply'), allowEmpty: flag('force') });
+      res = applyInventoryToAll({ gear: rec.loadout.gear, carry: rec.loadout.carry }, chars,
+                                { from: rec.loadout.character, apply: flag('apply'),
+                                  allowEmpty: flag('force') });
     } catch (e) { console.error(e.message); process.exit(1); }
     const g = res.gear;
-    console.log(`${flag('apply') ? 'applied' : 'would apply'} ${rec.loadout.character}'s gear to ` +
+    console.log(`${flag('apply') ? 'applied' : 'would apply'} ${rec.loadout.character}'s gear and carry list to ` +
                 `${chars.length} character(s):`);
     if (g.weapon.length) console.log(`  weapon   ${g.weapon.join(' > ')}`);
     for (const [s, v] of Object.entries(g.slots)) console.log(`  ${s.padEnd(8)} ${v.join(' > ')}`);
+    for (const c of res.carry ?? [])
+      console.log(`  carry    ${c.item} ${c.min}${c.max === null ? '+' : '-' + c.max}`);
     for (const p of res.problems) console.log(`  ! ${p}`);
     for (const r of res.rows) {
       const what = r.error ? `! ${r.error}`
         : !r.changed ? 'already has it'
         : r.created ? (flag('apply') ? 'new loadout written' : 'would get a new loadout')
-        : (flag('apply') ? 'gear replaced' : 'would be changed') +
-          (r.before && !gearIsEmpty(r.before) ? ` (was ${r.before.weapon.join(' > ') || 'no weapon'})` : ' (had no gear)');
+        : (flag('apply') ? 'inventory plan replaced' : 'would be changed') +
+          (r.before?.gear && !gearIsEmpty(r.before.gear)
+            ? ` (was ${r.before.gear.weapon.join(' > ') || 'no weapon'})` : ' (had no gear)');
       console.log(`  ${r.character.padEnd(12)} ${what}`);
     }
     console.log(`${res.counts.changed} changed, ${res.counts.unchanged} already as asked` +

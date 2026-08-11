@@ -738,13 +738,13 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   along, so Solomon in Cor Noth was reported as stationary whether or not he is. The class
   map is now case-insensitive on lookup while keeping the file's own spelling on iteration.
 
-- **THERE ARE FIVE BOARDS AND ONE TAB BAR, AND A PURSE HAS NO RECORD BUT THE SAMPLE.**
-  `/` (fleet), `/deaths`, `/tougher`, `/economy` and `/skills`, all on the dashboard port
-  (8902 — the MCP port serves only the fleet page). The nav, the stylesheet and the
-  inlined treemap live in **`m59-page-chrome.mjs`**: a new board is one line in `TABS`,
-  and it is one line because five hand-written copies of a tab list means the sixth board
-  is invisible from whichever copy nobody remembered to edit. That had already happened
-  once — the fleet page and the deaths page carried two separate copies.
+- **THERE ARE SIX BOARDS AND ONE TAB BAR, AND A PURSE HAS NO RECORD BUT THE SAMPLE.**
+  `/` (fleet), `/deaths`, `/tougher`, `/economy`, `/skills` and `/stats`, all on the
+  dashboard port (8902 — the MCP port serves only the fleet page). The nav, the stylesheet
+  and the inlined treemap live in **`m59-page-chrome.mjs`**: a new board is one line in
+  `TABS`, and it is one line because six hand-written copies of a tab list means the seventh
+  board is invisible from whichever copy nobody remembered to edit. That had already
+  happened once — the fleet page and the deaths page carried two separate copies.
 
   What each board can answer is decided by whether the quantity leaves a trace.
   **A bank balance does** — a banker says it aloud and `substrate/banks/` catches it — so
@@ -762,6 +762,30 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   fleet gained 1846 points and lost 1558, with `relay` and `blink` losing hundreds and
   gaining nothing. The page never nets the two, because a fleet gaining 40 and losing 38
   is standing still and one number cannot say so.
+
+  **`/stats` IS THE ONE BOARD WITH NO CLOCK ON IT, AND IT GROUPS RATHER THAN LISTS.**
+  Attributes are fixed at creation and never move, so unlike a purse or a bank balance a
+  reading of them cannot go stale — it reads `substrate/sheets/` and needs nothing live,
+  carries no freshness pill, and takes no `?hours=`. It draws the client's own stats screen,
+  read-only, one pane per **set of attributes** with every character rolled that way beside
+  it: twenty-one characters here are **four builds** — 8, 5, 4 and 4 — and that shape is the
+  finding, because it says how many bets this fleet has actually placed and a row-per-character
+  table hid it behind a wall of repeated numbers. Two things it refuses to flatten. **A sheet
+  with no attributes is not a build**: it is named apart, because `create automated` really
+  does roll zeroes and "nobody has read this" must not render as "it rolled nothing". And
+  **the tallest bar is not what a build is for** — every character in this fleet was rolled
+  with 50 stamina, so stamina is the tallest bar in three of the four and distinguishes none
+  of them; an attribute every build shares is stated once above the panes (one ceiling of 151
+  for the whole fleet, which is why nine characters being stuck is a fleet-wide fact) and left
+  out of the per-build line, where what remains is the attributes that build holds the fleet's
+  best of. One build here leads in nothing at all, and no pane on its own could say so.
+
+  The pane itself is **`compendium/tools/statpane.mjs`** — the same file the planner draws
+  from, imported in node and inlined into `assets/statpane.js` + `assets/statpane.css` for the
+  browser. Both panes therefore agree on the six stats, their order, the CSS and the three
+  derived numbers (`101 + stamina`, `1700 + might*20`, points spent). The board's copy has no
+  slider and no hatching, deliberately: attributes cannot move, so a bar you could drag would
+  be offering a re-roll, which is the planner's job and not a board's.
 
 - **A SKILL IS BOUGHT LIKE A HAT, AND FOR A YEAR NO LIVE MERCHANT APPEARED TO SELL ONE.**
   `plFor_sale` is four positional slots and `AssembleForSaleList` names them in its own
@@ -916,6 +940,14 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   reads: 22 skills with their requisite stat and level, 150 spells with school and level,
   202 items with weight, value and sprite, and the constants `PlayerCanLearn` runs on.
 
+  **ITS STATS TAB IS NOT ONLY ITS OWN** — the fleet's `/stats` board draws the same pane,
+  read-only, so `compendium/tools/statpane.mjs` owns the six stats, their order, the labels,
+  the frame and bar CSS, and the three derived numbers. Same arrangement as `learn.mjs`
+  below: imported in node by `m59-planner-data.mjs` and `m59-stats-page.mjs`, inlined into
+  `assets/statpane.js` + `assets/statpane.css` for the browser. `planner.css` keeps only the
+  editable half — the tab strip, the draggable bar, the hatching for a typed value — so a
+  rule about the bars belongs in `statpane.mjs` or the two panes will drift.
+
   **THE LEARNING ARITHMETIC HAS ONE HOME**, `compendium/tools/learn.mjs`, imported by
   `m59-loadout.mjs` and inlined into `assets/learn.js` by the page's build — the same trick
   `creatures.mjs` uses for `calc.mjs`, and for the same reason. Three things about it:
@@ -964,6 +996,49 @@ start Docker Desktop; do not try to start it yourself unless they ask.
 
 ## Working in this repository
 
+- **A CLAIM THAT CONTRADICTS WHAT IS ALREADY WRITTEN DOWN NEEDS A REPRODUCTION BEFORE
+  ANYTHING IS DECIDED ON IT — and the private server is where that reproduction goes.**
+  Not every fact needs an experiment; most observations are just observations, and
+  demanding proof of each would stop the work. The bar is **two things at once**: the
+  claim cuts against this file, the kod, or the extracted indexes, **and** something is
+  about to be decided on it. Contradicting the literature about a detail nobody acts on
+  can wait. Contradicting it about a number a resupply plan rests on cannot.
+
+  The failure this exists to stop, **and it was checked and is WRONG**: *"Meidei only
+  sells one item per call"* went into a fleet report as a constraint on feeding
+  twenty-one characters. It contradicted a source-cited fact three sections above, and
+  the source settles it — `monster.kod:238` declares `vbSellFromInventory = FALSE` for
+  every merchant in the tree, exactly **two** classes override it to TRUE
+  (`kcshopk.kod:54`, `izzio.kod:54`), and Meidei is `BarloqueBartender is BarloqueTown`
+  (`bqbart.kod:11`), which is neither. **She assembles her list on demand and cannot run
+  out.** Ask again and she sells again.
+
+  The evidence for overturning the literature had been ONE ambiguous reading: a `shop`
+  call whose `got` field listed a single item, with no second call, no purse reading, and
+  no catalogue check afterwards. The same session had already logged `apple x10` from
+  that same merchant and did not notice the contradiction. **An inventory line saying
+  `x1` is a STACK SIZE, not a refusal**, and the two are indistinguishable unless you
+  measure the purse. Reading a one-item response as an empty shop also had a cost beyond
+  being wrong: it argued for a second food vendor the fleet does not need.
+
+  So when the bar is met: **measure the thing that must change if the claim is true** —
+  the purse before and after each call, not the wording of one response — and **repeat
+  the call**, because "it stopped after one" and "I only asked once" produce identical
+  evidence. A merchant refusal is a sentence spoken to the room (see the Izzio/Ko'catan
+  note above), never an error on the wire, so no error has never meant success here.
+
+  **Prod cannot answer this kind of question at all: the fleet is being driven, so the
+  subject walks away mid-experiment.** Five candidates in a row were walked out of the
+  shop before a second buy. That is not a flaky test, it is the bot holding movement —
+  and it is why the controlled reading has to happen on the private server.
+
+- **The private server is on `127.0.0.1:15959`, not 5959.** It is a native Windows
+  `blakserv.exe`, its admin port moves with it (19998), and `docker ps` reports nothing
+  because there is no container. A bare port check against 5959 returns `ECONNREFUSED`
+  and reads exactly like "the server is down" — which is what the parent repository's
+  notes still say, and it is wrong. Check the listening port of the running process
+  before concluding anything is down.
+
 - Every tool in `tools/` is standalone `.mjs`, zero dependencies, run with
   `node tools/<name>.mjs`. Only the chat responder needs `npm install`.
 - `M59_ROOT` points at the Meridian 59 source tree. The compendium's citations
@@ -1000,7 +1075,13 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `M59_LOADOUT_DIR` so it never reads the real one, which a live keeper is reading every
   pass) and
   `node tools/m59-economy-test.mjs` (61 — the Economy and Skills boards, and the one
-  tab bar all five boards share) and
+  tab bar all six boards share) and
+  `node tools/m59-stats-test.mjs` (60 — the Stats board and the pane it shares with the
+  planner: that grouping is the six numbers and not the level, that a sheet with no
+  attributes is never folded in as a zero roll, that a roster character with no sheet at all
+  is named rather than silently absent from a page of percentages, that the read-only pane
+  carries neither a slider nor the hatching that marks a typed value, and that the ceiling and
+  carry arithmetic have one home. Runs against scratch sheets, never the fleet's own) and
   `node tools/m59-backup-test.mjs` (42 — backing the rosters up and putting them back,
   against scratch directories; never touches a real fleet) and
   `node tools/m59-merchants-test.mjs` (77, dropping to 43 without `M59_ROOT`) and

@@ -27,6 +27,10 @@ const CONTEXT_ACTIONS = new Set(CONTEXT_ACTION_LIST);
 // Keep idempotency keys compact and limited to transport-safe identifier bytes.
 // Ownership tokens are separately generated opaque values and never embed this id.
 const ORDER_ID = /^[A-Za-z0-9._:-]{8,80}$/;
+const OPAQUE_CAPABILITY = /^[A-Za-z0-9._:-]{8,200}$/;
+const COMMERCE_KINDS = new Set([
+  'buy', 'sell', 'offer', 'trade_counter_empty', 'trade_accept', 'trade_cancel',
+]);
 
 function option(argv, name, fallback) {
   const index = argv.indexOf(name);
@@ -373,11 +377,27 @@ export class BrokerReader {
     }
   }
 
+  // WHAT A GATEWAY HAS TO PROVE BEFORE IT MAY CARRY WRITES AT ALL, which is a
+  // question about this session and not about what the fleet happens to be doing.
+  //
+  // This used to be the per-order check run across the whole roster, and that made
+  // an armed gateway impossible on exactly the fleet it exists for: the keeper is
+  // the fleet's normal state, so ONE busy character out of twenty-one refused the
+  // gateway at startup, `/health` answered 503, and the launcher gave up with "RTS
+  // gateway did not become healthy". The operator sees a commander that will only
+  // ever open read-only and no way to tell that from a policy forbidding it.
+  //
+  // Nothing is given up by moving it. The keeper rule is about two drivers on one
+  // character, which is a property of the moment an order is issued, and it is
+  // still enforced there — in controlState() below for the agents actually named,
+  // and again in the broker (m59-broker.mjs), which refuses RTS control for a
+  // character with an active keeper no matter what this process believes.
   async assertControlReady() {
-    return this.controlState([...this.allowedAgents]);
+    return this.controlState([...this.allowedAgents], { requireIdleKeeper: false });
   }
 
-  async controlState(requestedAgents) {
+  async controlState(requestedAgents,
+                     { requireIdleKeeper = true, requireCommanderLease = false } = {}) {
     try {
       if (!this.ordersEnabled) throw orderError(403, 'RTS gateway orders are disabled');
       const agents = [...new Set(requestedAgents.map(cleanAgent).filter(Boolean))];
@@ -392,16 +412,28 @@ export class BrokerReader {
       const aggregate = await this.aggregateState(agents);
       if (!aggregate)
         throw orderError(503, 'RTS control requires the broker aggregate endpoint; legacy brokers are read-only');
+      if (aggregate.commander?.enabled !== true)
+        throw orderError(503, 'broker commander capability is unavailable');
       if (agents.some(agent => !aggregate.agents.includes(agent)))
         throw orderError(409, 'one or more control agents are no longer present in the broker fleet');
       const health = this.assertControlHealth(aggregate.health);
       for (const agent of agents) {
         if (!sameEndpoint(health.session_game_servers?.[agent], this.controlServer))
-          throw orderError(403, `${agent} is not attached to the allowed local game server`);
+          throw orderError(403, `${agent} is not attached to the allowed game server`);
         const row = Array.isArray(aggregate.fleet?.fleet)
           ? aggregate.fleet.fleet.find(value => value?.agent === agent) : null;
-        if (row?.autopilot?.running && !/^inert\b/i.test(String(row.activity || '')))
+        // Only when somebody is actually being ordered. A roster-wide sweep asking
+        // this of every character at once answers a question nobody asked and
+        // refuses the whole gateway over one busy character.
+        if (requireIdleKeeper && row?.autopilot?.running &&
+            !/^inert\b/i.test(String(row.activity || '')))
           throw orderError(409, `${agent} still has an active keeper; make it inert before RTS control`);
+        if (requireCommanderLease) {
+          const control = aggregate.control?.[agent];
+          if (!control || control.lease_state !== 'active' ||
+              typeof control.lease_id !== 'string' || !control.lease_id)
+            throw orderError(409, `${agent} does not have an active commander lease`);
+        }
       }
       return aggregate;
     } catch (error) {
@@ -431,6 +463,18 @@ export class BrokerReader {
           aggregate.spells?.[agent] ?? []])),
         inventory: new Map(agents.map(agent => [agent,
           aggregate.inventory?.[agent] ?? []])),
+        // Broker support alone is not permission. Native availability is the
+        // conjunction of that capability and this gateway's explicitly armed,
+        // bearer-protected, exact-roster/exact-server write boundary.
+        commander: {
+          ...(aggregate.commander || {}),
+          enabled: aggregate.commander?.enabled === true &&
+            this.ordersEnabled && this.controlStatus.armed,
+        },
+        control: new Map(agents.map(agent => [agent,
+          aggregate.control?.[agent] ?? { lease_state: 'unavailable' }])),
+        commerce: new Map(agents.map(agent => [agent,
+          aggregate.commerce?.[agent] ?? { error: 'aggregate read omitted cached commerce state' }])),
         observedAt: aggregate.observed_at,
         sequence: aggregate.sequence,
       });
@@ -461,6 +505,9 @@ export class BrokerReader {
       equipment,
       spells: new Map(),
       inventory: new Map(),
+      commander: null,
+      control: new Map(),
+      commerce: new Map(),
       observedAt: now.toISOString(),
       sequence: `${now.getTime()}-${health.pid}`,
     });
@@ -485,6 +532,104 @@ function assertExactKeys(value, allowed, label) {
 
 function exactInteger(value) {
   return typeof value === 'number' && Number.isSafeInteger(value);
+}
+
+function exactText(value, label, max = 160) {
+  if (typeof value !== 'string' || !value || value !== value.trim() ||
+      value.length > max || /[\x00-\x1f\x7f]/.test(value))
+    throw orderError(400, `${label} must be an exact non-empty string of at most ${max} characters`);
+  return value;
+}
+
+function opaqueCapability(value, label) {
+  if (typeof value !== 'string' || !OPAQUE_CAPABILITY.test(value))
+    throw orderError(400, `${label} must be an opaque capability token`);
+  return value;
+}
+
+function bindingInfo(reader, body) {
+  if (typeof body?.fleet !== 'string' || body.fleet !== reader.expectedFleet)
+    throw orderError(409, `request fleet must exactly match ${reader.expectedFleet}`);
+  if (!exactInteger(body?.broker_pid) || body.broker_pid < 1)
+    throw orderError(400, 'broker_pid must be a numeric positive integer');
+  if (typeof body?.server_host !== 'string' ||
+      body.server_host !== reader.controlServer?.host ||
+      !exactInteger(body?.server_port) || body.server_port !== reader.controlServer?.port)
+    throw orderError(409, 'request game server must exactly match this gateway control endpoint');
+  return {
+    fleet: body.fleet,
+    brokerPid: body.broker_pid,
+    serverHost: body.server_host,
+    serverPort: body.server_port,
+  };
+}
+
+function exactCommanderRows(value) {
+  if (!Array.isArray(value) || !value.length || value.length > 40)
+    throw orderError(400, 'commander agents must be an array of 1-40 exact roster rows');
+  const rows = value.map(row => {
+    assertExactKeys(row, ['agent', 'character'], 'commander agent');
+    const agent = cleanAgent(row.agent);
+    if (!agent) throw orderError(400, 'commander agent must be a simple identifier');
+    return { agent, character: exactText(row.character, 'commander character', 100) };
+  });
+  uniqueAgents(rows, 'commander');
+  return rows;
+}
+
+function exactIdentity(value, label) {
+  assertExactKeys(value, ['id', 'name'], label);
+  if (!exactInteger(value.id) || value.id < 1)
+    throw orderError(400, `${label} id must be a numeric positive integer`);
+  return { id: value.id, name: exactText(value.name, `${label} name`, 160) };
+}
+
+function exactCommerceItems(value, label, { allowEmpty = false } = {}) {
+  if (!Array.isArray(value) || (!allowEmpty && !value.length) || value.length > 64)
+    throw orderError(400, `${label} must contain ${allowEmpty ? '0-64' : '1-64'} exact items`);
+  const rows = value.map(item => {
+    assertExactKeys(item, ['id', 'name', 'quantity'], `${label} item`);
+    const identity = exactIdentity({ id: item.id, name: item.name }, `${label} item`);
+    if (!exactInteger(item.quantity) || item.quantity < 1 || item.quantity > 9999)
+      throw orderError(400, `${label} item quantity must be a numeric integer from 1 to 9999`);
+    return { ...identity, quantity: item.quantity };
+  });
+  if (new Set(rows.map(row => row.id)).size !== rows.length)
+    throw orderError(400, `${label} contains a duplicate item id`);
+  return rows;
+}
+
+function assertRosterBinding(state, rows) {
+  const fleetRows = Array.isArray(state?.fleet?.fleet) ? state.fleet.fleet : [];
+  for (const row of rows) {
+    const roster = fleetRows.find(value => value?.agent === row.agent);
+    if (!roster || roster.character !== row.character)
+      throw orderError(409, `${row.agent}/${row.character} no longer exactly matches the broker roster`);
+  }
+}
+
+function assertAllowedRows(reader, rows) {
+  const outside = rows.find(row => !reader.allowedAgents?.has(row.agent));
+  if (outside)
+    throw orderError(403, `${outside.agent} is outside this gateway's configured RTS control roster`);
+}
+
+function assertCurrentBinding(state, binding) {
+  if (state?.health?.pid !== binding.brokerPid)
+    throw orderError(409, 'broker restarted after the requested authority binding');
+}
+
+function redactCommandResult(value, { keepLease = false, keepQuote = false } = {}) {
+  if (Array.isArray(value)) return value.map(item => redactCommandResult(item, { keepLease, keepQuote }));
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (key === 'fingerprint' || key === 'trade_fingerprint') continue;
+    if (key === 'lease_token' && !keepLease) continue;
+    if (key === 'quote_token' && !keepQuote) continue;
+    out[key] = redactCommandResult(item, { keepLease, keepQuote });
+  }
+  return out;
 }
 
 function issuedControlToken(reader, orderId, agent) {
@@ -534,10 +679,11 @@ function rawLook(state, agent) {
   return look;
 }
 
-async function settledDispatch(reader, tool, rows, argsFor) {
+async function settledDispatch(reader, tool, rows, argsFor,
+                               { resultFor = value => redactCommandResult(value) } = {}) {
   const settled = await Promise.allSettled(rows.map(row => reader.order(tool, argsFor(row))));
   const outcomes = settled.map((result, index) => result.status === 'fulfilled'
-    ? { agent: rows[index].agent, accepted: true, result: result.value }
+    ? { agent: rows[index].agent, accepted: true, result: resultFor(result.value) }
     : { agent: rows[index].agent, accepted: false,
         error: String(result.reason?.message || result.reason).slice(0, 240) });
   return {
@@ -560,27 +706,199 @@ async function readJsonBody(req, maxBytes = 64 * 1024) {
   catch { throw orderError(400, 'order request is not valid JSON'); }
 }
 
+export async function dispatchCommanderRequest(reader, action, body, { now = Date.now() } = {}) {
+  if (!reader.ordersEnabled) throw orderError(403, 'RTS gateway orders are disabled');
+  if (!['acquire', 'heartbeat', 'release', 'status'].includes(action))
+    throw orderError(404, 'unknown commander operation');
+
+  const common = ['order_id', 'fleet', 'broker_pid', 'server_host', 'server_port'];
+  const allowed = action === 'acquire'
+    ? [...common, 'generation', 'agents', 'owner', 'lease_ms']
+    : action === 'heartbeat'
+      ? [...common, 'agents', 'lease_token', 'lease_ms']
+      : action === 'release'
+        ? [...common, 'agents', 'lease_token']
+        : [...common, 'lease_token'];
+  assertExactKeys(body, allowed, `commander ${action} request`);
+  const id = orderId(body);
+  const binding = bindingInfo(reader, body);
+  let rows = [];
+  let state;
+
+  if (action === 'acquire') {
+    const generation = generationInfo(body, now);
+    if (generation.brokerPid !== binding.brokerPid)
+      throw orderError(409, 'snapshot generation and commander broker_pid do not match');
+    rows = exactCommanderRows(body.agents);
+    assertAllowedRows(reader, rows);
+    if (body.owner !== undefined) exactText(body.owner, 'commander owner', 80);
+    if (body.lease_ms !== undefined &&
+        (!exactInteger(body.lease_ms) || body.lease_ms < 5000 || body.lease_ms > 30000))
+      throw orderError(400, 'commander lease_ms must be a numeric integer from 5000 to 30000');
+    state = await reader.controlState(rows.map(row => row.agent), { requireIdleKeeper: false });
+    assertCurrentBinding(state, binding);
+    assertRosterBinding(state, rows);
+  } else if (action === 'heartbeat' || action === 'release') {
+    rows = exactCommanderRows(body.agents);
+    assertAllowedRows(reader, rows);
+    opaqueCapability(body.lease_token, 'commander lease_token');
+    if (action === 'heartbeat' && body.lease_ms !== undefined &&
+        (!exactInteger(body.lease_ms) || body.lease_ms < 5000 || body.lease_ms > 30000))
+      throw orderError(400, 'commander lease_ms must be a numeric integer from 5000 to 30000');
+    // Do not require a current aggregate row here. Release must remain possible
+    // after expiry/disconnect, and heartbeat must report partial loss accurately.
+    // The broker capability itself pins the exact roster, pid, fleet, and server.
+  } else {
+    if (body.lease_token !== undefined)
+      opaqueCapability(body.lease_token, 'commander lease_token');
+    if (!reader.allowedAgents?.size)
+      throw orderError(503, 'commander status has no configured control roster');
+  }
+
+  const result = await reader.order('commander_lease', {
+    action,
+    fleet: binding.fleet,
+    broker_pid: binding.brokerPid,
+    server_host: binding.serverHost,
+    server_port: binding.serverPort,
+    ...(rows.length ? { agents: rows } : {}),
+    ...(body.owner === undefined ? {} : { owner: body.owner }),
+    ...(body.lease_token === undefined ? {} : { lease_token: body.lease_token }),
+    ...(body.lease_ms === undefined ? {} : { lease_ms: body.lease_ms }),
+  });
+  return {
+    schema: RTS_SCHEMA,
+    accepted: true,
+    order_id: id,
+    operation: `commander.${action}`,
+    result: redactCommandResult(result,
+      { keepLease: action === 'acquire' || action === 'heartbeat' }),
+    accepted_at: new Date(now).toISOString(),
+  };
+}
+
+export async function dispatchCommerceRequest(reader, phase, body, { now = Date.now() } = {}) {
+  if (!reader.ordersEnabled) throw orderError(403, 'RTS gateway orders are disabled');
+  if (!['status', 'catalog', 'prepare', 'commit'].includes(phase))
+    throw orderError(404, 'unknown commerce operation');
+
+  const common = ['order_id', 'agent', 'character', 'room', 'fleet', 'broker_pid',
+    'server_host', 'server_port', 'lease_token'];
+  let allowed;
+  if (phase === 'status') allowed = common;
+  else if (phase === 'catalog') allowed = [...common, 'generation', 'merchant'];
+  else if (phase === 'commit') allowed = [...common, 'generation', 'quote_token'];
+  else {
+    if (typeof body?.kind !== 'string' || !COMMERCE_KINDS.has(body.kind))
+      throw orderError(400, 'commerce kind must be buy, sell, offer, trade_counter_empty, trade_accept, or trade_cancel');
+    const actionKeys = body.kind === 'buy' ? ['merchant', 'item', 'quantity']
+      : body.kind === 'sell' ? ['merchant', 'items']
+      : body.kind === 'offer' ? ['counterparty', 'items']
+      : ['counterparty', 'expected_trade_revision', 'expected_ours', 'expected_theirs',
+          'expected_may_accept'];
+    allowed = [...common, 'generation', 'kind', ...actionKeys];
+  }
+  assertExactKeys(body, allowed, `commerce ${phase} request`);
+
+  const id = orderId(body);
+  const binding = bindingInfo(reader, body);
+  const agent = cleanAgent(body.agent);
+  if (!agent) throw orderError(400, 'commerce agent must be a simple identifier');
+  const character = exactText(body.character, 'commerce character', 100);
+  if (!exactInteger(body.room) || body.room < 1)
+    throw orderError(400, 'commerce room must be a numeric positive integer');
+  const leaseToken = opaqueCapability(body.lease_token, 'commerce lease_token');
+  if (phase !== 'status') {
+    const generation = generationInfo(body, now);
+    if (generation.brokerPid !== binding.brokerPid)
+      throw orderError(409, 'snapshot generation and commerce broker_pid do not match');
+  }
+
+  const state = await reader.controlState([agent],
+    { requireIdleKeeper: false, requireCommanderLease: true });
+  assertCurrentBinding(state, binding);
+  assertRosterBinding(state, [{ agent, character }]);
+  const look = rawLook(state, agent);
+  if (Number(look.room?.num) !== body.room)
+    throw orderError(409, `${agent} is no longer in room ${body.room}`);
+
+  const args = {
+    agent,
+    fleet: binding.fleet,
+    character,
+    room: body.room,
+    server_host: binding.serverHost,
+    server_port: binding.serverPort,
+    lease_token: leaseToken,
+  };
+  if (phase === 'catalog') args.merchant = exactIdentity(body.merchant, 'commerce merchant');
+  else if (phase === 'commit') args.quote_token = opaqueCapability(body.quote_token, 'commerce quote_token');
+  else if (phase === 'prepare') {
+    args.kind = body.kind;
+    if (body.kind === 'buy') {
+      args.merchant = exactIdentity(body.merchant, 'commerce merchant');
+      args.item = exactIdentity(body.item, 'commerce item');
+      if (!exactInteger(body.quantity) || body.quantity < 1 || body.quantity > 9999)
+        throw orderError(400, 'commerce buy quantity must be a numeric integer from 1 to 9999');
+      args.quantity = body.quantity;
+    } else if (body.kind === 'sell') {
+      args.merchant = exactIdentity(body.merchant, 'commerce merchant');
+      args.items = exactCommerceItems(body.items, 'commerce sell items');
+    } else if (body.kind === 'offer') {
+      args.counterparty = exactIdentity(body.counterparty, 'commerce counterparty');
+      args.items = exactCommerceItems(body.items, 'commerce offer items');
+    } else {
+      args.counterparty = exactIdentity(body.counterparty, 'commerce counterparty');
+      if (!exactInteger(body.expected_trade_revision) || body.expected_trade_revision < 0)
+        throw orderError(400, 'expected_trade_revision must be a numeric non-negative integer');
+      if (typeof body.expected_may_accept !== 'boolean')
+        throw orderError(400, 'expected_may_accept must be a JSON boolean');
+      args.expected_trade_revision = body.expected_trade_revision;
+      args.expected_ours = exactCommerceItems(body.expected_ours, 'expected ours', { allowEmpty: true });
+      args.expected_theirs = exactCommerceItems(body.expected_theirs, 'expected theirs', { allowEmpty: true });
+      args.expected_may_accept = body.expected_may_accept;
+    }
+  }
+
+  const tool = `commerce_${phase}`;
+  const dispatch = await settledDispatch(reader, tool, [{ agent, args }], row => row.args, {
+    resultFor: value => redactCommandResult(value, { keepQuote: phase === 'prepare' }),
+  });
+  return {
+    schema: RTS_SCHEMA,
+    ...dispatch,
+    order_id: id,
+    operation: `commerce.${phase}`,
+    ...(body.generation === undefined ? {} : { generation: body.generation }),
+    accepted_at: new Date(now).toISOString(),
+  };
+}
+
 export async function dispatchAttackOrder(reader, body, { now = Date.now() } = {}) {
   if (!reader.ordersEnabled) throw orderError(403, 'RTS gateway orders are disabled');
   batch(body, 'attack');
   const id = orderId(body);
   const { brokerPid } = generationInfo(body, now);
   for (const order of body.orders)
-    assertExactKeys(order, ['agent', 'room', 'target_id', 'swings'], 'attack order');
+    assertExactKeys(order, ['agent', 'room', 'target_id', 'swings', 'lease_token'], 'attack order');
   const normalized = body.orders.map(order => ({
     agent: cleanAgent(order?.agent),
     room: order?.room,
     target: order?.target_id,
     swings: order?.swings === undefined ? 20 : order.swings,
+    leaseToken: typeof order?.lease_token === 'string' ? order.lease_token : '',
   }));
   if (normalized.some(order => !order.agent || !exactInteger(order.room) || order.room < 1 ||
       !exactInteger(order.target) || order.target < 1 ||
-      !exactInteger(order.swings) || order.swings < 1 || order.swings > 20))
+      !exactInteger(order.swings) || order.swings < 1 || order.swings > 20 ||
+      !OPAQUE_CAPABILITY.test(order.leaseToken)))
     throw orderError(400,
-      'attack orders require a string agent, numeric positive integer room/target_id, and numeric 1-20 integer swings');
+      'attack orders require a string agent, numeric positive integer room/target_id, ' +
+      'numeric 1-20 integer swings, and an opaque lease_token');
   uniqueAgents(normalized, 'attack');
 
-  const state = await reader.controlState(normalized.map(order => order.agent));
+  const state = await reader.controlState(normalized.map(order => order.agent),
+    { requireIdleKeeper: false, requireCommanderLease: true });
   if (state.health.pid !== brokerPid)
     throw orderError(409, 'broker restarted after this snapshot generation');
   for (const order of normalized) {
@@ -597,6 +915,7 @@ export async function dispatchAttackOrder(reader, body, { now = Date.now() } = {
 
   const dispatch = await settledDispatch(reader, 'attack_intent', normalized, order => ({
     agent: order.agent, room: order.room, target: order.target, swings: order.swings,
+    lease_token: order.leaseToken,
     control_token: issuedControlToken(reader, id, order.agent),
     server_host: reader.controlServer.host, server_port: reader.controlServer.port,
   }));
@@ -615,22 +934,26 @@ export async function dispatchMoveOrder(reader, body, { now = Date.now(), sceneS
   const id = orderId(body);
   const { brokerPid } = generationInfo(body, now);
   for (const order of body.orders)
-    assertExactKeys(order, ['agent', 'room', 'col', 'row', 'max_steps'], 'move order');
+    assertExactKeys(order, ['agent', 'room', 'col', 'row', 'max_steps', 'lease_token'], 'move order');
   const normalized = body.orders.map(order => ({
     agent: cleanAgent(order?.agent),
     room: order?.room,
     col: order?.col,
     row: order?.row,
     maxSteps: order?.max_steps === undefined ? 120 : order.max_steps,
+    leaseToken: typeof order?.lease_token === 'string' ? order.lease_token : '',
   }));
   if (normalized.some(order => !order.agent || !exactInteger(order.room) || order.room < 1 ||
       !exactInteger(order.col) || !exactInteger(order.row) ||
-      !exactInteger(order.maxSteps) || order.maxSteps < 1 || order.maxSteps > 400))
+      !exactInteger(order.maxSteps) || order.maxSteps < 1 || order.maxSteps > 400 ||
+      !OPAQUE_CAPABILITY.test(order.leaseToken)))
     throw orderError(400,
-      'move orders require a string agent and numeric integer room/col/row/max_steps (1-400)');
+      'move orders require a string agent, numeric integer room/col/row/max_steps (1-400), ' +
+      'and an opaque lease_token');
   uniqueAgents(normalized, 'move');
 
-  const state = await reader.controlState(normalized.map(order => order.agent));
+  const state = await reader.controlState(normalized.map(order => order.agent),
+    { requireIdleKeeper: false, requireCommanderLease: true });
   if (state.health.pid !== brokerPid)
     throw orderError(409, 'broker restarted after this snapshot generation');
   for (const order of normalized) {
@@ -652,6 +975,7 @@ export async function dispatchMoveOrder(reader, body, { now = Date.now(), sceneS
   const dispatch = await settledDispatch(reader, 'move_intent', normalized, order => ({
     agent: order.agent, room: order.room, col: order.col, row: order.row,
     max_steps: order.maxSteps, control_token: issuedControlToken(reader, id, order.agent),
+    lease_token: order.leaseToken,
     server_host: reader.controlServer.host, server_port: reader.controlServer.port,
   }));
   return {
@@ -683,6 +1007,12 @@ export async function dispatchMoveOrder(reader, body, { now = Date.now(), sceneS
 // success's clothing.
 export async function dispatchTravelOrder(reader, body, { now = Date.now() } = {}) {
   if (!reader.ordersEnabled) throw orderError(403, 'RTS gateway orders are disabled');
+  // The legacy keeper tool does not recheck a commander lease in every door,
+  // edge, and fine-movement pacer callback. A token field it never consumes is
+  // not authority; fail closed pending an audited broker `travel_intent`.
+  throw orderError(403,
+    'cross-room commander travel is unavailable until the broker exposes a lease-guarded travel_intent');
+  /* c8 ignore start -- retained only as an executable design record for travel_intent
   batch(body, 'travel');
   const id = orderId(body);
   const { brokerPid } = generationInfo(body, now);
@@ -719,6 +1049,7 @@ export async function dispatchTravelOrder(reader, body, { now = Date.now() } = {
     generation: body.generation,
     accepted_at: new Date(now).toISOString(),
   };
+  c8 ignore stop */
 }
 
 export async function dispatchContextOrder(reader, body, { now = Date.now(), sceneStore = null } = {}) {
@@ -733,7 +1064,7 @@ export async function dispatchContextOrder(reader, body, { now = Date.now(), sce
   const groundAction = action === 'rest_here' || action === 'recover_here';
   const targetAction = action === 'take' || action === 'approach' || action === 'face';
   const itemAction = action === 'item_use' || action === 'item_unuse' || action === 'item_eat';
-  const contextKeys = ['agent', 'room',
+  const contextKeys = ['agent', 'room', 'lease_token',
     ...(groundAction ? ['col', 'row'] : []),
     ...(targetAction || action === 'cast' ? ['target_id'] : []),
     ...(itemAction ? ['item_id'] : []),
@@ -750,9 +1081,11 @@ export async function dispatchContextOrder(reader, body, { now = Date.now(), sce
     target: order?.target_id === undefined ? null : order.target_id,
     item: order?.item_id === undefined ? null : order.item_id,
     spell: typeof order?.spell === 'string' ? order.spell.trim() : '',
+    leaseToken: typeof order?.lease_token === 'string' ? order.lease_token : '',
   }));
-  if (normalized.some(order => !order.agent || !exactInteger(order.room) || order.room < 1))
-    throw orderError(400, 'context orders require a string agent and numeric positive integer room');
+  if (normalized.some(order => !order.agent || !exactInteger(order.room) || order.room < 1 ||
+      !OPAQUE_CAPABILITY.test(order.leaseToken)))
+    throw orderError(400, 'context orders require an agent, positive integer room, and opaque lease_token');
   if (groundAction && normalized.some(order =>
       !exactInteger(order.col) || !exactInteger(order.row)))
     throw orderError(400, `${action} orders require numeric integer col/row`);
@@ -776,7 +1109,8 @@ export async function dispatchContextOrder(reader, body, { now = Date.now(), sce
     throw orderError(400, `${action} orders do not accept spell`);
   uniqueAgents(normalized, 'context');
 
-  const state = await reader.controlState(normalized.map(order => order.agent));
+  const state = await reader.controlState(normalized.map(order => order.agent),
+    { requireIdleKeeper: false, requireCommanderLease: true });
   if (state.health.pid !== brokerPid)
     throw orderError(409, 'broker restarted after this snapshot generation');
 
@@ -941,6 +1275,7 @@ export async function dispatchContextOrder(reader, body, { now = Date.now(), sce
       ...(order.target === null ? {} : { target: order.target }),
     } : {}),
     control_token: issuedControlToken(reader, id, order.agent),
+    lease_token: order.leaseToken,
     server_host: reader.controlServer.host,
     server_port: reader.controlServer.port,
   }));
@@ -960,17 +1295,22 @@ export async function dispatchCancelOrder(reader, body, { now = Date.now() } = {
   batch(body, 'cancel', ['type', 'order_id', 'orders']);
   const id = orderId(body);
   for (const order of body.orders)
-    assertExactKeys(order, ['agent', 'control_token'], 'cancel order');
+    assertExactKeys(order, ['agent', 'control_token', 'lease_token'], 'cancel order');
   const normalized = body.orders.map(order => ({
     agent: cleanAgent(order?.agent),
     controlToken: typeof order?.control_token === 'string' ? order.control_token : '',
+    leaseToken: typeof order?.lease_token === 'string' ? order.lease_token : '',
   }));
-  if (normalized.some(order => !order.agent || !/^[A-Za-z0-9._:-]{8,160}$/.test(order.controlToken)))
-    throw orderError(400, 'cancel orders require agent and the owned control_token');
+  if (normalized.some(order => !order.agent || !OPAQUE_CAPABILITY.test(order.controlToken) ||
+      !OPAQUE_CAPABILITY.test(order.leaseToken)))
+    throw orderError(400, 'cancel orders require agent, owned control_token, and commander lease_token');
   uniqueAgents(normalized, 'cancel');
-  await reader.controlState(normalized.map(order => order.agent));
+  // Cancellation is a protective stop and deliberately remains available after
+  // lease expiry; the broker pins both tokens to the recorded job before acting.
+  await reader.controlState(normalized.map(order => order.agent), { requireIdleKeeper: false });
   const dispatch = await settledDispatch(reader, 'cancel_action', normalized, order => ({
     agent: order.agent, control_token: order.controlToken,
+    lease_token: order.leaseToken,
     server_host: reader.controlServer.host, server_port: reader.controlServer.port,
   }));
   return {
@@ -1276,26 +1616,35 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
   const server = http.createServer(async (req, res) => {
     if (!isLocalRequest(req)) return sendJson(res, 403, { error: 'RTS gateway is loopback-only' });
     const url = new URL(req.url, 'http://127.0.0.1');
-    if (req.method === 'POST' && url.pathname === '/v1/orders') {
+    const commanderRoute = /^\/v1\/commander\/(acquire|heartbeat|release|status)$/.exec(url.pathname);
+    const commerceRoute = /^\/v1\/commerce\/(status|catalog|prepare|commit)$/.exec(url.pathname);
+    const controlRoute = url.pathname === '/v1/orders' || commanderRoute || commerceRoute;
+    if (req.method === 'POST' && controlRoute) {
       try {
         if (!reader.ordersEnabled) throw orderError(403, 'RTS gateway orders are disabled');
         if (req.headers.origin)
-          throw orderError(403, 'browser-origin order requests are refused');
+          throw orderError(403, 'browser-origin control requests are refused');
         const mediaType = String(req.headers['content-type'] || '')
           .split(';', 1)[0].trim().toLowerCase();
         if (mediaType !== 'application/json')
-          throw orderError(415, 'orders require application/json');
+          throw orderError(415, 'control requests require application/json');
         if (!authorizedBearer(req, reader.controlToken))
           throw orderError(401, 'RTS control bearer token required');
         const body = await readJsonBody(req);
         const id = orderId(body);
-        const result = await orderDedupe.execute(id, body,
-          () => dispatchControlOrder(reader, body, { sceneStore }));
-        return sendJson(res, 202, result);
+        const operation = commanderRoute ? `commander.${commanderRoute[1]}`
+          : commerceRoute ? `commerce.${commerceRoute[1]}` : `orders.${body?.type || 'unknown'}`;
+        const result = await orderDedupe.execute(id, { operation, body }, () =>
+          commanderRoute ? dispatchCommanderRequest(reader, commanderRoute[1], body)
+            : commerceRoute ? dispatchCommerceRequest(reader, commerceRoute[1], body)
+              : dispatchControlOrder(reader, body, { sceneStore }));
+        const status = url.pathname === '/v1/orders' || commerceRoute?.[1] === 'commit' ? 202 : 200;
+        return sendJson(res, status, result);
       } catch (error) {
         return sendJson(res, error.status || 503, { error: error.message, schema: RTS_SCHEMA });
       }
     }
+    if (controlRoute) return sendJson(res, 405, { error: 'control endpoints require POST', schema: RTS_SCHEMA });
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'unsupported gateway method' });
     try {
       if (url.pathname === '/health') {
@@ -1303,7 +1652,12 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
         let controlError = null;
         if (reader.ordersEnabled) {
           try {
-            const aggregate = await reader.controlState([...reader.allowedAgents]);
+            // `writes` here means "this gateway may carry an order", not "every
+            // character is free this second" — so it asks the session question,
+            // the same one startup asks. Fused, a single keeper-driven character
+            // made /health 503 and the launcher refused to start at all.
+            const aggregate = await reader.controlState([...reader.allowedAgents],
+              { requireIdleKeeper: false });
             health = aggregate.health;
           }
           catch (error) { controlError = error; }
@@ -1330,7 +1684,7 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
       }
       if (url.pathname === '/v1/contract') {
         if (reader.ordersEnabled) {
-          try { await reader.controlState([...reader.allowedAgents]); }
+          try { await reader.controlState([...reader.allowedAgents], { requireIdleKeeper: false }); }
           catch { /* reflected as writes:false below */ }
         }
         const writes = reader.controlStatus.armed;
@@ -1344,21 +1698,36 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
                           'server-observed-equipment', 'broker-aggregate-cached-read',
                           'cached-inventory', 'per-agent-action-outcomes',
                           'adaptive-50ms-native-reconciliation',
-                          ...(writes ? ['local-pve-attack', 'local-room-move',
+                          ...(writes ? ['lease-bound-pve-attack', 'lease-bound-room-move',
                                         'local-context-stand', 'local-context-rest',
                                         'local-context-loot', 'local-context-cast',
                                         'local-context-positioning', 'local-context-recovery',
                                         'local-context-loadout', 'local-context-safe-items',
                                         'local-context-safety-on',
-                                        'owned-action-cancel'] : [])],
+                                        'owned-action-cancel',
+                                        'commander-lease-acquire-heartbeat-release',
+                                        'commerce-cached-status', 'commerce-on-demand-catalog',
+                                        'commerce-prepare-commit',
+                                        'exact-two-sided-player-trade'] : [])],
           writes,
           pvp: false,
           action_catalogue: {
             typed_only: true,
             batches: ['attack', 'move', 'context', 'cancel'],
             context: CONTEXT_ACTION_LIST,
-            confirmation_required: [],
-            deliberately_absent: ['drop', 'safety_off', 'buy', 'sell', 'trade'],
+            commander: ['acquire', 'heartbeat', 'release', 'status'],
+            commerce: ['status', 'catalog', 'prepare', 'commit'],
+            commerce_kinds: [...COMMERCE_KINDS],
+            confirmation_required: ['commerce.commit'],
+            deliberately_absent: ['drop', 'safety_off', 'cross-room-travel'],
+          },
+          command_endpoints: {
+            orders: '/v1/orders',
+            commander: '/v1/commander/{acquire,heartbeat,release,status}',
+            commerce: '/v1/commerce/{status,catalog,prepare,commit}',
+            bearer_required: true,
+            browser_origins: false,
+            idempotency: 'order_id exact-payload dedupe',
           },
           rts_cast_policy: {
             fail_closed: true,
@@ -1510,7 +1879,7 @@ async function main() {
     readToken: process.env.M59_RTS_READ_TOKEN || '',
   });
   // Do not bind a port or advertise write capability until the updated broker has
-  // proven that the entire active fleet is on the exact explicitly allowed test server.
+  // proven that the entire active fleet is on the exact explicitly allowed game server.
   if (ordersEnabled) await reader.assertControlReady();
   if (argv.includes('--once')) {
     const snapshot = await reader.snapshot(requestedAgents);
@@ -1527,7 +1896,7 @@ async function main() {
   const nativeServer = createNativeStreamServer({ reader, hub });
   server.listen(port, '127.0.0.1', () => {
     console.error(`m59 RTS gateway on http://127.0.0.1:${port} — ${RTS_SCHEMA}, ` +
-                  `${ordersEnabled ? `local PvE control for ${controlServer}` : 'read-only'}, ` +
+                  `${ordersEnabled ? `lease-bound PvE control for ${controlServer}` : 'read-only'}, ` +
                   `${hub.reconcileMs}ms requested reconciliation (50ms only for aggregate/latest-native)`);
   });
   nativeServer.listen(nativePort, '127.0.0.1', () => {

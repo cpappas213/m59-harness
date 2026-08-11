@@ -212,17 +212,24 @@ export function flushPending(character, now = Date.now()) {
 // ------------------------------------------------------------------ reading it back
 
 export const feedFor = (character) => (feeds.get(character)?.feed ?? []).slice().reverse();
-export const allFeeds = () => [...feeds.values()]
+// In-process rather than on disk, so it only ever holds this broker's own characters —
+// but it takes the same `characters` filter as its siblings so a caller does not have to
+// remember which of the three is safe by construction. Uniformity is the point: a scoping
+// rule with an exception is a rule somebody forgets.
+export const allFeeds = ({ characters = null } = {}) => [...feeds.values()]
+  .filter(f => !characters || characters.has(f.character))
   .map(f => ({ character: f.character, feed: f.feed.slice().reverse(),
                pending_gain: !!f.pendingGain }))
   .filter(f => f.feed.length);
 
 // Every gain the fleet has on disk, newest first, joined across characters. This is the
 // TOUGHER page's whole dataset.
-export function allGains({ sinceMs = null, limit = 2000 } = {}) {
+// `characters` scopes this to one fleet — see fleetAbilities and m59-fleetscope.mjs for
+// why a directory keyed by character name needs telling.
+export function allGains({ sinceMs = null, limit = 2000, characters = null } = {}) {
   const cutoff = sinceMs ? Date.now() - sinceMs : null;
   const out = [];
-  for (const c of listCharacters())
+  for (const c of listCharacters().filter(c => !characters || characters.has(c)))
     for (const g of loadGains(c).gains || [])
       if (!cutoff || g.at >= cutoff) out.push({ character: c, ...g });
   out.sort((a, b) => b.at - a.at);

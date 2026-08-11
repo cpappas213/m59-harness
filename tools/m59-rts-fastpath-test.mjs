@@ -51,6 +51,26 @@ const aggregate = {
         role: 'other', safe_actions: [] },
     ],
   },
+  commander: { enabled: true, authority: 'authenticated-enabled-loopback-gateway',
+    heartbeat_default_ms: 6666 },
+  control: {
+    t1: { lease_state: 'active', lease_id: 'lease-fast', owner: 'fixture',
+      expires_at_ms: 1770000020000, expires_in_ms: 20000,
+      leased_faculties: ['work', 'movement'], keeper_state: 'inert',
+      lease_token: 'm59l_must_not_reach_snapshot' },
+    t2: { lease_state: 'available', leased_faculties: [], keeper_state: 'running' },
+  },
+  commerce: {
+    t1: { purse: { amount: 42, currency: 'shillings' },
+      affordances: { buy: [], sell: [], offer: [] }, catalog: null,
+      trade: { revision: 2, role: 'recipient', counterparty: { id: 99, name: 'Friend' },
+        ours: [], theirs: [], may_accept: false, fingerprint: 'internal-only' },
+      observed_at_ms: 1770000000000, refresh: 'cached_no_packet',
+      quote_token: 'm59q_must_not_reach_snapshot' },
+    t2: { purse: { amount: 0, currency: 'shillings' },
+      affordances: { buy: [], sell: [], offer: [] }, catalog: null, trade: null,
+      observed_at_ms: 1770000000000, refresh: 'cached_no_packet' },
+  },
 };
 
 let clock = 1000;
@@ -94,6 +114,11 @@ assert.equal(fast.agents[0].took_s, 1);
 assert.equal(fast.agents[0].ok, true);
 assert.equal(fastReader.fastPathStatus.mode, 'broker-aggregate-v1');
 assert.equal(fastReader.healthCache.value.pid, 4321);
+assert.equal(fast.commander.enabled, false,
+  'broker support alone does not advertise commander through a read-only gateway');
+assert.equal(fast.control.t1.lease_id, 'lease-fast');
+assert.equal(fast.commerce.t1.purse.amount, 42);
+assert.doesNotMatch(JSON.stringify(fast), /must_not_reach|lease_token|quote_token|fingerprint|internal-only/);
 
 const legacyCalls = [];
 const legacyTool = value => jsonResponse(200, {

@@ -25,8 +25,10 @@
 //      relay needs an edible mushroom. A character with neither can neither cook nor
 //      share, so reagents go first.
 //   2. FOOD. Straight redistribution from the fullest larder to the emptiest.
-//   3. RELAY. Kraanan lv1, 5 mana, one edible mushroom, and it hands the CASTER's OWN
-//      VIGOR to someone else (relay.kod) — it is not a mana transfer. It refuses a target
+//   3. RELAY. Kraanan lv1, 5 mana, one edible mushroom — whose kod class is "Snack", so
+//      the `spells` tool reports the requirement under that name; see readAll — and it
+//      hands the CASTER's OWN VIGOR to someone else
+//      (relay.kod) — it is not a mana transfer. It refuses a target
 //      already at 150 (MAX_TOTAL_AMOUNT) and a caster at or under 15 vigor, and it moves
 //      spellpower's worth, capped at the caster's vigor minus 10. So it is the one way to
 //      move vigor itself rather than the means to make it.
@@ -124,6 +126,17 @@ async function readAll(agents) {
       purse: items.filter(i => /shilling/i.test(i.name)).reduce((t, i) => t + (i.amount || 1), 0),
       larder: items.reduce((t, i) => t + nut(i.name) * (i.amount || 1), 0),
       shrooms: items.filter(i => /edible mushroom/i.test(i.name)).reduce((t, i) => t + (i.amount || 1), 0),
+      // THE CLASS IS `Snack`; THE DISPLAY NAME IS "edible mushroom". They are one item,
+      // and confusing them wasted a shopping trip and nearly a working tool.
+      //
+      // `spells` reports relay as `blocked_by: ["needs 1 x Snack, carrying 0"]` — that is
+      // the KOD CLASS. Every inventory name on the wire is the display name, so a scan for
+      // /snack/ over `items` matches nothing even while the character is holding a stack of
+      // them, and reads as "the fleet has none" rather than "this scan cannot see them".
+      // `shrooms` above is the count relay actually needs; there is no separate field.
+      //
+      // Buying them: the shop lists the class, `Mushroom`, so `who-sells mushroom` finds it
+      // (104 Barloque, 53 Tos, 373 Jasper) while `who-sells snack` finds nothing at all.
       elder: items.filter(i => /elder\s?berry/i.test(i.name)).reduce((t, i) => t + (i.amount || 1), 0),
       herbs: items.filter(i => /^herbs?$/i.test(i.name)).reduce((t, i) => t + (i.amount || 1), 0),
       items,
@@ -243,7 +256,18 @@ const main = async () => {
     const rich = now.filter(r => (r.vigor ?? 0) > TARGET + 20 && r.mana >= 5 && r.shrooms >= 1)
                     .sort((a, b) => b.vigor - a.vigor);
     if (!poor.length) { log('   everyone is at the cap'); break; }
-    if (!rich.length) { log('   nobody has spare vigor, mana and a mushroom to cast with'); continue; }
+    // SAY HOW MANY, not just that nobody can. "Nobody has spare vigor, mana and a mushroom"
+    // is three conditions in one sentence and hides which one failed — and the commonest
+    // cause is the eating step above, which ranks edible mushrooms FIRST and will happily
+    // eat the entire relay reagent before this line is reached.
+    if (!rich.length) {
+      const held = now.reduce((t, r) => t + (r.shrooms ?? 0), 0);
+      const spare = now.filter(r => (r.vigor ?? 0) > TARGET + 20).length;
+      log(`   no relay: ${spare} character(s) have vigor to spare and the fleet holds ` +
+          `${held} edible mushroom(s) — relay needs one per cast, and the eat rounds above ` +
+          `consume them first`);
+      continue;
+    }
     for (const t of poor) {
       const g = rich.find(x => x.agent !== t.agent);
       if (!g) break;

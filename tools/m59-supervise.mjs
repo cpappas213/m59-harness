@@ -205,10 +205,24 @@ const stamp = () => new Date().toISOString().slice(11, 19);
 // multiplied by a 30% paying rate, so the fleet was barely collecting it.
 //
 // 536 is listed twice because living tree is 30% of its table against 15% of 556's.
+//
+// `level` IS THE PREY'S OWN LEVEL AND IT IS NOT OPTIONAL. fallbackHunt picks the first
+// entry whose ground can still advance the character, and the test it used was
+// `g.level == null || g.level > l` — with no entry carrying a level, `undefined == null`
+// matched the FIRST ENTRY EVERY TIME. Measured after the fact: fallbackHunt(10) through
+// fallbackHunt(95) all returned 'living tree', and the whole ladder underneath it — giant
+// rat, fungus beast, zombie, battered skeleton, skeleton, troll — was unreachable code.
+//
+// It cost the fleet two things at once. Living tree is level 50, so every one of the
+// twelve characters at 50 or above was handed prey that CANNOT advance them
+// (AdvancementCheck needs monster level strictly greater), which is why the fleet went two
+// hours without a single level gain while killing steadily. And it sent them to 536, which
+// is the deadliest room in the whole postmortem record at 17 deaths: Kermit was re-tasked
+// to 'living tree @ 536', walked there at low health, and died.
 const CAVE = [
-  { room: 536, name: 'Forest of Farol',      hunt: 'living tree', share: 30, cap: 12 },
-  { room: 536, name: 'Forest of Farol',      hunt: 'living tree', share: 30, cap: 12 },
-  { room: 556, name: 'Deep Forest of Farol', hunt: 'living tree', share: 15, cap: 16 },
+  { room: 536, name: 'Forest of Farol',      hunt: 'living tree', level: 50, share: 30, cap: 12 },
+  { room: 536, name: 'Forest of Farol',      hunt: 'living tree', level: 50, share: 30, cap: 12 },
+  { room: 556, name: 'Deep Forest of Farol', hunt: 'living tree', level: 50, share: 15, cap: 16 },
 ];
 
 // `hunt` is matched as a SUBSTRING (findCreature, m59-skills.mjs), so the single word
@@ -332,7 +346,13 @@ export function fallbackHunt(level) {
   // So: if the fleet's own hunting ground can advance this character, hunt what IT holds.
   // The level table below is only for a character that ground cannot pay.
   const l = Number(level) || 0;
-  const here = CAVE.find(g => g.level == null || g.level > l) ?? CAVE[0];
+  // AN ENTRY WITH NO LEVEL IS NOT A WILDCARD, IT IS AN ENTRY THAT CANNOT BE JUDGED — and
+  // treating it as one made this function a constant. `g.level == null` matched the first
+  // row of CAVE for every character in the fleet, so the ladder below never ran once. Skip
+  // what we cannot judge and fall through to the level table, which is the safe direction:
+  // being wrong there costs a walk, being wrong here costs the character its advancement
+  // and points it at Forest of Farol.
+  const here = CAVE.find(g => g.level != null && g.level > l);
   if (here?.hunt) return here.hunt;
   if (l < 30) return 'giant rat';          // L30
   if (l < 50) return 'fungus beast';       // L50 — gentlest thing in the game, rating 210

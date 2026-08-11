@@ -110,8 +110,13 @@ function keeperCell(k) {
 
 // ------------------------------------------------------------------ /deaths
 
-export function renderDeaths({ hours = 168 } = {}) {
-  const rows = loadPostmortems({ sinceMs: hours * 3600 * 1000 });
+// `characters` is the fleet this board is about, as a Set of names, or null for every
+// record on the machine. The broker passes its OWN roster — it is serving this page, so it
+// already knows, and probing itself over HTTP to find out would be absurd. See
+// m59-fleetscope.mjs for why these directories need telling at all.
+export function renderDeaths({ hours = 168, characters = null } = {}) {
+  const all = loadPostmortems({ sinceMs: hours * 3600 * 1000 });
+  const rows = characters ? all.filter(r => characters.has(r.character)) : all;
   const f = facets(rows);
   const placed = rows.filter(r => r.where.trusted).length;
   const observed = rows.filter(r => r.cause.observed).length;
@@ -209,10 +214,10 @@ pickFacet('cause');
 
 // ------------------------------------------------------------------ /tougher
 
-export function renderTougher({ hours = 168 } = {}) {
-  const gains = allGains({ sinceMs: hours * 3600 * 1000 });
+export function renderTougher({ hours = 168, characters = null } = {}) {
+  const gains = allGains({ sinceMs: hours * 3600 * 1000, characters });
   const s = toughSummary(gains);
-  const feeds = allFeeds();
+  const feeds = allFeeds({ characters });
 
   const FACETS = {
     creature: { children: s.by_creature, total: s.total, unit: 'points',

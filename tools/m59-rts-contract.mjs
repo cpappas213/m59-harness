@@ -7,7 +7,7 @@
 import { rtsSafeSpellRule } from './m59-rts-safety.mjs';
 
 export const RTS_SCHEMA = 'm59-rts/v1';
-export const RTS_NATIVE_VERSION = 6;
+export const RTS_NATIVE_VERSION = 7;
 export const RTS_INVENTORY_MAX_ITEMS = 512;
 
 const RTS_INVENTORY_ROLES = new Set(['weapon', 'armor', 'shield', 'helmet', 'food', 'other']);
@@ -106,6 +106,135 @@ function normalizeInventory(value) {
   if (!Array.isArray(value)) return [];
   return value.slice(0, RTS_INVENTORY_MAX_ITEMS)
     .map(normalizeInventoryItem).filter(Boolean);
+}
+
+function normalizeCommander(value) {
+  const row = object(value);
+  const heartbeat = integer(row.heartbeat_default_ms ?? row.heartbeat_ms);
+  return {
+    enabled: bool(row.enabled) === true,
+    authority: text(row.authority, 120),
+    heartbeat_ms: heartbeat !== null && heartbeat >= 0 ? heartbeat : null,
+  };
+}
+
+function normalizeControl(value) {
+  const row = object(value);
+  const expiresAt = integer(row.expires_at_ms);
+  const expiresIn = integer(row.expires_in_ms);
+  return {
+    lease_state: text(row.lease_state, 40) || 'unavailable',
+    lease_id: text(row.lease_id, 120),
+    owner: text(row.owner, 120),
+    expires_at_ms: expiresAt !== null && expiresAt >= 0 ? expiresAt : null,
+    expires_in_ms: expiresIn !== null && expiresIn >= 0 ? expiresIn : null,
+    faculties: stringList(row.leased_faculties, 16),
+    keeper_state: text(row.keeper_state, 40),
+    blocked_reason: text(row.blocked_reason, 240),
+  };
+}
+
+function normalizeCommerceIdentity(value) {
+  const row = object(value);
+  const id = integer(row.id);
+  const name = text(row.name, 160);
+  return id !== null && id > 0 && name ? { id, name } : null;
+}
+
+function normalizeCommerceItems(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const items = [];
+  for (const raw of value.slice(0, RTS_INVENTORY_MAX_ITEMS)) {
+    const row = object(raw);
+    const identity = normalizeCommerceIdentity(row);
+    const quantity = integer(row.quantity);
+    if (!identity || quantity === null || quantity < 1 || seen.has(identity.id)) continue;
+    seen.add(identity.id);
+    items.push({ ...identity, quantity });
+  }
+  return items.sort((a, b) => a.id - b.id || a.name.localeCompare(b.name));
+}
+
+function normalizeCommerceCatalogue(value, observedAtMs) {
+  const row = object(value);
+  const merchant = normalizeCommerceIdentity(row.merchant);
+  if (!merchant) return null;
+  const items = [];
+  const seen = new Set();
+  for (const raw of (Array.isArray(row.items) ? row.items : []).slice(0, RTS_INVENTORY_MAX_ITEMS)) {
+    const item = object(raw);
+    const identity = normalizeCommerceIdentity(item);
+    const available = integer(item.available_quantity);
+    const max = integer(item.max_quantity);
+    const unitPrice = integer(item.unit_price);
+    const currency = text(item.currency, 40);
+    if (!identity || seen.has(identity.id) || unitPrice === null || unitPrice < 0) continue;
+    seen.add(identity.id);
+    items.push({
+      ...identity,
+      available_quantity: available !== null && available >= 0 ? available : null,
+      max_quantity: max !== null && max >= 0 ? max : null,
+      unit_price: unitPrice,
+      currency,
+    });
+  }
+  return {
+    merchant,
+    observed_at_ms: observedAtMs,
+    items: items.sort((a, b) => a.id - b.id || a.name.localeCompare(b.name)),
+  };
+}
+
+function normalizeCommerceTrade(value) {
+  const row = object(value);
+  if (!Object.keys(row).length) return null;
+  const revision = integer(row.revision);
+  if (revision === null || revision < 0) return null;
+  const updatedAt = integer(row.updated_at_ms);
+  return {
+    revision,
+    role: text(row.role, 40),
+    counterparty: normalizeCommerceIdentity(row.counterparty),
+    ours: normalizeCommerceItems(row.ours),
+    theirs: normalizeCommerceItems(row.theirs),
+    may_accept: bool(row.may_accept) === true,
+    updated_at_ms: updatedAt !== null && updatedAt >= 0 ? updatedAt : null,
+  };
+}
+
+function normalizeCommerce(value) {
+  const row = object(value);
+  if (text(row.error, 240)) return { error: text(row.error, 240) };
+  const purse = object(row.purse);
+  const amount = integer(purse.amount);
+  const observedAt = integer(row.observed_at_ms);
+  const affordances = object(row.affordances);
+  const targets = kind => {
+    const seen = new Set();
+    return (Array.isArray(affordances[kind]) ? affordances[kind] : [])
+      .map(normalizeCommerceIdentity).filter(identity => {
+        if (!identity || seen.has(identity.id)) return false;
+        seen.add(identity.id);
+        return true;
+      }).sort((a, b) => a.id - b.id || a.name.localeCompare(b.name));
+  };
+  const observedAtMs = observedAt !== null && observedAt >= 0 ? observedAt : null;
+  return {
+    purse: {
+      amount: amount !== null && amount >= 0 ? amount : null,
+      currency: text(purse.currency, 40),
+    },
+    affordances: {
+      buy: targets('buy'),
+      sell: targets('sell'),
+      offer: targets('offer'),
+    },
+    catalog: normalizeCommerceCatalogue(row.catalog, observedAtMs),
+    trade: normalizeCommerceTrade(row.trade),
+    observed_at_ms: observedAtMs,
+    refresh: text(row.refresh, 80),
+  };
 }
 
 function normalizeAnimation(value) {
@@ -287,7 +416,7 @@ function exitKey(exit) {
 }
 
 export function buildRtsSnapshot({ health, fleetPayload, looks, equipment, spells, inventory,
-                                   observedAt, sequence }) {
+                                   commander, control, commerce, observedAt, sequence }) {
   const broker = object(health);
   const fleet = object(fleetPayload);
   const rows = Array.isArray(fleet.fleet) ? fleet.fleet : [];
@@ -297,6 +426,8 @@ export function buildRtsSnapshot({ health, fleetPayload, looks, equipment, spell
   const spellsByAgent = spells instanceof Map ? spells : new Map(Object.entries(object(spells)));
   const inventoryByAgent = inventory instanceof Map
     ? inventory : new Map(Object.entries(object(inventory)));
+  const controlByAgent = control instanceof Map ? control : new Map(Object.entries(object(control)));
+  const commerceByAgent = commerce instanceof Map ? commerce : new Map(Object.entries(object(commerce)));
   const rooms = new Map();
   const agents = [];
   const errors = [];
@@ -400,6 +531,13 @@ export function buildRtsSnapshot({ health, fleetPayload, looks, equipment, spell
       (a.to ?? Number.MAX_SAFE_INTEGER) - (b.to ?? Number.MAX_SAFE_INTEGER) || a.kind.localeCompare(b.kind)),
   })).sort((a, b) => a.num - b.num);
 
+  const controlOut = Object.create(null);
+  const commerceOut = Object.create(null);
+  for (const agent of agents) {
+    controlOut[agent.agent] = normalizeControl(controlByAgent.get(agent.agent));
+    commerceOut[agent.agent] = normalizeCommerce(commerceByAgent.get(agent.agent));
+  }
+
   return {
     schema: RTS_SCHEMA,
     sequence: text(sequence, 100) || String(Date.now()),
@@ -410,6 +548,9 @@ export function buildRtsSnapshot({ health, fleetPayload, looks, equipment, spell
       fleet: text(broker.fleet, 64),
       broker_pid: integer(broker.pid),
     },
+    commander: normalizeCommander(commander),
+    control: controlOut,
+    commerce: commerceOut,
     agents: agents.sort((a, b) => a.agent.localeCompare(b.agent)),
     rooms: roomList,
     errors: errors.sort((a, b) => a.agent.localeCompare(b.agent)),
@@ -448,7 +589,8 @@ export function toNativeSnapshot(snapshot) {
   // Native v5 adds one SPELL record per cached known spell immediately after its
   // AGENT. It does not change the fixed AGENT or ENTITY field counts.
   // Native v6 follows those spells with cached ITEM records and an optional recent
-  // ACTION outcome. Older fixed record shapes remain unchanged.
+  // ACTION outcome. Native v7 adds token-free commander, lease, commerce catalog,
+  // and exact two-sided trade telemetry. Older fixed record shapes remain unchanged.
   const appearance = (room, objectId, value) => {
     if (room === null || room === undefined || objectId === null || objectId === undefined) return;
     const visual = value?.appearance;
@@ -476,6 +618,8 @@ export function toNativeSnapshot(snapshot) {
   };
   line('M59RTS', RTS_NATIVE_VERSION, snapshot.sequence, snapshot.observed_at,
        snapshot.source?.fleet, snapshot.source?.broker_pid);
+  line('COMMANDER', snapshot.commander?.enabled, snapshot.commander?.authority,
+       snapshot.commander?.heartbeat_ms);
   for (const agent of snapshot.agents || []) {
     line('AGENT', agent.agent, agent.character, agent.room_num, agent.room,
          agent.room_resource, agent.level, agent.object_id, agent.col, agent.row,
@@ -491,6 +635,41 @@ export function toNativeSnapshot(snapshot) {
     if (agent.last_action)
       line('ACTION', agent.agent, agent.last_action, agent.took_s, agent.ok,
            agent.cancelled, agent.failed);
+    const control = snapshot.control?.[agent.agent];
+    line('CONTROL', agent.agent, control?.lease_state, control?.lease_id, control?.owner,
+         control?.expires_at_ms, control?.expires_in_ms, encodeList(control?.faculties),
+         control?.keeper_state, control?.blocked_reason);
+    const commerce = snapshot.commerce?.[agent.agent];
+    line('COMMERCE', agent.agent, commerce?.purse?.amount, commerce?.purse?.currency);
+    const targets = new Map();
+    for (const kind of ['buy', 'sell', 'offer']) {
+      for (const target of commerce?.affordances?.[kind] || []) {
+        const key = `${target.id}\0${target.name}`;
+        if (!targets.has(key)) targets.set(key,
+          { ...target, buy: false, sell: false, offer: false });
+        targets.get(key)[kind] = true;
+      }
+    }
+    for (const target of targets.values())
+      line('COMMERCE_TARGET', agent.agent, agent.room_num, target.id, target.name,
+           target.buy, target.sell, target.offer);
+    if (commerce?.catalog) {
+      line('CATALOG', agent.agent, commerce.catalog.merchant?.id,
+           commerce.catalog.merchant?.name, commerce.catalog.observed_at_ms);
+      for (const item of commerce.catalog.items || [])
+        line('CATALOG_ITEM', agent.agent, commerce.catalog.merchant?.id, item.id,
+             item.name, item.available_quantity, item.max_quantity, item.unit_price,
+             item.currency);
+    }
+    if (commerce?.trade) {
+      const trade = commerce.trade;
+      line('TRADE', agent.agent, trade.revision, trade.role, trade.counterparty?.id,
+           trade.counterparty?.name, trade.may_accept, trade.updated_at_ms);
+      for (const item of trade.ours || [])
+        line('TRADE_ITEM', agent.agent, 'ours', item.id, item.name, item.quantity);
+      for (const item of trade.theirs || [])
+        line('TRADE_ITEM', agent.agent, 'theirs', item.id, item.name, item.quantity);
+    }
     appearance(agent.room_num, agent.object_id, agent);
   }
   for (const room of snapshot.rooms || []) {

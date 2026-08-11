@@ -320,17 +320,66 @@ console.log('\nboth boards render against this fixture');
 
 // ------------------------------------------------------------------ the tab bar
 //
-// The whole reason m59-page-chrome.mjs exists: five boards were carrying five copies of
-// one list, and a page added to four of them is invisible from the fifth.
-console.log('\none tab bar, five boards');
+// The whole reason m59-page-chrome.mjs exists: eight boards carrying eight copies of one
+// list would inevitably leave a newly added page invisible from one of the others.
+console.log('\none tab bar, eight boards');
 {
   const { NAV, TABS } = await import('./m59-page-chrome.mjs');
-  ok('every board has a tab', TABS.length === 5);
+  ok('every board has a tab', TABS.length === 8);
   const nav = NAV('economy');
   ok('the current page is the only one marked', (nav.match(/class="on"/g) || []).length === 1);
   ok('and it is the right one', /href="\/economy" class="on"/.test(nav));
   ok('a page that names no tab still gets a working nav',
      !/class="on"/.test(NAV('nonesuch')) && /href="\/deaths"/.test(NAV('nonesuch')));
+}
+
+// ------------------------------------------------------------------ automation boards
+
+console.log('\nthe DUM and Harness boards');
+{
+  const { keeperActivity, renderDumBoard, renderHarnessBoard } =
+    await import('./m59-observability-page.mjs');
+  const metrics = { since: NOW - 60_000, through: NOW, interventions_triggered: 7,
+    interventions_applied: 5, interventions_no_change: 2, verification_failures: 1,
+    findings: 3, errors: 1, by_rule: [{ name: 'vault-policy', count: 4 }],
+    by_kind: [{ name: 'orders', count: 5 }] };
+  const dum = renderDumBoard({ metrics, hours: 2, details: {
+    crate: { checks: 1, finds: 1, rewards: 2, records: [{ at: NOW, agent: 'a', found: true,
+      reached: true, reward: [{ name: 'Rose', amount: 2 }], transcript: ['found'] }] },
+    create_food: { attempts: 1, produced: 1, blocked: 1,
+      blocked_by: [{ name: 'herbs', count: 1 }], records: [{ at: NOW, agent: 'b', event: 'blocked',
+        readiness: { meals: 0, mana: 10, reagents: { elderberry: 2, herbs: 0 }, blocked_by: ['herbs'] } }] },
+  } });
+  ok('the DUM board renders its own selected tab and counters',
+     /href="\/dum" class="on"/.test(dum) && /vault-policy/.test(dum) && />7<\/div>/.test(dum));
+  ok('crate and food records drill in without a client-side API',
+     /<details class="record">/.test(dum) && /2× Rose/.test(dum) && /blocked by herbs/.test(dum));
+  const fleet = [
+    { agent: 'a', character: 'Alpha', activity: 'hunting',
+      time: { fighting_s: 90, travelling_s: 30, active_s: 120 } },
+    { agent: 'b', character: 'Beta', activity: 'recovering',
+      time: { recovering_s: 60, stalled_s: 5, active_s: 65 } },
+  ];
+  const activity = keeperActivity(fleet);
+  ok('keeper activity totals every category across the fleet',
+     activity.totals.fighting_s === 90 && activity.totals.recovering_s === 60 &&
+     activity.totals.active_s === 185);
+  const harness = renderHarnessBoard({ fleet, details: {
+    travel: { trips: 1, duration_ms: 12_000, damage: 4, safe_spot_stops: 1, records: [{
+      at: NOW, character: 'Alpha', arrived: true, to: 39, duration_ms: 12_000, damage: 4,
+      safe_spot_stops: 1, maps: [{ room: 38, name: 'Castle Victoria', duration_ms: 8000, damage: 4 }] }] },
+    fighting: { sessions: 1, duration_ms: 10_000, damage: 2, safe_spot_pct: 75, records: [] },
+    trading: { sessions: 1, earned: 90, spent: 10, banked: 50, records: [] },
+    vault: { deposits: 1, items_deposited: 3, latest: [{ at: NOW, character: 'Beta',
+      items: [{ name: 'Inky Cap Mushroom', amount: 12 }] }] },
+  } });
+  ok('the Harness board renders its own selected tab and per-unit clocks',
+     /href="\/harness" class="on"/.test(harness) && /Alpha/.test(harness) && /1m 30s/.test(harness));
+  ok('keeper drill-ins carry map numbers, exact damage, trade income, and cached vault contents',
+     /Castle Victoria \(38\)/.test(harness) && /earned<\/div><div class="v">90/.test(harness) &&
+     /12× Inky Cap Mushroom/.test(harness));
+  ok('a missing DUM process is a visible page rather than a failed route',
+     /DUM observability is unavailable/.test(renderDumBoard({ error: 'connection refused' })));
 }
 
 rmSync(root, { recursive: true, force: true });

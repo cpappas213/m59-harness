@@ -65,6 +65,10 @@ const DRY = !!arg('dry-run', false);
 const NO_WAIT = !!arg('no-wait', false);
 const FORCE = !!arg('force', false);
 const TIMEOUT_MS = Number(arg('timeout', 240)) * 1000;
+// How long ONE character may spend looking for a wall before the update stops waiting for
+// it and takes it where it stands. Deliberately longer than the 90s the keeper is supposed
+// to give up at by itself, so this only ever catches a park that is genuinely stuck.
+const PARK_GIVE_UP_MS = Number(arg('park-give-up', 150)) * 1000;
 const FLEET = arg('fleet', null);
 const RPC = `http://127.0.0.1:${PORT}/`;
 
@@ -146,7 +150,26 @@ async function waitForReady(expected) {
     const f = await call('fleet', {}).catch(() => null);
     const rows = (f?.fleet || []).filter(r => r.in_game !== false);
     const parked = rows.filter(r => r.parked);
-    const ready = parked.filter(r => r.parked.ready);
+    // A CHARACTER THAT HAS BEEN LOOKING FOR A WALL FOR TOO LONG IS ALREADY STANDING IN THE
+    // OPEN, AND SAYING SO BEATS WAITING FOR IT FOR EVER.
+    //
+    // The header above promises that a character which cannot find a wall "gives up after
+    // ninety seconds and says so rather than holding the fleet hostage". That was the
+    // intent and it was never implemented: readiness was `parked.ready` alone, so a keeper
+    // whose park never resolves blocks every update indefinitely. Beaker sat
+    // `parked: true, ready: false` for 1,174 seconds across four separate attempts, and
+    // every one of them timed out with twenty of twenty-one behind walls.
+    //
+    // Waiting longer does not make that character safer. It keeps the whole fleet parked
+    // and earning nothing, and it leaves the outage un-taken. So a park past the deadline
+    // counts as ready IN THE OPEN — which is factually what it is — and is reported
+    // separately from the ones that found a wall.
+    //
+    // MARKED AS A WORKAROUND AT THE WRONG LEVEL. The bug is in the keeper's park(), which
+    // should reach that state by itself, and it cannot be fixed from here: fixing it needs
+    // the restart this is trying to perform.
+    const stuck = (r) => (r.parked?.waiting_for_s ?? 0) * 1000 > PARK_GIVE_UP_MS;
+    const ready = parked.filter(r => r.parked.ready || stuck(r));
     const line = `${stamp()} ${ready.length}/${rows.length} ready` +
                  (parked.length < rows.length ? `  (${rows.length - parked.length} not parking)` : '');
     if (line !== lastLine) { console.log(line); lastLine = line; }
@@ -154,6 +177,7 @@ async function waitForReady(expected) {
     // mid-update is not something to wait for — it is already not in a fight.
     if (rows.length && ready.length >= rows.length) {
       const open = ready.filter(r => !r.parked.holding);
+      const gaveUp = ready.filter(r => !r.parked.ready && stuck(r));
       console.log(`\n${stamp()} the fleet is parked.`);
       for (const r of ready) {
         const h = r.parked.holding;
@@ -166,6 +190,12 @@ async function waitForReady(expected) {
         console.log(`\n   ${open.length} of them could not find a wall. They are standing still and ` +
                     'awake, which is still better than being stopped mid-fight — but they are the ' +
                     'ones to look at first if the restart costs anybody.');
+      if (gaveUp.length)
+        console.log(`   ${gaveUp.length} never finished parking and are being taken as-is after ` +
+                    `${Math.round(PARK_GIVE_UP_MS / 1000)}s: ` +
+                    gaveUp.map(r => r.character ?? r.agent).join(', ') +
+                    ". That is a bug in the keeper's park(), not a property of the room — " +
+                    'they are the first to check if the restart costs anybody.');
       return { ok: true, rows };
     }
     await sleep(3000);

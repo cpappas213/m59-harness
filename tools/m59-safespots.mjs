@@ -588,6 +588,17 @@ export class SafeSpotBook {
     return rec;
   }
 
+  // WHAT JUDGED THIS SQUARE. A failure is permanent and that stays true however it was
+  // found — a square that let a blow through is a bad square whether the character was
+  // fighting from it or resting at it part-way through a journey, and the conservative
+  // direction is the cheap one: being wrong about a bad square costs a character, being
+  // wrong about a good one costs a walk to the next corner.
+  //
+  // But the two are not the same evidence. A travel hold is taken in a room nobody chose,
+  // with whatever followed you through the door, on a wall derived from geometry that has
+  // never been stood on. So the provenance is written down: `failed_via` is the most recent
+  // judge and `failed_by` counts them, which is enough to fish the travel-only rejections
+  // back out later without having to reconstruct anything.
   discredited(rec) {
     if (!rec) return false;
     if (rec.verified) return false;             // a person's word beats our arithmetic
@@ -595,9 +606,10 @@ export class SafeSpotBook {
   }
 
   // We stood here under attack and nothing landed while we were not swinging.
-  held(room, { col, row, x = null, y = null, seconds = 0, attackers = 0 }) {
+  held(room, { col, row, x = null, y = null, seconds = 0, attackers = 0, source = null }) {
     const rec = this.touch(room, col, row);
     rec.held++;
+    if (source) mark(rec, 'held', source);
     rec.held_seconds = (rec.held_seconds || 0) + Math.round(seconds);
     rec.most_attackers = Math.max(rec.most_attackers || 0, attackers);
     if (x != null) { rec.x = x; rec.y = y; }     // the exact place that worked
@@ -608,9 +620,10 @@ export class SafeSpotBook {
 
   // We stood here under attack and were hit anyway. The spot does not work, or does
   // not work from the angle we were standing at.
-  failed(room, { col, row, damage = 0, attackers = 0, settledMs = null }) {
+  failed(room, { col, row, damage = 0, attackers = 0, settledMs = null, source = null }) {
     const rec = this.touch(room, col, row);
     rec.failed++;
+    if (source) mark(rec, 'failed', source);
     rec.damage_taken = (rec.damage_taken || 0) + damage;
     rec.most_attackers = Math.max(rec.most_attackers || 0, attackers);
     // HOW SETTLED WE WERE WHEN THE WINDOW THAT CONDEMNED THIS SQUARE OPENED.
@@ -650,6 +663,15 @@ export class SafeSpotBook {
                                 : r.held > 0 ? 'holds' : 'untested' }))
       .sort((a, b) => (a.failed - b.failed) || (b.held - a.held));
   }
+}
+
+// Provenance for one outcome — the most recent judge, and a count per judge. Kept tiny and
+// additive so an old book without it reads exactly as it always did.
+function mark(rec, kind, source) {
+  rec[`${kind}_via`] = source;
+  const by = rec[`${kind}_by`] ?? {};
+  by[source] = (by[source] || 0) + 1;
+  rec[`${kind}_by`] = by;
 }
 
 let theBook = null;

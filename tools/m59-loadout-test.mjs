@@ -534,6 +534,134 @@ console.log('\none plan\'s gear, given to every character');
      odd.gear.slots.hat.join() === 'helmet' && odd.problems.some(p => /slot "hat"/.test(p)));
 }
 
+// Gear and desired inventory can also be one shared answer for a checked group or the
+// whole fleet. Character-specific fields must survive exactly as they do in the gear-only
+// compatibility path above.
+console.log('\none inventory plan, given to several characters');
+{
+  const shared = {
+    gear: { weapon: ['mace'], slots: { body: ['leather armor'] } },
+    carry: [
+      { item: 'elderberry', min: 20, max: 40, why: 'shared reagent target' },
+      { item: 'herb', min: 10, max: 20 },
+    ],
+  };
+  L.writeLoadout('Beaker', {
+    character: 'Beaker', note: 'do not replace this note',
+    carry: [{ item: 'herb', min: 2, max: 4 }],
+    sell: ['sapphire'], keep: ['signet ring'], purse: { float: 333, bank_above: 999 },
+    plan: { schools: { Faren: 3 }, abilities: [{ name: 'dodge' }] },
+    gear: { weapon: ['short sword'], slots: {} },
+  });
+  const before = L.readLoadout('Beaker').loadout;
+  const group = [{ character: 'Beaker', agent: 't7' }, { character: 'Bunsen', agent: 't8' }];
+
+  const preview = L.applyInventoryToAll(shared, group, { from: 'Kermit' });
+  ok('the shared preview writes nothing',
+     !existsSync(join(root, 'loadouts', 'bunsen.json')) &&
+     JSON.stringify(L.readLoadout('Beaker').loadout) === JSON.stringify(before));
+  ok('it reports gear and carry changes separately',
+     preview.rows[0].gear_changed && preview.rows[0].carry_changed &&
+     preview.counts.changed === 2 && preview.counts.created === 1);
+
+  const done = L.applyInventoryToAll(shared, group, { from: 'Kermit', apply: true });
+  const after = L.readLoadout('Beaker').loadout;
+  const fresh = L.readLoadout('Bunsen').loadout;
+  ok('applying gives every target the desired gear and carry list',
+     after.gear.weapon.join() === 'mace' && fresh.gear.slots.body.join() === 'leather armor' &&
+     after.carry.map(c => c.item).join() === 'elderberry,herb' && fresh.carry[0].min === 20);
+  ok('the preview and write select the same rows and sections',
+     JSON.stringify(preview.rows.map(r => [r.character, r.changed, r.gear_changed, r.carry_changed])) ===
+     JSON.stringify(done.rows.map(r => [r.character, r.changed, r.gear_changed, r.carry_changed])));
+  ok('and every character-specific field survives the shared write',
+     after.note === before.note && JSON.stringify(after.sell) === JSON.stringify(before.sell) &&
+     JSON.stringify(after.keep) === JSON.stringify(before.keep) &&
+     JSON.stringify(after.plan) === JSON.stringify(before.plan) &&
+     JSON.stringify(after.purse) === JSON.stringify(before.purse));
+  ok('sameCarry treats ordering as part of the plan',
+     L.sameCarry(shared.carry, shared.carry) && !L.sameCarry(shared.carry, [...shared.carry].reverse()));
+
+  ok('an entirely empty shared plan is refused without an explicit force',
+     (() => { try { L.applyInventoryToAll({ gear: {}, carry: [] }, group); return false; }
+              catch { return true; } })());
+  const cleared = L.applyInventoryToAll({ carry: [] }, [{ character: 'Beaker' }],
+                                        { apply: true, allowEmpty: true });
+  ok('an explicit carry-only clear leaves gear and all other fields alone',
+     cleared.rows[0].carry_changed && L.readLoadout('Beaker').loadout.carry.length === 0 &&
+     L.readLoadout('Beaker').loadout.gear.weapon.join() === 'mace' &&
+     L.readLoadout('Beaker').loadout.note === before.note);
+}
+
+// ------------------------------------------------- is this run closing the gear gap?
+//
+// `purpose: 'equip'` protects a run that earns kit rather than levels — ten characters are
+// at the level cap and cannot advance on a fungus beast, which does not make their day
+// worthless. What must NOT happen is that declaring it becomes an excuse that can never be
+// wrong: before this existed, yieldCheck returned null for every purpose except 'advance',
+// so `equip` would have protected the run by turning the instrument off.
+{
+  console.log('\nthe equip yield');
+
+  // A faction soldier, as m59-spawns.mjs now records one: TID_NONE (the treasure table
+  // genuinely says it drops nothing) plus the carried-gear drop the extractor never saw.
+  const soldier = {
+    name: "soldier of the Duke's army",
+    loot: { tid: 'TID_NONE', items: [] },
+    equipment_drops: { items: [
+      { item: 'LeatherArmor', slot: 'armour', carried_percent: 35, per_kill_percent: 7 },
+      { item: 'ShortSword',   slot: 'weapon', carried_percent: 15, per_kill_percent: 3 },
+      { item: 'Shield',       slot: 'shield', carried_percent: 100, per_kill_percent: 0,
+        never_drops: true },
+    ] },
+  };
+  const fungus = {
+    name: 'fungus beast',
+    loot: { tid: 'TID_MEDIUM', items: [{ item: 'ElderBerry', per_roll_percent: 30 }] },
+  };
+
+  ok('a creature with no row at all is no opinion, never "fine"',
+     L.equipYield({ buy: [{ item: 'leather armor', short: 1, gear: true }] }, null) === null);
+
+  // THE SHIELD IS THE ONE THAT MATTERS. Every soldier carries one and none can ever be
+  // collected, so a gap listing a shield must not read as satisfied by going to Tos.
+  const drops = L.droppablesOf(soldier).map(d => d.item);
+  ok('a never-dropped item is not offered as droppable',
+     !drops.includes('Shield') && drops.includes('LeatherArmor'), drops.join());
+  ok('a treasure share is kept under its own name, not passed off as per-kill',
+     L.droppablesOf(fungus)[0].per_roll_percent === 30 &&
+     L.droppablesOf(fungus)[0].per_kill_percent === undefined);
+
+  {
+    // Kod class name against display name, and the two spellings of armour.
+    const y = L.equipYield({ buy: [{ item: 'leather armour', short: 1, gear: true }] }, soldier);
+    ok('a soldier pays a character short of leather', y.pays === true);
+    ok('and says how often, per kill', y.for[0].per_kill_percent === 7);
+  }
+
+  {
+    const y = L.equipYield({ buy: [{ item: 'leather armor', short: 1, gear: true }] }, fungus);
+    ok('a fungus beast does NOT pay for leather', y.pays === false);
+    ok('and names what it drops instead of just refusing',
+       /drops none of/.test(y.why) && y.drops.includes('ElderBerry'), y.why);
+  }
+
+  // FINISHED AND FUTILE ARE BOTH "NOT PAYING" AND ONLY ONE IS BAD NEWS.
+  {
+    const y = L.equipYield({ buy: [] }, soldier);
+    ok('a complete list is not paying', y.pays === false);
+    ok('but is marked done rather than wasted', y.done === true);
+  }
+
+  // A gap the creature cannot fill, when it can fill nothing at all.
+  {
+    const bare = { name: 'training dummy' };
+    const y = L.equipYield({ buy: [{ item: 'leather armor', short: 1 }] }, bare);
+    ok('a creature that leaves nothing behind says so specifically',
+       y.pays === false && /leaves\s+nothing behind/.test(y.why), y.why);
+    ok('and does not invent a drop list', y.drops === null);
+  }
+}
+
 rmSync(root, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -157,19 +157,56 @@ export function locate(pm) {
 // A bare Y there is true and useless. So Y carries how long it had been blind, and the
 // page colours it: a keeper that was watching is not the same as one that was merely
 // running.
+function handbrakeOf(pm, outage) {
+  if (outage)
+    return { known: true, fired: false,
+             why: 'there was no keeper running, so there was no handbrake to fire' };
+  const w = pm?.summary?.watchdog ?? null;
+  if (!w) return { known: false, why: 'this death predates the watchdog being recorded' };
+  if (w.running === false) return { known: true, fired: false, why: 'no watchdog on that keeper' };
+  if (w.stood_down_for)
+    return { known: true, fired: false, stood_down_for: w.stood_down_for,
+             why: `the watchdog stood down — ${w.stood_down_for} — so it was never allowed to act` };
+  if (w.interrupted_this_pass)
+    return { known: true, fired: true, blocked_ms: w.pass_blocked_ms,
+             why: 'the watchdog DID interrupt the pass this character died in, and it died anyway' };
+  return { known: true, fired: false, blocked_ms: w.pass_blocked_ms,
+           why: 'the watchdog was running and never interrupted this pass — health did not '
+              + 'cross the flee line while it was watching' };
+}
+
 export function keeperOf(pm) {
   const outage = pm?.during_keeper_outage ?? null;
   const frame = (pm?.frames || []).filter(f => f?.at != null).sort((a, b) => a.at - b.at).slice(-1)[0];
   const blind_ms = frame && pm?.at != null ? pm.at - frame.at : null;
+  // COMPUTED BEFORE THE EARLY RETURNS, and included in all three of them.
+  //
+  // It was computed after, so the two branches that return early — died during a keeper
+  // outage, and no frames at all — carried `handbrake: undefined`. That is the same
+  // failure this field exists to fix, one level up: `undefined` reads as "did not fire"
+  // to anything that does not check, when the truth for an outage is "there was no keeper
+  // to fire it".
+  const handbrake = handbrakeOf(pm, outage);
   if (outage)
-    return { up: false, blind_ms, outage,
+    return { up: false, blind_ms, outage, handbrake,
              why: `nothing was driving — the keeper had been down ${Math.round((outage.ms ?? 0) / 1000)}s` };
   if (blind_ms == null)
-    return { up: null, blind_ms: null, outage: null,
+    return { up: null, blind_ms: null, outage: null, handbrake,
              why: 'no uptime record and no frames — cannot say either way' };
+  // WHAT THE HANDBRAKE DID, when the record carries it. Three deaths that look identical
+  // from outside — "died travelling, keeper blind" — are three different faults:
+  //   fired and died anyway  the interrupt is not enough; it cancels a walk and the next
+  //                          pass still has to survive long enough to decide
+  //   never fired            health never crossed the flee line before the end, so a
+  //                          level trigger was the wrong instrument (see the burst deaths)
+  //   stood down             an errand owned the character and the watchdog returns early
+  // Absent on every death recorded before the watchdog was written into the postmortem,
+  // and reported as UNKNOWN rather than as "did not fire" — the two are not the same and
+  // reading one as the other is how a fix gets aimed at the wrong half.
   return {
     up: true, blind_ms, outage: null,
     watching: blind_ms <= WATCH_MS,
+    handbrake,
     why: blind_ms <= WATCH_MS
       ? `the keeper was up and had looked ${Math.round(blind_ms / 100) / 10}s before the end`
       : `the keeper was UP BUT BLIND — it had not observed this character for ` +
@@ -339,9 +376,18 @@ if (import.meta.url === `file://${process.argv[1]}` ||
   const spec = String(arg('since', ''));
   const m = /^(\d+)\s*([hdm])$/.exec(spec);
   const sinceMs = m ? Number(m[1]) * ({ m: 60e3, h: 3600e3, d: 86400e3 })[m[2]] : null;
-  const rows = loadPostmortems({ sinceMs });
+
+  // WHOSE DEATHS. This directory is keyed by character name and nothing else, so a
+  // machine that has ever run a second fleet has that fleet's deaths in it for ever.
+  // Scoped to the fleet the BROKER is holding — see m59-fleetscope.mjs for why that and
+  // not the fleet named in a file. `--all-fleets` puts it back.
+  const { fleetScope, partition, scopeLine } = await import('./m59-fleetscope.mjs');
+  const scope = await fleetScope({ allFleets: process.argv.includes('--all-fleets') });
+  const { kept: rows, setAside } = partition(loadPostmortems({ sinceMs }), scope);
+
   const f = facets(rows);
-  console.log(`${rows.length} deaths${sinceMs ? ' in that window' : ''}\n`);
+  console.log(`${rows.length} deaths${sinceMs ? ' in that window' : ''}`);
+  console.log('  ' + scopeLine(scope, setAside) + '\n');
   console.log('WHAT KILLED THEM — announced by the server');
   for (const c of f.cause.children.slice(0, 12))
     console.log('  ' + String(c.value).padStart(4) + '  ' + c.name);

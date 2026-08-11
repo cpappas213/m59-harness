@@ -4,46 +4,21 @@
  * screen rather than inventing a fifth layout: the same four tabs in the same order, the
  * same stat bars, the same inventory grid with the stack count in the corner.
  *
+ * THE FRAME, THE STAT BARS AND THE FOOTER LINE ARE NOT HERE. They live in
+ * `tools/statpane.mjs`, which the build writes out as `assets/statpane.css` and which the
+ * fleet's own /stats board draws from as well — a read-only copy of this pane's stats tab.
+ * This file is loaded after it and holds the half that only a planner has: the tab strip,
+ * the draggable bar, the hatching that marks a value somebody TYPED, and the three other
+ * tabs. Add a rule about the frame or the bars there, not here, or the two panes will drift.
+ *
  * WHY IT IGNORES THE SITE'S THEME. Every other page here follows the reader's light/dark
  * preference. This panel does not, and must not: the whole point is that it looks like the
  * thing next to it on the desktop, and a "dark mode Meridian 59" is a different program.
  * The chrome around it — the picker, the summary, the diff — is theme-aware as usual, and
  * the seam between the two is deliberate.
- *
- * The colours are taken off screenshots of the running client at 1x, not guessed:
- * panel 0x9c9c9c, bar trough 0x5c1414, bar fill 0x18a018, bar border 0xc8a028.
  */
 
-:root {
-  --m59-panel: #9c9c9c;
-  --m59-panel-lit: #b4b4b4;
-  --m59-panel-dim: #6e6e6e;
-  --m59-trough: #5c1414;
-  --m59-fill: #18a018;
-  --m59-edge: #c8a028;
-  --m59-ink: #1c1c1c;
-  --m59-ink-dim: #4a4a4a;
-  --m59-say: #800080;      /* the client's own message colour */
-}
-
-/* The panel's noise. The client's is a bitmap; this is the same idea at the same
- * amplitude, inlined so the page has no extra request and works from a file:// copy. */
-.m59 {
-  --m59-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='64' height='64' filter='url(%23n)' opacity='0.16'/%3E%3C/svg%3E");
-}
-
 /* ---------------------------------------------------------------- the frame */
-
-.m59 {
-  background: var(--m59-noise), var(--m59-panel);
-  border: 2px solid;
-  border-color: var(--m59-panel-lit) var(--m59-panel-dim) var(--m59-panel-dim) var(--m59-panel-lit);
-  padding: 3px;
-  color: var(--m59-ink);
-  font: 13px/1.35 "Segoe UI", Tahoma, "DejaVu Sans", sans-serif;
-  min-width: 0;
-}
-.m59 * { box-sizing: border-box; }
 
 /* The tab strip. Four buttons, the selected one pressed in. */
 .m59-tabs { display: flex; gap: 2px; margin-bottom: 3px; }
@@ -61,6 +36,11 @@
   border-color: var(--m59-panel-dim) var(--m59-panel-lit) var(--m59-panel-lit) var(--m59-panel-dim);
   background: var(--m59-noise), #8e8e8e;
 }
+.m59-tab:disabled {
+  opacity: .4; cursor: not-allowed;
+  background: var(--m59-noise), var(--m59-panel);
+}
+.m59-tab:disabled:hover { background: var(--m59-noise), var(--m59-panel); }
 .m59-tab svg { width: 15px; height: 15px; flex: none; }
 .m59-tab .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 620px) { .m59-tab .lbl { display: none; } }
@@ -68,29 +48,21 @@
 .m59-pane { min-height: 320px; padding: 4px; }
 .m59-pane[hidden] { display: none; }
 
-/* ---------------------------------------------------------------- stat bars */
+/* ------------------------------------------------- stat bars: the editable half only
+ *
+ * The bar itself is in statpane.css. What is here is what a PLAN has and a reading does
+ * not: a bar you can drag, and hatching that says the number came from a person. The
+ * read-only board deliberately carries neither. */
 
-.m59-bars { display: grid; grid-template-columns: max-content 1fr; gap: 3px 8px; align-items: center; }
-.m59-bars > .k { font-size: 13px; color: var(--m59-ink); }
-.m59-bar {
-  position: relative; height: 17px; background: var(--m59-trough);
-  border: 1px solid var(--m59-edge); overflow: hidden;
-}
-.m59-bar > i { display: block; height: 100%; background: var(--m59-fill); }
-.m59-bar > b {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end;
-  padding-right: 5px; font-weight: 400; font-size: 11px; color: #fff;
-  text-shadow: 0 0 2px #000, 0 0 2px #000;
-}
-/* A bar you can drag. The game's are read-only; these are a build being described. */
 .m59-bar.edit { cursor: ew-resize; }
 .m59-bar input[type="range"] {
   position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
   opacity: 0; cursor: ew-resize;
 }
 /* Where the value came from. A number read off a live character and one somebody typed
- * must not render identically — that is the whole rule this site is built on. */
-.m59-bar.observed { border-color: #e8e8e8; }
+ * must not render identically — that is the whole rule this site is built on.
+ * `.observed`, the other half of the pair, is in statpane.css: the board's bars are all
+ * observed, so that is the shared state and this is the planner's addition. */
 .m59-bar.planned  > i { background: repeating-linear-gradient(135deg, var(--m59-fill) 0 6px, #12780f 6px 12px); }
 
 /* ---------------------------------------------------------------- lists */
@@ -144,12 +116,7 @@
 .m59-cell .noicon { font-size: 9px; text-align: center; word-break: break-word; opacity: .8; }
 .m59-empty { padding: 18px 6px; text-align: center; color: var(--m59-ink-dim); font-size: 12px; }
 
-/* The pane's own footer line — weight against capacity. */
-.m59-foot {
-  margin-top: 4px; padding-top: 3px; border-top: 1px solid var(--m59-panel-dim);
-  font-size: 11px; color: var(--m59-ink-dim); display: flex; gap: 10px; flex-wrap: wrap;
-}
-.m59-foot .over { color: #7a1010; font-weight: 600; }
+/* The pane's own footer line — weight against capacity — is `.m59-foot`, in statpane.css. */
 
 /* ---------------------------------------------------------------- school grid */
 
@@ -180,6 +147,27 @@
 }
 .pl-bar select, .pl-bar input[type="text"] { min-width: 0; }
 .pl-bar .grow { flex: 1 1 auto; }
+.pl-characters {
+  flex: 1 0 100%; min-width: 0; margin: 0; padding: 6px 8px 8px;
+  border: 1px solid var(--line, #d6d3cd); border-radius: 4px;
+}
+.pl-characters legend { padding: 0 4px; font-size: 12px; font-weight: 600; }
+.pl-character-list { display: flex; flex-direction: column; gap: 5px; }
+.pl-char-group { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: start; }
+.pl-char-group > strong { padding-top: 2px; font-size: 11px; opacity: .7; }
+.pl-char-checks {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 3px 10px;
+}
+.pl-char-check {
+  display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 12px; cursor: pointer;
+}
+.pl-char-check input { flex: none; }
+.pl-char-check span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-character-empty { margin: 0; font-size: 12px; opacity: .7; }
+@media (max-width: 620px) {
+  .pl-char-group { grid-template-columns: 1fr; gap: 2px; }
+  .pl-char-checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .pl-msg { font-size: 13px; }
 .pl-msg.bad { color: #a4232b; }
 .pl-msg.good { color: #1d7a3a; }

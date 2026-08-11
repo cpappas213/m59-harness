@@ -202,9 +202,17 @@ export async function ensureAbilities(s, { kinds = 'both', maxAgeMs = DEFAULT_MA
 // no message and no complaint. It is in the history exactly as a gain is — `by` is
 // negative — and it is separated out here rather than netted off, because a fleet that
 // gained 40 points and lost 38 is a fleet standing still, and one number cannot say so.
-export function fleetAbilities({ sinceMs = 7 * 24 * 3600 * 1000 } = {}) {
+// `characters` is the fleet this is being asked about, as a Set of names, or null for
+// every book on the machine. It is not optional in spirit: this directory is keyed by
+// character name and nothing else, so a machine that has ever run a second fleet has that
+// fleet's books in it for ever — 10 of 31 when this was written, including a throwaway
+// from a local server that no longer exists. The atrophy columns, which are the whole
+// reason this board exists, were being computed over that mixture. See m59-fleetscope.mjs.
+export function fleetAbilities({ sinceMs = 7 * 24 * 3600 * 1000, characters = null } = {}) {
   const cutoff = sinceMs ? Date.now() - sinceMs : 0;
-  const books = listCharacters().map(loadBook).filter(b => b.character);
+  const books = listCharacters()
+    .filter(c => !characters || characters.has(c))
+    .map(loadBook).filter(b => b.character);
 
   // name -> the row on the ability sheet. Keyed by name across the whole fleet, because
   // the interesting comparison is one skill down twenty-one characters.

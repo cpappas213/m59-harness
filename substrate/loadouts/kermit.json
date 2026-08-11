@@ -2,7 +2,7 @@
  "format": "m59-loadout/1",
  "character": "Kermit",
  "agent": "t1",
- "updated": "2026-08-08T01:25:54.224Z",
+ "updated": "2026-08-08T23:50:28.612Z",
  "note": "",
  "plan": {
   "schools": {},
@@ -10,8 +10,19 @@
   "abilities": []
  },
  "gear": {
-  "weapon": [],
-  "slots": {}
+  "weapon": [
+   "mace",
+   "hammer"
+  ],
+  "slots": {
+   "body": [
+    "leather armor"
+   ],
+   "shield": [
+    "small round shield"
+   ]
+  },
+  "from": "the fleet's proven answer, applied deliberately, 2026-08-08 23:50"
  },
  "carry": [
   {

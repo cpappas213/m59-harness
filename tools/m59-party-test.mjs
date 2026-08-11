@@ -24,7 +24,8 @@ import './m59-test-ledger.mjs';        // FIRST — importing the keeper records
 import { claimSpot, releaseSpot, spotTakenByAnother, claimedSpotList,
          spotOccupancy, SPOT_SHARE_CAP } from './m59-autopilot.mjs';
 import * as party from './m59-party.mjs';
-import { armourKind, armourScore, armourOf, ARMOUR_SLOTS } from './m59-skills.mjs';
+import { armourKind, armourScore, armourOf, ARMOUR_SLOTS,
+         absorbsSomething, wearBest } from './m59-skills.mjs';
 import { pairUp, assignRooms } from './m59-supervise.mjs';
 
 let pass = 0, fail = 0;
@@ -231,6 +232,77 @@ party.resetParties();
      ARMOUR_SLOTS.every(s => !have[s].some(x => /mace/.test(x.name))));
 }
 
+// ------------------------------------------------- any armour beats none, in an EMPTY slot
+//
+// Fourteen of twenty-one characters were bare while the rule said a negative score "stays
+// off", so a character holding chain and nothing else wore nothing. Bare skin has no
+// defence bonus AND no absorption; the score compares against it as though it were
+// neutral, and it is not. See absorbsSomething in m59-skills.mjs for the arithmetic —
+// against a fungus beast every piece in the table beats wearing nothing.
+//
+// What must NOT change is the ranking: leather still wins where leather exists, and the
+// floor is a floor rather than a preference for heavy armour.
+{
+  console.log('\nthe armour floor');
+  const mk = (names, wornIds = []) => {
+    const using = new Set(wornIds);
+    const c = {
+      inventory: names.map((_, i) => ({ id: i + 1, nameRsc: i + 1 })),
+      rsc: { get: r => names[r - 1] },
+      using, evSeq: 0,
+      requestInventory: async () => {},
+      waitFor: async () => ({ events: [] }),
+      use: async (id) => { using.add(id); },
+      unuse: async (id) => { using.delete(id); },
+    };
+    return { need: () => c, pacer: { submit: async (_k, fn) => fn() }, _c: c };
+  };
+  const bodyOf = (r) => (r.worn || []).find(w => w.slot === 'armour');
+
+  ok('absorption is what makes the trade real', absorbsSomething({ absorb: 4 }) === true);
+  ok('leather absorbs nothing, and does not need to', absorbsSomething({ absorb: 0 }) === false);
+  // The one shape that really would be worse than skin. Nothing in ARMOUR is this today;
+  // the floor is written so that adding one would not silently get it worn.
+  ok('negative defence buying no absorption is not floored',
+     absorbsSomething({ defense: -80, absorb: 0 }) === false);
+
+  {
+    const s = mk(['scale armor']);
+    const r = await wearBest(s, { refresh: false });
+    const body = bodyOf(r);
+    ok('a bare character wears the scale it was carrying', body?.name === 'scale armor',
+       JSON.stringify(r.worn) + ' skipped=' + JSON.stringify(r.skipped));
+    ok('and says it is a floor rather than an endorsement', body?.floor === true);
+    ok('and the score it lost on is recorded', body?.score < 0);
+  }
+
+  {
+    const s = mk(['scale armor', 'leather armor']);
+    const r = await wearBest(s, { refresh: false });
+    ok('leather still beats scale when both are in the pack',
+       bodyOf(r)?.name === 'leather armor', JSON.stringify(r.worn));
+    ok('and winning on merit is not marked as a floor', bodyOf(r)?.floor === undefined);
+  }
+
+  // THE HALF THAT ACTUALLY BIT. `wearBest` stripped a negative piece "whether or not the
+  // pack holds a replacement" — so a character wearing the only armour it owned was
+  // undressed and left that way.
+  {
+    const s = mk(['scale armor'], [1]);
+    const r = await wearBest(s, { refresh: false });
+    ok('scale already on is not stripped down to bare', !(r.stripped || []).length,
+       JSON.stringify(r.stripped));
+    ok('and the server use list still holds it', s._c.using.has(1));
+  }
+
+  // ...while a real upgrade must still displace it, or the floor becomes a ratchet.
+  {
+    const s = mk(['plate armor', 'leather armor'], [1]);
+    const r = await wearBest(s, { refresh: false });
+    ok('leather still displaces worn plate', s._c.using.has(2), JSON.stringify(r));
+  }
+}
+
 // ---------------------------------------------------------------- deployment
 
 {
@@ -249,8 +321,13 @@ party.resetParties();
   const five = pairUp([...rows, { agent: 't5', character: 'E', level: 28 }]);
   ok('an odd fleet leaves exactly one over', five.pairs.length === 2 && five.odd?.character === 'E');
 
-  // Pairs spread across rooms rather than stacking: each room caps its generator.
-  const plan = assignRooms(pairs);
+  // The assignment primitive spreads across the room list it is given. The production
+  // hunting table may deliberately repeat a room to weight a better generator, so keep
+  // this unit test about assignment rather than baking an obsolete hunting table into it.
+  const plan = assignRooms(pairs, [
+    { room: 544, hunt: 'fungus beast' },
+    { room: 545, hunt: 'fungus beast' },
+  ]);
   ok('pairs go to different rooms', plan[0].room !== plan[1].room,
      'both went to ' + plan[0].room);
   ok('the first pair goes to the valley', plan[0].room === 544);

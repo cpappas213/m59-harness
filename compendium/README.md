@@ -28,12 +28,18 @@ Three pages do real work rather than listing things:
   one here that can *write*. It rebuilds the client's own right-hand panel — inventory,
   spells, skills, stats, the same four tabs in the same order, the same stat bars and the
   same stack counts in the corner of each cell — and makes all of it editable. Bring a
-  character in (press `P` on it in the fleet terminal, or pick it from the dropdown),
+  character in (press `P` on it in the fleet terminal, or tick it in the character list),
   choose the level you want in each spell school, tick the skills, and put items in the
   inventory with a **minimum** to carry and a **ceiling** to shed above. Saving writes
   `substrate/loadouts/<character>.json`, which the keeper then reads before it buys, sells,
   keeps or drops anything — so the gear a character gets back to after a day of breaking
   things is a decision somebody made rather than a constant shared by twenty-one of them.
+
+  **Its stats tab is not only its own.** The frame, the bars and the arithmetic under them
+  live in `tools/statpane.mjs`, which the build writes out as `assets/statpane.js` and
+  `assets/statpane.css` — and which the harness's own `/stats` board imports directly, to
+  draw the same pane read-only over every character in the fleet. `assets/planner.css` holds
+  only the editable half, so a change to how a bar looks belongs in `statpane.mjs`.
 
   Two things it will tell you that nothing else does. Picking a school shows the **reagents
   those spells eat**, with a button that turns them into the carry list — a spell list is
@@ -47,11 +53,12 @@ Three pages do real work rather than listing things:
   first, which is a different kind of answer from a carry list: the keeper reaches for the
   first of these the character owns and an outfitting run buys the first it is missing, so a
   character holding the second is one upgrade short rather than missing its gear. That is
-  also the one part of a loadout that is about the fleet rather than about a character, so
-  **Apply gear to fleet** writes it into every character's loadout and changes nothing else
-  in any of them. It says what it would do first, per character, and refuses an empty list:
-  a loadout nobody has filled in is not an instruction to strip twenty-one weapon
-  preferences.
+  also the part of a loadout that can be shared across characters. **Apply gear + carry to
+  fleet** writes both the ordered gear preferences and the desired carry list into every
+  character's loadout while preserving schools, skills, sell/keep rules, purse settings and
+  notes. It says what it would do first, per character. The character picker is a checkbox
+  list; with several checked, the inventory tab becomes a shared gear-and-carry editor and
+  the character-specific spells, skills and stats tabs are disabled.
 
   Served by the harness it saves; opened any other way it exports the same file for you to
   drop in by hand, and says which of the two it is doing.

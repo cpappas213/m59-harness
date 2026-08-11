@@ -166,7 +166,19 @@ if (import.meta.url === (process.argv[1] ? new URL(`file://${process.argv[1].rep
   const only = arg('character');
   const roomWanted = arg('room');
   const travellingOnly = process.argv.includes('--travelling');
-  const names = only ? [safeName(only)] : listCharacters();
+  // Scoped to the fleet the broker is holding, unless a character was named or
+  // --all-fleets was passed. This directory is keyed by character name, so any second
+  // fleet this machine has run is in it too — 5 of 26 when this was written. Naming a
+  // character is its own scope and is honoured as given.
+  const { fleetScope, scopeLine } = await import('./m59-fleetscope.mjs');
+  const scope = only ? null
+    : await fleetScope({ allFleets: process.argv.includes('--all-fleets') });
+  const all = only ? [safeName(only)] : listCharacters();
+  const names = scope?.characters ? all.filter(n => scope.characters.has(n)) : all;
+  if (scope) {
+    const setAside = all.filter(n => !names.includes(n)).map(character => ({ character }));
+    console.log(scopeLine(scope, setAside) + '\n');
+  }
   if (!names.length) {
     console.log(`no hit records yet — ${HITS_DIR} is empty.`);
     console.log('The broker writes them as damage arrives; give a running fleet a few minutes.');

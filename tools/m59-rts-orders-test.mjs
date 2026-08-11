@@ -7,7 +7,9 @@ import {
   createGatewayServer,
   dispatchAttackOrder,
   dispatchCancelOrder,
-  dispatchContextOrder,
+  dispatchCommanderRequest,
+  dispatchCommerceRequest,
+  dispatchContextOrder as dispatchContextOrderRaw,
   dispatchMoveOrder,
   dispatchTravelOrder,
   parseControlServer,
@@ -16,6 +18,13 @@ import {
 const now = 1786083600000;
 const generation = `${now - 100}-1234`;
 const endpoint = { host: '127.0.0.1', port: 5959 };
+const leaseToken = 'm59l_fixture_commander_lease_token';
+const dispatchContextOrder = (reader, body, options) => dispatchContextOrderRaw(reader, {
+  ...body,
+  orders: Array.isArray(body?.orders)
+    ? body.orders.map(order => ({ ...order, lease_token: order.lease_token ?? leaseToken }))
+    : body?.orders,
+}, options);
 const look = (attack = true, player = false) => ({
   room: { num: 200, name: 'Marion', size: { rows: 4, cols: 4 } },
   you: { object_id: 501, col: 1, row: 1 },
@@ -30,6 +39,18 @@ const state = (looks = { t1: look(), t2: look() }) => ({
     sessions: Object.keys(looks),
     session_game_servers: Object.fromEntries(Object.keys(looks).map(agent => [agent, endpoint])) },
   agents: Object.keys(looks), looks, equipment: {},
+  commander: { enabled: true, authority: 'authenticated-enabled-loopback-gateway',
+    heartbeat_default_ms: 6666 },
+  control: Object.fromEntries(Object.keys(looks).map(agent => [agent, {
+    lease_state: 'active', lease_id: 'lease_fixture', owner: 'test',
+    expires_at_ms: now + 20_000, expires_in_ms: 20_000,
+    leased_faculties: ['work', 'movement', 'economy', 'social'], keeper_state: 'inert',
+  }])),
+  commerce: Object.fromEntries(Object.keys(looks).map(agent => [agent, {
+    purse: { amount: 500, currency: 'shillings' },
+    affordances: { buy: [], sell: [], offer: [] }, catalog: null, trade: null,
+    observed_at_ms: now, refresh: 'cached_no_packet',
+  }])),
   inventory: Object.fromEntries(Object.keys(looks).map(agent => [agent, [
     { id: 4573, name: 'mace', amount: 1, equipped: false,
       role: 'weapon', safe_actions: ['use'] },
@@ -46,15 +67,19 @@ const state = (looks = { t1: look(), t2: look() }) => ({
     { id: 803, name: 'earthquake', targets: 0, school: 4 },
     { id: 804, name: 'resist magic', targets: 1, school: 2 },
   ]])),
-  fleet: { fleet: [] },
+  fleet: { fleet: Object.keys(looks).map(agent => ({
+    agent, character: agent === 't1' ? 'Kermit' : agent === 't2' ? 'Piggy' : agent,
+    autopilot: { running: false }, activity: 'inert',
+  })) },
 });
 
 const calls = [];
 let fixtureTokenCounter = 0;
 const fixtureControlToken = () => `fixture.${String(++fixtureTokenCounter).padStart(8, '0')}`;
 const withoutControlToken = args => {
-  const { control_token: token, ...rest } = args;
+  const { control_token: token, lease_token: lease, ...rest } = args;
   assert.match(token, /^fixture[.]\d{8}$/);
+  assert.equal(lease, leaseToken, 'the broker dispatch retains the commander lease capability');
   return { token, rest };
 };
 const reader = {
@@ -71,8 +96,8 @@ const reader = {
 const accepted = await dispatchAttackOrder(reader, {
   type: 'attack', generation, order_id: 'group-attack-1',
   orders: [
-    { agent: 't1', room: 200, target_id: 900 },
-    { agent: 't2', room: 200, target_id: 900, swings: 3 },
+    { agent: 't1', room: 200, target_id: 900, lease_token: leaseToken },
+    { agent: 't2', room: 200, target_id: 900, swings: 3, lease_token: leaseToken },
   ],
 }, { now });
 assert.equal(accepted.accepted, true);
@@ -87,42 +112,42 @@ for (const call of calls) assert.match(call.args.control_token, /^fixture[.]\d{8
 
 await assert.rejects(() => dispatchAttackOrder(reader, {
   type: 'attack', generation, order_id: 'typed-attack-01',
-  orders: [{ agent: 't1', room: '200', target_id: 900 }],
+  orders: [{ agent: 't1', room: '200', target_id: 900, lease_token: leaseToken }],
 }, { now }), /numeric positive integer room/);
 await assert.rejects(() => dispatchAttackOrder(reader, {
   type: 'attack', generation, order_id: 'typed-attack-02',
-  orders: [{ agent: 't1', room: 200, target_id: true }],
+  orders: [{ agent: 't1', room: 200, target_id: true, lease_token: leaseToken }],
 }, { now }), /numeric positive integer room/);
 await assert.rejects(() => dispatchAttackOrder(reader, {
   type: 'attack', generation, order_id: 'typed-attack-03', debug: true,
-  orders: [{ agent: 't1', room: 200, target_id: 900 }],
+  orders: [{ agent: 't1', room: 200, target_id: 900, lease_token: leaseToken }],
 }, { now }), /attack request contains unsupported field: debug/);
 await assert.rejects(() => dispatchAttackOrder(reader, {
   type: 'attack', generation, order_id: 'typed-attack-04',
-  orders: [{ agent: 't1', room: 200, target_id: 900, arbitrary: 1 }],
+  orders: [{ agent: 't1', room: 200, target_id: 900, lease_token: leaseToken, arbitrary: 1 }],
 }, { now }), /attack order contains unsupported field: arbitrary/);
 await assert.rejects(() => dispatchAttackOrder(reader, {
   type: 'attack', generation: [generation], order_id: 'typed-attack-05',
-  orders: [{ agent: 't1', room: 200, target_id: 900 }],
+  orders: [{ agent: 't1', room: 200, target_id: 900, lease_token: leaseToken }],
 }, { now }), /missing or malformed snapshot generation/);
 
 await assert.rejects(() => dispatchAttackOrder(reader, {
   type: 'attack', generation: `${now - 3000}-1234`, order_id: 'stale-attack-1',
-  orders: [{ agent: 't1', room: 200, target_id: 900 }],
+  orders: [{ agent: 't1', room: 200, target_id: 900, lease_token: leaseToken }],
 }, { now }), /stale/);
 
 const actorSpecific = { ...reader, controlState: async () => state({ t1: look(), t2: look(false) }) };
 await assert.rejects(() => dispatchAttackOrder(actorSpecific, {
   type: 'attack', generation, order_id: 'actor-specific-1',
-  orders: [{ agent: 't1', room: 200, target_id: 900 },
-    { agent: 't2', room: 200, target_id: 900 }],
+  orders: [{ agent: 't1', room: 200, target_id: 900, lease_token: leaseToken },
+    { agent: 't2', room: 200, target_id: 900, lease_token: leaseToken }],
 }, { now }), /t2 no longer perceives/);
 assert.equal(calls.length, 2, 'a rejected actor-specific batch dispatches nothing');
 
 const playerReader = { ...reader, controlState: async () => state({ t1: look(true, true) }) };
 await assert.rejects(() => dispatchAttackOrder(playerReader, {
   type: 'attack', generation, order_id: 'player-target-1',
-  orders: [{ agent: 't1', room: 200, target_id: 900 }],
+  orders: [{ agent: 't1', room: 200, target_id: 900, lease_token: leaseToken }],
 }, { now }), /PvE-only/);
 
 const partialReader = { ...reader, order: async (name, args) => {
@@ -131,8 +156,8 @@ const partialReader = { ...reader, order: async (name, args) => {
 } };
 const partial = await dispatchAttackOrder(partialReader, {
   type: 'attack', generation, order_id: 'partial-attack-1',
-  orders: [{ agent: 't1', room: 200, target_id: 900 },
-    { agent: 't2', room: 200, target_id: 900 }],
+  orders: [{ agent: 't1', room: 200, target_id: 900, lease_token: leaseToken },
+    { agent: 't2', room: 200, target_id: 900, lease_token: leaseToken }],
 }, { now });
 assert.equal(partial.accepted, false);
 assert.equal(partial.accepted_count, 1);
@@ -144,7 +169,8 @@ const sceneStore = { get: () => ({ rows: 4, cols: 4, planes: { flags: floor.toSt
 const beforeMove = calls.length;
 const moved = await dispatchMoveOrder(reader, {
   type: 'move', generation, order_id: 'group-move-001',
-  orders: [{ agent: 't1', room: 200, col: 3, row: 2, max_steps: 80 }],
+  orders: [{ agent: 't1', room: 200, col: 3, row: 2, max_steps: 80,
+    lease_token: leaseToken }],
 }, { now, sceneStore });
 assert.equal(moved.accepted, true);
 assert.equal(calls[beforeMove].name, 'move_intent');
@@ -155,11 +181,11 @@ assert.deepEqual(movedArgs.rest,
     server_host: '127.0.0.1', server_port: 5959 });
 await assert.rejects(() => dispatchMoveOrder(reader, {
   type: 'move', generation, order_id: 'typed-move-001',
-  orders: [{ agent: 't1', room: 200, col: '3', row: 2 }],
+  orders: [{ agent: 't1', room: 200, col: '3', row: 2, lease_token: leaseToken }],
 }, { now, sceneStore }), /numeric integer room[/]col[/]row/);
 await assert.rejects(() => dispatchMoveOrder(reader, {
   type: 'move', generation, order_id: 'blocked-move-1',
-  orders: [{ agent: 't1', room: 200, col: 2, row: 2 }],
+  orders: [{ agent: 't1', room: 200, col: 2, row: 2, lease_token: leaseToken }],
 }, { now, sceneStore }), /not on the walkable/);
 
 // Travel: the world-graph walk, dispatched to the keeper's own `travel` tool.
@@ -168,35 +194,11 @@ await assert.rejects(() => dispatchMoveOrder(reader, {
 // request that blocks for a nine-minute walk is a timeout wearing a success's
 // clothing.
 const beforeTravel = calls.length;
-const travelled = await dispatchTravelOrder(reader, {
+await assert.rejects(() => dispatchTravelOrder(reader, {
   type: 'travel', generation, order_id: 'group-travel-01',
-  orders: [{ agent: 't1', to: 'Marion' }, { agent: 't2', to: 205, max_hops: 40 }],
-}, { now });
-assert.equal(travelled.accepted, true);
-assert.equal(travelled.accepted_count, 2);
-assert.deepEqual(calls.slice(beforeTravel).map(call => call.name), ['travel', 'travel']);
-const travelArgs = withoutControlToken(calls[beforeTravel].args);
-assert.deepEqual(travelArgs.rest,
-  { agent: 't1', to: 'Marion', max_hops: 25, background: true });
-const travelArgs2 = withoutControlToken(calls[beforeTravel + 1].args);
-assert.deepEqual(travelArgs2.rest,
-  { agent: 't2', to: 205, max_hops: 40, background: true });
-await assert.rejects(() => dispatchTravelOrder(reader, {
-  type: 'travel', generation, order_id: 'typed-travel-01',
-  orders: [{ agent: 't1', to: -3 }],
-}, { now }), /room name or positive integer room number/);
-await assert.rejects(() => dispatchTravelOrder(reader, {
-  type: 'travel', generation, order_id: 'typed-travel-02',
-  orders: [{ agent: 't1', to: 'Marion', max_hops: 500 }],
-}, { now }), /max_hops \(1-60\)/);
-await assert.rejects(() => dispatchTravelOrder(reader, {
-  type: 'travel', generation, order_id: 'typed-travel-03',
-  orders: [{ agent: 't1', to: 'Marion', walk_fast: true }],
-}, { now }), /travel order contains unsupported field: walk_fast/);
-await assert.rejects(() => dispatchTravelOrder(reader, {
-  type: 'travel', generation: `${now - 3000}-1234`, order_id: 'stale-travel-1',
-  orders: [{ agent: 't1', to: 'Marion' }],
-}, { now }), /stale/);
+  orders: [{ agent: 't1', to: 'Marion', lease_token: leaseToken }],
+}, { now }), /lease-guarded travel_intent/);
+assert.equal(calls.length, beforeTravel, 'refused commander travel dispatches no broker tool');
 
 const floorItems = Array.from({ length: 14 }, (_, index) => ({
   id: 1001 + index, name: `loot ${index + 1}`, is_player: false,
@@ -420,18 +422,19 @@ await assert.rejects(() => dispatchContextOrder(contextReader, {
 
 const cancelled = await dispatchCancelOrder(reader, {
   type: 'cancel', order_id: 'cancel-action-1',
-  orders: [{ agent: 't1', control_token: moveControlToken }],
+  orders: [{ agent: 't1', control_token: moveControlToken, lease_token: leaseToken }],
 }, { now });
 assert.equal(cancelled.accepted, true);
 assert.equal(calls.at(-1).name, 'cancel_action');
 assert.equal(calls.at(-1).args.control_token, moveControlToken);
+assert.equal(calls.at(-1).args.lease_token, leaseToken);
 await assert.rejects(() => dispatchCancelOrder(reader, {
   type: 'cancel', order_id: 'cancel-action-2', generation,
-  orders: [{ agent: 't1', control_token: moveControlToken }],
+  orders: [{ agent: 't1', control_token: moveControlToken, lease_token: leaseToken }],
 }, { now }), /cancel request contains unsupported field: generation/);
 await assert.rejects(() => dispatchCancelOrder(reader, {
   type: 'cancel', order_id: 'cancel-action-3',
-  orders: [{ agent: 't1', control_token: moveControlToken, force: true }],
+  orders: [{ agent: 't1', control_token: moveControlToken, lease_token: leaseToken, force: true }],
 }, { now }), /cancel order contains unsupported field: force/);
 
 assert.deepEqual(parseControlServer('127.0.0.1:5959'), endpoint);
@@ -502,6 +505,18 @@ const activeKeeperReader = new BrokerReader({
 await assert.rejects(() => activeKeeperReader.controlState(['t1']), /active keeper/);
 assert.equal(activeKeeperReader.controlStatus.armed, false,
   'an active keeper clears write readiness');
+// ...AND YET THE GATEWAY STILL COMES UP. The keeper rule is about two drivers on
+// one character, which is only ever true of a character somebody is ordering.
+// Asked of the whole roster at startup it refused the entire gateway over one busy
+// character — and a busy character is a real fleet's ordinary state, so the
+// commander could only ever open read-only and "t8 is hunting" was indistinguishable
+// from "production may not be controlled".
+await activeKeeperReader.assertControlReady();
+assert.equal(activeKeeperReader.controlStatus.armed, true,
+  'a busy keeper must not stop the gateway from arming');
+await assert.rejects(() => activeKeeperReader.controlState(['t1']), /active keeper/);
+assert.equal(activeKeeperReader.controlStatus.armed, false,
+  'ordering that same character is still refused while its keeper runs');
 const noAggregateReader = new BrokerReader({
   expectedFleet: 'local-control-test', ordersEnabled: true,
   controlServer: '127.0.0.1:5959', controlToken: '0123456789abcdef',
@@ -524,6 +539,80 @@ assert.deepEqual([first, retry, executions], [1, 1, 1]);
 assert.throws(() => dedupe.execute(body.order_id, { ...body, type: 'move' }, async () => 2),
   /different payload/);
 
+// Dedicated commander and commerce dispatchers bind every capability to the
+// exact fleet, broker generation, server, roster character, room, and active
+// lease before the broker tool sees it.
+const capabilityCalls = [];
+const capabilityReader = {
+  ...reader,
+  expectedFleet: 'local-control-test',
+  allowedAgents: new Set(['t1']),
+  controlState: async () => state({ t1: look() }),
+  order: async (name, args) => {
+    capabilityCalls.push({ name, args });
+    if (name === 'commander_lease') return {
+      schema: 'm59-rts-commander/v1', state: 'active', lease_id: 'lease_fixture',
+      lease_token: leaseToken, agents: [{ agent: 't1', character: 'Kermit', granted: true }],
+    };
+    if (name === 'commerce_prepare') return {
+      schema: 'm59-rts-commerce/v1', phase: 'prepared', kind: args.kind,
+      quote_id: 'quote_fixture', quote_token: 'm59q_fixture_quote_token',
+      trade: { revision: 3, fingerprint: 'internal-only' }, lease_token: args.lease_token,
+    };
+    if (name === 'commerce_commit') return {
+      schema: 'm59-rts-commerce/v1', phase: 'committing', accepted: true,
+      control_token: 'commerce.control.fixture', lease_token: args.lease_token,
+    };
+    return { schema: 'm59-rts-commerce/v1', phase: name.replace('commerce_', ''),
+      trade: { revision: 3, fingerprint: 'internal-only' }, lease_token: args.lease_token };
+  },
+};
+const commanderBase = {
+  order_id: 'lease-acquire-001', generation, fleet: 'local-control-test', broker_pid: 1234,
+  server_host: '127.0.0.1', server_port: 5959,
+  agents: [{ agent: 't1', character: 'Kermit' }], owner: 'boswars-native', lease_ms: 20000,
+};
+const acquired = await dispatchCommanderRequest(capabilityReader, 'acquire', commanderBase, { now });
+assert.equal(acquired.operation, 'commander.acquire');
+assert.equal(acquired.result.lease_token, leaseToken, 'acquire returns the capability only to its caller');
+assert.deepEqual(capabilityCalls.at(-1), { name: 'commander_lease', args: {
+  action: 'acquire', fleet: 'local-control-test', broker_pid: 1234,
+  server_host: '127.0.0.1', server_port: 5959,
+  agents: [{ agent: 't1', character: 'Kermit' }], owner: 'boswars-native', lease_ms: 20000,
+} });
+await assert.rejects(() => dispatchCommanderRequest(capabilityReader, 'acquire',
+  { ...commanderBase, order_id: 'lease-acquire-002', debug: true }, { now }), /unsupported field: debug/);
+await assert.rejects(() => dispatchCommanderRequest(capabilityReader, 'acquire',
+  { ...commanderBase, order_id: 'lease-acquire-003', agents: [{ agent: 't1', character: 'Piggy' }] },
+  { now }), /exactly matches the broker roster/);
+
+const commerceBase = {
+  order_id: 'commerce-status-01', agent: 't1', character: 'Kermit', room: 200,
+  fleet: 'local-control-test', broker_pid: 1234, server_host: '127.0.0.1',
+  server_port: 5959, lease_token: leaseToken,
+};
+const commerceStatus = await dispatchCommerceRequest(capabilityReader, 'status', commerceBase, { now });
+assert.equal(commerceStatus.operation, 'commerce.status');
+assert.doesNotMatch(JSON.stringify(commerceStatus), /lease_token|fingerprint|internal-only/,
+  'status command output strips redundant lease capabilities and internal trade fingerprints');
+const prepared = await dispatchCommerceRequest(capabilityReader, 'prepare', {
+  ...commerceBase, order_id: 'commerce-prepare1', generation, kind: 'buy',
+  merchant: { id: 910, name: 'Rook' }, item: { id: 920, name: 'bread' }, quantity: 2,
+}, { now });
+assert.equal(prepared.outcomes[0].result.quote_token, 'm59q_fixture_quote_token');
+assert.doesNotMatch(JSON.stringify(prepared), /lease_token|fingerprint|internal-only/);
+const committed = await dispatchCommerceRequest(capabilityReader, 'commit', {
+  ...commerceBase, order_id: 'commerce-commit1', generation,
+  quote_token: 'm59q_fixture_quote_token',
+}, { now });
+assert.equal(committed.outcomes[0].result.control_token, 'commerce.control.fixture');
+assert.doesNotMatch(JSON.stringify(committed), /lease_token/);
+await assert.rejects(() => dispatchCommerceRequest(capabilityReader, 'prepare', {
+  ...commerceBase, order_id: 'commerce-prepare2', generation, kind: 'trade_accept',
+  counterparty: { id: 912, name: 'Friendly Player' }, expected_trade_revision: 3,
+  expected_ours: [], expected_theirs: [], expected_may_accept: 'true',
+}, { now }), /JSON boolean/);
+
 // HTTP boundary: disabled-by-default, token, JSON and browser-Origin checks, then
 // one idempotent accepted POST. This is an in-process fixture and opens no Meridian
 // session, roster, broker, or game-server connection.
@@ -545,9 +634,28 @@ const httpReader = new BrokerReader({
 });
 httpReader.order = async (name, args) => {
   httpCalls.push({ name, args });
+  if (name === 'commander_lease') return {
+    schema: 'm59-rts-commander/v1', state: args.action === 'release' ? 'released' : 'active',
+    lease_id: 'lease_http', ...(args.action === 'acquire' || args.action === 'heartbeat'
+      ? { lease_token: leaseToken } : {}),
+    agents: args.agents || [],
+  };
+  if (name === 'commerce_prepare') return {
+    schema: 'm59-rts-commerce/v1', phase: 'prepared', kind: args.kind,
+    quote_id: 'quote_http', quote_token: 'm59q_http_quote_token',
+  };
+  if (name === 'commerce_commit') return {
+    schema: 'm59-rts-commerce/v1', phase: 'committing', accepted: true,
+    control_token: 'commerce.http.control', lease_token: args.lease_token,
+  };
+  if (name.startsWith('commerce_')) return {
+    schema: 'm59-rts-commerce/v1', phase: name.slice('commerce_'.length), agent: args.agent,
+  };
   return { accepted: true, control_token: args.control_token };
 };
 await httpReader.assertControlReady();
+assert.equal((await httpReader.snapshot(['t1'])).commander.enabled, true,
+  'an explicitly enabled and exact-bound gateway advertises effective commander availability');
 const httpHub = new RealtimeHub({ reader: httpReader });
 const server = createGatewayServer({ reader: httpReader, sceneStore: null, hub: httpHub });
 await new Promise((resolve, reject) => {
@@ -573,10 +681,14 @@ try {
     'item_use', 'item_unuse', 'item_eat', 'safety_on',
   ]);
   assert.deepEqual(contractBody.action_catalogue.deliberately_absent,
-    ['drop', 'safety_off', 'buy', 'sell', 'trade']);
+    ['drop', 'safety_off', 'cross-room-travel']);
+  assert.deepEqual(contractBody.action_catalogue.commander,
+    ['acquire', 'heartbeat', 'release', 'status']);
+  assert.deepEqual(contractBody.action_catalogue.commerce,
+    ['status', 'catalog', 'prepare', 'commit']);
   const postBody = JSON.stringify({ type: 'attack', generation: `${Date.now() - 100}-1234`,
     order_id: 'http-attack-001',
-    orders: [{ agent: 't1', room: 200, target_id: 900 }] });
+    orders: [{ agent: 't1', room: 200, target_id: 900, lease_token: leaseToken }] });
   const noToken = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: postBody });
   assert.equal(noToken.status, 401);
   const browser = await fetch(url, { method: 'POST', headers: {
@@ -607,7 +719,7 @@ try {
   assert.equal(httpCalls.length, 1, 'an HTTP retry with one order_id is not dispatched twice');
   const contextBody = JSON.stringify({ type: 'context', action: 'stand',
     generation: `${Date.now() - 100}-1234`, order_id: 'http-context-001',
-    orders: [{ agent: 't1', room: 200 }] });
+    orders: [{ agent: 't1', room: 200, lease_token: leaseToken }] });
   const context = await fetch(url, { method: 'POST', headers, body: contextBody });
   assert.equal(context.status, 202);
   const contextResult = await context.json();
@@ -618,6 +730,85 @@ try {
     /^rts[.][0-9a-f]{32}[.][0-9a-z]+[.][0-9a-f]{24}$/);
   assert.notEqual(httpCalls[1].args.control_token, attackControlToken,
     'newly admitted commands receive unique ownership tokens');
+
+  const liveGeneration = () => `${Date.now() - 100}-1234`;
+  const leaseAcquireBody = {
+    order_id: 'http-lease-acquire1', generation: liveGeneration(),
+    fleet: 'local-control-test', broker_pid: 1234,
+    server_host: '127.0.0.1', server_port: 5959,
+    agents: [{ agent: 't1', character: 'Kermit' }], owner: 'boswars-native', lease_ms: 20000,
+  };
+  const acquireUrl = url.replace('/v1/orders', '/v1/commander/acquire');
+  const acquireNoBearer = await fetch(acquireUrl, { method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify(leaseAcquireBody) });
+  assert.equal(acquireNoBearer.status, 401, 'dedicated commander routes share the bearer boundary');
+  const acquire = await fetch(acquireUrl, { method: 'POST', headers,
+    body: JSON.stringify(leaseAcquireBody) });
+  assert.equal(acquire.status, 200);
+  const acquireResult = await acquire.json();
+  assert.equal(acquireResult.operation, 'commander.acquire');
+  assert.equal(acquireResult.result.lease_token, leaseToken);
+  const acquireRetry = await fetch(acquireUrl, { method: 'POST', headers,
+    body: JSON.stringify(leaseAcquireBody) });
+  assert.deepEqual(await acquireRetry.json(), acquireResult,
+    'commander acquire exact retry returns its original lease capability');
+
+  const commanderBinding = {
+    fleet: 'local-control-test', broker_pid: 1234,
+    server_host: '127.0.0.1', server_port: 5959,
+  };
+  for (const [action, payload] of [
+    ['heartbeat', { order_id: 'http-lease-heartbt1', ...commanderBinding,
+      agents: [{ agent: 't1', character: 'Kermit' }], lease_token: leaseToken, lease_ms: 20000 }],
+    ['status', { order_id: 'http-lease-status01', ...commanderBinding, lease_token: leaseToken }],
+    ['release', { order_id: 'http-lease-release1', ...commanderBinding,
+      agents: [{ agent: 't1', character: 'Kermit' }], lease_token: leaseToken }],
+  ]) {
+    const response = await fetch(url.replace('/v1/orders', `/v1/commander/${action}`), {
+      method: 'POST', headers, body: JSON.stringify(payload),
+    });
+    assert.equal(response.status, 200, `commander ${action} route`);
+    assert.equal((await response.json()).operation, `commander.${action}`);
+  }
+
+  const commerceHttpBase = {
+    agent: 't1', character: 'Kermit', room: 200, fleet: 'local-control-test', broker_pid: 1234,
+    server_host: '127.0.0.1', server_port: 5959, lease_token: leaseToken,
+  };
+  const commerceStatusResponse = await fetch(url.replace('/v1/orders', '/v1/commerce/status'), {
+    method: 'POST', headers,
+    body: JSON.stringify({ ...commerceHttpBase, order_id: 'http-commerce-stat1' }),
+  });
+  assert.equal(commerceStatusResponse.status, 200);
+  assert.equal((await commerceStatusResponse.json()).operation, 'commerce.status');
+  const catalogResponse = await fetch(url.replace('/v1/orders', '/v1/commerce/catalog'), {
+    method: 'POST', headers, body: JSON.stringify({ ...commerceHttpBase,
+      order_id: 'http-commerce-cat01', generation: liveGeneration(),
+      merchant: { id: 910, name: 'Rook' } }),
+  });
+  assert.equal(catalogResponse.status, 200);
+  assert.equal((await catalogResponse.json()).operation, 'commerce.catalog');
+  const prepareResponse = await fetch(url.replace('/v1/orders', '/v1/commerce/prepare'), {
+    method: 'POST', headers, body: JSON.stringify({ ...commerceHttpBase,
+      order_id: 'http-commerce-prep1', generation: liveGeneration(), kind: 'buy',
+      merchant: { id: 910, name: 'Rook' }, item: { id: 920, name: 'bread' }, quantity: 2 }),
+  });
+  assert.equal(prepareResponse.status, 200);
+  const prepareResult = await prepareResponse.json();
+  assert.equal(prepareResult.outcomes[0].result.quote_token, 'm59q_http_quote_token');
+  const commitResponse = await fetch(url.replace('/v1/orders', '/v1/commerce/commit'), {
+    method: 'POST', headers, body: JSON.stringify({ ...commerceHttpBase,
+      order_id: 'http-commerce-commit1', generation: liveGeneration(),
+      quote_token: 'm59q_http_quote_token' }),
+  });
+  assert.equal(commitResponse.status, 202);
+  const commitResult = await commitResponse.json();
+  assert.equal(commitResult.outcomes[0].result.control_token, 'commerce.http.control');
+  assert.doesNotMatch(JSON.stringify(commitResult), /lease_token/,
+    'commerce commit response does not echo the reusable lease capability');
+  const wrongMethod = await fetch(acquireUrl);
+  assert.equal(wrongMethod.status, 405);
+
   httpAggregateFailure = true;
   httpReader.healthCache = null;
   httpReader.fastPathUnavailableUntil = 0;
@@ -643,4 +834,4 @@ try {
   httpHub.close();
 }
 
-console.log('m59 RTS local control: attack/move/cancel/auth/dedupe safety passed');
+console.log('m59 RTS commander/commerce and lease-bound local control safety passed');

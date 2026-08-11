@@ -120,10 +120,13 @@ tools/m59.mjs               say / listen / escort / follow, over the admin socke
 tools/m59-fleets.mjs        every roster on this machine: slots, server, who is holding it
 tools/m59-proxy.mjs         sit between a human client and the server and watch
 tools/m59-tui.mjs           interactive fleet terminal
-tools/m59-dashboard.mjs     the fleet web page — /, and the tab bar for the four below
+tools/m59-dashboard.mjs     the fleet web page — /, and the shared dashboard tab bar
+tools/m59-observability-page.mjs  DUM interventions plus opt-in 2h strategy drill-ins — /dum, /harness
+tools/m59-strategy-stats.mjs      rotating travel/fight/trade/vault detail spool (24h default)
 tools/m59-deaths-page.mjs   /deaths and /tougher: what killed them, what it took to gain
 tools/m59-economy.mjs       purses, bank balances and reagents — /economy
 tools/m59-abilities.mjs     every skill and spell number the fleet holds — /skills
+tools/m59-stats-page.mjs    /stats: the builds the fleet is made of, grouped by the roll
 
 substrate/m59-map.json        264 rooms with their .roo geometry, built once over the admin socket
 substrate/m59-merchants.json  70 merchants: who buys, sells and teaches what
@@ -147,6 +150,7 @@ node tools/m59-chat-test.mjs          # 102 tests — sanitiser and leak detecti
 node tools/m59-escape-test.mjs        # 29 tests — leaving and fighting from a sitting start
 node tools/m59-fleets-test.mjs        # the roster inventory, against a fixture broker
 node tools/m59-loadout-test.mjs       # 109 tests — loadouts, and what reaches the counter
+node tools/m59-stats-test.mjs         # 60 tests — the builds board, and the pane it shares
 ```
 
 Against a live server, with test accounts:

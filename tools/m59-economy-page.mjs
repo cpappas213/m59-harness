@@ -77,8 +77,8 @@ function sourcePill(from, at) {
          `stated it was holding when it last cast, ${esc(ago(at))}">cast ${esc(ago(at))}</span>`;
 }
 
-export function renderEconomy({ hours = 168, live = null } = {}) {
-  const e = economy({ sinceMs: hours * 3600 * 1000, live });
+export function renderEconomy({ hours = 168, live = null, characters = null } = {}) {
+  const e = economy({ sinceMs: hours * 3600 * 1000, live, characters });
   const t = e.totals;
 
   const FACETS = {

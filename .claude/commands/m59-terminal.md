@@ -18,7 +18,7 @@ drive. So this launches one. It talks to the same broker on 8901 that everything
 does, so it is the same fleet, live.
 
 **The keys.** `↑↓` or `jk` to move, `⏎` for a character's full sheet, `r` to refresh,
-`q` to quit — and three that do something outside the terminal:
+`q` to quit — and four that do something outside the terminal:
 
 - **`X`** is the **override**. By default the cursor steps straight over any character
   the fleet is already using for a multi-character operation — a loot run, a signet ring
@@ -29,6 +29,15 @@ does, so it is the same fleet, live.
   did. The footer tells you which of the two the key is about to do.
 - **`L`** launches the real game client logged in as the selected character, with the
   agent DLL injected, and claims it from the keeper so the broker stops driving it.
+- **`B`** opens the **commander** — the Bos Wars build in `maps/m59-boswars`, an RTS
+  board that draws the whole roster at once instead of one character per window. It is
+  about the *fleet*, not the row under the cursor, and the fleet this terminal is showing
+  is the one it opens on: opened by hand the commander offers every roster this machine
+  holds and asks you to pick, and picking wrong gives you a board of characters nobody is
+  watching, which looks exactly like a board that works. Its own window says `COMMAND` or
+  `SPECTATE` before it connects, and nothing happens until you press Start Game there.
+  That repository is a separate clone — without it beside the harness the key says so
+  rather than failing.
 - **`C`** opens the **compendium** in your browser with that character loaded into it.
   It starts a loopback-only server (`tools/m59-compendium.mjs`, port 8099) if one is
   not already up, reads the character's attributes, confirmed abilities and actual
@@ -69,6 +78,7 @@ tryWt.on('close', code => {
 | `Enter` | open that character's full sheet — vitals, pack, safe spot, readings, recent log |
 | `X` | **override** — reach the greyed-out ones, and take one back off whatever is holding it |
 | `L` | **launch the real client logged in as that character**, then inject the agent DLL |
+| `B` | **open the commander on this fleet** — `maps/m59-boswars`, the whole roster on one board |
 | `r` | force a refresh |
 | `q` / `Esc` | back, then quit |
 
