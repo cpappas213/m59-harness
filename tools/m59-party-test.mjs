@@ -252,7 +252,13 @@ party.resetParties();
       using, evSeq: 0,
       requestInventory: async () => {},
       waitFor: async () => ({ events: [] }),
-      use: async (id) => { using.add(id); },
+      // The game permits one item per armour slot. Keep the fake honest: accepting a
+      // second shield/body piece here hid wearBest's failure to remove the old one.
+      use: async (id) => {
+        const candidate = armourKind(names[id - 1]);
+        const occupied = [...using].some(old => armourKind(names[old - 1])?.slot === candidate?.slot);
+        if (!occupied) using.add(id);
+      },
       unuse: async (id) => { using.delete(id); },
     };
     return { need: () => c, pacer: { submit: async (_k, fn) => fn() }, _c: c };
@@ -300,6 +306,31 @@ party.resetParties();
     const s = mk(['plate armor', 'leather armor'], [1]);
     const r = await wearBest(s, { refresh: false });
     ok('leather still displaces worn plate', s._c.using.has(2), JSON.stringify(r));
+    ok('and the displaced plate is no longer worn', !s._c.using.has(1), JSON.stringify(r));
+    ok('the confirmed result names the replacement', bodyOf(r)?.replaced === 'plate armor',
+       JSON.stringify(r.worn));
+  }
+
+  {
+    const s = mk(['small round shield', "knight's shield"], [1]);
+    const r = await wearBest(s, { refresh: false });
+    const shield = (r.worn || []).find(w => w.slot === 'shield');
+    ok("a carried knight's shield displaces a worn small round shield",
+       s._c.using.has(2) && !s._c.using.has(1), JSON.stringify(r));
+    ok('shield preference is recorded as an upgrade',
+       shield?.name === "knight's shield" && shield?.replaced === 'small round shield',
+       JSON.stringify(shield));
+  }
+
+  {
+    const s = mk(['small round shield', "knight's shield"], [1]);
+    const normalUse = s._c.use;
+    s._c.use = async (id) => { if (id !== 2) await normalUse(id); };
+    const r = await wearBest(s, { refresh: false });
+    ok('a refused shield upgrade restores the shield it displaced',
+       s._c.using.has(1) && !s._c.using.has(2), JSON.stringify(r));
+    ok('the refused upgrade reports that rollback was confirmed',
+       r.rejected?.[0]?.restored === true, JSON.stringify(r.rejected));
   }
 }
 

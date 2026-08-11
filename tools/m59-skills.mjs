@@ -613,6 +613,34 @@ export async function wearBest(s, { slots = ARMOUR_SLOTS, refresh = true,
       worn.push({ slot, name: best.name, already: true, defense: best.kind.defense });
       continue;
     }
+    // A use slot is not a stack. The server refuses an upgrade while the old piece is
+    // still in that slot (usually as "Your hands are full" for shields), so asking it
+    // to wear the better item first can never work. This was especially visible with
+    // knight's shields: characters carried one forever while continuing to wear the
+    // small round shield named in their original loadout.
+    //
+    // Take the incumbent off only for a real upgrade, confirm that it came off, and put
+    // it back if the replacement is refused. A failed upgrade must not leave a fighter
+    // less protected than it was before the pass.
+    let displaced = null;
+    if (onNow && onNow.o.id !== best.o.id && best.score > onNow.score) {
+      const beforeOff = c.evSeq;
+      await s.pacer.submit('use', () => {
+        if (typeof beforeMutation === 'function')
+          beforeMutation('unuse', { item_id: onNow.o.id, expected_name: onNow.name,
+                                    role: 'armor-upgrade' });
+        return c.unuse(onNow.o.id);
+      });
+      await c.waitFor({ since: beforeOff, kinds: ['equipment', 'message'], timeoutMs: 3000 })
+        .catch(() => ({ events: [] }));
+      const afterOff = equippedNow(c);
+      if (afterOff?.has(onNow.o.id)) {
+        rejected.push({ slot, name: best.name, id: best.o.id,
+                        why: `could not take off ${onNow.name}, so the upgrade was not attempted` });
+        continue;
+      }
+      displaced = onNow;
+    }
     const before = c.evSeq;
     await s.pacer.submit('use', () => {
       if (typeof beforeMutation === 'function')
@@ -640,10 +668,20 @@ export async function wearBest(s, { slots = ARMOUR_SLOTS, refresh = true,
                       why: texts.find(handsFullText)
                         ? 'refused: that slot is already full, and not by this item — we checked'
                         : texts[0] || 'the server never added it to the use list, and said nothing' });
+      if (displaced) {
+        await s.pacer.submit('use', () => {
+          if (typeof beforeMutation === 'function')
+            beforeMutation('use', { item_id: displaced.o.id, expected_name: displaced.name,
+                                    role: 'armor-rollback' });
+          return c.use(displaced.o.id);
+        });
+        await c.waitFor({ kinds: ['equipment', 'message'], timeoutMs: 3000 }).catch(() => {});
+        rejected.at(-1).restored = !!equippedNow(c)?.has(displaced.o.id);
+      }
       continue;
     }
     worn.push({ slot, name: best.name, defense: best.kind.defense, absorb: best.kind.absorb,
-                verified: !!now,
+                ...(displaced ? { replaced: displaced.name } : {}), verified: !!now,
                 // Said out loud, because "wearing scale" and "wearing scale ON PURPOSE,
                 // having nothing better" are different states and one of them is a
                 // shopping list. A silent floor reads as an endorsement.
