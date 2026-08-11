@@ -6422,6 +6422,12 @@ const TOOLS = [
       max_carry: { type: 'number', description: 'stop farming at this many items, default 14' },
       max_weapons: { type: ['number', 'null'],
         description: 'weapons retained after selling, including the equipped weapon. Default 2; null removes the limit' },
+      buy_food: { type: 'boolean',
+        description: 'allow paid food purchases; false also suppresses food-only town trips and withdrawals' },
+      buy_weapons: { type: 'boolean',
+        description: 'allow paid weapon purchases by rearming and outfitting automation; creating and sharing remain available' },
+      buy_reagents: { type: 'boolean',
+        description: 'allow paid reagent purchases, including Farm Delivery cargo; carried spares may still be shared' },
       vault_items: { type: 'array', items: { type: 'string' },
         description: 'item names to protect from eating/selling/gifting/dropping and deposit at the Barloque vault during town loops' },
       strategy_stats: { type: ['object', 'null'], properties: {
@@ -6629,6 +6635,9 @@ const TOOLS = [
       if (a.max_weapons !== undefined)
         p.policy.maxWeapons = a.max_weapons == null
           ? null : Math.max(0, Math.floor(Number(a.max_weapons) || 0));
+      if (a.buy_food !== undefined) p.policy.buyFood = !!a.buy_food;
+      if (a.buy_weapons !== undefined) p.policy.buyWeapons = !!a.buy_weapons;
+      if (a.buy_reagents !== undefined) p.policy.buyReagents = !!a.buy_reagents;
       if (a.vault_items !== undefined) {
         if (!Array.isArray(a.vault_items) || a.vault_items.some(v => typeof v !== 'string'))
           throw new Error('vault_items must be a list of item names');
@@ -10075,6 +10084,11 @@ function heroSnapshot(name) {
         name: c.rsc.get(o.nameRsc), amount: o.amount || undefined, can: affordances(o.flags) })),
       max_carry: st?.policy?.maxCarry ?? null,
       max_weapons: st?.policy?.maxWeapons ?? null,
+      purchases: {
+        food: st?.policy?.buyFood !== false,
+        weapons: st?.policy?.buyWeapons !== false,
+        reagents: st?.policy?.buyReagents !== false,
+      },
       weapon_priority: st?.policy?.weaponPriority ?? 'by proficiency',
       // HOW GOOD IT IS AT EACH ONE — which is the whole reason to look at this list, and
       // which this page showed as a blank column for its entire life.

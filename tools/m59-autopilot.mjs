@@ -461,6 +461,13 @@ const FOOD_SHOP = { room: 103, name: 'The Bhrama & Falcon, Barloque' };
 // who-sells herb). Barloque has the bread, the apothecary and Roq within a few rooms of
 // each other, which is why every town leg in this file already points at that town.
 const REAGENT_SHOP = { room: 104, name: 'Joguer the apothecary, Barloque' };
+
+// Independent purchase permissions owned by DUM strategies. `undefined` means the
+// historical behaviour (enabled), so an older roster or a standalone keeper does not
+// silently lose maintenance merely because it predates these switches.
+export const purchaseEnabled = (policy, kind) => policy?.[{
+  food: 'buyFood', weapons: 'buyWeapons', reagents: 'buyReagents',
+}[kind]] !== false;
 const BARLOQUE_VAULT = { room: 114, name: "Obert Cair'bre's vault, North Barloque" };
 
 export const MODES = ['survive', 'farm', 'idle'];
@@ -571,6 +578,11 @@ export class Autopilot {
       // Total weapons retained after a merchant visit, including the equipped one.
       // Two means the weapon in hand and one best spare under weaponPriority.
       maxWeapons: 2,
+      // Paying a merchant is independently selectable from creating, looting, sharing,
+      // eating, or equipping the same item classes.
+      buyFood: true,
+      buyWeapons: true,
+      buyReagents: true,
       // Independent DUM coordination strategies. null is deliberately inert: assigning
       // either strategy is what widens the keeper's behaviour, not merely installing it.
       farmCleanup: null,
@@ -8759,6 +8771,20 @@ export class Autopilot {
     const p = this.pendingFarmDelivery;
     if (!p || !this.policy.farmDelivery?.enabled) return null;
     const s = this.s, c = s.need();
+    if (!purchaseEnabled(this.policy, 'reagents')) {
+      const have = this.reagentCount();
+      const own = { herb: reagentTargetFor('herb', this.policy.reagentTarget),
+        elderberry: reagentTargetFor('elderberry', this.policy.reagentTarget) };
+      const spare = { herb: Math.max(0, have.herbs - own.herb),
+        elderberry: Math.max(0, have.elderberry - own.elderberry) };
+      p.bought = { herb: 0, elderberry: 0 };
+      p.cargo = { herb: Math.min(p.requested.herb, spare.herb),
+        elderberry: Math.min(p.requested.elderberry, spare.elderberry) };
+      this.note('farm delivery used carried spares without buying reagents', {
+        to_room: p.room, requested: p.requested, cargo: p.cargo,
+        why: 'the Buy Reagents strategy is disabled' });
+      return p;
+    }
     if (s.world?.room?.num !== REAGENT_SHOP.room) {
       const walked = await this.travel(REAGENT_SHOP.room, { maxHops: 12 })
         .catch(error => ({ arrived: false, reason: error.message }));
@@ -8998,7 +9024,8 @@ export class Autopilot {
     // illiquid — and withdrawForFood() is now the thing that fixes that, at a counter.
     const balance = s.bankKnown?.()?.balance ?? 0;
     const canFetch = balance >= 200;
-    const starving = !this.larder(c).length && !canCook &&
+    const starving = purchaseEnabled(this.policy, 'food') &&
+                     !this.larder(c).length && !canCook &&
                      (spendable >= 60 || canFetch) && !triedRecently;
     // Which counter first. With money in hand the bread shop is the whole trip; without
     // it, the bank comes first and buyFoodInTown walks the last hop afterwards.
@@ -9297,6 +9324,7 @@ export class Autopilot {
   // because a character with nothing to eat now needs bread now; reagents are for the next
   // hour. Both are one trip and the walk between them is a single room.
   async buyReagentsInTown() {
+    if (!purchaseEnabled(this.policy, 'reagents')) return;
     const s = this.s, c = s.need();
     const wantEb = reagentTargetFor('elderberry', this.policy.reagentTarget);
     const wantHb = reagentTargetFor('herb', this.policy.reagentTarget);
@@ -9338,6 +9366,7 @@ export class Autopilot {
   // or genuinely short. Taking the food money out after banking the surplus is one round
   // trip at the counter we are already standing at.
   async withdrawForFood() {
+    if (!purchaseEnabled(this.policy, 'food')) return;
     const s = this.s, c = s.need();
     const room = s.world?.room;
     if (!room) return;
@@ -9450,6 +9479,7 @@ export class Autopilot {
   // fill: vigor above the resting cap has to be EATEN, and everything below it comes
   // back for free by sitting down.
   async buyFoodInTown() {
+    if (!purchaseEnabled(this.policy, 'food')) return;
     const s = this.s, c = s.need();
     const vg = c.vitals?.()?.vigor;
     // larderOf already carries the food table — nutrition per item, best value first.
@@ -9538,6 +9568,7 @@ export class Autopilot {
   // AND SPEND IT ON THE TWO THINGS THAT RUN OUT. restockReagents buys elderberry, herbs
   // and food, and until now was reachable only from makeRoom for the same dead reason.
   async restockInTown() {
+    if (!purchaseEnabled(this.policy, 'food') && !purchaseEnabled(this.policy, 'reagents')) return;
     const s = this.s, c = s.need();
     // ASK THE ONE THAT ACTUALLY TRADES. This took the first object flagged `buy` and
     // committed to it, which is how the fleet spent a day asking Parrin Aragone for bread
@@ -9601,7 +9632,8 @@ export class Autopilot {
     const shortBy = Math.max(0, (this.policy.fightAboveVigor ?? 140) - (vg?.value ?? 0) - larder);
     // Roughly 4.5 shillings a vigor point at the Barloque shelf, plus the 100 reserve
     // restockReagents keeps. Capped so a badly-fed character cannot refuse to bank at all.
-    const foodMoney = shortBy > 20 ? Math.min(900, Math.round(shortBy * 4.5) + 100) : 0;
+    const foodMoney = purchaseEnabled(this.policy, 'food') && shortBy > 20
+      ? Math.min(900, Math.round(shortBy * 4.5) + 100) : 0;
     const deliveryMoney = this.deliveryCashReserve();
     const keep = FLOAT + foodMoney + deliveryMoney;
     if (carried <= keep) {
@@ -9865,6 +9897,9 @@ export class Autopilot {
   // the money a character needs to get home.
   async restockReagents(seller) {
     const s = this.s, c = s.need();
+    const mayBuyFood = purchaseEnabled(this.policy, 'food');
+    const mayBuyReagents = purchaseEnabled(this.policy, 'reagents');
+    if (!mayBuyFood && !mayBuyReagents) return [];
     // Per kind: the field refills elderberry for nothing and nothing in the world drops a
     // herb, so they are not the same number. See REAGENT_TARGET_BY_KIND.
     const wantEb = reagentTargetFor('elderberry', this.policy.reagentTarget);
@@ -9902,6 +9937,7 @@ export class Autopilot {
       }
     }
     const shortOf = (name) => {
+      if (!mayBuyReagents) return 0;
       const k = skills.shareKind(name);
       if (k && need[k] > 0) return need[k];
       return askedFor[norm(name)] || 0;
@@ -9924,8 +9960,8 @@ export class Autopilot {
     //
     // The two wants are independent and the test has to be too. `buyFoodInTown` walks to
     // 103 specifically to buy food, and this is the function it calls to do it.
-    const wantsFood = !this.larder(c).length ||
-                      (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
+    const wantsFood = mayBuyFood && (!this.larder(c).length ||
+                      (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9));
     if (!need.elderberry && !need.herb && !wantsFood &&
         !Object.values(askedFor).some(n => n > 0)) {
       this.declinedPurchase('already at the reagent target and not hungry', { have, target: want,
@@ -9955,7 +9991,7 @@ export class Autopilot {
     // stood in it buying nothing, which is a longer way to fail than never setting off.
     //
     // So "hungry" here means "cannot eat", not "wants to eat now".
-    const emptyLarder = !this.larder(c).length;
+    const emptyLarder = mayBuyFood && !this.larder(c).length;
     const hungryNow = emptyLarder ||
                       (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
     const fullFloor = this.policy.walkingMoney ?? 400;
@@ -9990,7 +10026,7 @@ export class Autopilot {
     // isFood comes from the Food class tree (m59-items.mjs), not a word list: guessing by
     // name would miss "Inky-cap mushroom" and "goblet of ale" and would wrongly include
     // the mushrooms that are reagents.
-    const hungry = hungryNow;
+    const hungry = mayBuyFood && hungryNow;
 
     // RANK FOOD BY VIGOR PER SHILLING, and stop once the gap is closed.
     //
@@ -10005,7 +10041,8 @@ export class Autopilot {
 
     // shortOf() asks shareKind first and the loadout's own item names second, so this is
     // the two-reagent filter it always was plus whatever this character listed.
-    const reagents = (shop.items || []).filter(it => shortOf(it.name) > 0 && affordable(it));
+    const reagents = mayBuyReagents
+      ? (shop.items || []).filter(it => shortOf(it.name) > 0 && affordable(it)) : [];
     for (const it of reagents) spend += it.cost;
 
     // What eating everything already in the pack would be worth, so a character with a
@@ -10044,7 +10081,7 @@ export class Autopilot {
       : 0);
 
     const food = [];
-    if (gap > 0) {
+    if (mayBuyFood && gap > 0) {
       const menu = (shop.items || []).filter(it => isFood(it.name) && (foodValue(it.name)?.nutrition ?? 0) > 0)
         .map(it => ({ it, vigor: foodValue(it.name).nutrition }))
         .sort((a, b) => (b.vigor / b.it.cost) - (a.vigor / a.it.cost) || b.vigor - a.vigor);

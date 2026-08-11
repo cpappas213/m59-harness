@@ -190,6 +190,10 @@ async function goTo(agent, room, where) {
 
 async function stockUp(row) {
   const who = row.character || row.agent;
+  const purchaseStatus = await call('autopilot', { agent: row.agent, action: 'status' }, 60_000)
+    .catch(() => null);
+  if (purchaseStatus?.policy?.buyReagents === false)
+    return `${who}: paid reagent buying is disabled by strategy`;
   const inv0 = await call('inventory', { agent: row.agent }, 60_000).catch(() => ({ items: [] }));
   const eb0 = countOf(inv0.items, /elder/);
   const purse0 = purseOf(inv0.items);

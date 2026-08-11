@@ -208,6 +208,8 @@ async function fundFrom(row, need) {
 async function feed(row) {
   const who = row.character || row.agent;
   const was = await call('autopilot', { agent: row.agent, action: 'status' }).catch(() => null);
+  if (was?.policy?.buyFood === false)
+    return `${who}: paid food buying is disabled by strategy`;
   if (DRY) {
     const shops = await foodShopsFor(row.agent);
     return `${who}: vigor ${row.vigor}, would go to ${shops.length ? `room ${shops[0]}` : 'NOWHERE — no reachable food shop'}`;

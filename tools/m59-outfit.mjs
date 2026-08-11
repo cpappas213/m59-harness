@@ -302,6 +302,8 @@ async function outfit(row) {
   // is not in game, and a loadout is looked up by the character's name.
   const loadout = row.character ? loadoutFor(row.character) : null;
   const wants = wantsFor(loadout);
+  const purchaseStatus = await call('autopilot', { agent: row.agent, action: 'status' }).catch(() => null);
+  const mayBuyWeapons = purchaseStatus?.policy?.buyWeapons !== false;
   // DEFENCE FIRST, WHATEVER ORDER THE LIST CAME IN.
   //
   // The header of this file states the principle — "a weapon changes how fast something
@@ -317,8 +319,10 @@ async function outfit(row) {
   // Sorted here rather than in wantsFor, so a loadout keeps meaning what it says about
   // WHICH items are wanted and only the sequence of spending is imposed.
   const SLOT_ORDER = { armour: 0, shield: 1, weapon: 2 };
+  const allMissing = WANT_GEAR ? missingFor(items, wants) : [];
+  const suppressedWeapons = allMissing.filter(w => w.slot === 'weapon' && !mayBuyWeapons);
   const missing = WANT_GEAR
-    ? missingFor(items, wants).sort((a, b) =>
+    ? allMissing.filter(w => w.slot !== 'weapon' || mayBuyWeapons).sort((a, b) =>
         (SLOT_ORDER[a.slot] ?? 9) - (SLOT_ORDER[b.slot] ?? 9))
     : [];
 
@@ -340,6 +344,8 @@ async function outfit(row) {
   }
 
   if (!missing.length && !toLearn.length) {
+    if (suppressedWeapons.length)
+      return `${who}: paid weapon buying is disabled by strategy`;
     if (LEARN.length) return `${who}: already knows ${LEARN.join(', ')}`;
     // Owning is not wearing. Even a fully-stocked character is worth a wear_best.
     if (!DRY) {
@@ -354,7 +360,7 @@ async function outfit(row) {
 
   // Stop the keeper, and remember EXACTLY what it was running so the errand cannot
   // quietly re-write a character's orders. Restored in the finally below.
-  const was = await call('autopilot', { agent: row.agent, action: 'status' }).catch(() => null);
+  const was = purchaseStatus ?? await call('autopilot', { agent: row.agent, action: 'status' }).catch(() => null);
   await call('autopilot', { agent: row.agent, action: 'stop' }).catch(() => {});
   const log = [];
   // A FAILED READ IS NOT "DOES NOT KNOW IT". Going anyway is right — the merchant will
@@ -771,7 +777,8 @@ async function outfit(row) {
     }
 
     items = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
-    const still = WANT_GEAR ? missingFor(items, wants).map(w => w.what) : [];
+    const still = WANT_GEAR ? missingFor(items, wants)
+      .filter(w => w.slot !== 'weapon' || mayBuyWeapons).map(w => w.what) : [];
     return `${who}: ${log.join(', ')}` + (still.length ? ` — STILL MISSING ${still.join(', ')}` : '');
   } finally {
     // Put the orders back exactly as they were, including the strategy and the room

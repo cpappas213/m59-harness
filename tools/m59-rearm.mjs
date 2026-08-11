@@ -259,6 +259,13 @@ async function buyWeaponFor(row) {
          'weapon base values inherit the Item default of 10 and every smith stocks a mace.';
 }
 
+async function paidWeaponPurchaseAllowed(agent) {
+  const status = await call('autopilot', { agent, action: 'status' }, 60_000).catch(() => null);
+  // Missing policy is the historical enabled behaviour. Only an explicit strategy-off
+  // value may turn a requested --buy into a no-op.
+  return status?.policy?.buyWeapons !== false;
+}
+
 async function main() {
   const f = await call('fleet', {}, 120_000);
   const rows = (f.fleet || []).filter(r => r.character);
@@ -395,7 +402,12 @@ async function main() {
     const pick = routed[0];
     if (!pick) {
       // Nobody has one to give. Buy it — the fleet has money and the shops work now.
-      if (BUY && !isReagents && GO) { console.log('  ' + await buyWeaponFor(need)); continue; }
+      if (BUY && !isReagents && GO) {
+        if (await paidWeaponPurchaseAllowed(need.agent))
+          console.log('  ' + await buyWeaponFor(need));
+        else console.log(`  ${need.character}: no donor can reach it; paid weapon buying is disabled by strategy`);
+        continue;
+      }
       // SAY WHICH FLAG IS ACTUALLY MISSING. This told me to pass --buy while I was
       // passing --buy: the purchase needs --go as well, and the advice was a constant
       // string that could not know what had been asked for. An instruction that is
@@ -496,7 +508,9 @@ async function main() {
       // rather than anything exceptional — and hunted fungus beasts bare-handed in
       // between. Janice hit it the pass before.
       if (!armedAnyway && BUY && !isReagents && GO) {
-        console.log('  ' + await buyWeaponFor(need));
+        if (await paidWeaponPurchaseAllowed(need.agent))
+          console.log('  ' + await buyWeaponFor(need));
+        else console.log(`  ${need.character}: paid weapon buying is disabled by strategy`);
       }
       continue;
     }
