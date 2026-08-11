@@ -2,10 +2,19 @@
 import assert from 'node:assert/strict';
 import { BP, M59Client } from './m59-client.mjs';
 import { depositInVault, itemIsProtected, itemNameMatches } from './m59-skills.mjs';
+import { resolveItemNames } from './m59-items.mjs';
 
 assert.equal(itemNameMatches('Inky-cap mushroom', 'inky cap mushrooms'), true);
 assert.equal(itemNameMatches('dark angel feather', 'Dark Angel Feathers'), true);
 assert.equal(itemIsProtected('purple mushroom', ['inky cap mushroom']), false);
+assert.equal(itemIsProtected('mushroom', ['inky cap mushroom']), false);
+assert.equal(itemIsProtected('Inky-cap mushroom', ['mushroom']), false);
+assert.equal(itemIsProtected('red mushroom', ['mushroom']), false);
+assert.deepEqual(resolveItemNames(['inky cap mushrooms', 'arrow', 'nerudite arrow']),
+  ['Inky-cap mushroom', 'arrows', 'nerudite arrows']);
+assert.deepEqual(resolveItemNames(['mushroom']), ['mushroom']);
+assert.throws(() => resolveItemNames(['mush']), /does not resolve/);
+assert.throws(() => resolveItemNames(['inkycap mushroom']), /does not resolve/);
 
 const sent = [];
 M59Client.prototype.depositItems.call({ send: (...args) => sent.push(args) }, 4321,
@@ -47,4 +56,4 @@ assert.deepEqual(result.deposited, [
 ]);
 assert.equal(client.inventory[0].id, 73);
 
-console.log('vault: 10 assertions passed');
+console.log('vault: 17 assertions passed');

@@ -51,6 +51,7 @@ import * as transits from './m59-transits.mjs';
 import * as descriptions from './m59-describe.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { loadoutFor, reconcile as reconcileLoadout } from './m59-loadout.mjs';
+import { resolveItemNames } from './m59-items.mjs';
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
          POSTMORTEM_DIR, setPilotLookup } from './m59-autopilot.mjs';
@@ -6641,7 +6642,8 @@ const TOOLS = [
       if (a.vault_items !== undefined) {
         if (!Array.isArray(a.vault_items) || a.vault_items.some(v => typeof v !== 'string'))
           throw new Error('vault_items must be a list of item names');
-        p.policy.vaultItems = [...new Set(a.vault_items.map(v => v.trim()).filter(Boolean))].slice(0, 24);
+        if (a.vault_items.length > 24) throw new Error('vault_items may contain at most 24 items');
+        p.policy.vaultItems = resolveItemNames(a.vault_items);
       }
       if (a.strategy_stats !== undefined) {
         if (a.strategy_stats == null) p.policy.strategyStats = null;
@@ -8574,6 +8576,17 @@ const TOOLS = [
               '`tested` is worth more than any of the scores.',
       };
     },
+  },
+  {
+    name: 'resolve_item_names',
+    description:
+      'Resolve complete human-written item names against the local m59-items datastore. ' +
+      'Punctuation and singular/plural spelling are tolerated, but abbreviations and partial ' +
+      'names are rejected. Used by collection-strategy editors before saving policy.',
+    schema: { type: 'object', properties: {
+      items: { type: 'array', items: { type: 'string' }, maxItems: 24 },
+    }, required: ['items'] },
+    run: a => ({ items: resolveItemNames(a.items), source: 'substrate/m59-items.json' }),
   },
   {
     name: 'drop_sources',

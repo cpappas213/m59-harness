@@ -206,6 +206,42 @@ export function loadItems(file = ITEMS_FILE) {
   return cached;
 }
 
+// ITEM IDENTITY FOR HUMAN-WRITTEN SETTINGS.
+//
+// Punctuation and a final plural are spelling, not identity: "inky cap mushrooms"
+// should resolve to the datastore's "Inky-cap mushroom", and "arrow" to "arrows".
+// Words may not be omitted, however. In particular, "mushroom" is its own item and
+// must never mean every item whose longer name happens to contain that word.
+const ITEM_IRREGULAR = { teeth: 'tooth', feet: 'foot', mice: 'mouse', geese: 'goose',
+  leaves: 'leaf', knives: 'knife', wolves: 'wolf' };
+const itemWord = word => ITEM_IRREGULAR[word]
+  ?? (word.endsWith('ies') && word.length > 4 ? `${word.slice(0, -3)}y`
+    : /(?:ses|xes|hes)$/.test(word) ? word.slice(0, -2)
+    : word.endsWith('s') && !word.endsWith('ss') && word.length > 3 ? word.slice(0, -1)
+    : word);
+export const itemNameKey = name => String(name || '').toLowerCase()
+  .split(/[^a-z0-9]+/).filter(Boolean).map(itemWord).join(' ');
+
+export function resolveItemName(name, file = ITEMS_FILE) {
+  const raw = String(name ?? '').trim();
+  const key = itemNameKey(raw);
+  if (!key) throw new Error('item name must not be empty');
+  const table = loadItems(file);
+  if (!table?.items) throw new Error(`local item datastore is unavailable (${file})`);
+  const matches = Object.values(table.items).filter(item => itemNameKey(item.name) === key);
+  if (matches.length === 1) return matches[0].name;
+  if (!matches.length)
+    throw new Error(`item "${raw}" does not resolve to an item in the local datastore; ` +
+                    'choose one complete item name, without abbreviating it');
+  throw new Error(`item "${raw}" is ambiguous: ${matches.map(item => item.name).join(', ')}`);
+}
+
+export function resolveItemNames(names = [], file = ITEMS_FILE) {
+  if (!Array.isArray(names)) throw new Error('items must be a list of item names');
+  const resolved = names.map(name => resolveItemName(name, file));
+  return [...new Map(resolved.map(name => [name.toLowerCase(), name])).values()];
+}
+
 // What one item weighs, by the name the protocol gave us. Returns null for anything the
 // table does not know — the caller has to decide what to do about that, and every
 // caller here treats it as "unknown", never as zero.

@@ -21,7 +21,7 @@ import { OF, isTeleporter, describeObject, dropSpec } from './m59-parse.mjs';
 // The Underworld's exits, and which city is nearest to any room. As a namespace,
 // because escapeUnderworld re-exports most of it and a bare import would shadow.
 import * as UW from './m59-underworld.mjs';
-import { weighPack, isWeaponName } from './m59-items.mjs';
+import { weighPack, isWeaponName, itemNameKey } from './m59-items.mjs';
 // A character's own buy/sell/keep list, when it has one. Imported for the two pure
 // predicates only — this file does not go looking for the file, because the caller knows
 // which character it is and this one does not.
@@ -1028,25 +1028,13 @@ export function larderOf(c) {
     .sort((a, b) => (b.food.nutrition / b.food.filling) - (a.food.nutrition / a.food.filling));
 }
 
-// DISPLAY NAMES AND COMPILED CLASS NAMES DISAGREE ABOUT PUNCTUATION AND PLURALS.
-// Strategy settings are written as ordinary names ("inky cap mushrooms") while the
-// inventory says "Inky-cap mushroom". Use one conservative matcher everywhere an
-// accumulated item must be protected; a protection that works for eating but misses
-// selling is not protection.
-const ITEM_IRREGULAR = { teeth: 'tooth', feet: 'foot', mice: 'mouse', geese: 'goose',
-  leaves: 'leaf', knives: 'knife', wolves: 'wolf' };
-const itemWord = word => ITEM_IRREGULAR[word]
-  ?? (word.endsWith('ies') && word.length > 4 ? `${word.slice(0, -3)}y`
-    : /(?:ses|xes|hes)$/.test(word) ? word.slice(0, -2)
-    : word.endsWith('s') && !word.endsWith('ss') && word.length > 3 ? word.slice(0, -1)
-    : word);
-export const itemNameKey = name => String(name || '').toLowerCase()
-  .split(/[^a-z0-9]+/).filter(Boolean).map(itemWord).join('');
+// Exact canonical identity, after punctuation/plural normalisation. A configured
+// "mushroom" protects the item actually named mushroom, not every longer mushroom
+// name; the broker separately rejects settings that do not resolve in m59-items.json.
+export { itemNameKey };
 export function itemNameMatches(name, wanted) {
   const have = itemNameKey(name), ask = itemNameKey(wanted);
-  if (!have || !ask) return false;
-  return have === ask || (Math.min(have.length, ask.length) >= 4 &&
-    (have.includes(ask) || ask.includes(have)));
+  return !!have && have === ask;
 }
 export const itemIsProtected = (name, wanted = []) =>
   [].concat(wanted || []).some(item => itemNameMatches(name, item));
