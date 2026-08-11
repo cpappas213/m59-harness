@@ -27,7 +27,7 @@
 // It should fail the day somebody moves a survival decision out of the keeper. That is
 // its whole job.
 
-import { Autopilot } from './m59-autopilot.mjs';
+import { Autopilot, shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
 import { describeCommitment, isTakeable, heldBy } from './m59-commitment.mjs';
 
 let pass = 0, fail = 0;
@@ -47,6 +47,16 @@ const ok = (name, cond, extra = '') => {
 const keeper = () => Object.assign(Object.create(Autopilot.prototype), {
   journal: [], policy: {}, claims: new Map(), passes: 0,
 });
+
+console.log('\nan explicit farming-room assignment');
+{
+  ok('moves a keeper that is farming in a different room',
+     shouldRelocateToAssignedRoom({ assignedRoom: 39 }, { num: 2601 }));
+  ok('does not move one already standing in its assignment',
+     !shouldRelocateToAssignedRoom({ assignedRoom: 39 }, { num: 39 }));
+  ok('does not invent a destination when room spreading is disabled',
+     !shouldRelocateToAssignedRoom({ assignedRoom: null }, { num: 2601 }));
+}
 
 console.log('\nan unattended keeper');
 {

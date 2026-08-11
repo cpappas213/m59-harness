@@ -59,6 +59,16 @@ const SAFESPOT_FILE = process.env.M59_SAFESPOT_FILE ||
 export const POSTMORTEM_DIR = process.env.M59_POSTMORTEM_DIR ||
   new URL('../substrate/postmortems', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 
+// A ROOM ASSIGNMENT IS A DESTINATION, NOT A TIE-BREAKER.
+//
+// The old farm loop only consulted preyRooms() when the current room could not spawn
+// the quarry. A bot assigned to Castle Victoria while standing in Marion's crypt could
+// therefore hunt the same skeleton there forever: status said assigned_room=39 while
+// the character never took one step toward 39.
+export function shouldRelocateToAssignedRoom(policy, room) {
+  return policy?.assignedRoom != null && room?.num != null && room.num !== policy.assignedRoom;
+}
+
 // How long a spot must go quiet, with something adjacent to us that wants to kill us,
 // before we believe it works. Two passes' worth: one quiet reading is also what you
 // get from a monster that happened to be walking away.
@@ -7297,7 +7307,8 @@ export class Autopilot {
         const here = (spawns0?.rooms?.[room.num] || []).filter(x => x.huntable);
         const want0 = String(this.policy.hunt || '').toLowerCase();
         const preyHere = here.some(x => (x.creature || '').toLowerCase().includes(want0));
-        if (!preyHere) {
+        const offAssignment = shouldRelocateToAssignedRoom(this.policy, room);
+        if (!preyHere || offAssignment) {
           const known = this.preyRooms(room);
           if (known.length) {
             const target = known[0];
@@ -7305,11 +7316,13 @@ export class Autopilot {
             // this exact line. The room is still the wrong room; that is not a reason to
             // arrive at the right one in no state to be there.
             if (!await this.readyToLeaveSanctuary(target.room_name)) return;
-            this.note('this room cannot produce our prey — leaving now', {
+            this.note(offAssignment ? 'leaving for the explicitly assigned farming room'
+                                    : 'this room cannot produce our prey — leaving now', {
               room: room.name, hunting: this.policy.hunt,
               generates: here.map(x => x.creature),
               going_to: target.room_name,
-              why: here.length ? 'none of what spawns here is what we hunt'
+              why: offAssignment ? `room ${this.policy.assignedRoom} is the explicit fleet assignment`
+                               : here.length ? 'none of what spawns here is what we hunt'
                                : 'nothing is generated here at all — it is not a hunting ground' });
             this.doing = 'travelling';
             if ((await this.leaveHold('travelling to a room that generates our prey')).refused) return;
