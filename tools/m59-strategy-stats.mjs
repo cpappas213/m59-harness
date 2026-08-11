@@ -19,9 +19,17 @@ let lastRotation = 0;
 
 export function detailSettings(policy = {}, category = null) {
   const settings = policy?.strategyStats;
-  if (!settings?.enabled) return null;
-  if (category && settings[category] !== true) return null;
-  return settings;
+  if (settings?.enabled) {
+    if (category && settings[category] !== true) return null;
+    return settings;
+  }
+  // These two strategies are themselves an explicit opt-in and their usefulness depends
+  // on proving the coordination happened. Keep their small event stream even when the
+  // broad Detailed strategy stats switch is off; it uses the same 24h rotation and 2h UI.
+  const auto = category === 'farm_cleanup' ? policy?.farmCleanup?.enabled
+             : category === 'farm_delivery' ? policy?.farmDelivery?.enabled : false;
+  return auto ? { enabled: true, retention_hours: 24, default_window_hours: 2,
+    [category]: true } : null;
 }
 
 function rotate(at = Date.now()) {
@@ -113,6 +121,8 @@ export function strategyStatsReport({ hours = 2 } = {}) {
   const fighting = categoryRows('fighting');
   const trading = categoryRows('trading');
   const vault = categoryRows('vault_accumulation');
+  const cleanup = categoryRows('farm_cleanup');
+  const delivery = categoryRows('farm_delivery');
   const fightMs = sum(fighting, 'duration_ms');
   const safeMs = sum(fighting, 'safe_spot_ms');
   return {
@@ -130,5 +140,22 @@ export function strategyStatsReport({ hours = 2 } = {}) {
       items_deposited: vault.filter(row => row.event === 'deposit')
         .flatMap(row => row.deposited ?? []).reduce((n, item) => n + (Number(item.amount) || 1), 0),
       latest: readVaultSnapshots(), records: records(vault) },
+    farm_cleanup: { runs: cleanup.length, dropped: sum(cleanup, 'dropped_count') ||
+        cleanup.reduce((n, row) => n + (row.dropped?.length ?? 0), 0),
+      picked: cleanup.reduce((n, row) => n + (row.picked ?? []).reduce((m, item) => m + (Number(item.amount) || 1), 0), 0),
+      picked_value: sum(cleanup, 'value'),
+      protected_picked: cleanup.reduce((n, row) => n + (row.protected ?? []).reduce((m, item) => m + (Number(item.amount) || 1), 0), 0),
+      refused: cleanup.reduce((n, row) => n + (row.refused?.length ?? 0), 0), records: records(cleanup) },
+    farm_delivery: { trips: delivery.length,
+      farmers: delivery.reduce((n, row) => n + (row.delivered?.length ?? 0), 0),
+      herbs_bought: delivery.reduce((n, row) => n + (Number(row.bought?.herb) || 0), 0),
+      elderberries_bought: delivery.reduce((n, row) => n + (Number(row.bought?.elderberry) || 0), 0),
+      herbs_delivered: delivery.reduce((n, row) => n + (row.delivered ?? [])
+        .reduce((m, rec) => m + (Number(rec.delivered?.herb) || 0), 0), 0),
+      elderberries_delivered: delivery.reduce((n, row) => n + (row.delivered ?? [])
+        .reduce((m, rec) => m + (Number(rec.delivered?.elderberry) || 0), 0), 0),
+      herbs_retained: delivery.reduce((n, row) => n + (Number(row.retained?.herb) || 0), 0),
+      elderberries_retained: delivery.reduce((n, row) => n + (Number(row.retained?.elderberry) || 0), 0),
+      records: records(delivery) },
   };
 }

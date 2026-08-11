@@ -6419,8 +6419,17 @@ const TOOLS = [
         default_window_hours: { type: 'number' }, crate_check: { type: 'boolean' },
         travel: { type: 'boolean' }, fighting: { type: 'boolean' },
         trading: { type: 'boolean' }, vault_accumulation: { type: 'boolean' },
-        create_food: { type: 'boolean' },
+        create_food: { type: 'boolean' }, farm_cleanup: { type: 'boolean' },
+        farm_delivery: { type: 'boolean' },
       }, description: 'opt-in rotating strategy detail recorder. null disables it; lightweight counters remain on' },
+      farm_cleanup: { type: ['object', 'null'], properties: {
+        enabled: { type: 'boolean' }, max_floor_items: { type: 'number' },
+        keep_free_stacks: { type: 'number' },
+      }, description: 'before sell-bound departures, discard confirmed dead gear and rank floor stock for the return pack; null disables it' },
+      farm_delivery: { type: ['object', 'null'], properties: {
+        enabled: { type: 'boolean' }, herbs_per_farmer: { type: 'number' },
+        elderberries_per_farmer: { type: 'number' }, max_recipients: { type: 'number' },
+      }, description: 'one returning seller buys and delivers exact reagent shortfalls for active farmers in its destination room; null disables it' },
       // HOW FAR ABOVE ITS OWN LEVEL THIS CHARACTER MAY FIGHT, and it was unreachable.
       //
       // `refuseEngagement` and `capBlockers` both gate on `max_health + maxThreatOver`
@@ -6616,16 +6625,42 @@ const TOOLS = [
         if (a.strategy_stats == null) p.policy.strategyStats = null;
         else {
           const value = a.strategy_stats;
-          const bools = ['crate_check', 'travel', 'fighting', 'trading', 'vault_accumulation', 'create_food'];
+          const bools = ['crate_check', 'travel', 'fighting', 'trading', 'vault_accumulation', 'create_food',
+            'farm_cleanup', 'farm_delivery'];
           if (typeof value !== 'object' || Array.isArray(value) || typeof value.enabled !== 'boolean' ||
               bools.some(key => typeof value[key] !== 'boolean'))
-            throw new Error('strategy_stats needs enabled and six boolean category switches');
+            throw new Error('strategy_stats needs enabled and eight boolean category switches');
           p.policy.strategyStats = {
             enabled: value.enabled,
             retention_hours: Math.max(1, Math.min(168, Number(value.retention_hours) || 24)),
             default_window_hours: Math.max(0.25, Math.min(168, Number(value.default_window_hours) || 2)),
             ...Object.fromEntries(bools.map(key => [key, value[key]])),
           };
+        }
+      }
+      if (a.farm_cleanup !== undefined) {
+        if (a.farm_cleanup == null) p.policy.farmCleanup = null;
+        else {
+          const value = a.farm_cleanup;
+          if (typeof value !== 'object' || Array.isArray(value) || value.enabled !== true)
+            throw new Error('farm_cleanup must be null or an enabled settings object');
+          p.policy.farmCleanup = { enabled: true,
+            max_floor_items: Math.max(1, Math.min(40, Math.floor(Number(value.max_floor_items) || 12))),
+            keep_free_stacks: Math.max(0, Math.min(12, Math.floor(Number(value.keep_free_stacks) || 0))) };
+        }
+      }
+      if (a.farm_delivery !== undefined) {
+        if (a.farm_delivery == null) {
+          p.cancelFarmDelivery('Farm delivery strategy was turned off');
+          p.policy.farmDelivery = null;
+        } else {
+          const value = a.farm_delivery;
+          if (typeof value !== 'object' || Array.isArray(value) || value.enabled !== true)
+            throw new Error('farm_delivery must be null or an enabled settings object');
+          p.policy.farmDelivery = { enabled: true,
+            herbs_per_farmer: Math.max(0, Math.min(100, Math.floor(Number(value.herbs_per_farmer) || 0))),
+            elderberries_per_farmer: Math.max(0, Math.min(100, Math.floor(Number(value.elderberries_per_farmer) || 0))),
+            max_recipients: Math.max(1, Math.min(12, Math.floor(Number(value.max_recipients) || 4))) };
         }
       }
       // Floored at 0, never at 6: 0 is the legitimate "fight nothing above my own level",
@@ -9309,6 +9344,7 @@ const TOOLS = [
           // Time by activity. `stalled_pct` is the honest health metric: recovering
           // is active, and a character sitting down regenerating is working.
           time: st?.time ?? null,
+          coordination: st?.coordination ?? null,
           last_death: st?.last_death ?? null,
           vigor_target: st?.policy?.fightAboveVigor || null,
           // No keeper, or a keeper that is not running, IS a stall. It used to report

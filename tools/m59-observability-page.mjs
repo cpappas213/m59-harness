@@ -163,6 +163,26 @@ export function keeperActivity(fleet = []) {
 export function renderHarnessBoard({ fleet = [], details = null, hours = 2, error = null } = {}) {
   const { rows, totals } = keeperActivity(fleet);
   const d = details ?? {};
+  const coord = (Array.isArray(fleet) ? fleet : []).map(unit => unit.coordination ?? {});
+  const cleanupNow = coord.reduce((out, row) => {
+    const value = row.farm_cleanup ?? {};
+    for (const key of ['runs', 'dropped', 'picked', 'picked_value', 'protected_picked', 'refused'])
+      out[key] += count(value[key]);
+    return out;
+  }, { runs: 0, dropped: 0, picked: 0, picked_value: 0, protected_picked: 0, refused: 0 });
+  const deliveryNow = coord.reduce((out, row) => {
+    const value = row.farm_delivery ?? {};
+    out.trips += count(value.trips); out.farmers_polled += count(value.farmers_polled);
+    out.failed += count(value.failed); out.pending += value.pending ? 1 : 0;
+    for (const key of ['requested', 'bought', 'delivered', 'retained'])
+      for (const kind of ['herb', 'elderberry']) out[key][kind] += count(value[key]?.[kind]);
+    return out;
+  }, { trips: 0, farmers_polled: 0, failed: 0, pending: 0,
+    requested: { herb: 0, elderberry: 0 }, bought: { herb: 0, elderberry: 0 },
+    delivered: { herb: 0, elderberry: 0 }, retained: { herb: 0, elderberry: 0 } });
+  const activitySeconds = totals.fighting_s + totals.recovering_s + totals.travelling_s +
+    totals.trading_s + totals.stalled_s;
+  const fightingShare = activitySeconds ? +(100 * totals.fighting_s / activitySeconds).toFixed(1) : null;
   const body = rows.map(row => `
     <tr><td class="name">${esc(row.character)}</td>${TIME_FIELDS.map(([key]) =>
       `<td>${esc(durationLabel(row.time[key]))}</td>`).join('')}<td>${esc(row.activity)}</td></tr>`).join('');
@@ -184,6 +204,16 @@ export function renderHarnessBoard({ fleet = [], details = null, hours = 2, erro
   const vaultRecords = (d.vault?.latest ?? []).map(row => detail(
     `${row.character ?? 'unknown'} · ${count((row.items ?? []).reduce((n, item) => n + (Number(item.amount) || 1), 0)).toLocaleString('en-GB')} vaulted items in latest read`,
     row.at, `<div>${esc(itemLabel(row.items))}</div>`)).join('');
+  const cleanupRecords = (d.farm_cleanup?.records ?? []).map(row => detail(
+    `${row.character ?? row.agent ?? 'unknown'} Â· picked ${count((row.picked ?? []).length)} floor stack(s) worth about ${count(row.value).toLocaleString('en-GB')}`,
+    row.at, `<div><strong>dropped:</strong> ${esc(itemLabel(row.dropped))}</div>` +
+      `<div><strong>picked:</strong> ${esc(itemLabel(row.picked))}</div>` +
+      `<div><strong>protected first:</strong> ${esc(itemLabel(row.protected))} Â· <strong>refused:</strong> ${esc((row.refused ?? []).length)}</div>`)).join('');
+  const deliveryRecords = (d.farm_delivery?.records ?? []).map(row => detail(
+    `${row.character ?? row.agent ?? 'unknown'} Â· delivered ${(row.delivered ?? []).reduce((n, rec) => n + count(rec.delivered?.herb) + count(rec.delivered?.elderberry), 0)} reagents to room ${row.to_room ?? 'â€”'}`,
+    row.at, `<div><strong>bought:</strong> herbs ${esc(row.bought?.herb ?? 0)}, elderberries ${esc(row.bought?.elderberry ?? 0)}</div>` +
+      `<div><strong>retained:</strong> herbs ${esc(row.retained?.herb ?? 0)}, elderberries ${esc(row.retained?.elderberry ?? 0)}</div>` +
+      `<div class="log">${(row.delivered ?? []).map(rec => `<div>${esc(rec.character ?? rec.agent ?? 'farmer')}: requested ${esc(JSON.stringify(rec.requested ?? {}))}; delivered ${esc(JSON.stringify(rec.delivered ?? {}))}${rec.why ? `; ${esc(rec.why)}` : ''}</div>`).join('')}</div>`)).join('');
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -235,6 +265,26 @@ export function renderHarnessBoard({ fleet = [], details = null, hours = 2, erro
     ${metricCard('vaults read', count(d.vault?.latest?.length).toLocaleString('en-GB'))}
   </div>
   <div class="panel">${vaultRecords || `<div class="empty">${esc(emptyDetail)}</div>`}</div>
+  <h2>Farm clean-up</h2>
+  <div class="section-note">Current-session counters survive without the broad detailed-stat switch; drill-ins rotate from disk for 24h.</div>
+  <div class="metric-grid">
+    ${metricCard('clean-up runs', cleanupNow.runs.toLocaleString('en-GB'))}
+    ${metricCard('dead gear dropped', cleanupNow.dropped.toLocaleString('en-GB'))}
+    ${metricCard('items picked', cleanupNow.picked.toLocaleString('en-GB'))}
+    ${metricCard('estimated value', cleanupNow.picked_value.toLocaleString('en-GB'))}
+    ${metricCard('protected items', cleanupNow.protected_picked.toLocaleString('en-GB'))}
+  </div>
+  <div class="panel">${cleanupRecords || `<div class="empty">No farm clean-up trip has completed in this window.</div>`}</div>
+  <h2>Farm delivery</h2>
+  <div class="metric-grid">
+    ${metricCard('courier trips', deliveryNow.trips.toLocaleString('en-GB'))}
+    ${metricCard('farmers polled', deliveryNow.farmers_polled.toLocaleString('en-GB'))}
+    ${metricCard('herbs delivered', deliveryNow.delivered.herb.toLocaleString('en-GB'))}
+    ${metricCard('elderberries delivered', deliveryNow.delivered.elderberry.toLocaleString('en-GB'))}
+    ${metricCard('cargo retained', (deliveryNow.retained.herb + deliveryNow.retained.elderberry).toLocaleString('en-GB'))}
+    ${metricCard('fleet fighting share', fightingShare == null ? 'â€”' : `${fightingShare}%`, 'current keeper process')}
+  </div>
+  <div class="panel">${deliveryRecords || `<div class="empty">No farm delivery has completed in this window.</div>`}</div>
   <div class="caveat">The top clock is current-process. Drill-ins are opt-in disk records, retained per selected unit (24h default), and this view is ${esc(hours)}h. Damage comes from the server-pushed hit record, not net health change, so healing cannot erase it.</div>
 </div></body></html>`;
 }

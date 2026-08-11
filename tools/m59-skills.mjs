@@ -1065,12 +1065,17 @@ export const itemIsProtected = (name, wanted = []) =>
 // aggregate before letting anything go. When the guild hall lands, its store is another
 // holder to publish into this same board rather than a second mechanism.
 export const interest = {
-  byAgent: new Map(),          // agent -> { wants:Set<string>, spare:Map<string,number>, at:number }
+  byAgent: new Map(),          // agent -> wants, exact needs, spare, room and freshness
 
-  declare(agent, { wants = [], spare = new Map() } = {}) {
+  declare(agent, { wants = [], needs = new Map(), spare = new Map(), room = null,
+                   character = null, farming = false } = {}) {
     this.byAgent.set(agent, {
       wants: new Set(wants.map(w => String(w).toLowerCase())),
+      needs: needs instanceof Map ? needs : new Map(Object.entries(needs)),
       spare: spare instanceof Map ? spare : new Map(Object.entries(spare)),
+      room: room == null ? null : Number(room),
+      character: character == null ? null : String(character),
+      farming: !!farming,
       at: Date.now(),
     });
   },
@@ -1098,9 +1103,25 @@ export const interest = {
       .sort((a, b) => b.count - a.count);
   },
 
+  // Exact, fresh demand in one destination room. Farm delivery reads this instead of
+  // guessing from the courier's own pack, so a town trip buys what the people still in
+  // that room need. A stale or non-farming declaration is not a delivery order.
+  demandsForRoom(room, { except = null, maxAgeMs = 90_000 } = {}) {
+    const wantedRoom = Number(room);
+    const now = Date.now();
+    return [...this.byAgent]
+      .filter(([agent, rec]) => agent !== except && rec.farming && rec.room === wantedRoom &&
+        now - rec.at <= maxAgeMs)
+      .map(([agent, rec]) => ({ agent, character: rec.character,
+        needs: Object.fromEntries([...rec.needs].map(([kind, amount]) =>
+          [String(kind).toLowerCase(), Math.max(0, Math.floor(Number(amount) || 0))])), at: rec.at }))
+      .filter(rec => Object.values(rec.needs).some(amount => amount > 0));
+  },
+
   board() {
     return [...this.byAgent].map(([agent, r]) => ({
-      agent, wants: [...r.wants], spare: Object.fromEntries(r.spare),
+      agent, character: r.character, room: r.room, farming: r.farming,
+      wants: [...r.wants], needs: Object.fromEntries(r.needs), spare: Object.fromEntries(r.spare),
     }));
   },
 };

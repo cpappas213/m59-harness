@@ -11,7 +11,7 @@ try {
   const stats = await import(`./m59-strategy-stats.mjs?test=${Date.now()}`);
   const settings = { enabled: true, retention_hours: 24, default_window_hours: 2,
     crate_check: true, travel: true, fighting: true, trading: true,
-    vault_accumulation: true, create_food: true };
+    vault_accumulation: true, create_food: true, farm_cleanup: true, farm_delivery: true };
 
   assert.equal(stats.detailSettings({ strategyStats: settings }, 'travel'), settings);
   assert.equal(stats.detailSettings({ strategyStats: settings }, 'unknown'), null);
@@ -31,6 +31,19 @@ try {
     deposited: [{ name: 'Inky Cap Mushroom', amount: 3 }],
   }, settings);
   stats.saveVaultSnapshot('Gonzo', { at: Date.now(), items: [{ name: 'Inky Cap Mushroom', amount: 12 }] });
+  const cleanupPolicy = { farmCleanup: { enabled: true } };
+  const cleanupSettings = stats.detailSettings(cleanupPolicy, 'farm_cleanup');
+  assert.equal(cleanupSettings.retention_hours, 24);
+  stats.recordStrategyStat('Gonzo', 'farm_cleanup', 'run', {
+    dropped: [{ name: 'broken mace' }], picked: [{ name: 'inky cap mushroom', amount: 3 }],
+    protected: [{ name: 'inky cap mushroom', amount: 3 }], value: 90,
+  }, cleanupSettings);
+  const deliveryPolicy = { farmDelivery: { enabled: true } };
+  const deliverySettings = stats.detailSettings(deliveryPolicy, 'farm_delivery');
+  stats.recordStrategyStat('Gonzo', 'farm_delivery', 'trip', {
+    bought: { herb: 6, elderberry: 2 }, retained: { herb: 1, elderberry: 0 },
+    delivered: [{ character: 'Kermit', delivered: { herb: 5, elderberry: 2 } }],
+  }, deliverySettings);
 
   const report = stats.strategyStatsReport({ hours: 2 });
   assert.equal(report.travel.trips, 1);
@@ -40,11 +53,14 @@ try {
   assert.equal(report.trading.earned, 90);
   assert.equal(report.vault.items_deposited, 3);
   assert.equal(report.vault.latest[0].items[0].amount, 12);
+  assert.equal(report.farm_cleanup.protected_picked, 3);
+  assert.equal(report.farm_delivery.herbs_delivered, 5);
+  assert.equal(report.farm_delivery.herbs_retained, 1);
 
   const off = { ...settings, travel: false };
   assert.equal(stats.recordStrategyStat('Gonzo', 'travel', 'trip', {}, off), null);
   assert.equal(stats.strategyStatsReport({ hours: 2 }).travel.trips, 1);
-  console.log('strategy stats: 13 assertions passed');
+  console.log('strategy stats: 17 assertions passed');
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

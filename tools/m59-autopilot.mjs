@@ -558,6 +558,10 @@ export class Autopilot {
       // Items a directional strategy is accumulating. The keeper treats these as
       // collection stock rather than food or loot and stores them during Barloque loops.
       vaultItems: [],
+      // Independent DUM coordination strategies. null is deliberately inert: assigning
+      // either strategy is what widens the keeper's behaviour, not merely installing it.
+      farmCleanup: null,
+      farmDelivery: null,
       // Opt-in detailed, short-lived activity records. DUM owns this object and leaves
       // it null unless the independent Detailed strategy stats strategy is checked.
       strategyStats: null,
@@ -786,6 +790,13 @@ export class Autopilot {
     this.lastError = null;
     // What actually happened, so a returning model gets a summary rather than a tail.
     this.tally = { kills: 0, deaths: 0, rests: 0, withdrawals: 0, rooms_moved: 0, looted: {} };
+    this.coordination = {
+      cleanup: { runs: 0, dropped: 0, picked: 0, picked_value: 0, protected_picked: 0, refused: 0 },
+      delivery: { trips: 0, farmers_polled: 0, requested: { herb: 0, elderberry: 0 },
+        bought: { herb: 0, elderberry: 0 }, delivered: { herb: 0, elderberry: 0 },
+        retained: { herb: 0, elderberry: 0 }, failed: 0 },
+    };
+    this.pendingFarmDelivery = null;
     // WHEN each kill happened, not just how many there have been.
     //
     // A running total answers "has this character ever worked", and that is not the
@@ -971,11 +982,12 @@ export class Autopilot {
   declareInterest() {
     const c = this.s.client;
     if (!c) return;
-    const want = this.policy.reagentTarget ?? REAGENT_TARGET;
     const r = this.reagentCount();
-    const wants = [], spare = new Map();
+    const wants = [], needs = new Map(), spare = new Map();
     for (const [kind, have] of [['elderberry', r.elderberry], ['herb', r.herbs]]) {
+      const want = reagentTargetFor(kind, this.policy.reagentTarget);
       if (have < want) wants.push(kind);
+      if (have < want) needs.set(kind, want - have);
       else if (have > want) spare.set(kind, have - want);
     }
     // No food and nothing to cook with is a want somebody else can answer directly.
@@ -992,7 +1004,9 @@ export class Autopilot {
       for (const w of mine.wants) if (!wants.includes(w)) wants.push(w);
       for (const [k, n] of mine.spare) if (!spare.has(k)) spare.set(k, n);
     }
-    skills.interest.declare(this.name ?? this.s.name, { wants, spare });
+    skills.interest.declare(this.name ?? this.s.name, { wants, needs, spare,
+      room: this.s.world?.room?.num ?? null, character: c.me?.name ?? null,
+      farming: this.mode === 'farm' && this.running && !this.inert });
     // Kept for the party register too. The fleet-wide board is a broadcast — anyone may
     // read it — while a partner needs the same list addressed to it specifically, so
     // that "one of us is short" can become "both of us go to town" rather than each
@@ -4888,6 +4902,16 @@ export class Autopilot {
         looted: Object.entries(this.tally.looted).map(([k, n]) => `${k}${n > 1 ? ` x${n}` : ''}`),
         rooms_visited: [...this.visited],
       },
+      coordination: {
+        farm_cleanup: { enabled: !!this.policy.farmCleanup?.enabled, ...this.coordination.cleanup },
+        farm_delivery: { enabled: !!this.policy.farmDelivery?.enabled, ...this.coordination.delivery,
+          pending: this.pendingFarmDelivery ? {
+            room: this.pendingFarmDelivery.room, room_name: this.pendingFarmDelivery.room_name,
+            recipients: this.pendingFarmDelivery.recipients.length,
+            requested: this.pendingFarmDelivery.requested, bought: this.pendingFarmDelivery.bought,
+            cargo: this.pendingFarmDelivery.cargo,
+          } : null },
+      },
       last_error: this.lastError,
       // The one field worth reading before anything else. Everything this keeper got
       // wrong in practice was invisible: it kept running, kept journalling, and did
@@ -7161,6 +7185,13 @@ export class Autopilot {
     // Carrying enough that it is worth WALKING to one? Go. See bankRun().
     if (await this.vaultRunIfPassing().catch(() => false)) return;
     if (await this.bankRun().catch(() => false)) return;
+    // The ordinary farming relocation has brought a town runner back to its original
+    // room. Complete the shared cargo hand-off before it eats, fights, or wanders.
+    if (await this.deliverFarmSupplies().catch(error => {
+      this.coordination.delivery.failed++;
+      this.note('farm delivery failed', { why: error.message });
+      return false;
+    })) return;
 
     // Someone else is standing here and we can mend them: do that first. It costs a
     // second and it is the only action available that helps another character.
@@ -8583,6 +8614,273 @@ export class Autopilot {
                : `${Math.round(fullness * 100)}% loaded, nothing to do` };
   }
 
+  itemValue(name, amount = 1) {
+    return (Number(ITEM_VALUE[String(name || '').toLowerCase()]) || 0) * Math.max(1, Number(amount) || 1);
+  }
+
+  // A SELLER IS ALREADY PAYING FOR THE WALK HOME. Spend a bounded moment making that
+  // one pack the best return from the room: known dead gear leaves first, protected
+  // collection stock boards first, and the remaining attempts are ranked by merchant
+  // value with sound gear ahead of ordinary stock. Partial wear is server-private; we
+  // never invent it. inspectForBroken and lootFloor ask the server for the condition.
+  async farmCleanupBeforeSale() {
+    const cfg = this.policy.farmCleanup;
+    if (!cfg?.enabled) return null;
+    const s = this.s, c = s.need();
+    const run = { room: s.world?.room?.num ?? null, room_name: s.world?.room?.name ?? null,
+      dropped: [], picked: [], refused: [], protected: [], value: 0 };
+    this.coordination.cleanup.runs++;
+
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+    const worn = skills.equippedNow(c) ?? new Set();
+    const spareGear = (c.inventory || []).filter(o => !worn.has(o.id) &&
+      (skills.weaponScore(c.rsc.get(o.nameRsc) || '') > 0 || skills.armourKind(c.rsc.get(o.nameRsc) || '')));
+    if (spareGear.length) await skills.inspectForBroken(s, spareGear.map(o => o.id)).catch(() => null);
+    const dropAttempts = [];
+    for (const dead of skills.junkAndBroken(c).filter(item => !worn.has(item.o?.id ?? item.id))) {
+      const id = dead.o?.id ?? dead.id;
+      const item = (c.inventory || []).find(o => o.id === id);
+      if (!item) continue;
+      await s.pacer.submit('drop', () => c.drop([this.dropSpec(item)])).catch(() => {});
+      await new Promise(resolve => setTimeout(resolve, 900));
+      dropAttempts.push({ id, name: dead.name, why: dead.why });
+    }
+    if (dropAttempts.length) {
+      await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+      await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+      const stillHere = new Set((c.inventory || []).map(item => item.id));
+      run.dropped = dropAttempts.filter(item => !stillHere.has(item.id))
+        .map(({ name, why }) => ({ name, why }));
+      run.refused.push(...dropAttempts.filter(item => stillHere.has(item.id))
+        .map(item => ({ name: item.name, why: 'server did not remove the requested dead gear from the pack' })));
+    }
+
+    await s.pacer.submit('read', () => c.roomContents()).catch(() => {});
+    await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 }).catch(() => {});
+    const protectedNames = Array.isArray(this.policy.vaultItems) ? this.policy.vaultItems : [];
+    const candidates = [...(c.room?.objects?.values?.() ?? [])]
+      .filter(o => o.id !== c.selfId && (o.flags & OF.GETTABLE))
+      .map(o => { const name = c.rsc.get(o.nameRsc) || '';
+        const protectedItem = skills.itemIsProtected(name, protectedNames);
+        const gear = skills.weaponScore(name) > 0 || !!skills.armourKind(name);
+        return { o, name, amount: o.amount || 1, protectedItem, gear,
+          value: this.itemValue(name, o.amount || 1) }; })
+      .sort((a, b) => Number(b.protectedItem) - Number(a.protectedItem) ||
+        Number(b.gear) - Number(a.gear) || b.value - a.value);
+    const max = Math.max(1, Math.min(40, Number(cfg.max_floor_items) || 12));
+    const configuredRoom = Math.max(0, (this.policy.maxCarry ?? 14) -
+      (c.inventory?.length ?? 0) - Math.max(0, Number(cfg.keep_free_stacks) || 0));
+    const attempt = candidates.slice(0, Math.min(max, Math.max(0, configuredRoom)));
+    const protectedIds = attempt.filter(row => row.protectedItem).map(row => row.o.id);
+    const ordinaryIds = attempt.filter(row => !row.protectedItem).map(row => row.o.id);
+    const take = async ids => ids.length
+      ? s.lootFloor({ ids, maxItems: ids.length, explicitIdsOverride: false })
+          .catch(error => ({ taken: [], refused: [{ why: error.message }] }))
+      : { taken: [], refused: [] };
+    const first = await take(protectedIds);
+    const second = await take(ordinaryIds);
+    run.picked = [...(first.taken || []), ...(second.taken || [])];
+    run.refused.push(...(first.refused || []), ...(second.refused || []));
+    run.protected = run.picked.filter(item => skills.itemIsProtected(item.name, protectedNames));
+    run.value = run.picked.reduce((sum, item) => sum + this.itemValue(item.name, item.amount || 1), 0);
+    this.coordination.cleanup.dropped += run.dropped.length;
+    this.coordination.cleanup.picked += run.picked.reduce((sum, item) => sum + (item.amount || 1), 0);
+    this.coordination.cleanup.picked_value += run.value;
+    this.coordination.cleanup.protected_picked += run.protected.reduce((sum, item) => sum + (item.amount || 1), 0);
+    this.coordination.cleanup.refused += run.refused.length;
+    this.detailEvent('farm_cleanup', 'run', run);
+    this.note('cleaned the farm before the sell trip', {
+      dropped: run.dropped, picked: run.picked, estimated_value: run.value,
+      protected_picked: run.protected, refused: run.refused.length });
+    return run;
+  }
+
+  prepareFarmDelivery(room) {
+    const cfg = this.policy.farmDelivery;
+    if (!cfg?.enabled || this.mode !== 'farm' || room == null || this.pendingFarmDelivery) return null;
+    const demands = skills.interest.demandsForRoom(room, { except: this.name ?? this.s.name })
+      .slice(0, Math.max(1, Math.min(12, Number(cfg.max_recipients) || 4)))
+      .map(rec => ({ ...rec, needs: {
+        herb: Math.min(rec.needs.herb || 0, Math.max(0, Number(cfg.herbs_per_farmer) || 0)),
+        elderberry: Math.min(rec.needs.elderberry || 0, Math.max(0, Number(cfg.elderberries_per_farmer) || 0)),
+      } }))
+      .filter(rec => rec.needs.herb || rec.needs.elderberry);
+    if (!demands.length || !claimFarmDelivery(room, this.name ?? this.s.name)) return null;
+    const requested = demands.reduce((out, rec) => ({
+      herb: out.herb + rec.needs.herb, elderberry: out.elderberry + rec.needs.elderberry,
+    }), { herb: 0, elderberry: 0 });
+    this.pendingFarmDelivery = { room: Number(room), room_name: this.s.world?.room?.name ?? null,
+      recipients: demands, requested, bought: { herb: 0, elderberry: 0 },
+      cargo: { herb: 0, elderberry: 0 }, claimed_at: Date.now() };
+    this.coordination.delivery.trips++;
+    this.coordination.delivery.farmers_polled += demands.length;
+    for (const kind of ['herb', 'elderberry']) this.coordination.delivery.requested[kind] += requested[kind];
+    this.note('claimed the return supply run', { to_room: room,
+      farmers: demands.map(rec => ({ agent: rec.agent, character: rec.character, needs: rec.needs })), requested });
+    return this.pendingFarmDelivery;
+  }
+
+  deliveryCashReserve() {
+    const p = this.pendingFarmDelivery;
+    if (!p) return 0;
+    // Vendor costs vary around viValue. Twenty per unit is deliberately an upper-bound
+    // reserve, capped so coordination can never turn banking off for a wealthy courier.
+    return Math.min(2500, 20 * ((p.requested.herb || 0) + (p.requested.elderberry || 0)));
+  }
+
+  cancelFarmDelivery(why = 'strategy disabled') {
+    const p = this.pendingFarmDelivery;
+    if (!p) return false;
+    releaseFarmDelivery(p.room, this.name ?? this.s.name);
+    this.pendingFarmDelivery = null;
+    this.note('cancelled the farm delivery', { to_room: p.room, why,
+      retained: p.cargo ?? { herb: 0, elderberry: 0 } });
+    return true;
+  }
+
+  async buyFarmDeliveryCargo() {
+    const p = this.pendingFarmDelivery;
+    if (!p || !this.policy.farmDelivery?.enabled) return null;
+    const s = this.s, c = s.need();
+    if (s.world?.room?.num !== REAGENT_SHOP.room) {
+      const walked = await this.travel(REAGENT_SHOP.room, { maxHops: 12 })
+        .catch(error => ({ arrived: false, reason: error.message }));
+      if (!walked?.arrived) {
+        this.coordination.delivery.failed++;
+        this.note('could not reach the apothecary for the farm delivery', { why: walked?.reason, to: p.room });
+        return null;
+      }
+    }
+    const pick = await this.sellerHere({ want: /elder\s?berry|^herbs?$/i }).catch(() => null);
+    if (!pick) { this.coordination.delivery.failed++; return null; }
+    const beforeCounts = this.reagentCount();
+    const ownTarget = { herb: reagentTargetFor('herb', this.policy.reagentTarget),
+      elderberry: reagentTargetFor('elderberry', this.policy.reagentTarget) };
+    const spare = { herb: Math.max(0, beforeCounts.herbs - ownTarget.herb),
+      elderberry: Math.max(0, beforeCounts.elderberry - ownTarget.elderberry) };
+    const need = { herb: Math.max(0, p.requested.herb - spare.herb),
+      elderberry: Math.max(0, p.requested.elderberry - spare.elderberry) };
+    const start = c.evSeq;
+    await s.pacer.submit('buy', () => c.buy(pick.seller.id ?? pick.seller));
+    const ev = await c.waitFor({ since: start, kinds: ['shop', 'message'], timeoutMs: 4000 })
+      .catch(() => ({ events: [] }));
+    const shop = ev.events?.find(row => row.kind === 'shop');
+    if (!shop) { this.coordination.delivery.failed++; return null; }
+    let purse = this.purseNow();
+    const floor = this.policy.walkingMoney ?? 400;
+    for (const kind of ['herb', 'elderberry']) {
+      const entry = (shop.items || []).find(item => skills.shareKind(item.name) === kind);
+      if (!entry) continue;
+      for (let n = 0; n < need[kind] && purse - (entry.cost || 0) >= floor; n++) {
+        await s.pacer.submit('buy', () => c.buyItems(shop.sellerId, [entry.id]));
+        await new Promise(resolve => setTimeout(resolve, 700));
+        purse -= entry.cost || 0;
+        this.recordPurchase(entry.name, entry.cost, { kind, from: c.rsc.get(pick.seller.nameRsc) ?? null,
+          why: `farm delivery for room ${p.room}` });
+      }
+    }
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+    const afterCounts = this.reagentCount();
+    p.bought = { herb: Math.max(0, afterCounts.herbs - beforeCounts.herbs),
+      elderberry: Math.max(0, afterCounts.elderberry - beforeCounts.elderberry) };
+    p.cargo = { herb: Math.min(p.requested.herb, spare.herb + p.bought.herb),
+      elderberry: Math.min(p.requested.elderberry, spare.elderberry + p.bought.elderberry) };
+    for (const kind of ['herb', 'elderberry']) this.coordination.delivery.bought[kind] += p.bought[kind];
+    this.note('loaded the farm delivery', { to_room: p.room, requested: p.requested,
+      bought: p.bought, fleet_spares_used: spare, cargo: p.cargo });
+    return p;
+  }
+
+  async giveFarmReagents(recipient, wanted) {
+    const s = this.s, c = s.need();
+    const them = [...(c.room?.objects?.values?.() ?? [])].find(o => (o.flags & OF.PLAYER) &&
+      (c.rsc.get(o.nameRsc) || '').toLowerCase() === String(recipient.character || '').toLowerCase());
+    if (!them) return { gave: { herb: 0, elderberry: 0 }, why: 'farmer left the room or is dead' };
+    const beforeCounts = this.reagentCount();
+    const offers = [], planned = { herb: 0, elderberry: 0 };
+    for (const kind of ['herb', 'elderberry']) {
+      let left = Math.max(0, Number(wanted[kind]) || 0);
+      for (const item of (c.inventory || []).filter(o => skills.shareKind(c.rsc.get(o.nameRsc) || '') === kind)) {
+        if (!left) break;
+        const amount = Math.min(left, item.amount || 1);
+        offers.push(amount < (item.amount || 1) ? { id: item.id, amount } : item.id);
+        planned[kind] += amount; left -= amount;
+      }
+    }
+    if (!offers.length) return { gave: planned, why: 'courier has no requested reagent cargo left' };
+    const before = c.evSeq;
+    await s.pacer.submit('trade', () => c.offer(them.id, offers));
+    const ev = await c.waitFor({ since: before, kinds: ['countered', 'trade-ended'], timeoutMs: 8000 })
+      .catch(() => ({ events: [] }));
+    if (!ev.events?.some(row => row.kind === 'countered')) {
+      await s.pacer.submit('trade', () => c.cancelOffer()).catch(() => {});
+      return { gave: { herb: 0, elderberry: 0 }, why: 'farmer did not counter the gift' };
+    }
+    const acceptingAt = c.evSeq;
+    await s.pacer.submit('trade', () => c.acceptOffer());
+    await c.waitFor({ since: acceptingAt, kinds: ['trade-ended'], timeoutMs: 4000 }).catch(() => {});
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+    const afterCounts = this.reagentCount();
+    const gave = { herb: Math.min(planned.herb, Math.max(0, beforeCounts.herbs - afterCounts.herbs)),
+      elderberry: Math.min(planned.elderberry,
+        Math.max(0, beforeCounts.elderberry - afterCounts.elderberry)) };
+    return { gave, ...(!gave.herb && !gave.elderberry
+      ? { why: 'trade handshake ended but no requested reagent left the courier pack' } : {}) };
+  }
+
+  async deliverFarmSupplies() {
+    const p = this.pendingFarmDelivery;
+    if (!p) return false;
+    if (this.s.world?.room?.num !== p.room) {
+      this.doing = 'travelling';
+      if ((await this.leaveHold('returning with the shared farm delivery')).refused) return true;
+      const walked = await this.travel(p.room, { maxHops: 24 })
+        .catch(error => ({ arrived: false, reason: error.message }));
+      if (!walked?.arrived) {
+        p.failures = (p.failures || 0) + 1;
+        this.coordination.delivery.failed++;
+        this.note('could not return with the farm delivery', {
+          to_room: p.room, attempt: p.failures, why: walked?.reason,
+          cargo_retained: p.cargo });
+        // Two failures means the route itself is unavailable. Keep the goods and let a
+        // later courier claim the room instead of retiring this one into an endless trip.
+        if (p.failures >= 2) this.cancelFarmDelivery('destination could not be reached twice');
+      }
+      return true;
+    }
+    this.doing = 'trading';
+    await this.s.pacer.submit('read', () => this.s.need().roomContents()).catch(() => {});
+    await this.s.client.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 }).catch(() => {});
+    const remaining = { ...p.cargo };
+    const deliveries = [];
+    for (const recipient of p.recipients) {
+      const wanted = { herb: Math.min(recipient.needs.herb || 0, remaining.herb),
+        elderberry: Math.min(recipient.needs.elderberry || 0, remaining.elderberry) };
+      if (!wanted.herb && !wanted.elderberry) continue;
+      const result = await this.giveFarmReagents(recipient, wanted).catch(error => ({
+        gave: { herb: 0, elderberry: 0 }, why: error.message }));
+      for (const kind of ['herb', 'elderberry']) {
+        remaining[kind] -= result.gave[kind] || 0;
+        this.coordination.delivery.delivered[kind] += result.gave[kind] || 0;
+      }
+      if (result.why) this.coordination.delivery.failed++;
+      deliveries.push({ agent: recipient.agent, character: recipient.character,
+        requested: wanted, delivered: result.gave, why: result.why });
+    }
+    for (const kind of ['herb', 'elderberry']) this.coordination.delivery.retained[kind] += remaining[kind];
+    const event = { to_room: p.room, room_name: p.room_name, requested: p.requested,
+      bought: p.bought, cargo: p.cargo, delivered: deliveries, retained: remaining };
+    this.detailEvent('farm_delivery', 'trip', event);
+    this.note('farm delivery finished', event);
+    releaseFarmDelivery(p.room, this.name ?? this.s.name);
+    this.pendingFarmDelivery = null;
+    this.progress('resupplied the farmers');
+    return true;
+  }
+
   async bankRun() {
     const above = this.policy.bankAbove;
     if (!above) return false;                       // 0 or null turns the trips off
@@ -8797,6 +9095,14 @@ export class Autopilot {
       return false;
     }
 
+    // Claim the return cargo while the destination is still unambiguous: this is the
+    // farming room the seller is leaving, not whichever shop the town leg ends in.
+    this.prepareFarmDelivery(room.num);
+    if (packFull || brokeWithGoods) await this.farmCleanupBeforeSale().catch(error => {
+      this.coordination.cleanup.refused++;
+      this.note('farm clean-up could not finish', { why: error.message, consequence: 'selling trip continues' });
+    });
+
     this.doing = 'travelling';
     // Stamp the attempt, not the success — the cooldown exists to stop a walk that buys
     // nothing from repeating, and "bought nothing" is the case that would otherwise never
@@ -8813,6 +9119,10 @@ export class Autopilot {
                     .catch(e => ({ arrived: false, reason: e.message }));
     this.money.trips++;
     if (!r.arrived) {
+      if (this.pendingFarmDelivery?.room === room.num) {
+        releaseFarmDelivery(room.num, this.name ?? this.s.name);
+        this.pendingFarmDelivery = null;
+      }
       this.money.trips_failed++;
       if (this.money.why_not.length < 6) this.money.why_not.push({ to: target.room, why: r.reason || 'did not arrive' });
       this.noProgress('could not reach the bank');
@@ -8848,6 +9158,10 @@ export class Autopilot {
     // One more hop, for the ingredients rather than the meal. Cheaper per vigor point than
     // bread and it is what keeps the character fed in the FIELD, where no shop is.
     await this.buyReagentsInTown().catch(() => {});
+    // Own food and reagent floors are filled first. Whatever remains above the walking
+    // reserve now buys the room's shared cargo, so helping the fleet cannot strand the
+    // courier that is carrying it.
+    await this.buyFarmDeliveryCargo().catch(() => {});
     await this.vaultRunIfPassing().catch(() => {});
     this.progress('banked the takings');
     return true;
@@ -9270,10 +9584,12 @@ export class Autopilot {
     // Roughly 4.5 shillings a vigor point at the Barloque shelf, plus the 100 reserve
     // restockReagents keeps. Capped so a badly-fed character cannot refuse to bank at all.
     const foodMoney = shortBy > 20 ? Math.min(900, Math.round(shortBy * 4.5) + 100) : 0;
-    const keep = FLOAT + foodMoney;
+    const deliveryMoney = this.deliveryCashReserve();
+    const keep = FLOAT + foodMoney + deliveryMoney;
     if (carried <= keep) {
-      if (foodMoney) this.note('keeping the food money back rather than banking it', {
-        carrying: carried, float: FLOAT, for_food: foodMoney, short_by: shortBy });
+      if (foodMoney || deliveryMoney) this.note('keeping supply money back rather than banking it', {
+        carrying: carried, float: FLOAT, for_food: foodMoney,
+        for_farm_delivery: deliveryMoney, short_by: shortBy });
       return;
     }
 
@@ -9285,7 +9601,8 @@ export class Autopilot {
                     .then(ev => ({ said: ev.events?.filter(e => e.text).map(e => e.text).slice(0, 2) }))
                     .catch(e => ({ error: e.message }));
     this.note(r.error ? 'could not bank' : 'banked the surplus', {
-      deposited: r.error ? undefined : put, kept: keep, float: FLOAT, for_food: foodMoney, why: r.error, said: r.said,
+      deposited: r.error ? undefined : put, kept: keep, float: FLOAT, for_food: foodMoney,
+      for_farm_delivery: deliveryMoney, why: r.error, said: r.said,
       because: 'money in hand is lost on death; money in the bank is not' });
     if (!r.error) {
       this.tally.banked = (this.tally.banked || 0) + put;
@@ -10407,6 +10724,22 @@ export function whereIs(agent, { staleMs = 120000 } = {}) {
   const r = lastRoom.get(agent);
   if (!r) return null;
   return (Date.now() - r.at) > staleMs ? null : r;   // a stale reading is worse than none
+}
+
+// ONE OUTBOUND COURIER PER DESTINATION ROOM. A claim is in-process coordination, not
+// durable state: a broker restart abandons the trip and lets a new seller claim it. The
+// TTL covers a long Barloque round trip without allowing a dead courier to block a room.
+const farmDeliveryClaims = new Map();   // room -> { agent, at }
+function claimFarmDelivery(room, agent) {
+  const key = Number(room), now = Date.now();
+  const held = farmDeliveryClaims.get(key);
+  if (held && held.agent !== agent && now - held.at < 30 * 60_000) return false;
+  farmDeliveryClaims.set(key, { agent, at: now });
+  return true;
+}
+function releaseFarmDelivery(room, agent) {
+  const key = Number(room), held = farmDeliveryClaims.get(key);
+  if (held?.agent === agent) farmDeliveryClaims.delete(key);
 }
 
 // Where a particular keeper is standing, for the one case that WANTS to share: a loot
