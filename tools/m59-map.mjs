@@ -62,6 +62,34 @@ export const COND_NAME = { 1: 'row>', 2: 'row<', 3: 'col>', 4: 'col<', 5: 'defau
 export const ROOM_LOCKED_DOOR = -1;         // blakston.khd:371
 export const ROTATE_NONE = 8;               // blakston.khd:1253
 
+// EXITS THE ROOM GRAPH CANNOT OBSERVE, BUT THE ROOM CLASS DEFINITELY IMPLEMENTS.
+//
+// TempleQor does not populate plEdge_Exits. Its SomethingMoved override catches
+// LEAVE_SOUTH itself and forwards the player to piCurrentExit, which alternates on a
+// timer between OutdoorsH9 (589) and OutdoorsI8 (598). The admin map builder therefore
+// sees an empty exit list and every consumer calls the temple sealed even though its
+// two walkable south-edge squares are the door.
+//
+// Keep both possible destinations in the graph. They are two descriptions of the SAME
+// action, not two physical doors: walk south from the boundary and accept whichever
+// outside room is currently open. A travel that expected the other destination simply
+// replans from the room actually entered.
+const SYNTHETIC_EDGE_EXITS = Object.freeze({
+  802: Object.freeze([
+    Object.freeze({ leave: LEAVE.SOUTH, leaveName: 'south', to: 589,
+      arriveRow: null, arriveCol: null, synthetic: true, dynamic: true }),
+    Object.freeze({ leave: LEAVE.SOUTH, leaveName: 'south', to: 598,
+      arriveRow: null, arriveCol: null, synthetic: true, dynamic: true }),
+  ]),
+});
+
+export function edgeExitsOf(room) {
+  const declared = Array.isArray(room?.edgeExits) ? room.edgeExits : [];
+  const synthetic = SYNTHETIC_EDGE_EXITS[room?.num] ?? [];
+  return [...declared, ...synthetic.filter(s =>
+    !declared.some(e => e.leave === s.leave && e.to === s.to))];
+}
+
 // ------------------------------------------------------------------ admin socket
 
 // The shared helper in m59.mjs paces commands 400ms apart, which is right for
@@ -297,13 +325,16 @@ export function loadMap(file = MAP_FILE) {
 // care which mechanism a given door uses — only what it has to do.
 export function exitsOf(room) {
   const out = [];
-  for (const e of room.edgeExits) {
+  for (const e of edgeExitsOf(room)) {
     out.push({
       kind: 'edge', to: e.to, direction: e.leaveName,
       how: `walk ${e.leaveName} past the room edge` +
+           (e.synthetic ? ' (synthetic from the room class; destination changes on its timer)' : '') +
            (e.condition ? ` (only when ${e.condition.name}${e.condition.threshold})` : ''),
       arriveRow: e.arriveRow, arriveCol: e.arriveCol,
       condition: e.condition,
+      ...(e.synthetic ? { synthetic: true } : {}),
+      ...(e.dynamic ? { dynamic_destination: true } : {}),
     });
   }
   for (const g of room.goExits) {

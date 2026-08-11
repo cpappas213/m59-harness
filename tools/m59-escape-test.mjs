@@ -23,6 +23,7 @@
 import { escapeUnderworld, standUp, fight } from './m59-skills.mjs';
 import { MOVEON, OF } from './m59-parse.mjs';
 import { readPortalSign, UNDERWORLD_PORTALS, nearestCity } from './m59-underworld.mjs';
+import { edgeExitsOf, exitsOf, LEAVE } from './m59-map.mjs';
 
 function underworld({ resting = false, deaf = false, portals = [], unwalkable = [] } = {}) {
   const log = [];
@@ -418,6 +419,23 @@ console.log('\nan edge is a wall, and every square on it crosses');
   ok('and several exits all still appear', spreadEdges([edge, plain]).length === 4);
   ok('empty and missing input do not throw',
      spreadEdges([]).length === 0 && spreadEdges(undefined).length === 0);
+}
+
+// TempleQor implements its exit in SomethingMoved instead of plEdge_Exits, and changes
+// the outside destination on a timer. The static graph must still advertise the action
+// or both the travel planner and an LLM looking at the room call it inescapable.
+console.log('\nthe Temple of Qor has its code-defined south exit');
+{
+  const room = { num: 802, edgeExits: [], goExits: [] };
+  const raw = edgeExitsOf(room);
+  const exits = exitsOf(room);
+  ok('the synthetic exit walks south', raw.length === 2 && raw.every(e => e.leave === LEAVE.SOUTH));
+  ok('both destinations selected by the room timer are routable',
+     raw.map(e => e.to).sort((a, b) => a - b).join(',') === '589,598');
+  ok('both graph edges identify themselves as synthetic and dynamic',
+     exits.every(e => e.synthetic && e.dynamic_destination));
+  ok('an ordinary room does not inherit the Temple exit',
+     edgeExitsOf({ num: 801, edgeExits: [] }).length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

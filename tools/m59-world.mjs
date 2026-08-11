@@ -19,7 +19,7 @@
 // a person or an agent can look at.
 
 import { RoomGeometry } from './m59-roo.mjs';
-import { exitsOf, findPath, inferredExits, codeExits, LEAVE } from './m59-map.mjs';
+import { exitsOf, findPath, inferredExits, codeExits, edgeExitsOf, LEAVE } from './m59-map.mjs';
 import { inRegion } from './m59-codeexits.mjs';
 import { affordances, OF, isTeleporter, KOD_FINENESS } from './m59-parse.mjs';
 
@@ -358,7 +358,7 @@ export class World {
     // That is worse than not knowing the route at all, because it looks like a
     // geometry problem rather than a bookkeeping one.
     const inferred = this.map ? inferredExits(this.map, room.num) : [];
-    for (const e of [...room.edgeExits,
+    for (const e of [...edgeExitsOf(room),
                      ...inferred.map(x => ({ leave: x.leave, to: x.to, leaveName: x.direction,
                                              arriveRow: null, arriveCol: null, inferred: true }))]) {
       // The boundary square to aim for. Walking past row 0 or piRows+1 is what
@@ -449,6 +449,8 @@ export class World {
         // Flagged so leaveVia can tell a declared boundary from a guessed one, and
         // retire the guess when the server refuses it.
         ...(e.inferred ? { inferred: true } : {}),
+        ...(e.synthetic ? { synthetic: true } : {}),
+        ...(e.dynamic ? { dynamic_destination: true } : {}),
       });
     }
 
