@@ -154,6 +154,88 @@ function summariseScenery(list) {
   };
 }
 
+// A ROOM NUMBER IS NOT NECESSARILY ONE CONNECTED FLOOR.
+//
+// Castle Victoria's upstairs is the worked example. The west and east wings are one
+// `Room` object and one .roo file, but a solid wall separates them. A player changes
+// wings by going downstairs and immediately taking the other staircase; a monster can
+// never do that because monsters do not use `go` exits. Consequently `travel(39)` is
+// already "done" while standing in the wrong wing, and an in-room path to a west-side
+// quarry from the east side correctly says there is no route.
+//
+// Find the small route the room graph normally hides: current room -> bridge room ->
+// the SAME room, landing in the target's connected component. This is deliberately a
+// plan only. The broker remains the authority for walking through each exact doorway.
+// Keeping it data-driven makes the rule useful for any other split room authored the
+// same way rather than baking Castle Victoria coordinates into combat code.
+export function sameRoomIslandBridgePlan(map, roomNum, geo, from, target) {
+  const room = map?.rooms?.[roomNum];
+  if (!room || !geo || !from || !target) return null;
+
+  const onFloor = p => {
+    if (geo.walkable(p.row, p.col)) return { row: p.row, col: p.col };
+    const near = geo.nearestWalkable(p.row, p.col);
+    return near ? { row: near.row, col: near.col } : null;
+  };
+  const start = onFloor(from), goal = onFloor(target);
+  if (!start || !goal) return null;
+  if (geo.path(start.row, start.col, goal.row, goal.col, { fine: true }).found) return null;
+
+  // Door squares can themselves be absent from the one-byte grid. In that case being
+  // able to reach a neighbouring square is enough: leaveVia performs the final fine
+  // movement/door lean and asks the server to judge the exact square.
+  const routeToDoor = (origin, door) => {
+    const candidates = [{ row: door.row, col: door.col }];
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      if (!dr && !dc) continue;
+      candidates.push({ row: door.row + dr, col: door.col + dc });
+    }
+    let best = null;
+    for (const p of candidates) {
+      if (!geo.walkable(p.row, p.col)) continue;
+      const r = geo.path(origin.row, origin.col, p.row, p.col, { fine: true });
+      if (r.found && (!best || r.steps.length < best.steps))
+        best = { steps: r.steps.length, approach: p };
+    }
+    return best;
+  };
+
+  const outward = (room.goExits || []).filter(e => !e.locked && e.to != null && e.to !== room.num);
+  for (const viaNum of [...new Set(outward.map(e => e.to))]) {
+    const leaveDoors = outward
+      .filter(e => e.to === viaNum)
+      .map(e => ({ ...e, route: routeToDoor(start, e) }))
+      .filter(e => e.route)
+      .sort((a, b) => a.route.steps - b.route.steps);
+    if (!leaveDoors.length) continue;
+
+    const via = map.rooms?.[viaNum];
+    if (!via) continue;
+    const returnDoors = (via.goExits || []).filter(e => {
+      if (e.locked || e.to !== room.num || e.arriveRow == null || e.arriveCol == null) return false;
+      const landing = onFloor({ row: e.arriveRow, col: e.arriveCol });
+      return !!landing && geo.path(landing.row, landing.col, goal.row, goal.col, { fine: true }).found;
+    });
+    if (!returnDoors.length) continue;
+
+    return {
+      fromRoom: room.num,
+      fromName: room.name,
+      viaRoom: via.num,
+      viaName: via.name,
+      leaveDoors: leaveDoors.map(e => ({ row: e.row, col: e.col, to: e.to })),
+      returnDoors: returnDoors.map(e => ({
+        row: e.row, col: e.col, to: e.to,
+        arriveRow: e.arriveRow, arriveCol: e.arriveCol,
+      })),
+      target: { row: goal.row, col: goal.col },
+      why: 'the quarry is in another connected part of this room; players can change ' +
+           'parts through the intervening room, while monsters cannot use those doors',
+    };
+  }
+  return null;
+}
+
 export class World {
   // `client` is an M59Client; `map` is the parsed substrate/m59-map.json.
   constructor(client, map) {

@@ -28,12 +28,13 @@ import {
 import { Autopilot, bearingIn, DEBUG_STATES } from './m59-autopilot.mjs';
 import { isFood } from './m59-items.mjs';
 import { outages, outageAround, recoverCrash, readLedger, ACTIVE_FILE } from './m59-uptime.mjs';
-import { mkdtempSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const recoverCrashAt = (activeFile, ledgerFile) => recoverCrash({ activeFile, ledgerFile });
 const readLedgerAt = (f) => readLedger(f);
 import { RoomGeometry } from './m59-roo.mjs';
+import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { roomCap, karmaSafe } from './m59-spawns.mjs';
 import { OF } from './m59-parse.mjs';
 import { nearestSafeSpot, safeSpots, exposureAt, lineOfSight, MAX_ATTACKERS } from './m59-safespots.mjs';
@@ -744,6 +745,81 @@ console.log('\nthe cliff, from the geometry instead of from experience');
   // nothing is being hunted, and refusing every square there would strand the fleet.
   const noQuarry = nearestSafeSpot(geo, { col: 3, row: 2 }, { within: 12, minAvoided: 0 });
   ok('with no quarry to ask about, nothing is filtered', noQuarry !== null);
+}
+
+console.log('\na split room is crossed through its intervening room');
+{
+  // Upstairs Castle Victoria is one room number with two pieces of floor. Players use
+  // the two staircases through base Castle Victoria; monsters cannot operate either
+  // door. Exercise the real baked room so a map update that changes those landings also
+  // changes (and, if necessary, breaks) this test visibly.
+  const map = JSON.parse(readFileSync(new URL('../substrate/m59-map.json', import.meta.url), 'utf8'));
+  const upstairs = map.rooms[39];
+  const geo = RoomGeometry.fromJSON(upstairs.roo);
+  const eastToWest = sameRoomIslandBridgePlan(
+    map, 39, geo, { row: 8, col: 40 }, { row: 8, col: 10 });
+  ok('the east and west wings are not mistaken for a direct in-room walk',
+     !geo.path(8, 40, 8, 10, { fine: true }).found);
+  ok('east to west goes through base Castle Victoria',
+     eastToWest?.viaRoom === 38, JSON.stringify(eastToWest));
+  ok('it leaves by an east-side upstairs door',
+     eastToWest?.leaveDoors?.length > 0 && eastToWest.leaveDoors.every(e => e.col === 27),
+     JSON.stringify(eastToWest?.leaveDoors));
+  ok('and returns by the staircase that lands in the west wing',
+     eastToWest?.returnDoors?.length > 0 &&
+     eastToWest.returnDoors.every(e => e.col === 17 && e.arriveCol === 23),
+     JSON.stringify(eastToWest?.returnDoors));
+
+  const westToEast = sameRoomIslandBridgePlan(
+    map, 39, geo, { row: 8, col: 10 }, { row: 8, col: 40 });
+  ok('west to east leaves by the west-side upstairs door',
+     westToEast?.leaveDoors?.length > 0 && westToEast.leaveDoors.every(e => e.col === 24),
+     JSON.stringify(westToEast?.leaveDoors));
+  ok('and returns by the staircase that lands in the east wing',
+     westToEast?.returnDoors?.length > 0 &&
+     westToEast.returnDoors.every(e => e.col === 19 && e.arriveCol === 28),
+     JSON.stringify(westToEast?.returnDoors));
+  ok('no bridge is proposed when player and quarry are already on the same side',
+     sameRoomIslandBridgePlan(map, 39, geo, { row: 8, col: 40 }, { row: 8, col: 30 }) === null);
+
+  // The executor must honour the exact doors in that plan. A destination-room travel
+  // call cannot do this because it sees room 39 both before and after and returns before
+  // moving; model the two room-entered packets and make sure both explicit hops occur.
+  let roomNum = 39;
+  const used = [];
+  const client = {
+    evSeq: 0, self: { row: 8, col: 40 },
+    roomContents() { this.evSeq++; },
+    async waitFor() { return { events: [] }; },
+  };
+  const session = {
+    name: 'castle-test', client,
+    pacer: { submit: async (_kind, fn) => fn() },
+    world: {
+      map,
+      get room() { return map.rooms[roomNum]; },
+      get geometry() { return geo; },
+      exits() {
+        return roomNum === 39
+          ? [{ kind: 'go', to: 38, stand_on: { row: 8, col: 27 }, reachable: true }]
+          : [{ kind: 'go', to: 39, stand_on: { row: 1, col: 17 }, reachable: true }];
+      },
+    },
+    async leaveViaAny(candidates) {
+      used.push(candidates.map(e => ({ to: e.to, ...e.stand_on })));
+      if (roomNum === 39) { roomNum = 38; client.self = { row: 1, col: 18 }; }
+      else { roomNum = 39; client.self = { row: 8, col: 23 }; }
+      return { left: true };
+    },
+  };
+  const keeper = new Autopilot(session, {});
+  const crossed = await keeper.crossSameRoomIsland(eastToWest);
+  ok('the executor performs both room changes even though it starts and ends in room 39',
+     crossed.arrived === true && used.length === 2, JSON.stringify({ crossed, used }));
+  ok('the first hop uses only the reachable east-wing upstairs door',
+     used[0]?.every(e => e.to === 38 && e.col === 27), JSON.stringify(used[0]));
+  ok('the second hop uses only the downstairs door that lands in the west wing',
+     used[1]?.every(e => e.to === 39 && e.col === 17), JSON.stringify(used[1]));
 }
 
 console.log('\nthe post-mortem');

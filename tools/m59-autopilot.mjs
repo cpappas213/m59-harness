@@ -25,6 +25,7 @@ import { OF, affordances, dropSpec as dropSpecFor } from './m59-parse.mjs';
 import { isFood, foodValue } from './m59-items.mjs';
 import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe } from './m59-spawns.mjs';
 import { findPath } from './m59-map.mjs';
+import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
 import { inboxIfAny } from './m59-inbox.mjs';
 import { describeCommitment } from './m59-commitment.mjs';
@@ -1792,6 +1793,64 @@ export class Autopilot {
                   'walk to a corner costs more than the fight does' };
   }
 
+  // CROSS BETWEEN DISCONNECTED PARTS OF ONE ROOM.
+  //
+  // Ordinary travel intentionally stops when the room number matches its destination.
+  // That is usually exactly right and makes it incapable of expressing this particular
+  // journey: Upstairs Castle Victoria -> Castle Victoria -> Upstairs Castle Victoria.
+  // The second upstairs arrival is the destination even though its room number is the
+  // same as the departure, because it is on the quarry's side of the central wall.
+  async crossSameRoomIsland(plan) {
+    const s = this.s, c = s.client;
+    if (!plan || !c || !s.world) return { arrived: false, reason: 'no same-room bridge plan' };
+
+    const matches = (e, doors, to) => e.kind === 'go' && e.to === to && e.stand_on &&
+      doors.some(d => d.row === e.stand_on.row && d.col === e.stand_on.col);
+    const settle = async () => {
+      const before = c.evSeq;
+      await s.pacer.submit('read', () => c.roomContents());
+      await c.waitFor({ since: before, kinds: ['room-contents'], timeoutMs: 2500 });
+    };
+
+    const out = (s.world.exits?.() || [])
+      .filter(e => matches(e, plan.leaveDoors, plan.viaRoom));
+    if (!out.length)
+      return { arrived: false, reason: `cannot reach a door from this part of ${plan.fromName}` };
+
+    this.doing = 'travelling';
+    this.note('changing sides of a split room', {
+      room: plan.fromName, quarry: { col: plan.target.col, row: plan.target.row },
+      via: plan.viaName, why: plan.why,
+    });
+    let crossed = await s.leaveViaAny(out).catch(e => ({ left: false, reason: e.message }));
+    this.movedAt = Date.now();
+    if (!crossed.left) return { arrived: false, reason: crossed.reason || 'could not leave this side' };
+    await settle().catch(() => {});
+    if (s.world.room?.num !== plan.viaRoom)
+      return { arrived: false, reason: `the first door arrived in ${s.world.room?.name || 'an unknown room'}` };
+
+    const back = (s.world.exits?.() || [])
+      .filter(e => matches(e, plan.returnDoors, plan.fromRoom));
+    if (!back.length)
+      return { arrived: false, reason: `no door from ${plan.viaName} lands on the quarry's side` };
+    crossed = await s.leaveViaAny(back).catch(e => ({ left: false, reason: e.message }));
+    this.movedAt = Date.now();
+    if (!crossed.left) return { arrived: false, reason: crossed.reason || 'could not take the other door back' };
+    await settle().catch(() => {});
+
+    const room = s.world.room, geo = s.world.geometry, me = c.self;
+    const arrived = room?.num === plan.fromRoom && geo && me &&
+      geo.path(me.row, me.col, plan.target.row, plan.target.col, { fine: true }).found;
+    if (!arrived)
+      return { arrived: false, reason: 'returned to the room, but not to the quarry\'s connected side' };
+    this.note('reached the quarry\'s side of the room', {
+      room: room.name, via: plan.viaName,
+      at: { col: me.col, row: me.row }, quarry: { col: plan.target.col, row: plan.target.row },
+      next: 'choose a wall on this side, hit the quarry, and pull it there',
+    });
+    return { arrived: true, room: room.num, position: { col: me.col, row: me.row } };
+  }
+
   // Go and stand somewhere defensible, preferring somewhere we have already proved —
   // and somewhere the fight can actually be brought to.
   // `source` is what will be written into the safe-spot book alongside any verdict this
@@ -1799,10 +1858,35 @@ export class Autopilot {
   // a journey. A failure still discredits the square permanently either way: a blow that
   // got through is a bad square however we came to be standing on it. The tag is so the
   // travel-only rejections can be told apart afterwards without reconstructing anything.
-  async takeSafeSpot(why, quarry = null, { source = 'fight' } = {}) {
+  async takeSafeSpot(why, quarry = null, { source = 'fight', islandCrossings = 0 } = {}) {
     const s = this.s, c = s.client;
     const room = s.world?.room, geo = s.world?.geometry, me = c?.self;
     if (!geo || !me || !room) return { took: false, why: 'no geometry for this room' };
+
+    // PLAYER REACH AND MONSTER REACH ARE DIFFERENT GRAPHS WHEN A ROOM HAS DOORS.
+    //
+    // If the quarry is across an internal wall, selecting a wall from our current
+    // component guarantees the pull will never convert; selecting one from its component
+    // and calling walkTo guarantees the player will report it unreachable. Neither says
+    // anything bad about the wall. Take the two-door player route first, then run the
+    // ordinary selector from the correct side. The quarry stays behind because monsters
+    // cannot operate the doors, which is exactly the invariant this route relies on.
+    const bridge = quarry?.col != null && quarry?.row != null
+      ? sameRoomIslandBridgePlan(s.world.map, room.num, geo, me, quarry)
+      : null;
+    if (bridge) {
+      if (islandCrossings >= 1)
+        return { took: false, why: 'changed rooms once but still did not land on the quarry\'s side' };
+      const crossed = await this.crossSameRoomIsland(bridge);
+      if (!crossed.arrived)
+        return { took: false, why: crossed.reason || 'could not change sides of this room' };
+      // Re-entering replaces the room object map. Use the live quarry instance rather
+      // than carrying its pre-door coordinates and identity through the trip.
+      const liveQuarry = quarry.id != null ? c.room?.objects?.get(quarry.id) : quarry;
+      if (!liveQuarry)
+        return { took: false, why: 'the quarry was gone when we reached its side' };
+      return this.takeSafeSpot(why, liveQuarry, { source, islandCrossings: islandCrossings + 1 });
+    }
     // Squares we have already discovered nothing can be pulled to. Without this the
     // keeper re-picks the same unusable corner every pass for ever, because the
     // geometry's opinion of it never changes and neither does ours.
