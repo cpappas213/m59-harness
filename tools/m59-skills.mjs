@@ -2114,13 +2114,70 @@ export function sellable({ name, worn, keepRe, loadout = null, pack = [], armour
   return { sell: true, why: 'nothing protects it' };
 }
 
+// WHICH EQUIPMENT EARNS A PLACE BACK OUT OF TOWN.
+//
+// This is identity-based, not name-based. A loadout saying "mace" used to protect every
+// mace in the pack, so a character could arrive with six and leave with six. The same
+// happened to spare armour: if no body piece was equipped, every body piece was kept.
+// A merchant trip is the point at which those duplicates should become money.
+//
+// Equipped objects are untouchable. `maxWeapons` counts them, then the remaining places
+// go to the best sound weapons under the active priority. Armour gets one carried piece
+// only when that slot is currently empty; once a slot is filled, its unworn pieces are
+// surplus. If the client cannot provide the server's equipment set, this declines to
+// force any equipment sale rather than guessing which object is in use.
+export function merchantEquipmentPlan(c, { maxWeapons = null, weaponPriority = null } = {}) {
+  const equipped = equippedNow(c);
+  const keep = new Map(), sell = new Map();
+  if (!equipped) return { keep, sell, verified: false };
+
+  const pack = (c.inventory || []).map(o => ({ o, name: c.rsc.get(o.nameRsc) || '' }));
+  const weapons = pack.filter(x => weaponScore(x.name) > 0);
+  const equippedWeapons = weapons.filter(x => equipped.has(x.o.id));
+  for (const x of equippedWeapons) keep.set(x.o.id, 'equipped weapon');
+
+  if (Number.isFinite(maxWeapons)) {
+    const limit = Math.max(0, Math.floor(maxWeapons));
+    const places = Math.max(0, limit - equippedWeapons.length);
+    const ranked = weaponRanking(c, { priority: weaponPriority })
+      .filter(x => !equipped.has(x.o.id));
+    for (const x of ranked.slice(0, places)) keep.set(x.o.id, 'best spare weapon within max_weapons');
+    for (const x of weapons) {
+      if (!equipped.has(x.o.id) && !keep.has(x.o.id))
+        sell.set(x.o.id, `weapon beyond max_weapons=${limit}`);
+    }
+  } else {
+    for (const x of weapons) keep.set(x.o.id, 'no weapon limit is configured');
+  }
+
+  const soundArmour = armourOf(c);
+  for (const slot of ARMOUR_SLOTS) {
+    const all = pack.filter(x => armourKind(x.name)?.slot === slot);
+    const worn = all.filter(x => equipped.has(x.o.id));
+    for (const x of worn) keep.set(x.o.id, `equipped ${slot}`);
+    // An empty slot needs one usable future piece. armourOf excludes gear already known
+    // broken and ranks the rest by the same score wearBest uses.
+    if (!worn.length) {
+      const future = soundArmour[slot]?.find(x => !equipped.has(x.o.id));
+      if (future) keep.set(future.o.id, `best ${slot} available for the empty slot`);
+    }
+    for (const x of all) {
+      if (!equipped.has(x.o.id) && !keep.has(x.o.id))
+        sell.set(x.o.id, worn.length ? `spare ${slot}; that slot is already equipped`
+                                    : `surplus or unusable ${slot}`);
+    }
+  }
+  return { keep, sell, verified: true };
+}
+
 // Sell everything a merchant will take, keeping what you are using.
 //
 // `loadout` is this character's own list, or null. See `sellable` above for the order the
 // rules apply in and why. A caller that passes null gets the behaviour this function has
 // always had, which is what every existing caller relies on.
 export async function sellAll(s, { merchant, keep = [], protect = [], minPrice = 1,
-                                   loadout = null } = {}) {
+                                   loadout = null, maxWeapons = null,
+                                   weaponPriority = null } = {}) {
   const c = s.need();
   await s.pacer.submit('read', () => c.requestInventory());
   await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 });
@@ -2138,10 +2195,13 @@ export async function sellAll(s, { merchant, keep = [], protect = [], minPrice =
   // pack counts as a spare — see sellable.
   const armoured = pack.some(x => wielded.has(x.o.id) && ARMOUR_BODY.test(x.name) && !/shield/i.test(x.name));
 
-  let items = pack.filter(x => sellable({
-    name: x.name, worn: wielded.has(x.o.id), keepRe, loadout, armoured,
-    pack: pack.map(y => ({ name: y.name, amount: y.o.amount || 1 })),
-  }).sell);
+  const equipment = merchantEquipmentPlan(c, { maxWeapons, weaponPriority });
+
+  let items = pack.filter(x => equipment.sell.has(x.o.id) ||
+    (!equipment.keep.has(x.o.id) && sellable({
+      name: x.name, worn: wielded.has(x.o.id), keepRe, loadout, armoured,
+      pack: pack.map(y => ({ name: y.name, amount: y.o.amount || 1 })),
+    }).sell));
   items = items.filter(x => !itemIsProtected(x.name, protect));
 
   // DO NOT SELL WHAT A CRewMATE IS SHORT OF. The merchant buys low and sells high, so
@@ -2149,6 +2209,9 @@ export async function sellAll(s, { merchant, keep = [], protect = [], minPrice =
   // usually the reagent that decides whether somebody can eat.
   const held = [];
   items = items.filter(x => {
+    // max_weapons and the armour slot rules are hard pack limits. A fleetmate's broad
+    // equipment interest must not turn one character back into the fleet warehouse.
+    if (equipment.sell.has(x.o.id)) return true;
     if (!interest.anyoneWants(x.name, { except: s.name })) return true;
     held.push({ name: x.name, wanted_by: interest.wantedBy(x.name, { except: s.name }) });
     return false;

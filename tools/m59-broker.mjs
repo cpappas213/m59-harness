@@ -6288,7 +6288,8 @@ const TOOLS = [
   {
     name: 'sell_all',
     description:
-      'Sell everything a merchant will take, keeping your money and anything weapon-like. Quotes each ' +
+      'Sell everything a merchant will take, keeping your money, equipped gear, one useful piece for ' +
+      'an empty armour slot, and at most max_weapons weapons when that limit is supplied. Quotes each ' +
       'item first and skips the ones the merchant refuses, so a refusal costs you nothing. Merchants only ' +
       'deal in certain things — use the merchants tool to find one that wants what you are carrying.\n' +
       'If this character has a LOADOUT (substrate/loadouts/<name>.json, written in the compendium\'s ' +
@@ -6300,6 +6301,10 @@ const TOOLS = [
       merchant: { type: ['string', 'number'], description: 'the merchant, by id or name' },
       keep: { type: 'array', items: { type: 'string' }, description: 'name fragments to hold back' },
       min_price: { type: 'number', description: 'skip anything worth less than this, default 1' },
+      max_weapons: { type: ['number', 'null'],
+        description: 'total equipped plus carried weapons to retain; null keeps every weapon' },
+      weapon_priority: { type: 'array', items: { type: 'string' },
+        description: 'name fragments best first when choosing which weapons fit under max_weapons' },
       ignore_loadout: { type: 'boolean',
         description: 'sell against the generic rules, ignoring this character\'s own list' },
     }, required: ['agent', 'merchant'] },
@@ -6310,7 +6315,10 @@ const TOOLS = [
       // belongs to the character and follows it across rosters.
       const who = s.client?.me?.name;
       return skills.sellAll(s, { merchant: t, keep: a.keep || [], minPrice: num(a.min_price, 1),
-                                 loadout: a.ignore_loadout || !who ? null : loadoutFor(who) });
+                                 loadout: a.ignore_loadout || !who ? null : loadoutFor(who),
+                                 maxWeapons: a.max_weapons == null ? null : Number(a.max_weapons),
+                                 weaponPriority: Array.isArray(a.weapon_priority)
+                                   ? a.weapon_priority.map(String) : null });
     },
   },
   {
@@ -6412,6 +6420,8 @@ const TOOLS = [
       rest_below: { type: 'number', description: 'rest when a vital drops under this fraction, default 0.7' },
       flee_below: { type: 'number', description: 'withdraw under this fraction, default 0.4' },
       max_carry: { type: 'number', description: 'stop farming at this many items, default 14' },
+      max_weapons: { type: ['number', 'null'],
+        description: 'weapons retained after selling, including the equipped weapon. Default 2; null removes the limit' },
       vault_items: { type: 'array', items: { type: 'string' },
         description: 'item names to protect from eating/selling/gifting/dropping and deposit at the Barloque vault during town loops' },
       strategy_stats: { type: ['object', 'null'], properties: {
@@ -6616,6 +6626,9 @@ const TOOLS = [
       if (a.rest_below !== undefined) p.policy.restBelow = Number(a.rest_below);
       if (a.flee_below !== undefined) p.policy.fleeBelow = Number(a.flee_below);
       if (a.max_carry !== undefined) p.policy.maxCarry = Number(a.max_carry);
+      if (a.max_weapons !== undefined)
+        p.policy.maxWeapons = a.max_weapons == null
+          ? null : Math.max(0, Math.floor(Number(a.max_weapons) || 0));
       if (a.vault_items !== undefined) {
         if (!Array.isArray(a.vault_items) || a.vault_items.some(v => typeof v !== 'string'))
           throw new Error('vault_items must be a list of item names');
@@ -10061,6 +10074,7 @@ function heroSnapshot(name) {
       inventory: (c.inventory || []).map(o => ({
         name: c.rsc.get(o.nameRsc), amount: o.amount || undefined, can: affordances(o.flags) })),
       max_carry: st?.policy?.maxCarry ?? null,
+      max_weapons: st?.policy?.maxWeapons ?? null,
       weapon_priority: st?.policy?.weaponPriority ?? 'by proficiency',
       // HOW GOOD IT IS AT EACH ONE — which is the whole reason to look at this list, and
       // which this page showed as a blank column for its entire life.

@@ -568,6 +568,9 @@ export class Autopilot {
       // Items a directional strategy is accumulating. The keeper treats these as
       // collection stock rather than food or loot and stores them during Barloque loops.
       vaultItems: [],
+      // Total weapons retained after a merchant visit, including the equipped one.
+      // Two means the weapon in hand and one best spare under weaponPriority.
+      maxWeapons: 2,
       // Independent DUM coordination strategies. null is deliberately inert: assigning
       // either strategy is what widens the keeper's behaviour, not merely installing it.
       farmCleanup: null,
@@ -9519,7 +9522,9 @@ export class Autopilot {
     if (!buyer) return;
     this.doing = 'trading';
     const r = await skills.sellAll(s, { merchant: buyer.id, loadout: this.loadout(),
-                                       protect: this.policy.vaultItems })
+                                       protect: this.policy.vaultItems,
+                                       maxWeapons: this.policy.maxWeapons,
+                                       weaponPriority: this.weaponPriorityNow() })
                           .catch(e => ({ error: e.message }));
     if (r.error) return this.note('could not sell in town', { why: r.error });
     if (r.sold?.length) {
@@ -10098,7 +10103,9 @@ export class Autopilot {
       // guards — money, worn gear, anything a crewmate is short of — still apply; this adds
       // this character's floors and its sell list on top.
       const sold = await skills.sellAll(s, { merchant: buyer.id, loadout: this.loadout(),
-                                            protect: this.policy.vaultItems })
+                                            protect: this.policy.vaultItems,
+                                            maxWeapons: this.policy.maxWeapons,
+                                            weaponPriority: this.weaponPriorityNow() })
                                .catch(e => ({ error: e.message }));
       // WE ARE STANDING AT A SHOP WITH MONEY IN HAND. Restocking reagents here costs
       // nothing extra — the walk is already paid for — and it is the one time buying
