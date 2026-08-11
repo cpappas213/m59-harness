@@ -245,17 +245,17 @@ export function safeSpots(geo, { limit = 8, mustReach = null, los = 0 } = {}) {
 // side of the field from anything worth killing: the keeper walks to a perfect corner,
 // discovers the nearest centipede is twelve steps away and cannot be fetched, gives
 // the corner up, and picks the same one again next pass. A safe spot nothing can be
-// brought to is not a safe spot, it is a bench.
-// THE SPOT MUST BE ONE THE FIGHT CAN REACH, and that is a different question from
-// whether we can reach it. A clifftop scores beautifully on defensibility — almost
-// nothing can stand next to you, which is the whole metric — and we can walk up to it,
-// so every test this function used to run said yes. The monsters could not follow, and
-// nothing asked them.
+// brought to is not a safe spot, it is a bench. But the room grid is only a prediction
+// of that fact: it ranks predicted-reachable squares first and still offers a doubtful
+// square when none remain. Repeated live pulls are the veto.
+// THE SPOT MUST ULTIMATELY BE ONE THE FIGHT CAN REACH, and that is a different question
+// from whether we can reach it. A clifftop scores beautifully on defensibility — almost
+// nothing can stand next to you, which is the whole metric — and we can walk up to it.
 //
 // `quarryReach(col,row)` answers "could the thing we came to fight get here", on the
 // grid that governs MONSTERS (see RoomGeometry.LOS — the stock server puts them on the
-// coarse grid). Null means the caller cannot say, and then this reverts to the old
-// behaviour rather than refusing every square.
+// coarse grid). Null means the caller cannot say. False lowers a square behind every
+// predicted-reachable option; it no longer suppresses the live experiment.
 // WHAT A SAFE WALL ACTUALLY IS, AND WHY THE DISC METRICS ARE NOT IT.
 //
 // `attackers_avoided` and `free_shots` are transcriptions of the server's reach and
@@ -356,7 +356,12 @@ export function nearestSafeSpot(geo, from, {
   const all = safeSpots(geo, { limit: Infinity, los });
   const known = book && room != null ? book.recall(room) : null;
   let best = null;
+  let bestPredictedUnreachable = null;
   let unreachableByQuarry = 0;
+  let reachableByQuarry = 0;
+  let eligible = 0;
+  let unreachableToUs = 0;
+  let empiricallyBarren = 0;
   for (const s of all) {
     const seen = known?.get(key(s.col, s.row)) || null;
     // Never send a character back to a square that has already been disproved.
@@ -385,15 +390,34 @@ export function nearestSafeSpot(geo, from, {
     // happen. It grants no proof bonus below, and it does not survive discredited()
     // above: fail again and the square is out for good, exactly as before.
     if (!gate && !(seen && (seen.held > 0 || seen.retest))) continue;
-    // A square nothing can walk to is not a safe spot, it is a balcony. Checked before
-    // the reachability test because a cliff passes that easily — being unreachable is
-    // precisely what makes it score well.
+    eligible++;
+
+    // THE MONSTER GRID IS A PRIOR, NOT A VERDICT.
+    //
+    // This used to `continue` on one coarse-grid miss. That made a stale quarry position,
+    // an imperfect .roo movement mask, or a server setting we had inferred incorrectly
+    // sufficient to declare every wall in the room a clifftop — before a character had
+    // stood on even one of them. The live observation is cheaper and stronger: take the
+    // best predicted-reachable wall first, but if none exists take the best predicted-
+    // unreachable wall and actually try to pull the quarry there. `barrenSpots` below is
+    // the empirical veto, learned only after repeated swings and a full follow window.
+    let predictedUnreachable = false;
+    let quarryPrediction = null;
     if (quarryReach) {
-      const q = quarryReach(s.col, s.row);
-      if (q && q.reachable === false) { unreachableByQuarry++; continue; }
+      quarryPrediction = quarryReach(s.col, s.row);
+      if (quarryPrediction?.reachable === false) {
+        predictedUnreachable = true;
+        unreachableByQuarry++;
+      } else if (quarryPrediction?.reachable === true) {
+        reachableByQuarry++;
+      }
     }
     const p = reach ? reach(s.col, s.row) : { reachable: true, steps: d };
-    if (!p?.reachable) continue;
+    if (!p?.reachable) {
+      unreachableToUs++;
+      if (/empirically barren/i.test(String(p?.reason || p?.why || ''))) empiricallyBarren++;
+      continue;
+    }
     // Prefer defensibility, then closeness. A spot two squares further away that
     // halves the number of attackers is worth the two squares. Proof is worth more
     // than either — a square that has held under attack beats any amount of
@@ -406,9 +430,9 @@ export function nearestSafeSpot(geo, from, {
     //
     // This was 1.2 a square, which is heavier than it sounds: at that weight a wall
     // eight squares further from the quarry loses to open floor beside it, and the
-    // question of whether the fight can happen there is already answered — properly —
-    // by quarryReach above. Any reachable spot in the zone is good enough, so long as
-    // the monster can follow us to it, and that is the check that says so.
+    // quarryReach prediction above already supplies the primary partition. Any spot in
+    // its predicted-reachable partition is good enough; if that partition is empty, the
+    // best doubtful one is tested live instead of being forbidden by the map.
     const fromFight = toward ? Math.max(Math.abs(s.col - toward.col), Math.abs(s.row - toward.row)) : 0;
     // RANK ON THE THING THAT PREDICTS HOLDING. `score` is the disc composite; under the
     // wall rule the back arc leads and the disc score stays as a weak tie-break, at
@@ -416,21 +440,41 @@ export function nearestSafeSpot(geo, from, {
     const defensibility = rule === 'disc' ? s.score
       : s.back_cover * 3 + s.score * 0.25 + (s.back_cover >= CORNER ? CORNER_BONUS : 0);
     const value = defensibility + proof - (p.steps ?? d) * 0.5 - fromFight * fromFightWeight;
-    if (!best || value > best.value)
-      best = { ...s, steps_away: p.steps ?? d, value, from_fight: toward ? fromFight : null,
-               // Proven means held AND never failed. Discredited squares are already
-               // skipped above; this keeps the flag honest for anything reading it.
-               proven: !!seen?.held && !seen?.failed, held_before: seen?.held ?? 0,
-               // The fine coordinate is what we actually want to stand on; see
-               // SafeSpotBook. The square is only how we get there.
-               fine: seen?.x != null ? { x: seen.x, y: seen.y } : null };
+    const candidate = {
+      ...s, steps_away: p.steps ?? d, value, from_fight: toward ? fromFight : null,
+      // This is an invitation to TEST the prediction, not a statement that the square
+      // works. The empirical pull detector is the authority after arrival.
+      predicted_unreachable_by_quarry: predictedUnreachable || undefined,
+      quarry_prediction: predictedUnreachable ? quarryPrediction : undefined,
+      // Proven means held AND never failed. Discredited squares are already
+      // skipped above; this keeps the flag honest for anything reading it.
+      proven: !!seen?.held && !seen?.failed, held_before: seen?.held ?? 0,
+      // The fine coordinate is what we actually want to stand on; see SafeSpotBook.
+      // The square is only how we get there.
+      fine: seen?.x != null ? { x: seen.x, y: seen.y } : null,
+    };
+    if (predictedUnreachable) {
+      if (!bestPredictedUnreachable || value > bestPredictedUnreachable.value)
+        bestPredictedUnreachable = candidate;
+    } else if (!best || value > best.value) {
+      best = candidate;
+    }
   }
-  // Say how many were dropped for being unreachable, INCLUDING when nothing was found.
-  // "no spot here" and "203 spots here and the fight cannot get to any of them" are
-  // different facts about a room, and only the second one explains West Merchant Way.
+  // A reachable prediction always wins. The fallback is deliberately visible in the
+  // returned record so the keeper can say it is testing a doubtful map rather than
+  // presenting the map's guess as a fact.
+  best ??= bestPredictedUnreachable;
+  // Keep the map prediction and the live verdict separate in the diagnostics. A doubtful
+  // square is no longer dropped merely for being doubtful; `empirically_barren` counts
+  // the ones repeated pull tests have actually retired.
   if (stats) {
     stats.considered = all.length;
+    stats.eligible = eligible;
     stats.unreachable_by_quarry = unreachableByQuarry;
+    stats.reachable_by_quarry = reachableByQuarry;
+    stats.unreachable_to_us = unreachableToUs;
+    stats.empirically_barren = empiricallyBarren;
+    stats.used_predicted_unreachable = !!best?.predicted_unreachable_by_quarry;
   }
   if (best && unreachableByQuarry) best.rejected_unreachable_by_quarry = unreachableByQuarry;
   return best;

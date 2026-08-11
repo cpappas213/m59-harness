@@ -338,11 +338,16 @@ console.log('\n--- keeping track of where we are ---');
   const w = world();
   const p = keeper(w);
   holdAt(p, 5, 5, { proven: true });
+  p.pendingPull = { waitUntil: Date.now() + 30_000, target: 'giant rat' };
+  p.pullsWithoutContact = 2;
   w.me().col = 6;                                     // something moved us
   look(p);
   ok('a spot we are not standing on is released', p.hold === null,
      'holding a belief about a square we left is how a keeper walks into a swarm confident');
   ok('and said why', p.journal.some(e => e.what === 'gave up the safe spot'));
+  ok('pull evidence is released with its wall',
+     p.pendingPull === null && p.pullsWithoutContact === 0,
+     'misses from one square must not condemn the next square');
 }
 {
   const w = world();

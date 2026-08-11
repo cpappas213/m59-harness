@@ -569,10 +569,15 @@ export class Autopilot {
       // NOT renamed (weapon.kod:788 changes only the icon), so it keeps out-scoring the
       // working one in the pack and cannot be recognised except by having been refused.
       dropJunk: true,
-      // How many pulls that never turn into a fight before the square is written off.
-      // See pullDidNotConvert(): the empirical cliff detector, and now the BACKSTOP —
-      // takeSafeSpot refuses unreachable squares up front, so this should rarely fire.
-      pullsBeforeBarren: 3,
+      // How many COMPLETE pulls that never turn into a fight before the square is
+      // written off. Geometry only ranks candidates; this live test is the veto.
+      pullsBeforeBarren: 4,
+      // Give the quarry enough time to walk the same ground we just crossed. Decisions
+      // run every second, while one square of movement takes about a second; counting
+      // the very next decision as a failed pull condemned distant but working walls.
+      pullFollowMinMs: 8_000,
+      pullFollowPerStepMs: 1_100,
+      pullFollowMaxMs: 60_000,
       // WHICH MOVEMENT GRID THE SERVER PUTS MONSTERS ON. room.kod:2102 reads one
       // server-wide setting: 0 LOS_OLD (default — everyone coarse), 1 monsters fine,
       // 2 players fine, 3 both. Getting this wrong in the permissive direction is what
@@ -1724,6 +1729,11 @@ export class Autopilot {
       where: { col: h.col, row: h.row }, why, proven: h.proven,
       held_s: Math.round((Date.now() - h.takenAt) / 1000) });
     this.hold = null;
+    // Pull evidence belongs to the square being released. Letting two misses from one
+    // wall follow us to the next would condemn the new wall on its second experiment.
+    this.pendingPull = null;
+    this.pullsWithoutContact = 0;
+    this.pulledLastPass = false; // compatibility with state created by older code
     releaseSpot(this.s.name);
     this.book.save();
   }
@@ -1846,21 +1856,37 @@ export class Autopilot {
         why: `every wall in this room already had ${shareCap - 1} on it, and two to a wall ` +
              'beats one on a wall and one in the open' });
     if (!spot) {
-      // Distinguish "flat room" from "ledge system". The second reads as the first
-      // unless it is said out loud, and it was West Merchant Way for five characters.
-      if (spotStats.unreachable_by_quarry > 0) {
+      // ONLY EMPIRICAL FAILURES EARN THE CATEGORICAL TERRAIN VERDICT.
+      //
+      // This used to fire when `unreachable_by_quarry > 0`: one coarse-grid rejection
+      // among hundreds of candidates was enough for the sentence "every defensible
+      // square". Even when every geometry candidate was rejected, that was still a map
+      // prediction made before standing on one. A square enters `barrenSpots` only after
+      // repeated pulls, each allowed a distance-sized follow window. Equality here means
+      // every currently eligible square has actually failed that experiment.
+      const allEmpiricallyBarren = spotStats.eligible > 0 &&
+        spotStats.empirically_barren === spotStats.eligible;
+      if (allEmpiricallyBarren) {
         this.note('every defensible square here is out of the fight\'s reach', {
-          considered: spotStats.considered, unreachable: spotStats.unreachable_by_quarry,
+          considered: spotStats.eligible, unreachable: spotStats.empirically_barren,
           quarry: quarry ? { col: quarry.col, row: quarry.row } : null,
-          why: 'this is a ledge or clifftop system: the squares that score well do so ' +
-               'BECAUSE nothing can get to them, which also means nothing will come.',
+          why: 'every eligible wall has been tried repeatedly, and pulls from each one ' +
+               'failed to produce a fight after the quarry had time to follow.',
           note: 'fighting in the open here is the correct answer; a better room is a better one' });
         return { took: false, unreachable_terrain: true,
-                 why: `${spotStats.unreachable_by_quarry} of ${spotStats.considered} defensible ` +
-                      'squares here cannot be reached by what we are fighting' };
+                 why: `all ${spotStats.empirically_barren} eligible defensible squares here ` +
+                      'failed repeated pull tests' };
       }
       return { took: false, why: 'nothing in this room is more defensible than open floor' };
     }
+
+    if (spot.predicted_unreachable_by_quarry)
+      this.note('testing a wall the room grid doubts', {
+        at: { col: spot.col, row: spot.row },
+        quarry: quarry ? { col: quarry.col, row: quarry.row } : null,
+        prediction: spot.quarry_prediction,
+        why: 'the coarse movement grid is useful for ranking, but only repeated pulls can ' +
+             'prove that a live quarry cannot fight here' });
 
     // CLAIM IT BEFORE WALKING, not after arriving. Choosing and taking are separated
     // by a walk, and a walk is an await: three keepers each looked at the room, each
@@ -3237,8 +3263,10 @@ export class Autopilot {
       // Both are expressed as "unreachable" because that is the question the ranking
       // already asks, and neither is worth a second mechanism.
       reach: (col, r2) => {
-        if (barren?.has(`${col},${r2}`)) return { reachable: false };
-        if (spotTakenByAnother(this.s.name, room.num, col, r2, shareCap)) return { reachable: false };
+        if (barren?.has(`${col},${r2}`))
+          return { reachable: false, reason: 'empirically barren after repeated pulls' };
+        if (spotTakenByAnother(this.s.name, room.num, col, r2, shareCap))
+          return { reachable: false, reason: 'occupied at this share cap' };
         return s.world.reach(col, r2);
       },
     });
@@ -4023,6 +4051,26 @@ export class Autopilot {
     }
   }
 
+  // HOW LONG TO LET A PULLED QUARRY FOLLOW BEFORE CALLING THE PULL A MISS.
+  //
+  // The keeper decides every second. The quarry moves on roughly the same one-square-
+  // per-second clock as the walk we just made, so "still out of reach next pass" says
+  // almost nothing after a long pull. Give it the outbound distance plus a small reaction
+  // margin, bounded so a genuinely stuck quarry cannot park a keeper forever.
+  pullFollowWaitMs(steps = 0) {
+    const min = Math.max(0, Number(this.policy.pullFollowMinMs ?? 8_000));
+    const per = Math.max(0, Number(this.policy.pullFollowPerStepMs ?? 1_100));
+    const max = Math.max(min, Number(this.policy.pullFollowMaxMs ?? 60_000));
+    return Math.min(max, Math.max(min, Math.max(0, Number(steps) || 0) * per + 3_000));
+  }
+
+  pendingPullWait(now = Date.now()) {
+    const p = this.pendingPull;
+    if (!p) return null;
+    const remaining = Math.max(0, p.waitUntil - now);
+    return { ...p, remaining_ms: remaining, ready: remaining === 0 };
+  }
+
   // THE SPOT NOTHING CAN ACTUALLY REACH — the cliff.
   //
   // A whole band of the fleet stood on the clifftop above West Merchant Way, taking a
@@ -4045,7 +4093,7 @@ export class Autopilot {
   // this failure catches human players too.
   pullDidNotConvert(why) {
     this.pullsWithoutContact = (this.pullsWithoutContact ?? 0) + 1;
-    const limit = this.policy.pullsBeforeBarren ?? 3;
+    const limit = this.policy.pullsBeforeBarren ?? 4;
     if (this.pullsWithoutContact < limit) {
       this.note('pulled, but nothing came', {
         attempt: this.pullsWithoutContact, of: limit, why,
@@ -4063,8 +4111,8 @@ export class Autopilot {
     // hit standing here" and feeds `discredited`, which is a SAFETY judgement. A cliff
     // square is perfectly safe — it is useless, which is the opposite problem — and
     // filing it under failed would teach the book a lie to get one convenient effect.
-    // The cost is that this knowledge is per-process and a restart re-learns it, three
-    // wasted passes at a time. Worth fixing with a second book, not with a wrong flag.
+    // The cost is that this knowledge is per-process and a restart re-learns it, four
+    // fully-waited pulls at a time. Worth fixing with a second book, not with a wrong flag.
     this.note('SPOT UNUSABLE — nothing can reach it', {
       at: this.hold ? { col: this.hold.col, row: this.hold.row } : null,
       room: room?.num, attempts: this.pullsWithoutContact,
@@ -4078,8 +4126,39 @@ export class Autopilot {
     return true;
   }
 
+  // A FAILED ATTEMPT TO SWING IS NOT YET A FAILED WALL.
+  //
+  // `pull()` can fail before the attack because a moving quarry invalidated its approach
+  // square or because one walk was refused. The old branch retired the wall after that
+  // single miss. Count per square and require the same patience as a pull that succeeded
+  // but did not convert; only then does the square enter the empirical barren set.
+  pullAttemptFailed(spot, why) {
+    if (spot?.room == null || spot?.col == null || spot?.row == null)
+      return { retired: false, attempt: 0, limit: this.policy.pullsBeforeBarren ?? 4 };
+    const id = `${spot.room}:${spot.col},${spot.row}`;
+    (this.pullFailures ??= new Map());
+    const attempt = (this.pullFailures.get(id) ?? 0) + 1;
+    this.pullFailures.set(id, attempt);
+    const limit = this.policy.pullsBeforeBarren ?? 4;
+    if (attempt < limit) return { retired: false, attempt, limit };
+
+    (this.barrenSpots ??= new Map());
+    const set = this.barrenSpots.get(spot.room) ?? new Set();
+    set.add(`${spot.col},${spot.row}`);
+    this.barrenSpots.set(spot.room, set);
+    this.note('SPOT UNUSABLE — could not complete a pull from it', {
+      at: { col: spot.col, row: spot.row }, room: spot.room, attempts: attempt, why,
+      note: 'excluded only after repeated failed approaches; one refused walk is transient' });
+    return { retired: true, attempt, limit };
+  }
+
   // Contact happened, so whatever we are standing on works. Called from the fight path.
-  pullConverted() { this.pullsWithoutContact = 0; }
+  pullConverted() {
+    this.pullsWithoutContact = 0;
+    this.pendingPull = null;
+    this.pulledLastPass = false; // clear state left by an older in-process keeper
+    this.pullFailures?.clear();
+  }
 
   // DOES WHAT WE ARE KILLING STILL PAY FOR WHAT WE SAID WE WERE FARMING?
   //
@@ -7785,45 +7864,79 @@ export class Autopilot {
       // a monster that will not come to the wall has to be fetched. Hit it once and
       // walk back, and the fight happens where we chose.
       if (f.out_of_reach) {
-        // WE PULLED LAST PASS AND WE ARE STILL STANDING HERE ALONE. The pull did what it
-        // said and the monster never arrived, so this square is a candidate for the
-        // cliff. Ask before pulling again, or we spend the afternoon proving it.
-        if (this.pulledLastPass && this.pullDidNotConvert(f.reason || 'still nothing in reach'))
+        // A DISTANT QUARRY IS STILL ON THE ROAD.
+        //
+        // Decisions run every second. Counting the first decision after a pull as a miss
+        // gave a quarry one or two seconds to cross routes that took us tens of seconds,
+        // then hit it again and repeated the mistake. Wait out a distance-sized follow
+        // window before this pull is allowed to count toward the empirical cliff verdict.
+        let waiting = this.pendingPullWait();
+        // A quarry that despawned, died to somebody else, or left the room did not fail
+        // to follow. Clear the experiment without charging the square and try whatever is
+        // actually here now.
+        if (waiting?.target_id != null && !c.room.objects.get(waiting.target_id)) {
+          this.note('the pulled quarry is gone — not blaming the wall', {
+            target: waiting.target, target_id: waiting.target_id,
+            why: 'a missing quarry cannot establish that the route to this square is blocked' });
+          this.pendingPull = null;
+          waiting = null;
+        }
+        if (waiting && !waiting.ready) {
+          if (!this.pendingPull.waitNoted) {
+            this.pendingPull.waitNoted = true;
+            this.note('giving the pulled quarry time to reach the wall', {
+              target: waiting.target, pull_steps: waiting.steps,
+              waiting_ms: waiting.remaining_ms,
+              why: 'one movement square takes about one decision interval; the next pass ' +
+                   'is not evidence that a distant quarry cannot follow' });
+          }
+          this.doing = 'fighting';
           return;
+        }
+        if (waiting?.ready) {
+          this.pendingPull = null;
+          if (this.pullDidNotConvert(f.reason || 'still nothing in reach after the follow window'))
+            return;
+        }
+        const pullSpot = this.hold
+          ? { room: this.hold.room, col: this.hold.col, row: this.hold.row }
+          : null;
         const quarry = found.find(o => o.id === f.nearest?.id) || found[0];
         const p = quarry ? await this.pull(quarry) : { pulled: false, why: 'nothing to pull' };
         if (p.pulled && p.back) {
-          this.pulledLastPass = true;
+          const waitMs = this.pullFollowWaitMs(p.steps);
+          this.pendingPull = {
+            at: Date.now(), waitUntil: Date.now() + waitMs,
+            target: p.target, target_id: quarry?.id ?? null, steps: p.steps, wait_ms: waitMs,
+          };
           // DELIBERATELY NOT progress(). A pull is not an achievement, it is an attempt,
           // and calling it progress is what kept the stall detector quiet through hours
           // of this. Contact is the achievement, and the fight path below reports that.
           this.note('waiting for it at the wall', {
             target: p.target, pull_attempt: (this.pullsWithoutContact ?? 0) + 1,
-            why: 'it has been hit and is following; the next pass fights it from here — ' +
-                 'if it never arrives, the square gets written off' });
+            follow_window_ms: waitMs, pull_steps: p.steps,
+            why: 'it has been hit and is following; only after its distance-sized follow ' +
+                 'window expires can this pull count against the square' });
         } else {
-          // Fetching failed. Give the spot up — but REMEMBER that it cannot be used,
-          // or the next pass picks the identical square for the identical reason and
-          // the keeper spends its life walking between a wall and a decision. Cedric
-          // did exactly that at the Tos gate: take, fail, release, take, fail.
-          const room2 = s.world?.room;
-          if (room2?.num != null && this.hold) {
-            (this.barrenSpots ??= new Map());
-            const set = this.barrenSpots.get(room2.num) ?? new Set();
-            set.add(`${this.hold.col},${this.hold.row}`);
-            this.barrenSpots.set(room2.num, set);
-          }
+          // Fetching failed before a swing. One moving target or refused step is not a
+          // property of the wall; retire it only after repeated misses from this square.
+          const failed = this.pullAttemptFailed(pullSpot, p.why || 'the pull did not complete');
           this.note('could not bring it to the wall', {
-            why: p.why, target: p.target,
-            note: 'that square is now excluded in this room — nothing can be fetched to it' });
-          this.releaseHold('nothing can be pulled to it from here');
-          this.noProgress('holding a spot nothing will come to');
+            why: p.why, target: p.target, attempt: failed.attempt, of: failed.limit,
+            note: failed.retired
+              ? 'repeated failures excluded this square in this room'
+              : 'keeping the wall and trying again; a single failed approach proves nothing' });
+          if (failed.retired && this.hold)
+            this.releaseHold('repeated pull attempts could not swing from here');
+          this.noProgress(failed.retired
+            ? 'holding a spot repeated pull attempts could not use'
+            : 'a pull attempt failed transiently; retrying from the same wall');
         }
         return;
       }
       // We got a fight. Whatever we are standing on can be fought from, so the cliff
       // counter resets — this is the only evidence that actually settles the question.
-      if (f.rounds > 0) { this.pullConverted(); this.pulledLastPass = false; }
+      if (f.rounds > 0) this.pullConverted();
       this.swungAt = Date.now();
       this.foeId = f.foe_id ?? null;
       // fight() can now tell death apart from a stale object id. If it is the

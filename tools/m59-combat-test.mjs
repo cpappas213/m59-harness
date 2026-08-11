@@ -559,11 +559,12 @@ console.log('\nthe cliff detector');
   };
 
   const k = keeper();
-  ok('the default is three attempts', k.policy.pullsBeforeBarren === 3);
+  ok('the default is four complete attempts', k.policy.pullsBeforeBarren === 4);
   ok('the first pull that does not convert is not fatal', k.pullDidNotConvert('nothing came') === false);
   ok('nor the second', k.pullDidNotConvert('nothing came') === false);
+  ok('nor the third', k.pullDidNotConvert('nothing came') === false);
   ok('and the spot is still held while it is in doubt', !k._released);
-  ok('the third writes it off', k.pullDidNotConvert('nothing came') === true);
+  ok('the fourth writes it off', k.pullDidNotConvert('nothing came') === true);
   ok('the square is now barren in this room',
      k.barrenSpots.get(42)?.has('10,20') === true,
      JSON.stringify([...(k.barrenSpots.get(42) ?? [])]));
@@ -575,14 +576,34 @@ console.log('\nthe cliff detector');
      JSON.stringify(k.journal.at(-1)));
 
   const k2 = keeper();
-  k2.pullDidNotConvert('a'); k2.pullDidNotConvert('b');
+  k2.pullDidNotConvert('a'); k2.pullDidNotConvert('b'); k2.pullDidNotConvert('c');
   k2.pullConverted();
   ok('contact resets the count', k2.pullsWithoutContact === 0);
   ok('so a slow-but-working spot is never written off',
-     k2.pullDidNotConvert('c') === false && k2.pullDidNotConvert('d') === false);
+     k2.pullDidNotConvert('d') === false && k2.pullDidNotConvert('e') === false);
 
   const k3 = keeper(1);
   ok('the limit is configurable', k3.pullDidNotConvert('x') === true);
+
+  const wait = keeper();
+  ok('a long pull gets longer to follow than a short one',
+     wait.pullFollowWaitMs(20) > wait.pullFollowWaitMs(2));
+  ok('but the follow wait is bounded', wait.pullFollowWaitMs(1000) === 60_000);
+  wait.pendingPull = { waitUntil: 10_000, target: 'centipede', steps: 8 };
+  ok('the next decision is explicitly still waiting, not a failed pull',
+     wait.pendingPullWait(9_000)?.ready === false && wait.pendingPullWait(9_000)?.remaining_ms === 1_000);
+  ok('only expiry permits the pull to count', wait.pendingPullWait(10_000)?.ready === true);
+
+  const missed = keeper();
+  const missedSpot = { room: 42, col: 10, row: 20 };
+  ok('one failed attempt to swing does not retire the wall',
+     missed.pullAttemptFailed(missedSpot, 'quarry moved').retired === false);
+  missed.pullAttemptFailed(missedSpot, 'quarry moved');
+  missed.pullAttemptFailed(missedSpot, 'quarry moved');
+  ok('nor do three failed approaches', !missed.barrenSpots?.get(42)?.has('10,20'));
+  ok('four failed approaches finally make it empirical',
+     missed.pullAttemptFailed(missedSpot, 'quarry moved').retired === true &&
+     missed.barrenSpots.get(42)?.has('10,20'));
 }
 
 console.log('\nreach is a disc of radius 3, not the eight squares touching you');
@@ -681,18 +702,44 @@ console.log('\nthe cliff, from the geometry instead of from experience');
   ok('we can still walk down to it, which is why every earlier check passed',
      geo.path(TOP[0], TOP[1], BOT[0], BOT[1], { fine: false }).found === true);
 
-  // And the chooser must refuse the ledge rather than score it well for being empty.
+  // A reachable prediction wins over a better-looking ledge, but the map is a ranking
+  // input rather than a veto: if it doubts every wall, the best one still gets a live
+  // pull test.
   const qr = (col, r2) => geo.monsterCanReach(BOT[0], BOT[1], r2, col, { los: 0 });
   const stats = {};
   const picked = nearestSafeSpot(geo, { col: 3, row: 2 },
     { within: 12, minAvoided: 0, quarryReach: qr, stats });
-  ok('no square the quarry cannot reach is offered',
+  ok('a predicted-reachable square wins whenever one exists',
      !picked || qr(picked.col, picked.row).reachable === true,
      JSON.stringify(picked && { col: picked.col, row: picked.row }));
-  ok('the refused count is reported even when nothing is chosen',
+  ok('the doubtful count is reported even though it is no longer a veto',
      stats.unreachable_by_quarry > 0, JSON.stringify(stats));
   ok('considered is reported too, so "no spots" and "no reachable spots" differ',
      stats.considered > 0, JSON.stringify(stats));
+
+  const doubtedStats = {};
+  const doubted = nearestSafeSpot(geo, { col: 3, row: 2 }, {
+    within: 12, minAvoided: 0, quarryReach: () => ({ reachable: false, why: 'coarse grid' }),
+    stats: doubtedStats,
+  });
+  ok('when the grid doubts every wall, one is still offered for an in-game test',
+     doubted?.predicted_unreachable_by_quarry === true,
+     JSON.stringify(doubted && { col: doubted.col, row: doubted.row }));
+  ok('and the fallback is explicit rather than laundered into a reachable claim',
+     doubtedStats.used_predicted_unreachable === true &&
+     doubtedStats.reachable_by_quarry === 0 && doubtedStats.unreachable_by_quarry > 0,
+     JSON.stringify(doubtedStats));
+
+  const barrenStats = {};
+  const allBarren = nearestSafeSpot(geo, { col: 3, row: 2 }, {
+    within: 12, minAvoided: 0,
+    reach: () => ({ reachable: false, reason: 'empirically barren after repeated pulls' }),
+    stats: barrenStats,
+  });
+  ok('only repeated live failures can establish that every eligible wall is barren',
+     allBarren === null && barrenStats.eligible > 0 &&
+     barrenStats.empirically_barren === barrenStats.eligible,
+     JSON.stringify(barrenStats));
   // Without a quarry the old behaviour must be untouched: this runs in rooms where
   // nothing is being hunted, and refusing every square there would strand the fleet.
   const noQuarry = nearestSafeSpot(geo, { col: 3, row: 2 }, { within: 12, minAvoided: 0 });
