@@ -177,3 +177,7 @@ __pycache__/
 # share the SHAPE — doctrines in meridian59-dum-bot are written to be public and address
 # characters by role.
 /substrate/playbooks/
+
+# Verified per-character daily guild-rent payments. This is live operational state and
+# includes fleet/character identifiers, so it stays with the roster rather than Git.
+/substrate/guild-tithes/

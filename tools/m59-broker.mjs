@@ -6551,6 +6551,9 @@ const TOOLS = [
         radius_rooms: { type: 'number',
           description: 'How many rooms off the destination a courier will walk to hand goods over (0-3).' },
       }, description: 'one returning seller buys and delivers exact reagent shortfalls for active farmers in its destination room; null disables it' },
+      guild_tithe: { type: ['object', 'null'], properties: {
+        enabled: { type: 'boolean' }, daily_amount: { type: 'number' },
+      }, description: 'pay at most this daily amount from verified town-sale proceeds to Frular for guild rent; null disables it' },
       // HOW FAR ABOVE ITS OWN LEVEL THIS CHARACTER MAY FIGHT, and it was unreachable.
       //
       // `refuseEngagement` and `capBlockers` both gate on `max_health + maxThreatOver`
@@ -6798,6 +6801,16 @@ const TOOLS = [
             per_farmer_default: num(value.per_farmer_default, 10, 0, 100),
             radius_rooms: num(value.radius_rooms, 2, 0, 3),
             max_recipients: Math.max(1, Math.min(12, Math.floor(Number(value.max_recipients) || 4))) };
+        }
+      }
+      if (a.guild_tithe !== undefined) {
+        if (a.guild_tithe == null) p.policy.guildTithe = null;
+        else {
+          const value = a.guild_tithe;
+          if (typeof value !== 'object' || Array.isArray(value) || value.enabled !== true)
+            throw new Error('guild_tithe must be null or an enabled settings object');
+          p.policy.guildTithe = { enabled: true,
+            daily_amount: Math.max(0, Math.floor(Number(value.daily_amount) || 0)) };
         }
       }
       // Floored at 0, never at 6: 0 is the legitimate "fight nothing above my own level",

@@ -33,6 +33,7 @@ import * as tougher from './m59-tougher.mjs';
 import { recordEvent } from './m59-ledger.mjs';
 import { detailSettings, recordStrategyStat, saveVaultSnapshot }
   from './m59-strategy-stats.mjs';
+import { TitheBook, payGuildTithe, purseAmount, tithePaymentPlan } from './m59-tithe.mjs';
 import * as uptime from './m59-uptime.mjs';
 import * as party from './m59-party.mjs';
 import { mayShareSpot } from './m59-party.mjs';
@@ -48,6 +49,10 @@ import { CITY_INNS } from './m59-underworld.mjs';
 import { loadoutFor, keepTest, sellTest, dropRank, wantsOf, norm,
          reconcile, equipYield } from './m59-loadout.mjs';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
+
+const fleetAt = process.argv.indexOf('--fleet');
+const TITHE_FLEET = process.env.M59_FLEET ||
+  (fleetAt >= 0 ? process.argv[fleetAt + 1] : null) || 'default';
 
 // Built by: node tools/m59-spawns.mjs
 const SPAWN_FILE = process.env.M59_SPAWN_FILE ||
@@ -620,6 +625,9 @@ export class Autopilot {
       // either strategy is what widens the keeper's behaviour, not merely installing it.
       farmCleanup: null,
       farmDelivery: null,
+      // A daily share of actual sale proceeds paid to Frular for guild rent. null is
+      // inert; DUM's independent Guild Tithe strategy installs the settings object.
+      guildTithe: null,
       // Opt-in detailed, short-lived activity records. DUM owns this object and leaves
       // it null unless the independent Detailed strategy stats strategy is checked.
       strategyStats: null,
@@ -5080,6 +5088,12 @@ export class Autopilot {
         carried_at_death: this.money.carried_at_death,
         why_not: this.money.why_not,
       } : null,
+      guild_tithe: this.policy.guildTithe?.enabled ? {
+        daily_amount: this.policy.guildTithe.daily_amount,
+        paid_today: new TitheBook({ agent: this.name ?? this.s.name,
+          fleet: TITHE_FLEET }).paidToday(),
+        paid_since_restart: this.tally.guild_tithe ?? 0,
+      } : null,
       // WHERE IT WAS PUT, AND WHETHER THAT STUCK. Three numbers, in the order worth
       // arguing about: did the assignment work, does it work every time, and how does
       // it fail. `held` null means it has never had to relocate, which is the good
@@ -9414,7 +9428,9 @@ export class Autopilot {
     // The walk to the bank is already paid for, so the order is sell, bank, restock:
     // sell first so the proceeds are bankable and spendable, bank the surplus so death
     // cannot take it, and buy food and reagents last with the float that is left.
-    await this.sellInTown().catch(() => {});
+    const sale = await this.sellInTown().catch(() => null);
+    await this.guildTitheFromSale(sale).catch(error =>
+      this.note('could not pay guild tithe', { why: error.message }));
     await this.bankSurplus().catch(() => {});
     await this.withdrawForFood().catch(() => {});
     await this.restockInTown().catch(() => {});
@@ -9787,13 +9803,57 @@ export class Autopilot {
                                        maxWeapons: this.policy.maxWeapons,
                                        weaponPriority: this.weaponPriorityNow() })
                           .catch(e => ({ error: e.message }));
-    if (r.error) return this.note('could not sell in town', { why: r.error });
+    if (r.error) { this.note('could not sell in town', { why: r.error }); return null; }
     if (r.sold?.length) {
       this.tally.sold = (this.tally.sold || 0) + r.sold.length;
       this.tradeFact({ earned: r.total_received, sold: r.sold });
       this.note('sold in town', { to: c.rsc.get(buyer.nameRsc), items: r.sold.length,
         earned: r.total_received, kept_for_the_fleet: r.kept_for_the_fleet?.map(k => k.name) });
     }
+    return r;
+  }
+
+  // Tax only what this town trip just earned. Existing purse, bank balances and the
+  // walking reserve are not a guild treasury. Partial payments accumulate in a durable
+  // per-character daily book and the next sale trip finishes the configured sum.
+  async guildTitheFromSale(sale) {
+    const cfg = this.policy.guildTithe;
+    const proceeds = Math.max(0, Math.floor(Number(sale?.total_received) || 0));
+    if (!cfg?.enabled || !proceeds) return null;
+    const c = this.s.need();
+    await this.s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+    const book = new TitheBook({ agent: this.name ?? this.s.name, fleet: TITHE_FLEET });
+    const plan = tithePaymentPlan({ dailyAmount: cfg.daily_amount,
+      paidToday: book.paidToday(), saleProceeds: proceeds, purse: purseAmount(c),
+      walkingMoney: this.policy.walkingMoney ?? 400 });
+    if (!plan.amount) {
+      this.note(plan.remaining > 0
+        ? 'guild tithe retained for a later sale'
+        : 'daily guild tithe already paid', plan);
+      return { ...plan, paid: 0 };
+    }
+
+    this.doing = 'travelling';
+    const trip = await this.travel(700, { maxHops: 12 })
+      .catch(error => ({ arrived: false, reason: error.message }));
+    if (!trip.arrived) {
+      this.note('could not reach the guildmaster for tithe', { amount: plan.amount,
+        why: trip.reason || 'travel refused' });
+      return { ...plan, paid: 0, reason: trip.reason || 'travel refused' };
+    }
+    this.doing = 'trading';
+    const result = await payGuildTithe(this.s, { amount: plan.amount });
+    if (result.paid > 0) {
+      book.record(result.paid, { detail: { target: plan.target,
+        proceeds: plan.proceeds, credit_after: result.credit ?? null } });
+      this.tally.guild_tithe = (this.tally.guild_tithe || 0) + result.paid;
+      this.note('paid guild tithe from town-sale proceeds', { paid: result.paid,
+        daily_target: plan.target, paid_today: plan.paid + result.paid,
+        credit_after: result.credit ?? null });
+    } else this.note('guildmaster refused tithe', { offered: plan.amount,
+      said: result.frular_said, due: result.due ?? null });
+    return { ...plan, ...result };
   }
 
   // AND SPEND IT ON THE TWO THINGS THAT RUN OUT. restockReagents buys elderberry, herbs
