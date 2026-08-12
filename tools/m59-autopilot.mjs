@@ -569,6 +569,15 @@ export const STRATEGIES = {
   },
 };
 
+export function restoredAutopilotPolicy(policy = {}) {
+  const restored = { ...(policy && typeof policy === 'object' ? policy : {}) };
+  // Six was the former hard-coded default and was copied into every roster.
+  // Upgrade that legacy value when a keeper resumes so changing the default
+  // reaches existing characters; preserve any genuinely custom value.
+  if (restored.maxThreatOver === 6) restored.maxThreatOver = 15;
+  return restored;
+}
+
 export class Autopilot {
   constructor(session, { mode = 'survive', policy = {} } = {}) {
     this.s = session;
@@ -694,7 +703,7 @@ export class Autopilot {
       roamLimit: 6,
       // How far above the character's own level the toughest thing a room can
       // generate is allowed to be. See preyRooms.
-      maxThreatOver: 6,
+      maxThreatOver: 15,
       // WHERE THIS CHARACTER IS SUPPOSED TO FARM. null means "wherever ranks best".
       //
       // Without it a fleet cannot be spread out, and not because anyone moves it back
@@ -3410,7 +3419,7 @@ export class Autopilot {
     if (!status.full) return status;
 
     const level = c.vitals?.()?.health?.max ?? 0;
-    const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
+    const ceiling = level ? level + (this.policy.maxThreatOver ?? 15) : null;
     const seen = new Set();
     for (const o of mons) {
       const name = c.rsc.get(o.nameRsc) || '';
@@ -4146,7 +4155,7 @@ export class Autopilot {
     const info = Object.values(spawns.creatures ?? {})
       .find(x => String(x.name).toLowerCase() === key);
     const level = this.s.client?.vitals?.()?.health?.max ?? 0;
-    const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
+    const ceiling = level ? level + (this.policy.maxThreatOver ?? 15) : null;
     const lvl = info?.level ?? null, rating = info?.attack_rating ?? null;
     if (!info)
       return { name, level: null, rating: null,
@@ -10534,7 +10543,7 @@ export class Autopilot {
     const spawns = loadSpawns(SPAWN_FILE);
     if (!spawns) return [];
     const level = this.s.client?.vitals?.()?.health?.max ?? 0;
-    const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
+    const ceiling = level ? level + (this.policy.maxThreatOver ?? 15) : null;
     const rooms = huntingGrounds(spawns, want, { maxDanger: ceiling, limit: 8 })
       .filter(r => !r.rejected && r.room !== room?.num && !this.unreachable.has(r.room))
       // And not one we have already refused for having no wall. Without this the
@@ -10678,7 +10687,7 @@ export class Autopilot {
     // for stepping through the door to find out.
     const spawns = loadSpawns(SPAWN_FILE);
     const level = s.client?.vitals?.()?.health?.max ?? 0;
-    const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
+    const ceiling = level ? level + (this.policy.maxThreatOver ?? 15) : null;
     const tooDangerous = (to) => {
       if (!spawns || ceiling == null) return null;
       const worst = (roomThreats(spawns, to) || [])[0];

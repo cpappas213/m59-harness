@@ -26,7 +26,8 @@ import {
   parseDeathBroadcast, deathBroadcastFor,
 } from './m59-skills.mjs';
 import { Autopilot, bearingIn, DEBUG_STATES, belowRoomRetreatHealth,
-         rankQuarries, claimQuarry, releaseQuarry } from './m59-autopilot.mjs';
+         rankQuarries, claimQuarry, releaseQuarry,
+         restoredAutopilotPolicy } from './m59-autopilot.mjs';
 import { isFood } from './m59-items.mjs';
 import { outages, outageAround, recoverCrash, readLedger, ACTIVE_FILE } from './m59-uptime.mjs';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -45,6 +46,16 @@ const ok = (what, cond, extra = '') => {
   if (cond) { pass++; console.log(`  ok   ${what}`); }
   else { fail++; console.log(`  FAIL ${what}${extra ? ` — ${extra}` : ''}`); }
 };
+
+{
+  const k = new Autopilot({ name: 'danger-margin-default', world: {}, client: null }, {});
+  ok('the autonomous threat margin defaults to fifteen levels',
+     k.policy.maxThreatOver === 15, String(k.policy.maxThreatOver));
+  ok('the former persisted six-level default migrates to fifteen',
+     restoredAutopilotPolicy({ maxThreatOver: 6 }).maxThreatOver === 15);
+  ok('a custom persisted threat margin remains custom',
+     restoredAutopilotPolicy({ maxThreatOver: 20 }).maxThreatOver === 20);
+}
 
 // A client whose inventory is a list of [id, name], and whose `use` replies the way the
 // server does: either a refusal text from the script, or silence and the id joining the
