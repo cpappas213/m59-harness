@@ -64,6 +64,7 @@ import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRA
          POSTMORTEM_DIR, setPilotLookup } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
+import { TitheBook, guildRentStatus, payGuildTithe, titheFleet } from './m59-tithe.mjs';
 import { RANK, RANK_NAME, COMMANDS, mayI, commandsIn, validateGuild,
          DEFAULT_RANK_TITLES, maturityWait, inductionPlan, INVITATION_MS,
          WAR_LOSS_PENALTY, MINIMUM_MEMBERS, FRULAR_ROOM, FRULAR_NAME, KNOWN_HALLS,
@@ -9301,120 +9302,59 @@ const TOOLS = [
     name: 'tithe',
     description:
       'PAY THE GUILD\'S RENT — hand shillings to Frular in The Guildmaster\'s Hall (room 700, ' +
-      'Barloque), or ask him what the guild owes. This is the verb a bot uses to turn a character\'s ' +
-      'loot into the guild keeping its hall.\n' +
+      'Barloque), or ask him what the guild owes. This is the verb a bot uses to turn a ' +
+      'character\'s loot into the guild keeping its hall.\n' +
       'THE PAYMENT IS AN OFFER THAT THE SERVER REFUSES, AND THE REFUSAL IS THE SUCCESS. ' +
       'GuildCreator.ReqOffer (gcreator.kod:325) intercepts the offer, sums the value, subtracts it ' +
       'from the payer\'s purse, credits the guild with PayRent, says "I thank thee for thy payment" ' +
       'and then returns FALSE — which cancels the trade. So the offer dialog closing with nothing ' +
       'handed over is exactly what a successful tithe looks like, and the only proof is the PURSE ' +
-      'GOING DOWN. That is what this reports.\n' +
-      'THE RENT BALANCE IS PROSE AND IS SENT ONCE, like a bank balance. There is no packet: Frular ' +
-      'answers the spoken word "rent" (gcreator.kod:97) with one of three sentences, and the SIGN is ' +
-      'the whole meaning — "owes N coins" is a debt, "has a positive balance of N" is credit already ' +
-      'negated for display. action=status reads it back as `due`, positive for owed.\n' +
-      'OFFER A QUANTITY, NEVER A BARE STACK ID. The server reads "is there a quantity here" from the ' +
-      'tag nibble alone, so a bare id means ONE — and the opposite mistake is worse: without an ' +
-      'amount the whole purse is what gets valued. `amount` is required for that reason and is ' +
-      'capped at what the character is actually carrying.\n' +
+      'GOING DOWN. That is what this reports, and the day-book records only that verified delta, ' +
+      'never the amount offered.\n' +
+      'OFFER A QUANTITY, NEVER A BARE STACK ID. The server reads "is there a quantity here" from ' +
+      'the tag nibble alone, so a bare id means ONE — and the opposite mistake is worse: without ' +
+      'an amount the whole purse is what gets valued. `amount` is capped at what is carried.\n' +
       'The character must be standing in room 700; ReqOffer checks the room itself and logs an ' +
       'ALERT if not (gcreator.kod:330). It must also be in a guild, or Frular says "Why dost thou ' +
-      'make offers to me? Thou owest not any guild rent."',
+      'make offers to me? Thou owest not any guild rent."\n' +
+      'UNVERIFIED: `status` asks by SAYING "rent", and on 2026-08-12 Frular did not answer a ' +
+      'guildmaster standing in front of him — only the speaker\'s own echo came back, and his ' +
+      'other keyword branch was silent too. MOB_LISTEN is set, so something earlier in ' +
+      'Monster.SomeoneSaid (monster.kod:2581) is returning first. The three sentences are parsed ' +
+      'correctly when they arrive; none has yet been seen. `due: null` with frular_said holding ' +
+      'only your own line is that, not a balance of zero.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
-      action: { type: 'string', enum: ['status', 'pay'], description: 'default status' },
+      action: { type: 'string', enum: ['status', 'pay', 'book'], description: 'default status' },
       amount: { type: 'number', description: 'pay: shillings. Capped at what is carried.' },
       all: { type: 'boolean', description: 'pay: hand over the whole purse. Ignores `amount`.' },
     }, required: ['agent'] },
+    // THE PAYMENT AND THE BOOK LIVE IN `m59-tithe.mjs`, NOT HERE.
+    //
+    // This tool and that module were written the same afternoon by two hands and had the
+    // same offer-and-check-the-purse logic twice, plus two copies of the rent parser and two
+    // Frular constants. The module keeps it because it also owns the durable day-book and the
+    // payment plan the keeper's `guild_tithe` policy runs on, and a quantity with two homes in
+    // this repository has always ended up with two answers.
     run: async (a) => {
-      const s = session(a.agent), c = s.need();
-      const room = s.world?.room?.num ?? null;
-      const frular = [...(c.room?.objects?.values() ?? [])]
-        .find(o => (c.rsc.get(o.nameRsc) || '') === FRULAR_NAME);
-      if (!frular)
-        return { ok: false, reason: `${FRULAR_NAME} is not in this room`, room,
-                 go_to: FRULAR_ROOM,
-                 note: `travel to ${FRULAR_ROOM} (The Guildmaster's Hall, Barloque). He is ` +
-                       'MOB_NOMOVE and always at row 5, col 7.' };
-
-      const purse = () => (c.inventory || [])
-        .filter(i => (c.rsc.get(i.nameRsc) || '').toLowerCase() === 'shilling')
-        .reduce((n, i) => n + (i.amount ?? 1), 0);
-
-      const askRent = async () => {
-        const before = c.evSeq;
-        await s.pacer.submit('say', () => c.say('rent'));
-        const { events } = await c.waitFor({ since: before, timeoutMs: 4000 });
-        const said = events.filter(e => e.text).map(e => String(e.text));
-        const rent = parseRentLine(said), hours_left = parseRentHours(said);
-        // CAUGHT ON THE WAY PAST, exactly as a bank balance is. Frular states the rent
-        // once and never mentions it again, so this is the only moment it can be written
-        // down — and the economy board reads that record rather than sending somebody to
-        // Barloque to ask again. An unparsed answer is stored as null, never as zero.
-        if (rent) storage.writeRent({ ...rent, hours_left, by: c.me?.name ?? s.name,
-          guild: c.guild?.name ?? null });
-        return { said, rent, hours_left };
-      };
-
-      if ((a.action ?? 'status') === 'status') {
-        const r = await askRent();
-        return {
-          action: 'status', room, purse: purse(),
-          due: r.rent?.due ?? null, credit: r.rent?.credit ?? null,
-          hours_until_arrears: r.hours_left,
-          frular_said: r.said,
-          ...(r.rent ? {} : { note:
-            'nothing recognisable came back. He answers the word "rent" only, and only for a ' +
-            'character in a guild — the three sentences are in gcreator.kod:180. An unmatched ' +
-            'line is reported as unmatched rather than read as a balance of zero.' }),
-        };
-      }
-
-      // ---- pay
-      await s.pacer.submit('read', () => c.requestInventory());
-      await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
-      const stack = (c.inventory || [])
-        .find(i => (c.rsc.get(i.nameRsc) || '').toLowerCase() === 'shilling');
-      const have = stack ? (stack.amount ?? 1) : 0;
-      if (!stack || have < 1) return { ok: false, reason: 'carrying no shillings', purse: 0 };
-
-      const asked = a.all ? have : Math.floor(num(a.amount, 0));
-      if (!(asked > 0)) throw new Error('pay needs a positive `amount`, or all:true');
-      const amount = Math.min(asked, have);
-
-      const before = c.evSeq;
-      await s.pacer.submit('trade', () => c.offer(frular.id, [{ id: stack.id, amount }]));
-      const { events } = await c.waitFor({ since: before, timeoutMs: 5000 });
-      const said = events.filter(e => e.text).map(e => String(e.text));
-      // The offer is cancelled by the server whatever happens, so clear our side rather
-      // than leaving a session believing it has a trade open.
-      await s.pacer.submit('trade', () => c.cancelOffer()).catch(() => {});
-
-      // PROVE IT WITH THE PURSE. "I thank thee for thy payment" is the happy line, but a
-      // refusal is also just a line, and the offer being cancelled is what BOTH look like.
-      await new Promise(r => setTimeout(r, 800));
-      await s.pacer.submit('read', () => c.requestInventory());
-      await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
-      const after = purse();
-      const paid = have - after;
-      const r = await askRent();
-
-      return {
-        action: 'pay', room, offered: amount,
-        purse_before: have, purse_after: after,
-        paid, ok: paid > 0,
-        thanked: said.some(x => /thank thee for thy payment/i.test(x)),
-        frular_said: said,
-        due: r.rent?.due ?? null, credit: r.rent?.credit ?? null,
-        hours_until_arrears: r.hours_left,
-        ...(paid > 0 ? {} : { note:
-          'the purse did not move, so nothing was paid whatever was said. The three refusals are ' +
-          '"Thou owest not any guild rent" (no guild, or a necromancer guild), "Thou hast not N ' +
-          'shillings to give me!" (the offered value exceeds the purse) and "Thou canst pay thy ' +
-          'rent only with shillings!" (something other than money was in the offer).' }),
-        ...(paid !== amount && paid > 0 ? { warning:
-          `offered ${amount} but the purse fell by ${paid} — read the purse, not the offer` } : {}),
-      };
+      const s = session(a.agent);
+      s.need();
+      const book = new TitheBook({ agent: a.agent, fleet: titheFleet() });
+      if (a.action === 'book')
+        return { agent: a.agent, paid_today: book.paidToday(), book: book.read() };
+      if ((a.action ?? 'status') === 'status')
+        return { ...await guildRentStatus(s), paid_today: book.paidToday() };
+      const res = await payGuildTithe(s, { amount: a.amount, all: a.all });
+      // ONLY THE VERIFIED DELTA IS WRITTEN DOWN. Recording what was offered would make a
+      // refused tithe look paid for the rest of the day, which is exactly the day the fleet
+      // would then skip.
+      if (res.paid > 0) book.record(res.paid, { detail: { room: res.room } });
+      return { ...res, paid_today: book.paidToday(),
+        ...(res.paid > 0 ? {} : { note:
+          'the purse did not move, so nothing was paid whatever was said, and nothing was ' +
+          'written to the book. The refusals are "Thou owest not any guild rent" (no guild), ' +
+          '"Thou hast not N shillings to give me!" (offered value over the purse) and "Thou ' +
+          'canst pay thy rent only with shillings!" (something other than money was offered).' }) };
     },
   },
   {
@@ -10960,6 +10900,25 @@ const TOOLS = [
           mulligans: st?.did?.mulligans ?? 0,
           logoffs: st?.did?.logoffs ?? 0,
           carrying: c.inventory?.length ?? null,
+          // HOW FULL THAT PACK IS, which the count above cannot answer: twenty stacks of
+          // feathers and twenty of plate are the same `carrying` and opposite answers to
+          // "will the next pickup be refused".
+          //
+          // Computed here rather than on the page because the ceiling needs MIGHT and the
+          // load needs the item list, and neither survives into a stored sample — so a
+          // board reading the record alone can only render this hatched. `carryCapacity`
+          // is the single home of the formula (skills.mjs, 1700 + might*20 for weight and
+          // bulk alike) and is reused rather than restated.
+          pack: (() => {
+            const cap = skills.carryCapacity(c);
+            if (!cap.known) return null;
+            const pctOf = n => Math.min(999, Math.round((n / cap.weight_max) * 100));
+            const w = pctOf(cap.load.weight), b = pctOf(cap.load.bulk);
+            // The WORSE of the two: a pack is full when EITHER ceiling is reached.
+            return { percent: Math.max(w, b), weight_pct: w, bulk_pct: b,
+                     weight: cap.load.weight, bulk: cap.load.bulk, max: cap.weight_max,
+                     binding: b > w ? 'bulk' : 'weight', exact: cap.load.exact };
+          })(),
           // MONEY, BOTH HALVES OF IT, ON THE ROW.
           //
           // `carrying` counts items and says nothing about wealth, so "how much has the

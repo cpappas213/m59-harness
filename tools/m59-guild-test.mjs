@@ -38,6 +38,7 @@ import {
   RANK_QUOTA, rankRoom, SELF_SUSTAINING_RANK,
 } from './m59-guild.mjs';
 import { parseGuildInfo, parseGuildAsk, parseGuildList, parseGuildHalls } from './m59-parse.mjs';
+import * as tithe from './m59-tithe.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -416,6 +417,32 @@ console.log('\nrent, which is prose and whose SIGN is the whole meaning');
   ok('one hour is a special string', parseRentHours(['The guild members have an hour to pay off their balance, or the guild will be disbanded.']) === 1);
   ok('less than an hour is half',   parseRentHours(['The guild members have less than an hour to pay off their balance, or the guild will be disbanded.']) === 0.5);
   ok('and silence is null',         parseRentHours(['nothing about hours']) === null);
+}
+
+console.log('\none home for the rent half, not two');
+{
+  // THIS FILE AND m59-tithe.mjs BOTH GREW A parseRentLine ON THE SAME AFTERNOON, written by
+  // two hands from the same kod. They agreed by luck, which is not a property worth having:
+  // the tithe module owns the rent arithmetic because it also owns the durable day-book and
+  // the payment plan the keeper's guild_tithe policy runs on, and this one re-exports it.
+  // Identity, not equality — a copy that merely matches today is the thing being prevented.
+  ok('parseRentLine is the tithe module\'s own', parseRentLine === tithe.parseRentLine);
+  ok('so is parseRentHours',                     parseRentHours === tithe.parseRentHours);
+  ok('and Frular\'s room',                       FRULAR_ROOM === tithe.FRULAR_ROOM);
+
+  // The book is keyed <fleet>-<agent>, so two answers to "which fleet" are two books — and
+  // the failure is quiet in the expensive direction: paid_today reads 0 all day and the
+  // fleet tithes again on every sale.
+  ok('the fleet name has one resolver',  typeof tithe.titheFleet === 'function');
+  ok('--fleet wins',                     tithe.titheFleet(['--fleet', 'x'], {}) === 'x');
+  ok('then the environment',             tithe.titheFleet([], { M59_FLEET: 'y' }) === 'y');
+  // AND IT IS NEVER EMPTY, whatever it resolves to. `fleetName` answers '' for the unnamed
+  // fleet, and '' would key the book `-t14.json` — a third file nobody reads. The recorded
+  // `substrate/fleet-default` sits between the environment and that fallback, which is why
+  // this asserts non-empty rather than a literal: on this machine it is `prod`, and on a
+  // fresh clone with no such file it is `default`.
+  ok('and never empty',                  !!tithe.titheFleet([], {}));
+  ok('even for the unnamed fleet',       tithe.titheFleet(['--fleet', '-'], {}) === 'default');
 }
 
 console.log("\nthe Bookmaker's, whose rent the general formula gets wrong");

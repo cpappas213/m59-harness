@@ -180,8 +180,12 @@ export function renderEconomy({ hours = 168, live = null, characters = null } = 
   const rows = e.rows.map(r => {
     const l = liveOf.get(r.character) ?? null;
     const vault = storage.readVault(r.character);
-    const pack = l?.carrying?.length
-      ? packFullness(l.carrying, l.might ?? l.stats?.might ?? null) : null;
+    // THE ROW'S OWN FIGURE, not a second computation from a different input. The pack
+    // needs might for the ceiling and the item list for the load, and neither survives
+    // into a stored sample — so the broker computes it where the client is in hand and
+    // this renders what it was given. A character nobody is holding has no pack reading
+    // and renders hatched, which is the honest answer rather than 0%.
+    const pack = l?.pack ?? null;
     return `
     <tr${r.short ? ' class="row-short"' : ''}>
       <td class="name">${esc(r.character)}</td>
@@ -211,7 +215,9 @@ export function renderEconomy({ hours = 168, live = null, characters = null } = 
           <h4>pack ${pack ? `· ${pack.percent}% · ${pack.binding}-bound` : ''}</h4>
           ${pack ? `<div class="dim" style="font-size:.75rem">${pack.bulk} bulk / ${pack.weight} weight
              against a ceiling of ${pack.max} (1700 + might*20)${pack.exact ? '' : ' — LOWER BOUND, some items are not in the weight table'}</div>` : ''}
-          ${itemList(l?.carrying, 'no live inventory — this character is not being held by the broker right now')}
+          <div class="dim" style="font-size:.75rem">${l?.carrying != null
+             ? esc(String(l.carrying)) + ' stack(s) in the pack'
+             : 'no live reading — this character is not being held by the broker right now'}</div>
         </div>
         <div class="box">
           <h4>vault ${vault ? `· ${vault.fullness.percent}%` : ''}</h4>

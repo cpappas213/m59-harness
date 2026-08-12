@@ -192,11 +192,21 @@ export function hallCost({ quality, pkAllowed = true }) {
   return { purchase: quality * PURCHASE_MODIFIER, rent_hourly: hourly, rent_daily: hourly * 24 };
 }
 
-// WHERE FRULAR STANDS. He is the only guild NPC in the world: founding, hall purchase and
-// rent all happen in front of him, at row 5 col 7 of room 700 (gmhall.kod:74). `MOB_NOMOVE`,
-// so unlike most merchants he can be routed to once and relied on.
-export const FRULAR_ROOM = 700;
-export const FRULAR_NAME = 'Frular';
+// WHERE FRULAR STANDS, AND WHO OWNS THE RENT ARITHMETIC.
+//
+// He is the only guild NPC in the world: founding, hall purchase and rent all happen in
+// front of him, at row 5 col 7 of room 700 (gmhall.kod:74). `MOB_NOMOVE`, so unlike most
+// merchants he can be routed to once and relied on.
+//
+// THE RENT HALF LIVES IN `m59-tithe.mjs` AND IS RE-EXPORTED HERE RATHER THAN REPEATED.
+// This file grew its own `parseRentLine`, `parseRentHours` and Frular constants on the same
+// afternoon that `m59-tithe.mjs` was committed with the same four — two homes for one
+// quantity, which in this repository has always ended in two answers. The tithe module is
+// the owner because it also holds the durable day-book and the payment plan the keeper
+// policy runs on; this one only needs the numbers to explain a hall.
+export { FRULAR_ROOM, FRULAR_NAME, parseRentLine, parseRentHours,
+         TitheBook, tithePaymentPlan, localDayKey, purseAmount } from './m59-tithe.mjs';
+import { FRULAR_ROOM } from './m59-tithe.mjs';
 
 // The halls this fleet has reason to know about. Not a complete index — halls are one kod
 // file each under kod/object/active/holder/room/ghall/ — but a place to put a citation for
@@ -216,65 +226,6 @@ export const KNOWN_HALLS = {
                         'not the non-PK rule',
          cite: 'guildh14.kod:60,158,172', entrance: 'from RID_BAR_NORTH (101)' },
 };
-
-// WHAT FRULAR SAYS ABOUT RENT, WHICH IS THE ONLY PLACE THE NUMBER EXISTS.
-//
-// Exactly like a bank balance: there is no packet for it. `ReportRent` (gcreator.kod:180)
-// speaks one of three sentences and never mentions it again, so the only way to read the
-// guild's rent position is to stand in front of him and say "rent".
-//
-// THE SIGN IS THE WHOLE MEANING AND THE TWO SENTENCES ARE DIFFERENT SENTENCES. `GetRentDue`
-// positive is a DEBT and negative is CREDIT, and the resources phrase them as "owes N coins"
-// and "has a positive balance of N shillings" — with the credit already negated for display.
-// Reading both as one number, or matching only on the digits, gets the sign backwards, and
-// the sign is what decides whether the guild is about to be disbanded for arrears or is
-// carrying the 50,000 a war needs.
-// ORDER MATTERS AND THE TWO NEGATIVE SENTENCES OVERLAP. "Thou belongest to no guild, and
-// thus owest no rent." CONTAINS the whole of the zero-rent phrase, so a table that tests
-// for zero first reads "this character has no guild" as "this guild owes nothing" — the
-// difference between a healthy hall and no hall at all. The no-guild case is therefore
-// first, and the test pins the order rather than the regexes.
-const RENT_LINES = [
-  { re: /belongest to no guild/i,                      none: true, cite: 'gcreator_no_guild' },
-  { re: /owes\s+(\d+)\s+coins?\s+in\s+rent/i,          sign: +1, cite: 'gcreator_rent_due' },
-  { re: /has a positive balance of\s+(\d+)\s+shillings?/i, sign: -1, cite: 'gcreator_positive_balance' },
-  { re: /owest\s+no\s+rent/i,                          zero: true, cite: 'gCreator_no_rent' },
-];
-
-/**
- * Read Frular's rent answer out of what he said.
- *
- * Returns `due` in the game's own sign convention — POSITIVE IS OWED, negative is credit —
- * plus `credit` as the friendlier reading, and null when he said nothing recognisable. A
- * line that does not match is not forced into a number: an unparsed sentence and a zero
- * balance must not look the same, because one of them means the guild is fine.
- */
-export function parseRentLine(lines) {
-  for (const raw of [].concat(lines ?? [])) {
-    const s = String(raw);
-    for (const r of RENT_LINES) {
-      const m = s.match(r.re);
-      if (!m) continue;
-      if (r.none) return { in_guild: false, due: null, credit: null, said: s, cite: r.cite };
-      if (r.zero) return { in_guild: true, due: 0, credit: 0, said: s, cite: r.cite };
-      const n = Number(m[1]);
-      return { in_guild: true, due: r.sign * n, credit: -(r.sign * n), said: s, cite: r.cite };
-    }
-  }
-  return null;
-}
-
-/** Hours before the arrears deadline, from `gcreator_hours_til_rent`. */
-export function parseRentHours(lines) {
-  for (const raw of [].concat(lines ?? [])) {
-    const s = String(raw);
-    if (/less than an hour/i.test(s)) return 0.5;
-    if (/have an hour to pay/i.test(s)) return 1;
-    const m = s.match(/have\s+(\d+)\s+hours?\s+to pay/i);
-    if (m) return Number(m[1]);
-  }
-  return null;
-}
 
 /**
  * Who should put in how much, to raise a sum for the guild.

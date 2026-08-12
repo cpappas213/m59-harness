@@ -6,6 +6,18 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { fleetName } from './m59-fleetpath.mjs';
+
+// WHICH FLEET'S BOOK, ANSWERED ONCE.
+//
+// The book is keyed `<fleet>-<agent>.json`, so two answers to "which fleet" are two books
+// for the same character — and the failure is quiet in the expensive direction: a keeper
+// writing to `default-t14` while a tool reads `prod-t14` sees `paid_today: 0` all day and
+// tithes again every time it sells. The keeper derived the name from argv/env with a
+// literal 'default' fallback while the broker resolved it properly, so a broker started
+// with no `--fleet` but a `substrate/fleet-default` of `prod` split them. `fleetName()` is
+// the same resolver every other fleet tool uses, in the same order.
+export const titheFleet = (argv, env) => fleetName(argv, env) || 'default';
 
 export const FRULAR_ROOM = 700;
 export const FRULAR_NAME = 'Frular';

@@ -34,7 +34,8 @@ import { recordEvent } from './m59-ledger.mjs';
 import { detailSettings, recordStrategyStat, saveVaultSnapshot }
   from './m59-strategy-stats.mjs';
 import { routeTravelKind } from './m59-travel-kind.mjs';
-import { TitheBook, payGuildTithe, purseAmount, tithePaymentPlan } from './m59-tithe.mjs';
+import { TitheBook, payGuildTithe, purseAmount, tithePaymentPlan,
+         titheFleet } from './m59-tithe.mjs';
 import * as uptime from './m59-uptime.mjs';
 import * as party from './m59-party.mjs';
 import { mayShareSpot } from './m59-party.mjs';
@@ -51,9 +52,9 @@ import { loadoutFor, keepTest, sellTest, dropRank, wantsOf, norm,
          reconcile, equipYield } from './m59-loadout.mjs';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 
-const fleetAt = process.argv.indexOf('--fleet');
-const TITHE_FLEET = process.env.M59_FLEET ||
-  (fleetAt >= 0 ? process.argv[fleetAt + 1] : null) || 'default';
+// One resolver, shared with the broker's `tithe` tool — see titheFleet in m59-tithe.mjs
+// for why two answers here meant two books and a fleet that tithed twice a day.
+const TITHE_FLEET = titheFleet();
 
 // Built by: node tools/m59-spawns.mjs
 const SPAWN_FILE = process.env.M59_SPAWN_FILE ||

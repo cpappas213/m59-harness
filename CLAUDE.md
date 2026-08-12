@@ -1085,8 +1085,19 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   subtracts it from the payer's purse, credits the guild with `PayRent`, says *"I thank thee
   for thy payment"* — and returns FALSE, which cancels the trade. So the dialog closing with
   nothing handed over is exactly what a successful payment looks like, and the only proof is
-  the purse going down. That is what the `tithe` tool reports; it also re-asks the balance
-  afterwards. **And the balance is prose sent once, exactly like a bank balance**: no packet,
+  the purse going down. **`m59-tithe.mjs` owns all of that** — the payment, the rent parser,
+  Frular's constants, a durable once-per-day book keyed `<fleet>-<agent>`, and the
+  `guild_tithe` keeper policy that lets a bot tithe out of its sale proceeds without being
+  asked. `m59-guild.mjs` re-exports the rent half rather than keeping a second copy: both
+  files grew a `parseRentLine` on the same afternoon, from the same kod, and agreed by luck.
+  The broker's `tithe` tool is a thin wrapper over that module and writes to the book **only
+  the verified purse delta**, never the amount offered — recording the offer would make a
+  refused tithe look paid for the rest of the day, which is exactly the day the fleet would
+  then skip. The book's fleet name goes through `fleetName()`, the same resolver as every
+  other fleet tool: the keeper had its own argv/env reading with a literal `default`
+  fallback, so a broker started with no `--fleet` but a recorded `substrate/fleet-default`
+  wrote `default-t14` while the tool read `prod-t14`, and `paid_today` would have read zero
+  all day. **And the balance is prose sent once, exactly like a bank balance**: no packet,
   Frular answers the spoken word `rent` (`gcreator.kod:97`).
 
   **UNVERIFIED, 2026-08-12: Frular did not in fact answer `rent` when asked.** Piggy, a
@@ -1116,7 +1127,7 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   and money already moved cannot be rolled back. A hall is paid from the **buyer's purse**,
   so every banked contribution is a detour to Tos or Jasper first — never Barloque.
 
-  `node tools/m59-guild-test.mjs` (184) pins the permission check, the four packet layouts
+  `node tools/m59-guild-test.mjs` (192) pins the permission check, the four packet layouts
   against server-built fixtures, the title ordering, the rent sign and its overlapping
   sentences, the Bookmaker's override, and the pooling arithmetic.
 
@@ -1311,7 +1322,7 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   enough to be handed it, and how far a courier walks: that a loadout shortfall of any kind
   reaches the board with its quantity, that the neighbourhood is polled nearest-first, and
   that a stale declaration and a zero shortfall are both refused as delivery orders) and
-  `node tools/m59-guild-test.mjs` (184 — **the contract test for a command space that
+  `node tools/m59-guild-test.mjs` (192 — **the contract test for a command space that
   refuses in total silence**: that the permission check runs off the server's own bitmask
   rather than the rank table, that invite is LORD while exile is LIEUTENANT, that
   `set_password` inherits MASTER from a declaration it does not make, that UC_GUILDINFO's
