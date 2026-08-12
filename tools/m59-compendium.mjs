@@ -34,6 +34,8 @@ import { fileURLToPath } from 'node:url';
 // seven of the eight were invented until recently, and a second copy is how that comes
 // back.
 import { proficiencyFor as profFor } from './m59-skills.mjs';
+import { guildPlan, saveGuildPlan, guildStoreAvailable, guildShortfall } from './m59-guildwants.mjs';
+import { StorageCache, GUILD_CHEST_SLOTS, CHEST_BULK_MAX, chestFullness } from './m59-storage.mjs';
 // The loadout format, and the only thing that decides what a character name may become on
 // the filesystem. This server accepts one over a socket; it does not get to invent its own
 // rule for that.
@@ -426,6 +428,53 @@ export function createServer() {
         fleet,
         loadouts: saved.map(s => ({ character: s.loadout?.character ?? s.file,
                                     file: s.file, ok: !!s.loadout, problems: s.problems })),
+      });
+    }
+
+    // THE GUILD HALL IS A SHEET IN THE PLANNER, AND IT IS NOT A CHARACTER.
+    //
+    // Everything else the planner edits belongs to one character and follows it across
+    // re-rolls. A chest plan belongs to the FLEET: one file, one end state, answered by
+    // whoever walks past. So it is its own route rather than a loadout with a reserved
+    // name — a character called "GUILD HALL" would be indistinguishable from a real one to
+    // every tool that iterates loadouts, and the first of those to run would try to give
+    // it a weapon.
+    //
+    // The sheet is offered only when the cache shows a guild AND an opened chest, which is
+    // the same gate the keeper uses. A planner that let somebody fill in three chests for a
+    // hall the fleet does not own would be collecting items against nowhere to put them.
+    if (url.pathname === '/_guildplan' && req.method === 'GET') {
+      const store = new StorageCache();
+      const chests = store.allChests(), rent = store.readRent();
+      const gate = guildStoreAvailable({ rent, chests });
+      const plan = guildPlan();
+      return json(res, {
+        available: gate.ok, why: gate.why ?? null,
+        slots: GUILD_CHEST_SLOTS, chest_bulk_max: CHEST_BULK_MAX,
+        chests: chests.map(c => ({ slot: c.slot, never_opened: !!c.never_opened,
+          observed_at: c.observed_at ?? null, opened_by: c.opened_by ?? null,
+          items: c.items ?? null, bulk: c.items ? chestFullness(c.items).bulk : null,
+          percent: c.fullness?.percent ?? null })),
+        plan: plan ? Object.fromEntries([...plan.chests].map(([slot, items]) => [slot, items])) : null,
+        problems: plan?.problems ?? [],
+        shortfall: plan ? guildShortfall({ plan, chests, rent }) : [],
+      });
+    }
+
+    if (url.pathname === '/_guildplan' && req.method === 'POST') {
+      return readBody(req, res, (raw) => {
+        const store = new StorageCache();
+        const gate = guildStoreAvailable({ rent: store.readRent(), chests: store.allChests() });
+        // REFUSED RATHER THAN SAVED-AND-IGNORED. A plan written against a hall the fleet
+        // does not own would sit on disk protecting items from every vendor the fleet
+        // visits, for a chest that does not exist.
+        if (!gate.ok) {
+          res.writeHead(409, JSONH);
+          res.end(JSON.stringify({ error: 'no guild hall', why: gate.why }));
+          return;
+        }
+        const { saved, problems } = saveGuildPlan(raw);
+        return json(res, { saved, problems });
       });
     }
 

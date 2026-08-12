@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guild hall — planner</title>
+<link rel="stylesheet" href="../assets/site.css">
+<link rel="stylesheet" href="../assets/planner.css">
+<style>
+  /* THE HALL IS NOT A CHARACTER, and the sheet should not pretend otherwise. The planner's
+     other sheets are one person's inventory panel; this is a floor plan, so it is laid out
+     as chests side by side rather than as a single pane. */
+  .halls { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1rem; margin:1rem 0; }
+  .hall { border:1px solid var(--line,#3a3a3a); border-radius:10px; padding:.9rem 1rem; background:var(--panel,#1c1c1c); }
+  .hall h2 { margin:0 0 .2rem 0; font-size:1rem; }
+  .hall .now { font-size:.75rem; color:var(--dim,#888); margin-bottom:.6rem; }
+  .hall table { width:100%; border-collapse:collapse; font-size:.85rem; }
+  .hall td { padding:.15rem .2rem; }
+  .hall input[type=text] { width:100%; }
+  .hall input[type=number] { width:6.5em; text-align:right; }
+  .bar { height:7px; border-radius:99px; background:#333; overflow:hidden; margin:.35rem 0 .6rem 0; }
+  .bar > i { display:block; height:100%; background:var(--accent,#4a9); }
+  .bar > i.over { background:#c0392b; }
+  .off { border:1px dashed var(--line,#3a3a3a); border-radius:10px; padding:1rem; color:var(--dim,#888); }
+  .short { font-size:.8rem; color:var(--dim,#888); margin-top:.4rem; }
+  .row-del { cursor:pointer; color:var(--dim,#888); }
+</style>
+</head><body>
+<div class="wrap">
+  <p><a href="./">&larr; back to the planner</a></p>
+  <h1>Guild hall</h1>
+  <p class="lede">The <strong>end state</strong> of each chest — what should be in it when
+  the fleet has finished stocking it. Not an errand list: any character carrying the
+  <em>guild wants</em> strategy contributes toward whatever is still short on its town
+  trips, so a target shrinks as others fill it and a satisfied plan produces no work and no
+  walk at all.</p>
+
+  <div id="gate"></div>
+  <div class="halls" id="halls"></div>
+  <p id="shortfall" class="short"></p>
+  <p>
+    <button type="button" class="btn" id="save">Save the plan</button>
+    <span id="say" class="short"></span>
+  </p>
+</div>
+<script>
+(function () {
+  var rel = '..';
+  var CHESTS = [], PLAN = {}, MAX = 24000, AVAILABLE = false;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g,
+    function (c) { return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' })[c]; }); };
+  var say = function (t) { $('say').textContent = t || ''; };
+
+  function draw() {
+    if (!AVAILABLE) { $('halls').innerHTML = ''; return; }
+    $('halls').innerHTML = CHESTS.map(function (ch) {
+      var rows = (PLAN[ch.slot] || []).concat([{ item: '', target: 0 }]);
+      // A chest nobody has opened cannot show what it holds, and saying "empty" would be a
+      // different fact entirely — so it says so and still accepts a plan.
+      var now = ch.never_opened
+        ? '<span title="nobody has looked inside this one — that is not the same as empty">never opened</span>'
+        : (ch.items || []).length + ' stack(s) · ' + (ch.bulk || 0) + ' of ' + MAX + ' bulk' +
+          (ch.percent != null ? ' · ' + ch.percent + '%' : '');
+      var pc = ch.percent == null ? 0 : Math.min(100, ch.percent);
+      return '<div class="hall" data-slot="' + ch.slot + '">' +
+        '<h2>Chest ' + ch.slot + '</h2>' +
+        '<div class="now">' + now + '</div>' +
+        '<div class="bar"><i style="width:' + pc + '%"></i></div>' +
+        '<table><tbody>' + rows.map(function (r, i) {
+          return '<tr>' +
+            '<td><input type="text" class="pi" data-slot="' + ch.slot + '" data-i="' + i +
+              '" value="' + esc(r.item) + '" placeholder="item name" list="itemnames"></td>' +
+            '<td><input type="number" class="pt" min="0" step="1" data-slot="' + ch.slot +
+              '" data-i="' + i + '" value="' + (Number(r.target) || 0) + '"></td>' +
+            '</tr>';
+        }).join('') + '</tbody></table></div>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('.pi,.pt'), function (el) {
+      el.addEventListener('change', collect);
+    });
+  }
+
+  // Read the form back into PLAN. A row with no name is dropped rather than saved as an
+  // item called "" — the blank last row is how a new line is added.
+  function collect() {
+    var next = {};
+    Array.prototype.forEach.call(document.querySelectorAll('.pi'), function (el) {
+      var slot = el.getAttribute('data-slot'), i = el.getAttribute('data-i');
+      var name = (el.value || '').trim();
+      if (!name) return;
+      var t = document.querySelector('.pt[data-slot="' + slot + '"][data-i="' + i + '"]');
+      (next[slot] = next[slot] || []).push({ item: name, target: Number(t && t.value) || 0 });
+    });
+    PLAN = next;
+    draw();
+  }
+
+  function load() {
+    fetch(rel + '/_guildplan').then(function (r) { return r.json(); }).then(function (b) {
+      AVAILABLE = !!b.available; CHESTS = b.chests || []; MAX = b.chest_bulk_max || 24000;
+      PLAN = {};
+      if (b.plan) Object.keys(b.plan).forEach(function (k) { PLAN[k] = b.plan[k]; });
+      $('gate').innerHTML = AVAILABLE ? '' :
+        '<div class="off"><strong>No guild hall.</strong> ' + esc(b.why || '') +
+        '<br>Guild wants stay off until the fleet belongs to a guild and somebody has ' +
+        'opened a chest in its hall — a plan against a hall the fleet does not own would ' +
+        'hold items back from every vendor for a chest that does not exist.</div>';
+      $('save').disabled = !AVAILABLE;
+      $('shortfall').textContent = (b.shortfall || []).length
+        ? 'Still short: ' + b.shortfall.map(function (s) { return s.short + ' ' + s.item; }).join(', ')
+        : '';
+      draw();
+    }).catch(function (e) { $('gate').innerHTML = '<div class="off">Not being served by the harness: ' + esc(e.message) + '</div>'; });
+  }
+
+  $('save').addEventListener('click', function () {
+    collect();
+    say('saving…');
+    fetch(rel + '/_guildplan', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chests: Object.keys(PLAN).reduce(function (o, k) {
+        o[k] = { items: PLAN[k] }; return o; }, {}) }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) {
+        if (!x.ok) { say('refused: ' + (x.j.why || x.j.error)); return; }
+        say('saved' + (x.j.problems && x.j.problems.length ? ' — ' + x.j.problems.join('; ') : ''));
+        load();
+      })
+      .catch(function (e) { say('failed: ' + e.message); });
+  });
+
+  load();
+})();
+</script>
+</body></html>

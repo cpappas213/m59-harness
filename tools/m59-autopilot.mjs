@@ -36,6 +36,8 @@ import { detailSettings, recordStrategyStat, saveVaultSnapshot }
 import { routeTravelKind } from './m59-travel-kind.mjs';
 import { TitheBook, payGuildTithe, purseAmount, tithePaymentPlan,
          titheFleet } from './m59-tithe.mjs';
+import { contributionPlan, guildPlan, guildKeepTest } from './m59-guildwants.mjs';
+import { StorageCache, BOOKMAKERS_HALL_ROOM } from './m59-storage.mjs';
 import * as uptime from './m59-uptime.mjs';
 import * as party from './m59-party.mjs';
 import { mayShareSpot } from './m59-party.mjs';
@@ -678,6 +680,10 @@ export class Autopilot {
       // A daily share of actual sale proceeds paid to Frular for guild rent. null is
       // inert; DUM's independent Guild Tithe strategy installs the settings object.
       guildTithe: null,
+      // Null, not {enabled:false}: absent means the fleet has no guild wants at all, which
+      // is a different thing from having them switched off, and only the first should be
+      // silent on the board.
+      guildWants: null,
       // Opt-in detailed, short-lived activity records. DUM owns this object and leaves
       // it null unless the independent Detailed strategy stats strategy is checked.
       strategyStats: null,
@@ -2018,7 +2024,27 @@ export class Autopilot {
     return [...new Set([
       ...(Array.isArray(this.policy.vaultItems) ? this.policy.vaultItems : []),
       ...(Array.isArray(this.policy.protectedItems) ? this.policy.protectedItems : []),
+      // AND WHATEVER THE GUILD IS STILL SHORT OF, which is the half of the overflow rule
+      // that has to hold on the sell paths this town trip does not own. The order is
+      // pack -> own floor -> guild chests -> sold -> banked, so an item is held back from
+      // the vendor exactly while a chest still wants it and becomes sellable the moment
+      // the plan is met. Without the release half, a full hall would mean a fleet that
+      // could never sell anything again.
+      ...this.guildWantedNames(),
     ].map(String).filter(Boolean))];
+  }
+
+  // Cheap on the common path: no plan, or the flag off, returns [] without touching disk
+  // beyond the mtime stat `guildPlan` already does.
+  guildWantedNames() {
+    if (!this.policy.guildWants?.enabled) return [];
+    const plan = guildPlan();
+    if (!plan) return [];
+    try {
+      const store = new StorageCache();
+      const test = guildKeepTest({ plan, chests: store.allChests(), rent: store.readRent() });
+      return [...(test.shortfall ?? new Map())].filter(([, short]) => short > 0).map(([item]) => item);
+    } catch { return []; }
   }
 
   // The keeper's usable larder excludes collection items. Centralising the filter is
@@ -9565,6 +9591,13 @@ export class Autopilot {
     // The walk to the bank is already paid for, so the order is sell, bank, restock:
     // sell first so the proceeds are bankable and spendable, bank the surplus so death
     // cannot take it, and buy food and reagents last with the float that is left.
+    // BEFORE THE VENDOR SEES ANY OF IT. The order is pack -> the character's own floor ->
+    // the guild's chests -> sold -> banked, and it has to be that order: a mushroom sold in
+    // the first line of a town trip cannot be un-sold into a chest in the last. The keep
+    // test below is the belt to this braces, for the sell paths that do not come through
+    // here.
+    await this.contributeGuildWants().catch(error =>
+      this.note('could not contribute to the guild chests', { why: error.message }));
     const sale = await this.sellInTown().catch(() => null);
     await this.guildTitheFromSale(sale).catch(error =>
       this.note('could not pay guild tithe', { why: error.message }));
@@ -9954,6 +9987,106 @@ export class Autopilot {
   // TAX ONLY WHAT THIS TOWN TRIP JUST EARNED. Existing purse, bank balances and the
   // walking reserve are not a guild treasury. Partial payments accumulate in a durable
   // per-character daily book and the next sale trip finishes the day's configured sum.
+  // GUILD WANTS — the fleet's shared demand, answered by whoever is passing.
+  //
+  // A CHECK-IN, NOT AN ERRAND, exactly like the rent tithe beside it: it runs on every town
+  // trip, and the walk is skipped whenever there is nothing to carry. That is the whole
+  // reason the plan is an END STATE — "chest 2 should hold 300 mushrooms" shrinks as other
+  // characters contribute, so a met plan silently produces no work instead of sending
+  // twenty-one characters to look at a full chest.
+  async contributeGuildWants() {
+    const cfg = this.policy.guildWants;
+    if (!cfg?.enabled) return null;
+    const plan = guildPlan();
+    if (!plan) return null;                       // no plan is not an empty plan
+    const store = new StorageCache();
+    const chests = store.allChests(), rent = store.readRent();
+
+    // THE CONTRIBUTOR KEEPS ITS OWN FLOOR. A guild is not entitled to the elderberry a
+    // caster eats with, so the loadout's own minimum comes off the top before anything is
+    // offered — the same rule farm delivery follows for the same reason.
+    const l = this.loadout();
+    const keepFloor = (item) => {
+      const entry = l?.carry?.find(cRow => norm(cRow.item) === item);
+      return entry ? (entry.min || 0) : 0;
+    };
+    const pack = this.packAsItems();
+    const want = contributionPlan({ plan, chests, pack, keepFloor, rent });
+
+    if (!want.enabled) { this.note('guild wants are off', { why: want.why }); return want; }
+    if (!want.walk) {
+      // Deliberately quiet and deliberately not a walk. This is the common case on most
+      // trips and it must stay free.
+      this.note('nothing to contribute to the guild chests', { total: 0 });
+      return want;
+    }
+
+    this.doing = 'travelling';
+    const trip = await this.travel(BOOKMAKERS_HALL_ROOM, { maxHops: 14 })
+      .catch(error => ({ arrived: false, reason: error.message }));
+    if (!trip.arrived) {
+      this.note('could not reach the guild hall to contribute', {
+        want: want.total, why: trip.reason || 'travel refused' });
+      return { ...want, contributed: 0, reason: trip.reason || 'travel refused' };
+    }
+
+    this.doing = 'trading';
+    const s = this.s, c = s.need();
+    await s.pacer.submit('read', () => c.roomContents()).catch(() => {});
+    await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 }).catch(() => {});
+
+    // A CHEST IS ADDRESSED BY OBJECT ID, and the cache is what knows which id is which
+    // slot. Falling back to the order chests appear in the room would be a guess that
+    // silently files chest 3's contents into chest 1 — so a slot whose id is not in the
+    // room is skipped and named rather than substituted.
+    const inRoom = new Map([...(c.room?.objects?.values?.() ?? [])]
+      .filter(o => /chest/i.test(c.rsc.get(o.nameRsc) || ''))
+      .map(o => [o.id, o]));
+    const done = [];
+    let contributed = 0;
+    for (const chest of want.chests) {
+      if (!chest.total) continue;
+      const cached = chests.find(x => x.slot === chest.slot);
+      const target = cached?.object_id != null ? inRoom.get(cached.object_id) : null;
+      if (!target) {
+        done.push({ slot: chest.slot, put: 0,
+          why: 'no chest in this room matches the object id recorded for that slot' });
+        continue;
+      }
+      for (const give of chest.give) {
+        if (!give.amount) continue;
+        const held = (c.inventory || []).filter(o =>
+          norm(c.rsc.get(o.nameRsc) || '') === give.item);
+        let left = give.amount;
+        for (const item of held) {
+          if (left <= 0) break;
+          const before = this.packAsItems()
+            .filter(x => norm(x.name) === give.item)
+            .reduce((t, x) => t + (x.amount || 1), 0);
+          await s.pacer.submit('trade', () => c.put(item.id, target.id)).catch(() => {});
+          await new Promise(r => setTimeout(r, 400));
+          await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+          await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+          // WHAT LEFT THE PACK, not what the put was asked to move. A container refusal in
+          // this game is a sentence spoken to the room, never an error on the wire, so a
+          // `put` that reports nothing is not a `put` that worked.
+          const after = this.packAsItems()
+            .filter(x => norm(x.name) === give.item)
+            .reduce((t, x) => t + (x.amount || 1), 0);
+          const moved = Math.max(0, before - after);
+          left -= moved; contributed += moved;
+          if (!moved) break;                      // it refused; stop hammering the chest
+        }
+        done.push({ slot: chest.slot, item: give.item, wanted: give.amount,
+                    put: give.amount - Math.max(0, left) });
+      }
+    }
+    this.tally.guild_contributed = (this.tally.guild_contributed || 0) + contributed;
+    this.note('contributed to the guild chests', { contributed, planned: want.total, done });
+    if (contributed) this.progress('stocked the guild hall');
+    return { ...want, contributed, done };
+  }
+
   async guildTitheFromSale(sale) {
     const cfg = this.policy.guildTithe;
     const proceeds = Math.max(0, Math.floor(Number(sale?.total_received) || 0));

@@ -748,6 +748,53 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   along, so Solomon in Cor Noth was reported as stationary whether or not he is. The class
   map is now case-insensitive on lookup while keeping the file's own spelling on iteration.
 
+- **A GUILD WANT IS AN END STATE, NOT AN ERRAND, AND THAT IS WHAT MAKES IT SAFE TO GIVE TO
+  TWENTY-ONE CHARACTERS.** A loadout says what one character should carry; a guild want says
+  what should end up IN THE HALL, and it is answered by whoever walks past with the right
+  thing. `substrate/guild-plan.json` holds it — per chest, per item, a target — written by
+  the planner's **Guild hall** sheet and read by the keeper on every town trip.
+
+  Stating it as "chest 2 should hold 300 mushrooms" rather than "take 40 mushrooms to chest
+  2" is the whole design: the shortfall shrinks as others contribute, nobody owns the
+  errand, it cannot double-count, and **a satisfied plan produces no work and no walk**.
+  That last part is the point — a check-in that walked to the hall on every sale to look at
+  a full chest would be a tax on every town trip. `m59-guildwants.mjs` owns it and
+  `contributionPlan(...).walk` is what the keeper honours.
+
+  **THE ORDER IS pack -> the character's own floor -> the guild's chests -> sold -> banked**,
+  and it has to be that order. A mushroom sold in the first line of a town trip cannot be
+  un-sold into a chest in the last, so contributing runs BEFORE `sellInTown`; and a bank
+  balance is the only unlimited store in the game and the only one that survives death, so
+  it is where overflow ends up. **Guild-wanted items are protected from the vendor exactly
+  while a chest is still short of them and become sellable the moment the target is met** —
+  without the release half, a full hall would mean a fleet that could never sell anything
+  again.
+
+  Four refusals, each of which is the cheap mistake:
+
+  - **It does nothing at all without a guild AND a hall**, checked from the cache, and it
+    reports WHICH is missing rather than a bare false — "nobody has asked Frular" and "this
+    guild has no hall" have different fixes. The planner sheet and the POST that saves it
+    are gated the same way, because a plan against a hall the fleet does not own would sit
+    on disk holding items back from every vendor for a chest that does not exist.
+  - **The contributor keeps its own loadout floor.** A guild is not entitled to the
+    elderberry a caster eats with — the same rule `deliverableSpare` follows.
+  - **An unopened chest is never read as empty.** `never_opened` means nobody looked, which
+    is the opposite fact, and treating it as empty would send the whole fleet to fill a
+    chest that may already be full. The keep test goes the other way for the same reason:
+    an unopened chest holds its whole target back, because selling is not reversible.
+  - **Two chests wanting the same item cannot each be promised the whole stack**, and two
+    lines for one item in one chest are a contradiction rather than a sum — the larger is
+    kept and the collision is reported.
+
+  **The hall is a SHEET, not a character.** It is `compendium/planner/guild-hall.html` and
+  `/_guildplan`, not a loadout under a reserved name: a character called "GUILD HALL" would
+  be indistinguishable from a real one to every tool that iterates loadouts, and the first
+  of those to run would try to give it a weapon.
+
+  `node tools/m59-guildwants-test.mjs` (39) pins all of it, including that an empty pack
+  never walks and that a met target releases the item to the vendor.
+
 - **FOUR CONTAINERS, FOUR DIFFERENT RULES, AND ONLY ONE OF THEM HAS TWO CEILINGS.**
   `m59-storage.mjs` owns all of it, because the arithmetic is different in each case and a
   page that averaged them would be confidently wrong four ways:

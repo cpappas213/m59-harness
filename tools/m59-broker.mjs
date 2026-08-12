@@ -6959,6 +6959,12 @@ const TOOLS = [
       guild_tithe: { type: ['object', 'null'], properties: {
         enabled: { type: 'boolean' }, daily_amount: { type: 'number' },
       }, description: 'pay at most this daily amount from verified town-sale proceeds to Frular for guild rent; null disables it' },
+      guild_wants: { type: ['object', 'null'], properties: { enabled: { type: 'boolean' } },
+        description: 'contribute pack items toward the fleet-wide guild chest plan on town trips. ' +
+          'The plan itself is substrate/guild-plan.json, written by the compendium planner GUILD HALL sheet ' +
+          'sheet — it is one plan for the whole fleet, so this flag only says whether THIS character ' +
+          'carries for it. Refuses to do anything at all unless the cache shows both a guild and an ' +
+          'opened chest; null disables it' },
       // HOW FAR ABOVE ITS OWN LEVEL THIS CHARACTER MAY FIGHT, and it was unreachable.
       //
       // `refuseEngagement` and `capBlockers` both gate on `max_health + maxThreatOver`
@@ -7212,6 +7218,15 @@ const TOOLS = [
             per_farmer_default: num(value.per_farmer_default, 10, 0, 100),
             radius_rooms: num(value.radius_rooms, 2, 0, 3),
             max_recipients: Math.max(1, Math.min(12, Math.floor(Number(value.max_recipients) || 4))) };
+        }
+      }
+      if (a.guild_wants !== undefined) {
+        if (a.guild_wants == null) p.policy.guildWants = null;
+        else {
+          const value = a.guild_wants;
+          if (typeof value !== 'object' || Array.isArray(value) || value.enabled !== true)
+            throw new Error('guild_wants must be null or an enabled settings object');
+          p.policy.guildWants = { enabled: true };
         }
       }
       if (a.guild_tithe !== undefined) {
