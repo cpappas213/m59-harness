@@ -25,7 +25,8 @@ import {
   signetPayout, signetOwnerOf, SIGNET_OWNERS,
   parseDeathBroadcast, deathBroadcastFor,
 } from './m59-skills.mjs';
-import { Autopilot, bearingIn, DEBUG_STATES } from './m59-autopilot.mjs';
+import { Autopilot, bearingIn, DEBUG_STATES, belowRoomRetreatHealth,
+         rankQuarries, claimQuarry, releaseQuarry } from './m59-autopilot.mjs';
 import { isFood } from './m59-items.mjs';
 import { outages, outageAround, recoverCrash, readLedger, ACTIVE_FILE } from './m59-uptime.mjs';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -731,6 +732,16 @@ console.log('\nthe cliff, from the geometry instead of from experience');
      doubtedStats.reachable_by_quarry === 0 && doubtedStats.unreachable_by_quarry > 0,
      JSON.stringify(doubtedStats));
 
+  const strictStats = {};
+  const strict = nearestSafeSpot(geo, { col: 3, row: 2 }, {
+    within: 12, minAvoided: 0,
+    quarryReach: () => ({ reachable: false, why: 'a player-only door separates it' }),
+    strictQuarryReach: true, stats: strictStats,
+  });
+  ok('a known player-only door makes the monster component a hard boundary',
+     strict === null && strictStats.partition_rejected > 0,
+     JSON.stringify(strictStats));
+
   const barrenStats = {};
   const allBarren = nearestSafeSpot(geo, { col: 3, row: 2 }, {
     within: 12, minAvoided: 0,
@@ -747,6 +758,32 @@ console.log('\nthe cliff, from the geometry instead of from experience');
   ok('with no quarry to ask about, nothing is filtered', noQuarry !== null);
 }
 
+console.log('\ncombat readiness is not room-retreat danger');
+{
+  ok('89% health does not trigger a room retreat merely because engageAt is 90%',
+     belowRoomRetreatHealth(0.89, 0.75) === false);
+  ok('health below the configured recovery line does trigger it',
+     belowRoomRetreatHealth(0.74, 0.75) === true);
+  ok('vigor is absent from the room-retreat decision',
+     belowRoomRetreatHealth(0.89, 0.75, 0) === false);
+}
+
+console.log('\nquarry claims spread independent keepers before doubling up');
+{
+  const room = 3800, prey = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  for (const a of ['qa', 'qb', 'qc', 'qd']) releaseQuarry(a);
+  const a = rankQuarries('qa', room, prey)[0]; claimQuarry('qa', room, a.id);
+  const b = rankQuarries('qb', room, prey)[0]; claimQuarry('qb', room, b.id);
+  const c = rankQuarries('qc', room, prey)[0]; claimQuarry('qc', room, c.id);
+  const d = rankQuarries('qd', room, prey)[0];
+  ok('the first three keepers take three different creatures',
+     new Set([a.id, b.id, c.id]).size === 3, JSON.stringify([a.id, b.id, c.id]));
+  ok('only the fourth keeper starts a second lap', d.id === 1, JSON.stringify(d));
+  const preferred = rankQuarries('qe', room, prey, { preferId: 1 })[0];
+  ok('a creature already being fought still wins over distribution', preferred.id === 1);
+  for (const x of ['qa', 'qb', 'qc', 'qd', 'qe']) releaseQuarry(x);
+}
+
 console.log('\na split room is crossed through its intervening room');
 {
   // Upstairs Castle Victoria is one room number with two pieces of floor. Players use
@@ -754,6 +791,23 @@ console.log('\na split room is crossed through its intervening room');
   // door. Exercise the real baked room so a map update that changes those landings also
   // changes (and, if necessary, breaks) this test visibly.
   const map = JSON.parse(readFileSync(new URL('../substrate/m59-map.json', import.meta.url), 'utf8'));
+  const base = map.rooms[38];
+  const baseGeo = RoomGeometry.fromJSON(base.roo);
+  const chamberQuarry = { row: 7, col: 33 };
+  const chamberStats = {};
+  const chamberWall = nearestSafeSpot(baseGeo, { row: 13, col: 35 }, {
+    within: 64, minAvoided: 0, strictQuarryReach: true, stats: chamberStats,
+    quarryReach: (col, row) =>
+      baseGeo.monsterCanReach(chamberQuarry.row, chamberQuarry.col, row, col, { los: 0 }),
+  });
+  ok('base Castle Victoria chooses a wall in the quarry\'s monster chamber',
+     !!chamberWall &&
+     baseGeo.monsterCanReach(chamberQuarry.row, chamberQuarry.col,
+                             chamberWall.row, chamberWall.col, { los: 0 }).reachable,
+     JSON.stringify(chamberWall && { col: chamberWall.col, row: chamberWall.row }));
+  ok('and rejects the many attractive walls beyond its player-only doors',
+     chamberStats.partition_rejected > chamberStats.reachable_by_quarry,
+     JSON.stringify(chamberStats));
   const upstairs = map.rooms[39];
   const geo = RoomGeometry.fromJSON(upstairs.roo);
   const eastToWest = sameRoomIslandBridgePlan(
@@ -915,6 +969,13 @@ console.log('\nthe post-mortem');
   ok('but what the pass was is remembered', k3.lastDoing === 'fighting');
   ok('so a frame taken after the reset still knows',
      k3.postMortem('still alive').was.doing === 'fighting');
+  k3.doing = 'pulling'; k3.spend(2000);
+  k3.doing = 'waiting'; k3.spend(3000);
+  const splitTime = k3.status().time;
+  ok('pull approaches are not counted as attacking time',
+     splitTime.fighting_s === 1 && splitTime.pulling_s === 2, JSON.stringify(splitTime));
+  ok('waiting for contact has its own bucket too',
+     splitTime.waiting_s === 3 && splitTime.active_s === 6, JSON.stringify(splitTime));
   k3.doing = null; k3.spend(1000);
   ok('a pass that decided nothing is "stalled", not null', k3.lastDoing === 'stalled');
   ok('and degrades to nulls rather than throwing on an empty history',
@@ -1332,23 +1393,15 @@ console.log('\nreading who actually struck the killing blow');
 // zero kills. Robin fled 54 times at 29 of 29 health.
 console.log('\nwhen to leave a room, and when to stand and fight tired');
 {
-  // The predicate as the keeper computes it: health below the rest bar, OR too tired to
-  // fight at all for this character's own vigor floor.
-  const leaves = (hp, vig, fightAboveVigor) => {
-    const healthHurt = hp !== null && hp < 0.7;                 // restAt
-    const tooTired = vig !== null && vig < (fightAboveVigor / 200);
-    return healthHurt || tooTired;
-  };
+  const leaves = (hp, _vig, _fightAboveVigor) => belowRoomRetreatHealth(hp, 0.7);
   ok('full health at the vigor cap does NOT leave — it fights tired',
      leaves(1.0, 0.4, 0) === false);
   ok('nor at 90% health and low vigor', leaves(0.9, 0.4, 0) === false);
   ok('but genuinely hurt still leaves', leaves(0.3, 1.0, 0) === true);
   ok('and hurt AND tired leaves', leaves(0.3, 0.4, 0) === true);
-  // The deadlock the branch exists for must survive: a character that refuses to fight
-  // below a vigor floor cannot fight and cannot rest in a combat zone, so it must go.
-  ok('a character with a vigor floor it cannot meet still leaves',
-     leaves(1.0, 0.4, 180) === true);
-  ok('and once above that floor it stays', leaves(1.0, 0.95, 180) === false);
+  ok('a healthy character below its vigor target stays and provisions in place',
+     leaves(1.0, 0.4, 180) === false);
+  ok('and being above that target also stays', leaves(1.0, 0.95, 180) === false);
   ok('unknown vitals do not trigger a flee', leaves(null, null, 0) === false);
 }
 

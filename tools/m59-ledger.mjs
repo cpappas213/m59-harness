@@ -143,6 +143,8 @@ export function recordSample(rows = []) {
       active_s: r.time?.active_s ?? null,
       stalled_s: r.time?.stalled_s ?? null,
       fighting_s: r.time?.fighting_s ?? null,
+      pulling_s: r.time?.pulling_s ?? null,
+      waiting_s: r.time?.waiting_s ?? null,
       recovering_s: r.time?.recovering_s ?? null,
       travelling_s: r.time?.travelling_s ?? null,
       death_sig: r.last_death?.at ?? null,
@@ -489,7 +491,8 @@ export function timeReport({ sinceMs = 24 * 3600 * 1000 } = {}) {
   const rows = [...latest.values()].map(s => ({
     character: s.character, strategy: s.strategy,
     active_s: s.active_s, stalled_s: s.stalled_s, stalled_pct: s.stalled_pct,
-    fighting_s: s.fighting_s, recovering_s: s.recovering_s, travelling_s: s.travelling_s,
+    fighting_s: s.fighting_s, pulling_s: s.pulling_s, waiting_s: s.waiting_s,
+    recovering_s: s.recovering_s, travelling_s: s.travelling_s,
   })).sort((a, b) => (b.stalled_pct ?? 0) - (a.stalled_pct ?? 0));
 
   const sum = k => rows.reduce((a, r) => a + (r[k] || 0), 0);
@@ -506,6 +509,7 @@ export function timeReport({ sinceMs = 24 * 3600 * 1000 } = {}) {
     fleet: { active_s: sum('active_s'), stalled_s: sum('stalled_s'),
              stalled_pct: total ? +((100 * sum('stalled_s')) / total).toFixed(1) : 0,
              fighting_s: sum('fighting_s'), recovering_s: sum('recovering_s'),
+             pulling_s: sum('pulling_s'), waiting_s: sum('waiting_s'),
              travelling_s: sum('travelling_s') },
     worst_offenders: rows.slice(0, 8),
     stall_causes: Object.entries(stalls).sort((a, b) => b[1] - a[1])

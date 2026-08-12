@@ -495,6 +495,12 @@ const REAGENT_SHOP = { room: 104, name: 'Joguer the apothecary, Barloque' };
 export const purchaseEnabled = (policy, kind) => policy?.[{
   food: 'buyFood', weapons: 'buyWeapons', reagents: 'buyReagents',
 }[kind]] !== false;
+// The retreat line is intentionally independent of engageAt and vigor. Those decide
+// whether to open a fight and whether to eat; neither means a healthy character should
+// abandon a monster room. Exported because 89% vs a 90% engagement preference is the
+// exact regression this distinction exists to pin.
+export const belowRoomRetreatHealth = (health, restBelow) =>
+  health != null && Number.isFinite(restBelow) && health < restBelow;
 const BARLOQUE_VAULT = { room: 114, name: "Obert Cair'bre's vault, North Barloque" };
 
 export const MODES = ['survive', 'farm', 'idle'];
@@ -910,7 +916,8 @@ export class Autopilot {
     //
     // So: seconds by activity, and STALLED means only one thing — standing about not
     // knowing what to do, while NOT recovering.
-    this.time = { fighting: 0, recovering: 0, travelling: 0, trading: 0, stalled: 0 };
+    this.time = { fighting: 0, pulling: 0, waiting: 0,
+                  recovering: 0, travelling: 0, trading: 0, stalled: 0 };
     this.doing = null;             // set during a pass; decides which bucket it lands in
     this.visited = new Set();
     // Where the hunting was actually good. Roaming without this wanders off down a
@@ -1999,6 +2006,13 @@ export class Autopilot {
     const quarryReach = (quarry && quarry.col != null && geo.monsterCanReach)
       ? (col, r2) => geo.monsterCanReach(quarry.row, quarry.col, r2, col, { los })
       : null;
+    // Self-room `go` exits are player-operated doors between monster partitions.
+    // Castle Victoria's small chambers all remain room 38 for a player, but a monster
+    // cannot cross those transitions. In that authored shape the monster grid is the
+    // component boundary, so a wall the quarry cannot reach is in the wrong chamber,
+    // not an uncertain ledge prediction worth live-testing.
+    const strictQuarryReach = !!quarryReach &&
+      (room.goExits || []).some(e => !e.locked && Number(e.to) === Number(room.num));
     // SEARCH THE WHOLE ROOM. A RADIUS IS THE WRONG SHAPE OF ANSWER.
     //
     // `within` was a flat 12 squares from wherever the character happened to be
@@ -2037,7 +2051,8 @@ export class Autopilot {
     for (; configuredShareCap == null || shareCap <= configuredShareCap; shareCap++) {
       for (const k of Object.keys(spotStats)) delete spotStats[k];   // stats describe the LAST attempt
       spot = this.searchSafeSpot(geo, me, room, {
-        within, quarryReach, los, quarry, barren, stats: spotStats, shareCap });
+        within, quarryReach, strictQuarryReach, los, quarry, barren,
+        stats: spotStats, shareCap });
       if (spot) break;
       if (configuredShareCap == null) break;
     }
@@ -3316,6 +3331,8 @@ export class Autopilot {
       const proven = this.holdWorks() ? 'proven' : 'untested';
       if (this.spotTest) return 'testing a safe spot';
       if (this.doing === 'fighting') return `fighting from a ${proven} safe spot`;
+      if (this.doing === 'pulling') return `pulling quarry to a ${proven} safe spot`;
+      if (this.doing === 'waiting') return `waiting at a ${proven} safe spot`;
       return `holding a ${proven} safe spot`;
     }
     // One wording for the errand, shared with the commitment the board greys rows on —
@@ -3327,6 +3344,8 @@ export class Autopilot {
     if (this.doing === 'travelling') return 'travelling';
     if (this.doing === 'trading') return 'trading';
     if (this.doing === 'recovering') return this.climbing ? 'eating to raise vigor' : 'resting';
+    if (this.doing === 'pulling') return 'pulling quarry into position';
+    if (this.doing === 'waiting') return 'waiting for quarry contact';
     if (this.mode === 'farm' && this.policy.hunt) {
       // A keeper earning nothing must not describe itself the same way as one that is.
       // This string is what the fleet board renders, and it is where the afternoon of
@@ -3473,7 +3492,8 @@ export class Autopilot {
   // Extracted from takeSafeSpot only so the search can be re-run at a higher share cap
   // without duplicating the option block — a second copy of these arguments is exactly
   // how the two would come to disagree about `los` or the book.
-  searchSafeSpot(geo, me, room, { within, quarryReach, los, quarry, barren, stats, shareCap = 1 }) {
+  searchSafeSpot(geo, me, room, { within, quarryReach, strictQuarryReach = false,
+                                  los, quarry, barren, stats, shareCap = 1 }) {
     const s = this.s;
     return nearestSafeSpot(geo, me, {
       // WHAT MAKES A SQUARE A CANDIDATE. `wall` asks for a wall to stand against and
@@ -3485,7 +3505,7 @@ export class Autopilot {
       // `los` has to be the same setting quarryReach uses, or the two disagree about
       // the same monster.
       within, rule: this.policy.spotRule ?? 'wall', minAvoided: 20,
-      book: this.book, room: room.num, quarryReach, los,
+      book: this.book, room: room.num, quarryReach, strictQuarryReach, los,
       stats,
       toward: quarry ? { col: quarry.col, row: quarry.row } : null,
       // Skip squares already at the share cap, and squares nothing can be fetched to.
@@ -5111,7 +5131,8 @@ export class Autopilot {
       time: (() => {
         const t = this.time, act = this.activeSeconds, total = act + t.stalled;
         const r = n => Math.round(n);
-        return { fighting_s: r(t.fighting), recovering_s: r(t.recovering),
+        return { fighting_s: r(t.fighting), pulling_s: r(t.pulling), waiting_s: r(t.waiting),
+                 recovering_s: r(t.recovering),
                  travelling_s: r(t.travelling), trading_s: r(t.trading),
                  stalled_s: r(t.stalled),
                  active_s: r(act),
@@ -5594,6 +5615,7 @@ export class Autopilot {
   // of one. See goInert for why everything else should not.
   stop(why = null, { hard = false } = {}) {
     if (!hard) { this.goInert(why); return this.status(); }
+    releaseQuarry(this.s.name);
     this.stopping = true;
     this.stopWatchdog();
     this.passStartedAt = null;
@@ -5683,7 +5705,7 @@ export class Autopilot {
 
   get activeSeconds() {
     const t = this.time;
-    return t.fighting + t.recovering + t.travelling + t.trading;
+    return t.fighting + t.pulling + t.waiting + t.recovering + t.travelling + t.trading;
   }
 
   // ------------------------------------------------------------------ the watchdog
@@ -6883,37 +6905,26 @@ export class Autopilot {
     // rest because something is watching — but it is a HEALTH deadlock. At full health
     // there is no deadlock: a tired character fights worse, not not-at-all, and the
     // answer to low vigor is food, which is somewhere else entirely.
-    // The one case where low vigor SHOULD still send us away: when this character refuses
-    // to fight below a vigor floor. Then it genuinely cannot act here — cannot fight,
-    // cannot rest in a combat zone — and leaving is the only move left. That is the
-    // deadlock the branch was written for, kept intact. Most of the fleet runs
-    // fightAboveVigor at 0 and will simply fight on, tired, which is the point.
-    const healthHurt = hp !== null && hp < restAt;
-    // A FLOOR YOU CAN NEVER REACH IS NOT A FLOOR, IT IS A STOP.
-    //
-    // fightAboveVigor is 180 on graduated pairs, and vigor only passes 80 by EATING.
-    // A character with no food is therefore permanently below its own floor: it refuses
-    // every fight, flees every room, earns nothing, and so never buys the food that
-    // would raise the vigor. Animal ran that loop 150 times for zero kills, at full
-    // health the whole way.
-    //
-    // So the floor only applies while it is achievable. With an empty larder, the honest
-    // ceiling is what resting can deliver, and a tired character fighting badly beats a
-    // rested one fighting nothing.
-    const larder = this.larder(c).length;
-    const floor = (this.policy.fightAboveVigor ?? 0) / 200;
-    const reachable = larder > 0 || floor <= REST_VIGOR_CAP;
-    const tooTiredToFight = reachable && vig !== null && vig < floor;
-    if ((healthHurt || tooTiredToFight) && combatZone && !sheltered && !testing && !this.hold) {
+    // Vigor is handled by provision() before quarry selection and by the single fight
+    // gate below. It never belongs in the escape predicate: duplicating the raw fleet
+    // target here made this branch stricter than the strategy it was supposedly serving.
+    // LEAVING THE ROOM IS AN EMERGENCY HEALTH DECISION, NOT AN ENGAGEMENT PREFERENCE.
+    // restAt includes engageAt so an 89%-healthy character can choose to recover before
+    // opening at 90%. That is not evidence it is dying. The raw fightAboveVigor value is
+    // provisioning intent; the strategy fight gate below is its only combat authority.
+    // Reading 180 here as an escape threshold made healthy bots walk for minutes at 156.
+    const mustLeaveForHealth = belowRoomRetreatHealth(hp, this.policy.restBelow);
+    if (mustLeaveForHealth && combatZone && !sheltered && !testing && !this.hold) {
       this.doing = 'travelling';
       const ways = (s.world?.exits() || []).filter(e => e.to != null && e.reachable !== false);
       const out = ways.sort((a, b) => (a.steps_away ?? 999) - (b.steps_away ?? 999))[0];
-      this.note('leaving the room rather than dying in it', {
+      this.note('leaving the room to recover safely', {
         health: hp === null ? null : Math.round(hp * 100) + '%', vigor: vigorNow2,
         monsters_in_room: hostiles.length, leaving_via: out?.to_name ?? 'nothing reachable',
-        why: 'too hurt to fight, too tired to be worth walking far, and resting where something ' +
-             'can reach us is how a rest becomes a death. Out of the room none of that is true',
-        then: 'find food — that is the thing actually wrong' });
+        retreat_below: Math.round(this.policy.restBelow * 100) + '%',
+        why: 'health is below the configured recovery line and there is no proven wall here. ' +
+             'Resting where a monster can reach us is unsafe; vigor alone never triggers this trip',
+        then: 'recover health outside the monster room, then return' });
       // TRY EVERY WAY OUT, AND THEN STOP BEING SURROUNDED.
       //
       // THIS IS WHAT IS KILLING THE FLEET. Of 37 deaths since the reach model went in,
@@ -7492,6 +7503,21 @@ export class Autopilot {
         }
       }
 
+      // ONE NEAREST TARGET PER KEEPER PRODUCES A PILE, NOT A FLEET.
+      // Keep a wounded foe first, then a partner's deliberate shared target, otherwise
+      // prefer the least-claimed creature while retaining findCreature's distance order
+      // as the tie-break. This is advisory: with ten monsters and twenty-one keepers the
+      // second lap still happens, but only after all ten have somebody assigned.
+      if (found.length) {
+        const agreed = party.agreedTarget(this.s.name);
+        const preferId = found.some(o => o.id === this.foeId) ? this.foeId
+          : found.some(o => o.id === agreed?.id) ? agreed.id : null;
+        found = rankQuarries(this.s.name, room?.num, found, { preferId });
+        claimQuarry(this.s.name, room?.num, found[0]?.id);
+      } else {
+        releaseQuarry(this.s.name);
+      }
+
       if (!found.length) {
         // HOLDING A WALL IN A ROOM THAT SPAWNS IS WORK. WAITING IS THE JOB.
         //
@@ -7513,6 +7539,7 @@ export class Autopilot {
         // handled above, hunger and health run on their own clocks.
         const waitingInASpot = !!this.hold && this.holdWorks() && !this.sanctuary(room);
         if (waitingInASpot) {
+          this.doing = 'waiting';
           if (!this.waitedInSpotAt || Date.now() - this.waitedInSpotAt > 60_000) {
             this.waitedInSpotAt = Date.now();
             this.note('holding the spot and waiting for something to come to us', {
@@ -8199,9 +8226,11 @@ export class Autopilot {
       // independently, which is the one moment convergence is worth most — whoever
       // gets there first sets the target and the other joins on its next pass.
       const swingAt = bystander ? bystander.id : (partyFoe ? partyFoe.id : this.foeId);
-      if (this.policy.partner) party.declareTarget(this.s.name, swingAt ?? null, engageName);
+      const claimedSwing = swingAt ?? found[0]?.id ?? null;
+      if (claimedSwing != null) claimQuarry(this.s.name, room?.num, claimedSwing);
+      if (this.policy.partner) party.declareTarget(this.s.name, claimedSwing, engageName);
       const f = await skills.fight(s, { target: engageName,
-                                        preferId: swingAt,
+                                        preferId: claimedSwing,
                                         disengageAt: safe.fleeAt, loot: true,
                                         holdPosition: holding, reach: REACH,
                                         weaponPriority: this.weaponPriorityNow() });
@@ -8211,6 +8240,7 @@ export class Autopilot {
       // a monster that will not come to the wall has to be fetched. Hit it once and
       // walk back, and the fight happens where we chose.
       if (f.out_of_reach) {
+        this.doing = 'pulling';
         // A DISTANT QUARRY IS STILL ON THE ROAD.
         //
         // Decisions run every second. Counting the first decision after a pull as a miss
@@ -8226,6 +8256,7 @@ export class Autopilot {
             target: waiting.target, target_id: waiting.target_id,
             why: 'a missing quarry cannot establish that the route to this square is blocked' });
           this.pendingPull = null;
+          releaseQuarry(this.s.name);
           waiting = null;
         }
         if (waiting && !waiting.ready) {
@@ -8237,7 +8268,7 @@ export class Autopilot {
               why: 'one movement square takes about one decision interval; the next pass ' +
                    'is not evidence that a distant quarry cannot follow' });
           }
-          this.doing = 'fighting';
+          this.doing = 'waiting';
           return;
         }
         if (waiting?.ready) {
@@ -8322,6 +8353,7 @@ export class Autopilot {
       }
       const looted = (f.looted || []).map(x => x.name + (x.amount ? ` x${x.amount}` : ''));
       if (f.killed) {
+        releaseQuarry(this.s.name);
         this.tally.kills++;
         this.killTimes.push(Date.now());
         if (this.killTimes.length > 500) this.killTimes.shift();
@@ -8352,7 +8384,10 @@ export class Autopilot {
         // Remember where the work is. This is what roaming steers back toward.
         if (room?.num != null) this.homeRoom = room.num;
         this.progress('killed something');
-      } else this.noProgress(f.died ? 'died in a fight' : 'broke off without a kill');
+      } else {
+        if (f.died) releaseQuarry(this.s.name);
+        this.noProgress(f.died ? 'died in a fight' : 'broke off without a kill');
+      }
       this.countLoot(looted);
       this.note(f.killed ? 'killed' : (f.died ? 'died' : 'broke off'), {
         target: f.target, rounds: f.rounds, looted,
@@ -10989,6 +11024,78 @@ export function spotTakenByAnother(agent, room, col, row, cap = 1) {
 export const SPOT_SHARE_CAP = 3;
 export const claimedSpotList = () =>
   [...claimedSpots.entries()].flatMap(([k, who]) => [...who].map(agent => ({ at: k, agent })));
+
+// SPREAD THE FLEET ACROSS THE ROOM'S QUARRY.
+//
+// Every keeper sees the same object list and findCreature sorts it only by distance.
+// Characters gathered at the same wall therefore choose the same nearest skeleton,
+// spend a pull window on it, and discover that somebody else killed it. A claim is a
+// preference, not an exclusion: when there are fewer monsters than keepers the least-
+// claimed creature wins, so every creature gets one hunter before any gets a second.
+// Partners do not count as contention because converging is their explicit strategy.
+//
+// Claims are in-process and expire quickly. A crashed keeper, a long trip, or a broker
+// restart cannot reserve a monster indefinitely; retaining foeId still wins so a keeper
+// never throws away advancement credit merely to make the distribution prettier.
+const QUARRY_CLAIM_MS = 90_000;
+const claimedQuarries = new Map();     // "room:id" -> Map(agent -> refreshedAt)
+const quarryKey = (room, id) => `${room}:${id}`;
+
+function pruneQuarryClaims(now = Date.now()) {
+  for (const [k, held] of claimedQuarries) {
+    for (const [agent, at] of held) if (now - at > QUARRY_CLAIM_MS) held.delete(agent);
+    if (!held.size) claimedQuarries.delete(k);
+  }
+}
+
+export function releaseQuarry(agent) {
+  for (const [k, held] of claimedQuarries) {
+    if (!held.delete(agent)) continue;
+    if (!held.size) claimedQuarries.delete(k);
+  }
+}
+
+export function quarryOccupancy(agent, room, id, { now = Date.now() } = {}) {
+  pruneQuarryClaims(now);
+  const held = claimedQuarries.get(quarryKey(room, id));
+  if (!held) return 0;
+  let n = 0;
+  for (const other of held.keys()) {
+    if (other === agent || mayShareSpot(agent, other)) continue;
+    n++;
+  }
+  return n;
+}
+
+export function claimQuarry(agent, room, id, { now = Date.now() } = {}) {
+  if (room == null || id == null) return false;
+  releaseQuarry(agent);
+  pruneQuarryClaims(now);
+  const k = quarryKey(room, id);
+  let held = claimedQuarries.get(k);
+  if (!held) claimedQuarries.set(k, held = new Map());
+  held.set(agent, now);
+  return true;
+}
+
+export function rankQuarries(agent, room, candidates = [],
+                              { preferId = null, now = Date.now() } = {}) {
+  pruneQuarryClaims(now);
+  return candidates.map((o, order) => ({
+    o, order,
+    preferred: preferId != null && o.id === preferId,
+    occupancy: quarryOccupancy(agent, room, o.id, { now }),
+  })).sort((a, b) =>
+    Number(b.preferred) - Number(a.preferred) ||
+    a.occupancy - b.occupancy || a.order - b.order)
+    .map(x => x.o);
+}
+
+export const claimedQuarryList = () => {
+  pruneQuarryClaims();
+  return [...claimedQuarries.entries()].flatMap(([at, who]) =>
+    [...who.keys()].map(agent => ({ at, agent })));
+};
 
 // WHICH ROOM EACH KEEPER IS IN, refreshed every pass.
 //

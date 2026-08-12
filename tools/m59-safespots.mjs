@@ -318,7 +318,7 @@ const CORNER = 5;
 const CORNER_BONUS = 24;
 export function nearestSafeSpot(geo, from, {
   within = 12, minAvoided = 20, reach = null, book = null, room = null, toward = null,
-  quarryReach = null, stats = null, los = 0,
+  quarryReach = null, strictQuarryReach = false, stats = null, los = 0,
   rule = 'wall', minBackCover = 1, fromFightWeight = 0.3,
 } = {}) {
   if (!geo || !from) return null;
@@ -362,6 +362,7 @@ export function nearestSafeSpot(geo, from, {
   let eligible = 0;
   let unreachableToUs = 0;
   let empiricallyBarren = 0;
+  let partitionRejected = 0;
   for (const s of all) {
     const seen = known?.get(key(s.col, s.row)) || null;
     // Never send a character back to a square that has already been disproved.
@@ -411,6 +412,15 @@ export function nearestSafeSpot(geo, from, {
       } else if (quarryPrediction?.reachable === true) {
         reachableByQuarry++;
       }
+    }
+    // Some rooms contain player-operated doors whose two sides share a room number.
+    // The coarse movement grid is the server's monster graph there, not merely a prior:
+    // a monster cannot operate the door, so offering a wall in another component creates
+    // a pull that can never convert. Keep the ordinary loose, test-it-live rule everywhere
+    // else; only callers that know the room has player-only internal portals opt in.
+    if (strictQuarryReach && predictedUnreachable) {
+      partitionRejected++;
+      continue;
     }
     const p = reach ? reach(s.col, s.row) : { reachable: true, steps: d };
     if (!p?.reachable) {
@@ -474,6 +484,7 @@ export function nearestSafeSpot(geo, from, {
     stats.reachable_by_quarry = reachableByQuarry;
     stats.unreachable_to_us = unreachableToUs;
     stats.empirically_barren = empiricallyBarren;
+    stats.partition_rejected = partitionRejected;
     stats.used_predicted_unreachable = !!best?.predicted_unreachable_by_quarry;
   }
   if (best && unreachableByQuarry) best.rejected_unreachable_by_quarry = unreachableByQuarry;
