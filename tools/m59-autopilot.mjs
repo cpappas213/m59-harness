@@ -3421,6 +3421,7 @@ export class Autopilot {
       const info = Object.values(spawns.creatures ?? {})
         .find(x => x.name.toLowerCase() === key);
       const lvl = info?.level ?? null;
+      const politicalTroop = info?.political_troop === true;
       const count = mons.filter(m => (c.rsc.get(m.nameRsc) || '').toLowerCase() === key).length;
       const row = { name, level: lvl, karma: info?.karma ?? null, count };
       // The two exceptions, and they are genuinely different. Karma is a decision the
@@ -3450,6 +3451,10 @@ export class Autopilot {
         status.blocked.push({ ...row, rating: null,
           why: 'nothing is known about it — the spawn table has no row for this name, and ' +
                'an unrecognised creature is refused rather than assumed harmless' });
+      } else if (politicalTroop) {
+        status.blocked.push({ ...row, rating,
+          why: 'political faction troop; attackability permits an initiated swing but does not ' +
+               'prove aggression, so it is never incidental room-clearing prey' });
       } else if (rating != null && rating > GENTLE_RATING && lvl != null && lvl > ceiling) {
         status.blocked.push({ ...row, rating,
           why: `attack rating ${rating} is above the forgiving band of ${GENTLE_RATING} ` +
