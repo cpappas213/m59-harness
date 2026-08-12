@@ -1802,6 +1802,20 @@ console.log('\nan unreachable vigor floor stops applying');
   ok('the first is where we set off from', k.recent5[0].room === 'Brownestone Inn');
   ok('the second is where we arrived', k.recent5[1].room === 'Valley of Ileria');
 
+  const zoning = mk(mkRoom('Upstairs in Castle Victoria', 39));
+  zoning.s.world.route = () => ({ found: true, hops: [{ to: 38 }] });
+  zoning.s.travel = async () => ({ arrived: true });
+  zoning.doing = 'travelling';
+  const zoningLedger = [], zoningDetails = [];
+  zoning.ledgerEvent = (kind, detail) => zoningLedger.push({ kind, detail });
+  zoning.detailEvent = (category, event) => zoningDetails.push({ category, event });
+  await zoning.travel(38, {});
+  ok('one map change is classified as zoning while it is happening', zoning.doing === 'zoning');
+  ok('and is recorded as a zone change, not a travel journey',
+     zoningLedger.some(row => row.kind === 'zone_change') &&
+     !zoningLedger.some(row => row.kind === 'travel_journey'));
+  ok('and it does not enter detailed Travel trips', zoningDetails.length === 0);
+
   k.recent5 = [];
   k.s.travel = async () => { throw new Error('no route'); };
   await k.travel(999, {}).catch(() => {});

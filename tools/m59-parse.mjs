@@ -686,6 +686,102 @@ export function parseLookPlayer(body, lookup) {
                    extra: extra ? stripCodes(extra) : null, url: url || null });
 }
 
+// ------------------------------------------------------------------ guilds
+//
+// FOUR MORE BP_USERCOMMAND REPLIES THAT NOBODY WAS PARSING, and for once the sending
+// half was missing too — so unlike UC_LOOK_PLAYER there was no silent timeout to notice,
+// just a command space with no calls into it at all.
+//
+// The authority for every field width below is module/merintr/merintr.c, which is where
+// the real client's guild dialogs are built. The kod side (user.kod:1969 onward) writes
+// them, and the two disagree about nothing, but only merintr.c states the widths — kod's
+// `AddPacket(6, x)` is STRING_RESOURCE, meaning "resolve the resource and write the
+// STRING" (blakserv/commcli.c:21), which is a 2-byte length and then the bytes. Reading
+// that 6 as six bytes desynchronises the whole packet.
+
+// UC_GUILDINFO (11) — merintr.c:1299 HandleGuildInfo. The roster, the rank titles, and
+// `flags`, which is the only authoritative answer to "may this character issue this
+// command" — see m59-guild.mjs, and note that being refused for want of a bit is
+// answered with total silence rather than a message.
+//
+// TWO FIELDS ARE CONDITIONAL AND ONE IS EASY TO MISREAD. The password is present only
+// when `has_password` is set — the server sends it solely to a guildmaster of a guild
+// that holds a hall (user.kod:1983) — so a missing password means "not master, or no
+// hall", never "no password set". And `current_vote` is written by scanning the member
+// list for OURSELF and emitting that entry's third field (user.kod:2005), so a guild
+// whose roster somehow lacks the reader emits nothing there at all and every field
+// after it shifts. `exact` is the guard: a short or long read means the layout was not
+// what this thought it was, and the caller must not use the result.
+export const GUILD_RANKS = 5;                       // module/merintr/guild.h:18
+export function parseGuildInfo(body) {
+  const r = new Reader(body);
+  const name = r.str();
+  const hasPassword = r.u8();
+  const password = hasPassword ? r.str() : null;
+  const flags = r.u32();
+  const guildId = r.id();
+  // Five ranks, male then female, apprentice upward — the same order
+  // UC_GUILD_CREATE takes them in (guild.kod:1195 GetRankNames).
+  const titles = [];
+  for (let i = 0; i < GUILD_RANKS; i++) titles.push(r.str(), r.str());
+  const vote = r.id();                              // 0 means "supporting nobody"
+  const n = r.u16();
+  const members = [];
+  for (let i = 0; i < n; i++)
+    members.push({ id: r.id(), name: r.str(), rank: r.u8(), gender: r.u8() });
+  return done(r, { name, hasPassword: !!hasPassword, password, flags, guildId,
+                   titles, vote: vote || null, members });
+}
+
+// UC_GUILD_ASK (18) — merintr.c:1358. Two prices and nothing else; the client answers
+// it with UC_GUILD_CREATE. It arrives UNPROMPTED, pushed by Frular the moment he decides
+// a character is eligible (gcreator.kod:321), which makes it the one positive proof that
+// the PFLAG_PKILL_ENABLE gate was passed — the failure is a spoken sentence.
+export function parseGuildAsk(body) {
+  const r = new Reader(body);
+  const price = r.i32(), secretPrice = r.i32();
+  return done(r, { price, secretPrice });
+}
+
+// UC_GUILD_LIST (22) — merintr.c:1371. Every guild on the server by id and name, then
+// FOUR id lists in a fixed order (user.kod:2046 onward): allies, enemies, then the
+// DECLARED forms of each.
+//
+// THE DECLARED LISTS ARE THE ONE-SIDED HALF AND THEY ARE WHY WAR IS EXPENSIVE. `allies`
+// and `enemies` are mutual; `declared_*` is what we have said about them and they have
+// not returned. A guild appearing in `declared_enemies` alone is not at war — and the
+// 50,000 forfeit applies only once the other side declares back, which is what makes
+// pulling out of a MUTUAL war the costly move (guild.kod:2290).
+export function parseGuildList(body) {
+  const r = new Reader(body);
+  const guilds = [];
+  const n = r.u16();
+  for (let i = 0; i < n; i++) guilds.push({ id: r.id(), name: r.str() });
+  const ids = () => { const k = r.u16(); const out = []; for (let i = 0; i < k; i++) out.push(r.id()); return out; };
+  const allies = ids(), enemies = ids(), declaredAllies = ids(), declaredEnemies = ids();
+  return done(r, { guilds, allies, enemies, declaredAllies, declaredEnemies });
+}
+
+// UC_GUILD_HALLS (27) — merintr.c:1476. Only the halls this character could actually
+// rent: the server filters on `GetPurchaseValue(who) <> -1` before counting
+// (user.kod:5765), so an empty list means "none available TO YOU", not "none exist".
+//
+// THE NAME IS A RESOURCE ID, NOT A STRING. kod writes `AddPacket(4, GetName)` — four
+// bytes — where every other name in this file is length-prefixed text. Resolve it
+// through the resource table like an icon name.
+//
+// AND THE RENT ON THE WIRE IS A DAY, NOT AN HOUR. `24*Send(i,@GetRentValue)` is what
+// goes out, while every rent rule inside the game is hourly. Named `rentDaily` so the
+// factor cannot be lost by the next reader.
+export function parseGuildHalls(body) {
+  const r = new Reader(body);
+  const n = r.u16();
+  const halls = [];
+  for (let i = 0; i < n; i++)
+    halls.push({ id: r.id(), nameRsc: r.id(), cost: r.i32(), rentDaily: r.i32() });
+  return done(r, { halls });
+}
+
 // BP_STAT (131) / BP_STAT_GROUP (132) — health, mana, vigor and every character
 // number. The handler does NOT live in clientd3d: stats are a UI module, so the
 // authority is module/merintr/merintr.c:ExtractStatistic. Two levels of type tag,

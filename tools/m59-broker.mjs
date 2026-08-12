@@ -53,11 +53,22 @@ import * as descriptions from './m59-describe.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { loadoutFor, reconcile as reconcileLoadout, plannedAbilities } from './m59-loadout.mjs';
 import { resolveItemNames } from './m59-items.mjs';
+import { factionAssignment, factionJoinConfirmed, factionJoinSpec,
+         factionOfferAllowed, FACTION_SOLDIER, factionFromProfile,
+         visibleTokenFromProfile, isCouncilToken, soldierAssignment,
+         soldierPromotionConfirmed, COUNCIL_TOKEN_DESTINATIONS } from './m59-factions.mjs';
+import { FactionStatusCache } from './m59-faction-status.mjs';
+import { StorageCache, GUILD_CHEST_SLOTS } from './m59-storage.mjs';
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
          POSTMORTEM_DIR, setPilotLookup } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
+import { RANK, RANK_NAME, COMMANDS, mayI, commandsIn, validateGuild,
+         DEFAULT_RANK_TITLES, maturityWait, inductionPlan, INVITATION_MS,
+         WAR_LOSS_PENALTY, MINIMUM_MEMBERS, FRULAR_ROOM, FRULAR_NAME, KNOWN_HALLS,
+         parseRentLine, parseRentHours, fundingPlan, rankRoom, RANK_QUOTA,
+         SELF_SUSTAINING_RANK, CANNOT_REJOIN_MINUTES } from './m59-guild.mjs';
 import { loadSpawns, huntingGrounds, roomThreats, preyFor, scorePrey, PURPOSES,
          knownDrops, whoDrops } from './m59-spawns.mjs';
 import { safeSpots, safeSpotBook } from './m59-safespots.mjs';
@@ -72,6 +83,7 @@ import { renderStatsBoard } from './m59-stats-page.mjs';
 import { renderDumBoard, renderHarnessBoard } from './m59-observability-page.mjs';
 import { strategyStatsReport } from './m59-strategy-stats.mjs';
 import { renderHero, startScript } from './m59-hero-page.mjs';
+import { dashboardRedirectUrl } from './m59-dashboard-route.mjs';
 import { inboxIfAny, dropInbox, sanitizeInbound, unwrapSpeech } from './m59-inbox.mjs';
 import { localClients, soleClientAgent, createClientWatch,
          identifyClients, clientsHoldingRoster } from './m59-localclient.mjs';
@@ -88,6 +100,10 @@ import { COMMANDER_SCHEMA, COMMERCE_SCHEMA, COMMANDER_FACULTIES,
 
 const HOST = process.env.M59_HOST || '127.0.0.1';
 const PORT = Number(process.env.M59_PORT || 5959);
+const factionStatuses = new FactionStatusCache();
+// Vault contents, guild chest contents and the guild's rent position. None of the three is
+// pushed by the server, so this file is their only record between visits.
+const storage = new StorageCache();
 
 // The global throttle across every packet kind. It was four a second, which quietly
 // capped movement no matter what MOVE_INTERVAL_MS said — four packets a second is four
@@ -363,6 +379,7 @@ function learningView(c) {
     const teacher = row ? taughtAbility(row.name, row.kind) : null;
     return {
       order, name: entry.name, kind: row?.kind ?? entry.kind ?? null,
+      queue_stage: entry.queue_stage ?? order,
       level: row?.level ?? entry.level ?? null,
       remaining_required: row?.remaining_required ?? null,
       expected_buyable: row?.can_learn === true && !!teacher && teacher.teachers.length > 0,
@@ -372,15 +389,25 @@ function learningView(c) {
         : !teacher ? ['no teacher in the merchant catalogue'] : undefined),
     };
   });
+  // THE FIRST UNFINISHED QUEUE STAGE IS A BARRIER. A later-level ability may become
+  // buyable after only part of the preceding level is trained; selecting it here would
+  // turn "all Weaponcraft 2, then all Weaponcraft 3" into a suggestion. Known abilities
+  // disappeared in plannedAbilities(), so the smallest remaining stage is the active one.
+  const activeStage = planned.length
+    ? Math.min(...planned.map(row => Number(row.queue_stage) || 0)) : null;
+  const active = activeStage == null ? []
+    : planned.filter(row => (Number(row.queue_stage) || 0) === activeStage);
   // One purchase per character per press. Buying an ability changes PlayerCanLearn's
   // inputs, so a second one that was eligible before the first is not assumed eligible
   // afterwards. The next refresh is the next trustworthy preflight.
-  const next = planned.find(row => row.expected_buyable) ?? null;
+  const next = active.find(row => row.expected_buyable) ?? null;
   return {
     progress,
     planned: {
       configured: planned.length,
-      ready: planned.filter(row => row.expected_buyable).length,
+      ready: active.filter(row => row.expected_buyable).length,
+      active_stage: activeStage,
+      active,
       next,
       abilities: planned,
     },
@@ -1639,6 +1666,10 @@ class Session {
     // one room is a slow crossing, and slow is something we control. See m59-transits.mjs.
     this.transits = null;
     this.transitSaveTimer = null;
+    // A PvP target is never inferred from a name or a broadcast. The opt-in faction
+    // game surface records only a freshly inspected player profile in this room and
+    // expires it quickly; engage() rechecks the profile once more before attacking.
+    this.factionGameTargets = new Map();
   }
 
   // The hit record for whoever this session is currently playing. Keyed by CHARACTER and
@@ -1790,6 +1821,23 @@ class Session {
   //
   // Cheap enough to do on every message: m59-bank.mjs bails on the first regex for
   // anything that is not about an account, which is every line but a handful per hour.
+  // What this character has on deposit, written down the moment the vaultman says it.
+  //
+  // The fee the packet carries per item is kept: it is `GetVaultRetrievalFee`, which is
+  // what getting the thing back will cost, and that is a different number from what the
+  // item is worth. Storing it means the board can say what emptying the vault would cost
+  // without another trip.
+  noteVault(ev) {
+    const who = this.client?.me?.name ?? null;
+    if (!who) return;
+    try {
+      const entry = storage.writeVault(who, ev.items || [],
+        { at: ev.at ?? Date.now(), account: ev.vaultmanId ?? null });
+      this.recorder.line('note', { what: 'vault contents recorded', character: who,
+        items: entry.items.length });
+    } catch { /* a record is a convenience; never let it interrupt play */ }
+  }
+
   noteBanker(ev) {
     const who = this.client?.me?.name ?? null;
     if (!who) return;
@@ -1919,6 +1967,11 @@ class Session {
       this.recorder.line('event', ev);
       if (ev.kind === 'ability') this.noteAdvancement(ev);
       if (ev.kind === 'message' && ev.text) { this.noteBanker(ev); this.noteCombatLine(ev); }
+      // A VAULT ANSWERS ONCE AND ONLY WHEN ASKED, so this is caught off the stream for
+      // exactly the reason a bank balance is: whatever walked a character to a vaultman
+      // has already paid for the trip, and if the reply goes past unread the contents are
+      // unknown until somebody pays for it again.
+      if (ev.kind === 'vault-list') this.noteVault(ev);
       // OFF THE STREAM, NOT OFF THE KEEPER. This is the one measurement that keeps
       // working while the keeper is inside a multi-minute travel await or held inert by
       // an errand — which is where 23 of the last 50 deaths happened. See m59-hits.mjs.
@@ -1966,6 +2019,25 @@ class Session {
     // populate something nothing needs in the first second.
     this.firstAbilityRead = readAbilitiesOnce(this)
       .catch(e => { this.recorder.line('note', { what: 'ability read failed', why: e.message }); });
+
+    // FACTION MEMBERSHIP, ONCE, HERE, FOR THE SAME REASON — except that unlike abilities
+    // the server never pushes a change, so this is the only moment it can be caught
+    // cheaply. It is one paced `look` at ourselves, and `Player.TryLook` (user.kod:4374)
+    // checks invisibility, checks the room and sends the profile: it moves nothing, breaks
+    // no invisibility and touches no aggression timer, so there is no safe-moment to wait
+    // for and nothing is attracted by asking.
+    //
+    // Deliberately not awaited, exactly as above: a fleet resume brings twenty-one sessions
+    // up at once and none of them should wait on a profile read to start playing. A person
+    // who joins a faction between logins therefore has it noticed at the next login rather
+    // than never, which is what happened to Piggy — joined the Jonas rebels, and the board
+    // reported neutral until somebody asked by hand.
+    //
+    // `M59_FACTION_ON_LOGIN=0` turns it off.
+    if (process.env.M59_FACTION_ON_LOGIN !== '0')
+      readFactionStatus(this, { refresh: true })
+        .then(status => this.recorder.line('note', { what: 'faction read', faction: status?.faction }))
+        .catch(e => { this.recorder.line('note', { what: 'faction read failed', why: e.message }); });
     // A chatter binds to the CLIENT, not to the session, so a rejoin after a save-game
     // renumber leaves it listening to a socket that no longer exists. Rebind here rather
     // than making every caller remember to.
@@ -3909,6 +3981,62 @@ function resolveTarget(s, arg) {
   return hits[0];
 }
 
+const factionInventory = c => (c.inventory || []).map(item => ({
+  id: item.id, name: c.rsc.get(item.nameRsc) || '', amount: item.amount || undefined,
+}));
+
+// HOW LONG A MEMBERSHIP READING IS TRUSTED WITHOUT LOOKING AGAIN.
+//
+// It used to be for ever: any faction other than 'unknown' short-circuited the read, so a
+// character that was neutral when it was first seen stayed neutral in every answer this
+// broker gave, whatever it had joined since. Piggy joined the Jonas rebels and the board
+// went on reporting neutral, because nothing ever asked a second time.
+//
+// A membership genuinely changes rarely, and the check is not free — it is a paced `look`
+// and up to a four second wait — so this is hours rather than minutes. The login refresh
+// below is what makes a change show up promptly; this is the backstop for a change made
+// while a character is already in the world. `M59_FACTION_MAX_AGE_MS=0` turns it off and
+// restores the old trust-for-ever behaviour.
+const FACTION_MAX_AGE_MS = process.env.M59_FACTION_MAX_AGE_MS === undefined
+  ? 6 * 60 * 60 * 1000 : Math.max(0, Number(process.env.M59_FACTION_MAX_AGE_MS) || 0);
+
+async function readFactionStatus(s, { refresh = false } = {}) {
+  const c = s.need(), character = c.me?.name ?? s.name;
+  let cached = factionStatuses.reconcileInventory(character, factionInventory(c));
+  const age = cached?.observed_at ? Date.now() - cached.observed_at : null;
+  const stale = FACTION_MAX_AGE_MS > 0 && (age === null || age > FACTION_MAX_AGE_MS);
+  if (cached && cached.faction !== 'unknown' && !refresh && !stale) return { ...cached, cached: true,
+    age_ms: age, max_health: c.vitals().health?.max ?? null };
+  const before = c.evSeq;
+  await s.pacer.submit('look', () => c.look(c.selfId));
+  const reply = await c.waitFor({ since: before, kinds: ['look'], timeoutMs: 4000 });
+  const hit = reply.events.find(event => event.id === c.selfId) || reply.events[0];
+  if (!hit?.player) {
+    return cached ? { ...cached, cached: true, stale: true,
+      max_health: c.vitals().health?.max ?? null,
+      note: 'the self-profile did not answer; returning the last observed membership' }
+      : { character, faction: 'unknown', soldier: false, observed_at: null,
+          source: null, cached: false, max_health: c.vitals().health?.max ?? null,
+          note: 'the self-profile did not answer and no membership is cached' };
+  }
+  cached = factionStatuses.observe(character, hit.extra, factionInventory(c));
+  return { ...cached, cached: false, max_health: c.vitals().health?.max ?? null };
+}
+
+const exactRoomObject = (c, name, { player = null } = {}) => [...c.room.objects.values()].find(object => {
+  const isPlayer = !!(object.flags & OF.PLAYER);
+  return (player == null || player === isPlayer) &&
+    String(c.rsc.get(object.nameRsc) || '').trim().toLowerCase() === String(name).trim().toLowerCase();
+});
+
+async function factionSpeech(s, text) {
+  const c = s.need(), before = c.evSeq;
+  await s.pacer.submit('say', () => c.say(text));
+  await c.waitFor({ since: before, kinds: ['said', 'message'], timeoutMs: 5000 }).catch(() => null);
+  await new Promise(resolveReply => setTimeout(resolveReply, 700));
+  return c.eventsSince(before).filter(event => event.text).map(event => event.text);
+}
+
 const TOOLS = [
   {
     name: 'join',
@@ -4235,6 +4363,280 @@ const TOOLS = [
                note: 'sent, and unconfirmed — the server acknowledges this packet with nothing. It ' +
                      'also replaces the default look text entirely. Confirm it with `look_at` on ' +
                      'this same character, which it can do to itself.' };
+    },
+  },
+  {
+    name: 'faction_join',
+    description:
+      'Perform one bounded step of a faction join quest. action=request speaks the fixed phrase ' +
+      '"May I join you?" only when the exact liege is present, then returns the source-defined ' +
+      'item and recipient parsed from the reply. action=offer hands exactly that faction\'s allowed ' +
+      'quest item to an exact allowed recipient and proves acceptance by refreshing inventory. ' +
+      'This is deliberately narrower than general speech or trade so an unattended goal cannot ' +
+      'say arbitrary text or offer arbitrary possessions.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      action: { type: 'string', enum: ['request', 'offer'] },
+      faction: { type: 'string', enum: ['duke', 'princess', 'rebel'] },
+      item: { type: 'number', description: 'offer: exact inventory object id' },
+      target: { type: 'string', description: 'offer: exact source-defined recipient name' },
+    }, required: ['agent', 'action', 'faction'] },
+    run: async (a) => {
+      const spec = factionJoinSpec(a.faction);
+      if (!spec) throw new Error(`unknown faction "${a.faction}"`);
+      const s = session(a.agent), c = s.need();
+      const here = s.world?.room?.num ?? null;
+
+      if (a.action === 'request') {
+        if (here !== spec.room)
+          return { requested: false, arrived: false, faction: spec.id, room: here,
+                   reason: `${spec.leader} receives join requests in room ${spec.room}` };
+        const leader = [...c.room.objects.values()].find(o =>
+          String(c.rsc.get(o.nameRsc) || '').toLowerCase() === spec.leader.toLowerCase());
+        if (!leader)
+          return { requested: false, arrived: true, faction: spec.id, room: here,
+                   reason: `${spec.leader} is not present` };
+        const before = c.evSeq;
+        await s.pacer.submit('say', () => c.say('May I join you?'));
+        await c.waitFor({ since: before, kinds: ['said', 'message'], timeoutMs: 5000 })
+          .catch(() => null);
+        // The first event is normally our own echo. Give the liege's deterministic reply
+        // one beat to land, then read the whole slice rather than mistaking that echo for
+        // the answer.
+        await new Promise(resolveReply => setTimeout(resolveReply, 700));
+        const messages = c.eventsSince(before).filter(e => e.text).map(e => e.text);
+        const assigned = factionAssignment(spec.id, messages);
+        return { requested: true, faction: spec.id, leader: spec.leader, room: here,
+                 assigned, messages,
+                 note: assigned ? undefined : 'the phrase was spoken, but no source-defined join assignment was heard' };
+      }
+
+      if (a.action === 'offer') {
+        const id = Number(a.item);
+        const held = (c.inventory || []).find(o => o.id === id);
+        if (!held) throw new Error(`inventory does not contain object ${a.item}`);
+        const item = c.rsc.get(held.nameRsc) || '';
+        const assignment = factionOfferAllowed(spec.id, { item, target: a.target });
+        if (!assignment)
+          throw new Error(`${item || `object ${id}`} may not be offered to ${a.target || '?'} ` +
+                          `through the ${spec.id} join surface`);
+        if (here !== assignment.room)
+          return { offered: false, accepted: false, joined: false, faction: spec.id,
+                   item, target: assignment.target, room: here,
+                   reason: `${assignment.target} receives this quest item in room ${assignment.room}` };
+        const targetNames = [assignment.target, ...(assignment.aliases ?? [])]
+          .map(name => name.toLowerCase());
+        const npc = [...c.room.objects.values()].find(o =>
+          targetNames.includes(String(c.rsc.get(o.nameRsc) || '').toLowerCase()));
+        if (!npc)
+          return { offered: false, accepted: false, joined: false, faction: spec.id,
+                   item, target: assignment.target, room: here,
+                   reason: `${assignment.target} is not present` };
+
+        const before = c.evSeq;
+        await s.pacer.submit('trade', () => c.offer(npc.id, [id]));
+        await c.waitFor({ since: before, kinds: ['message', 'said', 'trade-ended', 'offer-sent'],
+                          timeoutMs: 5000 }).catch(() => null);
+        await new Promise(resolveOffer => setTimeout(resolveOffer, 700));
+        await s.pacer.submit('read', () => c.requestInventory());
+        await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => null);
+        const accepted = !(c.inventory || []).some(o => o.id === id);
+        const messages = c.eventsSince(before).filter(e => e.text).map(e => e.text);
+        const joined = accepted && factionJoinConfirmed(messages);
+        if (joined) factionStatuses.write(c.me?.name ?? a.agent, { faction: spec.id,
+          soldier: false, source: 'join-confirmation' });
+        // An NPC offer that was not accepted can leave the ordinary trade UI open. Clear
+        // it so a later merchant trip does not inherit a half-started interaction.
+        if (!accepted && c.trade)
+          await s.pacer.submit('trade', () => c.cancelOffer()).catch(() => null);
+        return { offered: true, accepted, joined, faction: spec.id, item,
+                 target: assignment.target, room: here, messages,
+                 note: joined ? undefined : accepted
+                   ? 'the item left the pack, but the faction membership message was not observed'
+                   : 'the recipient did not take the item' };
+      }
+
+      throw new Error(`unknown faction_join action "${a.action}"`);
+    },
+  },
+  {
+    name: 'faction_status',
+    description: 'Observed in-game faction membership for one character. Reads a character-scoped ' +
+      'disk cache first; refresh=true or a missing entry looks at the current player profile. Desired ' +
+      'DUM goals never count as membership. Soldier status is confirmed by the faction shield.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' }, refresh: { type: 'boolean' },
+    }, required: ['agent'] },
+    run: a => readFactionStatus(session(a.agent), { refresh: a.refresh === true }),
+  },
+  {
+    name: 'faction_soldier',
+    description: 'One bounded soldier-promotion step. request says exactly "I want to be a soldier." ' +
+      'to the character\'s own liege; hunt fights only an exact source-audited faction troop; report ' +
+      'returns to the liege. Membership and 75 maximum health are rechecked first.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' }, action: { type: 'string', enum: ['request', 'hunt', 'report'] },
+      faction: { type: 'string', enum: ['duke', 'princess', 'rebel'] },
+      target: { type: 'string' },
+    }, required: ['agent', 'action', 'faction'] },
+    run: async a => {
+      const s = session(a.agent), c = s.need(), status = await readFactionStatus(s);
+      const join = factionJoinSpec(a.faction), soldier = FACTION_SOLDIER[a.faction];
+      if (!join || !soldier) throw new Error(`unknown faction "${a.faction}"`);
+      if (status.faction !== a.faction)
+        throw new Error(`soldier promotion requires observed ${a.faction} membership; profile says ${status.faction}`);
+      if ((status.max_health ?? 0) < 75)
+        throw new Error(`soldier promotion requires 75 maximum health; ${status.character} has ${status.max_health ?? 'unknown'}`);
+      if (status.soldier) return { faction: a.faction, soldier: true, complete: true,
+        note: `${status.character} already carries ${soldier.shield}` };
+
+      if (a.action === 'hunt') {
+        const stage = soldier.stages.find(value => value.target.toLowerCase() ===
+          String(a.target ?? '').trim().toLowerCase());
+        if (!stage) throw new Error(`${a.target || '?'} is not a source-defined ${a.faction} soldier target`);
+        await s.pacer.submit('read', () => c.roomContents());
+        await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 });
+        const foe = exactRoomObject(c, stage.target, { player: false });
+        if (!foe) return { faction: a.faction, target: stage.target, fought: false,
+          killed: false, room: s.world?.room?.num ?? null, reason: `${stage.target} is not here` };
+        const result = await skills.fight(s, { target: stage.target, preferId: foe.id,
+          exactTargetId: foe.id, rounds: 30, swingsPerRound: 4, loot: false });
+        return { faction: a.faction, target: stage.target, room: s.world?.room?.num ?? null,
+          ...result };
+      }
+
+      if ((s.world?.room?.num ?? null) !== join.room)
+        return { faction: a.faction, action: a.action, arrived: false,
+          reason: `${join.leader} receives soldier reports in room ${join.room}` };
+      if (!exactRoomObject(c, join.leader, { player: false }))
+        return { faction: a.faction, action: a.action, arrived: true,
+          reason: `${join.leader} is not present` };
+      const phrase = a.action === 'request' ? 'I want to be a soldier.' : 'I have done it.';
+      const messages = await factionSpeech(s, phrase);
+      await s.pacer.submit('read', () => c.requestInventory());
+      await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => null);
+      const assigned = soldierAssignment(a.faction, messages);
+      const complete = soldierPromotionConfirmed(a.faction, messages, factionInventory(c));
+      if (complete) factionStatuses.write(c.me?.name ?? a.agent, { faction: a.faction,
+        soldier: true, source: 'soldier-shield' });
+      return { faction: a.faction, action: a.action, phrase, assigned,
+        complete, soldier: complete, messages,
+        note: assigned || complete ? undefined : 'the liege gave no recognized soldier response' };
+    },
+  },
+  {
+    name: 'faction_game',
+    description: 'Opt-in faction-token PvP with a fail-closed target check. scan looks at player ' +
+      'profiles in the current room. engage rechecks one freshly verified visible token carrier and ' +
+      'refuses unknown or same-faction targets. deliver offers a real Council token to a ' +
+      'positively reported weak councilor, otherwise to the character\'s own faction leader.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' }, action: { type: 'string', enum: ['scan', 'engage', 'deliver'] },
+      target: { type: 'number' }, token: { type: 'number' },
+    }, required: ['agent', 'action'] },
+    run: async a => {
+      const s = session(a.agent), c = s.need(), own = await readFactionStatus(s);
+      if (!['duke', 'princess', 'rebel'].includes(own.faction))
+        throw new Error(`faction games require observed faction membership; profile says ${own.faction}`);
+      if (a.action === 'scan') {
+        await s.pacer.submit('read', () => c.roomContents());
+        await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 });
+        const targets = [];
+        const players = [...c.room.objects.values()].filter(object =>
+          object.id !== c.selfId && (object.flags & OF.PLAYER)).slice(0, 12);
+        for (const player of players) {
+          const before = c.evSeq;
+          await s.pacer.submit('look', () => c.look(player.id));
+          const reply = await c.waitFor({ since: before, kinds: ['look'], timeoutMs: 2500 });
+          const hit = reply.events.find(event => event.id === player.id);
+          const faction = factionFromProfile(hit?.extra), token = visibleTokenFromProfile(hit?.extra);
+          if (!token || !['duke', 'princess', 'rebel'].includes(faction) || faction === own.faction) continue;
+          const row = { id: player.id, name: c.rsc.get(player.nameRsc) || '', faction, token,
+            room: s.world?.room?.num ?? null, verified_at: Date.now() };
+          s.factionGameTargets.set(player.id, row);
+          targets.push(row);
+        }
+        for (const [id, row] of s.factionGameTargets)
+          if (Date.now() - row.verified_at > 15_000) s.factionGameTargets.delete(id);
+        return { faction: own.faction, targets, carrying: factionInventory(c)
+          .filter(item => isCouncilToken(item.name)) };
+      }
+      if (a.action === 'engage') {
+        const targetId = Number(a.target), proof = s.factionGameTargets.get(targetId);
+        if (!proof || Date.now() - proof.verified_at > 15_000 || proof.room !== (s.world?.room?.num ?? null))
+          throw new Error('faction-game attack refused: target has no fresh token-carrier verification in this room');
+        const player = c.room.objects.get(targetId);
+        if (!player || !(player.flags & OF.PLAYER)) throw new Error('faction-game attack refused: verified player left the room');
+        const before = c.evSeq;
+        await s.pacer.submit('look', () => c.look(targetId));
+        const reply = await c.waitFor({ since: before, kinds: ['look'], timeoutMs: 3000 });
+        const hit = reply.events.find(event => event.id === targetId);
+        const faction = factionFromProfile(hit?.extra), token = visibleTokenFromProfile(hit?.extra);
+        if (!token || !['duke', 'princess', 'rebel'].includes(faction) || faction === own.faction)
+          throw new Error('faction-game attack refused: the immediate profile check does not prove an opposing token carrier');
+        const result = await skills.fight(s, { target: proof.name, preferId: targetId,
+          exactTargetId: targetId, includePlayers: true, rounds: 30, swingsPerRound: 4, loot: false });
+        s.factionGameTargets.delete(targetId);
+        await s.pacer.submit('read', () => c.roomContents());
+        await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 });
+        const dropped = [...c.room.objects.values()].filter(object =>
+          isCouncilToken(c.rsc.get(object.nameRsc) || '')).map(object => ({
+            id: object.id, name: c.rsc.get(object.nameRsc) || '',
+          }));
+        const recovered = result.killed && dropped.length
+          ? await s.lootFloor({ ids: [dropped[0].id], maxItems: 1 }) : null;
+        return { faction: own.faction, target: proof, token, ...result, dropped, recovered };
+      }
+      if (a.action === 'deliver') {
+        const join = factionJoinSpec(own.faction);
+        const held = factionInventory(c).find(item => isCouncilToken(item.name) &&
+          (!a.token || item.id === Number(a.token)));
+        if (!held) throw new Error('no real Council token is carried');
+        if ((s.world?.room?.num ?? null) !== join.room) {
+          const traveled = await s.travel(join.room, { maxHops: 25 });
+          if (!traveled.arrived) return { delivered: false, faction: own.faction, token: held,
+            reason: `could not reach ${join.leader}: ${traveled.reason ?? 'travel did not arrive'}` };
+        }
+        let recipient = exactRoomObject(c, join.leader, { player: false });
+        if (!recipient) return { delivered: false, faction: own.faction, token: held,
+          reason: `${join.leader} is not present` };
+
+        // Lieges reveal the current belief strength for a named councilor. A weak
+        // councilor is a useful influence target; strong or dedicated believers are
+        // deliberately bypassed in favor of guaranteed service to our own liege.
+        const council = COUNCIL_TOKEN_DESTINATIONS[held.name.toLowerCase()];
+        let report = [], route = 'own-leader';
+        if (council) {
+          report = await factionSpeech(s, council.councilor);
+          const weak = report.some(line => /suspected to be a weak believer/i.test(line));
+          if (weak) {
+            const traveled = await s.travel(council.room, { maxHops: 25 });
+            if (!traveled.arrived) return { delivered: false, faction: own.faction, token: held,
+              councilor_report: report,
+              reason: `could not reach weak councilor ${council.councilor}: ${traveled.reason ?? 'travel did not arrive'}` };
+            const current = (c.inventory || []).some(item => item.id === held.id);
+            const councilor = exactRoomObject(c, council.councilor, { player: false });
+            if (!current || !councilor) return { delivered: false, faction: own.faction,
+              token: held, councilor_report: report,
+              reason: `${council.councilor} or the verified token was absent after travel` };
+            recipient = councilor;
+            route = 'weak-councilor';
+          }
+        }
+        const before = c.evSeq;
+        await s.pacer.submit('trade', () => c.offer(recipient.id, [held.id]));
+        await c.waitFor({ since: before, kinds: ['message', 'said', 'trade-ended', 'offer-sent'],
+          timeoutMs: 5000 }).catch(() => null);
+        await new Promise(resolveOffer => setTimeout(resolveOffer, 700));
+        await s.pacer.submit('read', () => c.requestInventory());
+        await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => null);
+        const delivered = !(c.inventory || []).some(item => item.id === held.id);
+        return { delivered, faction: own.faction, token: held,
+          target: route === 'weak-councilor' ? council.councilor : join.leader,
+          route, councilor_report: report,
+          messages: c.eventsSince(before).filter(event => event.text).map(event => event.text),
+          policy: 'use a positively reported weak councilor; use the own leader for strong, dedicated, or unknown belief' };
+      }
     },
   },
   {
@@ -6531,6 +6933,8 @@ const TOOLS = [
         description: 'allow paid reagent purchases, including Farm Delivery cargo; carried spares may still be shared' },
       vault_items: { type: 'array', items: { type: 'string' },
         description: 'item names to protect from eating/selling/gifting/dropping and deposit at the Barloque vault during town loops' },
+      protect_items: { type: 'array', items: { type: 'string' },
+        description: 'temporary cargo to protect from eating/selling/gifting/dropping while keeping it in the pack' },
       strategy_stats: { type: ['object', 'null'], properties: {
         enabled: { type: 'boolean' }, retention_hours: { type: 'number' },
         default_window_hours: { type: 'number' }, crate_check: { type: 'boolean' },
@@ -6751,6 +7155,12 @@ const TOOLS = [
           throw new Error('vault_items must be a list of item names');
         if (a.vault_items.length > 24) throw new Error('vault_items may contain at most 24 items');
         p.policy.vaultItems = resolveItemNames(a.vault_items);
+      }
+      if (a.protect_items !== undefined) {
+        if (!Array.isArray(a.protect_items) || a.protect_items.some(v => typeof v !== 'string'))
+          throw new Error('protect_items must be a list of item names');
+        if (a.protect_items.length > 24) throw new Error('protect_items may contain at most 24 items');
+        p.policy.protectedItems = resolveItemNames(a.protect_items);
       }
       if (a.strategy_stats !== undefined) {
         if (a.strategy_stats == null) p.policy.strategyStats = null;
@@ -7978,9 +8388,16 @@ const TOOLS = [
       'A WITHDRAWAL DOES NOT REPORT THE NEW BALANCE — it reports the amount handed over ' +
       '(Lm_bnkr_did_withdraw, monster.kod:144). So `balance` after a withdrawal is the last stated ' +
       'figure minus what came out, and `balance_observed:false` says so.\n' +
-      'There are TWO accounts, not one per town. Jasper (Yevitan), Tos (Skivlat) and Barloque ' +
-      '(Setag\'lib) all pay into bank 1 — BANK_BASIC and BID_TOS are both 1, blakston.khd:1275 — while ' +
-      'Ko\'catan (Huital ko\'Nosak) is bank 2. Money put into one is not available at the other.',
+      'There are TWO accounts and THREE counters, and they do not line up with the towns. Jasper ' +
+      '(Yevitan) and Tos (Skivlat) both pay into bank 1 — BANK_BASIC and BID_TOS are both 1, ' +
+      'blakston.khd:1275, and JasperBanker is created with #bid=BID_TOS — while Ko\'catan ' +
+      '(Huital ko\'Nosak) is bank 2. Money put into one is not available at the other.\n' +
+      'THERE IS NO BANKER IN BARLOQUE. `BarloqueBanker` ("Setag\'lib", bqbanker.kod:11) is declared ' +
+      'and compiled and appears in kodbase.txt, and `Create(&BarloqueBanker)` occurs NOWHERE in the ' +
+      'room tree — only Jasper, Tos and Ko\'catan ever place one. A class that exists is not an NPC ' +
+      'that stands somewhere, and this note used to name Setag\'lib as a live third counter. Walking ' +
+      'to Barloque to bank gets you a room with no banker in it, which this tool reports as "the ' +
+      'banker said nothing".',
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       action: { type: 'string', enum: ['balance', 'deposit', 'withdraw'] },
@@ -8018,10 +8435,985 @@ const TOOLS = [
         ...(stored?.accounts ? { all_accounts: stored.accounts } : {}),
         ...(said.length ? {} : { note:
           'the banker said nothing, which almost always means there is no banker in this room. ' +
-          'Banks: "The Royal Bank of Jasper" (Yevitan), "First Royal Bank of Tos" (Skivlat) and ' +
-          'Barloque (Setag\'lib) all share ONE account; "The Hungry Vaults" in Ko\'catan ' +
-          '(Huital ko\'Nosak) is a second, separate one. `balance` above, if present, is the last ' +
+          'There are exactly THREE counters in the world: "The Royal Bank of Jasper" (Yevitan) and ' +
+          '"First Royal Bank of Tos" (Skivlat), which share ONE account, and "The Hungry Vaults" in ' +
+          'Ko\'catan (Huital ko\'Nosak), which is a second, separate one. BARLOQUE HAS NONE — ' +
+          'Setag\'lib is a compiled class that nothing ever creates. `balance` above, if present, is the last ' +
           'figure on record from tools/m59-bank.mjs rather than anything said just now.' }),
+      };
+    },
+  },
+  {
+    name: 'guild',
+    description:
+      'FOUND, RUN AND HOUSE A GUILD — the one standing arrangement in this game that is between ' +
+      'characters rather than a property of one.\n' +
+      'THE ENTIRE COMMAND SPACE REFUSES BY TOTAL SILENCE, and not the usual Meridian way. The usual ' +
+      'refusal is a sentence spoken to the room; these are worse. UserGuildCommand (user.kod:4848) ' +
+      'checks the caller\'s command bitmask and, when the bit is absent, writes a line to the SERVER ' +
+      'LOG and returns — nothing reaches the player at all. So an under-ranked invite, exile, ' +
+      'promotion, alliance or disband is byte-for-byte identical to one that worked. This tool ' +
+      'therefore reads the roster FIRST, checks the bit itself, and refuses locally with the rank the ' +
+      'command needs and the kod line that says so. `force:true` sends anyway and says it is flying ' +
+      'blind.\n' +
+      'RANKS, AND THE SURPRISE IN THEM: invite is LORD (3) while exile and set_rank are LIEUTENANT ' +
+      '(4), so there is a rank that can recruit but neither expel nor promote. set_password and ' +
+      'disband and abdicate are MASTER (5). renounce and vote are APPRENTICE (1).\n' +
+      'FOUNDING costs 5,000 shillings from the PURSE, not a bank balance (system.kod:243), needs ' +
+      'PFLAG_PKILL_ENABLE — which base max health 30 sets — and must be done standing next to Frular ' +
+      'in The Guildmaster\'s Hall, room 700 in Barloque. A secret guild is 7,500 and takes twice as ' +
+      'long to mature. There is NO WAY TO RENAME A GUILD: the only correction is disband and pay again, ' +
+      'so `create` validates the name and all ten rank titles before spending anything.\n' +
+      'JOINING IS THE PART THAT CATCHES A FLEET, and it is not "invite everyone and let them accept". ' +
+      'An invitation is an OBJECT in the invitee\'s pack that vanishes the moment EITHER party leaves ' +
+      'the room (invitat.kod:145), lives two minutes, and CheckInvitationList allows the inviter ' +
+      'exactly ONE outstanding at a time — refused with no message, so a fan-out reports twenty ' +
+      'successes and inducts one. Use action=induct: it is strictly serial, confirms each roster before ' +
+      'moving on, and plans unless apply is true.\n' +
+      'A GUILD HALL NEEDS THE GUILD TO BE MATURE, which is 30 maintenance ticks of 6 minutes — three ' +
+      'hours — AND at least 3 members at the final tick, or the countdown stalls at 1 indefinitely ' +
+      '(guild.kod:705). Price is quality*5000 and the rent on the wire is a DAY of an hourly rate. ' +
+      'action=halls lists only what this character could actually rent; an empty list means "none ' +
+      'available to you", never "none exist".\n' +
+      'WAR IS NOT FREE AND THE 50,000 IS NOT A PURSE. declare_war needs the guild\'s RENT ACCOUNT ' +
+      'at least 50,000 in credit as a forfeit (guild.kod:2290); no character carrying that sum ' +
+      'satisfies it. `list` separates mutual allies/enemies from the one-sided `declared_*` lists, ' +
+      'because only a mutual war can cost you the forfeit.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      action: { type: 'string', enum: [
+        'status', 'list', 'halls', 'may',
+        'create', 'disband', 'invite', 'accept', 'exile', 'renounce',
+        'set_rank', 'abdicate', 'vote', 'ally', 'end_alliance',
+        'declare_war', 'make_peace', 'rent_hall', 'abandon_hall', 'set_password',
+        'induct', 'spread', 'promote', 'fund_hall'] },
+      promote_to: { type: 'number',
+        description: 'spread: rank to promote each new member to, 1..5. Default 4 (lieutenant), ' +
+          'which is what makes the spread self-sustaining — 3 is enough to invite, but 4 is ' +
+          'needed to promote the next one.' },
+      rounds: { type: 'number', description: 'spread: how many passes, default 1' },
+      need: { type: 'number', description: 'fund_hall: shillings to raise, default 25000' },
+      buyer: { type: 'string', description: 'fund_hall: agent who will hold the money and buy' },
+      target: { type: ['string', 'number'],
+        description: 'a player in the room for invite/exile/set_rank/abdicate/vote; a GUILD by name or ' +
+          'id for ally/end_alliance/declare_war/make_peace; a hall id for rent_hall' },
+      name: { type: 'string', description: 'create: the guild name, at most 30 characters' },
+      titles: { type: 'array', items: { type: 'string' },
+        description: 'create: exactly 10 rank titles — apprentice m/f, sir/madame, lord/lady, ' +
+          'lieutenant m/f, master/mistress. Omitted uses the game\'s own defaults.' },
+      secret: { type: 'boolean', description: 'create: 7,500 instead of 5,000, and 60 ticks to mature' },
+      rank: { type: 'number', description: 'set_rank: an ABSOLUTE rank 1..5, not a direction' },
+      password: { type: 'string', description: 'rent_hall / set_password' },
+      agents: { type: 'array', items: { type: 'string' },
+        description: 'induct: who to bring in. Omitted means every character in game with no guild.' },
+      room: { type: 'number', description: 'induct: where to gather. Defaults to the inviter\'s room.' },
+      apply: { type: 'boolean', description: 'induct: actually do it (default false — plan only)' },
+      force: { type: 'boolean',
+        description: 'send a command the roster says this character may not issue. It will be answered ' +
+          'with silence rather than an error, so the result cannot be read — say so deliberately.' },
+    }, required: ['agent', 'action'] },
+    run: async (a) => {
+      const s = session(a.agent), c = s.need();
+
+      // Reading the roster is the precondition for almost everything else, so it is one
+      // function and every action that needs a permission check calls it. It is a real
+      // round trip, not a cache read: a rank change by somebody else is invisible until
+      // asked for, and acting on a stale bitmask is exactly the failure this tool exists
+      // to stop.
+      const readRoster = async () => {
+        const before = c.evSeq;
+        await s.pacer.submit('guild', () => c.requestGuildInfo());
+        const { events } = await c.waitFor({ since: before, kinds: ['guild'], timeoutMs: 4000 });
+        const said = events.filter(e => e.text).map(e => String(e.text));
+        // NO GUILD IS AN ANSWER, NOT A TIMEOUT. UserGuildSendInfo (user.kod:1974) sends
+        // `user_no_guild` as prose and no packet at all, so `this.guild` staying null with
+        // a message present is the guildless case rather than a lost reply.
+        return { guild: c.guild ?? null, said };
+      };
+
+      const describeGuild = g => g && ({
+        id: g.id, name: g.name, rank: g.rank,
+        rank_title: g.rank ? RANK_NAME[g.rank] : null,
+        members: g.members.length,
+        may: commandsIn(g.flags),
+        flags: `0x${(g.flags >>> 0).toString(16)}`,
+        hall_password: g.password ?? undefined,
+        rank_titles: g.rankTitles,
+        supporting: g.vote,
+        roster: g.members.map(m => ({ id: m.id, name: m.name, rank: m.rank,
+                                      rank_title: RANK_NAME[m.rank] ?? null })),
+        read_at: g.readAt,
+      });
+
+      // Every command routed through UserGuildCommand goes through here, so the silent
+      // refusal is checked in exactly one place. `verify` re-reads the roster afterwards,
+      // because for these commands that is the ONLY evidence available.
+      const guildCommand = async ({ command, send, verify = true, extra = {} }) => {
+        const { guild, said } = await readRoster();
+        if (!guild)
+          return { action: a.action, ok: false, reason: 'not in a guild', messages: said };
+        const permitted = mayI(command, { flags: guild.flags });
+        if (!permitted.allowed && !a.force)
+          return { action: a.action, ok: false, refused_locally: true, ...permitted,
+                   your_rank: guild.rank, your_rank_title: RANK_NAME[guild.rank] ?? null,
+                   note: 'refused HERE, before the send, because the server refuses this one in ' +
+                         'silence — pass force:true to send it blind' };
+        const before = c.evSeq;
+        await s.pacer.submit('guild', send);
+        const { events } = await c.waitFor({ since: before, timeoutMs: 4000 });
+        const messages = events.filter(e => e.text).map(e => String(e.text));
+        const after = verify ? (await readRoster()).guild : null;
+        return {
+          action: a.action, sent: true, ...extra,
+          flying_blind: !permitted.allowed || undefined,
+          messages,
+          // THE MESSAGES ARE NOT THE OUTCOME. A command with the bit present can still
+          // fail for a reason of its own (already in the guild, ranks full, not mature),
+          // and some of those are silent too. `guild` below is the state afterwards, and
+          // it is the only thing worth believing.
+          guild: describeGuild(after),
+        };
+      };
+
+      // WHICH CHARACTERS ARE OURS, BY THE OBJECT ID THE SERVER GAVE EACH SESSION.
+      //
+      // This is the safety boundary for every action that touches another character, and it
+      // is deliberately not a name match. `prod` is a shared server with real players on it;
+      // an invitation, an exile and a promotion are all addressed to somebody. Names are
+      // chosen by their owners and two can be made confusingly alike, whereas the object id
+      // of a live session is the server's own answer to "is this a character this broker is
+      // driving". Built fresh on every call, because a rejoin changes the id and a stale map
+      // could carry one that now belongs to someone else entirely.
+      const oursById = new Map();
+      for (const [name, sess] of sessions) {
+        const id = sess.client?.me?.id;
+        if (sess.client?.state === 'game' && id) oursById.set(id, { agent: name, session: sess });
+      }
+
+      switch (a.action) {
+        case 'status': {
+          const { guild, said } = await readRoster();
+          return guild
+            ? { in_guild: true, guild: describeGuild(guild) }
+            : { in_guild: false, messages: said,
+                note: 'no guild. To found one: carry 5,000 shillings, stand next to Frular in room ' +
+                      '700 (The Guildmaster\'s Hall, Barloque), then action=create.' };
+        }
+
+        case 'may': {
+          const { guild } = await readRoster();
+          if (!guild) return { in_guild: false, may: [] };
+          return { in_guild: true, rank: guild.rank, rank_title: RANK_NAME[guild.rank] ?? null,
+                   may: commandsIn(guild.flags),
+                   each: Object.fromEntries(Object.keys(COMMANDS)
+                     .map(k => [k, mayI(k, { flags: guild.flags })])) };
+        }
+
+        case 'list': {
+          const before = c.evSeq;
+          await s.pacer.submit('guild', () => c.requestGuildList());
+          await c.waitFor({ since: before, kinds: ['guild'], timeoutMs: 4000 });
+          const l = c.guildList;
+          if (!l) return { reason: 'the server sent no guild list' };
+          const nameOf = id => l.guilds.find(g => g.id === id)?.name ?? id;
+          return {
+            guilds: l.guilds,
+            allies: l.allies.map(nameOf), enemies: l.enemies.map(nameOf),
+            // ONE-SIDED, AND THAT IS THE DISTINCTION THAT DECIDES WHAT A WAR COSTS.
+            declared_allies: l.declaredAllies.map(nameOf),
+            declared_enemies: l.declaredEnemies.map(nameOf),
+            note: 'allies/enemies are MUTUAL; declared_* is what we have said and they have not ' +
+                  'returned. The 50,000 forfeit for pulling out applies only to a mutual war.',
+            read_at: l.at,
+          };
+        }
+
+        case 'halls': {
+          // ASKED BY TRYING TO TRADE WITH FRULAR, which is the only trigger there is —
+          // `GetForSale` is a hook that pushes the dialog and then returns an empty shop
+          // (gcreator.kod:250). So this must be run standing in front of him, and a `shop`
+          // call here reporting nothing for sale is the same event seen from the other side.
+          const frular = [...(c.room?.objects?.values() ?? [])]
+            .find(o => (c.rsc.get(o.nameRsc) || '') === FRULAR_NAME);
+          if (!frular)
+            return { ok: false, reason: `${FRULAR_NAME} is not in this room`, go_to: FRULAR_ROOM,
+                     note: 'there is no request for the hall list — it is pushed only in answer ' +
+                           'to a trade request made to Frular himself' };
+          const before = c.evSeq;
+          await s.pacer.submit('shop', () => c.askFrular(frular.id));
+          const asked = await c.waitFor({ since: before, timeoutMs: 5000 }).catch(() => ({ events: [] }));
+          const h = c.guildHalls;
+          if (!h) return { halls: [], frular_said: asked.events.filter(e => e.text).map(e => String(e.text)),
+                           note: 'no hall list came back. Frular pushes it only to a member of rank ' +
+                                 'LIEUTENANT or above, in a guild that IS MATURE, that does not ' +
+                                 'already hold a hall (gcreator.kod:264). Anything else and he says ' +
+                                 'which of those failed — read frular_said. Maturity is 30 ticks of ' +
+                                 '6 minutes, three hours, and needs 3 members at the final tick.' };
+          return {
+            halls: h.halls.map(x => ({ id: x.id, name: x.name, purchase: x.cost,
+                                       rent_daily: x.rentDaily,
+                                       rent_hourly: Math.round(x.rentDaily / 24) })),
+            note: 'this list is filtered PER CHARACTER (GetPurchaseValue <> -1, user.kod:5765) — ' +
+                  'empty means none available to you, not none in the world. `rent_daily` is what ' +
+                  'the wire carries; every rule inside the game is hourly.',
+            read_at: h.at,
+          };
+        }
+
+        case 'create': {
+          const plan = validateGuild({ name: a.name, titles: a.titles ?? DEFAULT_RANK_TITLES,
+                                       secret: !!a.secret });
+          if (!plan.ok) return { ok: false, refused_locally: true, ...plan,
+                                 note: 'every one of these is discarded by the server with a log ' +
+                                       'line and no reply, so nothing would be charged and nothing ' +
+                                       'said — checked here instead' };
+          const { guild } = await readRoster();
+          if (guild) return { ok: false, reason: `already in ${guild.name} — renounce or disband first`,
+                              guild: describeGuild(guild) };
+          const before = c.evSeq;
+          await s.pacer.submit('guild', () =>
+            c.guildCreate({ name: plan.name, titles: plan.titles, secret: plan.secret }));
+          const { events } = await c.waitFor({ since: before, timeoutMs: 5000 });
+          const after = (await readRoster()).guild;
+          return {
+            ok: !!after, name: plan.name, price: plan.price, secret: plan.secret,
+            messages: events.filter(e => e.text).map(e => String(e.text)),
+            guild: describeGuild(after),
+            maturity: maturityWait({ secret: plan.secret }),
+            ...(after ? {} : { note:
+              'no guild afterwards. The server refuses a duplicate name, a name matching a player, ' +
+              'or a purse short of the price — the first two say so, the last says ' +
+              '"user_no_guild_broke". Check `messages`, and check the PURSE rather than a bank ' +
+              'balance: founding is paid from what the character is carrying.' }),
+          };
+        }
+
+        case 'invite': {
+          const t = resolveTarget(s, a.target);
+          return guildCommand({ command: 'invite', send: () => c.guildInvite(t.id),
+                                verify: false, extra: { target: t.id,
+            window_s: INVITATION_MS / 1000,
+            reminder: 'the invitation is now an object in that character\'s pack. It vanishes if ' +
+                      'EITHER of you leaves the room, and in two minutes regardless. Have them run ' +
+                      'guild action=accept.' } });
+        }
+
+        case 'accept': {
+          // `use` on the scroll, which is what its own description tells the player to do.
+          // ITEM_SINGLE_USE redirects TryUseItem to TryApplyItem on self (player.kod:3325),
+          // so this is one verb and not an apply-to-yourself.
+          const inv = c.inventory.find(i =>
+            (c.rsc.get(i.nameRsc) || '').toLowerCase().includes('invitation'));
+          if (!inv) return { ok: false, reason:
+            'no invitation in the pack. Either none was issued, or it has already vanished — it dies ' +
+            'when either party leaves the room and after two minutes regardless (invitat.kod:16).' };
+          const before = c.evSeq;
+          await s.pacer.submit('guild', () => c.use(inv.id));
+          const { events } = await c.waitFor({ since: before, timeoutMs: 4000 });
+          const after = (await readRoster()).guild;
+          return { ok: !!after, used: inv.id,
+                   messages: events.filter(e => e.text).map(e => String(e.text)),
+                   guild: describeGuild(after),
+                   ...(after ? {} : { note:
+                     'still no guild. The two refusals here are spoken: under max health 30 gives ' +
+                     '"you may not join a guild until you are more experienced" (PFLAG_PKILL_ENABLE, ' +
+                     'invitat.kod:174), and an existing guild gives "renounce your old guild ties".' }) };
+        }
+
+        case 'exile': {
+          const t = resolveTarget(s, a.target);
+          return guildCommand({ command: 'exile', send: () => c.guildExile(t.id),
+                                extra: { target: t.id } });
+        }
+
+        case 'renounce':
+          // The one command a master must not simply issue: PerformSuicide disbands for a
+          // master (user.kod:1433), but renouncing is the member's verb and the guild needs
+          // its master handed on first. The bit is present at every rank, so the local check
+          // cannot catch it — say so.
+          return guildCommand({ command: 'renounce', send: () => c.guildRenounce(),
+            extra: { note: 'if this character is the MASTER, abdicate to somebody first — the ' +
+                           'renounce bit is held at every rank, so nothing here refuses it for you' } });
+
+        case 'set_rank': {
+          const t = resolveTarget(s, a.target);
+          const rank = Math.floor(num(a.rank, 0));
+          if (!(rank >= RANK.APPRENTICE && rank <= RANK.MASTER))
+            throw new Error(`rank must be ${RANK.APPRENTICE}..${RANK.MASTER} — an absolute rank, ` +
+                            `not a direction (${Object.entries(RANK_NAME).map(([n, t2]) => `${n}=${t2}`).join(', ')})`);
+          return guildCommand({ command: 'set_rank', send: () => c.guildSetRank(t.id, rank),
+                                extra: { target: t.id, rank, rank_title: RANK_NAME[rank] } });
+        }
+
+        case 'abdicate': {
+          const t = resolveTarget(s, a.target);
+          return guildCommand({ command: 'abdicate', send: () => c.guildAbdicate(t.id),
+                                extra: { target: t.id } });
+        }
+
+        case 'vote': {
+          const t = resolveTarget(s, a.target);
+          return guildCommand({ command: 'vote', send: () => c.guildVote(t.id),
+                                extra: { target: t.id } });
+        }
+
+        case 'disband':
+          return guildCommand({ command: 'disband', send: () => c.guildDisband(),
+            extra: { note: 'the 5,000 is not refunded, and the name becomes free for anybody' } });
+
+        case 'set_password':
+          return guildCommand({ command: 'set_password',
+                                send: () => c.guildSetPassword(a.password ?? '') });
+
+        case 'abandon_hall':
+          return guildCommand({ command: 'abandon_hall', send: () => c.guildAbandonHall() });
+
+        case 'ally': case 'end_alliance': case 'declare_war': case 'make_peace': {
+          // THE TARGET IS A GUILD, NOT A PLAYER, and a guild is not an object in the room —
+          // it has an id but nothing to walk up to. So it resolves against the guild LIST,
+          // which has to be read first. Handing a player's id to these produces the "non
+          // user" prose refusal rather than anything useful.
+          if (!c.guildList) {
+            const before = c.evSeq;
+            await s.pacer.submit('guild', () => c.requestGuildList());
+            await c.waitFor({ since: before, kinds: ['guild'], timeoutMs: 4000 });
+          }
+          const wanted = String(a.target ?? '');
+          const g = /^\d+$/.test(wanted)
+            ? c.guildList?.guilds.find(x => x.id === Number(wanted))
+            : c.guildList?.guilds.find(x => x.name.toLowerCase() === wanted.toLowerCase())
+              ?? c.guildList?.guilds.find(x => x.name.toLowerCase().includes(wanted.toLowerCase()));
+          if (!g) return { ok: false, reason: `no guild matching "${a.target}"`,
+                           guilds: c.guildList?.guilds ?? [] };
+          const send = { ally: () => c.guildAlly(g.id), end_alliance: () => c.guildEndAlliance(g.id),
+                         declare_war: () => c.guildDeclareWar(g.id),
+                         make_peace: () => c.guildMakePeace(g.id) }[a.action];
+          return guildCommand({ command: { ally: 'ally', end_alliance: 'end_alliance',
+                                           declare_war: 'declare_war', make_peace: 'make_peace' }[a.action],
+                                send, verify: false, extra: { target_guild: g,
+            ...(a.action === 'declare_war' ? { forfeit: WAR_LOSS_PENALTY,
+              forfeit_note: 'refused unless the guild\'s RENT ACCOUNT is at least 50,000 in credit ' +
+                            '(guild.kod:2290) — that is prepaid rent, not anybody\'s purse' } : {}) } });
+        }
+
+        case 'rent_hall': {
+          // NOT a UserGuildCommand, and therefore the one guild verb that reports its own
+          // failure out loud (user.kod:1815). No local bit to check; the refusals are prose.
+          const { guild } = await readRoster();
+          if (!guild) return { ok: false, reason: 'not in a guild' };
+          if (!c.guildHalls) {
+            const frular = [...(c.room?.objects?.values() ?? [])]
+              .find(o => (c.rsc.get(o.nameRsc) || '') === FRULAR_NAME);
+            if (!frular)
+              return { ok: false, reason: `${FRULAR_NAME} is not in this room`,
+                       go_to: FRULAR_ROOM,
+                       note: 'the hall list is PUSHED by Frular in answer to a trade request ' +
+                             '(GetForSale, gcreator.kod:250) — there is no way to request it ' +
+                             'from anywhere else' };
+            const before = c.evSeq;
+            await s.pacer.submit('shop', () => c.askFrular(frular.id));
+            await c.waitFor({ since: before, kinds: ['guild'], timeoutMs: 5000 }).catch(() => {});
+          }
+          const wanted = String(a.target ?? '');
+          const hall = /^\d+$/.test(wanted)
+            ? c.guildHalls?.halls.find(h => h.id === Number(wanted))
+            : c.guildHalls?.halls.find(h => (h.name || '').toLowerCase().includes(wanted.toLowerCase()));
+          if (!hall) return { ok: false, reason: `no available hall matching "${a.target}"`,
+                              halls: c.guildHalls?.halls ?? [],
+                              note: 'the list is filtered per character; empty means none available ' +
+                                    'to you. A hall needs the guild MATURE — three hours and three ' +
+                                    'members — before it can be claimed at all (ghall.kod:352).' };
+          const before = c.evSeq;
+          await s.pacer.submit('guild', () => c.guildRentHall(hall.id, a.password ?? ''));
+          const { events } = await c.waitFor({ since: before, timeoutMs: 5000 });
+          const after = (await readRoster()).guild;
+          return { action: 'rent_hall', hall, cost: hall.cost,
+                   messages: events.filter(e => e.text).map(e => String(e.text)),
+                   guild: describeGuild(after),
+                   note: 'paid from the PURSE. The refusals are all spoken: ' +
+                         '"user_no_guildhall_broke", "guildhall_not_mature", ' +
+                         '"guildhall_already_has" — read `messages`.' };
+        }
+
+        // ------------------------------------------------- bringing a fleet in
+        case 'induct': {
+          const { guild } = await readRoster();
+          if (!guild) return { ok: false, reason: 'the inviter is not in a guild' };
+          const room = a.room != null ? Math.floor(a.room) : (s.world?.room?.num ?? null);
+          if (room == null) return { ok: false, reason: 'no room known for the inviter — pass `room`' };
+
+          // Who to bring. Default is every character in game that this broker holds and
+          // that has no guild — asked of each session rather than assumed, because a
+          // character already in another guild has to renounce first and that is its own
+          // decision, not something to do to it silently.
+          const wanted = a.agents?.length ? a.agents
+            : [...sessions.keys()].filter(n => n !== a.agent);
+          const candidates = [];
+          for (const name of wanted) {
+            const other = sessions.get(name);
+            if (!other?.client || other.client.state !== 'game') {
+              candidates.push({ agent: name, skip: 'not in game' });
+              continue;
+            }
+            candidates.push({
+              agent: name,
+              character: other.client.me?.name ?? null,
+              room: other.world?.room?.num ?? null,
+              maxHealth: other.client.vitals()?.health?.max ?? null,
+              // Their own guild, from what that session last read. Not re-asked here: it
+              // would be one paced round trip per character before any work started, and
+              // `apply` re-reads each one at its turn anyway.
+              guildOfCharacter: other.client.guild?.name ?? null,
+            });
+          }
+
+          const plan = inductionPlan({
+            inviter: c.me?.name ?? a.agent,
+            inviterFlags: guild.flags,
+            room,
+            characters: candidates.filter(x => !x.skip),
+          });
+
+          if (!a.apply)
+            return { plan: true, guild: describeGuild(guild), ...plan,
+                     skipped: candidates.filter(x => x.skip),
+                     note: 'nothing sent. Pass apply:true to run it. It is SERIAL by necessity, so ' +
+                           'budget the time: one outstanding invitation per inviter, two-minute ' +
+                           'window each, and both parties must be standing in the same room.' };
+
+          if (!plan.may_invite.allowed)
+            return { ok: false, refused_locally: true, ...plan.may_invite,
+                     note: 'the invite bit is absent, and the server would answer every invitation ' +
+                           'with silence' };
+
+          const results = [];
+          for (const step of plan.steps) {
+            const other = sessions.get(step.agent);
+            if (!other?.client) { results.push({ ...step, ok: false, why: 'session went away' }); continue; }
+            if (step.blockers.length) { results.push({ ...step, ok: false, why: 'blocked' }); continue; }
+
+            // ONE AT A TIME, AND THE ROOM CHECK IS BEFORE THE INVITE RATHER THAN AFTER.
+            // Issuing an invitation to somebody in another room burns the inviter's only
+            // slot for two minutes and tells nobody.
+            if ((other.world?.room?.num ?? null) !== room) {
+              results.push({ ...step, ok: false,
+                             why: `in room ${other.world?.room?.num ?? '?'}, not ${room} — travel it ` +
+                                  `there first; the invitation would vanish immediately` });
+              continue;
+            }
+            const target = other.client.me?.id;
+            const before = c.evSeq;
+            await s.pacer.submit('guild', () => c.guildInvite(target));
+            const invited = await c.waitFor({ since: before, timeoutMs: 4000 });
+            const b2 = other.client.evSeq;
+            const scroll = other.client.inventory.find(i =>
+              (other.client.rsc.get(i.nameRsc) || '').toLowerCase().includes('invitation'));
+            if (!scroll) {
+              results.push({ ...step, ok: false, why: 'no invitation arrived in the pack',
+                             messages: invited.events.filter(e => e.text).map(e => String(e.text)) });
+              continue;
+            }
+            await other.pacer.submit('guild', () => other.client.use(scroll.id));
+            const used = await other.client.waitFor({ since: b2, timeoutMs: 4000 });
+            // The roster is the only evidence. Re-read the INVITEE's guild, not ours: our
+            // own member count moving is the same signal one hop further away.
+            const b3 = other.client.evSeq;
+            await other.pacer.submit('guild', () => other.client.requestGuildInfo());
+            await other.client.waitFor({ since: b3, kinds: ['guild'], timeoutMs: 4000 });
+            const joined = other.client.guild?.id === guild.id;
+            results.push({ character: step.character, agent: step.agent, ok: joined,
+                           messages: used.events.filter(e => e.text).map(e => String(e.text)),
+                           guild: other.client.guild?.name ?? null });
+          }
+          const after = (await readRoster()).guild;
+          return { applied: true, room, inducted: results.filter(r => r.ok).map(r => r.character),
+                   failed: results.filter(r => !r.ok),
+                   results, guild: describeGuild(after),
+                   maturity: maturityWait({ secret: false }),
+                   note: `the guild now holds ${after?.members.length ?? '?'} members. A hall needs ` +
+                         `${MINIMUM_MEMBERS} of them and three hours of maturity.` };
+        }
+
+        // ------------------------------------------------- the opportunistic spread
+        //
+        // THIS IS `induct` WITHOUT THE TRAVEL, AND IT IS THE ONE THAT SUITS A FLEET THAT IS
+        // ALREADY MOVING. `induct` gathers everybody into one room, which costs every
+        // character its errand. This walks nobody: it asks each guilded character who is
+        // ALREADY standing next to it, invites those, and promotes them so they can do the
+        // same wherever they end up. A fleet that hunts in pairs converts itself over a few
+        // rounds for the price of no walking at all.
+        //
+        // WHO COUNTS AS "OURS" IS DECIDED BY OBJECT ID AGAINST OUR OWN SESSIONS, NEVER BY
+        // NAME. This is a shared server with real players on it and an invitation is an
+        // outward-facing act addressed to a stranger. A name match would be enough to fool
+        // — names are chosen by their owners and two characters can be confusingly alike —
+        // whereas the object id of a live session is the server's own answer to "is this the
+        // character this broker is driving". Anything in the room that is not one of our
+        // sessions is not merely skipped, it is never considered.
+        case 'spread': {
+          // DEFAULTS TO LORD (3), NOT THE SECOND-HIGHEST RANK, AND THE CAP IS WHY.
+          // MAX_LIEUTENANT is 2 (guild.kod:49), so rank 4 can be handed to exactly two
+          // members and every attempt after that is refused — with the message going to the
+          // PROMOTER, so from the member's side it is silent. Lord is uncapped
+          // (`NewLordOkay` always returns TRUE) and is the lowest rank that can invite,
+          // which is the whole purpose of promoting a new member here.
+          const rank = Math.floor(num(a.promote_to, SELF_SUSTAINING_RANK));
+          if (!(rank >= RANK.APPRENTICE && rank <= RANK.MASTER))
+            throw new Error(`promote_to must be ${RANK.APPRENTICE}..${RANK.MASTER}`);
+          const rounds = Math.max(1, Math.floor(num(a.rounds, 1)));
+
+          // MEMBERSHIP COMES FROM THE GUILD'S OWN ROSTER, NOT FROM ASKING EACH CHARACTER.
+          //
+          // `client.guild` is populated only by UC_GUILDINFO — nothing volunteers membership
+          // at login, unlike health or equipment — so on a fresh broker every session reads
+          // null, which is indistinguishable from "not a member". Asking all twenty-one
+          // separately is both twenty-one round trips AND unreliable: a read that times out
+          // leaves a member looking unguilded.
+          //
+          // The roster already answers it. UC_GUILDINFO carries every member's OBJECT ID
+          // (user.kod:2020), which is the same id our sessions carry, so ONE read of the
+          // inviter's roster identifies every member of the fleet exactly. Two live failures
+          // came from not doing this: a fresh broker found zero inviters inside a guild of
+          // six, and later a whole round spent eleven inviters on one character who was
+          // already a member — each of them told "This person already belongs to your guild"
+          // and none of them getting a scroll, which the slot-guard then read as a burnt slot.
+          const out = [];
+          for (let round = 0; round < rounds; round++) {
+            const { guild: mine } = await readRoster();
+            if (!mine) return { ok: false, reason: 'the inviter is not in a guild' };
+            const memberById = new Map(mine.members.map(m => [m.id, m]));
+
+            // Who may invite: a member of ours at or above the invite rank. Selected from the
+            // roster's own rank, then confirmed against that character's real bitmask before
+            // it is used — the rank is a planning answer and the bits are the server's.
+            const inviters = [];
+            for (const [id, o] of oursById) {
+              const m = memberById.get(id);
+              if (!m || m.rank < COMMANDS.invite.rank) continue;
+              inviters.push({ agent: o.agent, session: o.session, client: o.session.client, member: m });
+            }
+            const roundLog = { round: round + 1, members: mine.members.length,
+                               inviters: inviters.map(i => i.agent), invited: [] };
+
+            for (const inv of inviters) {
+              const room = inv.session.world?.room?.num ?? null;
+              // A FRESH LOOK BEFORE CHOOSING, because a stale room list costs the inviter its
+              // ONE slot for two minutes. The cached contents are updated by pushes, but this
+              // fleet fights in the room it recruits in and somebody walks out every few
+              // seconds; inviting a character that has already gone is the single most
+              // expensive mistake available here.
+              await inv.session.refresh().catch(() => {});
+              // Everyone in this room that is ours, in game, and not already in the guild —
+              // membership read off the roster's object ids rather than from each session.
+              const here = [...(inv.client.room?.objects?.values() ?? [])]
+                .filter(o => (o.flags & OF.PLAYER) && oursById.has(o.id))
+                .map(o => ({ id: o.id, ...oursById.get(o.id) }))
+                .filter(x => x.session !== inv.session)
+                .filter(x => !memberById.has(x.id));
+              if (!here.length) continue;
+
+              // The bitmask, once, and only for an inviter that has somebody to invite. The
+              // roster gave us a rank; this is what the server will actually test, and the
+              // difference is not theoretical — Piggy's master rank implies renounce and the
+              // bits say otherwise.
+              const b0 = inv.client.evSeq;
+              await inv.session.pacer.submit('guild', () => inv.client.requestGuildInfo()).catch(() => {});
+              await inv.client.waitFor({ since: b0, kinds: ['guild'], timeoutMs: 3000 }).catch(() => {});
+              const invFlags = inv.client.guild?.flags ?? 0;
+              const canInvite = mayI('invite', { flags: invFlags });
+              if (!canInvite.allowed) {
+                roundLog.invited.push({ agent: null, ok: false, inviter: inv.agent, ...canInvite });
+                continue;
+              }
+              inv.guild = inv.client.guild;
+
+              for (const cand of here) {
+                const them = cand.session, tc = them.client;
+                // Under max health 30 the invitation is refused when USED, by which point
+                // the inviter's single slot has been burnt for two minutes. Check first.
+                const maxHp = tc.vitals()?.health?.max ?? 0;
+                if (maxHp < 30) {
+                  roundLog.invited.push({ agent: cand.agent, ok: false,
+                    why: `max health ${maxHp} — under 30 there is no PFLAG_PKILL_ENABLE and the ` +
+                         `invitation cannot be used (invitat.kod:174)` });
+                  continue;
+                }
+                if (tc.guild?.id) {
+                  roundLog.invited.push({ agent: cand.agent, ok: false,
+                    why: `already in ${tc.guild.name} — must renounce first` });
+                  continue;
+                }
+
+                const b1 = inv.client.evSeq;
+                await inv.session.pacer.submit('guild', () => inv.client.guildInvite(cand.id));
+                const sent = await inv.client.waitFor({ since: b1, timeoutMs: 4000 });
+                const toInviter = sent.events.filter(e => e.text).map(e => String(e.text));
+
+                // THE INVITER IS THE ONE WHO IS TOLD WHY, and two of the refusals cost
+                // nothing while one costs the slot. "Already belongs to your guild" and
+                // "ranks are full" create no scroll and occupy no slot (gcinvite.kod:86,93),
+                // so they must not stop this inviter — reading them as a burnt slot is what
+                // turned one stale roster entry into a wasted round across eleven inviters.
+                const alreadyIn = toInviter.some(t => /already belongs to your guild/i.test(t));
+                const full = toInviter.some(t => /ranks are full/i.test(t));
+                const cannotRejoin = toInviter.some(t => /may not rejoin/i.test(t));
+                if (alreadyIn || full || cannotRejoin) {
+                  roundLog.invited.push({ agent: cand.agent, ok: false, no_slot_used: true,
+                    why: alreadyIn ? 'already a member — the roster read here was stale'
+                       : full ? 'the guild\'s ranks are full'
+                       : `a former member, and may not rejoin for ${CANNOT_REJOIN_MINUTES} minutes`,
+                    messages: toInviter });
+                  if (alreadyIn) memberById.set(cand.id, { id: cand.id, rank: null });
+                  continue;
+                }
+
+                // NEITHER OF THEM MAY MOVE BETWEEN THESE TWO CALLS. Nothing here can hold
+                // them still — their keepers own movement — so the scroll simply may not be
+                // there, and that is reported as itself rather than retried. A retry would
+                // occupy the inviter's one slot again for another two minutes.
+                const b2 = tc.evSeq;
+                await them.pacer.submit('read', () => tc.requestInventory());
+                await tc.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+                const scroll = (tc.inventory || []).find(i =>
+                  (tc.rsc.get(i.nameRsc) || '').toLowerCase().includes('invitation'));
+                if (!scroll) {
+                  roundLog.invited.push({ agent: cand.agent, ok: false,
+                    why: 'no invitation in the pack — either one of them left the room, which deletes ' +
+                         'it immediately (invitat.kod:145), or this inviter still has an unexpired ' +
+                         'invitation outstanding, which CheckInvitationList refuses in silence' });
+                  // THIS INVITER IS DONE FOR THE ROUND, and that is the whole lesson of the
+                  // first live run. A failed accept leaves the scroll alive for up to two
+                  // minutes, and while it lives every further invitation from the same
+                  // character is refused with no message — so the loop carried on and
+                  // reported twelve identical failures in a row after one real one. Other
+                  // inviters are unaffected; the slot is per inviter.
+                  roundLog.invited.push({ agent: null, ok: false, stopped_inviter: inv.agent,
+                    why: `stopping ${inv.agent} for this round: its one invitation slot is ` +
+                         `occupied for up to ${INVITATION_MS / 1000}s and every further invite ` +
+                         `would be refused silently` });
+                  break;
+                }
+                await them.pacer.submit('guild', () => tc.use(scroll.id));
+                const used = await tc.waitFor({ since: b2, timeoutMs: 4000 });
+
+                // The roster is the only evidence, and it is the INVITEE's roster.
+                const b3 = tc.evSeq;
+                await them.pacer.submit('guild', () => tc.requestGuildInfo());
+                await tc.waitFor({ since: b3, kinds: ['guild'], timeoutMs: 4000 }).catch(() => {});
+                const joined = tc.guild?.id === c.guild?.id;
+
+                // Promote, so this one can invite and promote in turn. Done by whoever just
+                // invited, which needs set_rank (LIEUTENANT) — an inviter that is only a
+                // LORD can recruit and cannot promote, and that asymmetry is reported rather
+                // than silently leaving a dead-end member.
+                let promoted = null;
+                if (joined && rank > RANK.APPRENTICE) {
+                  const canSet = mayI('set_rank', { flags: inv.guild.flags });
+                  // THE SEAT MAY BE TAKEN EVEN WHEN THE PERMISSION IS THERE. MAX_LIEUTENANT
+                  // is 2, and the refusal is sent to the PROMOTER — so from here a full
+                  // rank looks exactly like a successful promotion unless it is counted
+                  // first. The roster used is the INVITEE's, which was just re-read and
+                  // therefore includes the member who has this moment joined.
+                  const seat = rankRoom(rank, tc.guild?.members ?? []);
+                  if (!canSet.allowed) promoted = { ok: false, ...canSet };
+                  else if (seat.capped && seat.room === 0) promoted = { ok: false, ...seat };
+                  else {
+                    await inv.session.pacer.submit('guild', () => inv.client.guildSetRank(cand.id, rank));
+                    const b4 = tc.evSeq;
+                    await them.pacer.submit('guild', () => tc.requestGuildInfo());
+                    await tc.waitFor({ since: b4, kinds: ['guild'], timeoutMs: 4000 }).catch(() => {});
+                    promoted = { ok: tc.guild?.rank === rank, rank: tc.guild?.rank ?? null,
+                                 rank_title: RANK_NAME[tc.guild?.rank] ?? null };
+                  }
+                }
+                roundLog.invited.push({
+                  agent: cand.agent, character: tc.me?.name ?? null, by: inv.agent, room,
+                  ok: joined, promoted,
+                  messages: used.events.filter(e => e.text).map(e => String(e.text)),
+                });
+              }
+            }
+            out.push(roundLog);
+            if (!roundLog.invited.some(x => x.ok)) break;      // a dry round; stop early
+          }
+
+          // WHERE THE FLEET STANDS, ANSWERED BY THE GUILD RATHER THAN BY EACH SESSION.
+          // The first version of this summary asked every session for its own guild and
+          // reported three characters out of a guild that in fact held twenty of twenty-one —
+          // because two of the three had simply not had a successful roster read. The guild's
+          // member list carries object ids and cannot disagree with itself.
+          const finalGuild = (await readRoster()).guild;
+          const finalIds = new Set((finalGuild?.members ?? []).map(m => m.id));
+          const roster = [];
+          for (const [name, sess] of sessions) {
+            if (sess.client?.state !== 'game') continue;
+            const id = sess.client.me?.id;
+            const m = (finalGuild?.members ?? []).find(x => x.id === id);
+            roster.push({ agent: name, character: sess.client.me?.name ?? null,
+                          in_guild: !!m, rank: m?.rank ?? null,
+                          rank_title: m ? (RANK_NAME[m.rank] ?? null) : null,
+                          room: sess.world?.room?.num ?? null });
+          }
+          const inGuild = roster.filter(r => r.in_guild);
+          return {
+            rounds: out,
+            in_guild: inGuild.length, of: roster.length,
+            promote_to: rank, promote_to_title: RANK_NAME[rank] ?? null,
+            // Stated on every answer, because "why is everyone still an apprentice" is the
+            // first question this tool will ever be asked.
+            rank_seats: finalGuild
+              ? { lieutenant: rankRoom(RANK.LIEUTENANT, finalGuild.members),
+                  lord: rankRoom(RANK.LORD, finalGuild.members) }
+              : null,
+            quota_note: `only ${RANK_QUOTA[RANK.LIEUTENANT]} members may hold lieutenant ` +
+                        `(MAX_LIEUTENANT, guild.kod:49) and the refusal goes to the promoter, not ` +
+                        `the member. Lord is uncapped and is all that is needed to invite, which ` +
+                        `is why promote_to defaults to ${SELF_SUSTAINING_RANK}.`,
+            still_out: roster.filter(r => !r.in_guild)
+              .map(r => ({ agent: r.agent, character: r.character, room: r.room })),
+            below_rank: roster.filter(r => r.in_guild && (r.rank ?? 0) < rank)
+              .map(r => ({ agent: r.agent, character: r.character, rank: r.rank })),
+            fleet: roster,
+            note: 'nobody was walked. Characters not in a room with a guilded fleetmate cannot be ' +
+                  'reached this way at all — run it again as the fleet moves, or use ' +
+                  'action=induct to gather them, which costs each of them its errand.',
+            safety: 'candidates were matched by OBJECT ID against this broker\'s own live sessions, ' +
+                    'never by name, so nobody outside the fleet can be invited by this action.',
+          };
+        }
+
+        // ------------------------------------------------- bringing existing members up
+        //
+        // SEPARATE FROM `spread` BECAUSE A PROMOTION NEEDS NEITHER THE SAME ROOM NOR THE SAME
+        // MOMENT. An invitation is an object that must be handed over face to face; set_rank
+        // takes an object id and works anywhere in the world. So a member who joined while
+        // the promoter's lieutenant seats were full, or whose promotion raced a rejoin, can be
+        // caught up later without gathering anybody — which is the ordinary case after a
+        // spread, since only the master and two lieutenants may promote at all.
+        case 'promote': {
+          const rank = Math.floor(num(a.promote_to, SELF_SUSTAINING_RANK));
+          if (!(rank >= RANK.APPRENTICE && rank <= RANK.MASTER))
+            throw new Error(`promote_to must be ${RANK.APPRENTICE}..${RANK.MASTER}`);
+          const { guild } = await readRoster();
+          if (!guild) return { ok: false, reason: 'not in a guild' };
+          const permitted = mayI('set_rank', { flags: guild.flags });
+          if (!permitted.allowed && !a.force)
+            return { ok: false, refused_locally: true, ...permitted, your_rank: guild.rank };
+
+          // The seat check up front, because a rationed rank refuses to the PROMOTER and this
+          // action would otherwise report a run of successes it never had.
+          const seat = rankRoom(rank, guild.members);
+          const wanted = a.agents?.length ? new Set(a.agents) : null;
+          const targets = [];
+          for (const [id, o] of oursById) {
+            if (wanted && !wanted.has(o.agent)) continue;
+            const m = guild.members.find(x => x.id === id);
+            if (!m || m.rank >= rank) continue;
+            // `oldrank >= promoterrank` and `newrank >= promoterrank` are both refused
+            // (gcsetrnk.kod:85,91), so a promoter cannot lift anybody to its own rank.
+            if (m.rank >= guild.rank || rank >= guild.rank) {
+              targets.push({ agent: o.agent, id, rank: m.rank, skip:
+                `${rank} is not below the promoter's own rank ${guild.rank} — gcsetrnk.kod:91 ` +
+                `refuses newrank >= promoterrank` });
+              continue;
+            }
+            targets.push({ agent: o.agent, id, rank: m.rank });
+          }
+          const doable = targets.filter(t => !t.skip);
+          if (seat.capped && seat.room !== null && doable.length > seat.room)
+            return { ok: false, refused_locally: true, ...seat,
+                     would_promote: doable.map(t => t.agent),
+                     note: `only ${seat.room} seat(s) left at rank ${rank}; the rest would be ` +
+                           `refused to the promoter in silence. Pick a lower, unrationed rank ` +
+                           `(lord is uncapped) or name fewer agents.` };
+
+          const done = [];
+          for (const t of doable) {
+            await s.pacer.submit('guild', () => c.guildSetRank(t.id, rank));
+            done.push(t);
+          }
+          // ONE ROSTER READ FOR THE WHOLE BATCH, because the roster states every member's rank
+          // at once — asking each promoted character for its own would be N round trips for a
+          // fact one already carries.
+          const after = (await readRoster()).guild;
+          const rankOf = id => after?.members.find(m => m.id === id)?.rank ?? null;
+          return {
+            action: 'promote', to: rank, to_title: RANK_NAME[rank] ?? null,
+            promoted: done.map(t => ({ agent: t.agent, was: t.rank, now: rankOf(t.id),
+                                       ok: rankOf(t.id) === rank })),
+            skipped: targets.filter(t => t.skip).map(t => ({ agent: t.agent, why: t.skip })),
+            already_at_or_above: [...oursById.values()]
+              .filter(o => (after?.members.find(m => m.id === o.session.client?.me?.id)?.rank ?? 0) >= rank)
+              .map(o => o.agent),
+            seats: after ? { lieutenant: rankRoom(RANK.LIEUTENANT, after.members),
+                             lord: rankRoom(RANK.LORD, after.members) } : null,
+            guild: describeGuild(after),
+          };
+        }
+
+        // ------------------------------------------------- paying for a hall
+        case 'fund_hall': {
+          const need = Math.floor(num(a.need, 25_000));
+          const buyer = a.buyer ?? a.agent;
+          const holders = [];
+          for (const [name, sess] of sessions) {
+            if (sess.client?.state !== 'game') continue;
+            const purse = (sess.client.inventory || [])
+              .filter(i => (sess.client.rsc.get(i.nameRsc) || '').toLowerCase() === 'shilling')
+              .reduce((n, i) => n + (i.amount ?? 1), 0);
+            holders.push({ agent: name, character: sess.client.me?.name ?? null,
+                           purse, banked: sess.bankKnown()?.balance ?? 0 });
+          }
+          const plan = fundingPlan({ need, buyer, holders });
+          // PLAN ONLY, ALWAYS, AND DELIBERATELY SO. Executing this is a dozen bank trips and
+          // a dozen walks across the world by characters whose keepers own their movement,
+          // and it is not one atomic thing that can be rolled back — money already moved
+          // stays moved. The steps are named so an operator or a bot can drive them with
+          // `bank`, `travel` and `supply`, each of which reports its own outcome.
+          return {
+            ...plan,
+            hall: KNOWN_HALLS[714],
+            steps: [
+              ...(plan.buyer_must_withdraw > 0
+                ? [`${buyer}: travel to a bank (54 Tos or 376 Jasper — NOT Barloque, it has none) ` +
+                   `and withdraw ${plan.buyer_must_withdraw}`] : []),
+              ...plan.from.flatMap(f => [
+                ...(f.must_withdraw > 0
+                  ? [`${f.agent}: withdraw ${f.must_withdraw} at room 54 or 376`] : []),
+                `${f.agent}: supply ${f.take} shillings to ${buyer}`,
+              ]),
+              `${buyer}: travel to room ${FRULAR_ROOM} and guild action=rent_hall target="Bookmaker"`,
+            ],
+            warning: plan.enough ? undefined
+              : `${plan.shortfall} short of ${need} across the whole fleet, purse and bank together`,
+            note: 'plan only — nothing was moved. A hall is paid from the BUYER\'S PURSE, so every ' +
+                  'banked contribution is a trip to Tos or Jasper first. Rent is ' +
+                  `${KNOWN_HALLS[714].rent_daily}/day thereafter and is paid with the \`tithe\` tool.`,
+          };
+        }
+
+        default:
+          throw new Error(`unknown guild action "${a.action}"`);
+      }
+    },
+  },
+  {
+    name: 'tithe',
+    description:
+      'PAY THE GUILD\'S RENT — hand shillings to Frular in The Guildmaster\'s Hall (room 700, ' +
+      'Barloque), or ask him what the guild owes. This is the verb a bot uses to turn a character\'s ' +
+      'loot into the guild keeping its hall.\n' +
+      'THE PAYMENT IS AN OFFER THAT THE SERVER REFUSES, AND THE REFUSAL IS THE SUCCESS. ' +
+      'GuildCreator.ReqOffer (gcreator.kod:325) intercepts the offer, sums the value, subtracts it ' +
+      'from the payer\'s purse, credits the guild with PayRent, says "I thank thee for thy payment" ' +
+      'and then returns FALSE — which cancels the trade. So the offer dialog closing with nothing ' +
+      'handed over is exactly what a successful tithe looks like, and the only proof is the PURSE ' +
+      'GOING DOWN. That is what this reports.\n' +
+      'THE RENT BALANCE IS PROSE AND IS SENT ONCE, like a bank balance. There is no packet: Frular ' +
+      'answers the spoken word "rent" (gcreator.kod:97) with one of three sentences, and the SIGN is ' +
+      'the whole meaning — "owes N coins" is a debt, "has a positive balance of N" is credit already ' +
+      'negated for display. action=status reads it back as `due`, positive for owed.\n' +
+      'OFFER A QUANTITY, NEVER A BARE STACK ID. The server reads "is there a quantity here" from the ' +
+      'tag nibble alone, so a bare id means ONE — and the opposite mistake is worse: without an ' +
+      'amount the whole purse is what gets valued. `amount` is required for that reason and is ' +
+      'capped at what the character is actually carrying.\n' +
+      'The character must be standing in room 700; ReqOffer checks the room itself and logs an ' +
+      'ALERT if not (gcreator.kod:330). It must also be in a guild, or Frular says "Why dost thou ' +
+      'make offers to me? Thou owest not any guild rent."',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      action: { type: 'string', enum: ['status', 'pay'], description: 'default status' },
+      amount: { type: 'number', description: 'pay: shillings. Capped at what is carried.' },
+      all: { type: 'boolean', description: 'pay: hand over the whole purse. Ignores `amount`.' },
+    }, required: ['agent'] },
+    run: async (a) => {
+      const s = session(a.agent), c = s.need();
+      const room = s.world?.room?.num ?? null;
+      const frular = [...(c.room?.objects?.values() ?? [])]
+        .find(o => (c.rsc.get(o.nameRsc) || '') === FRULAR_NAME);
+      if (!frular)
+        return { ok: false, reason: `${FRULAR_NAME} is not in this room`, room,
+                 go_to: FRULAR_ROOM,
+                 note: `travel to ${FRULAR_ROOM} (The Guildmaster's Hall, Barloque). He is ` +
+                       'MOB_NOMOVE and always at row 5, col 7.' };
+
+      const purse = () => (c.inventory || [])
+        .filter(i => (c.rsc.get(i.nameRsc) || '').toLowerCase() === 'shilling')
+        .reduce((n, i) => n + (i.amount ?? 1), 0);
+
+      const askRent = async () => {
+        const before = c.evSeq;
+        await s.pacer.submit('say', () => c.say('rent'));
+        const { events } = await c.waitFor({ since: before, timeoutMs: 4000 });
+        const said = events.filter(e => e.text).map(e => String(e.text));
+        const rent = parseRentLine(said), hours_left = parseRentHours(said);
+        // CAUGHT ON THE WAY PAST, exactly as a bank balance is. Frular states the rent
+        // once and never mentions it again, so this is the only moment it can be written
+        // down — and the economy board reads that record rather than sending somebody to
+        // Barloque to ask again. An unparsed answer is stored as null, never as zero.
+        if (rent) storage.writeRent({ ...rent, hours_left, by: c.me?.name ?? s.name,
+          guild: c.guild?.name ?? null });
+        return { said, rent, hours_left };
+      };
+
+      if ((a.action ?? 'status') === 'status') {
+        const r = await askRent();
+        return {
+          action: 'status', room, purse: purse(),
+          due: r.rent?.due ?? null, credit: r.rent?.credit ?? null,
+          hours_until_arrears: r.hours_left,
+          frular_said: r.said,
+          ...(r.rent ? {} : { note:
+            'nothing recognisable came back. He answers the word "rent" only, and only for a ' +
+            'character in a guild — the three sentences are in gcreator.kod:180. An unmatched ' +
+            'line is reported as unmatched rather than read as a balance of zero.' }),
+        };
+      }
+
+      // ---- pay
+      await s.pacer.submit('read', () => c.requestInventory());
+      await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+      const stack = (c.inventory || [])
+        .find(i => (c.rsc.get(i.nameRsc) || '').toLowerCase() === 'shilling');
+      const have = stack ? (stack.amount ?? 1) : 0;
+      if (!stack || have < 1) return { ok: false, reason: 'carrying no shillings', purse: 0 };
+
+      const asked = a.all ? have : Math.floor(num(a.amount, 0));
+      if (!(asked > 0)) throw new Error('pay needs a positive `amount`, or all:true');
+      const amount = Math.min(asked, have);
+
+      const before = c.evSeq;
+      await s.pacer.submit('trade', () => c.offer(frular.id, [{ id: stack.id, amount }]));
+      const { events } = await c.waitFor({ since: before, timeoutMs: 5000 });
+      const said = events.filter(e => e.text).map(e => String(e.text));
+      // The offer is cancelled by the server whatever happens, so clear our side rather
+      // than leaving a session believing it has a trade open.
+      await s.pacer.submit('trade', () => c.cancelOffer()).catch(() => {});
+
+      // PROVE IT WITH THE PURSE. "I thank thee for thy payment" is the happy line, but a
+      // refusal is also just a line, and the offer being cancelled is what BOTH look like.
+      await new Promise(r => setTimeout(r, 800));
+      await s.pacer.submit('read', () => c.requestInventory());
+      await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+      const after = purse();
+      const paid = have - after;
+      const r = await askRent();
+
+      return {
+        action: 'pay', room, offered: amount,
+        purse_before: have, purse_after: after,
+        paid, ok: paid > 0,
+        thanked: said.some(x => /thank thee for thy payment/i.test(x)),
+        frular_said: said,
+        due: r.rent?.due ?? null, credit: r.rent?.credit ?? null,
+        hours_until_arrears: r.hours_left,
+        ...(paid > 0 ? {} : { note:
+          'the purse did not move, so nothing was paid whatever was said. The three refusals are ' +
+          '"Thou owest not any guild rent" (no guild, or a necromancer guild), "Thou hast not N ' +
+          'shillings to give me!" (the offered value exceeds the purse) and "Thou canst pay thy ' +
+          'rent only with shillings!" (something other than money was in the offer).' }),
+        ...(paid !== amount && paid > 0 ? { warning:
+          `offered ${amount} but the purse fell by ${paid} — read the purse, not the offer` } : {}),
       };
     },
   },
@@ -9432,6 +10824,16 @@ const TOOLS = [
           health: v.health ? `${v.health.value}/${v.health.max}` : null,
           mana: v.mana ? `${v.mana.value}/${v.mana.max}` : null,
           level: v.health?.max ?? null,          // max health IS the level
+          // Actual allegiance, observed from this character's own player profile and
+          // persisted by character name. Null means the profile has not been read yet;
+          // it must never be filled from a desired DUM goal.
+          ...(() => {
+            const faction = factionStatuses.reconcileInventory(c.me?.name ?? name,
+              factionInventory(c));
+            return { faction: faction?.faction ?? null,
+              faction_soldier: faction?.soldier ?? null,
+              faction_observed_at: faction?.observed_at ?? null };
+          })(),
           vigor: v.vigor?.value ?? null,
           // VIGOR AS A FRACTION, because it is the combat-readiness number and the
           // raw value hides that. Farming is combat over time: vigor is what swinging
@@ -9529,6 +10931,10 @@ const TOOLS = [
           // refuse() in m59-autopilot.mjs for why the prose version was a liability.
           refusals: st?.refusals ?? [],
           waiting_on: st?.waiting_on ?? null,
+          // A completed sell/bank/restock boundary. DUM's faction scheduler uses this
+          // to defer a join quest until the keeper has finished its current economic
+          // cycle instead of duplicating that cycle or interrupting it mid-farm.
+          town_service_at: st?.town_service?.last_at ?? null,
           // HOW MANY TIMES THIS CHARACTER HAS DIED, WHICH THE LEDGER DETECTS DEATHS BY.
           //
           // m59-ledger.mjs's recordSample reads `r.deaths` off this row and files a `died`
@@ -10241,7 +11647,7 @@ async function brokerRtsRead(url) {
   };
 }
 
-function serveHttp(port) {
+function serveHttp(port, dashboardPort = null) {
   const server = http.createServer(async (req, res) => {
     // A page for the human, on the same port everything else runs on. Read-only: it
     // renders the ledger and drives nothing, so it is safe to leave open in a tab.
@@ -10301,6 +11707,19 @@ function serveHttp(port) {
                                              'x-content-type-options': 'nosniff' });
         return res.end(JSON.stringify({ error: String(error?.message || error).slice(0, 240),
                                         schema: RTS_READ_SCHEMA }));
+      }
+    }
+    // THE FLEET PAGE LIVES HERE, BUT ITS OTHER TABS LIVE ON THE READ-ONLY PORT.
+    //
+    // Shared navigation is intentionally origin-relative. That is correct on the
+    // dashboard port and used to turn every tab followed from :8901/fleet into a 405,
+    // because this server otherwise accepts only JSON-RPC POSTs. Redirect only the
+    // named read-only boards. /health and every RPC path retain their existing contract.
+    if (req.method === 'GET' && dashboardPort != null) {
+      const location = dashboardRedirectUrl(req.url, req.socket.localAddress, dashboardPort);
+      if (location) {
+        res.writeHead(307, { location, 'cache-control': 'no-store' });
+        return res.end();
       }
     }
     if (req.method !== 'POST') { res.writeHead(405); return res.end(); }
@@ -10367,14 +11786,23 @@ function heroSnapshot(name) {
     const st = ap?.status({ full: true }) ?? null;
     const me = c.self;
     const room = s.world?.room;
+    const character = c.me?.name ?? name;
+    // Membership is observed through the player's profile and retained on disk. The
+    // character page is deliberately read-only, so it shows that evidence without
+    // issuing a fresh look request. An absent observation stays unknown; it must never
+    // be presented as confirmed neutrality.
+    const factionStatus = factionStatuses.reconcileInventory(character, factionInventory(c)) ?? {
+      character, faction: 'unknown', soldier: false, observed_at: null, source: null,
+    };
     // Every stat the server has told us about, by the name it uses. This is the part
     // the agent tools filter out and a person actually wants.
     const stats = {};
     for (const [k, v] of (c.statsById ?? new Map()))
       if (!/^\d+\.\d+$/.test(k)) stats[k] = v?.text !== undefined ? v.text : v?.value;
     return {
-      name: c.me?.name ?? name, agent,
+      name: character, agent,
       in_game: s.live === true,
+      faction_status: factionStatus,
       room: room ? { num: room.num, name: room.name } : null,
       position: me ? { col: me.col, row: me.row } : null,
       vitals: c.vitals?.() ?? {},
@@ -10770,14 +12198,15 @@ if (argv.includes('--selftest')) {
   try { await selftest(acct, pw); process.exit(0); }
   catch (e) { console.error(`selftest failed: ${e.message}`); process.exit(1); }
 } else if (argv.includes('--http')) {
-  serveHttp(Number(argv[argv.indexOf('--http') + 1] || 8899));
+  const di = argv.indexOf('--dashboard');
+  const dashboardPort = di >= 0 ? Number(argv[di + 1] || 8902) : null;
+  serveHttp(Number(argv[argv.indexOf('--http') + 1] || 8899), dashboardPort);
   if (!argv.includes('--no-resume')) resumeFleet();
   startLedger();
   startReconciling();
   startPilotWatch();
   startAbilitySweep();
-  const di = argv.indexOf('--dashboard');
-  if (di >= 0) serveDashboard(Number(argv[di + 1] || 8902));
+  if (dashboardPort != null) serveDashboard(dashboardPort);
 } else {
   serveStdio();
   if (!argv.includes('--no-resume')) resumeFleet();

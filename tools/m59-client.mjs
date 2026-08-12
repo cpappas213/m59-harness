@@ -28,6 +28,7 @@ import {
   parseObjectList, parseObjectContents, parsePlayers, parsePlayerAdd,
   parseChangeResource, parsePlayer, parseBuyList, parseStringMessage, parseSaid,
   parseLook, parseLookPlayer, parseStat, parseStatGroup, parseSpells, parseSkills,
+  parseGuildInfo, parseGuildAsk, parseGuildList, parseGuildHalls,
   parseOffer, parseOfferItems, parseInventoryAdd, encodeIdList, describeObject,
   parseUseList, parseObjectId, affordances, STAT_GROUP,
 } from './m59-parse.mjs';
@@ -99,6 +100,8 @@ export const UC = {
   ABDICATE: 15, VOTE: 16, SET_RANK: 17, GUILD_ASK: 18, GUILD_CREATE: 19,
   DISBAND: 20, REQ_GUILD_LIST: 21, GUILD_LIST: 22,
   MAKE_ALLIANCE: 23, END_ALLIANCE: 24, MAKE_ENEMY: 25, END_ENEMY: 26,
+  GUILD_HALLS: 27, ABANDON_GUILD_HALL: 28, GUILD_RENT: 29,
+  GUILD_SET_PASSWORD: 30, GUILD_SHIELD: 31, GUILD_SHIELDS: 32, CLAIM_SHIELD: 33,
   DEPOSIT: 35, WITHDRAW: 36, BALANCE: 37,
   APPEAL: 40, REQ_RESCUE: 41,
 };
@@ -987,6 +990,79 @@ export class M59Client {
   withdraw(n)           { this.userCommand(UC.WITHDRAW, u32(n)); }
   requestRescue()       { this.userCommand(UC.REQ_RESCUE); }
 
+  // ------------------------------------------------- guilds
+  //
+  // The widths are module/merintr/merintr.c:88's `user_msg_table`, which is the real
+  // client's own declaration of every one of these: PARAM_ID is 4 bytes, PARAM_BYTE is
+  // 1, PARAM_STRING is a 2-byte length and then Latin-1 bytes.
+  //
+  // NOTHING HERE REPORTS ITS OWN SUCCESS AND MOST OF IT CANNOT FAIL VISIBLY.
+  // `User.UserGuildCommand` (user.kod:4848) tests `HasGuildCommand` and, when the bit
+  // is absent, writes a line to the SERVER LOG and returns — the player is sent nothing
+  // whatsoever. So an under-ranked invite, exile, promotion, alliance or disband is
+  // indistinguishable on the wire from one that worked. Check `client.guild.flags`
+  // through m59-guild.mjs's `mayI` before sending, and confirm afterwards by re-reading
+  // the roster, which is what the broker's `guild` tool does.
+  requestGuildInfo()    { this.userCommand(UC.REQ_GUILDINFO); }
+  requestGuildList()    { this.userCommand(UC.REQ_GUILD_LIST); }
+
+  // THE HALL LIST AND THE FOUNDING PRICES ARE PUSH-ONLY, AND THE THING THAT TRIGGERS THEM
+  // IS A SHOPPING REQUEST THAT DELIBERATELY SELLS NOTHING.
+  //
+  // There is no UC_GUILD_HALLS request. merintr.c lists it in the incoming handler table and
+  // NOT in `user_msg_table`, and user.kod has no `iClient_cmd = UC_GUILD_HALLS` branch at all
+  // — sending one reaches "got unknown UserCommand" and nothing else. This client had such a
+  // sender, and it was silent in the usual way: a request nobody handles and a reply nobody
+  // sends are the same nothing.
+  //
+  // What produces both dialogs is `GuildCreator.GetForSale`, whose own docstring calls itself
+  // hacky: "user.kod:UserBuy() aborts if it gets $ returned from here, so we can use it as a
+  // hook" (gcreator.kod:250). So asking Frular to trade pushes UC_GUILD_HALLS to an officer of
+  // a mature guild, or UC_GUILD_ASK to somebody eligible to found one, and then returns an
+  // empty for-sale list. A `shop` at Frular therefore looks exactly like a merchant with
+  // nothing to sell, which is the visible half of the same call.
+  askFrular(frularId)   { this.buy(frularId); }
+
+  guildInvite(id)       { this.userCommand(UC.INVITE,   u32(objId(id))); }
+  guildExile(id)        { this.userCommand(UC.EXILE,    u32(objId(id))); }
+  guildRenounce()       { this.userCommand(UC.RENOUNCE); }
+  guildAbdicate(id)     { this.userCommand(UC.ABDICATE, u32(objId(id))); }
+  guildVote(id)         { this.userCommand(UC.VOTE,     u32(objId(id))); }
+  guildDisband()        { this.userCommand(UC.DISBAND); }
+  guildAlly(id)         { this.userCommand(UC.MAKE_ALLIANCE, u32(objId(id))); }
+  guildEndAlliance(id)  { this.userCommand(UC.END_ALLIANCE,  u32(objId(id))); }
+  guildDeclareWar(id)   { this.userCommand(UC.MAKE_ENEMY,    u32(objId(id))); }
+  guildMakePeace(id)    { this.userCommand(UC.END_ENEMY,     u32(objId(id))); }
+  guildAbandonHall()    { this.userCommand(UC.ABANDON_GUILD_HALL); }
+  guildSetPassword(s)   { this.userCommand(UC.GUILD_SET_PASSWORD, pstr(s ?? '')); }
+
+  // RANK IS A BYTE AND IT IS AN ABSOLUTE RANK, NOT A DIRECTION. GCID_PROMOTE and
+  // GCID_DEMOTE exist as bits but no client command sends them; the real client only
+  // ever sends UC_SET_RANK with the rank it wants (merintr.c:99, PARAM_ID + PARAM_BYTE).
+  guildSetRank(id, rank) { this.userCommand(UC.SET_RANK, u32(objId(id)), u8b(rank)); }
+
+  // Renting a hall is the only guild command that is NOT routed through
+  // UserGuildCommand, so it is the only one that reports failure out loud: user.kod:1815
+  // reads the price itself, says `user_no_guildhall_broke` if the purse is short, and
+  // otherwise calls ClaimGuildHall, which answers with its own prose for a guild that is
+  // not mature or already holds a hall. The password is set on the hall in the same call.
+  guildRentHall(hallId, password = '') {
+    this.userCommand(UC.GUILD_RENT, u32(objId(hallId)), pstr(password));
+  }
+
+  // Founding one. Ten titles in RANK_TITLE_FIELDS order, then a byte for secrecy.
+  //
+  // THE ORDER IS FLAT AND WRONG ORDER DOES NOT ERROR — it gives every woman in the
+  // guild a man's title, permanently, since nothing renames a guild. Validate through
+  // m59-guild.mjs's `validateGuild` first: an over-long name or title is dropped by the
+  // server with a Debug and no reply, and the founder is not charged, so the whole
+  // attempt is silent in both directions.
+  guildCreate({ name, titles, secret = false }) {
+    if (!Array.isArray(titles) || titles.length !== 10)
+      throw new Error('guildCreate needs exactly 10 rank titles — see RANK_TITLE_FIELDS');
+    this.userCommand(UC.GUILD_CREATE, pstr(name), ...titles.map(t => pstr(t)), u8b(secret ? 1 : 0));
+  }
+
   // No-parameter requests. These are how an agent refreshes its perception —
   // nothing arrives unasked except changes to things already known. Named
   // `requestInventory` rather than `inventory` because `this.inventory` is the
@@ -1312,6 +1388,48 @@ export class M59Client {
                               description: res.text, inscription: null,
                               player: true, editable: res.editable,
                               extra: res.extra, url: res.url });
+        } else if (uc === UC.GUILDINFO) {
+          const res = parseGuildInfo(body.subarray(1));
+          if (!this.check('GUILDINFO', res)) break;
+          // KEPT, NOT POLLED, for the same reason abilities are: nothing re-sends it.
+          // UC_GUILDINFO arrives only when asked, and `flags` is the only authoritative
+          // answer to what this character may do — a question that has to be answerable
+          // at the moment of a command, not one round trip later.
+          this.guild = {
+            id: res.guildId, name: res.name, flags: res.flags,
+            password: res.password, rankTitles: res.titles,
+            vote: res.vote, members: res.members,
+            // The reader's own rank comes off the roster rather than being sent
+            // separately, so a member list that somehow omits us leaves it null rather
+            // than defaulting to something a permission check would trust.
+            rank: res.members.find(m => m.id === this.me?.id)?.rank ?? null,
+            readAt: Date.now(),
+          };
+          this.emit('guild', { what: 'roster', guild: this.guild });
+        } else if (uc === UC.GUILD_ASK) {
+          const res = parseGuildAsk(body.subarray(1));
+          if (!this.check('GUILD_ASK', res)) break;
+          // UNPROMPTED, and that is the point: Frular pushes this only after deciding
+          // the character is eligible (gcreator.kod:321), so its arrival is the positive
+          // evidence that the PFLAG_PKILL_ENABLE gate passed. The refusal is a sentence.
+          this.guildPrices = { price: res.price, secret: res.secretPrice, at: Date.now() };
+          this.emit('guild', { what: 'may-create', prices: this.guildPrices });
+        } else if (uc === UC.GUILD_LIST) {
+          const res = parseGuildList(body.subarray(1));
+          if (!this.check('GUILD_LIST', res)) break;
+          this.guildList = { ...res, at: Date.now() };
+          this.emit('guild', { what: 'list', list: this.guildList });
+        } else if (uc === UC.GUILD_HALLS) {
+          const res = parseGuildHalls(body.subarray(1));
+          if (!this.check('GUILD_HALLS', res)) break;
+          // The name is a 4-byte resource id here, unlike every other name on this
+          // opcode, so it is resolved rather than read. `rentDaily` keeps its factor in
+          // its name: the wire carries 24 hours of an hourly rate.
+          this.guildHalls = {
+            halls: res.halls.map(h => ({ ...h, name: this.rsc.get(h.nameRsc) || null })),
+            at: Date.now(),
+          };
+          this.emit('guild', { what: 'halls', halls: this.guildHalls });
         } else {
           this.log(`unhandled user command ${uc} (${body.length - 1} bytes)`);
         }
@@ -1327,6 +1445,32 @@ export class M59Client {
           items: res.items.map(o => ({ id: o.id, name: this.rsc.get(o.nameRsc), cost: o.cost,
                                       amount: o.amount || undefined })),
         });
+        break;
+      }
+
+      // WHAT THIS CHARACTER HAS ON DEPOSIT — the only statement of it that exists.
+      //
+      // A vault is per-player storage (`Storage.plStored` is keyed by owner, storage.kod:28)
+      // and nothing pushes its contents. The server sends them only in answer to a
+      // withdrawal request, in exactly the BUY_LIST shape — object, count, then object and
+      // a u32 each (user.kod:5741; HandleWithdrawalList, server.c:1195) — where the "cost"
+      // is `GetVaultRetrievalFee` rather than a price.
+      //
+      // The opcode was declared here and never parsed, which is the failure mode this
+      // repository has already paid for once with UC_LOOK_PLAYER: a packet nobody parses is
+      // indistinguishable from a packet nobody sends, and the conclusion drawn from the
+      // silence was that the protocol could not answer. It can.
+      case BP.WITHDRAWAL_LIST: {
+        const res = parseBuyList(body);
+        if (!this.check('WITHDRAWAL_LIST', res)) break;
+        this.vaultList = {
+          vaultman: describeObject(res.seller, this.lookup),
+          vaultmanId: res.seller.id,
+          items: res.items.map(o => ({ id: o.id, name: this.rsc.get(o.nameRsc), fee: o.cost,
+                                       amount: o.amount || undefined })),
+          at: Date.now(),
+        };
+        this.emit('vault-list', this.vaultList);
         break;
       }
 

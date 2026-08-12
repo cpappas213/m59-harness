@@ -15,6 +15,8 @@ import { economy, SHORT_BELOW } from './m59-economy.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { lore } from './m59-dashboard.mjs';
 import { esc, ago, num, NAV, STYLE, TREEMAP_JS, FACET_WIRING_JS } from './m59-page-chrome.mjs';
+import { StorageCache, packFullness, GUILD_CHEST_SLOTS, VAULT_BULK_MAX, CHEST_BULK_MAX,
+         BOOKMAKERS_CHESTS } from './m59-storage.mjs';
 
 const { label: FLEET_LABEL } = resolveFleet();
 
@@ -31,7 +33,60 @@ const EXTRA_STYLE = `
   .spark .area { fill:color-mix(in srgb, var(--accent) 14%, transparent); stroke:none; }
   .spark .delta { font-size:.75rem; }
   .row-short td { background:color-mix(in srgb, var(--edge) 9%, transparent); }
+
+  /* A METER, NOT A BAR CHART. These are fractions of a hard server ceiling, so the scale
+     is fixed at 0-100 and the colour is the only thing that moves: a pack at 96% is about
+     to start refusing pickups and DELETING spell-made weapons, which is worth seeing from
+     across the room. */
+  .meter { display:flex; align-items:center; gap:.5rem; }
+  .meter .track { position:relative; flex:1; min-width:70px; height:8px; border-radius:99px;
+                  background:color-mix(in srgb, var(--edge) 22%, transparent); overflow:hidden; }
+  .meter .fill { position:absolute; inset:0 auto 0 0; border-radius:99px; background:var(--accent); }
+  .meter .fill.warn { background:var(--warn,#c98a15); }
+  .meter .fill.bad  { background:var(--bad,#c0392b); }
+  .meter .pc { font-variant-numeric:tabular-nums; font-size:.75rem; color:var(--dim); min-width:3.2em; text-align:right; }
+  .meter.unknown .track { background:repeating-linear-gradient(90deg,
+      color-mix(in srgb, var(--edge) 18%, transparent) 0 4px, transparent 4px 8px); }
+
+  /* The per-character drill-in. A details element rather than script: the page has to work with no
+     JavaScript at all, and a table row that expands is the one interaction that genuinely
+     needs no more than the browser already does. */
+  tr.drill > td { padding:0; border-top:0; }
+  tr.drill details { margin:0; }
+  tr.drill summary { cursor:pointer; padding:.35rem 1rem; color:var(--dim); font-size:.78rem; }
+  tr.drill summary:hover { color:var(--fg); }
+  tr.drill .inner { padding:.2rem 1rem 1rem 1rem; display:grid;
+                    grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem; }
+  tr.drill .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:.7rem .9rem; }
+  tr.drill .box h4 { margin:0 0 .45rem 0; font-size:.74rem; text-transform:uppercase;
+                     letter-spacing:.06em; color:var(--dim); font-weight:600; }
+  tr.drill .items { font-size:.8rem; line-height:1.5; }
+  tr.drill .items .none { color:var(--dim); font-style:italic; }
+  .chests { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:1rem; }
+  .chest { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:.8rem 1rem; }
+  .chest.empty { border-style:dashed; opacity:.72; }
+  .chest h3 { margin:0 0 .3rem 0; font-size:.85rem; }
 `;
+
+const storage = new StorageCache();
+
+// 0-100 with a fixed scale, and null renders as a hatched track rather than as zero —
+// "nobody has looked" and "it is empty" are opposite facts about a store.
+function meter(percent, title = '') {
+  if (percent == null)
+    return `<span class="meter unknown" title="${esc(title || 'never read')}">` +
+           `<span class="track"></span><span class="pc">—</span></span>`;
+  const cls = percent >= 90 ? 'bad' : percent >= 70 ? 'warn' : '';
+  return `<span class="meter" title="${esc(title)}"><span class="track">` +
+         `<span class="fill ${cls}" style="width:${Math.min(100, percent)}%"></span></span>` +
+         `<span class="pc">${percent}%</span></span>`;
+}
+
+const itemList = (items, empty) => !items || !items.length
+  ? `<div class="items"><span class="none">${esc(empty)}</span></div>`
+  : `<div class="items">${items.slice(0, 40).map(i =>
+      `${esc(i.name)}${(i.amount ?? 1) > 1 ? ` <span class="dim">x${i.amount}</span>` : ''}`).join(', ')}` +
+    `${items.length > 40 ? ` <span class="dim">and ${items.length - 40} more</span>` : ''}</div>`;
 
 // A polyline and a wash under it. No script and no library: this is four numbers of
 // context, and the page has to open on a phone with no internet behind it.
@@ -118,7 +173,16 @@ export function renderEconomy({ hours = 168, live = null, characters = null } = 
     },
   };
 
-  const rows = e.rows.map(r => `
+  // The pack is measured from the live inventory when the broker passed one in; a stored
+  // sample carries no item list, so a character nobody is holding renders its pack meter
+  // hatched rather than at zero.
+  const liveOf = new Map((live || []).map(x => [x.character, x]));
+  const rows = e.rows.map(r => {
+    const l = liveOf.get(r.character) ?? null;
+    const vault = storage.readVault(r.character);
+    const pack = l?.carrying?.length
+      ? packFullness(l.carrying, l.might ?? l.stats?.might ?? null) : null;
+    return `
     <tr${r.short ? ' class="row-short"' : ''}>
       <td class="name">${esc(r.character)}</td>
       <td class="num">${r.purse == null ? '<span class="dim">—</span>' : num(r.purse)}</td>
@@ -133,7 +197,31 @@ export function renderEconomy({ hours = 168, live = null, characters = null } = 
       <td class="num ${(r.herbs ?? 0) < SHORT_BELOW ? 'bad' : ''}">${r.herbs == null ? '—' : r.herbs}</td>
       <td class="num ${r.casts_possible ? '' : 'bad'}">${r.casts_possible}</td>
       <td>${sourcePill(r.reagents_from, r.reagents_at)}</td>
-    </tr>`).join('');
+      <td>${meter(pack?.percent ?? null, pack
+          ? `pack ${pack.bulk} bulk / ${pack.weight} weight against ${pack.max}, ${pack.binding}-bound`
+          : 'no live inventory for this character — the stored sample carries totals, not an item list')}</td>
+      <td>${meter(vault?.fullness?.percent ?? null, vault
+          ? `${vault.fullness.bulk} of ${VAULT_BULK_MAX} bulk on deposit`
+          : 'no withdrawal list has been requested for this character')}</td>
+    </tr>
+    <tr class="drill"><td colspan="10"><details>
+      <summary>${esc(r.character)} — pack and vault</summary>
+      <div class="inner">
+        <div class="box">
+          <h4>pack ${pack ? `· ${pack.percent}% · ${pack.binding}-bound` : ''}</h4>
+          ${pack ? `<div class="dim" style="font-size:.75rem">${pack.bulk} bulk / ${pack.weight} weight
+             against a ceiling of ${pack.max} (1700 + might*20)${pack.exact ? '' : ' — LOWER BOUND, some items are not in the weight table'}</div>` : ''}
+          ${itemList(l?.carrying, 'no live inventory — this character is not being held by the broker right now')}
+        </div>
+        <div class="box">
+          <h4>vault ${vault ? `· ${vault.fullness.percent}%` : ''}</h4>
+          ${vault ? `<div class="dim" style="font-size:.75rem">${vault.fullness.bulk} of ${VAULT_BULK_MAX} bulk
+             · read ${esc(ago(vault.observed_at))}</div>` : ''}
+          ${itemList(vault?.items, 'never read — a vault states its contents only when a withdrawal is requested')}
+        </div>
+      </div>
+    </details></td></tr>`;
+  }).join('');
 
   const spendRows = e.spend.by_kind.map(k => `
     <tr>
@@ -213,6 +301,60 @@ export function renderEconomy({ hours = 168, live = null, characters = null } = 
     <div class="caveat" id="facet-note"></div>
   </div>
 
+  <!-- THE GUILD, WHICH IS THE ONE PART OF THIS PAGE THAT IS NOT ABOUT A CHARACTER.
+       Rent has a SIGN and the sign is the whole meaning: positive is a DEBT and the hall
+       is lost to arrears if it is not cleared, negative is credit. parseRentLine already
+       reads Frular's two different sentences correctly; this only has to not flatten them
+       back together. -->
+  <h2>Guild hall</h2>
+  <div class="sub" style="margin-top:-.4rem">Rent, and what is in the chests · none of this
+    is pushed by the server, so every figure is the last thing somebody was told</div>
+  ${(() => {
+    const rent = storage.readRent();
+    if (!rent) return `<p class="dim">Nobody has asked Frular about rent. He states it out
+      loud and never mentions it again (gcreator.kod:180), so it has to be asked for in
+      person at room ${esc(String(700))} — <code>guild action=status</code>.</p>`;
+    if (rent.in_guild === false)
+      return `<p class="dim">The character who asked belongs to no guild, so there is no
+        rent to report. <span class="dim">asked ${esc(ago(rent.observed_at))}</span></p>`;
+    const owed = rent.due != null && rent.due > 0;
+    const credit = rent.due != null && rent.due < 0;
+    return `<div class="cards">
+      <div class="card"><div class="k">${owed ? 'rent owed' : credit ? 'rent credit' : 'rent'}</div>
+        <div class="v ${owed ? 'bad' : credit ? 'good' : 'dim'}">${rent.due == null ? '?' :
+          owed ? num(rent.due) : credit ? '+' + num(-rent.due) : '0'}</div>
+        <div class="n">${rent.due == null
+            ? 'he said something this page could not parse — deliberately not shown as zero'
+            : owed ? 'shillings owed — positive is a DEBT and the hall is lost to arrears'
+            : credit ? 'shillings in hand against future rent' : 'nothing owed'}</div></div>
+      ${rent.hours_left != null ? `<div class="card"><div class="k">hours to pay</div>
+        <div class="v ${rent.hours_left <= 1 ? 'bad' : rent.hours_left <= 6 ? 'warn' : ''}">${rent.hours_left}</div>
+        <div class="n">before the arrears deadline</div></div>` : ''}
+      <div class="card"><div class="k">asked</div><div class="v" style="font-size:1rem">${esc(ago(rent.observed_at))}</div>
+        <div class="n">${rent.asked_by ? 'by ' + esc(rent.asked_by) : 'by somebody'}</div></div>
+    </div>
+    ${rent.said ? `<p class="dim" style="font-size:.78rem">He said: &ldquo;${esc(rent.said)}&rdquo;</p>` : ''}`;
+  })()}
+
+  <h3>Chests</h3>
+  <div class="sub" style="margin-top:-.4rem">A chest is ${num(CHEST_BULK_MAX)} BULK and no
+    weight limit at all (chest.kod:29) — so it is the one store in the game that a heavy
+    haul does not fill. The Bookmaker's hall builds ${BOOKMAKERS_CHESTS}
+    (guildh14.kod:518,520,522); a hall may hold ${GUILD_CHEST_SLOTS}, so there are
+    ${GUILD_CHEST_SLOTS} slots here and an unused one says so rather than being hidden.</div>
+  <div class="chests">
+    ${storage.allChests().map(ch => ch.never_opened
+      ? `<div class="chest empty"><h3>chest ${ch.slot}</h3>
+           <div class="dim" style="font-size:.8rem">never opened — nothing has looked inside
+           this slot. That is not the same as empty.</div></div>`
+      : `<div class="chest"><h3>chest ${ch.slot}</h3>
+           ${meter(ch.fullness.percent, `${ch.fullness.bulk} of ${CHEST_BULK_MAX} bulk`)}
+           <div class="dim" style="font-size:.75rem;margin:.35rem 0">
+             ${ch.items.length} stack(s) · ${ch.fullness.bulk} bulk ·
+             opened ${esc(ago(ch.observed_at))}${ch.opened_by ? ' by ' + esc(ch.opened_by) : ''}</div>
+           ${itemList(ch.items, 'empty')}</div>`).join('')}
+  </div>
+
   <h2>Every character</h2>
   <div class="sub">Rows tinted orange are under ${SHORT_BELOW} of a reagent and cannot cast
     their way out of an empty larder. <em>meals</em> is how many <em>create food</em> this
@@ -222,7 +364,9 @@ export function renderEconomy({ hours = 168, live = null, characters = null } = 
     <thead><tr><th>character</th><th class="num">purse</th><th class="num">banked</th>
       <th>balance</th><th class="num">elder</th><th class="num">herbs</th>
       <th class="num" title="create food castings this character could pay for out of its own pack">meals</th>
-      <th title="live is the inventory this second; a time is how old the reading is">pack read</th></tr></thead>
+      <th title="live is the inventory this second; a time is how old the reading is">pack read</th>
+      <th title="weight and bulk both cap at 1700 + might*20, and the pack is full when EITHER is reached — this is the worse of the two">pack full</th>
+      <th title="a vault is bulk-only and 3000 per depositor, not per vault">vault full</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="8" class="empty">nothing on record yet</td></tr>'}</tbody>
   </table>
   </div>

@@ -356,13 +356,14 @@ console.log('\nthe DUM and Harness boards');
      /<details class="record">/.test(dum) && /2× Rose/.test(dum) && /blocked by herbs/.test(dum));
   const fleet = [
     { agent: 'a', character: 'Alpha', activity: 'hunting',
-      time: { fighting_s: 90, travelling_s: 30, active_s: 120 } },
+      time: { fighting_s: 90, zoning_s: 10, travelling_s: 20, active_s: 120 } },
     { agent: 'b', character: 'Beta', activity: 'recovering',
       time: { recovering_s: 60, stalled_s: 5, active_s: 65 } },
   ];
   const activity = keeperActivity(fleet);
   ok('keeper activity totals every category across the fleet',
      activity.totals.fighting_s === 90 && activity.totals.recovering_s === 60 &&
+     activity.totals.zoning_s === 10 && activity.totals.travelling_s === 20 &&
      activity.totals.active_s === 185);
   const harness = renderHarnessBoard({ fleet, details: {
     travel: { trips: 1, duration_ms: 12_000, damage: 4, safe_spot_stops: 1, records: [{

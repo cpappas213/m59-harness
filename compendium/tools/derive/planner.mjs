@@ -152,8 +152,11 @@ tabs in the same order — and everything in it is editable.</p>
       <code>substrate/loadouts/&lt;character&gt;.json</code>. From there the keeper reads it
       every pass: it stops selling what the list protects, sheds what the list says to shed,
       tops up to the minimums when it is standing at a counter anyway, and reaches for the
-      weapon named here rather than whichever one it happens to be best with. Nothing the
-      list is silent about changes — a loadout adds rules, it does not replace them. With
+      weapon named here rather than whichever one it happens to be best with. Spell-school
+      and Weaponcraft levels become an ordered acquisition queue: the first unfinished
+      level is the only level the auto-level strategy may buy from, and every ability at
+      that level must be learned before the following row opens. Nothing the list is silent
+      about changes — a loadout adds rules, it does not replace them. With
       several characters checked, this becomes <strong>Apply gear + carry to selected</strong>
       and uses the same preview-before-write flow as the whole-fleet action.</p>
       <p class="pl-note"><strong>Apply gear + carry to fleet</strong> writes the gear and the

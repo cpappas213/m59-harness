@@ -110,6 +110,30 @@ console.log('\nnormalising what somebody typed');
   ], [{ name: 'spark', kind: 'spell' }]);
   ok('school plans expand into their unlearned spells without losing explicit skills',
      expanded.map(row => row.name).join(',') === 'dodge,fireball', JSON.stringify(expanded));
+  const weaponQueue = L.normalise({ character: 'x', plan: {
+    weapon_level: 5,
+    learning_queue: [
+      { track: 'weaponcraft', level: 2 }, { track: 'weaponcraft', level: 3 },
+      { track: 'weaponcraft', level: 4 }, { track: 'weaponcraft', level: 5 },
+    ],
+  } }).loadout.plan;
+  const weaponExpanded = L.plannedAbilities(weaponQueue, [
+    { name: 'dodge', kind: 'skill', level: 2, learnable: true, for_sale: true },
+    { name: 'short sword fighting', kind: 'skill', level: 2, learnable: true, for_sale: true },
+    { name: 'fencing', kind: 'skill', level: 3, learnable: true, for_sale: true },
+    { name: 'archery', kind: 'skill', level: 5, learnable: true, for_sale: true },
+    { name: 'thrust', kind: 'skill', level: 50, learnable: true, for_sale: false },
+  ], [{ name: 'dodge', kind: 'skill' }]);
+  ok('a Weaponcraft queue expands purchasable skills only, keeps exact level barriers, and skips known skills',
+     weaponExpanded.map(row => `${row.name}:${row.queue_stage}`).join(',') ===
+       'short sword fighting:1,fencing:2,archery:4', JSON.stringify(weaponExpanded));
+  ok('queue rows with an invalid level are reported and refused', (() => {
+    const r = L.normalise({ character: 'x', plan: {
+      learning_queue: [{ track: 'weaponcraft', level: 9 }],
+    } });
+    return r.loadout.plan.learning_queue.length === 0 &&
+      r.problems.some(p => /learning_queue/.test(p));
+  })());
   ok('A MAX BELOW A MIN IS RAISED, not honoured — the pair cannot both be satisfied and ' +
      'the keeper would buy and sell the same item for ever',
      loadout.carry[0].max === 20 && said(/buy and sell the same item for ever/));

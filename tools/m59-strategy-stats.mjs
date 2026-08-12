@@ -9,6 +9,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync,
          renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fleetName, strategyStatsDirFor } from './m59-fleetpath.mjs';
+import { isTravelTrip } from './m59-travel-kind.mjs';
 
 const HOUR = 3_600_000;
 const DIR = strategyStatsDirFor(fleetName());
@@ -117,7 +118,10 @@ export function strategyStatsReport({ hours = 2 } = {}) {
   const rows = readStrategyStats({ hours });
   const categoryRows = category => rows.filter(row => row.category === category);
   const records = values => values.slice().reverse().slice(0, 200);
-  const travel = categoryRows('travel');
+  // Historical rows predate the source-side split between trips and zoning. Filter
+  // those here too, otherwise the page stays inflated until the retention window ages
+  // out even though new direct map changes are no longer recorded as travel.
+  const travel = categoryRows('travel').filter(isTravelTrip);
   const fighting = categoryRows('fighting');
   const trading = categoryRows('trading');
   const vault = categoryRows('vault_accumulation');

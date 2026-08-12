@@ -17,7 +17,7 @@
 // that fighting from a wall means you take MORE damage and die LESS — so a measurement
 // built on damage would reject the intervention precisely when it is working.
 
-import { twoProportion, eventsNeeded } from './m59-travel-ab.mjs';
+import { twoProportion, eventsNeeded, isTravelTrip } from './m59-travel-ab.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
 
 let pass = 0, fail = 0;
@@ -28,7 +28,15 @@ const ok = (name, cond, extra = '') => {
 
 const armOf = (seed) => Autopilot.prototype.travelArmFor.call(null, seed);
 
-console.log('the split');
+console.log('what counts as a journey');
+{
+  ok('one room boundary is zoning, not a trip', !isTravelTrip({ legs: 1 }));
+  ok('zero room changes are not a trip either', !isTravelTrip({ legs: 0 }));
+  ok('two or more room changes are a trip', isTravelTrip({ legs: 2 }));
+  ok('legacy rows with no leg count are retained rather than guessed away', isTravelTrip({}));
+}
+
+console.log('\nthe split');
 {
   let hold = 0;
   const N = 200000;

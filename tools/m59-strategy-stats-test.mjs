@@ -18,8 +18,13 @@ try {
   assert.equal(stats.detailSettings({}, 'travel'), null);
 
   stats.recordStrategyStat('Gonzo', 'travel', 'trip', {
-    duration_ms: 12_000, damage: 4, safe_spot_stops: 1,
+    duration_ms: 12_000, damage: 4, safe_spot_stops: 1, legs: 2,
     maps: [{ room: 38, duration_ms: 8_000, damage: 4 }],
+  }, settings);
+  stats.recordStrategyStat('Gonzo', 'travel', 'trip', {
+    duration_ms: 50_000, damage: 40, safe_spot_stops: 0, legs: 1,
+    maps: [{ room: 38, duration_ms: 25_000, damage: 20 },
+           { room: 39, duration_ms: 25_000, damage: 20 }],
   }, settings);
   stats.recordStrategyStat('Gonzo', 'fighting', 'session', {
     duration_ms: 10_000, safe_spot_ms: 7_500, damage: 2,
@@ -47,6 +52,7 @@ try {
 
   const report = stats.strategyStatsReport({ hours: 2 });
   assert.equal(report.travel.trips, 1);
+  assert.equal(report.travel.duration_ms, 12_000);
   assert.equal(report.travel.damage, 4);
   assert.equal(report.travel.safe_spot_stops, 1);
   assert.equal(report.fighting.safe_spot_pct, 75);
@@ -60,7 +66,7 @@ try {
   const off = { ...settings, travel: false };
   assert.equal(stats.recordStrategyStat('Gonzo', 'travel', 'trip', {}, off), null);
   assert.equal(stats.strategyStatsReport({ hours: 2 }).travel.trips, 1);
-  console.log('strategy stats: 17 assertions passed');
+  console.log('strategy stats: 18 assertions passed');
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

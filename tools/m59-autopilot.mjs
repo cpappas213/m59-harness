@@ -33,6 +33,7 @@ import * as tougher from './m59-tougher.mjs';
 import { recordEvent } from './m59-ledger.mjs';
 import { detailSettings, recordStrategyStat, saveVaultSnapshot }
   from './m59-strategy-stats.mjs';
+import { routeTravelKind } from './m59-travel-kind.mjs';
 import { TitheBook, payGuildTithe, purseAmount, tithePaymentPlan } from './m59-tithe.mjs';
 import * as uptime from './m59-uptime.mjs';
 import * as party from './m59-party.mjs';
@@ -99,6 +100,50 @@ function preferredQuietRetreat(world, { maxHops = Infinity } = {}) {
 // the character never took one step toward 39.
 export function shouldRelocateToAssignedRoom(policy, room) {
   return policy?.assignedRoom != null && room?.num != null && room.num !== policy.assignedRoom;
+}
+
+// Keep an explicit placement reachable even when it is not one of the globally
+// highest-yielding rooms.  The old caller asked huntingGrounds for eight rows and only
+// then tried to move the assignment to the front.  Room 38 is a valid skeleton room but
+// ranks below that cut; Floyd consequently alternated between whichever top-eight room
+// was nearest on each side of the map, completing six-hop trips in both directions while
+// every journal entry claimed it was returning to room 38.
+export function preferAssignedRoom(rooms, assignedRoom, limit = 8) {
+  const ranked = [...rooms];
+  if (assignedRoom != null) {
+    const i = ranked.findIndex(r => r.room === assignedRoom);
+    if (i > 0) ranked.unshift(ranked.splice(i, 1)[0]);
+  }
+  return ranked.slice(0, limit);
+}
+
+// Enter an open fight conservatively, then do not reverse that decision after one
+// ordinary hit.  The previous test always required 90% health and divided MAX health by
+// damage per blow. Floyd entered room 38 at 56/57, took five points while killing one
+// zombie, then abandoned the assignment for a fourteen-hop journey at 51/57.  Current
+// health is the number of blows actually left; the configured recovery floor is the
+// hysteresis boundary after a unit has already accepted this room.
+export function openFightReadiness({ healthValue, healthMax, vigor, vigorBar, preyLevel,
+  alreadyFighting = false, openFightHealth = 0.9, restBelow = 0.75, minimumBlows = 7 } = {}) {
+  const healthPct = healthMax > 0 && healthValue != null ? healthValue / healthMax : null;
+  const perBlow = preyLevel != null ? Math.max(1, preyLevel / 12) : null;
+  const blows = healthValue != null && perBlow != null ? healthValue / perBlow : null;
+  const floor = alreadyFighting ? Math.min(openFightHealth, restBelow) : openFightHealth;
+  return { ready: healthPct !== null && healthPct >= floor &&
+      vigor != null && vigor >= vigorBar && blows !== null && blows >= minimumBlows,
+    healthPct, blows, floor };
+}
+
+// An empty larder makes the ordinary fighting floor deliberately fall back to the
+// strongest value rest alone can reach. The open-room gate used its independent 130
+// bar instead, so a starved character was allowed to fight by the general gate at 70
+// but denied its assigned room by this one at 129 — and answered the supply shortage
+// with a trip across the world. The danger-specific bar can make a fight cheaper; it
+// must not make the already-adjusted, reachable fighting floor impossible again.
+export function reachableOpenFightVigorBar(dangerBar, fightFloor) {
+  if (dangerBar == null) return fightFloor;
+  if (fightFloor == null) return dangerBar;
+  return Math.min(dangerBar, fightFloor);
 }
 
 // How long a spot must go quiet, with something adjacent to us that wants to kill us,
@@ -613,6 +658,10 @@ export class Autopilot {
       // Items a directional strategy is accumulating. The keeper treats these as
       // collection stock rather than food or loot and stores them during Barloque loops.
       vaultItems: [],
+      // Temporary cargo that must survive eating, selling, gifting and dropping, but
+      // must stay in the pack. Unlike vaultItems this is never deposited: faction
+      // errands use it for the item that has to be offered to a quest recipient.
+      protectedItems: [],
       // Total weapons retained after a merchant visit, including the equipped one.
       // Two means the weapon in hand and one best spare under weaponPriority.
       maxWeapons: 2,
@@ -909,6 +958,10 @@ export class Autopilot {
     // Whether the money is actually getting to a bank, and what stops it when it does
     // not. `carried_at_death` is the number this whole mechanism exists to drive to 0.
     this.money = { trips: 0, trips_failed: 0, carried_at_death: 0, why_not: [] };
+    // The faction-goal scheduler waits for this boundary: a completed town loop means
+    // loot was sold and surplus was banked before a long political errand takes over.
+    // It is session evidence, not a second town-loop implementation in DUM.
+    this.lastTownServiceAt = null;
     this.emptyPasses = 0;
     this.roamedFrom = null;
     this.roamedRooms = 0;
@@ -925,7 +978,7 @@ export class Autopilot {
     // So: seconds by activity, and STALLED means only one thing — standing about not
     // knowing what to do, while NOT recovering.
     this.time = { fighting: 0, pulling: 0, waiting: 0,
-                  recovering: 0, travelling: 0, trading: 0, stalled: 0 };
+                  recovering: 0, zoning: 0, travelling: 0, trading: 0, stalled: 0 };
     this.doing = null;             // set during a pass; decides which bucket it lands in
     this.visited = new Set();
     // Where the hunting was actually good. Roaming without this wanders off down a
@@ -1386,7 +1439,7 @@ export class Autopilot {
       this.doing = 'recovering';
       if (vigor < (ceiling || floor)) {
         const e = await skills.eat(s, { stomach: this.stomach, upToVigor: ceiling || undefined,
-                                       exclude: this.policy.vaultItems })
+                                       exclude: this.protectedItemNames() })
                               .catch(() => ({ ate: [] }));
         if (e.ate?.length) {
           this.tally.meals = (this.tally.meals || 0) + 1;
@@ -1445,7 +1498,7 @@ export class Autopilot {
     // measured in minutes. `eat` declines anything that would overshoot 200.
     if (ceiling && this.stomach.roomFor(smallest.filling)) {
       const e = await skills.eat(s, { stomach: this.stomach, upToVigor: ceiling,
-                                     exclude: this.policy.vaultItems })
+                                     exclude: this.protectedItemNames() })
                             .catch(() => ({ ate: [] }));
       if (e.ate?.length) {
         this.tally.meals = (this.tally.meals || 0) + 1;
@@ -1960,11 +2013,18 @@ export class Autopilot {
     return { arrived: true, room: room.num, position: { col: me.col, row: me.row } };
   }
 
+  protectedItemNames() {
+    return [...new Set([
+      ...(Array.isArray(this.policy.vaultItems) ? this.policy.vaultItems : []),
+      ...(Array.isArray(this.policy.protectedItems) ? this.policy.protectedItems : []),
+    ].map(String).filter(Boolean))];
+  }
+
   // The keeper's usable larder excludes collection items. Centralising the filter is
   // what keeps hunger, gifting, town-trip decisions and the actual eat call in agreement.
   larder(c = this.s.client) {
     return skills.larderOf(c).filter(item =>
-      !skills.itemIsProtected(item.name, this.policy.vaultItems));
+      !skills.itemIsProtected(item.name, this.protectedItemNames()));
   }
 
   // Go and stand somewhere defensible, preferring somewhere we have already proved —
@@ -3350,6 +3410,7 @@ export class Autopilot {
       return describeCommitment({ errand: this.errand })?.label ?? 'on an errand';
     if (this.mode === 'idle') return 'idle';
     if (this.doing === 'travelling') return 'travelling';
+    if (this.doing === 'zoning') return 'changing map';
     if (this.doing === 'trading') return 'trading';
     if (this.doing === 'recovering') return this.climbing ? 'eating to raise vigor' : 'resting';
     if (this.doing === 'pulling') return 'pulling quarry into position';
@@ -3788,6 +3849,16 @@ export class Autopilot {
   }
 
   async travel(room, opts) {
+    // The same primitive crosses a nearby room boundary and undertakes a journey. Those
+    // are different activities: upstairs-to-downstairs patrol movement is zoning, while
+    // a route with intermediate rooms is travel. Decide from the route before the await
+    // so the activity clock, hit attribution and any death mid-movement all use the same
+    // meaning as the completed trip record.
+    let initialRoute = null;
+    try { initialRoute = this.s.world?.route?.(room) ?? null; } catch { initialRoute = null; }
+    const travelKind = routeTravelKind(initialRoute);
+    const plannedLegs = Array.isArray(initialRoute?.hops) ? initialRoute.hops.length : null;
+    if (travelKind === 'zoning') this.doing = 'zoning';
     this.recordFrame('setting off');
     // One arm per journey, fixed before the first step so it cannot drift mid-route.
     const arm = this.travelArmFor(`${this.s.name}-${this.passes}-${Date.now()}`);
@@ -3830,7 +3901,12 @@ export class Autopilot {
       // attributed to the arm that was running when it happened. Deaths are the outcome
       // this experiment is measured on and they are rare — one per 1,180 journeys — so an
       // unattributable death is a real loss of power, not a rounding error.
-      this.travelArm = { arm, since: Date.now(), to: room };
+      // Zoning is not part of the travel-safety experiment. There is no intermediate
+      // room in which its treatment can fire, and including it only inflates the
+      // denominator with crossings that can never receive a hold.
+      this.travelArm = travelKind === 'travel'
+        ? { arm, since: Date.now(), to: room, planned_legs: plannedLegs }
+        : null;
       outcome = await this.s.travel(room, {
         ...opts,
         onHop: async (at) => {
@@ -3859,8 +3935,8 @@ export class Autopilot {
       // works is expected to look worse on damage, and judging it on damage would reject
       // exactly the intervention worth having. It is here as a mechanism check: if the
       // treatment arm is not taking more damage, the holds are not doing anything.
-      this.ledgerEvent('travel_journey', {
-        arm, to: room, legs,
+      this.ledgerEvent(travelKind === 'travel' ? 'travel_journey' : 'zone_change', {
+        ...(travelKind === 'travel' ? { arm } : {}), to: room, legs, planned_legs: plannedLegs,
         ms: Date.now() - startedAt,
         held_ms: this.travelHeldMs ?? 0,
         hp_start: hpStart, hp_end: v1?.value ?? null, hp_max: hpMax ?? v1?.max ?? null,
@@ -3868,14 +3944,16 @@ export class Autopilot {
         // alive to write this line. It is joined afterwards, from the postmortem's own
         // `travel_arm`, which is why that field exists.
       });
-      this.detailEvent('travel', 'trip', {
-        to: room, arrived: outcome?.arrived ?? false, reason: outcome?.reason ?? null,
-        duration_ms: Date.now() - startedAt, legs,
-        damage: Math.max(0, this.hitDamageTotal() - journeyDamageStart),
-        safe_spot_stops: this.travelSafeStops ?? 0, safe_spot_ms: this.travelHeldMs ?? 0,
-        health_start: hpStart, health_end: v1?.value ?? null,
-        health_max: hpMax ?? v1?.max ?? null, maps,
-      });
+      if (travelKind === 'travel') {
+        this.detailEvent('travel', 'trip', {
+          to: room, arrived: outcome?.arrived ?? false, reason: outcome?.reason ?? null,
+          duration_ms: Date.now() - startedAt, legs, planned_legs: plannedLegs,
+          damage: Math.max(0, this.hitDamageTotal() - journeyDamageStart),
+          safe_spot_stops: this.travelSafeStops ?? 0, safe_spot_ms: this.travelHeldMs ?? 0,
+          health_start: hpStart, health_end: v1?.value ?? null,
+          health_max: hpMax ?? v1?.max ?? null, maps,
+        });
+      }
       this.travelArm = null;
       this.travelHeldMs = 0;
       this.travelSafeStops = 0;
@@ -4972,6 +5050,7 @@ export class Autopilot {
       // than only on the fleet snapshot: anything reading a keeper's status — the
       // terminal board, another agent — wants the sentence, not the time buckets.
       activity: this.activity(),
+      town_service: this.lastTownServiceAt ? { last_at: this.lastTownServiceAt } : null,
       // IS THE FLEET ALREADY USING THIS CHARACTER FOR SOMETHING? Null for nearly all of
       // them, and never absent — a board that greys committed rows has to be able to tell
       // "free" from "this broker does not answer that question", and undefined is what it
@@ -5146,7 +5225,7 @@ export class Autopilot {
         const t = this.time, act = this.activeSeconds, total = act + t.stalled;
         const r = n => Math.round(n);
         return { fighting_s: r(t.fighting), pulling_s: r(t.pulling), waiting_s: r(t.waiting),
-                 recovering_s: r(t.recovering),
+                 recovering_s: r(t.recovering), zoning_s: r(t.zoning),
                  travelling_s: r(t.travelling), trading_s: r(t.trading),
                  stalled_s: r(t.stalled),
                  active_s: r(act),
@@ -5378,14 +5457,34 @@ export class Autopilot {
     // would leave the errand unannounced, which is the worse of the two.
     const asked = Math.max(1_000, leaseMs);
     const ms = Math.min(BUSY_MAX_MS, asked);
-    const at = (this.busy && this.busy.by === held.by) ? this.busy.at : Date.now();
+    const wasActive = this.busy && this.busy.until > Date.now();
+    const beginning = !wasActive || this.busy.by !== held.by;
+    const at = (!beginning && this.busy.by === held.by) ? this.busy.at : Date.now();
     this.busy = { by: held.by, kind, label, detail, at, until: Date.now() + ms };
+    // TAKE THE STEERING WHEEL AT THE BOUNDARY, not one server step later by accident.
+    //
+    // `busy` used to be visible only to the supervisor. The keeper never read it, so an
+    // external errand and the keeper could both move one character: the crate runner
+    // walked onto Castle Victoria's basement exit while the keeper swung at a skeleton,
+    // and the server quite correctly answered the resulting GO with "unable to go
+    // anywhere". Bumping the movement generation interrupts the keeper's current walk
+    // within its next paced step; the pass-level gate below keeps the next one from
+    // starting. Do this only when the operation BEGINS. A lease extension between errand
+    // steps must not cancel movement belonging to the errand itself.
+    const interrupted = beginning
+      ? (() => {
+          try { return this.s?.cancelMovement?.() ?? null; }
+          catch (e) { return { cancelled: false, why: e.message }; }
+        })()
+      : null;
     this.note('declared busy', { by: held.by, kind, label, lease_ms: ms,
       asked_for_ms: asked !== ms ? asked : undefined,
       clamped: asked !== ms ? `asked for ${Math.round(asked / 60000)}m, capped at ` +
                               `${Math.round(BUSY_MAX_MS / 60000)}m` : undefined,
-      note: 'stall detectors should step over this character until it is freed or the lease lapses' });
-    return { busy: this.busyStatus() };
+      interrupted: interrupted?.interrupted ?? undefined,
+      note: 'the keeper keeps death, danger and recovery, then yields directional action; ' +
+            'stall detectors step over this character until it is freed or the lease lapses' });
+    return { busy: this.busyStatus(), interrupted };
   }
 
   freeBusy({ by = null } = {}) {
@@ -5719,7 +5818,7 @@ export class Autopilot {
 
   get activeSeconds() {
     const t = this.time;
-    return t.fighting + t.pulling + t.waiting + t.recovering + t.travelling + t.trading;
+    return t.fighting + t.pulling + t.waiting + t.recovering + t.zoning + t.travelling + t.trading;
   }
 
   // ------------------------------------------------------------------ the watchdog
@@ -7222,6 +7321,20 @@ export class Autopilot {
       return;
     }
 
+    // AN OUTSIDE OPERATION OWNS EVERYTHING DIRECTIONAL FROM HERE DOWN.
+    //
+    // Keep this below death, danger and recovery: those are the keeper's protected
+    // faculties and an errand must not be able to turn them off. Keep it above parking,
+    // keeper errands, banking and farming: each of those moves, trades, swings or changes
+    // the character while the outside operation is trying to do the same thing. The first
+    // declaration also cancels a pass already blocked in movement; this gate handles every
+    // pass that begins afterwards.
+    const outside = this.busyStatus();
+    if (outside) {
+      this.progress(`busy — ${outside.label ?? outside.kind ?? 'something else is driving'}`);
+      return;
+    }
+
     // PARKED. This is the point the keeper would otherwise choose a new action — the
     // errand, the roam, the fight — and it is past death, danger and rest, so a parked
     // character has already handled anything that was happening to it. See park().
@@ -7860,11 +7973,21 @@ export class Autopilot {
         const hpFrac = pct(vNow?.health);
         const vigNow = vNow?.vigor?.value ?? null;
         const myMax = vNow?.health?.max ?? null;
+        const myNow = vNow?.health?.value ?? null;
         const preyLvl = worth.level ?? null;
-        const perBlow = preyLvl != null ? Math.max(1, preyLvl / 12) : null;
-        const blowsWeCanTake = myMax != null && perBlow != null ? myMax / perBlow : null;
+        const openVigorBar = reachableOpenFightVigorBar(
+          vigorBarFor([this.policy.hunt, ...this.threat().names], this.policy),
+          this.fightFloor());
+        const readiness = openFightReadiness({
+          healthValue: myNow, healthMax: myMax, vigor: vigNow,
+          vigorBar: openVigorBar,
+          preyLevel: preyLvl, alreadyFighting: this.warnedFightingOpen === room.num,
+          openFightHealth: this.policy.openFightHealth ?? 0.9,
+          restBelow: this.policy.restBelow ?? 0.75,
+          minimumBlows: this.policy.openFightBlows ?? 7,
+        });
+        const blowsWeCanTake = readiness.blows;
         const canFightOpen =
-          hpFrac !== null && hpFrac >= (this.policy.openFightHealth ?? 0.9) &&
           // WHAT WE INTEND TO FIGHT, not what happens to be standing next to us.
           //
           // This asked threat().names — creatures inside the crowd radius right now — and
@@ -7876,9 +7999,22 @@ export class Autopilot {
           // The question being asked is whether to fight our PREY without a wall, so the
           // prey is what should set the bar; anything else in the room that is worse
           // still has to get past blowsWeCanTake and the room's own danger filter.
-          vigNow !== null && vigNow >= vigorBarFor([this.policy.hunt, ...this.threat().names], this.policy) &&
-          blowsWeCanTake !== null && blowsWeCanTake >= (this.policy.openFightBlows ?? 7);
+          readiness.ready;
         if (denied !== false && !this.hold && canFightOpen) {
+          // AN EXPLICIT ROOM THAT PASSED THIS GATE IS USABLE FOR THIS SESSION.
+          //
+          // Leaving `noWallRooms` denied while fighting here worked for the first fight
+          // and failed on recovery: the unit retreated to the Castle front step at its
+          // health floor, then preyRooms excluded its own assignment and sent it to
+          // Marion's crypt. Floyd and Clifford both began the same cross-world circuit
+          // immediately after an otherwise correct local recovery. We have current
+          // evidence that this unit can fight here under the open-fight guard, so retain
+          // the operator's assignment; the ordinary recovery branch still takes it out
+          // again when health reaches restBelow.
+          if (this.policy.assignedRoom === room.num) {
+            this.noWallRooms.set(room.num, false);
+            this.clearRefusal('NO_SAFE_WALL');
+          }
           // ONE FLAG PER BRANCH, BECAUSE THE TRANSITION IS THE INTERESTING EVENT.
           //
           // Both branches shared `warnedOpenFight` and both SET it before logging, so a
@@ -8789,7 +8925,7 @@ export class Autopilot {
 
     await s.pacer.submit('read', () => c.roomContents()).catch(() => {});
     await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 }).catch(() => {});
-    const protectedNames = Array.isArray(this.policy.vaultItems) ? this.policy.vaultItems : [];
+    const protectedNames = this.protectedItemNames();
     const candidates = [...(c.room?.objects?.values?.() ?? [])]
       .filter(o => o.id !== c.selfId && (o.flags & OF.GETTABLE))
       .map(o => { const name = c.rsc.get(o.nameRsc) || '';
@@ -9453,6 +9589,7 @@ export class Autopilot {
     // courier that is carrying it.
     await this.buyFarmDeliveryCargo().catch(() => {});
     await this.vaultRunIfPassing().catch(() => {});
+    this.lastTownServiceAt = Date.now();
     this.progress('banked the takings');
     return true;
   }
@@ -9796,10 +9933,10 @@ export class Autopilot {
     // and being wrong about a walk costs a walk. See SELL_TO in m59-skills.mjs.
     const buyer = [...c.room.objects.values()]
       .find(o => affordances(o.flags).includes('buy') && skills.trustedBuyer(c.rsc.get(o.nameRsc)));
-    if (!buyer) return;
+    if (!buyer) return null;
     this.doing = 'trading';
     const r = await skills.sellAll(s, { merchant: buyer.id, loadout: this.loadout(),
-                                       protect: this.policy.vaultItems,
+                                       protect: this.protectedItemNames(),
                                        maxWeapons: this.policy.maxWeapons,
                                        weaponPriority: this.weaponPriorityNow() })
                           .catch(e => ({ error: e.message }));
@@ -9813,9 +9950,9 @@ export class Autopilot {
     return r;
   }
 
-  // Tax only what this town trip just earned. Existing purse, bank balances and the
+  // TAX ONLY WHAT THIS TOWN TRIP JUST EARNED. Existing purse, bank balances and the
   // walking reserve are not a guild treasury. Partial payments accumulate in a durable
-  // per-character daily book and the next sale trip finishes the configured sum.
+  // per-character daily book and the next sale trip finishes the day's configured sum.
   async guildTitheFromSale(sale) {
     const cfg = this.policy.guildTithe;
     const proceeds = Math.max(0, Math.floor(Number(sale?.total_received) || 0));
@@ -10431,7 +10568,7 @@ export class Autopilot {
       // guards — money, worn gear, anything a crewmate is short of — still apply; this adds
       // this character's floors and its sell list on top.
       const sold = await skills.sellAll(s, { merchant: buyer.id, loadout: this.loadout(),
-                                            protect: this.policy.vaultItems,
+                                            protect: this.protectedItemNames(),
                                             maxWeapons: this.policy.maxWeapons,
                                             weaponPriority: this.weaponPriorityNow() })
                                .catch(e => ({ error: e.message }));
@@ -10546,7 +10683,7 @@ export class Autopilot {
       .filter(o => {
         const name = c.rsc.get(o.nameRsc) || '';
         if (worn.has(o.id) || this.wontDrop?.has(o.id) ||
-            skills.itemIsProtected(name, this.policy.vaultItems)) return false;
+            skills.itemIsProtected(name, this.protectedItemNames())) return false;
         if (overrideSell?.(name)) return true;
         return !keep.test(name);
       })
@@ -10595,7 +10732,10 @@ export class Autopilot {
     if (!spawns) return [];
     const level = this.s.client?.vitals?.()?.health?.max ?? 0;
     const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
-    const rooms = huntingGrounds(spawns, want, { maxDanger: ceiling, limit: 8 })
+    // Do not truncate before looking for the assignment.  Ranking is global, whereas
+    // assignedRoom is an operator/fleet decision and must be allowed to outrank it.
+    const rooms = huntingGrounds(spawns, want,
+      { maxDanger: ceiling, limit: Number.MAX_SAFE_INTEGER })
       .filter(r => !r.rejected && r.room !== room?.num && !this.unreachable.has(r.room))
       // And not one we have already refused for having no wall. Without this the
       // keeper walks out of a wall-less room straight into the next wall-less room and
@@ -10609,10 +10749,7 @@ export class Autopilot {
     // cannot generate the prey, or that we have proven unreachable, is ignored rather
     // than obeyed into a corner.
     const mine = this.policy.assignedRoom;
-    if (mine == null || mine === room?.num) return rooms;
-    const i = rooms.findIndex(r => r.room === mine);
-    if (i > 0) rooms.unshift(rooms.splice(i, 1)[0]);
-    return rooms;
+    return preferAssignedRoom(rooms, mine === room?.num ? null : mine, 8);
   }
 
   async roam(room) {

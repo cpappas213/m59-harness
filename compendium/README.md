@@ -49,6 +49,11 @@ Three pages do real work rather than listing things:
   a level four out is priced against knowledge the character does not have yet, so a total
   for it would be arithmetic about an imaginary character.
 
+  Spell-school and Weaponcraft targets also form one ordered **acquisition queue**. Each
+  row is one exact school level; the fleet may buy from the first unfinished row only, and
+  every ability at that level must be known before the next row opens. Individual skills
+  can be appended and rows can be reordered in the same editor.
+
   The inventory tab also holds the **gear** — an ordered weapon and armour preference, best
   first, which is a different kind of answer from a carry list: the keeper reaches for the
   first of these the character owns and an outfitting run buys the first it is missing, so a

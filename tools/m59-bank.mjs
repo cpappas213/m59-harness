@@ -59,8 +59,17 @@
 //   Setag'lib    Barloque   viBank = BANK_BASIC   = 1   bqbanker.kod:30
 //   Huital ko'Nosak Ko'catan viBank = BID_KOCATAN = 2   kcbanker.kod:40
 //
-// BANK_BASIC and BID_TOS are both 1 (blakston.khd:1275-1284), so BARLOQUE PAYS INTO THE
-// TOS ACCOUNT — three towns share one balance, not the two this repository used to say.
+// BANK_BASIC and BID_TOS are both 1 (blakston.khd:1275-1284), so on paper three towns
+// share one balance rather than the two this repository used to say.
+//
+// **CORRECTION: SETAG'LIB IS NOT ANYWHERE. THERE IS NO BANK IN BARLOQUE.** The class is
+// declared, compiled and listed in kodbase.txt, and `Create(&BarloqueBanker)` appears
+// NOWHERE in the room tree — only jasbank.kod, tosbank.kod and kocbank.kod ever place a
+// banker. A class existing is not an NPC standing somewhere, and the two are hard to tell
+// apart from a source-derived table like this one, which is why the row below stays: if he
+// is ever placed, he is bank 1, and a parser that has to be edited to notice would notice
+// late. But do not route a character to Barloque to bank. It has three towns' worth of
+// documentation and no counter.
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';

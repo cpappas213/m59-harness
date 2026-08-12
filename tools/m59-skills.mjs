@@ -1579,6 +1579,10 @@ export async function fight(s, {
   reach = 1.5,
   // Name fragments overriding which weapon to reach for. See weaponRanking.
   weaponPriority = null,
+  // PvP is opt-in and every existing caller remains creature-only. exactTargetId
+  // prevents a name match from drifting to a different player after verification.
+  includePlayers = false,
+  exactTargetId = null,
 } = {}) {
   const c = s.need();
   const log = [];
@@ -1588,7 +1592,8 @@ export async function fight(s, {
   await s.pacer.submit('read', () => c.roomContents());
   await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 });
 
-  const candidates = findCreature(s, target);
+  let candidates = findCreature(s, target, { includePlayers });
+  if (exactTargetId != null) candidates = candidates.filter(object => object.id === Number(exactTargetId));
   if (!candidates.length) {
     const present = [...c.room.objects.values()]
       .filter(o => o.id !== c.selfId && (o.flags & OF.ATTACKABLE))

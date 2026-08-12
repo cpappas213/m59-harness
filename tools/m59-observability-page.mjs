@@ -142,6 +142,7 @@ export function renderDumBoard({ metrics = null, details = null, hours = 2, erro
 const TIME_FIELDS = [
   ['fighting_s', 'Fighting'],
   ['recovering_s', 'Recovering'],
+  ['zoning_s', 'Zoning'],
   ['travelling_s', 'Travelling'],
   ['trading_s', 'Trading'],
   ['stalled_s', 'Stalled'],
@@ -180,7 +181,7 @@ export function renderHarnessBoard({ fleet = [], details = null, hours = 2, erro
   }, { trips: 0, farmers_polled: 0, failed: 0, pending: 0,
     requested: { herb: 0, elderberry: 0 }, bought: { herb: 0, elderberry: 0 },
     delivered: { herb: 0, elderberry: 0 }, retained: { herb: 0, elderberry: 0 } });
-  const activitySeconds = totals.fighting_s + totals.recovering_s + totals.travelling_s +
+  const activitySeconds = totals.fighting_s + totals.recovering_s + totals.zoning_s + totals.travelling_s +
     totals.trading_s + totals.stalled_s;
   const fightingShare = activitySeconds ? +(100 * totals.fighting_s / activitySeconds).toFixed(1) : null;
   const body = rows.map(row => `
@@ -232,7 +233,7 @@ export function renderHarnessBoard({ fleet = [], details = null, hours = 2, erro
   <div class="panel scroller" style="padding:.25rem .5rem">
     <table class="activity-table"><thead><tr><th>unit</th>${TIME_FIELDS.map(([, label]) =>
       `<th>${esc(label)}</th>`).join('')}<th>now</th></tr></thead>
-      <tbody>${body || '<tr><td colspan="8" class="empty">no keeper rows are available</td></tr>'}</tbody></table>
+      <tbody>${body || '<tr><td colspan="9" class="empty">no keeper rows are available</td></tr>'}</tbody></table>
   </div>
   <h2>Travel trips</h2>
   <div class="metric-grid">

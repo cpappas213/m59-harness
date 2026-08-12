@@ -119,7 +119,10 @@ try {
 
   const source = readFileSync(broker, 'utf8');
   const aggregateStart = source.indexOf('async function brokerRtsRead(url)');
-  const aggregateEnd = source.indexOf('\nfunction serveHttp(port)', aggregateStart);
+  // Matched on the name alone, not on the parameter list. Pinning the whole signature made
+  // this fail the day `serveHttp` gained a second argument — a source-text marker should
+  // locate the next function, not assert an unrelated function's arity.
+  const aggregateEnd = source.indexOf('\nfunction serveHttp(', aggregateStart);
   assert.ok(aggregateStart >= 0 && aggregateEnd > aggregateStart,
     'broker aggregate implementation is present');
   const aggregateSource = source.slice(aggregateStart, aggregateEnd);

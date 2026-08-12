@@ -27,7 +27,9 @@
 // It should fail the day somebody moves a survival decision out of the keeper. That is
 // its whole job.
 
-import { Autopilot, shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
+import { Autopilot, shouldRelocateToAssignedRoom, preferAssignedRoom, openFightReadiness,
+         reachableOpenFightVigorBar }
+  from './m59-autopilot.mjs';
 import { describeCommitment, isTakeable, heldBy } from './m59-commitment.mjs';
 
 let pass = 0, fail = 0;
@@ -46,6 +48,7 @@ const ok = (name, cond, extra = '') => {
 // and they are stubbed to exactly what `note()` and `releaseCommitment()` read.
 const keeper = () => Object.assign(Object.create(Autopilot.prototype), {
   journal: [], policy: {}, claims: new Map(), passes: 0,
+  s: { cancelMovement: () => ({ cancelled: true, interrupted: { kind: 'travel', label: 'keeper walk' } }) },
 });
 
 console.log('\nan explicit farming-room assignment');
@@ -56,6 +59,23 @@ console.log('\nan explicit farming-room assignment');
      !shouldRelocateToAssignedRoom({ assignedRoom: 39 }, { num: 39 }));
   ok('does not invent a destination when room spreading is disabled',
      !shouldRelocateToAssignedRoom({ assignedRoom: null }, { num: 2601 }));
+  const ranked = Array.from({ length: 12 }, (_, i) => ({ room: i + 1 }));
+  const selected = preferAssignedRoom(ranked, 12, 8);
+  ok('keeps an assignment outside the normal top-eight cut and puts it first',
+     selected.length === 8 && selected[0].room === 12,
+     JSON.stringify(selected.map(x => x.room)));
+  const afterOneFight = { healthValue: 51, healthMax: 57, vigor: 194, vigorBar: 180,
+    preyLevel: 75, restBelow: 0.75 };
+  ok('enters a wall-less fight only near whole',
+     !openFightReadiness(afterOneFight).ready);
+  ok('does not reverse an accepted room after one ordinary fight',
+     openFightReadiness({ ...afterOneFight, alreadyFighting: true }).ready);
+  ok('still refuses when fewer than seven current-health blows remain',
+     !openFightReadiness({ ...afterOneFight, healthValue: 40, alreadyFighting: true }).ready);
+  ok('does not send a starved farmer travelling for an unreachable open-fight vigor bar',
+     reachableOpenFightVigorBar(130, 70) === 70);
+  ok('keeps the danger bar when the ordinary floor is higher and reachable',
+     reachableOpenFightVigorBar(130, 180) === 130);
 }
 
 console.log('\nan unattended keeper');
@@ -147,8 +167,13 @@ console.log('\nwho may say a character is busy');
      'is the same authority as taking it',
      other.busy === null && /holds this character/.test(other.refused));
 
-  k.declareBusy({ by: 'a-bot', kind: 'crate-check', label: 'checking the crate' });
+  const began = k.declareBusy({ by: 'a-bot', kind: 'crate-check', label: 'checking the crate' });
   ok('the holder may', k.busyStatus()?.kind === 'crate-check');
+  ok('and beginning the operation interrupts the keeper movement already in flight',
+     began.interrupted?.interrupted?.kind === 'travel');
+  const extended = k.declareBusy({ by: 'a-bot', kind: 'crate-check', label: 'checking the crate' });
+  ok('but extending its lease does not cancel the external operation between steps',
+     extended.interrupted === null);
   ok('and a stranger may not clear it either',
      k.freeBusy({ by: 'a-different-bot' }).refused !== undefined && k.busyStatus() !== null);
   ok('but an operator with no name may — that is the override',

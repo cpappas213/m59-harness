@@ -36,6 +36,18 @@ const STYLE = `
        margin:2rem 0 .6rem; font-weight:600; }
   .sub { color:var(--dim); font-size:.85rem; margin-bottom:1.2rem; }
   .back { color:var(--accent); text-decoration:none; font-size:.85rem; }
+  .faction-priority { display:flex; align-items:center; justify-content:space-between; gap:1rem;
+                      margin:0 0 1rem; padding:.85rem 1rem; background:var(--panel);
+                      border:2px solid var(--good); border-radius:10px; }
+  .faction-priority.missing { border-color:var(--bad);
+                              background:color-mix(in srgb, var(--bad) 7%, var(--panel)); }
+  .faction-priority.unknown { border-color:var(--edge);
+                              background:color-mix(in srgb, var(--edge) 7%, var(--panel)); }
+  .faction-priority .k { color:var(--dim); font-size:.68rem; text-transform:uppercase;
+                         letter-spacing:.07em; }
+  .faction-priority strong { display:block; font-size:1.2rem; }
+  .faction-priority p { max-width:55ch; margin:0; color:var(--dim); font-size:.82rem;
+                        text-align:right; }
   .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.75rem; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:.8rem 1rem; }
   .card .k { color:var(--dim); font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; }
@@ -60,7 +72,11 @@ const STYLE = `
   a.lore, a.room-link { color:var(--accent); text-decoration:none; border-bottom:1px dotted var(--line); }
   a.lore:hover, a.room-link:hover { border-bottom-color:var(--accent); }
   .cols { display:grid; grid-template-columns:1fr 1fr; gap:2rem; }
-  @media (max-width:760px){ .cols { grid-template-columns:1fr; } }
+  @media (max-width:760px){
+    .cols { grid-template-columns:1fr; }
+    .faction-priority { align-items:flex-start; flex-direction:column; }
+    .faction-priority p { text-align:left; }
+  }
   .launch { display:inline-flex; align-items:center; gap:.8rem; background:var(--panel);
             border:1px solid var(--line); border-radius:10px; padding:.8rem 1.1rem; cursor:pointer;
             font:inherit; color:inherit; text-align:left; }
@@ -85,6 +101,18 @@ export function renderHero(h, { localhost = false } = {}) {
   const carried = h.inventory?.length ?? 0;
   const cap = h.max_carry ?? null;
   const freePct = cap ? Math.max(0, Math.round(100 * (cap - carried) / cap)) : null;
+  const faction = h.faction_status || {};
+  const factionLabels = { duke: 'The Duke', princess: 'The Princess', rebel: 'The Rebels' };
+  const factionKnown = Object.hasOwn(factionLabels, faction.faction);
+  const factionNeutral = faction.faction === 'neutral';
+  const factionLabel = factionKnown ? factionLabels[faction.faction]
+    : factionNeutral ? 'No faction' : 'Faction not yet known';
+  const factionDetail = factionKnown
+    ? `${faction.soldier ? 'Faction soldier' : 'Faction member'}${faction.observed_at
+      ? ` · observed ${new Date(faction.observed_at).toLocaleString()}` : ''}`
+    : factionNeutral
+      ? 'Needs to join a faction. Assign the Duke, Princess, or Rebels in Faction Management.'
+      : 'The player profile has not been cached yet. Inspect it before assigning a join goal.';
 
   const items = (h.inventory || []).map(i => `
     <tr><td>${lore(i.name)}</td>
@@ -186,6 +214,12 @@ export function renderHero(h, { localhost = false } = {}) {
     ${h.in_game ? 'in game' : '<span class="bad">not in game</span>'} ·
     ${roomLink(h.room?.name, h.room?.num)}
     ${h.position ? `<span class="dim">(col ${h.position.col}, row ${h.position.row})</span>` : ''}</div>
+
+  <section class="faction-priority ${factionNeutral ? 'missing' : factionKnown ? 'member' : 'unknown'}"
+           aria-label="Faction status">
+    <div><span class="k">Faction</span><strong>${esc(factionLabel)}</strong></div>
+    <p>${esc(factionDetail)}</p>
+  </section>
 
   <div class="cards">
     <div class="card"><div class="k">doing</div>

@@ -60,7 +60,8 @@
   function blank(name) {
     return {
       format: 'm59-loadout/1', character: name || '', agent: null, updated: null, note: '',
-      plan: { schools: {}, weapon_level: null, learning_target: null, abilities: [] },
+      plan: { schools: {}, weapon_level: null, learning_target: null,
+              learning_queue: [], abilities: [] },
       gear: { weapon: [], slots: {}, from: null },
       carry: [], sell: [], keep: [], purse: { float: null, bank_above: null },
     };
@@ -243,6 +244,33 @@
     return top;
   }
 
+  // The server's accounting track intentionally includes the granted level-50 sentinels
+  // (thrust/kick). A human planning purchasable Weaponcraft levels does not mean that
+  // sentinel; show the highest ordinary, sold level here while trackLevels() keeps the
+  // server-exact MAX above for its cost calculation.
+  function observedPlannedWeaponLevel() {
+    if (!OBS || !OBS.skills) return 0;
+    var top = 0;
+    OBS.skills.forEach(function (sk) {
+      var row = BY_SKILL[norm(sk.name)];
+      var lvl = sk.level || (row && row.level);
+      if (lvl && lvl <= 6 && (!row || row.for_sale !== false)) top = Math.max(top, lvl);
+    });
+    return top;
+  }
+
+  function learningQueue() {
+    L.plan.learning_queue = Array.isArray(L.plan.learning_queue) ? L.plan.learning_queue : [];
+    return L.plan.learning_queue;
+  }
+
+  function setTrackQueue(track, level) {
+    var q = learningQueue().filter(function (entry) { return norm(entry.track) !== norm(track); });
+    for (var lv = 1; lv <= level; lv++) q.push({ track: track, level: lv });
+    L.plan.learning_queue = q;
+    L.plan.learning_target = track;
+  }
+
   function intellect() {
     return (L.plan.stats && L.plan.stats.intellect)
       || (OBS && OBS.attributes && OBS.attributes.intellect) || 0;
@@ -294,7 +322,15 @@
         var s = b.getAttribute('data-school'), lv = Number(b.getAttribute('data-level'));
         // Clicking the level you already asked for clears it, so there is a way back to
         // "no opinion" that is not the same as "level zero".
-        if (L.plan.schools[s] === lv) delete L.plan.schools[s]; else L.plan.schools[s] = lv;
+        if (L.plan.schools[s] === lv) {
+          delete L.plan.schools[s];
+          L.plan.learning_queue = learningQueue().filter(function (entry) {
+            return norm(entry.track) !== norm(s);
+          });
+        } else {
+          L.plan.schools[s] = lv;
+          setTrackQueue(s, lv);
+        }
         renderSpells(); renderEditor();
       };
     });
@@ -317,7 +353,32 @@
     var wanted = {};
     L.plan.abilities.forEach(function (a) { wanted[norm(a.name)] = true; });
 
-    wrap.innerHTML = '';
+    var has = observedPlannedWeaponLevel(), wantLevel = L.plan.weapon_level || 0;
+    var pips = '';
+    for (var lv = 1; lv <= (D.learning.max_school_level || 6); lv++) {
+      var mine = lv <= has, chosen = lv <= wantLevel;
+      pips += '<button type="button" class="m59-pip' + (mine ? ' have' : '')
+        + (chosen ? ' on' : '') + (chosen && !mine ? ' beyond' : '')
+        + '" data-weapon-level="' + lv + '" title="Weaponcraft level ' + lv
+        + (mine ? ' — already known' : chosen ? ' — planned' : '') + '">' + lv + '</button>';
+    }
+    wrap.innerHTML = '<div class="m59-school"><span class="k">Weaponcraft</span>'
+      + '<span class="m59-pips">' + pips + '</span></div>';
+    Array.prototype.forEach.call(wrap.querySelectorAll('[data-weapon-level]'), function (b) {
+      b.onclick = function () {
+        var level = Number(b.getAttribute('data-weapon-level'));
+        if (L.plan.weapon_level === level) {
+          L.plan.weapon_level = null;
+          L.plan.learning_queue = learningQueue().filter(function (entry) {
+            return norm(entry.track) !== 'weaponcraft';
+          });
+        } else {
+          L.plan.weapon_level = level;
+          setTrackQueue('weaponcraft', level);
+        }
+        renderSkills(); renderEditor();
+      };
+    });
     D.skills.filter(function (s) { return s.learnable; }).forEach(function (s) {
       var ab = abilityOf[norm(s.name)], want = wanted[norm(s.name)];
       var b = document.createElement('button');
@@ -336,8 +397,10 @@
       b.onclick = function () {
         if (wanted[norm(s.name)]) {
           L.plan.abilities = L.plan.abilities.filter(function (a) { return norm(a.name) !== norm(s.name); });
+          L.plan.learning_queue = learningQueue().filter(function (a) { return norm(a.name) !== norm(s.name); });
         } else {
           L.plan.abilities.push({ name: s.name, kind: 'skill', level: null, why: null });
+          learningQueue().push({ name: s.name, kind: 'skill' });
         }
         renderSkills(); renderEditor();
       };
@@ -676,6 +739,50 @@
     };
   }
 
+  // ---- one acquisition queue, shared by spells and skills
+
+  function appendLearningQueue(box) {
+    var q = learningQueue();
+    var section = document.createElement('div');
+    section.className = 'pl-learning-queue';
+    section.innerHTML = '<h2 style="margin-top:14px">Acquisition queue</h2>'
+      + '<p class="hint">The auto-level strategy works only on the first unfinished row. '
+      + 'Every ability at that exact school level is bought before the next row opens.</p>'
+      + (q.length ? '<ol>' + q.map(function (entry, i) {
+        var label = entry.name ? entry.name : (entry.track + ' level ' + entry.level);
+        return '<li><span>' + esc(label) + '</span><span class="pl-queue-buttons">'
+          + '<button type="button" class="btn" data-q-up="' + i + '" title="Move earlier">↑</button>'
+          + '<button type="button" class="btn" data-q-down="' + i + '" title="Move later">↓</button>'
+          + '<button type="button" class="btn" data-q-remove="' + i + '">Remove</button>'
+          + '</span></li>';
+      }).join('') + '</ol>'
+        : '<p class="pl-note">Nothing queued. Pick a school level or tick an individual skill.</p>');
+    box.appendChild(section);
+
+    function rerender() { renderSpells(); renderSkills(); renderEditor(); }
+    Array.prototype.forEach.call(section.querySelectorAll('[data-q-up]'), function (b) {
+      b.onclick = function () {
+        var i = Number(b.getAttribute('data-q-up'));
+        if (i > 0) { var x = q[i - 1]; q[i - 1] = q[i]; q[i] = x; rerender(); }
+      };
+    });
+    Array.prototype.forEach.call(section.querySelectorAll('[data-q-down]'), function (b) {
+      b.onclick = function () {
+        var i = Number(b.getAttribute('data-q-down'));
+        if (i < q.length - 1) { var x = q[i + 1]; q[i + 1] = q[i]; q[i] = x; rerender(); }
+      };
+    });
+    Array.prototype.forEach.call(section.querySelectorAll('[data-q-remove]'), function (b) {
+      b.onclick = function () {
+        var i = Number(b.getAttribute('data-q-remove')), removed = q.splice(i, 1)[0];
+        if (removed && removed.name) L.plan.abilities = L.plan.abilities.filter(function (a) {
+          return norm(a.name) !== norm(removed.name);
+        });
+        rerender();
+      };
+    });
+  }
+
   // ---- spells editor
 
   function renderSpellEditor(box) {
@@ -754,6 +861,7 @@
       selectTab('inventory');
       renderInventory(); renderEditor();
     };
+    appendLearningQueue(box);
   }
 
   // The catalogue keys on DISPLAY names and a spell's reagent list names CLASSES —
@@ -771,7 +879,7 @@
     if (OBS && OBS.skills) OBS.skills.forEach(function (s) { abilityOf[norm(s.name)] = s.ability; });
     var missing = L.plan.abilities.filter(function (a) { return abilityOf[norm(a.name)] == null; });
     box.innerHTML =
-      '<p class="hint">Ticking a skill puts it on the plan. It does not buy it — '
+      '<p class="hint">Ticking a skill appends it to the acquisition queue. It does not buy it — '
       + '<code>node tools/m59-outfit.mjs --learn &lt;name&gt;</code> is the errand that does, '
       + 'and it reads these names.</p>'
       + (L.plan.abilities.length
@@ -791,6 +899,7 @@
           return '<p class="pl-note"><strong>' + esc((D.stats[k] || {}).label || k) + '</strong> — '
             + esc(D.by_stat[k].skills.join(', ')) + '</p>';
         }).join('');
+    appendLearningQueue(box);
   }
 
   // ---- stats editor
@@ -898,6 +1007,25 @@
   function adopt(snapshot) {
     OBS = snapshot.observed || null;
     L = snapshot.loadout || blank(snapshot.character || (OBS && OBS.character) || '');
+    L.plan = L.plan || { schools: {}, weapon_level: null, learning_target: null,
+                         learning_queue: [], abilities: [] };
+    L.plan.schools = L.plan.schools || {};
+    L.plan.abilities = Array.isArray(L.plan.abilities) ? L.plan.abilities : [];
+    L.plan.learning_queue = Array.isArray(L.plan.learning_queue) ? L.plan.learning_queue : [];
+    // Older loadouts predate the explicit queue but already have deterministic order:
+    // checked abilities, spell schools alphabetically by level, then Weaponcraft. Show
+    // that order instead of an empty queue which the server would still infer on save.
+    if (!L.plan.learning_queue.length) {
+      L.plan.abilities.forEach(function (a) {
+        L.plan.learning_queue.push({ name: a.name, kind: a.kind || null });
+      });
+      Object.keys(L.plan.schools).sort().forEach(function (school) {
+        for (var lv = 1; lv <= Number(L.plan.schools[school]); lv++)
+          L.plan.learning_queue.push({ track: school, level: lv });
+      });
+      for (var wlv = 1; wlv <= Number(L.plan.weapon_level || 0); wlv++)
+        L.plan.learning_queue.push({ track: 'weaponcraft', level: wlv });
+    }
     if (!L.character && OBS && OBS.character) L.character = OBS.character;
     if (!L.agent && OBS && OBS.agent) L.agent = OBS.agent;
     el('plName').value = L.character || '';

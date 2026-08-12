@@ -239,6 +239,11 @@
 .pl-diff .shed td:first-child::before { content: "shed "; color: #a4232b; }
 
 .pl-problems { margin: 0; padding-left: 18px; font-size: 12.5px; color: #a4232b; }
+.pl-learning-queue ol { margin: 0; padding-left: 24px; }
+.pl-learning-queue li { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin: 5px 0; }
+.pl-queue-buttons { display: flex; gap: 4px; flex: 0 0 auto; }
+.pl-queue-buttons .btn { min-width: 0; padding: 2px 7px; }
 .pl-note { font-size: 12.5px; opacity: .85; }
 .pl-prov { font-size: 12px; opacity: .75; margin-top: 6px; }
 .pl-prov code { font-size: 11px; }

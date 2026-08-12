@@ -103,7 +103,8 @@ export function blank(character, agent = null) {
     agent: agent ?? null,
     updated: null,
     note: '',
-    plan: { schools: {}, weapon_level: null, learning_target: null, abilities: [] },
+    plan: { schools: {}, weapon_level: null, learning_target: null,
+            learning_queue: [], abilities: [] },
     // `from` is provenance and nothing else reads it: a gear stanza that arrived from a
     // fleet-wide apply looks exactly like one somebody typed for this character, and the
     // difference is the whole reason to open the file.
@@ -115,26 +116,84 @@ export function blank(character, agent = null) {
   };
 }
 
-// Turn both halves of the planner into the abilities a learning errand can buy. Skills
-// are explicit ticks in plan.abilities; spell plans name a school and destination level,
-// so every not-yet-known spell at or below that level belongs to the same plan.
+// Turn both halves of the planner into the ORDERED STAGES a learning errand can buy.
+// A queue row names either one ability or one exact level of a track. Exact levels are
+// load-bearing: a Weaponcraft 2 row must become empty before Weaponcraft 3 is considered,
+// even when PlayerCanLearn happens to offer a level-3 skill early. Old loadouts without a
+// queue retain their meaning: explicit abilities come first, then school goals, then the
+// weapon goal, with each level forming one inferred stage.
 export function plannedAbilities(plan, abilities = [], known = []) {
-  const out = [...(plan?.abilities ?? [])].map(row => ({ ...row }));
+  const out = [];
   const key = row => `${row?.kind ?? ''}:${norm(row?.name)}`;
   const knownKeys = new Set((known || []).map(key));
-  const outKeys = new Set(out.map(key));
+  const outKeys = new Set();
+  let stage = 0;
+  const add = (row, why) => {
+    const exact = `${row.kind ?? ''}:${norm(row.name)}`, generic = `:${norm(row.name)}`;
+    if (!row.name || knownKeys.has(exact) || outKeys.has(exact) || outKeys.has(generic)) return;
+    out.push({ ...row, why: row.why ?? why ?? null, queue_stage: stage });
+    outKeys.add(exact);
+  };
+  const rowsAt = (track, level) => (abilities || []).filter(row => {
+    if (track === 'weaponcraft')
+      return row.kind === 'skill' && row.learnable !== false && row.for_sale !== false &&
+        Number(row.level) === Number(level);
+    return row.kind === 'spell' && norm(row.school) === norm(track) &&
+      Number(row.level) === Number(level);
+  }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const addTrackLevel = (track, level) => {
+    stage++;
+    for (const row of rowsAt(track, level)) add({ name: row.name, kind: row.kind,
+      level: row.level, school: row.school ?? null, track }, `${track} level ${level} queue`);
+  };
+  const addAbility = entry => {
+    stage++;
+    const kinds = entry.kind ? [entry.kind] : ['skill', 'spell'];
+    const matches = (abilities || []).filter(row => kinds.includes(row.kind) &&
+      norm(row.name) === norm(entry.name));
+    const row = matches.length === 1 ? matches[0] : entry;
+    add({ ...entry, kind: row.kind ?? entry.kind ?? null, level: row.level ?? entry.level ?? null,
+      school: row.school ?? entry.school ?? null }, entry.why ?? 'explicit ability queue');
+  };
+
+  const queue = Array.isArray(plan?.learning_queue) ? plan.learning_queue : [];
+  if (queue.length) {
+    for (const entry of queue) {
+      if (entry?.name) addAbility(entry);
+      else if (entry?.track && entry?.level) addTrackLevel(entry.track, entry.level);
+    }
+    return out;
+  }
+
+  for (const entry of (plan?.abilities ?? [])) addAbility(entry);
   for (const [school, targetLevel] of Object.entries(plan?.schools ?? {})
     .sort(([a], [b]) => a.localeCompare(b))) {
-    const spells = (abilities || []).filter(row => row.kind === 'spell' &&
-      norm(row.school) === norm(school) && Number(row.level) <= Number(targetLevel))
-      .sort((a, b) => Number(a.level) - Number(b.level) || String(a.name).localeCompare(String(b.name)));
-    for (const spell of spells) {
-      const exact = `spell:${norm(spell.name)}`, generic = `:${norm(spell.name)}`;
-      if (knownKeys.has(exact) || outKeys.has(exact) || outKeys.has(generic)) continue;
-      out.push({ name: spell.name, kind: 'spell', level: spell.level,
-                 why: `${school} level ${targetLevel} plan` });
-      outKeys.add(exact);
+    for (let level = 1; level <= Number(targetLevel); level++) addTrackLevel(school, level);
+  }
+  if (Number(plan?.weapon_level) > 0) {
+    for (let level = 1; level <= Number(plan.weapon_level); level++) addTrackLevel('weaponcraft', level);
+  }
+  return out;
+}
+
+function normaliseLearningQueue(raw, problems) {
+  const out = [];
+  for (const [i, value] of (Array.isArray(raw) ? raw : []).entries()) {
+    const entry = typeof value === 'string' ? { track: value } : (value || {});
+    if (entry.name) {
+      const name = String(entry.name).trim();
+      if (!name) { problems.push(`plan.learning_queue[${i}] has no ability name`); continue; }
+      out.push({ name, kind: entry.kind === 'skill' || entry.kind === 'spell' ? entry.kind : null });
+      continue;
     }
+    const track = String(entry.track ?? entry.school ?? '').trim();
+    const level = numOr(entry.level, null);
+    if (!track || level === null || level < 1 || level > 6) {
+      problems.push(`plan.learning_queue[${i}] must name a track and a level from 1 to 6`);
+      continue;
+    }
+    out.push({ track: ['weapon', 'weapons', 'skills', 'weapon skills']
+      .includes(norm(track)) ? 'weaponcraft' : track, level: Math.round(level) });
   }
   return out;
 }
@@ -185,6 +244,7 @@ export function normalise(raw, { character = null } = {}) {
     if (!raw || !String(raw).trim()) problems.push('plan.learning_target is not a track name');
     else out.plan.learning_target = String(raw).trim().slice(0, 80);
   }
+  out.plan.learning_queue = normaliseLearningQueue(src.plan?.learning_queue, problems);
   out.plan.abilities = (Array.isArray(src.plan?.abilities) ? src.plan.abilities : [])
     .map(a => (typeof a === 'string' ? { name: a } : a))
     .filter(a => a && a.name)

@@ -2,11 +2,30 @@
  "format": "m59-loadout/1",
  "character": "Zoot",
  "agent": "t17",
- "updated": "2026-08-10T05:25:39.302Z",
+ "updated": "2026-08-12T06:57:46.552Z",
  "note": "",
  "plan": {
   "schools": {},
-  "weapon_level": null,
+  "weapon_level": 5,
+  "learning_target": "weaponcraft",
+  "learning_queue": [
+   {
+    "track": "weaponcraft",
+    "level": 2
+   },
+   {
+    "track": "weaponcraft",
+    "level": 3
+   },
+   {
+    "track": "weaponcraft",
+    "level": 4
+   },
+   {
+    "track": "weaponcraft",
+    "level": 5
+   }
+  ],
   "abilities": []
  },
  "gear": {

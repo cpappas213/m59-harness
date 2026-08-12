@@ -28,6 +28,9 @@
 import { readLedger } from './m59-ledger.mjs';
 import { loadPostmortems } from './m59-postmortems.mjs';
 import { fleetScope, partition, scopeLine } from './m59-fleetscope.mjs';
+import { isTravelTrip } from './m59-travel-kind.mjs';
+
+export { isTravelTrip } from './m59-travel-kind.mjs';
 
 const argv = process.argv.slice(2);
 const arg = (n, d) => { const i = argv.indexOf('--' + n); return i < 0 ? d : (argv[i + 1] ?? true); };
@@ -74,7 +77,10 @@ if (!isMain) { /* imported for the helpers only */ } else {
 const scope = await fleetScope({ argv, allFleets: argv.includes('--all-fleets') });
 
 const { events } = readLedger({ sinceMs });
-const journeys = events.filter(e => e.kind === 'travel_journey');
+// Direct room changes used to be written as journeys even though there is no
+// intermediate map in which the hold treatment can fire. Keeping them in the
+// denominator measures zoning frequency, not travel safety.
+const journeys = events.filter(e => e.kind === 'travel_journey' && isTravelTrip(e));
 const pauses = events.filter(e => e.kind === 'travel_pause');
 const holds = events.filter(e => e.kind === 'travel_hold');
 

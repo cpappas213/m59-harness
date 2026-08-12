@@ -6,6 +6,8 @@
 //   node tools/m59-almoner.mjs                    # hand out and set the vigor floor
 //   node tools/m59-almoner.mjs --amount 10        # per reagent kind, default 10
 //   node tools/m59-almoner.mjs --floor 140        # vigor to fight above afterwards
+//   node tools/m59-almoner.mjs --max-hops 2       # locality cap for reagent handovers
+//   node tools/m59-almoner.mjs --max-deliveries 2 # per donor in one pass
 //   node tools/m59-almoner.mjs --signets-only     # just the rings
 //   node tools/m59-almoner.mjs --no-signets       # just the reagents, as it used to be
 //
@@ -46,6 +48,8 @@
 // protocol between characters this broker holds, and verifies the receiver actually
 // ended up with the goods. A half-finished trade is silent, which is exactly why that
 // tool exists and why this one calls it rather than reimplementing it.
+import { findPath, loadMap } from './m59-map.mjs';
+
 const arg = (n, d = null) => {
   const i = process.argv.indexOf('--' + n);
   if (i < 0) return d;
@@ -57,6 +61,18 @@ const RPC = `http://127.0.0.1:${PORT}/`;
 const DRY = !!arg('dry-run', false);
 const AMOUNT = Number(arg('amount', 10));
 const FLOOR = Number(arg('floor', 140));
+// A meal is not worth turning the best farmer into a global courier. Piggy's three-hour
+// travel outlier included one pass that assigned her five recipients across Castle
+// Victoria, Tos and Marion. Keep this the local redistribution layer; the keeper's
+// farm-delivery strategy already moves stock opportunistically within two rooms.
+const MAX_HOPS = Math.max(0, Number(arg('max-hops', 2)) || 0);
+const MAX_DELIVERIES = Math.max(1, Number(arg('max-deliveries', 2)) || 2);
+const WORLD_MAP = loadMap();
+export const deliveryHops = (from, to, map = WORLD_MAP) => {
+  if (!Number.isInteger(from) || !Number.isInteger(to)) return Infinity;
+  const route = findPath(map, from, to);
+  return route.found ? route.hops.length : Infinity;
+};
 // Keep the giver able to feed itself: handing away the last of it just moves the
 // problem. One casting is 2 of each, so this is several meals of margin.
 const KEEP_BACK = Number(arg('keep', 20));
@@ -241,6 +257,16 @@ for (const k of KINDS)
     capacity.set(`${d.agent}/${k.kind}`,
                  Math.max(1, Math.floor((d[k.field] - keepFor(d, k)) / AMOUNT)));
 const cap = (d, kind) => capacity.get(`${d.agent}/${kind}`) || 0;
+const deliveries = new Map();
+const tripsBy = donor => deliveries.get(donor.agent) || 0;
+const canDeliver = (donor, recipient, kinds) => donor.agent !== recipient.agent &&
+  tripsBy(donor) < MAX_DELIVERIES && kinds.every(kind => cap(donor, kind) > 0) &&
+  deliveryHops(donor.room, recipient.room) <= MAX_HOPS;
+const spendDelivery = (donor, kinds) => {
+  for (const kind of kinds)
+    capacity.set(`${donor.agent}/${kind}`, cap(donor, kind) - 1);
+  deliveries.set(donor.agent, tripsBy(donor) + 1);
+};
 
 const plan = [];
 for (const n of needy) {
@@ -251,21 +277,28 @@ for (const n of needy) {
   // trip, so a donor holding both closes the whole gap with one walk — which is the case
   // this tool was originally written for and is still the cheapest when it exists.
   const both = short.length > 1
-    ? held.filter(d => d.agent !== n.agent && short.every(k => cap(d, k.kind) > 0))
+    ? held.filter(d => canDeliver(d, n, short.map(k => k.kind)))
     : [];
-  const pickFrom = (list) => list.find(d => d.room === n.room) || list[0];
-  const one = pickFrom(both.sort((a, b) => (b.eb + b.hb) - (a.eb + a.hb)));
+  const pickFrom = (list, kinds) => list.filter(d => canDeliver(d, n, kinds))
+    .sort((a, b) => deliveryHops(a.room, n.room) - deliveryHops(b.room, n.room) ||
+      (b.eb + b.hb) - (a.eb + a.hb))[0];
+  const one = pickFrom(both, short.map(k => k.kind));
   if (one) {
-    for (const k of short) capacity.set(`${one.agent}/${k.kind}`, cap(one, k.kind) - 1);
-    plan.push({ from: one, to: n, kinds: short.map(k => k.kind), sameRoom: one.room === n.room });
+    const kinds = short.map(k => k.kind);
+    spendDelivery(one, kinds);
+    plan.push({ from: one, to: n, kinds, sameRoom: one.room === n.room,
+      hops: deliveryHops(one.room, n.room) });
     continue;
   }
   for (const k of short) {
-    const able = pool.get(k.kind).filter(d => d.agent !== n.agent && cap(d, k.kind) > 0);
-    const pick = pickFrom(able.sort((a, b) => cap(b, k.kind) - cap(a, k.kind)));
-    if (!pick) { console.log(`  ${n.character}: nobody left with ${k.kind} to give`); continue; }
-    capacity.set(`${pick.agent}/${k.kind}`, cap(pick, k.kind) - 1);
-    plan.push({ from: pick, to: n, kinds: [k.kind], sameRoom: pick.room === n.room });
+    const pick = pickFrom(pool.get(k.kind), [k.kind]);
+    if (!pick) {
+      console.log(`  ${n.character}: nobody within ${MAX_HOPS} hops can spare ${k.kind}`);
+      continue;
+    }
+    spendDelivery(pick, [k.kind]);
+    plan.push({ from: pick, to: n, kinds: [k.kind], sameRoom: pick.room === n.room,
+      hops: deliveryHops(pick.room, n.room) });
   }
 }
 

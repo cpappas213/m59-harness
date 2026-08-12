@@ -25,12 +25,20 @@ node_modules/
 # since it was first read. One server's characters, and the history is theirs — the
 # same reason the roster and the post-mortems are not here.
 /substrate/abilities/
+# One JSON per character: faction membership observed from that character's own
+# player profile. This is live roster state, not reference data.
+/substrate/faction-status/
 # One JSON per character: what it has in the bank, written down each time a banker
 # states it, because the server never sends the number again. Same reasoning as the
 # abilities above — it is one server's characters and their money, not reference data.
 # Worth backing up if you care about the fleet: it cannot be reconstructed without
 # walking every character to a counter.
 /substrate/banks/
+
+# Vault contents, guild chest contents and the guild's rent position. Written by the
+# running fleet whenever a vaultman or Frular happens to state one, exactly like banks/
+# above — a record of what somebody was told, not source.
+/substrate/storage/
 # One JSON per character: the bio other players see when they look at it, written down
 # at the moment it is sent because NOTHING READS A DESCRIPTION BACK — there is no packet
 # for it, so this is the only copy. One server's characters and the words we put in their
@@ -178,6 +186,6 @@ __pycache__/
 # characters by role.
 /substrate/playbooks/
 
-# Verified per-character daily guild-rent payments. This is live operational state and
-# includes fleet/character identifiers, so it stays with the roster rather than Git.
+# Verified daily guild payments are live per-character operational state. They name the
+# local fleet and characters and exist only to prevent a restart from charging twice.
 /substrate/guild-tithes/
