@@ -37,7 +37,7 @@ const readLedgerAt = (f) => readLedger(f);
 import { RoomGeometry } from './m59-roo.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { roomCap, karmaSafe } from './m59-spawns.mjs';
-import { OF } from './m59-parse.mjs';
+import { OF, prepareActTarget } from './m59-parse.mjs';
 import { nearestSafeSpot, safeSpots, exposureAt, lineOfSight, MAX_ATTACKERS } from './m59-safespots.mjs';
 
 let pass = 0, fail = 0;
@@ -1005,6 +1005,45 @@ console.log('\ndropping a stack needs the quantity');
   ok('part of a stack can be asked for',
      JSON.stringify(k.dropSpec({ id: 7, amount: 192 }, 5)) === '{"id":7,"amount":5}');
   ok('a missing object does not throw', k.dropSpec(undefined) === undefined);
+}
+
+console.log('\nthe broker act contract validates drop quantities before the wire');
+{
+  const stack = { id: 7, tag: 1, amount: 20 };
+  const whole = prepareActTarget({ verb: 'drop', target: stack });
+  ok('omitting amount drops the whole observed stack',
+     JSON.stringify(whole.wire_target) === '{"id":7,"amount":20}' &&
+     whole.requested_amount === 20, JSON.stringify(whole));
+  const partial = prepareActTarget({ verb: 'drop', target: stack, amount: 5 });
+  ok('a bounded partial stack drop preserves its requested count',
+     JSON.stringify(partial.wire_target) === '{"id":7,"amount":5}' &&
+     partial.requested_amount === 5, JSON.stringify(partial));
+  const ordinary = prepareActTarget({ verb: 'drop', target: { id: 8 } });
+  ok('an ordinary item stays a bare wire id and reports one requested item',
+     ordinary.wire_target === 8 && ordinary.requested_amount === 1, JSON.stringify(ordinary));
+  ok('fractional stack amounts are rejected', (() => {
+    try { prepareActTarget({ verb: 'drop', target: stack, amount: 1.5 }); return false; }
+    catch (error) { return /whole number/.test(error.message); }
+  })());
+  ok('zero stack amounts are rejected', (() => {
+    try { prepareActTarget({ verb: 'drop', target: stack, amount: 0 }); return false; }
+    catch (error) { return /whole number/.test(error.message); }
+  })());
+  ok('more than the observed stack is rejected before the server chat refusal', (() => {
+    try { prepareActTarget({ verb: 'drop', target: stack, amount: 21 }); return false; }
+    catch (error) { return /only 20/.test(error.message); }
+  })());
+  ok('a quantity on a non-stack item is rejected instead of ignored', (() => {
+    try { prepareActTarget({ verb: 'drop', target: { id: 8 }, amount: 1 }); return false; }
+    catch (error) { return /stackable/.test(error.message); }
+  })());
+  ok('amount on another act verb is rejected instead of silently ignored', (() => {
+    try { prepareActTarget({ verb: 'use', target: stack, amount: 1 }); return false; }
+    catch (error) { return /only valid for drop/.test(error.message); }
+  })());
+  const use = prepareActTarget({ verb: 'use', target: stack });
+  ok('ordinary act verbs retain their object id and no requested amount',
+     use.wire_target === 7 && use.requested_amount === null, JSON.stringify(use));
 }
 
 console.log('\nthe room that filled up with what nobody would kill');

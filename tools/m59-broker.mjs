@@ -38,7 +38,7 @@ import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, un
 import { join, dirname } from 'node:path';
 import { M59Client, KOD_FINENESS } from './m59-client.mjs';
 import { loadResources } from './m59-rsc.mjs';
-import { describeObject, affordances, OF, dropSpec } from './m59-parse.mjs';
+import { describeObject, affordances, OF, prepareActTarget } from './m59-parse.mjs';
 import { World, sharedWorldMap, spreadEdges } from './m59-world.mjs';
 import { loadMap, resolveRoom, forgetInferredExit } from './m59-map.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
@@ -7379,6 +7379,9 @@ const TOOLS = [
     description: 'One-shot object interactions: use (wield/wear), unuse, get (pick up), drop, ' +
       'activate, eat (apply food to yourself), or go (take the exit under your feet — doors and ' +
       'stairs need this, walking off the edge of an outdoor room does not). ' +
+      'DROP QUANTITIES MATTER. Stackable items require the number-tagged wire form. Pass amount to ' +
+      'drop part of a stack; when amount is omitted, the broker drops the entire currently observed ' +
+      'stack. Non-stack items reject amount rather than guessing. ' +
       'EAT IS NOT USE. Food is APPLIED to the eater (food.kod:56 sends ReqEatSomething to the ' +
       'apply target), so `use` on a loaf silently does nothing at all — no message, no error, no ' +
       'vigor. That mattered: resting stops awarding vigor at 80 of 200, everything above it has ' +
@@ -7392,12 +7395,16 @@ const TOOLS = [
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       verb: { type: 'string', enum: ['use', 'unuse', 'get', 'drop', 'activate', 'eat', 'go'] },
-      amount: { type: 'number', description: 'drop only: how many out of a stack. Omitted drops ' +
-        'the whole stack. Ignored by every other verb — nothing else on this wire takes a count.' },
-      target: { type: ['string', 'number'] } }, required: ['agent', 'verb'] },
+      target: { type: ['string', 'number'] },
+      amount: { type: 'integer', minimum: 1,
+                description: 'drop exactly this many from a stack; omit to drop the whole observed stack' },
+    }, required: ['agent', 'verb'] },
     run: async (a) => {
       const s = session(a.agent), c = s.need();
       const before = c.evSeq;
+      let targetId = null, requestedAmount = null;
+      if (a.amount != null && a.verb !== 'drop')
+        throw new Error('amount is only valid for drop');
       if (a.verb === 'go') {
         await s.standBeforeGo();          // PFLAG_NO_MOVE, same as every other `go`
         await s.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
@@ -7408,26 +7415,25 @@ const TOOLS = [
         // nil (numbitem.kod:257) and the character was told "You don't have that amount
         // of herbs to drop." — while the tool reported the request as sent. dropSpec is
         // the one rule; see m59-parse.mjs for what the server does with each shape.
-        if (a.amount != null) {
-          if (!Number.isInteger(a.amount) || a.amount < 1)
-            throw new Error(`amount must be a whole number of 1 or more, got ${a.amount}`);
-          // Refuse here rather than let Split refuse there. We are holding the stack size
-          // already, and "you don't have that amount" arrives as a chat line the caller
-          // has to notice among the others — an error it cannot miss is worth more.
-          const have = t.amount ?? 0;
-          if (have >= 1 && a.amount > have)
-            throw new Error(`asked to drop ${a.amount} but only ${have} in the stack`);
-        }
-        const fn = { use: () => c.use(t.id), unuse: () => c.unuse(t.id), get: () => c.get(t.id),
-                     drop: () => c.drop([dropSpec(t, a.amount ?? null)]),
-                     activate: () => c.activate(t.id),
+        const prepared = prepareActTarget({ verb: a.verb, target: t, amount: a.amount ?? null });
+        targetId = prepared.target;
+        requestedAmount = prepared.requested_amount;
+        const wireTarget = prepared.wire_target;
+        const fn = { use: () => c.use(wireTarget), unuse: () => c.unuse(wireTarget), get: () => c.get(wireTarget),
+                     drop: () => c.drop([wireTarget]),
+                     activate: () => c.activate(wireTarget),
                      // onto ourselves — that is what eating IS on the wire
-                     eat: () => c.apply(t.id, c.selfId) }[a.verb];
+                     eat: () => c.apply(wireTarget, c.selfId) }[a.verb];
         if (!fn) throw new Error(`unknown verb "${a.verb}"`);
         await s.pacer.submit(a.verb, fn);
       }
       const { events } = await c.waitFor({ since: before, timeoutMs: 3000 });
-      return { verb: a.verb, messages: events.filter(e => e.text).map(e => e.text),
+      return { verb: a.verb,
+               ...(a.verb === 'drop' ? {
+                 target: targetId,
+                 requested_amount: requestedAmount,
+               } : {}),
+               messages: events.filter(e => e.text).map(e => e.text),
                events: events.map(e => e.kind) };
     },
   },
