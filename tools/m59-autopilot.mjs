@@ -346,6 +346,14 @@ export function bearingIn(row, col, rows, cols) {
                     : `the ${where} side${edge ? ' (hard against the edge)' : ''}`;
 }
 
+// Once a meal has lifted us above the configured fighting floor, do not spend a
+// long digestion interval chasing the strategy's ideal ceiling. The floor is the
+// operator's statement that fighting is safe; the ceiling is only a useful top-up
+// target when the next bite is soon, or when the wait is also healing us.
+export function shouldWaitForProvision({ vigor, floor, wait, hurt }) {
+  return vigor < floor || hurt || wait <= 60;
+}
+
 // VIGOR IS NOT SHAPED LIKE THE OTHER TWO, and reading it as though it were has been
 // quietly disabling every vigor decision in this file.
 //
@@ -1276,6 +1284,12 @@ export class Autopilot {
     return await this.makeWeapon('about to fight with nothing in hand').catch(() => false);
   }
 
+  knowsCreateWeapon() {
+    const c = this.s?.client;
+    return !!(c?.spells || []).find(
+      sp => (c.rsc?.get?.(sp.nameRsc) || '').toLowerCase() === 'create weapon');
+  }
+
   // WEAR THE ARMOUR WE ARE CARRYING.
   //
   // Buying armour and not putting it on is the same as not buying it, and it is the
@@ -1388,9 +1402,19 @@ export class Autopilot {
           this.progress('ate to raise vigor');
           return 'ate';
         }
-        // Too full to make progress: waiting IS the strategy. Report the clock so
-        // this does not read as a stall.
+        // Too full to make progress: waiting is useful only until the configured
+        // fighting floor is satisfied. Above it, a long digestion interval is time
+        // not spent fighting; eat opportunistically during the hunt instead.
         const wait = this.stomach.secondsUntilRoomFor(smallest.filling);
+        const hurt = (v.health?.value ?? 0) < (v.health?.max ?? 0) * 0.95;
+        if (!shouldWaitForProvision({ vigor, floor, wait, hurt })) {
+          this.climbing = false;
+          this.note('setting out above the fighting floor', {
+            vigor, floor, ceiling, stomach: Math.round(this.stomach.level),
+            room_for_next_in_s: wait,
+            why: 'the configured fighting floor is satisfied and the next top-up is too far away' });
+          return false;
+        }
         this.note('waiting to get hungry', {
           vigor, ceiling, stomach: Math.round(this.stomach.level),
           room_for_next_in_s: wait, next: larder[0].name,
@@ -6412,6 +6436,24 @@ export class Autopilot {
     if (!this.armed()) {
       const ok = await this.armSelf().catch(() => false);
       if (ok && this.armed()) { this.progress('armed itself'); return; }
+      // makeWeapon refreshes the spell list before reporting failure when mana is
+      // sufficient. Below 15 mana it cannot do that, so refresh once in sanctuary
+      // before deciding whether mana recovery can ever produce a weapon.
+      if (!this.knowsCreateWeapon() && this.sanctuary()) {
+        await s.pacer.submit('read', () => c.requestSpells()).catch(() => {});
+        await sleep(400);
+      }
+      if (!this.knowsCreateWeapon() && this.sanctuary()) {
+        const why = 'unarmed and does not know create weapon — external weapon acquisition required';
+        this.noProgress(why);
+        this.note('cannot self-arm', {
+          why,
+          mana: c.vitals?.()?.mana?.value ?? null,
+          action_needed: 'buy, recover, or receive a weapon before restarting combat',
+        });
+        this.stop(why);
+        return;
+      }
       // Not enough mana to conjure one yet. SIT DOWN — and do not let settle() decide
       // whether that happens.
       //
