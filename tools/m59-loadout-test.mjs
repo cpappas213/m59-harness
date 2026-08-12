@@ -96,6 +96,20 @@ console.log('\nnormalising what somebody typed');
   ok('a school level that is not a number is refused', !('Riija' in loadout.plan.schools) && said(/not a level/));
   ok('a seventh school level is refused — the game has six', !('Faren' in loadout.plan.schools) && said(/the game has six/));
   ok('a real one survives', loadout.plan.schools.Kraanan === 3);
+  const targeted = L.normalise({ character: 'x', plan: {
+    learning_target: { track: 'Kraanan' }, abilities: [],
+  } }).loadout;
+  ok('the learning target is a plan field and object input normalises to its track name',
+     targeted.plan.learning_target === 'Kraanan');
+  const expanded = L.plannedAbilities({
+    abilities: [{ name: 'dodge', kind: 'skill' }], schools: { Faren: 2 },
+  }, [
+    { name: 'spark', kind: 'spell', school: 'Faren', level: 1 },
+    { name: 'fireball', kind: 'spell', school: 'Faren', level: 2 },
+    { name: 'too far', kind: 'spell', school: 'Faren', level: 3 },
+  ], [{ name: 'spark', kind: 'spell' }]);
+  ok('school plans expand into their unlearned spells without losing explicit skills',
+     expanded.map(row => row.name).join(',') === 'dodge,fireball', JSON.stringify(expanded));
   ok('A MAX BELOW A MIN IS RAISED, not honoured — the pair cannot both be satisfied and ' +
      'the keeper would buy and sell the same item for ever',
      loadout.carry[0].max === 20 && said(/buy and sell the same item for ever/));
@@ -375,6 +389,29 @@ console.log('\nremaining required to learn new skills');
   ok('an already-known target has no "remaining to any new ability" number',
      already.candidates[0].already_known === true && already.remaining_required_to_any === null,
      JSON.stringify(already));
+
+  const auto = L.PointsToNextLevelOfTarget({ known, catalogue, intellect: 30, constants: C });
+  ok('without a plan target, the fleet row advances weaponcraft one level',
+     auto.target === 'weaponcraft' && auto.current_level === 1 && auto.next_level === 2 &&
+     auto.points === 20, JSON.stringify(auto));
+  const spellCatalogue = [...catalogue,
+    { name: 'faren spark', kind: 'spell', school: 'Faren', level: 1 },
+    { name: 'jala note', kind: 'spell', school: 'Jala', level: 1 }];
+  const maxWeaponKnown = [{ name: 'weapon six', kind: 'skill', discipline: 'fencing',
+                            level: 6, ability: 1 }];
+  const maxWeaponCatalogue = [...spellCatalogue,
+    { name: 'weapon six', kind: 'skill', discipline: 'fencing', level: 6, for_sale: true }];
+  const fallback = L.PointsToNextLevelOfTarget({
+    known: maxWeaponKnown, catalogue: maxWeaponCatalogue, intellect: 30, constants: C,
+  });
+  ok('at weaponcraft 6, the automatic target falls through spell schools alphabetically',
+     fallback.target === 'Faren' && fallback.next_level === 1, JSON.stringify(fallback));
+  const plannedTarget = L.PointsToNextLevelOfTarget({
+    known: maxWeaponKnown, catalogue: maxWeaponCatalogue, intellect: 30, constants: C,
+    plan: { learning_target: 'Jala' },
+  });
+  ok('a character-plan target overrides the automatic order',
+     plannedTarget.target === 'Jala' && plannedTarget.source === 'plan', JSON.stringify(plannedTarget));
 }
 
 console.log('\nschools, read off a character sheet');

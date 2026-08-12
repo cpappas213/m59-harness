@@ -103,7 +103,7 @@ export function blank(character, agent = null) {
     agent: agent ?? null,
     updated: null,
     note: '',
-    plan: { schools: {}, weapon_level: null, abilities: [] },
+    plan: { schools: {}, weapon_level: null, learning_target: null, abilities: [] },
     // `from` is provenance and nothing else reads it: a gear stanza that arrived from a
     // fleet-wide apply looks exactly like one somebody typed for this character, and the
     // difference is the whole reason to open the file.
@@ -113,6 +113,30 @@ export function blank(character, agent = null) {
     keep: [],
     purse: { float: null, bank_above: null },
   };
+}
+
+// Turn both halves of the planner into the abilities a learning errand can buy. Skills
+// are explicit ticks in plan.abilities; spell plans name a school and destination level,
+// so every not-yet-known spell at or below that level belongs to the same plan.
+export function plannedAbilities(plan, abilities = [], known = []) {
+  const out = [...(plan?.abilities ?? [])].map(row => ({ ...row }));
+  const key = row => `${row?.kind ?? ''}:${norm(row?.name)}`;
+  const knownKeys = new Set((known || []).map(key));
+  const outKeys = new Set(out.map(key));
+  for (const [school, targetLevel] of Object.entries(plan?.schools ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))) {
+    const spells = (abilities || []).filter(row => row.kind === 'spell' &&
+      norm(row.school) === norm(school) && Number(row.level) <= Number(targetLevel))
+      .sort((a, b) => Number(a.level) - Number(b.level) || String(a.name).localeCompare(String(b.name)));
+    for (const spell of spells) {
+      const exact = `spell:${norm(spell.name)}`, generic = `:${norm(spell.name)}`;
+      if (knownKeys.has(exact) || outKeys.has(exact) || outKeys.has(generic)) continue;
+      out.push({ name: spell.name, kind: 'spell', level: spell.level,
+                 why: `${school} level ${targetLevel} plan` });
+      outKeys.add(exact);
+    }
+  }
+  return out;
 }
 
 // The slots the keeper's wearBest knows about, plus the hand. Anything else in `slots` is
@@ -152,6 +176,15 @@ export function normalise(raw, { character = null } = {}) {
   }
   out.plan.schools = schools;
   out.plan.weapon_level = numOr(src.plan?.weapon_level, null);
+  const learningTarget = src.plan?.learning_target;
+  if (learningTarget !== null && learningTarget !== undefined && learningTarget !== '') {
+    const raw = typeof learningTarget === 'string' ? learningTarget
+      : learningTarget && typeof learningTarget === 'object'
+        ? learningTarget.track ?? learningTarget.school ?? learningTarget.name
+        : null;
+    if (!raw || !String(raw).trim()) problems.push('plan.learning_target is not a track name');
+    else out.plan.learning_target = String(raw).trim().slice(0, 80);
+  }
   out.plan.abilities = (Array.isArray(src.plan?.abilities) ? src.plan.abilities : [])
     .map(a => (typeof a === 'string' ? { name: a } : a))
     .filter(a => a && a.name)
@@ -890,7 +923,8 @@ export function weaponTrackLevel(sheet, skillData = null) {
 // assets/learn.js by the page's build. Two copies of a formula in this repository have
 // always become two answers to a question.
 export { learnCost, canLearn, trackPoints, levelPointsAt,
-         RemainingRequiredToLearnNewSkills, remainingRequiredToLearnNewSkills }
+         RemainingRequiredToLearnNewSkills, remainingRequiredToLearnNewSkills,
+         PointsToNextLevelOfTarget, pointsToNextLevelOfTarget }
   from '../compendium/tools/learn.mjs';
 
 // ---------------------------------------------------------------------- cli

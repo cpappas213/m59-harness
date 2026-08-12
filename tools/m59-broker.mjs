@@ -45,13 +45,13 @@ import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
 import * as skills from './m59-skills.mjs';
 import * as abilities from './m59-abilities.mjs';
-import { RemainingRequiredToLearnNewSkills } from '../compendium/tools/learn.mjs';
+import { RemainingRequiredToLearnNewSkills, PointsToNextLevelOfTarget } from '../compendium/tools/learn.mjs';
 import * as bankbook from './m59-bank.mjs';
 import * as hitbook from './m59-hits.mjs';
 import * as transits from './m59-transits.mjs';
 import * as descriptions from './m59-describe.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
-import { loadoutFor, reconcile as reconcileLoadout } from './m59-loadout.mjs';
+import { loadoutFor, reconcile as reconcileLoadout, plannedAbilities } from './m59-loadout.mjs';
 import { resolveItemNames } from './m59-items.mjs';
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
@@ -303,6 +303,91 @@ if (!worldMap) {
   console.error('WARNING: substrate/m59-map.json not found — no map, no geometry, no travel.');
   console.error('  build it with: node tools/m59-map.mjs build');
 }
+
+// LEARNING PROGRESS WITHOUT A PACKET. The fleet tool is sampled into the ledger and is
+// also polled by both UIs, so it may read the client's push-maintained ability map and the
+// kept book, but it must never turn every page refresh into 21 server requests.
+function cachedLearningRows(c) {
+  if (!c) return [];
+  const book = abilities.loadBook(c.me?.name ?? '') || {};
+  const merge = (list, kind) => (list || []).map(x => {
+    const name = c.rsc.get(x.nameRsc);
+    const live = c.abilityOf?.(name);
+    const kept = book[kind === 'skill' ? 'skills' : 'spells']?.[name]?.ability;
+    return { name, kind, ability: live ?? kept ?? 0 };
+  }).filter(x => x.name);
+  return [...merge(c.skills, 'skill'), ...merge(c.spells, 'spell')];
+}
+
+const learningName = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+function taughtAbility(name, kind = null) {
+  const q = learningName(name), seen = new Map();
+  for (const merchant of merchantCatalogue?.merchants ?? []) {
+    for (const row of merchant.teaches ?? []) {
+      const taught = row.skill || row.spell;
+      if (!taught || learningName(taught) !== q || (kind && row.kind && row.kind !== kind)) continue;
+      const key = `${row.kind ?? ''}:${learningName(taught)}`;
+      if (!seen.has(key)) seen.set(key, {
+        name: taught, kind: row.kind ?? kind ?? null, price: row.price ?? null,
+        teachers: [],
+      });
+      const answer = seen.get(key);
+      if (merchant.room != null) answer.teachers.push({ name: merchant.name, room: merchant.room });
+    }
+  }
+  return seen.size === 1 ? [...seen.values()][0] : null;
+}
+
+function learningView(c) {
+  if (!learningCatalogue || !c?.me?.name) return null;
+  const known = cachedLearningRows(c);
+  const plan = loadoutFor(c.me.name)?.plan ?? null;
+  const args = {
+    known, catalogue: learningCatalogue.abilities,
+    intellect: c.stat('intellect'), karma: c.stat('karma'),
+    constants: learningCatalogue.constants,
+  };
+  const progress = PointsToNextLevelOfTarget({ ...args, plan });
+  const result = RemainingRequiredToLearnNewSkills({ ...args, kind: 'both' });
+  const byName = new Map(result.candidates.map(row =>
+    [`${row.kind}:${learningName(row.name)}`, row]));
+  // Skills are explicit ticks in plan.abilities. Spells are planned by school level,
+  // because the planner's spell pane says "take Faren to 3" and shows everything that
+  // reaches. Expand that goal here so "planned skills" really means spells too.
+  const plannedEntries = plannedAbilities(plan, learningCatalogue.abilities, known);
+  const planned = plannedEntries.map((entry, order) => {
+    const kinds = entry.kind ? [entry.kind] : ['skill', 'spell'];
+    const matches = kinds.map(kind => byName.get(`${kind}:${learningName(entry.name)}`)).filter(Boolean);
+    const row = matches.length === 1 ? matches[0] : null;
+    const teacher = row ? taughtAbility(row.name, row.kind) : null;
+    return {
+      order, name: entry.name, kind: row?.kind ?? entry.kind ?? null,
+      level: row?.level ?? entry.level ?? null,
+      remaining_required: row?.remaining_required ?? null,
+      expected_buyable: row?.can_learn === true && !!teacher && teacher.teachers.length > 0,
+      price: teacher?.price ?? (row?.level ? 250 * (2 ** Number(row.level)) : null),
+      teacher: teacher?.teachers[0] ?? null,
+      blocked_by: row?.blocked_by ?? (!row ? ['already known or absent from the learning catalogue']
+        : !teacher ? ['no teacher in the merchant catalogue'] : undefined),
+    };
+  });
+  // One purchase per character per press. Buying an ability changes PlayerCanLearn's
+  // inputs, so a second one that was eligible before the first is not assumed eligible
+  // afterwards. The next refresh is the next trustworthy preflight.
+  const next = planned.find(row => row.expected_buyable) ?? null;
+  return {
+    progress,
+    planned: {
+      configured: planned.length,
+      ready: planned.filter(row => row.expected_buyable).length,
+      next,
+      abilities: planned,
+    },
+  };
+}
+
+const learningErrands = new Map();
 
 const sessions = new Map();             // agent name -> Session
 
@@ -7771,6 +7856,89 @@ const TOOLS = [
     },
   },
   {
+    name: 'buy_next_planned_skills',
+    description:
+      'LOCALHOST-ONLY planned-learning errand. For each selected character, re-evaluates ' +
+      'the character plan against PlayerCanLearn, chooses ONE currently buyable planned ' +
+      'skill or spell, and starts the existing outfitter errand. The errand visits a bank ' +
+      'when necessary, funds the exact level price, routes to a catalogue-backed teacher, ' +
+      'verifies the purchase, and restores the keeper. One per press is deliberate: buying ' +
+      'it changes the calculation, so a second purchase needs a fresh preflight.',
+    schema: { type: 'object', properties: {
+      agents: { type: 'array', items: { type: 'string' }, maxItems: 40 },
+    }, required: ['agents'] },
+    run: async (a, caller) => {
+      requireRtsLocalCaller(caller);
+      const agents = [...new Set((Array.isArray(a.agents) ? a.agents : [])
+        .map(x => String(x || '').trim()).filter(x => /^[A-Za-z0-9_-]{1,64}$/.test(x)))];
+      if (!agents.length) throw new Error('choose at least one fleet character');
+      const results = [];
+      for (const agent of agents) {
+        const s = sessions.get(agent), c = s?.client;
+        if (!s || !c || s.live !== true || c.state !== 'game') {
+          results.push({ agent, queued: false, reason: 'not in game' });
+          continue;
+        }
+        if (pilotOf(agent)) {
+          results.push({ agent, character: c.me?.name, queued: false,
+                         reason: 'a local Meridian client is playing this character' });
+          continue;
+        }
+        const running = learningErrands.get(agent);
+        if (running && pidAlive(running.pid)) {
+          results.push({ agent, character: c.me?.name, queued: false,
+                         reason: `planned-learning errand ${running.pid} is already running` });
+          continue;
+        }
+        learningErrands.delete(agent);
+        // The button is shown from the cheap push-maintained cache, but a click is a
+        // commitment to move and spend money. Re-read both sides of PlayerCanLearn at
+        // that boundary so an old percentage can hide a button, never authorize an
+        // errand. A failed preflight refuses just this character.
+        try {
+          await s.pacer.submit('read', () => c.stats(2));
+          await abilities.ensureAbilities(s, {
+            kinds: 'both', force: true, maxAgeMs: ABILITY_MAX_AGE_MS,
+          });
+        } catch (error) {
+          results.push({ agent, character: c.me?.name, queued: false,
+                         reason: `could not refresh advancement: ${error.message}` });
+          continue;
+        }
+        const view = learningView(c), next = view?.planned?.next;
+        if (!next?.expected_buyable) {
+          const first = view?.planned?.abilities?.[0] ?? null;
+          results.push({ agent, character: c.me?.name, queued: false,
+            reason: !view?.planned?.configured ? 'the character plan has no abilities'
+              : first?.remaining_required != null
+                ? `${first.name} still needs ${first.remaining_required} point(s)`
+                : first?.blocked_by?.join('; ') || 'no planned ability is expected to be offered now',
+          });
+          continue;
+        }
+        const script = new URL('./m59-outfit.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+        const httpAt = process.argv.indexOf('--http');
+        const brokerPort = httpAt >= 0 ? process.argv[httpAt + 1]
+          : process.env.M59_BROKER_PORT || '8901';
+        const child = spawn(process.execPath, [script,
+          '--port', String(brokerPort), '--agents', agent, '--learn', next.name,
+          '--withdraw', String(next.price), '--exact-funding',
+        ], { detached: true, stdio: 'ignore', cwd: BROKER_ROOT, windowsHide: true });
+        child.unref();
+        learningErrands.set(agent, { pid: child.pid, at: Date.now(), ability: next.name });
+        results.push({ agent, character: c.me?.name, queued: true,
+                       ability: next.name, kind: next.kind, level: next.level,
+                       price: next.price, teacher: next.teacher, pid: child.pid });
+      }
+      return {
+        queued: results.filter(r => r.queued).length,
+        refused: results.filter(r => !r.queued).length,
+        results,
+        note: 'each queued character buys one ability; refresh after it returns to preflight the next one',
+      };
+    },
+  },
+  {
     name: 'bank',
     description:
       'Deposit, withdraw, or check money at a bank. THIS IS WHAT MAKES PROGRESS SURVIVE DYING: ' +
@@ -9402,6 +9570,9 @@ const TOOLS = [
             return { ok: r.ok, short: r.buy.length, shed: r.sell.length,
                      at_least: r.at_least || undefined, summary: r.summary };
           })(),
+          // The same target and PlayerCanLearn arithmetic the planner uses. Cache-only:
+          // a fleet-page refresh must not turn into 21 game-server reads.
+          learning: learningView(c),
           // WHERE IT HAS BEEN GETTING HURT, in the last ten minutes. On the fleet row
           // because the row is what a person actually reads, and because the number that
           // matters is comparative: one character losing health while `travelling` is a
@@ -10059,7 +10230,8 @@ function serveHttp(port) {
           .filter(Boolean)
           .map(p => p.character)
           .filter(Boolean);
-        return res.end(renderDashboard({ hours, piloted: holding }));
+        const live = await TOOLS.find(t => t.name === 'fleet')?.run({});
+        return res.end(renderDashboard({ hours, piloted: holding, live: live?.fleet ?? null }));
       } catch (e) {
         res.writeHead(500, { 'content-type': 'text/plain' });
         return res.end('dashboard failed: ' + e.message);
@@ -10297,7 +10469,7 @@ function handleControl(action, res) {
 }
 
 function serveDashboard(port) {
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url0 = new URL(req.url, 'http://x');
     // THE ONLY WRITES THIS SERVER ACCEPTS, and only from the machine it runs on.
     //
@@ -10468,8 +10640,9 @@ function serveDashboard(port) {
     }
     try {
       const hours = Number(url.searchParams.get('hours')) || 24;
+      const live = await TOOLS.find(t => t.name === 'fleet')?.run({});
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-      res.end(renderDashboard({ hours, localhost: isLocal(req) }));
+      res.end(renderDashboard({ hours, localhost: isLocal(req), live: live?.fleet ?? null }));
     } catch (e) {
       res.writeHead(500, { 'content-type': 'text/plain' });
       res.end('dashboard failed: ' + e.message);

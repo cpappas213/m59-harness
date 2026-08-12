@@ -108,6 +108,15 @@ export function recordSample(rows = []) {
       has_weapon: r.has_weapon ?? null,
       has_food: r.has_food ?? null,
       activity: r.activity ?? null,
+      // The current learning threshold is a latest reading, just like health. Keep the
+      // compact target and the next planned purchase so /fleet still answers after the
+      // broker goes dark; the full candidate list remains in the live fleet row.
+      learning_progress: r.learning?.progress ?? null,
+      planned_learning: r.learning?.planned ? {
+        configured: r.learning.planned.configured ?? 0,
+        ready: r.learning.planned.ready ?? 0,
+        next: r.learning.planned.next ?? null,
+      } : null,
       // WHAT IT IS CARRYING, IN THE THREE QUANTITIES THAT DECIDE WHETHER IT CAN KEEP
       // WORKING. The purse buys the reagents, the reagents become food, and food is the
       // only way past the vigor-80 resting cap — so an economy that has stopped moving
@@ -569,6 +578,8 @@ export function summarise({ sinceMs = 24 * 3600 * 1000 } = {}) {
     e.weapon_last = s.has_weapon ?? e.weapon_last ?? null;
     e.food_last = s.has_food ?? e.food_last ?? null;
     e.activity_last = s.activity ?? e.activity_last ?? null;
+    e.learning_last = s.learning_progress ?? e.learning_last ?? null;
+    e.planned_learning_last = s.planned_learning ?? e.planned_learning_last ?? null;
     // Counters, so take the largest seen rather than the latest — a keeper restart
     // zeroes them and the point of the column is the run, not the process.
     e.spot_deaths = Math.max(e.spot_deaths ?? 0, s.deaths_in_safe_spot ?? 0);
@@ -614,6 +625,8 @@ export function summarise({ sinceMs = 24 * 3600 * 1000 } = {}) {
     has_weapon: e.weapon_last ?? null,
     has_food: e.food_last ?? null,
     activity: e.activity_last ?? null,
+    learning: e.learning_last ?? null,
+    planned_learning: e.planned_learning_last ?? null,
     deaths_in_safe_spot: e.spot_deaths ?? 0,
     deaths_in_proven_safe_spot: e.proven_spot_deaths ?? 0,
     mulligans: e.mulligans ?? 0,

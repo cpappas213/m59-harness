@@ -62,6 +62,10 @@ const URL = `http://127.0.0.1:${PORT}/`;
 const DRY = !!arg('dry-run', false);
 const AT = arg('at', null) == null ? null : Number(arg('at'));
 const WITHDRAW = Number(arg('withdraw', 1000));
+// Planned-learning buttons know the exact fixed ability price before leaving. In that
+// mode, carry the bill rather than the outfitter's ordinary 200-shilling contingency;
+// the character is going to one teacher for one purchase, not shopping speculatively.
+const EXACT_FUNDING = !!arg('exact-funding', false);
 const ONLY = arg('agents', null);
 const FROM_MATE = !!arg('from-mate', false);
 // What to learn, by the name the GAME uses — "mace fighting", not "proficiency mace".
@@ -524,7 +528,8 @@ async function outfit(row) {
           // still asks for the full amount, which is the old behaviour and the only thing
           // available. When it IS known, never ask for more than it.
           const balance = row.banked?.balance ?? null;
-          const want = Math.min(Math.max(WITHDRAW, bill - have + 200),
+          const want = Math.min(EXACT_FUNDING ? Math.max(0, bill - have)
+                                             : Math.max(WITHDRAW, bill - have + 200),
                                 balance == null ? Infinity : balance);
           if (want <= 0) { log.push(`nothing banked at ${b.banker} to draw on`); continue; }
           await call('bank', { agent: row.agent, action: 'withdraw', amount: want }).catch(() => null);

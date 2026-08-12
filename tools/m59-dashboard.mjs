@@ -156,11 +156,20 @@ const ago = (t) => {
 // one am I actually playing" is a question that is useless if it is five minutes stale.
 // Passing it keeps the page's read-only property intact: it is a list of names, not a
 // route to a session.
-export function renderDashboard({ hours = 24, localhost = false, piloted = [] } = {}) {
+export function renderDashboard({ hours = 24, localhost = false, piloted = [], live = null } = {}) {
   const nowPiloted = new Set([].concat(piloted).filter(Boolean).map(n => String(n).toLowerCase()));
   const sinceMs = hours * 3600 * 1000;
   const sum = summarise({ sinceMs });
   const { events } = readLedger({ sinceMs });
+  const liveByCharacter = new Map((Array.isArray(live) ? live : [])
+    .filter(r => r?.character).map(r => [String(r.character).toLowerCase(), r]));
+  const fleet = sum.fleet.map(row => {
+    const current = liveByCharacter.get(String(row.character ?? '').toLowerCase());
+    return current ? { ...row,
+      learning: current.learning?.progress ?? row.learning ?? null,
+      planned_learning: current.learning?.planned ?? row.planned_learning ?? null,
+    } : row;
+  });
 
   // THE FLEET IS DARK, AND EVERY NUMBER BELOW IS A MEMORY.
   //
@@ -236,7 +245,7 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [] } 
       <td class="num dim">${c.hours}</td>
     </tr>`).join('');
 
-  const fleetRows = sum.fleet.map(r => {
+  const fleetRows = fleet.map(r => {
     const hp = pair(r.health), mp = pair(r.mana), vg = pair(r.vigor);
     // AT THE CONTROLS. The keeper is stopped while a person holds a character, so this
     // row's numbers are about someone playing rather than something farming — which is
@@ -248,6 +257,18 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [] } 
         mine ? '<span class="pilot-badge" title="a client on the broker machine is holding this character">you</span>' : ''}</td>
       <td class="num strong">${r.level ?? '—'}</td>
       <td class="num ${r.gained_on_strategy > 0 ? 'good' : 'dim'}">${r.gained_on_strategy > 0 ? '+' + r.gained_on_strategy : r.gained_on_strategy}</td>
+      <td class="learning">${(() => {
+        const p = r.learning;
+        if (!p?.target) return '<span class="dim">â€”</span>';
+        const points = p.points == null ? '?' : p.points;
+        const cls = p.points === 0 ? 'good' : p.points == null ? 'dim' : '';
+        const title = [p.example_ability ? `next ability: ${p.example_ability}` : '',
+          p.blocked_by?.length ? p.blocked_by.join('; ') : '',
+          p.source === 'plan' ? 'target chosen by character plan' : 'automatic target']
+          .filter(Boolean).join(' Â· ');
+        return `<strong class="${cls}" title="${esc(title)}">${esc(points)}</strong>` +
+          `<span>${esc(p.label ?? p.target)}</span>`;
+      })()}</td>
       <td class="vital">${bar(hp.value, hp.max, 'hp')}<span class="vnum">${esc(r.health ?? '—')}</span></td>
       <td class="vital">${bar(mp.value, mp.max, 'mp')}<span class="vnum">${esc(r.mana ?? '—')}</span></td>
       <td class="vital">${bar(vg.value, vg.max, 'vg')}<span class="vnum">${esc(r.vigor ?? '—')}</span></td>
@@ -341,6 +362,10 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [] } 
                  font-weight:700; letter-spacing:.04em; text-transform:uppercase;
                  background:var(--accent); color:#000; vertical-align:middle; }
   .doing { color:var(--dim); max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .learning { min-width:105px; white-space:nowrap; }
+  .learning strong { display:inline-block; min-width:2.1em; margin-right:.35rem;
+    text-align:right; font-variant-numeric:tabular-nums; }
+  .learning span { color:var(--dim); font-size:.72rem; }
   /* Fixed-width blocks, coloured per square. The width never varies with the value —
      the COLOUR carries it — so the column stays scannable and the orange frontier
      lines up down the page. */
@@ -432,12 +457,13 @@ ${controls}
       reaches. Rooms link to the compendium.</p>
     <table class="${offlineForMs == null ? '' : 'stale'}">
       <thead><tr><th>character</th><th class="num">level</th><th class="num">gained</th>
+        <th title="combined previous-level ability percentage still required">points to next</th>
         <th>health</th><th>mana</th><th>vigor</th>
         <th class="num">food?</th><th class="num">weapon?</th>
         <th>strategy</th><th class="num">deaths</th><th class="num">kills</th>
         <th class="num" title="kills in the last 30 minutes, counted from the ledger — the column to its left is a high-water mark over the whole window, because a keeper restart zeroes that counter">kills/30m</th><th>where</th>
         <th>doing</th></tr></thead>
-      <tbody>${fleetRows || '<tr><td colspan="13" class="dim">nothing recorded yet</td></tr>'}</tbody>
+      <tbody>${fleetRows || '<tr><td colspan="15" class="dim">nothing recorded yet</td></tr>'}</tbody>
     </table>
   </section>
 

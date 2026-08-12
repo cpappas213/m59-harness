@@ -260,5 +260,97 @@ function RemainingRequiredToLearnNewSkills({
 // function name. Both names are the same implementation, not two formulas.
 const remainingRequiredToLearnNewSkills = RemainingRequiredToLearnNewSkills;
 
-window.M59Learn={learnCost,canLearn,trackPoints,levelPointsAt,RemainingRequiredToLearnNewSkills,remainingRequiredToLearnNewSkills};
+// THE ONE PROGRESSION NUMBER A FLEET ROW CAN CARRY.
+//
+// `RemainingRequiredToLearnNewSkills` answers about abilities. A character plan and the
+// fleet page answer about a TRACK: "weaponcraft", "Faren", and so on. This adapter picks
+// the next level of that track and reduces all of its ability candidates to the threshold
+// shared by the first thing the character could learn there.
+//
+// A plan may opt in with `plan.learning_target` as a track name (or `{track: name}`). The
+// planner does not need a second formula when its target picker lands: it writes that field
+// and calls this function. With no choice, weaponcraft wins until level 6; after that the
+// first incomplete spell school alphabetically wins. Nothing is inferred from the plan's
+// final `weapon_level` / `schools` goals: a destination can name several tracks, while this
+// field deliberately names the ONE whose next threshold should be shown.
+function PointsToNextLevelOfTarget({
+  known = [], catalogue = [], intellect = 0, karma = null, constants = {},
+  target = null, plan = null,
+} = {}) {
+  const all = RemainingRequiredToLearnNewSkills({
+    known, catalogue, intellect, karma, constants, kind: 'both',
+  });
+  const schools = [...new Set((catalogue || [])
+    .filter(r => learnKind(r) === 'spell' && r.school)
+    .map(r => String(r.school)))]
+    .sort((a, b) => a.localeCompare(b));
+  const schoolByName = new Map(schools.map(s => [learnNorm(s), s]));
+  const requested = target ?? plan?.learning_target ?? null;
+  const rawTrack = typeof requested === 'string' ? requested
+    : requested && typeof requested === 'object'
+      ? requested.track ?? requested.school ?? requested.name
+      : null;
+  const requestedKey = learnNorm(rawTrack);
+  let track = null, source = requestedKey ? 'plan' : 'automatic', targetError = null;
+  if (requestedKey) {
+    if (['weapon', 'weapons', 'weaponcraft', 'skill', 'skills'].includes(requestedKey))
+      track = 'weaponcraft';
+    else if (schoolByName.has(requestedKey)) track = schoolByName.get(requestedKey);
+    else targetError = `unknown learning target "${rawTrack}"`;
+  }
+
+  const levelOf = t => {
+    if (t === 'weaponcraft') return Math.max(0, Math.min(6, Number(all.track_levels.weapon) || 0));
+    const hit = Object.entries(all.track_levels)
+      .find(([name]) => learnNorm(name) === learnNorm(t));
+    return Math.max(0, Math.min(6, Number(hit?.[1]) || 0));
+  };
+  if (!track) {
+    source = 'automatic';
+    if (levelOf('weaponcraft') < 6) track = 'weaponcraft';
+    else track = schools.find(s => levelOf(s) < 6) ?? null;
+  }
+  if (!track) return {
+    target: null, source, complete: true, points: 0,
+    target_error: targetError || undefined,
+    note: 'weaponcraft and every spell school are already at level 6',
+  };
+
+  const currentLevel = levelOf(track);
+  if (currentLevel >= 6) return {
+    target: track, source, current_level: currentLevel, next_level: null,
+    complete: true, points: 0, target_error: targetError || undefined,
+    note: `${track} is already level 6`,
+  };
+  const nextLevel = currentLevel + 1;
+  const rows = all.candidates.filter(r => Number(r.level) === nextLevel &&
+    (track === 'weaponcraft'
+      ? r.kind === 'skill'
+      : r.kind === 'spell' && learnNorm(r.school) === learnNorm(track)));
+  const ranked = rows.slice().sort((a, b) =>
+    (b.can_learn === true ? 1 : 0) - (a.can_learn === true ? 1 : 0) ||
+    (a.remaining_required ?? Infinity) - (b.remaining_required ?? Infinity) ||
+    String(a.name).localeCompare(String(b.name)));
+  const best = ranked[0] ?? null;
+  return {
+    target: track,
+    source,
+    current_level: currentLevel,
+    next_level: nextLevel,
+    label: `${track === 'weaponcraft' ? 'Weaponcraft' : track} ${nextLevel}`,
+    points: best?.remaining_required ?? null,
+    ready_to_learn: rows.some(r => r.can_learn === true),
+    need: best?.need ?? null,
+    have: best?.have ?? null,
+    example_ability: best?.name ?? null,
+    blocked_by: best?.blocked_by,
+    candidates: rows.length,
+    target_error: targetError || undefined,
+    note: best ? undefined : `no learnable level ${nextLevel} ${track} ability is in the catalogue`,
+  };
+}
+
+const pointsToNextLevelOfTarget = PointsToNextLevelOfTarget;
+
+window.M59Learn={learnCost,canLearn,trackPoints,levelPointsAt,RemainingRequiredToLearnNewSkills,remainingRequiredToLearnNewSkills,PointsToNextLevelOfTarget,pointsToNextLevelOfTarget};
 })();

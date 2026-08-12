@@ -60,7 +60,7 @@
   function blank(name) {
     return {
       format: 'm59-loadout/1', character: name || '', agent: null, updated: null, note: '',
-      plan: { schools: {}, weapon_level: null, abilities: [] },
+      plan: { schools: {}, weapon_level: null, learning_target: null, abilities: [] },
       gear: { weapon: [], slots: {}, from: null },
       carry: [], sell: [], keep: [], purse: { float: null, bank_above: null },
     };
