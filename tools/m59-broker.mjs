@@ -66,7 +66,7 @@ import { hourFromSunAngle, phaseFromSun, isFresh } from './m59-skyclock.mjs';
 import { StorageCache, GUILD_CHEST_SLOTS, chestFullness } from './m59-storage.mjs';
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
-         POSTMORTEM_DIR, setPilotLookup } from './m59-autopilot.mjs';
+         POSTMORTEM_DIR, setPilotLookup, restoredAutopilotPolicy } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
 import { TitheBook, guildRentStatus, payGuildTithe, titheFleet } from './m59-tithe.mjs';
@@ -881,7 +881,7 @@ async function resumeFleet() {
         // killed anything for half an hour.
         const p = autopilotFor(s);
         p.mode = autopilot.mode || p.mode;
-        Object.assign(p.policy, autopilot.policy || {});
+        Object.assign(p.policy, restoredAutopilotPolicy(autopilot.policy));
         // RE-ESTABLISH THE PAIRING, which the policy remembers and the register does
         // not. m59-party's register is process-wide and in-memory, so it is empty after
         // a restart — and a keeper whose policy says it has a partner, in a register
@@ -993,7 +993,7 @@ async function confirmHeldOnline(held) {
       if (autopilot) {
         const p = autopilotFor(s);
         p.mode = autopilot.mode || p.mode;
-        Object.assign(p.policy, autopilot.policy || {});
+        Object.assign(p.policy, restoredAutopilotPolicy(autopilot.policy));
         p.start();
       }
       console.error(`[state] resumed ${agent} (${credentials.character || '?'}) after all`);
@@ -1148,7 +1148,7 @@ async function reconcileFleet() {
       if (restoreKeeper) {
         const p = autopilotFor(s);
         p.mode = entry.autopilot.mode || p.mode;
-        Object.assign(p.policy, entry.autopilot.policy || {});
+        Object.assign(p.policy, restoredAutopilotPolicy(entry.autopilot.policy));
         p.start();
         keeper = p.running ? `${p.mode}/${p.policy.hunt || '-'}` : 'FAILED TO START';
       } else if (entry.autopilot) {
@@ -1320,7 +1320,7 @@ function releasePilot(agent, why = 'released') {
       const saved = fleetState.get(agent)?.autopilot;
       if (saved) {
         keeper.mode = saved.mode || keeper.mode;
-        Object.assign(keeper.policy, saved.policy || {});
+        Object.assign(keeper.policy, restoredAutopilotPolicy(saved.policy));
       }
       keeper.start();
       console.error(`[pilot] ${agent} still in game — keeper restarted here rather than ` +
@@ -10817,7 +10817,7 @@ const TOOLS = [
         // is still refused the room; it just stops refusing it on everyone else's behalf.
         const roomsCache = new Map();
         const roomsFor = (c) => {
-          const ceil = c.level + (c.p.policy.maxThreatOver ?? 6);
+          const ceil = c.level + (c.p.policy.maxThreatOver ?? 15);
           if (!roomsCache.has(ceil)) {
             // A ROOM YOU CANNOT WALK TO IS NOT A HUNTING GROUND.
             //
@@ -10843,7 +10843,7 @@ const TOOLS = [
           }
           return roomsCache.get(ceil);
         };
-        const ceilingOf = (c) => c.level + (c.p.policy.maxThreatOver ?? 6);
+        const ceilingOf = (c) => c.level + (c.p.policy.maxThreatOver ?? 15);
         // Keep a character where it already stands when that room is in the set and
         // has space — travel is the expensive part and every hop is a chance to die.
         const has = r => taken[r.room] ?? 0;
