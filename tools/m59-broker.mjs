@@ -85,6 +85,7 @@ import { COMMANDER_SCHEMA, COMMERCE_SCHEMA, COMMANDER_FACULTIES,
          commerceItemsEqual, commanderSettings,
          exactRtsRoomBinding, fleetIdentity, leaseTiming, quoteTiming, redactControlArgs,
          resolveCommerceInventoryOrigins, tradeFingerprint } from './m59-rts-command.mjs';
+import { joinSessionOnce, sessionReadiness } from './m59-session-readiness.mjs';
 
 const HOST = process.env.M59_HOST || '127.0.0.1';
 const PORT = Number(process.env.M59_PORT || 5959);
@@ -1608,6 +1609,10 @@ class Session {
     this.pacer = new Pacer();
     this.client = null;
     this.world = null;
+    // Fleet resume and an HTTP caller can request the same slot during broker
+    // boot. They must share one login attempt instead of racing two sockets for
+    // the same character.
+    this.joining = null;
     this.cursor = 0;                    // last event seq this agent has been told about
     this.fine = false;                  // fine-movement mode — see walkFine
     this.recorder = new Recorder(name); // flight recorder; never surfaced in replies
@@ -1895,8 +1900,11 @@ class Session {
     return rtsJobReport(this.job);
   }
 
-  async join({ account, password, character, host = HOST, port = PORT }) {
-    if (this.live) return this.snapshot('already in game');
+  async join(args) {
+    return joinSessionOnce(this, args, value => this.joinOnce(value));
+  }
+
+  async joinOnce({ account, password, character, host = HOST, port = PORT }) {
     // Kept so the session can put itself back together. A `save game` renumbers
     // every object id, which leaves a live session holding a selfId the server has
     // stopped using — see Autopilot.pass. Logging in again is the only cure, and it
@@ -9997,13 +10005,14 @@ function brokerGameEndpoints() {
 }
 
 function brokerHealth() {
+  const readiness = sessionReadiness(sessions);
   return {
     ok: true,
     pid: process.pid,
     root: BROKER_ROOT,
     fleet: FLEET || 'default',
     state: STATE_FILE,
-    sessions: [...sessions.keys()],
+    ...readiness,
     tools: TOOLS.length,
     commander: { ...commanderSettings(process.env, COMMANDER_FLEET), broker_pid: process.pid },
     ...brokerGameEndpoints(),
