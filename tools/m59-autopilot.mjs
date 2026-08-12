@@ -24,7 +24,7 @@ import * as skills from './m59-skills.mjs';
 import { OF, affordances, dropSpec as dropSpecFor } from './m59-parse.mjs';
 import { isFood, foodValue } from './m59-items.mjs';
 import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe } from './m59-spawns.mjs';
-import { findPath } from './m59-map.mjs';
+import { findPath, roomsWithin } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
 import { inboxIfAny } from './m59-inbox.mjs';
@@ -1055,6 +1055,17 @@ export class Autopilot {
       const mine = wantsOf(l, this.packAsItems());
       for (const w of mine.wants) if (!wants.includes(w)) wants.push(w);
       for (const [k, n] of mine.spare) if (!spare.has(k)) spare.set(k, n);
+      // THE QUANTITIES TOO, and this line is the whole reason a loadout could be ignored by
+      // the one mechanism that fetches things. `needs` is what `demandsForRoom` filters and
+      // returns, so a shortfall that never reached it was invisible to farm delivery no
+      // matter how loudly the loadout asked. Only the two reagents above had a target, so
+      // only they were ever delivered — the fleet ran 14 elderberry against 215 herbs while
+      // couriers kept buying herbs, because herbs were what the board could say.
+      //
+      // The reagent targets above win on a tie: they are this character's own floor for the
+      // thing it casts with, and a loadout that also lists elderberry is asking for stock,
+      // not for a smaller floor than the keeper already runs on.
+      for (const [k, n] of mine.needs) if (!needs.has(k) && n > 0) needs.set(k, n);
     }
     skills.interest.declare(this.name ?? this.s.name, { wants, needs, spare,
       room: this.s.world?.room?.num ?? null, character: c.me?.name ?? null,
@@ -4973,7 +4984,8 @@ export class Autopilot {
         farm_delivery: { enabled: !!this.policy.farmDelivery?.enabled, ...this.coordination.delivery,
           pending: this.pendingFarmDelivery ? {
             room: this.pendingFarmDelivery.room, room_name: this.pendingFarmDelivery.room_name,
-            recipients: this.pendingFarmDelivery.recipients.length,
+            polled: this.pendingFarmDelivery.polled.length,
+            radius: this.pendingFarmDelivery.radius,
             requested: this.pendingFarmDelivery.requested, bought: this.pendingFarmDelivery.bought,
             cargo: this.pendingFarmDelivery.cargo,
           } : null },
@@ -8766,28 +8778,108 @@ export class Autopilot {
     return run;
   }
 
+  // How many of one kind a courier will carry for one character on one trip. The two named
+  // reagents keep their own settings because they are the two the fleet burns continuously;
+  // everything else a loadout asks for shares a default. A cap of 0 for a kind is a real
+  // answer — "do not fetch this" — so it is honoured rather than replaced by the default.
+  deliveryCapFor(kind, cfg = this.policy.farmDelivery) {
+    const num = (v, fallback) => (v === undefined || v === null || Number.isNaN(Number(v))
+      ? fallback : Math.max(0, Math.floor(Number(v))));
+    if (kind === 'herb') return num(cfg?.herbs_per_farmer, 20);
+    if (kind === 'elderberry') return num(cfg?.elderberries_per_farmer, 10);
+    return num(cfg?.per_farmer_default, 10);
+  }
+
+  // A KIND IS A NORMALISED ITEM NAME, and the two reagents also answer to their `shareKind`
+  // alias — the server says "herbs" where the board says "herb", and a delivery that
+  // matched only one of those spellings would carry the right thing and fail to find it.
+  matchesKind(name, kind) {
+    const n = String(name || '');
+    return skills.shareKind(n) === kind || norm(n) === String(kind || '').toLowerCase();
+  }
+
+  countOfKind(kind) {
+    return this.packAsItems().reduce((sum, item) =>
+      sum + (this.matchesKind(item.name, kind) ? (item.amount || 1) : 0), 0);
+  }
+
+  // What this character keeps for ITSELF before anything is spare. The two reagents use the
+  // keeper's own target; anything else uses the floor its loadout asked for. Without this a
+  // courier would hand over the mushrooms it is carrying because it needs them.
+  ownFloorFor(kind) {
+    if (kind === 'herb' || kind === 'elderberry')
+      return reagentTargetFor(kind, this.policy.reagentTarget);
+    const l = this.loadout();
+    const entry = l?.carry?.find(c => norm(c.item) === String(kind || '').toLowerCase());
+    return entry ? (entry.min || 0) : 0;
+  }
+
+  // Everything above that floor, per kind, which is what may be given away.
+  deliverableSpare(kinds = null) {
+    const want = kinds ?? [...new Set(this.packAsItems()
+      .map(item => skills.shareKind(item.name) ?? norm(item.name)).filter(Boolean))];
+    const out = {};
+    for (const kind of want) {
+      const spare = this.countOfKind(kind) - this.ownFloorFor(kind);
+      if (spare > 0) out[kind] = spare;
+    }
+    return out;
+  }
+
+  // How far a courier will walk off its destination to hand things over. Bounded at 3
+  // because this is a detour taken while carrying somebody else's goods, not a patrol.
+  deliveryRadius(cfg = this.policy.farmDelivery) {
+    const n = Number(cfg?.radius_rooms);
+    return Number.isFinite(n) ? Math.max(0, Math.min(3, Math.floor(n))) : 2;
+  }
+
+  // The rooms this delivery serves: the destination and its neighbourhood, nearest first.
+  deliveryNeighbourhood(room, cfg = this.policy.farmDelivery) {
+    const map = this.s.world?.map;
+    const radius = this.deliveryRadius(cfg);
+    if (!map || !radius) return new Map([[Number(room), 0]]);
+    try { return roomsWithin(map, Number(room), radius); }
+    catch { return new Map([[Number(room), 0]]); }
+  }
+
+  // Sum a list of demands into one shopping list, capped per kind per character.
+  deliveryRequestOf(demands, cfg = this.policy.farmDelivery) {
+    const requested = {};
+    for (const rec of demands)
+      for (const [kind, amount] of Object.entries(rec.needs || {})) {
+        const want = Math.min(amount, this.deliveryCapFor(kind, cfg));
+        if (want > 0) requested[kind] = (requested[kind] || 0) + want;
+      }
+    return requested;
+  }
+
   prepareFarmDelivery(room) {
     const cfg = this.policy.farmDelivery;
     if (!cfg?.enabled || this.mode !== 'farm' || room == null || this.pendingFarmDelivery) return null;
-    const demands = skills.interest.demandsForRoom(room, { except: this.name ?? this.s.name })
+    // POLLED OVER THE NEIGHBOURHOOD AND ACROSS EVERY KIND ANYONE ASKS FOR. Both halves of
+    // that used to be narrower: one room, and the two reagents that happened to have a
+    // target. A loadout now puts quantities on the board (see `declareInterest`), so the
+    // list a courier buys is whatever the people out there are actually short of.
+    const within = this.deliveryNeighbourhood(room, cfg);
+    const demands = skills.interest.demandsNear(within, { except: this.name ?? this.s.name })
       .slice(0, Math.max(1, Math.min(12, Number(cfg.max_recipients) || 4)))
-      .map(rec => ({ ...rec, needs: {
-        herb: Math.min(rec.needs.herb || 0, Math.max(0, Number(cfg.herbs_per_farmer) || 0)),
-        elderberry: Math.min(rec.needs.elderberry || 0, Math.max(0, Number(cfg.elderberries_per_farmer) || 0)),
-      } }))
-      .filter(rec => rec.needs.herb || rec.needs.elderberry);
+      .map(rec => ({ ...rec, needs: Object.fromEntries(Object.entries(rec.needs)
+        .map(([kind, amount]) => [kind, Math.min(amount, this.deliveryCapFor(kind, cfg))])
+        .filter(([, amount]) => amount > 0)) }))
+      .filter(rec => Object.keys(rec.needs).length);
     if (!demands.length || !claimFarmDelivery(room, this.name ?? this.s.name)) return null;
-    const requested = demands.reduce((out, rec) => ({
-      herb: out.herb + rec.needs.herb, elderberry: out.elderberry + rec.needs.elderberry,
-    }), { herb: 0, elderberry: 0 });
+    const requested = this.deliveryRequestOf(demands, cfg);
     this.pendingFarmDelivery = { room: Number(room), room_name: this.s.world?.room?.name ?? null,
-      recipients: demands, requested, bought: { herb: 0, elderberry: 0 },
-      cargo: { herb: 0, elderberry: 0 }, claimed_at: Date.now() };
+      radius: this.deliveryRadius(cfg), polled: demands, requested, bought: {},
+      cargo: {}, claimed_at: Date.now() };
     this.coordination.delivery.trips++;
     this.coordination.delivery.farmers_polled += demands.length;
-    for (const kind of ['herb', 'elderberry']) this.coordination.delivery.requested[kind] += requested[kind];
-    this.note('claimed the return supply run', { to_room: room,
-      farmers: demands.map(rec => ({ agent: rec.agent, character: rec.character, needs: rec.needs })), requested });
+    for (const [kind, amount] of Object.entries(requested))
+      this.coordination.delivery.requested[kind] = (this.coordination.delivery.requested[kind] || 0) + amount;
+    this.note('claimed the return supply run', { to_room: room, radius: this.deliveryRadius(cfg),
+      rooms_polled: [...within.keys()],
+      farmers: demands.map(rec => ({ agent: rec.agent, character: rec.character,
+        room: rec.room, needs: rec.needs })), requested });
     return this.pendingFarmDelivery;
   }
 
@@ -8796,7 +8888,7 @@ export class Autopilot {
     if (!p) return 0;
     // Vendor costs vary around viValue. Twenty per unit is deliberately an upper-bound
     // reserve, capped so coordination can never turn banking off for a wealthy courier.
-    return Math.min(2500, 20 * ((p.requested.herb || 0) + (p.requested.elderberry || 0)));
+    return Math.min(2500, 20 * Object.values(p.requested).reduce((sum, n) => sum + n, 0));
   }
 
   cancelFarmDelivery(why = 'strategy disabled') {
@@ -8804,8 +8896,7 @@ export class Autopilot {
     if (!p) return false;
     releaseFarmDelivery(p.room, this.name ?? this.s.name);
     this.pendingFarmDelivery = null;
-    this.note('cancelled the farm delivery', { to_room: p.room, why,
-      retained: p.cargo ?? { herb: 0, elderberry: 0 } });
+    this.note('cancelled the farm delivery', { to_room: p.room, why, retained: p.cargo ?? {} });
     return true;
   }
 
@@ -8814,14 +8905,11 @@ export class Autopilot {
     if (!p || !this.policy.farmDelivery?.enabled) return null;
     const s = this.s, c = s.need();
     if (!purchaseEnabled(this.policy, 'reagents')) {
-      const have = this.reagentCount();
-      const own = { herb: reagentTargetFor('herb', this.policy.reagentTarget),
-        elderberry: reagentTargetFor('elderberry', this.policy.reagentTarget) };
-      const spare = { herb: Math.max(0, have.herbs - own.herb),
-        elderberry: Math.max(0, have.elderberry - own.elderberry) };
-      p.bought = { herb: 0, elderberry: 0 };
-      p.cargo = { herb: Math.min(p.requested.herb, spare.herb),
-        elderberry: Math.min(p.requested.elderberry, spare.elderberry) };
+      const spare = this.deliverableSpare(Object.keys(p.requested));
+      p.bought = {};
+      p.cargo = Object.fromEntries(Object.entries(p.requested)
+        .map(([kind, want]) => [kind, Math.min(want, spare[kind] || 0)])
+        .filter(([, n]) => n > 0));
       this.note('farm delivery used carried spares without buying reagents', {
         to_room: p.room, requested: p.requested, cargo: p.cargo,
         why: 'the Buy Reagents strategy is disabled' });
@@ -8836,15 +8924,13 @@ export class Autopilot {
         return null;
       }
     }
+    const kinds = Object.keys(p.requested);
     const pick = await this.sellerHere({ want: /elder\s?berry|^herbs?$/i }).catch(() => null);
     if (!pick) { this.coordination.delivery.failed++; return null; }
-    const beforeCounts = this.reagentCount();
-    const ownTarget = { herb: reagentTargetFor('herb', this.policy.reagentTarget),
-      elderberry: reagentTargetFor('elderberry', this.policy.reagentTarget) };
-    const spare = { herb: Math.max(0, beforeCounts.herbs - ownTarget.herb),
-      elderberry: Math.max(0, beforeCounts.elderberry - ownTarget.elderberry) };
-    const need = { herb: Math.max(0, p.requested.herb - spare.herb),
-      elderberry: Math.max(0, p.requested.elderberry - spare.elderberry) };
+    const before = Object.fromEntries(kinds.map(k => [k, this.countOfKind(k)]));
+    const spare = this.deliverableSpare(kinds);
+    const need = Object.fromEntries(kinds.map(k =>
+      [k, Math.max(0, p.requested[k] - (spare[k] || 0))]));
     const start = c.evSeq;
     await s.pacer.submit('buy', () => c.buy(pick.seller.id ?? pick.seller));
     const ev = await c.waitFor({ since: start, kinds: ['shop', 'message'], timeoutMs: 4000 })
@@ -8853,66 +8939,80 @@ export class Autopilot {
     if (!shop) { this.coordination.delivery.failed++; return null; }
     let purse = this.purseNow();
     const floor = this.policy.walkingMoney ?? 400;
-    for (const kind of ['herb', 'elderberry']) {
-      const entry = (shop.items || []).find(item => skills.shareKind(item.name) === kind);
-      if (!entry) continue;
+    // A KIND THIS COUNTER DOES NOT STOCK IS REPORTED, NOT SILENTLY DROPPED. The reagent run
+    // that exposed all of this failed exactly here — one counter had no elderberry, another
+    // no herbs — and the trip still reported itself loaded, so the fleet learned nothing
+    // from a walk it had already paid for.
+    const unstocked = [];
+    for (const kind of kinds) {
+      if (!need[kind]) continue;
+      const entry = (shop.items || []).find(item => this.matchesKind(item.name, kind));
+      if (!entry) { unstocked.push(kind); continue; }
       for (let n = 0; n < need[kind] && purse - (entry.cost || 0) >= floor; n++) {
         await s.pacer.submit('buy', () => c.buyItems(shop.sellerId, [entry.id]));
         await new Promise(resolve => setTimeout(resolve, 700));
         purse -= entry.cost || 0;
-        this.recordPurchase(entry.name, entry.cost, { kind, from: c.rsc.get(pick.seller.nameRsc) ?? null,
-          why: `farm delivery for room ${p.room}` });
+        this.recordPurchase(entry.name, entry.cost, { item_kind: kind,
+          from: c.rsc.get(pick.seller.nameRsc) ?? null, why: `farm delivery for room ${p.room}` });
       }
     }
     await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
     await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
-    const afterCounts = this.reagentCount();
-    p.bought = { herb: Math.max(0, afterCounts.herbs - beforeCounts.herbs),
-      elderberry: Math.max(0, afterCounts.elderberry - beforeCounts.elderberry) };
-    p.cargo = { herb: Math.min(p.requested.herb, spare.herb + p.bought.herb),
-      elderberry: Math.min(p.requested.elderberry, spare.elderberry + p.bought.elderberry) };
-    for (const kind of ['herb', 'elderberry']) this.coordination.delivery.bought[kind] += p.bought[kind];
+    p.bought = {}; p.cargo = {};
+    for (const kind of kinds) {
+      const gained = Math.max(0, this.countOfKind(kind) - before[kind]);
+      if (gained) p.bought[kind] = gained;
+      const carry = Math.min(p.requested[kind], (spare[kind] || 0) + gained);
+      if (carry > 0) p.cargo[kind] = carry;
+      this.coordination.delivery.bought[kind] = (this.coordination.delivery.bought[kind] || 0) + gained;
+    }
     this.note('loaded the farm delivery', { to_room: p.room, requested: p.requested,
-      bought: p.bought, fleet_spares_used: spare, cargo: p.cargo });
+      bought: p.bought, fleet_spares_used: spare, cargo: p.cargo,
+      ...(unstocked.length ? { counter_did_not_stock: unstocked } : {}) });
     return p;
   }
 
   async giveFarmReagents(recipient, wanted) {
     const s = this.s, c = s.need();
+    const kinds = Object.keys(wanted).filter(k => (Number(wanted[k]) || 0) > 0);
     const them = [...(c.room?.objects?.values?.() ?? [])].find(o => (o.flags & OF.PLAYER) &&
       (c.rsc.get(o.nameRsc) || '').toLowerCase() === String(recipient.character || '').toLowerCase());
-    if (!them) return { gave: { herb: 0, elderberry: 0 }, why: 'farmer left the room or is dead' };
-    const beforeCounts = this.reagentCount();
-    const offers = [], planned = { herb: 0, elderberry: 0 };
-    for (const kind of ['herb', 'elderberry']) {
+    if (!them) return { gave: {}, why: 'farmer left the room or is dead' };
+    const beforeCounts = Object.fromEntries(kinds.map(k => [k, this.countOfKind(k)]));
+    const offers = [], planned = {};
+    for (const kind of kinds) {
       let left = Math.max(0, Number(wanted[kind]) || 0);
-      for (const item of (c.inventory || []).filter(o => skills.shareKind(c.rsc.get(o.nameRsc) || '') === kind)) {
+      for (const item of (c.inventory || []).filter(o => this.matchesKind(c.rsc.get(o.nameRsc) || '', kind))) {
         if (!left) break;
         const amount = Math.min(left, item.amount || 1);
         offers.push(amount < (item.amount || 1) ? { id: item.id, amount } : item.id);
-        planned[kind] += amount; left -= amount;
+        planned[kind] = (planned[kind] || 0) + amount; left -= amount;
       }
     }
-    if (!offers.length) return { gave: planned, why: 'courier has no requested reagent cargo left' };
+    if (!offers.length) return { gave: planned, why: 'courier has no requested cargo left' };
     const before = c.evSeq;
     await s.pacer.submit('trade', () => c.offer(them.id, offers));
     const ev = await c.waitFor({ since: before, kinds: ['countered', 'trade-ended'], timeoutMs: 8000 })
       .catch(() => ({ events: [] }));
     if (!ev.events?.some(row => row.kind === 'countered')) {
       await s.pacer.submit('trade', () => c.cancelOffer()).catch(() => {});
-      return { gave: { herb: 0, elderberry: 0 }, why: 'farmer did not counter the gift' };
+      return { gave: {}, why: 'farmer did not counter the gift' };
     }
     const acceptingAt = c.evSeq;
     await s.pacer.submit('trade', () => c.acceptOffer());
     await c.waitFor({ since: acceptingAt, kinds: ['trade-ended'], timeoutMs: 4000 }).catch(() => {});
     await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
     await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
-    const afterCounts = this.reagentCount();
-    const gave = { herb: Math.min(planned.herb, Math.max(0, beforeCounts.herbs - afterCounts.herbs)),
-      elderberry: Math.min(planned.elderberry,
-        Math.max(0, beforeCounts.elderberry - afterCounts.elderberry)) };
-    return { gave, ...(!gave.herb && !gave.elderberry
-      ? { why: 'trade handshake ended but no requested reagent left the courier pack' } : {}) };
+    // WHAT LEFT THE PACK, not what the offer was asked to contain. A trade that handshakes
+    // and moves nothing is the same family as a merchant that says thank you and pays
+    // nothing, and only the count can tell the two apart.
+    const gave = {};
+    for (const kind of kinds) {
+      const moved = Math.min(planned[kind] || 0, Math.max(0, beforeCounts[kind] - this.countOfKind(kind)));
+      if (moved > 0) gave[kind] = moved;
+    }
+    return { gave, ...(Object.keys(gave).length ? {}
+      : { why: 'trade handshake ended but no requested item left the courier pack' }) };
   }
 
   async deliverFarmSupplies() {
@@ -8935,28 +9035,82 @@ export class Autopilot {
       }
       return true;
     }
-    this.doing = 'trading';
-    await this.s.pacer.submit('read', () => this.s.need().roomContents()).catch(() => {});
-    await this.s.client.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 }).catch(() => {});
+    // ------------------------------------------------------------------ the hand-out
+    //
+    // A DELIVERY IS ADDRESSED TO A PLACE, NOT TO A LIST OF PEOPLE. The recipients polled at
+    // pickup decided WHAT to buy; they do not decide who gets it. By the time a courier has
+    // walked to the apothecary and back, minutes have passed and the fleet has moved — and
+    // the old code, which iterated the frozen list and looked each name up in the room,
+    // answered "farmer left the room or is dead" and carried the goods home. The people
+    // standing here now want the same things for the same reason.
+    //
+    // So the board is re-read on arrival and the cargo goes to whoever is present and short,
+    // polled first, unpolled, or polled-for-somewhere-else alike.
     const remaining = { ...p.cargo };
-    const deliveries = [];
-    for (const recipient of p.recipients) {
-      const wanted = { herb: Math.min(recipient.needs.herb || 0, remaining.herb),
-        elderberry: Math.min(recipient.needs.elderberry || 0, remaining.elderberry) };
-      if (!wanted.herb && !wanted.elderberry) continue;
-      const result = await this.giveFarmReagents(recipient, wanted).catch(error => ({
-        gave: { herb: 0, elderberry: 0 }, why: error.message }));
-      for (const kind of ['herb', 'elderberry']) {
-        remaining[kind] -= result.gave[kind] || 0;
-        this.coordination.delivery.delivered[kind] += result.gave[kind] || 0;
+    const left = () => Object.values(remaining).some(n => n > 0);
+    const deliveries = [], visited = [];
+    const served = new Set();
+
+    const handOutHere = async () => {
+      this.doing = 'trading';
+      await this.s.pacer.submit('read', () => this.s.need().roomContents()).catch(() => {});
+      await this.s.client.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 }).catch(() => {});
+      const here = this.s.world?.room?.num ?? null;
+      visited.push(here);
+      const takers = skills.interest.demandsNear(new Map([[Number(here), 0]]),
+        { except: this.name ?? this.s.name }).filter(rec => !served.has(rec.agent));
+      for (const recipient of takers) {
+        if (!left()) break;
+        const wanted = {};
+        for (const [kind, amount] of Object.entries(recipient.needs))
+          if (remaining[kind] > 0) wanted[kind] = Math.min(amount, remaining[kind]);
+        if (!Object.keys(wanted).length) continue;
+        const result = await this.giveFarmReagents(recipient, wanted)
+          .catch(error => ({ gave: {}, why: error.message }));
+        for (const [kind, n] of Object.entries(result.gave || {})) {
+          remaining[kind] -= n;
+          this.coordination.delivery.delivered[kind] = (this.coordination.delivery.delivered[kind] || 0) + n;
+        }
+        if (Object.keys(result.gave || {}).length) served.add(recipient.agent);
+        if (result.why) this.coordination.delivery.failed++;
+        deliveries.push({ agent: recipient.agent, character: recipient.character, room: here,
+          was_polled: p.polled.some(rec => rec.agent === recipient.agent),
+          requested: wanted, delivered: result.gave, why: result.why });
       }
-      if (result.why) this.coordination.delivery.failed++;
-      deliveries.push({ agent: recipient.agent, character: recipient.character,
-        requested: wanted, delivered: result.gave, why: result.why });
+    };
+
+    await handOutHere();
+
+    // THEN WALK THE NEIGHBOURHOOD WHILE ANYTHING IS LEFT. Trading needs the same room, so
+    // "deliver to anyone nearby" is a short circuit, nearest first, and it stops the moment
+    // the cargo is gone. Each leg is bounded and a leg that fails is skipped rather than
+    // retried — the goods keep, and a courier stuck bouncing between two rooms is worse for
+    // the fleet than one that goes back to work carrying a little.
+    if (left() && p.radius > 0) {
+      const within = this.deliveryNeighbourhood(p.room);
+      const elsewhere = skills.interest.demandsNear(within, { except: this.name ?? this.s.name })
+        .filter(rec => !served.has(rec.agent) && rec.room !== p.room &&
+          Object.keys(rec.needs).some(kind => remaining[kind] > 0));
+      const stops = [...new Set(elsewhere.map(rec => rec.room))].slice(0, 3);
+      for (const stop of stops) {
+        if (!left()) break;
+        if ((await this.leaveHold('carrying the rest of the delivery to the next room')).refused) break;
+        const walked = await this.travel(stop, { maxHops: 6 })
+          .catch(error => ({ arrived: false, reason: error.message }));
+        if (!walked?.arrived) {
+          this.note('could not reach a nearby farmer with the rest of the delivery',
+            { room: stop, why: walked?.reason, still_carrying: remaining });
+          continue;
+        }
+        await handOutHere();
+      }
     }
-    for (const kind of ['herb', 'elderberry']) this.coordination.delivery.retained[kind] += remaining[kind];
-    const event = { to_room: p.room, room_name: p.room_name, requested: p.requested,
-      bought: p.bought, cargo: p.cargo, delivered: deliveries, retained: remaining };
+
+    for (const [kind, n] of Object.entries(remaining))
+      if (n > 0) this.coordination.delivery.retained[kind] = (this.coordination.delivery.retained[kind] || 0) + n;
+    const event = { to_room: p.room, room_name: p.room_name, radius: p.radius,
+      rooms_served: visited, requested: p.requested, bought: p.bought, cargo: p.cargo,
+      polled: p.polled.map(rec => rec.agent), delivered: deliveries, retained: remaining };
     this.detailEvent('farm_delivery', 'trip', event);
     this.note('farm delivery finished', event);
     releaseFarmDelivery(p.room, this.name ?? this.s.name);

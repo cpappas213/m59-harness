@@ -6546,6 +6546,10 @@ const TOOLS = [
       farm_delivery: { type: ['object', 'null'], properties: {
         enabled: { type: 'boolean' }, herbs_per_farmer: { type: 'number' },
         elderberries_per_farmer: { type: 'number' }, max_recipients: { type: 'number' },
+        per_farmer_default: { type: 'number',
+          description: 'Cap per character per trip for any other kind a loadout asks for.' },
+        radius_rooms: { type: 'number',
+          description: 'How many rooms off the destination a courier will walk to hand goods over (0-3).' },
       }, description: 'one returning seller buys and delivers exact reagent shortfalls for active farmers in its destination room; null disables it' },
       // HOW FAR ABOVE ITS OWN LEVEL THIS CHARACTER MAY FIGHT, and it was unreachable.
       //
@@ -6781,9 +6785,18 @@ const TOOLS = [
           const value = a.farm_delivery;
           if (typeof value !== 'object' || Array.isArray(value) || value.enabled !== true)
             throw new Error('farm_delivery must be null or an enabled settings object');
+          // `per_farmer_default` is the cap for every kind a loadout asks for that is not
+          // one of the two named reagents, and `radius_rooms` is how far off the
+          // destination a courier will walk to hand things over. Both are floored at 0 and
+          // 0 is a real answer — "fetch nothing else", "do not leave the room" — so an
+          // absent value falls back to the default while an explicit 0 is honoured.
+          const num = (v, fallback, lo, hi) => (v === undefined || v === null || v === ''
+            ? fallback : Math.max(lo, Math.min(hi, Math.floor(Number(v) || 0))));
           p.policy.farmDelivery = { enabled: true,
-            herbs_per_farmer: Math.max(0, Math.min(100, Math.floor(Number(value.herbs_per_farmer) || 0))),
-            elderberries_per_farmer: Math.max(0, Math.min(100, Math.floor(Number(value.elderberries_per_farmer) || 0))),
+            herbs_per_farmer: num(value.herbs_per_farmer, 20, 0, 100),
+            elderberries_per_farmer: num(value.elderberries_per_farmer, 10, 0, 100),
+            per_farmer_default: num(value.per_farmer_default, 10, 0, 100),
+            radius_rooms: num(value.radius_rooms, 2, 0, 3),
             max_recipients: Math.max(1, Math.min(12, Math.floor(Number(value.max_recipients) || 4))) };
         }
       }

@@ -667,15 +667,21 @@ export function sellTest(loadout) {
 // This is what lets one character's shopping list stop another character selling the thing
 // it needs, which the board already does for elderberry and herbs and could not do for
 // anything else because nothing else had a target.
+// `needs` is the QUANTITY half of `wants`, and the two are deliberately both returned.
+// `wants` answers "may somebody sell this", which only needs a name; `needs` answers "how
+// many should a courier buy", which a name cannot. Farm delivery reads the second, and
+// until it existed the board could only ever state a shortfall of elderberry or herbs —
+// so a caster short of forty mushrooms was invisible to the one mechanism that fetches
+// things. A want with no quantity is not a delivery order.
 export function wantsOf(loadout, items) {
   if (!loadout) return null;
-  const wants = [], spare = new Map();
+  const wants = [], needs = new Map(), spare = new Map();
   for (const c of loadout.carry) {
     const have = countIn(items, c);
-    if (have < c.min) wants.push(norm(c.item));
+    if (have < c.min) { wants.push(norm(c.item)); needs.set(norm(c.item), c.min - have); }
     else if (c.max !== null && have > c.max) spare.set(norm(c.item), have - c.max);
   }
-  return { wants, spare };
+  return { wants, needs, spare };
 }
 
 // ------------------------------------------------------------------ reconcile

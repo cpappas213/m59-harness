@@ -479,6 +479,40 @@ export function codeExits(roomNum) {
 // avoiding it costs hops rather than reachability.
 export const AVOID_IN_TRANSIT = new Set([534]);
 
+// EVERY ROOM WITHIN `radius` HOPS, the destination itself first. Farm delivery reads this
+// to answer "who is near enough to be worth walking to", which one room number cannot.
+//
+// It walks the same three exit sources `bfsPath` does — declared, inferred and code — so a
+// room the router can reach is a room this reports, and the two cannot drift into
+// disagreeing about what "next door" means. `avoid` is honoured for rooms passed THROUGH,
+// never for the origin, exactly as the router does it.
+//
+// The result is hop counts, not a bare set: a courier with cargo for two rooms should
+// serve the nearer one first, and that ordering is the difference between one short walk
+// and crossing the destination twice. Note the caveat this repository has learned the hard
+// way — an edge from A to B does not put you where the edge back to A starts — so a hop
+// count is a routing estimate and never a promise about walking distance.
+export function roomsWithin(map, fromNum, radius = 2, { avoid = AVOID_IN_TRANSIT } = {}) {
+  const out = new Map([[Number(fromNum), 0]]);
+  if (!(radius > 0)) return out;
+  let frontier = [Number(fromNum)];
+  for (let depth = 1; depth <= radius && frontier.length; depth++) {
+    const next = [];
+    for (const at of frontier) {
+      const room = map.rooms[at];
+      if (!room) continue;
+      for (const ex of [...exitsOf(room), ...inferredExits(map, at), ...codeExits(at)]) {
+        if (ex.to == null || out.has(ex.to)) continue;
+        if (avoid && avoid.has(ex.to) && ex.to !== Number(fromNum)) continue;
+        out.set(ex.to, depth);
+        next.push(ex.to);
+      }
+    }
+    frontier = next;
+  }
+  return out;
+}
+
 // The search itself. Unchanged except that it can be told to pretend some rooms are not
 // there — `avoid` is consulted for rooms we would PASS THROUGH, never for where we are or
 // where we are going.

@@ -1132,16 +1132,33 @@ export const interest = {
   // Exact, fresh demand in one destination room. Farm delivery reads this instead of
   // guessing from the courier's own pack, so a town trip buys what the people still in
   // that room need. A stale or non-farming declaration is not a delivery order.
-  demandsForRoom(room, { except = null, maxAgeMs = 90_000 } = {}) {
-    const wantedRoom = Number(room);
+  demandsForRoom(room, opts = {}) {
+    return this.demandsNear(new Map([[Number(room), 0]]), opts);
+  },
+
+  // THE SAME QUESTION ASKED OF A NEIGHBOURHOOD, which is what farm delivery actually wants
+  // to know. `rooms` is a Map of room -> hop distance (see `roomsWithin` in m59-map.mjs);
+  // the result is sorted nearest first, so a courier serves the room it is standing in
+  // before it walks anywhere.
+  //
+  // This exists because a delivery addressed to ONE room is addressed to a snapshot of who
+  // stood in it ninety seconds ago. Characters move constantly — the fleet's own record has
+  // farmers crossing a room boundary between the poll and the arrival — and the old
+  // behaviour reported that as "farmer left the room or is dead" and carried the goods
+  // home. The neighbourhood is the unit that survives that.
+  demandsNear(rooms, { except = null, maxAgeMs = 90_000 } = {}) {
+    const within = rooms instanceof Map ? rooms
+      : new Map([...rooms].map(r => [Number(r), 0]));
     const now = Date.now();
     return [...this.byAgent]
-      .filter(([agent, rec]) => agent !== except && rec.farming && rec.room === wantedRoom &&
-        now - rec.at <= maxAgeMs)
-      .map(([agent, rec]) => ({ agent, character: rec.character,
+      .filter(([agent, rec]) => agent !== except && rec.farming && rec.room != null &&
+        within.has(rec.room) && now - rec.at <= maxAgeMs)
+      .map(([agent, rec]) => ({ agent, character: rec.character, room: rec.room,
+        hops: within.get(rec.room) ?? 0,
         needs: Object.fromEntries([...rec.needs].map(([kind, amount]) =>
           [String(kind).toLowerCase(), Math.max(0, Math.floor(Number(amount) || 0))])), at: rec.at }))
-      .filter(rec => Object.values(rec.needs).some(amount => amount > 0));
+      .filter(rec => Object.values(rec.needs).some(amount => amount > 0))
+      .sort((a, b) => a.hops - b.hops || b.at - a.at);
   },
 
   board() {

@@ -887,6 +887,42 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   the moment somebody edits the list — a line claiming the gear came from Kermit, over a list
   Kermit never had, is worse than no line.
 
+- **A SHORTFALL THE BOARD CANNOT STATE IS INVISIBLE TO THE ONLY THING THAT FETCHES IT, AND
+  A FLEET SWIMMING IN ONE HALF OF A RECIPE LOOKS WELL SUPPLIED.** `create food` is 2
+  elderberry AND 2 herbs, so what a character can cast is `min(elder, herb) / 2` — and the
+  fleet total is the one number that cannot say so. Measured 2026-08-11: 61 elderberry and 160
+  herbs across twenty-one characters, and **twenty of them could cast zero times**, because
+  the herb-rich (1/28, 1/26, 1/23) were standing next to the elderberry-rich (6/1, 6/1, 5/0).
+  Read the per-character minimum, never the sum.
+
+  Farm delivery is what is supposed to fix that, and three things stopped it:
+
+  - **`declareInterest` merged the loadout's `wants` and `spare` but not its `needs`** — and
+    `needs` is the only field `demandsForRoom` filters on. So only the two reagents with a
+    hard-coded target could ever be delivered, and a caster short of forty mushrooms was
+    unreachable by the mechanism built to reach it. `wantsOf` now returns quantities;
+    **`wants` is a name for "may somebody sell this", `needs` is a number for "how many
+    should a courier buy", and a want with no quantity is not a delivery order.**
+  - **The recipient list was frozen at pickup.** A courier polls, walks to the apothecary,
+    walks back — minutes — and the fleet has moved. Iterating the frozen list and looking
+    each name up gave "farmer left the room or is dead" and carried the goods home. A
+    delivery is now **addressed to a PLACE**: the board is re-read on arrival and the cargo
+    goes to whoever is standing there and short, polled or not.
+  - **It was addressed to one room**, so a character one door away got nothing.
+    `radius_rooms` (default 2, capped at 3) lets the courier walk the neighbourhood, nearest
+    first, stopping the moment the cargo is gone. `roomsWithin` in `m59-map.mjs` walks the
+    same three exit sources the router does, so "next door" cannot drift from what `travel`
+    believes.
+
+  Two things it now reports rather than swallows. **A counter that does not stock a kind is
+  named** (`counter_did_not_stock`) — the run that exposed all this hit one counter with no
+  elderberry and another with no herbs and still reported itself loaded. And **what left the
+  pack is counted, not what the offer asked for**: a trade that handshakes and moves nothing
+  is the same family as Skivlat saying thank you, and only the count tells them apart.
+
+  `node tools/m59-coordination-test.mjs` (25) pins all of it, including that a stale
+  declaration and a zero shortfall are both refused as delivery orders.
+
 - **A KEEPER EARNING NOTHING LOOKS EXACTLY LIKE A HEALTHY ONE, AND THE CHECK THAT SAYS SO
   WAS UNREACHABLE FOR A YEAR.** `noProgress()` fires when nothing WORKS. `yieldCheck()` fires
   when everything works and none of it is worth anything — the keeper kills something every
@@ -1074,6 +1110,10 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   composed sell decision, and the fleet-wide gear write, against scratch directories; it sets
   `M59_LOADOUT_DIR` so it never reads the real one, which a live keeper is reading every
   pass) and
+  `node tools/m59-coordination-test.mjs` (25 — what the fleet is short of, who is near
+  enough to be handed it, and how far a courier walks: that a loadout shortfall of any kind
+  reaches the board with its quantity, that the neighbourhood is polled nearest-first, and
+  that a stale declaration and a zero shortfall are both refused as delivery orders) and
   `node tools/m59-economy-test.mjs` (61 — the Economy and Skills boards, and the one
   tab bar all six boards share) and
   `node tools/m59-stats-test.mjs` (60 — the Stats board and the pane it shares with the
