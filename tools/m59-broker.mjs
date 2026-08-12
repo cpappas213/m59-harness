@@ -45,6 +45,7 @@ import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
 import * as skills from './m59-skills.mjs';
 import * as abilities from './m59-abilities.mjs';
+import { RemainingRequiredToLearnNewSkills } from '../compendium/tools/learn.mjs';
 import * as bankbook from './m59-bank.mjs';
 import * as hitbook from './m59-hits.mjs';
 import * as transits from './m59-transits.mjs';
@@ -284,6 +285,20 @@ try { merchantCatalogue = loadMerchants(); } catch { merchantCatalogue = null; }
 // only a name, a target count and a school — so this is compiled from kod.
 let spellCatalogue = null;
 try { spellCatalogue = loadSpells(); } catch { spellCatalogue = null; }
+// The spell/skill level and discipline table used by PlayerCanLearn. This is generated
+// from the same kod tree as the compendium pages; the live protocol sends ability values
+// but not levels, so without this join an exact remaining requirement is impossible.
+let learningCatalogue = null;
+try {
+  const p = JSON.parse(readFileSync(new URL('../compendium/data/planner.json', import.meta.url), 'utf8'));
+  learningCatalogue = {
+    constants: p.learning,
+    abilities: [
+      ...(p.skills || []).map(x => ({ ...x, kind: 'skill', school: x.discipline })),
+      ...(p.spells || []).map(x => ({ ...x, kind: 'spell' })),
+    ],
+  };
+} catch { learningCatalogue = null; }
 if (!worldMap) {
   console.error('WARNING: substrate/m59-map.json not found — no map, no geometry, no travel.');
   console.error('  build it with: node tools/m59-map.mjs build');
@@ -7678,6 +7693,81 @@ const TOOLS = [
                  '(player.kod:7343), so `advancement` is a log of what actually happened rather than ' +
                  'the difference between two polls.';
       return out;
+    },
+  },
+  {
+    name: 'remaining_required_to_learn_new_skills',
+    description:
+      'Can this character learn a new skill or spell NOW, and if not, how many combined ability ' +
+      'percentage points are still required in the preceding level?\n' +
+      'This reproduces PlayerCanLearn rather than using a level allowance table: it sums the best ' +
+      'THREE known abilities one level below the target, prices the character\'s seven knowledge ' +
+      'tracks (six magic schools plus weapon skills), subtracts the raw-intellect allowance, applies ' +
+      'the one/two-ability scarcity rule, and includes the server\'s same-level shortcuts. ' +
+      '`remaining_required` is a threshold, not points that are spent. Karma and a missing prior-level ' +
+      'foundation are reported as separate blockers. With no name this returns what is ready and the ' +
+      'ten closest candidates; pass name for the complete calculation for one ability.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      name: { type: 'string', description: 'one skill or spell; an unambiguous partial name is accepted' },
+      kind: { type: 'string', enum: ['skills', 'spells', 'both'], description: 'default both' },
+      all: { type: 'boolean', description: 'include every candidate rather than ready + ten closest' },
+      refresh: { type: 'boolean', description: 'force a live ability re-read; default uses the push-maintained cache' },
+    }, required: ['agent'] },
+    run: async (a) => {
+      const s = session(a.agent), c = s.need();
+      if (!learningCatalogue)
+        throw new Error('no learning catalogue — run node tools/m59-planner-data.mjs and restart the broker');
+
+      await s.pacer.submit('read', () => c.stats(2));
+      const fresh = await abilities.ensureAbilities(s, {
+        kinds: 'both', force: a.refresh === true, maxAgeMs: ABILITY_MAX_AGE_MS,
+      });
+      const knownNow = c.abilitiesKnown();
+      const known = [
+        ...knownNow.skills.map(x => ({ ...x, kind: 'skill' })),
+        ...knownNow.spells.map(x => ({ ...x, kind: 'spell' })),
+      ];
+      const normLearnName = x => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      const wantedKind = a.kind === 'skills' ? 'skill' : a.kind === 'spells' ? 'spell' : null;
+      let targetName = null;
+      if (a.name) {
+        const q = normLearnName(a.name);
+        const pool = learningCatalogue.abilities.filter(x => !wantedKind || x.kind === wantedKind);
+        const exact = pool.filter(x => normLearnName(x.name) === q);
+        const matches = exact.length ? exact : pool.filter(x => normLearnName(x.name).includes(q));
+        if (matches.length !== 1) return {
+          found: false,
+          reason: matches.length ? `"${a.name}" matches more than one ability` : `no ability matches "${a.name}"`,
+          matches: matches.slice(0, 20).map(x => ({ name: x.name, kind: x.kind,
+                                                   school: x.school, level: x.level })),
+        };
+        targetName = matches[0].name;
+      }
+
+      const result = RemainingRequiredToLearnNewSkills({
+        known, catalogue: learningCatalogue.abilities,
+        intellect: c.stat('intellect'), karma: c.stat('karma'),
+        constants: learningCatalogue.constants,
+        kind: a.kind || 'both', name: targetName,
+      });
+      const candidates = result.candidates;
+      const ready = candidates.filter(x => x.can_learn === true);
+      const closest = candidates.filter(x => x.can_learn !== true && !x.already_known)
+        .slice(0, targetName ? candidates.length : 10);
+      return {
+        character: c.me?.name ?? null,
+        ...result,
+        candidates: (a.all || targetName) ? candidates : undefined,
+        ready: ready.slice(0, a.all ? ready.length : 30),
+        closest: targetName ? undefined : closest,
+        ability_freshness: { from: fresh.from, age_ms: fresh.age_ms, known: fresh.known },
+        source: {
+          formula: 'player.kod PlayerCanLearn',
+          historical_chart: 'https://www.meridian59.com/gilcon-archive/faqs-get69ca.html?ID=42',
+          catalogue: 'compendium/data/planner.json',
+        },
+      };
     },
   },
   {

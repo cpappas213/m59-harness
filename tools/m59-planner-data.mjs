@@ -36,7 +36,7 @@ import path from 'node:path';
 // second implementation of that walk is how the item table ends up disagreeing with the
 // item pages it sits next to.
 import { loadImages, descendants, ivar, nameOf, descOf, humanize,
-         iconFor, ownMessage, findMessage, parseConsPairs, cleanText } from
+         iconFor, ownMessage, findMessage, parseConsPairs, cleanText, constNames } from
        '../compendium/tools/lib.mjs';
 // The stats pane's own table. See the stats section below.
 import { STATS } from '../compendium/tools/statpane.mjs';
@@ -109,6 +109,8 @@ for (const [key, c] of Object.entries(classes)) {
   if (!/\/skill\//.test(c.file || '')) continue;
   if (lower(c.name) === 'skill') continue;               // the base class is not a skill
   const stat = requisiteStat(key);
+  const schoolId = ivar(db, c, 'viSchool');
+  const schoolConst = schoolId == null ? null : constNames(db, 'SKS_', schoolId)[0];
   // A CLASS WITH CHILDREN IS A CATEGORY, NOT A SKILL. `proficiency` has eight children
   // and an icon of its own, and reads exactly like a learnable skill until you notice
   // every weapon proficiency inherits from it. Offering it in a planner would let
@@ -118,6 +120,8 @@ for (const [key, c] of Object.entries(classes)) {
   skills.push({
     key,
     name: displayName(key, c),
+    school: schoolId,
+    discipline: schoolConst ? schoolConst.replace(/^SKS_/, '').toLowerCase() : null,
     requisite_stat: stat,
     // THE SEVENTH TRACK. PlayerCanLearn sums `GetLevelLearnPoints` over the six schools AND
     // over `iWeapon` — the highest `viSkill_level` of any skill known, all of them pooled

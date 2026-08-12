@@ -889,7 +889,9 @@ export function weaponTrackLevel(sheet, skillData = null) {
 // so it lives in compendium/tools/learn.mjs, which has no imports and is inlined into
 // assets/learn.js by the page's build. Two copies of a formula in this repository have
 // always become two answers to a question.
-export { learnCost, canLearn, trackPoints, levelPointsAt } from '../compendium/tools/learn.mjs';
+export { learnCost, canLearn, trackPoints, levelPointsAt,
+         RemainingRequiredToLearnNewSkills, remainingRequiredToLearnNewSkills }
+  from '../compendium/tools/learn.mjs';
 
 // ---------------------------------------------------------------------- cli
 if (import.meta.filename === process.argv[1]) {

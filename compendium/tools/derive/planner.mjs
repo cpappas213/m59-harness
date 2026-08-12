@@ -185,7 +185,7 @@ tabs in the same order — and everything in it is editable.</p>
   const learnSrc = fs.readFileSync(path.join(ROOT, 'tools', 'learn.mjs'), 'utf8')
     .replace(/^export /gm, '');
   const browserLearn = '// GENERATED from tools/learn.mjs by tools/derive/planner.mjs — do not edit.\n'
-    + `(function(){\n${learnSrc}\nwindow.M59Learn={learnCost,canLearn,trackPoints,levelPointsAt};\n})();\n`;
+    + `(function(){\n${learnSrc}\nwindow.M59Learn={learnCost,canLearn,trackPoints,levelPointsAt,RemainingRequiredToLearnNewSkills,remainingRequiredToLearnNewSkills};\n})();\n`;
 
   // THE STATS PANE, WHICH THE FLEET'S OWN /stats BOARD ALSO DRAWS. Same arrangement as
   // learn.mjs above, and the same reason: the planner draws this pane so somebody can

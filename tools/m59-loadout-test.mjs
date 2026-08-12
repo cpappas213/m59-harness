@@ -279,6 +279,104 @@ console.log('\ncan this character learn it');
      L.canLearn({ have: 200, school: 'Qor', level: 2, constants: {} }).can === null);
 }
 
+console.log('\nremaining required to learn new skills');
+{
+  const C = { points_slope: 7, min_needed_to_advance: 75, max_learn_points: 16,
+              level_points: [1, 2, 4, 6, 8, 10] };
+  const catalogue = [
+    { name: 'foundation a', kind: 'skill', discipline: 'fencing', level: 1, for_sale: true },
+    { name: 'foundation b', kind: 'skill', discipline: 'fencing', level: 1, for_sale: true },
+    { name: 'foundation c', kind: 'skill', discipline: 'fencing', level: 1, for_sale: true },
+    { name: 'advanced guard', kind: 'skill', discipline: 'fencing', level: 2, for_sale: true },
+  ];
+  const known = [
+    { name: 'foundation a', kind: 'skill', ability: 40 },
+    { name: 'foundation b', kind: 'skill', ability: 35 },
+    { name: 'foundation c', kind: 'skill', ability: 20 },
+  ];
+  const r = L.RemainingRequiredToLearnNewSkills({
+    known, catalogue, intellect: 30, constants: C, name: 'advanced guard', kind: 'skills',
+  });
+  const target = r.candidates[0];
+  ok('the Gilroy chart and the server formula agree: intellect 30, first track level 2 needs 115',
+     target.need === 115, JSON.stringify(target));
+  ok('it sums the best prior-level percentages and reports the exact remainder',
+     target.have === 95 && target.remaining_required === 20 && target.can_learn === false,
+     JSON.stringify(target));
+  ok('the aggregate says how far the nearest new ability is',
+     r.can_learn_any === false && r.remaining_required_to_any === 20, JSON.stringify(r));
+
+  const fourKnown = [...known, { name: 'foundation d', kind: 'skill', discipline: 'fencing',
+                                 level: 1, ability: 99 }];
+  const fourCatalogue = [...catalogue,
+    { name: 'foundation d', kind: 'skill', discipline: 'fencing', level: 1, for_sale: true }];
+  const top = L.RemainingRequiredToLearnNewSkills({
+    known: fourKnown, catalogue: fourCatalogue, intellect: 30, constants: C,
+    name: 'advanced guard', kind: 'skills',
+  }).candidates[0];
+  ok('only the best three percentages count',
+     top.have === 99 + 40 + 35 && top.previous_level_best_three.length === 3,
+     JSON.stringify(top));
+
+  const peerCatalogue = [...catalogue,
+    { name: 'peer guard', kind: 'skill', discipline: 'fencing', level: 3, for_sale: true },
+    { name: 'other guard', kind: 'skill', discipline: 'fencing', level: 3, for_sale: true }];
+  const shortcut = L.RemainingRequiredToLearnNewSkills({
+    known: [{ name: 'peer guard', kind: 'skill', ability: 1 }], catalogue: peerCatalogue,
+    intellect: 1, constants: C, name: 'other guard', kind: 'skills',
+  }).candidates[0];
+  ok('at level 3+, knowing one peer at that level is the server\'s immediate-success shortcut',
+     shortcut.can_learn === true && shortcut.remaining_required === 0 && /enough/.test(shortcut.shortcut),
+     JSON.stringify(shortcut));
+
+  const thinCatalogue = [
+    { name: 'only base', kind: 'spell', school: 'Tiny', level: 1 },
+    { name: 'next spell', kind: 'spell', school: 'Tiny', level: 2 },
+  ];
+  const thin = L.RemainingRequiredToLearnNewSkills({
+    known: [{ name: 'only base', kind: 'spell', ability: 30 }], catalogue: thinCatalogue,
+    intellect: 30, constants: C, name: 'next spell', kind: 'spells',
+  }).candidates[0];
+  ok('scarcity uses abilities existing in the game, not how many this character happens to know',
+     thin.previous_level_abilities_in_game === 1 && thin.need === Math.trunc(115 / 3),
+     JSON.stringify(thin));
+
+  const noBase = L.RemainingRequiredToLearnNewSkills({
+    known: [], catalogue, intellect: 30, constants: C,
+    name: 'advanced guard', kind: 'skills',
+  }).candidates[0];
+  ok('no prior-level foundation is a named blocker rather than a mysterious percentage',
+     noBase.can_learn === false && noBase.blocked_by.some(x => /knows nothing/.test(x)),
+     JSON.stringify(noBase));
+
+  const qorCatalogue = [
+    { name: 'evil base', kind: 'spell', school: 'Qor', level: 1, required_karma: -10 },
+    { name: 'evil next', kind: 'spell', school: 'Qor', level: 2, required_karma: -20 },
+  ];
+  const karma = L.RemainingRequiredToLearnNewSkills({
+    known: [{ name: 'evil base', kind: 'spell', ability: 99 }], catalogue: qorCatalogue,
+    intellect: 50, karma: 0, constants: C, name: 'evil next', kind: 'spells',
+  }).candidates[0];
+  ok('karma is reported separately from the ability remainder',
+     karma.can_learn === false && karma.blocked_by.some(x => /karma/.test(x)), JSON.stringify(karma));
+
+  const levelOne = L.RemainingRequiredToLearnNewSkills({
+    known, catalogue: [...catalogue,
+      { name: 'first light', kind: 'spell', school: 'Shalille', level: 1 }],
+    intellect: 30, constants: C, name: 'first light', kind: 'spells',
+  }).candidates[0];
+  ok('level 1 has the server\'s flat 297 baseline, not one 99-point previous-level slot',
+     levelOne.can_learn === true && !levelOne.impossible && levelOne.have === 297,
+     JSON.stringify(levelOne));
+
+  const already = L.RemainingRequiredToLearnNewSkills({
+    known, catalogue, intellect: 30, constants: C, name: 'foundation a', kind: 'skills',
+  });
+  ok('an already-known target has no "remaining to any new ability" number',
+     already.candidates[0].already_known === true && already.remaining_required_to_any === null,
+     JSON.stringify(already));
+}
+
 console.log('\nschools, read off a character sheet');
 {
   const sheet = { character: 'x', spells: [

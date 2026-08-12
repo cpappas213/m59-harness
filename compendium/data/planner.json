@@ -97,6 +97,8 @@
   {
    "key": "archery",
    "name": "archery",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "aim",
    "level": 5,
    "for_sale": true,
@@ -111,6 +113,8 @@
   {
    "key": "assess",
    "name": "assess",
+   "school": 11,
+   "discipline": "brawling",
    "requisite_stat": "agility",
    "level": 50,
    "for_sale": false,
@@ -125,6 +129,8 @@
   {
    "key": "axeproficiency",
    "name": "axe wielding",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "might",
    "level": 3,
    "for_sale": true,
@@ -139,6 +145,8 @@
   {
    "key": "block",
    "name": "block",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "agility",
    "level": 1,
    "for_sale": true,
@@ -153,6 +161,8 @@
   {
    "key": "brawling",
    "name": "brawling",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "might",
    "level": 2,
    "for_sale": true,
@@ -167,6 +177,8 @@
   {
    "key": "disarm",
    "name": "disarm",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "agility",
    "level": 6,
    "for_sale": true,
@@ -181,6 +193,8 @@
   {
    "key": "dodge",
    "name": "dodge",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "agility",
    "level": 2,
    "for_sale": true,
@@ -195,6 +209,8 @@
   {
    "key": "swordproficiency",
    "name": "fencing",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "aim",
    "level": 3,
    "for_sale": true,
@@ -209,6 +225,8 @@
   {
    "key": "fire",
    "name": "fire",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "aim",
    "level": 4,
    "for_sale": true,
@@ -223,6 +241,8 @@
   {
    "key": "hammerproficiency",
    "name": "hammer wielding",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "might",
    "level": 3,
    "for_sale": true,
@@ -237,6 +257,8 @@
   {
    "key": "kick",
    "name": "kick",
+   "school": 11,
+   "discipline": "brawling",
    "requisite_stat": "agility",
    "level": 50,
    "for_sale": false,
@@ -251,6 +273,8 @@
   {
    "key": "maceproficiency",
    "name": "mace fighting",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "might",
    "level": 1,
    "for_sale": true,
@@ -265,6 +289,8 @@
   {
    "key": "parry",
    "name": "parry",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "agility",
    "level": 4,
    "for_sale": true,
@@ -279,6 +305,8 @@
   {
    "key": "punch",
    "name": "punch",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "agility",
    "level": 1,
    "for_sale": true,
@@ -293,6 +321,8 @@
   {
    "key": "scimitarproficiency",
    "name": "scimitar wielding",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "agility",
    "level": 4,
    "for_sale": true,
@@ -307,6 +337,8 @@
   {
    "key": "secondwind",
    "name": "second wind",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "stamina",
    "level": 4,
    "for_sale": true,
@@ -321,6 +353,8 @@
   {
    "key": "shortswordproficiency",
    "name": "short sword fighting",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "aim",
    "level": 2,
    "for_sale": true,
@@ -335,6 +369,8 @@
   {
    "key": "slash",
    "name": "slash",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "agility",
    "level": 1,
    "for_sale": true,
@@ -349,6 +385,8 @@
   {
    "key": "thrust",
    "name": "thrust",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "agility",
    "level": 50,
    "for_sale": false,
@@ -363,6 +401,8 @@
   {
    "key": "unarmed",
    "name": "Unarmed Combat",
+   "school": 11,
+   "discipline": "brawling",
    "requisite_stat": "agility",
    "level": 1,
    "for_sale": true,
@@ -377,6 +417,8 @@
   {
    "key": "proficiency",
    "name": "Weapon proficiency",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "agility",
    "level": 1,
    "for_sale": true,
@@ -391,6 +433,8 @@
   {
    "key": "stroke",
    "name": "Weapon stroke",
+   "school": 10,
+   "discipline": "fencing",
    "requisite_stat": "agility",
    "level": 1,
    "for_sale": true,
