@@ -8859,22 +8859,36 @@ const TOOLS = [
           // failure out loud (user.kod:1815). No local bit to check; the refusals are prose.
           const { guild } = await readRoster();
           if (!guild) return { ok: false, reason: 'not in a guild' };
-          if (!c.guildHalls) {
+          const wanted = String(a.target ?? '');
+
+          // A NUMERIC HALL ID NEEDS NEITHER FRULAR NOR THE LIST, AND THAT IS NOT A SHORTCUT —
+          // IT IS WHAT THE SERVER ACTUALLY REQUIRES.
+          //
+          // `UC_GUILD_RENT` (user.kod:1815) reads the hall's purchase value, checks the purse
+          // and calls `ClaimGuildHall`, which tests only that there IS a guild, that it is
+          // MATURE, and that it does not already hold a hall (ghall.kod:329). There is no room
+          // check and NO RANK CHECK anywhere on this path — the rank ≥ LIEUTENANT rule lives in
+          // Frular's `GetForSale` hook, which decides who is shown the list, not who may buy.
+          // So the trip to Barloque is needed once, to learn the ids, and never again.
+          //
+          // Resolving by NAME still needs the list, because the name only exists there.
+          const byId = /^\d+$/.test(wanted) ? Number(wanted) : null;
+          if (byId === null && !c.guildHalls) {
             const frular = [...(c.room?.objects?.values() ?? [])]
               .find(o => (c.rsc.get(o.nameRsc) || '') === FRULAR_NAME);
             if (!frular)
               return { ok: false, reason: `${FRULAR_NAME} is not in this room`,
                        go_to: FRULAR_ROOM,
                        note: 'the hall list is PUSHED by Frular in answer to a trade request ' +
-                             '(GetForSale, gcreator.kod:250) — there is no way to request it ' +
-                             'from anywhere else' };
+                             '(GetForSale, gcreator.kod:250) and a NAME can only be resolved ' +
+                             'against it. Pass the numeric hall id instead and this works from ' +
+                             'anywhere in the world.' };
             const before = c.evSeq;
             await s.pacer.submit('shop', () => c.askFrular(frular.id));
             await c.waitFor({ since: before, kinds: ['guild'], timeoutMs: 5000 }).catch(() => {});
           }
-          const wanted = String(a.target ?? '');
-          const hall = /^\d+$/.test(wanted)
-            ? c.guildHalls?.halls.find(h => h.id === Number(wanted))
+          const hall = byId !== null
+            ? (c.guildHalls?.halls.find(h => h.id === byId) ?? { id: byId, name: null, cost: null })
             : c.guildHalls?.halls.find(h => (h.name || '').toLowerCase().includes(wanted.toLowerCase()));
           if (!hall) return { ok: false, reason: `no available hall matching "${a.target}"`,
                               halls: c.guildHalls?.halls ?? [],
