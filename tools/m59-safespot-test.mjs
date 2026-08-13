@@ -16,6 +16,7 @@ import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; se
 import { unlinkSync } from 'node:fs';
 import { Autopilot } from './m59-autopilot.mjs';
 import { SafeSpotBook } from './m59-safespots.mjs';
+import { returnToSpot } from './m59-skills.mjs';
 
 const BOOK = `${process.env.TEMP || '/tmp'}/m59-safespot-test-${process.pid}.json`;
 let pass = 0, fail = 0;
@@ -61,6 +62,40 @@ function world({ col = 5, row = 5, health = 30, max = 30, room = 999 } = {}) {
 
 const { OF } = await import('./m59-parse.mjs');
 const MONSTER = OF.ATTACKABLE;
+
+console.log('\n--- safe-spot arrival is confirmed, not predicted ---');
+{
+  // The dead-reckoned position says we are home. The authoritative read says the
+  // server still has us one square away; returnToSpot must not accept the first claim.
+  const me = { col: 5, row: 5, x: 352, y: 352, predicted: true };
+  let confirms = 0, fineWalks = 0;
+  const c = { get self() { return me; } };
+  const s = {
+    need: () => c,
+    confirmPosition: async () => {
+      confirms++;
+      Object.assign(me, { col: 6, row: 5, x: 416, y: 352, predicted: false });
+      return { col: me.col, row: me.row };
+    },
+    walkTo: async (col, row) => {
+      Object.assign(me, { col, row, x: col * 64 + 32, y: row * 64 + 32, predicted: true });
+      return { arrived: true };
+    },
+    walkFine: async (x, y) => {
+      fineWalks++;
+      Object.assign(me, { col: (x / 64) | 0, row: (y / 64) | 0, x, y, predicted: false });
+      return { arrived: true };
+    },
+  };
+  const back = await returnToSpot(s, { col: 5, row: 5, x: 352, y: 352 });
+  ok('a predicted match is checked with the server', confirms === 2,
+     `confirmed ${confirms} time(s): before routing and after its predicted arrival`);
+  ok('the stale prediction is corrected rather than accepted as already home',
+     back.arrived && !back.already && fineWalks === 1,
+     JSON.stringify({ back, fineWalks }));
+  ok('success means the final coarse and fine position both match the hold',
+     me.col === 5 && me.row === 5 && me.x === 352 && me.y === 352 && !me.predicted);
+}
 
 function keeper(w) {
   const p = new Autopilot(w.s, { mode: 'farm', policy: { hunt: 'giant rat' } });
