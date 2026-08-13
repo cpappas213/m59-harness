@@ -6980,6 +6980,15 @@ const TOOLS = [
       // all — but the neighbours of the room it goes up into are what the gate is for.
       // Castle Victoria is the worked example: 28 admits a skeleton (75) for a character
       // at max health 47 while still refusing the tusked skeleton (100) one room away.
+      threat_ceiling: { type: ['object', 'number'],
+        properties: { mode: { type: 'string', enum: ['percent', 'flat'] }, value: { type: 'number' } },
+        description: 'THE ENGAGEMENT CEILING, in either of two shapes. {mode:"percent", value:150} lets ' +
+          'a character fight up to 1.5x its own level (max health IS the level here); {mode:"flat", ' +
+          'value:25} lets it fight up to max health + 25. A bare number is read as a percentage. ' +
+          'Percent is the default because a flat band is a different bet at each end of a roster — +24 ' +
+          'widens a 45-health character by 53% and an 88-health one by 27% — but flat is right when a ' +
+          'fleet is levelling past a fixed prey and wants the band to stop growing with it. Supersedes ' +
+          'max_threat_over, which is still accepted and no longer consulted.' },
       max_threat_over: { type: 'number',
         description: 'fight creatures up to max_health + this many levels, default 6. RAISES ' +
           'THE ENGAGEMENT CEILING — the character stops refusing things above its own level, ' +
@@ -7243,8 +7252,41 @@ const TOOLS = [
       // and coercing a bad value up to the default would quietly hand back a WIDER band
       // than was asked for, which is the wrong direction for the one gate that decides
       // what a character is allowed to be hit by.
-      if (a.max_threat_over !== undefined)
+      // SUPERSEDED, AND SAID SO RATHER THAN IGNORED. The engagement ceiling is now a
+      // PROPORTION of max health (see threatCeiling in m59-autopilot.mjs): a flat number of
+      // levels cannot be right at both ends of a roster, since +24 widens a 45-health
+      // character by 53% and an 88-health one by 27%. The field is still accepted and still
+      // stored so nothing that sets it errors, but it no longer decides anything — and a
+      // setting that quietly stopped mattering is exactly the kind of silence this
+      // repository keeps paying for, so the change is reported back to the caller.
+      if (a.max_threat_over !== undefined) {
         p.policy.maxThreatOver = Math.max(0, Number(a.max_threat_over) || 0);
+        p.policy.maxThreatOverSuperseded =
+          'the engagement ceiling is threat_ceiling_pct percent of max health; max_threat_over ' +
+          'is recorded but no longer consulted';
+      }
+      // EITHER MODE, SET EXPLICITLY. `{mode:'percent', value:150}` is 1.5x max health;
+      // `{mode:'flat', value:25}` is max health + 25. A bare number is read as a percentage,
+      // because that is the default mode and a caller that sends 150 means 150%.
+      if (a.threat_ceiling !== undefined) {
+        const raw = a.threat_ceiling;
+        const cfg = (typeof raw === 'number') ? { mode: 'percent', value: raw } : raw;
+        if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg))
+          throw new Error('threat_ceiling must be a number of percent, or {mode, value}');
+        const mode = cfg.mode ?? 'percent';
+        if (mode !== 'percent' && mode !== 'flat')
+          throw new Error('threat_ceiling.mode must be "percent" or "flat"');
+        const value = Number(cfg.value);
+        // Percent is floored ABOVE zero — a ceiling of nothing refuses every fight and reads
+        // as a broken keeper rather than as a policy. Flat allows 0, which is the legitimate
+        // "fight nothing above my own level". Deliberately not clamped upward: an operator
+        // may widen this on purpose, and it is their call.
+        if (!Number.isFinite(value) || value < 0 || (mode === 'percent' && value === 0))
+          throw new Error(mode === 'percent'
+            ? 'threat_ceiling.value must be a positive percentage of max health'
+            : 'threat_ceiling.value must be a non-negative number of levels');
+        p.policy.threatCeiling = { mode, value };
+      }
       // An empty list means "go back to ranking by proficiency", which is null internally.
       // Treating [] as an empty priority list would rank every weapon equally instead.
       if (a.weapon_priority !== undefined)

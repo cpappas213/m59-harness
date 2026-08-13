@@ -759,6 +759,18 @@ export class Autopilot {
       // How far above the character's own level the toughest thing a room can
       // generate is allowed to be. See preyRooms.
       maxThreatOver: 6,
+      // HOW FAR ABOVE ITS OWN LEVEL A CHARACTER MAY FIGHT, AS A PROPORTION.
+      //
+      // This replaced `maxThreatOver`, which was a flat number of levels added to max
+      // health, and a flat number cannot be right at both ends of a roster: +24 is a 53%
+      // widening for a character at 45 and a 27% one at 88, so the same policy was reckless
+      // for the small and timid for the large. 150% is the same bet at every level.
+      // Either a PROPORTION of max health or a FLAT number of levels above it, and the mode
+      // is explicit so the two can never silently disagree. Percent is the default because
+      // a flat band is a different bet at each end of a roster — +24 widens a 45-health
+      // character by 53% and an 88-health one by 27% — but flat is the right answer when a
+      // fleet is levelling past a fixed prey and wants the band to stop growing with it.
+      threatCeiling: { mode: 'percent', value: 150 },
       // WHERE THIS CHARACTER IS SUPPOSED TO FARM. null means "wherever ranks best".
       //
       // Without it a fleet cannot be spread out, and not because anyone moves it back
@@ -3506,7 +3518,7 @@ export class Autopilot {
     if (!status.full) return status;
 
     const level = c.vitals?.()?.health?.max ?? 0;
-    const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
+    const ceiling = this.threatCeiling();
     const seen = new Set();
     for (const o of mons) {
       const name = c.rsc.get(o.nameRsc) || '';
@@ -4252,6 +4264,27 @@ export class Autopilot {
   // Returns null when the creature is fine to fight, or a reason when it is not. Karma is
   // deliberately NOT consulted here: karma is a choice about what to hunt, and something
   // already swinging at us is not a choice.
+  // THE ONE HOME OF THE ENGAGEMENT CEILING.
+  //
+  // It had four, all spelling the same expression, which is how this repository has always
+  // ended up with two answers to one quantity — and this is the quantity that decides what
+  // a character is allowed to be hit by, so a fifth copy drifting is a character dying.
+  //
+  // MAX HEALTH IS THE LEVEL here (101 + stamina caps it, and the game treats max health as
+  // the level), so the ceiling is a proportion of it. Returns null when max health has not
+  // been read: an unknown ceiling must refuse everything rather than permit everything, and
+  // every caller treats null that way.
+  threatCeiling() {
+    const level = this.s.client?.vitals?.()?.health?.max ?? 0;
+    if (!level) return null;
+    const cfg = this.policy.threatCeiling;
+    const value = Number(cfg?.value);
+    // An unusable setting falls back to the documented default rather than to "no ceiling".
+    // Defaulting open is the one direction that kills a character.
+    if (!Number.isFinite(value) || value < 0) return Math.round(level * 1.5);
+    return cfg?.mode === 'flat' ? level + Math.round(value) : Math.round(level * (value / 100));
+  }
+
   refuseEngagement(name) {
     const key = String(name || '').toLowerCase();
     if (!key) return null;
@@ -4259,7 +4292,7 @@ export class Autopilot {
     const info = Object.values(spawns.creatures ?? {})
       .find(x => String(x.name).toLowerCase() === key);
     const level = this.s.client?.vitals?.()?.health?.max ?? 0;
-    const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
+    const ceiling = this.threatCeiling();
     const lvl = info?.level ?? null, rating = info?.attack_rating ?? null;
     if (!info)
       return { name, level: null, rating: null,
@@ -10865,7 +10898,7 @@ export class Autopilot {
     const spawns = loadSpawns(SPAWN_FILE);
     if (!spawns) return [];
     const level = this.s.client?.vitals?.()?.health?.max ?? 0;
-    const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
+    const ceiling = this.threatCeiling();
     // Do not truncate before looking for the assignment.  Ranking is global, whereas
     // assignedRoom is an operator/fleet decision and must be allowed to outrank it.
     const rooms = huntingGrounds(spawns, want,
@@ -11009,7 +11042,7 @@ export class Autopilot {
     // for stepping through the door to find out.
     const spawns = loadSpawns(SPAWN_FILE);
     const level = s.client?.vitals?.()?.health?.max ?? 0;
-    const ceiling = level ? level + (this.policy.maxThreatOver ?? 6) : null;
+    const ceiling = this.threatCeiling();
     const tooDangerous = (to) => {
       if (!spawns || ceiling == null) return null;
       const worst = (roomThreats(spawns, to) || [])[0];

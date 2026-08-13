@@ -748,6 +748,29 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   along, so Solomon in Cor Noth was reported as stationary whether or not he is. The class
   map is now case-insensitive on lookup while keeping the file's own spelling on iteration.
 
+- **THE ENGAGEMENT CEILING IS A PROPORTION NOW, IT HAS ONE HOME, AND IT USED TO HAVE FOUR.**
+  `refuseEngagement` and the three other gates that decide what a character may be hit by
+  all spelled `level + (maxThreatOver ?? 6)` separately — four copies of the quantity this
+  repository has learned always ends up with two answers, and this is the one where the
+  second answer is a dead character. They now all call `threatCeiling()`.
+
+  **A FLAT BAND IS A DIFFERENT BET AT EACH END OF A ROSTER.** `+24` widens a 45-health
+  character by 53% and an 88-health one by 27%, so one policy was reckless for the small and
+  timid for the large. The default is now `{mode: 'percent', value: 150}` — max health IS
+  the level here, so 150% is the same bet everywhere. `{mode: 'flat', value: 25}` is still
+  available and is the right answer when a fleet is levelling past a fixed prey and wants
+  the band to stop growing with it. **The mode is explicit** so the two can never silently
+  disagree, and it is settable over MCP (`autopilot threat_ceiling=…`) and from a doctrine
+  (`prey.threat_ceiling`).
+
+  Two directions it deliberately fails safe. **An unknown max health returns null and every
+  caller reads null as "refuse"** — a ceiling that defaults open is the one that kills
+  somebody. And **an unusable setting falls back to 150%, never to "no ceiling"**.
+
+  `max_threat_over` is still accepted, still stored, and **no longer consulted** — and the
+  broker says so in its reply rather than letting it become a silent no-op, which is the
+  failure this file exists to keep naming.
+
 - **A GUILD WANT IS AN END STATE, NOT AN ERRAND, AND THAT IS WHAT MAKES IT SAFE TO GIVE TO
   TWENTY-ONE CHARACTERS.** A loadout says what one character should carry; a guild want says
   what should end up IN THE HALL, and it is answered by whoever walks past with the right

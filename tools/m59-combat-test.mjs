@@ -1709,17 +1709,55 @@ console.log('\nan unreachable vigor floor stops applying');
   // nothing, so it is hit back at.
   ok('a fungus beast is gentle by rating despite its level',
      k.refuseEngagement('fungus beast') === null);
-  // An ant is level 40 at rating 360 — over this character's band of 33 on both counts,
-  // and the case the rating rule must NOT wave through.
-  ok('an ant is neither gentle nor within the band, and is refused',
-     k.refuseEngagement('ant') !== null);
+  // THE CEILING IS A PROPORTION OF MAX HEALTH, NOT A FLAT NUMBER OF LEVELS ABOVE IT.
+  //
+  // `maxThreatOver` was +6 by default, and a flat number cannot be the same bet at both
+  // ends of a roster: +24 widens a 45-health character by 53% and an 88-health one by 27%,
+  // so one policy was reckless for the small and timid for the large. 150% of max health is
+  // the same bet everywhere, and this character at 27 therefore fights up to 41.
+  ok('the ceiling is a percentage of max health', k.threatCeiling() === 41, k.threatCeiling());
+  ok('and it moves with the percentage',
+     mk({ threatCeiling: { mode: 'percent', value: 300 } }).threatCeiling() === 81);
+  // EITHER MODE, AND THE MODE IS EXPLICIT so the two can never silently disagree. Flat is
+  // the right answer when a fleet is levelling past a fixed prey and wants the band to stop
+  // growing with it; percent is the right default because a flat band is a different bet at
+  // each end of a roster.
+  ok('a flat band adds levels to max health',
+     mk({ threatCeiling: { mode: 'flat', value: 25 } }).threatCeiling() === 52);
+  ok('and 150 percent of 27 is not 27 plus 150',
+     mk({ threatCeiling: { mode: 'percent', value: 150 } }).threatCeiling() === 41);
+  // A BROKEN SETTING FALLS BACK TO THE DEFAULT, NEVER TO "NO CEILING". Defaulting open is
+  // the one direction that kills a character.
+  ok('a nonsense ceiling falls back to the documented default',
+     mk({ threatCeiling: { mode: 'percent', value: 'banana' } }).threatCeiling() === 41);
+  ok('and so does a missing one', mk({ threatCeiling: null }).threatCeiling() === 41);
+  // AN UNKNOWN CEILING REFUSES EVERYTHING RATHER THAN PERMITTING EVERYTHING. Max health
+  // that has not been read is the dangerous direction if it defaults open.
+  {
+    const blind = new Autopilot({ name: 't9', world: { room: { num: 603 } },
+      client: { selfId: 9, room: { objects: new Map() }, rsc: { get: r => r },
+                vitals: () => ({ health: { value: 0, max: 0 } }) } }, {});
+    Object.assign(blind.policy, { hunt: 'giant rat' });
+    ok('no max health means no ceiling', blind.threatCeiling() === null);
+  }
+
+  // A zombie is level 55 at rating 405 — over the ceiling of 41 on both counts, and the
+  // case the rating rule must NOT wave through.
+  ok('a zombie is neither gentle nor within the band, and is refused',
+     k.refuseEngagement('zombie') !== null);
   ok('and the refusal names the rating, not just the level',
-     /attack rating 360/.test(k.refuseEngagement('ant')?.why ?? ''),
-     k.refuseEngagement('ant')?.why);
-  ok('a centipede at level 30 is inside a band of 33',
+     /attack rating 405/.test(k.refuseEngagement('zombie')?.why ?? ''),
+     k.refuseEngagement('zombie')?.why);
+  ok('a centipede at level 30 is inside a ceiling of 41',
      k.refuseEngagement('centipede') === null);
-  ok('a character with a wide enough band is allowed the ant',
-     mk({ maxThreatOver: 200 }).refuseEngagement('ant') === null);
+  ok('a character with a wide enough ceiling is allowed the zombie',
+     mk({ threatCeiling: { mode: 'percent', value: 400 } }).refuseEngagement('zombie') === null);
+  ok('and a flat band wide enough does the same',
+     mk({ threatCeiling: { mode: 'flat', value: 200 } }).refuseEngagement('zombie') === null);
+  // AND max_threat_over NO LONGER WIDENS ANYTHING. It is still accepted so nothing that
+  // sets it errors, but it decides nothing — pinned here so the day somebody wires it back
+  // in, this says so rather than the fleet quietly fighting out of its band again.
+  ok('maxThreatOver is inert', mk({ maxThreatOver: 500 }).refuseEngagement('zombie') !== null);
 }
 
 // ------------------------------------------------------------ what is in reach of us
