@@ -7103,6 +7103,10 @@ const TOOLS = [
       pull_within: { type: 'number',
         description: 'how many steps it may go to fetch a monster that will not come to the wall, ' +
           'default 8. It hits it once and walks straight back' },
+      barren_spots_before_room_decision: { type: 'number',
+        description: 'how many top-ranked walls may each fail repeated, fully-waited pulls before ' +
+          'the keeper stops searching this room (default 3). This makes a room-scoped choice to ' +
+          'fight open when the safety gates permit it or relocate; it never blocks the goal' },
       break_out_via_logoff: { type: 'boolean',
         description: 'reconnect before stepping off a crowded safe spot, default true. The entry ' +
           'grace period means the swarm has to notice you one at a time instead of all at once' },
@@ -7362,6 +7366,9 @@ const TOOLS = [
       if (a.pull_within !== undefined)
         p.policy.pullWithin = (a.pull_within === null || Number(a.pull_within) <= 0)
           ? null : Number(a.pull_within);
+      if (a.barren_spots_before_room_decision !== undefined)
+        p.policy.barrenSpotsBeforeRoomDecision = Math.max(1,
+          Math.floor(Number(a.barren_spots_before_room_decision) || 1));
       if (a.break_out_via_logoff !== undefined) p.policy.breakOutViaLogoff = !!a.break_out_via_logoff;
       if (p.mode === 'farm' && !p.policy.hunt)
         return { started: false, reason: 'farm mode needs something to hunt — pass hunt with a creature name' };
