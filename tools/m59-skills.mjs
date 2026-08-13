@@ -34,6 +34,27 @@ import { keepTest as keepTestFor, sellTest as sellTestFor } from './m59-loadout.
 export const DEFAULT_DISENGAGE_AT = 0.35;
 export const DEFAULT_REST_UNTIL = 0.9;
 
+// A FIGHT CAN MAKE REAL PROGRESS WITHOUT ENDING IN A KILL.
+//
+// Safe-wall fights are often interrupted when the quarry steps just outside melee
+// reach. The keeper then pulls the same wounded object back and resumes it. Treating
+// every such return as "no progress" makes five useful exchanges look like a stall and
+// lets an external supervisor stop the keeper in the middle of a bounded pull cycle.
+// The server's own combat text is the affirmative evidence: "You hit ..." is emitted
+// only for a landed blow. Merely sending swings, or receiving dodge/avoid text, does not
+// qualify. Keep the parser pure so the distinction is testable without a live server.
+export function landedHitSummary(messages = []) {
+  let hits = 0, damage = 0, damageKnown = 0;
+  for (const value of messages || []) {
+    const line = String(value ?? '');
+    if (!/\byou hit\b/i.test(line)) continue;
+    hits++;
+    const amount = /\bfor\s+(\d+)(?:\s+damage)?\b/i.exec(line);
+    if (amount) { damage += Number(amount[1]); damageKnown++; }
+  }
+  return { hits, damage: damageKnown ? damage : null, damage_known_hits: damageKnown };
+}
+
 const pct = v => (v && v.max ? v.value / v.max : null);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -1778,9 +1799,12 @@ export async function fight(s, {
   await s.pacer.submit('read', () => c.stats(1));
   await c.waitFor({ kinds: ['stat'], timeoutMs: 2000 });
   const after = c.vitals();
+  const landed = landedHitSummary(combatLines);
 
   const out = {
     fought: true, target: foeName, killed, rounds: roundsFought,
+    landed_hits: landed.hits,
+    damage_dealt: landed.damage,
     health: { before: before.health, after: after.health },
     // Worth saying out loud: it means a round went nowhere, and it means whatever sat
     // this character down is not doing so again by itself.
