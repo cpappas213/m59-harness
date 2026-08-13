@@ -702,6 +702,55 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   twenty-first deletes the oldest out of whoever is carrying it (`library.kod:4288`), so
   hoarding one loses it.
 
+- **A FACTION IS A SUBSCRIPTION, THE BILL IS ONE SENTENCE, AND THE CLOCK RUNS WHILE THE
+  CHARACTER IS LOGGED OUT.** `FactionServiceTimer` (`player.kod:11238`) re-arms every 20
+  minutes and accumulates **wall-clock** unserved time. At `FACTION_WARN_TIME` (72000s,
+  20h) it sends `player_faction_time` — *"Your liege is no longer convinced of your
+  loyalty. You should visit your liege at court again."* At `FACTION_RESIGN_TIME` (86400s,
+  24h) it calls `ResignFaction`. **Four hours between them**, and the expulsion announces
+  itself only afterwards.
+
+  There is no packet, no stat and nothing to poll — it is `MsgSendUser` prose, so it is
+  caught off the event stream and written to `substrate/faction-status/<character>.json`
+  exactly as a bank balance is. `node tools/m59-loyalty.mjs` reads the fleet back without
+  moving anybody; `--serve <name>` plans the errand.
+
+  Five things that read backwards:
+
+  - **THE WARNING IS WHAT CREATES THE QUEST.** Service quests declare
+    `QT_SCHEDULE_CHANCE = 0` (`questengine.kod:1657`), so the ordinary quest timer never
+    makes one. Only `JoinFaction`, a completed previous service, and the warning branch
+    itself (`#override=TRUE`) do. Saying "loyalty" to a liege that has not warned you does
+    nothing at all, silently — and the warning is reliable evidence that a node is waiting.
+  - **THE WARNING REPEATS EVERY 20 MINUTES AND IT IS THE SAME DEADLINE.** Re-dating on
+    each repeat pushes the due time forward for ever, and the character is expelled while
+    the record says it has hours left. `noteLoyaltyWarning` refuses to re-date an open one.
+  - **ASKING TRADES FOUR HOURS FOR ONE, AND THE PENALTY IS EXPULSION.** Every faction's
+    last node carries `#penaltylist = [[QN_PRIZETYPE_FACTION, QN_PRIZE_FACTION_NEUTRAL]]`
+    on a one-hour timer (half an hour for the Duke), and arriving one second late awards
+    the penalty rather than the prize (`questnode.kod:846`). Make the trade anyway — not
+    asking loses the membership with certainty — but **carry the payment first**.
+  - **THE LIEGE NAMES ONE ITEM OUT OF SEVEN.** `pCargo` is a single
+    `GetRandomCargoFromQuestNodeTemplate` (`questnode.kod:226`) compared by CLASS
+    (`:699`), so carrying a candidate is a one-in-seven head start, not readiness. Rook in
+    **room 154** is the only reliable counter — `CorNothSergeant` does not declare
+    `vbSellFromInventory`, so he cannot run out of long swords. Izzio can, and wanders.
+  - **A SOLDIER IS WARNED FOR EVER AND NEVER EXPELLED.** `UpdateFactionService`
+    (`player.kod:11203`) clamps the counter at the warn threshold while a `SoldierShield`
+    is worn. Read naively that sends every soldier on the errand every 20 minutes for ever,
+    so `loyaltyDebt` reports a soldier's debt with **no deadline** rather than as no debt.
+
+  **A quest node is deaf beyond five squares and says nothing about it** — `SquaredDistanceTo
+  > Q_NPC_CLOSE_ENOUGH^2` is checked before the message is (`questnode.kod:650`), so in a
+  large chamber the word is spoken, the room hears it and the quest does not. Checked before
+  speaking. **And a node belongs to ONE character** (`questnode.kod:800`): a fleet all
+  shouting "loyalty" at one liege gets one quest and twenty silences.
+
+  **The Duke is recognised and deliberately not automated** — his middle leg is "say `tax`
+  to whichever townsperson I name", which would need a speech allowlist covering three
+  towns, on two half-hour timers. `node tools/m59-faction-test.mjs` (63 more assertions)
+  pins all of the above; the DUM side is `factions.keep_membership`.
+
 - **A CHARACTER CAN BE SPOKEN FOR, AND THE BOARD HAS TO SAY SO.** A loot run, a
   provisioning cast, a signet errand and a pairing all have another end, and pulling a
   character out of one abandons that end silently. `m59-commitment.mjs` is the single

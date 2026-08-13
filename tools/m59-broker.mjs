@@ -56,7 +56,10 @@ import { resolveItemNames } from './m59-items.mjs';
 import { factionAssignment, factionJoinConfirmed, factionJoinSpec,
          factionOfferAllowed, FACTION_SOLDIER, factionFromProfile,
          visibleTokenFromProfile, isCouncilToken, soldierAssignment,
-         soldierPromotionConfirmed, COUNCIL_TOKEN_DESTINATIONS } from './m59-factions.mjs';
+         soldierPromotionConfirmed, COUNCIL_TOKEN_DESTINATIONS,
+         isLoyaltyWarning, isLoyaltyLost, factionLoyaltySpec, loyaltyAssignment,
+         loyaltyOfferAllowed, loyaltyRenewalConfirmed, loyaltyFailed, loyaltyDebt, loyaltyPurchase,
+         LOYALTY_TRIGGER, withinQuestReach, QUEST_NPC_REACH_SQUARES } from './m59-factions.mjs';
 import { FactionStatusCache } from './m59-faction-status.mjs';
 import { StorageCache, GUILD_CHEST_SLOTS, chestFullness } from './m59-storage.mjs';
 import * as uptime from './m59-uptime.mjs';
@@ -1839,6 +1842,34 @@ class Session {
     } catch { /* a record is a convenience; never let it interrupt play */ }
   }
 
+  // THE ONLY NOTICE A FACTION MEMBER EVER GETS, CAUGHT ON ITS WAY PAST.
+  //
+  // `player_faction_time` (player.kod:160) is `MsgSendUser` prose, sent once when the
+  // service counter crosses FACTION_WARN_TIME, and there is no packet, no stat and
+  // nothing to poll. Four hours later `ResignFaction` runs and the character is out. So
+  // this is the bank-balance pattern exactly: written down at the moment it is said, or
+  // the fleet finds out by noticing a membership has quietly become 'neutral'.
+  //
+  // The expulsion line is caught too, because "the deadline passed" and "the server threw
+  // this character out" are different claims and only the second one is observed.
+  noteLoyalty(ev) {
+    const who = this.client?.me?.name ?? null;
+    if (!who) return;
+    try {
+      if (isLoyaltyWarning(ev.text)) {
+        const status = factionStatuses.read(who);
+        const entry = factionStatuses.noteLoyaltyWarning(who,
+          { at: ev.at ?? Date.now(), soldier: status?.soldier === true });
+        this.recorder.line('note', { what: 'faction loyalty warning', character: who,
+          faction: entry.faction, due_at: entry.loyalty?.due_at ?? null,
+          soldier: entry.loyalty?.soldier_at_warning === true });
+      } else if (isLoyaltyLost(ev.text)) {
+        factionStatuses.noteLoyaltyLost(who, { at: ev.at ?? Date.now() });
+        this.recorder.line('note', { what: 'faction membership lost', character: who });
+      }
+    } catch { /* the record is a convenience; never let it interrupt play */ }
+  }
+
   noteBanker(ev) {
     const who = this.client?.me?.name ?? null;
     if (!who) return;
@@ -1967,7 +1998,7 @@ class Session {
     c.onEvent = ev => {
       this.recorder.line('event', ev);
       if (ev.kind === 'ability') this.noteAdvancement(ev);
-      if (ev.kind === 'message' && ev.text) { this.noteBanker(ev); this.noteCombatLine(ev); }
+      if (ev.kind === 'message' && ev.text) { this.noteBanker(ev); this.noteCombatLine(ev); this.noteLoyalty(ev); }
       // A VAULT ANSWERS ONCE AND ONLY WHEN ASKED, so this is caught off the stream for
       // exactly the reason a bank balance is: whatever walked a character to a vaultman
       // has already paid for the trip, and if the reply goes past unread the contents are
@@ -4468,7 +4499,212 @@ const TOOLS = [
     schema: { type: 'object', properties: {
       agent: { type: 'string' }, refresh: { type: 'boolean' },
     }, required: ['agent'] },
-    run: a => readFactionStatus(session(a.agent), { refresh: a.refresh === true }),
+    run: async a => {
+      const status = await readFactionStatus(session(a.agent), { refresh: a.refresh === true });
+      // The debt is derived, not stored, so it can never disagree with the record it is
+      // derived from. Null means no service is owed — never an object full of zeroes.
+      return { ...status, loyalty_debt: loyaltyDebt(status) };
+    },
+  },
+  {
+    name: 'faction_loyalty',
+    description:
+      'One bounded step of a faction LOYALTY-SERVICE quest — the recurring one a member must ' +
+      'do to stay in, not the one-off join. status reports whether service is owed and how ' +
+      'long is left. request speaks the single fixed word "loyalty" to the character\'s own ' +
+      'liege and returns the source-defined assignment parsed from the reply. offer hands ' +
+      'exactly that assignment\'s allowed item to its allowed recipient and proves acceptance ' +
+      'by refreshing inventory.\n' +
+      'acquire buys a payment first, from a source-defined counter that cannot run out.\n' +
+      'THE WARNING GIVES FOUR HOURS; THE QUEST IT STARTS GIVES ONE. FACTION_RESIGN_TIME minus ' +
+      'FACTION_WARN_TIME is 14400s, but every faction\'s last quest node carries a penalty of ' +
+      'QN_PRIZE_FACTION_NEUTRAL on its own one-hour (Duke: half-hour) timer, so the reply trades ' +
+      'the four-hour grace for a one-hour deadline. Make that trade: not asking loses the ' +
+      'membership with certainty. The liege names ONE item out of seven, so carrying a candidate ' +
+      'is a head start and not readiness; `request` refuses only from a standing start with ' +
+      'neither a candidate nor a purse. The Duke is recognised and not automated.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      action: { type: 'string', enum: ['status', 'acquire', 'request', 'offer'] },
+      faction: { type: 'string', enum: ['duke', 'princess', 'rebel'] },
+      item: { type: 'number', description: 'offer: exact inventory object id' },
+      target: { type: 'string', description: 'offer: exact source-defined recipient name' },
+      anyway: { type: 'boolean', description: 'request: proceed with no acceptable item in the pack. ' +
+        'Starts a one-hour timer whose penalty is expulsion; the default refusal exists for a reason' },
+    }, required: ['agent', 'action'] },
+    run: async (a) => {
+      const s = session(a.agent), c = s.need();
+      const status = await readFactionStatus(s, {});
+      const debt = loyaltyDebt(status);
+      const faction = a.faction ?? status.faction;
+      const spec = factionLoyaltySpec(faction);
+
+      if (a.action === 'status')
+        return { character: status.character, faction: status.faction, soldier: status.soldier,
+                 loyalty: status.loyalty ?? null, loyalty_debt: debt,
+                 accepts: spec?.accepts ?? [], automated: spec?.automated !== false };
+
+      if (!spec) throw new Error(`unknown faction "${faction}"`);
+      // Membership is rechecked rather than taken from the argument, exactly as
+      // faction_soldier does: serving a liege this character does not belong to walks it
+      // across the world to be ignored.
+      if (status.faction !== spec.id)
+        throw new Error(`loyalty service requires observed ${spec.id} membership; profile says ${status.faction}`);
+      if (spec.automated === false)
+        return { faction: spec.id, action: a.action, automated: false, reason: spec.why_not,
+                 leader: spec.leader, room: spec.room, trigger: LOYALTY_TRIGGER };
+
+      const here = s.world?.room?.num ?? null;
+
+      // BUY THE PAYMENT BEFORE ASKING FOR THE JOB. One step here rather than two in the
+      // caller, because a purchase is list-then-buy: the item id only exists in the reply
+      // to the first call, and an errand runner cannot thread it into the second.
+      //
+      // The merchant and the item both come from the source-derived table and never from
+      // the caller — this is a buy surface, and a buy surface that accepts an arbitrary
+      // seller id is a way to hand a purse to Skivlat.
+      if (a.action === 'acquire') {
+        const plan = loyaltyPurchase(spec.id);
+        if (!plan)
+          return { bought: false, faction: spec.id,
+                   reason: `nothing on the ${spec.id} loyalty list is sold by a counter that ` +
+                     'cannot run out; this payment has to be looted or supplied' };
+        const already = factionInventory(c)
+          .filter(item => spec.accepts.includes(String(item.name).trim().toLowerCase()));
+        if (already.length)
+          return { bought: false, faction: spec.id, carrying: already,
+                   reason: 'the pack already holds something this liege accepts' };
+        if (here !== plan.room)
+          return { bought: false, arrived: false, faction: spec.id, room: here, plan,
+                   reason: `${plan.merchant} sells the ${plan.item} in room ${plan.room}` };
+        const seller = exactRoomObject(c, plan.merchant, { player: false });
+        if (!seller)
+          return { bought: false, arrived: true, faction: spec.id, room: here, plan,
+                   reason: `${plan.merchant} is not present` };
+
+        const shopTool = TOOLS.find(t => t.name === 'shop');
+        const listing = await shopTool.run({ agent: a.agent, seller: seller.id });
+        const offer = (listing.items || []).find(item =>
+          String(item.name || '').trim().toLowerCase() === plan.item);
+        if (!offer)
+          return { bought: false, faction: spec.id, room: here, plan,
+                   listed: listing.items?.length ?? 0,
+                   reason: `${plan.merchant} did not list a ${plan.item}` };
+        const purseBefore = c.money ?? null;
+        await shopTool.run({ agent: a.agent, seller: seller.id, buy_ids: [offer.id] });
+        await s.pacer.submit('read', () => c.requestInventory());
+        await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => null);
+        // THE PACK, NOT THE CALL. A merchant refusal is a sentence spoken to the room, so
+        // the only proof a purchase happened is the thing being in the pack afterwards.
+        const carrying = factionInventory(c)
+          .filter(item => spec.accepts.includes(String(item.name).trim().toLowerCase()));
+        return { bought: carrying.length > 0, faction: spec.id, room: here, plan,
+                 price: offer.price ?? null, carrying,
+                 purse_before: purseBefore, purse_after: c.money ?? null,
+                 note: carrying.length ? undefined
+                   : 'the buy was sent and the pack did not change; read the purse and the room' };
+      }
+
+      if (a.action === 'request') {
+        // ASK ONLY WHEN THERE IS A ROUTE, AND BE CLEAR THAT CARRYING ONE IS NOT A
+        // GUARANTEE.
+        //
+        // Node 198 is `QN_TYPE_ITEMFINDCLASS` over a SEVEN-ENTRY cargo list and the node
+        // instance picks ONE of them (`%INDEF_CARGO%CARGO` is singular). So a pack holding
+        // a scimitar loses to a liege who names gauntlets, and "I am carrying something
+        // he accepts" is a one-in-seven head start, not readiness.
+        //
+        // What the guard is really protecting is the trade being made: the reply starts a
+        // one-hour timer whose failure penalty is `QN_PRIZE_FACTION_NEUTRAL` — expulsion
+        // on the spot — in place of the four-hour grace the character already had. That
+        // trade is worth making, because NOT asking loses the membership with certainty
+        // at the four-hour mark and asking loses it only if the named item cannot be
+        // found. It is not worth making from a standing start with no candidate and no
+        // money, which is the one case that converts a comfortable deadline into a
+        // near-certain loss three hours early.
+        const carrying = factionInventory(c)
+          .filter(item => spec.accepts.includes(String(item.name).trim().toLowerCase()));
+        const purchase = loyaltyPurchase(spec.id);
+        const canBuy = purchase != null && (c.money ?? 0) > 0;
+        if (!carrying.length && !canBuy && a.anyway !== true && spec.shape === 'item-to-liege')
+          return { requested: false, faction: spec.id, room: here, accepts: spec.accepts,
+                   carrying: [], purse: c.money ?? null, purchase,
+                   reason: 'the pack holds nothing this liege accepts and there is no purse to buy ' +
+                     'with, so the reply would trade a four-hour grace for a one-hour timer with ' +
+                     'no way to beat it; acquire a candidate first, or pass anyway=true' };
+        if (here !== spec.room)
+          return { requested: false, arrived: false, faction: spec.id, room: here,
+                   reason: `${spec.leader} hears loyalty service in room ${spec.room}` };
+        const leader = exactRoomObject(c, spec.leader, { player: false });
+        if (!leader)
+          return { requested: false, arrived: true, faction: spec.id, room: here,
+                   reason: `${spec.leader} is not present` };
+        // Beyond five squares the quest node never sees the word, and says nothing about
+        // it. Reported rather than spoken into, so a caller walks closer instead of
+        // recording a silence as an attempt.
+        const reach = withinQuestReach(c.self, leader);
+        if (reach && !reach.within)
+          return { requested: false, arrived: true, faction: spec.id, room: here,
+                   distance: reach.distance, leader_at: { col: leader.col, row: leader.row },
+                   reason: `${spec.leader} is ${reach.distance} squares away and a quest node ` +
+                     `hears nothing beyond ${QUEST_NPC_REACH_SQUARES}; walk closer and ask again` };
+
+        const messages = await factionSpeech(s, LOYALTY_TRIGGER);
+        const assigned = loyaltyAssignment(spec.id, messages);
+        return { requested: true, faction: spec.id, leader: spec.leader, room: here,
+                 spoken: LOYALTY_TRIGGER, assigned, carrying, messages,
+                 deadline_hint_ms: spec.time_limit_ms,
+                 note: assigned ? undefined
+                   : 'the word was spoken, but no source-defined loyalty assignment was heard' };
+      }
+
+      if (a.action === 'offer') {
+        const id = Number(a.item);
+        const held = (c.inventory || []).find(o => o.id === id);
+        if (!held) throw new Error(`inventory does not contain object ${a.item}`);
+        const item = c.rsc.get(held.nameRsc) || '';
+        const allowed = loyaltyOfferAllowed(spec.id, { item, target: a.target });
+        if (!allowed)
+          throw new Error(`${item || `object ${id}`} may not be offered to ${a.target || '?'} ` +
+                          `through the ${spec.id} loyalty surface`);
+        if (here !== allowed.room)
+          return { offered: false, accepted: false, served: false, faction: spec.id, item,
+                   target: allowed.target, room: here,
+                   reason: `${allowed.target} receives this service in room ${allowed.room}` };
+        const targetNames = [allowed.target, ...(allowed.aliases ?? [])].map(name => name.toLowerCase());
+        const npc = [...c.room.objects.values()].find(o =>
+          targetNames.includes(String(c.rsc.get(o.nameRsc) || '').toLowerCase()));
+        if (!npc)
+          return { offered: false, accepted: false, served: false, faction: spec.id, item,
+                   target: allowed.target, room: here, reason: `${allowed.target} is not present` };
+
+        const before = c.evSeq;
+        await s.pacer.submit('trade', () => c.offer(npc.id, [id]));
+        await c.waitFor({ since: before, kinds: ['message', 'said', 'trade-ended', 'offer-sent'],
+                          timeoutMs: 5000 }).catch(() => null);
+        await new Promise(resolveOffer => setTimeout(resolveOffer, 700));
+        await s.pacer.submit('read', () => c.requestInventory());
+        await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => null);
+        const accepted = !(c.inventory || []).some(o => o.id === id);
+        const messages = c.eventsSince(before).filter(e => e.text).map(e => e.text);
+        const failed = loyaltyFailed(messages);
+        const served = accepted && loyaltyRenewalConfirmed(messages);
+        const who = c.me?.name ?? a.agent;
+        if (served) factionStatuses.noteLoyaltyServed(who);
+        if (failed) factionStatuses.noteLoyaltyLost(who);
+        if (!accepted && c.trade)
+          await s.pacer.submit('trade', () => c.cancelOffer()).catch(() => null);
+        return { offered: true, accepted, served, failed, faction: spec.id, item,
+                 target: allowed.target, room: here, messages,
+                 note: served ? undefined : failed
+                   ? 'the liege announced the membership was revoked'
+                   : accepted
+                   ? 'the item left the pack, but the renewal confirmation was not observed'
+                   : 'the recipient did not take the item' };
+      }
+
+      throw new Error(`unknown faction_loyalty action "${a.action}"`);
+    },
   },
   {
     name: 'faction_soldier',
