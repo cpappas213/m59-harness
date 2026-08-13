@@ -2479,9 +2479,21 @@ class Session {
   async confirmPosition() {
     const c = this.need();
     this.lastRoomRead = Date.now();
-    await this.pacer.submit('read', () => c.roomContents());
+    // There may already be a fire-and-forget room read in flight. Waiting for merely
+    // "the next room-contents event" can consume that older snapshot and certify the
+    // exact stale position this method was called to correct. The protocol returns
+    // these reads in request order, so wait through any older replies until the local
+    // ordinal for this request has arrived.
+    const since = c.evSeq;
+    const request = await this.pacer.submit('read', () => c.roomContents());
     const t0 = Date.now();
-    await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2000 });
+    let cursor = since;
+    while ((c.roomContentsReceived ?? request) < request) {
+      const reply = await c.waitFor({ since: cursor, kinds: ['room-contents'], timeoutMs: 2000 });
+      if (reply.timedOut)
+        throw new Error(`no fresh room position reply for request ${request}`);
+      cursor = reply.seq;
+    }
     Pacer.note('confirm_position', 'blocked', Date.now() - t0);
     return c.self ? { col: c.self.col, row: c.self.row } : null;
   }
