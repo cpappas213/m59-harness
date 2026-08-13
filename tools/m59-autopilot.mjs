@@ -9157,6 +9157,60 @@ export class Autopilot {
     return true;
   }
 
+  // SELL BEFORE YOU BUY, because a full pack refuses the purchase by SPEAKING, not by
+  // erroring. Joguer says "I'm unable to give you the elderberry. Perhaps you carry too
+  // much?" — a sentence to the room, which is the same class of silence as the Izzio and
+  // Skivlat refusals, and the buy call itself reports nothing wrong. Rizzo spent whole
+  // reagent trips walking to a counter, being refused item by item, and walking home.
+  //
+  // So every buying path asks this first. It is cheap on the common path — a capacity
+  // reading it already has — and does nothing at all when there is room.
+  //
+  // Selling comes before dropping deliberately: the pack is full of things worth
+  // shillings, and a merchant standing right there converts them. Dropping is the fallback
+  // for a counter that will not buy, never the first move.
+  async makeRoomToBuy(merchantId = null, { wantSlots = 6 } = {}) {
+    const s = this.s, c = s.need();
+    const cap = skills.carryCapacity(c);
+    const slotsLeft = Math.max(0, (this.policy.maxCarry ?? 50) - (c.inventory?.length ?? 0));
+    // room_for is withheld when the pack holds anything unweighed, and that is deliberately
+    // treated as "make room" rather than "there is room" — guessing light is the direction
+    // that produces exactly the refusal this exists to prevent.
+    const tight = slotsLeft < wantSlots ||
+      (cap.known && (!cap.room_for || cap.room_for.weight < 200 || cap.room_for.bulk < 200));
+    if (!tight) return null;
+
+    const buyer = merchantId != null && skills.trustedBuyer(
+      c.rsc.get([...c.room.objects.values()].find(o => o.id === merchantId)?.nameRsc) || '')
+      ? merchantId
+      : [...(c.room?.objects?.values?.() ?? [])]
+          .find(o => affordances(o.flags).includes('buy') &&
+                     skills.trustedBuyer(c.rsc.get(o.nameRsc)))?.id ?? null;
+
+    let sold = null;
+    if (buyer) {
+      sold = await skills.sellAll(s, { merchant: buyer, loadout: this.loadout(),
+        protect: this.protectedItemNames(), maxWeapons: this.policy.maxWeapons,
+        weaponPriority: this.weaponPriorityNow() }).catch(e => ({ error: e.message }));
+    }
+    // Still tight, or nobody here buys: shed what is provably worthless.
+    const dead = skills.junkAndBroken(c);
+    const dropped = [];
+    if (dead.length && (c.inventory?.length ?? 0) >= (this.policy.maxCarry ?? 50) - wantSlots) {
+      for (const d of dead.slice(0, 4)) {
+        await s.pacer.submit('drop', () => c.drop([this.dropSpec(d)])).catch(() => {});
+        await new Promise(r => setTimeout(r, 600));
+        dropped.push(d.name);
+      }
+    }
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+    this.note('made room before buying', { slots_left_before: slotsLeft,
+      sold: sold?.sold?.length ?? 0, received: sold?.total_received ?? 0, dropped,
+      why: 'a full pack refuses a purchase out loud and the buy call reports nothing wrong' });
+    return { sold, dropped };
+  }
+
   async buyFarmDeliveryCargo() {
     const p = this.pendingFarmDelivery;
     if (!p || !this.policy.farmDelivery?.enabled) return null;
@@ -9184,6 +9238,10 @@ export class Autopilot {
     const kinds = Object.keys(p.requested);
     const pick = await this.sellerHere({ want: /elder\s?berry|^herbs?$/i }).catch(() => null);
     if (!pick) { this.coordination.delivery.failed++; return null; }
+    // A courier carries a delivery's worth on top of its own pack, so this is the path most
+    // likely to be refused for space — and the refusal is a sentence, not an error.
+    await this.makeRoomToBuy(pick.seller?.id ?? pick.seller,
+      { wantSlots: Math.max(6, Object.values(p.requested).length * 2) }).catch(() => {});
     const before = Object.fromEntries(kinds.map(k => [k, this.countOfKind(k)]));
     const spare = this.deliverableSpare(kinds);
     const need = Object.fromEntries(kinds.map(k =>
@@ -10523,6 +10581,10 @@ export class Autopilot {
     const mayBuyFood = purchaseEnabled(this.policy, 'food');
     const mayBuyReagents = purchaseEnabled(this.policy, 'reagents');
     if (!mayBuyFood && !mayBuyReagents) return [];
+    // Sell first. A merchant refuses a purchase into a full pack by SPEAKING, and the buy
+    // call reports success either way — so without this a character walks to a counter,
+    // is talked at, and walks home with nothing.
+    await this.makeRoomToBuy(seller?.id ?? seller).catch(() => {});
     // Per kind: the field refills elderberry for nothing and nothing in the world drops a
     // herb, so they are not the same number. See REAGENT_TARGET_BY_KIND.
     const wantEb = reagentTargetFor('elderberry', this.policy.reagentTarget);
