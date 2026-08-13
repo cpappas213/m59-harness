@@ -102,8 +102,14 @@ function preferredQuietRetreat(world, { maxHops = Infinity } = {}) {
 // the quarry. A bot assigned to Castle Victoria while standing in Marion's crypt could
 // therefore hunt the same skeleton there forever: status said assigned_room=39 while
 // the character never took one step toward 39.
-export function shouldRelocateToAssignedRoom(policy, room) {
-  return policy?.assignedRoom != null && room?.num != null && room.num !== policy.assignedRoom;
+export function shouldRelocateToAssignedRoom(policy, room, deniedRooms = null) {
+  const assigned = policy?.assignedRoom;
+  if (assigned == null || room?.num == null || room.num === assigned) return false;
+  // An assignment is strong, not absolute. If this same keeper has already denied the
+  // room under a bounded safety experiment, forcing the assignment and the denial to
+  // alternate makes both rules useless: leave 566, immediately aim at 566, repeat.
+  // `false` means the room was probed and accepted; only a truthy reason defers it.
+  return !deniedRooms?.get(assigned);
 }
 
 // Keep an explicit placement reachable even when it is not one of the globally
@@ -5340,6 +5346,10 @@ export class Autopilot {
       // case and must not read as 0%.
       placement: this.policy.assignedRoom == null && !this.placement.relocations ? null : {
         assigned_room: this.policy.assignedRoom,
+        assignment_deferred: this.policy.assignedRoom != null
+          ? !!this.noWallRooms?.get(this.policy.assignedRoom) : false,
+        assignment_deferred_reason: this.policy.assignedRoom != null
+          ? this.noWallRooms?.get(this.policy.assignedRoom) || null : null,
         standing_where_assigned: this.policy.assignedRoom != null
           ? this.s.world?.room?.num === this.policy.assignedRoom : null,
         held: this.placement.relocations
@@ -7674,7 +7684,21 @@ export class Autopilot {
         const spawns0 = loadSpawns(SPAWN_FILE);
         const here = (spawns0?.rooms?.[room.num] || []).filter(x => x.huntable);
         const preyHere = here.some(x => creatureMatchesHunt(x, this.policy.hunt));
-        const offAssignment = shouldRelocateToAssignedRoom(this.policy, room);
+        const assignmentDenied = this.policy.assignedRoom != null
+          ? this.noWallRooms?.get(this.policy.assignedRoom) : null;
+        const offAssignment = shouldRelocateToAssignedRoom(this.policy, room, this.noWallRooms);
+        if (preyHere && assignmentDenied && this.warnedAssignmentDeferred !== this.policy.assignedRoom) {
+          this.warnedAssignmentDeferred = this.policy.assignedRoom;
+          this.note('working an alternate room while the assignment is deferred', {
+            room: room.name, room_num: room.num,
+            assigned_room: this.policy.assignedRoom,
+            why_assignment_deferred: assignmentDenied,
+            why: 'the assigned room was denied by this keeper\'s bounded safety evidence; ' +
+                 'sending it straight back would oscillate between assignment and refusal',
+            scope: 'session-only — the configured assignment is unchanged and a fresh keeper ' +
+                   'can reconsider it',
+            });
+        }
         if (!preyHere || offAssignment) {
           const known = this.preyRooms(room);
           if (known.length) {

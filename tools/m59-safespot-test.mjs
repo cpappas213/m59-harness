@@ -14,7 +14,7 @@
 // away the largest advantage in the game — a free heal to full in a monster room.
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import { unlinkSync } from 'node:fs';
-import { Autopilot } from './m59-autopilot.mjs';
+import { Autopilot, shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
 import { SafeSpotBook } from './m59-safespots.mjs';
 import { returnToSpot } from './m59-skills.mjs';
 
@@ -192,6 +192,22 @@ console.log('\n--- unrelated combat does not erase a pending pull ---');
   ok('contact with the actual pulled quarry converts and clears the experiment',
      p.pullConverted(10, 'groundworm larva') === true &&
        p.pendingPull === null && p.pullsWithoutContact === 0);
+}
+
+console.log('\n--- a denied assignment cannot fight its own relocation ---');
+{
+  const policy = { assignedRoom: 566 };
+  const elsewhere = { num: 557 };
+  ok('an available assignment still pulls the keeper back',
+     shouldRelocateToAssignedRoom(policy, elsewhere, new Map()) === true);
+  ok('a successful room probe stored as false also leaves the assignment active',
+     shouldRelocateToAssignedRoom(policy, elsewhere, new Map([[566, false]])) === true);
+  ok('a session-denied assignment is deferred instead of causing room oscillation',
+     shouldRelocateToAssignedRoom(policy, elsewhere,
+       new Map([[566, 'three wall samples failed']])) === false);
+  ok('standing in the assigned room never requests relocation',
+     shouldRelocateToAssignedRoom(policy, { num: 566 },
+       new Map([[566, 'three wall samples failed']])) === false);
 }
 
 console.log('\n--- proving a spot that works ---');
