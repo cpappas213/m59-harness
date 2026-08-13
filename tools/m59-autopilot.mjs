@@ -102,6 +102,29 @@ export function shouldRelocateToAssignedRoom(policy, room, deniedRooms = null) {
   return !deniedRooms?.get(assigned);
 }
 
+// EVERY ROOM-SCOPED FARM REFUSAL HAS TO PARTICIPATE IN THE SAME DECISION.
+//
+// A wall refusal used to be the only denial, so assignment deferral and prey-room
+// ranking read `noWallRooms` directly.  Spawn-cap refusals were later recorded in a
+// separate `cappedRooms` collection, but none of those readers consulted it.  The
+// keeper could therefore announce that it was giving a capped room up, then stay
+// there (with roam:false) or select it again on the next relocation.
+//
+// Keep the evidence separate at the source so status can say what happened, but merge
+// it at the decision boundary.  False wall entries mean a room was tested and accepted,
+// so only truthy reasons are denials.  Everything here is session-local: this chooses a
+// different room for the current keeper and never blocks the strategic goal.
+export function farmRoomDenials(noWallRooms = null, cappedRooms = null) {
+  const denied = new Map();
+  for (const [room, why] of noWallRooms?.entries?.() ?? []) {
+    if (why) denied.set(room, why);
+  }
+  for (const [room, why] of cappedRooms?.entries?.() ?? []) {
+    if (why) denied.set(room, why);
+  }
+  return denied;
+}
+
 // How long a spot must go quiet, with something adjacent to us that wants to kill us,
 // before we believe it works. Two passes' worth: one quiet reading is also what you
 // get from a monster that happened to be walking away.
@@ -5031,6 +5054,7 @@ export class Autopilot {
   }
 
   status({ full = false } = {}) {
+    const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms);
     return {
       running: this.running, mode: this.mode, policy: this.policy,
       // Null unless a fleet update is waiting on this character. See park().
@@ -5146,13 +5170,14 @@ export class Autopilot {
       // limit: a keeper that quietly declines half the map looks identical to one that
       // is simply unlucky with spawns, and the fleet would slowly stop working with no
       // single thing to point at. This is the list to read when output falls.
-      denied_rooms: this.noWallRooms?.size
-        ? { count: this.noWallRooms.size,
-            rooms: [...this.noWallRooms.entries()].filter(([, v]) => v !== false)
-                     .map(([room, why]) => ({ room, why })),
-            note: 'refused for having no safe wall this keeper could find. Not proof there is ' +
-                  'none — see requireSafeWall. Cleared on restart, so a better detector wins ' +
-                  'them back without anything to undo' }
+      denied_rooms: deniedFarmRooms.size
+        ? { count: deniedFarmRooms.size,
+            rooms: [...deniedFarmRooms.entries()].map(([room, why]) => ({
+              room, why,
+              kind: this.cappedRooms?.has(room) ? 'spawn_cap_blocked' : 'no_safe_wall',
+            })),
+            note: 'session-local room refusals only. The keeper tries other hunting grounds; ' +
+                  'these do not block or fail the strategic goal' }
         : null,
       // IS THE MONEY GETTING TO A BANK. banked is the total put away; carried_at_death
       // is what was lost on the floor anyway, and is the number to drive to zero.
@@ -5171,9 +5196,9 @@ export class Autopilot {
       placement: this.policy.assignedRoom == null && !this.placement.relocations ? null : {
         assigned_room: this.policy.assignedRoom,
         assignment_deferred: this.policy.assignedRoom != null
-          ? !!this.noWallRooms?.get(this.policy.assignedRoom) : false,
+          ? deniedFarmRooms.has(this.policy.assignedRoom) : false,
         assignment_deferred_reason: this.policy.assignedRoom != null
-          ? this.noWallRooms?.get(this.policy.assignedRoom) || null : null,
+          ? deniedFarmRooms.get(this.policy.assignedRoom) || null : null,
         standing_where_assigned: this.policy.assignedRoom != null
           ? this.s.world?.room?.num === this.policy.assignedRoom : null,
         held: this.placement.relocations
@@ -7475,16 +7500,17 @@ export class Autopilot {
         const here = (spawns0?.rooms?.[room.num] || []).filter(x => x.huntable);
         const want0 = String(this.policy.hunt || '').toLowerCase();
         const preyHere = here.some(x => (x.creature || '').toLowerCase().includes(want0));
+        const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms);
         const assignmentDenied = this.policy.assignedRoom != null
-          ? this.noWallRooms?.get(this.policy.assignedRoom) : null;
-        const offAssignment = shouldRelocateToAssignedRoom(this.policy, room, this.noWallRooms);
+          ? deniedFarmRooms.get(this.policy.assignedRoom) : null;
+        const offAssignment = shouldRelocateToAssignedRoom(this.policy, room, deniedFarmRooms);
         if (preyHere && assignmentDenied && this.warnedAssignmentDeferred !== this.policy.assignedRoom) {
           this.warnedAssignmentDeferred = this.policy.assignedRoom;
           this.note('working an alternate room while the assignment is deferred', {
             room: room.name, room_num: room.num,
             assigned_room: this.policy.assignedRoom,
             why_assignment_deferred: assignmentDenied,
-            why: 'the assigned room was denied by this keeper\'s bounded safety evidence; ' +
+            why: 'the assigned room was denied by this keeper\'s bounded room evidence; ' +
                  'sending it straight back would oscillate between assignment and refusal',
             scope: 'session-only — the configured assignment is unchanged and a fresh keeper ' +
                    'can reconsider it',
@@ -7593,15 +7619,59 @@ export class Autopilot {
           // Cannot clear it, so the room is finished for us — and it will still be
           // finished when we come back, because an abandoned full room keeps its
           // generator switched off. Go, and prefer somewhere else next time.
+          const reason = `spawn cap ${capped.present}/${capped.cap} is occupied by ` +
+            capped.blocked.map(b => `${b.count}x ${b.name}`).join(', ') +
+            ' that this keeper will not safely fight';
+          (this.cappedRooms ??= new Map()).set(room.num, reason);
+          this.tally.rooms_denied = farmRoomDenials(this.noWallRooms, this.cappedRooms).size;
           this.note('this room is capped by things we will not fight', {
             room: room?.name, at_cap: `${capped.present}/${capped.cap}`,
             blocked_by: capped.blocked.map(b => `${b.count}x ${b.name} — ${b.why}`),
             why: 'the generator is gated on the room total, so nothing new spawns while ' +
                  'these are alive. Leaving does NOT reset it (monsroom.kod:353 only ' +
-                 'reloads a room left with zero monsters) — this is giving it up.' });
-          this.cappedRooms = (this.cappedRooms ?? new Set()).add(room?.num);
-          if (this.policy.roam) { await this.roam(room); return; }
+                 'reloads a room left with zero monsters) — this is giving it up.',
+            doing_instead: 'leaving for a different room that generates the prey',
+            goal_scope: 'this refuses only the current room for this keeper session; the ' +
+                        'strategic goal remains active',
+          });
+
+          // GIVING UP A ROOM MUST ACTUALLY LEAVE IT. `roam` is deliberately false for
+          // assigned keepers, so gating this transition on policy.roam turned the line
+          // above into narration rather than behavior. Select through preyRooms(), which
+          // now excludes both wall-refused and cap-blocked rooms, and use the same bounded
+          // travel path as the no-wall refusal below.
+          const elsewhere = this.preyRooms(room);
+          if (elsewhere.length) {
+            this.doing = 'travelling';
+            await this.leaveHold('leaving a room whose spawn cap cannot recover',
+                                 { force: true }).catch(() => {});
+            const go = elsewhere[0];
+            const moved = await this.travel(go.room, { maxHops: 14 })
+                                    .catch(e => ({ arrived: false, reason: e.message }));
+            if (moved.arrived) {
+              this.homeRoom = go.room;
+              this.emptyPasses = 0;
+              this.placement.relocations++;
+              this.note('left a spawn-blocked hunting room', {
+                from: room.name, to: go.room_name, room: go.room,
+                why: reason,
+                note: 'the abandoned room stays denied only for this keeper session',
+              });
+              this.progress('left a room whose spawn cap cannot recover');
+              return;
+            }
+            this.note('could not leave the spawn-blocked room', {
+              room: room.name, tried: go.room_name, why: moved.reason,
+            });
+          } else {
+            this.note('no alternate room remains for this prey', {
+              room: room.name, hunting: this.policy.hunt,
+              why: 'every generated hunting ground is unreachable or has a session-local ' +
+                   'room refusal; this does not block the goal from being replanned',
+            });
+          }
           this.noProgress('room capped by creatures we will not fight');
+          return;
         }
       }
 
@@ -10637,14 +10707,13 @@ export class Autopilot {
     if (!spawns) return [];
     const level = this.s.client?.vitals?.()?.health?.max ?? 0;
     const ceiling = level ? level + (this.policy.maxThreatOver ?? 15) : null;
+    const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms);
     const rooms = huntingGrounds(spawns, want, { maxDanger: ceiling, limit: 8 })
       .filter(r => !r.rejected && r.room !== room?.num && !this.unreachable.has(r.room))
-      // And not one we have already refused for having no wall. Without this the
-      // keeper walks out of a wall-less room straight into the next wall-less room and
-      // back again, because the spawn table ranks them identically and has no opinion
-      // about whether either can be fought in.
-      .filter(r => this.noWallRooms?.get(r.room) === undefined ||
-                   this.noWallRooms.get(r.room) === false);
+      // And not one we have already refused for having no usable wall or an irrecoverably
+      // blocked spawn cap. Without this the keeper walks out and ranks the room it just
+      // abandoned as the best destination again.
+      .filter(r => !deniedFarmRooms.has(r.room));
     // AN ASSIGNMENT OUTRANKS THE SPAWN TABLE. Every caller takes [0], so putting the
     // assigned room at the front is the whole of "go back where you were put" — and
     // it stays subject to the same filters above, so an assignment to somewhere that
