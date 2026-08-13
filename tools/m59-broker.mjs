@@ -7904,8 +7904,9 @@ const TOOLS = [
       const manaBefore = c.vitals()?.mana?.value ?? null;
       let inventoryBefore = null;
       if (a.observe_created) {
+        const inventorySince = c.evSeq;
         await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
-        await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+        await c.waitFor({ since: inventorySince, kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
         inventoryBefore = (c.inventory || []).map(item => ({
           name: c.rsc.get(item.nameRsc) || 'unknown item', amount: item.amount || 1,
         }));
@@ -7947,8 +7948,9 @@ const TOOLS = [
       const manaAfter = c.vitals()?.mana?.value ?? null;
       let created = undefined;
       if (a.observe_created) {
+        const inventorySince = c.evSeq;
         await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
-        await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+        await c.waitFor({ since: inventorySince, kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
         const amounts = rows => {
           const out = new Map();
           for (const item of rows) out.set(item.name, (out.get(item.name) || 0) + (item.amount || 1));
