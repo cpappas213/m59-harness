@@ -4620,9 +4620,27 @@ export class Autopilot {
 
     const spawns = loadSpawns(SPAWN_FILE);
     if (!spawns) return null;
+    // AN EXACT NAME MUST NOT RESOLVE TO A DIFFERENT CREATURE, AND SUBSTRING-FIRST MEANT IT
+    // USUALLY DID.
+    //
+    // This was one `.find` on `name.includes(needle)`, so `hunt: "skeleton"` returned
+    // whichever qualifying creature came first in the map — **battered skeleton**, level
+    // 60 — rather than the skeleton, level 75. Observed live: the Castle fleet was
+    // retargeted from the battered skeleton it had outgrown onto the full one, arrived in
+    // room 38, and every row rendered `hunting: skeleton — PAYS NOTHING for advance`
+    // while the kills it was making paid perfectly well. The audit was judging a creature
+    // the character was not fighting, and the one it picked is the weakest of the four
+    // that match — so the error is always in the direction of understating the prey.
+    //
+    // THE SUBSTRING FALLBACK STAYS, because it is load-bearing elsewhere: all three
+    // faction troops are `... soldier`, and one substring is what catches them as a
+    // family. So this is exact name, then exact class, then the old behaviour — a
+    // deliberately loose name keeps working and a precise one stops being approximated.
     const needle = String(hunt).toLowerCase();
-    const c = Object.values(spawns.creatures)
-      .find(x => x.name.toLowerCase().includes(needle) || x.cls.toLowerCase() === needle);
+    const all = Object.values(spawns.creatures);
+    const c = all.find(x => x.name.toLowerCase() === needle)
+      ?? all.find(x => x.cls.toLowerCase() === needle)
+      ?? all.find(x => x.name.toLowerCase().includes(needle));
     if (!c) return null;
 
     // FARMING TO CLOSE THE GEAR GAP IS A REAL JOB, AND IT OUTLIVES ADVANCEMENT.
