@@ -55,7 +55,8 @@ import { loadoutFor, reconcile as reconcileLoadout, plannedAbilities } from './m
 import { resolveItemNames } from './m59-items.mjs';
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
-         POSTMORTEM_DIR, setPilotLookup, restoredAutopilotPolicy } from './m59-autopilot.mjs';
+         POSTMORTEM_DIR, setPilotLookup, restoredAutopilotPolicy,
+         applyFightAboveVigor } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
 import { loadSpawns, huntingGrounds, roomThreats, preyFor, scorePrey, PURPOSES,
@@ -6663,10 +6664,11 @@ const TOOLS = [
           'the ledger records the strategy with every sample, so `history` reports max health gained ' +
           'per hour by strategy rather than anyone having to argue about which ought to work. ' +
           'baseline is the control' },
-      fight_above_vigor: { type: 'number',
+      fight_above_vigor: { type: 'number', minimum: 0, maximum: 200,
         description: 'eat until vigor reaches this before picking a fight. Resting alone tops out at ' +
           'the rest threshold of 80 out of 200; above that only food will do it, and vigor is what ' +
-          'sets the health regeneration rate' },
+          'sets the health regeneration rate. An explicit value overrides both the selected ' +
+          'strategy floor and its provisioning ceiling' },
       use_safe_spots: { type: 'boolean',
         description: 'fight from a wall whenever the kill would pay (default true). Turning this off ' +
           'gives up the largest survival advantage in the game and is almost never right' },
@@ -6866,7 +6868,8 @@ const TOOLS = [
         if (a.fight_above_vigor === undefined) p.policy.fightAboveVigor = plan.fightAboveVigor ?? 0;
         if (a.max_carry === undefined && plan.maxCarry) p.policy.maxCarry = plan.maxCarry;
       }
-      if (a.fight_above_vigor !== undefined) p.policy.fightAboveVigor = Number(a.fight_above_vigor);
+      if (a.fight_above_vigor !== undefined)
+        applyFightAboveVigor(p.policy, a.fight_above_vigor);
       if (a.use_safe_spots !== undefined) p.policy.useSafeSpots = !!a.use_safe_spots;
       if (a.hold_resume_above !== undefined) p.policy.holdResumeAbove = Number(a.hold_resume_above);
       // 0 or null means NO LIMIT, not "never pull anything". There is no sensible reading

@@ -569,6 +569,21 @@ export const STRATEGIES = {
   },
 };
 
+// An explicit broker threshold is an operational override, not merely another
+// legacy hint beside the selected strategy.  Provisioning has hysteresis, so it
+// needs both ends of that band to agree with the caller: otherwise a request to
+// leave at 100 can inherit the baseline strategy's hidden 200 ceiling and spend
+// minutes digesting in an inn after the requested threshold was already met.
+export function applyFightAboveVigor(policy, value) {
+  const threshold = Number(value);
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 200)
+    throw new Error('fight_above_vigor must be a finite number from 0 to 200');
+  policy.fightAboveVigor = threshold;
+  policy.vigorFloor = threshold;
+  policy.vigorCeiling = threshold;
+  return policy;
+}
+
 export function restoredAutopilotPolicy(policy = {}) {
   const restored = { ...(policy && typeof policy === 'object' ? policy : {}) };
   // Six was the former hard-coded default and was copied into every roster.
