@@ -14,7 +14,8 @@
 // away the largest advantage in the game — a free heal to full in a monster room.
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import { unlinkSync } from 'node:fs';
-import { Autopilot, shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
+import { Autopilot, farmRoomDenials,
+         shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
 import { SafeSpotBook } from './m59-safespots.mjs';
 import { returnToSpot } from './m59-skills.mjs';
 
@@ -208,6 +209,16 @@ console.log('\n--- a denied assignment cannot fight its own relocation ---');
   ok('standing in the assigned room never requests relocation',
      shouldRelocateToAssignedRoom(policy, { num: 566 },
        new Map([[566, 'three wall samples failed']])) === false);
+
+  const denied = farmRoomDenials(
+    new Map([[566, false], [557, 'three wall samples failed']]),
+    new Map([[563, 'spawn cap 8/8 is occupied by 1x rebel soldier']]));
+  ok('a successful wall probe is not merged into room refusals', !denied.has(566));
+  ok('wall and spawn-cap refusals share the relocation decision',
+     denied.has(557) && denied.has(563) && denied.size === 2,
+     JSON.stringify([...denied.entries()]));
+  ok('a cap-blocked assignment is deferred just like a wall-refused assignment',
+     shouldRelocateToAssignedRoom({ assignedRoom: 563 }, elsewhere, denied) === false);
 }
 
 console.log('\n--- proving a spot that works ---');
