@@ -9693,9 +9693,18 @@ export class Autopilot {
   // character out of the field merely because it found one mushroom. It waits until
   // the keeper is already within four room hops of the mainland vault, which covers the
   // ordinary Barloque food/reagent loop, then stores every protected stack at once.
+  // READ THE VAULT BACK BY BUYING FROM IT. A vaultman's "shop" is your own deposit offered
+  // back at a retrieval fee, so a buy request is the only way to see what is in there — and
+  // the character is already standing at the counter, so it costs one packet rather than a
+  // trip across the world. Nobody has to walk to answer "what is in my vault" again.
+  //
+  // DELIBERATELY NOT GATED ON DETAILED STATS. It used to return early unless
+  // `vault_accumulation` stats were enabled, which made the fleet's only record of its own
+  // vaults a side effect of an observability toggle: turn the toggle off and the contents
+  // silently stopped being cached while the deposits carried on. The detail EVENT is still
+  // gated — that is a log — but the cache is not.
   async refreshVaultCache(vaultman) {
     const settings = detailSettings(this.policy, 'vault_accumulation');
-    if (!settings) return null;
     const c = this.s.need();
     const since = c.evSeq;
     await this.s.pacer.submit('buy', () => c.buy(vaultman.id ?? vaultman));
@@ -9714,7 +9723,14 @@ export class Autopilot {
         cost: item.cost ?? null })) };
     const who = c.me?.name;
     saveVaultSnapshot(who, snapshot);
-    this.detailEvent('vault_accumulation', 'snapshot', snapshot);
+    // AND INTO THE ONE STORE THE BOARDS AND TOOLS READ. These were two homes for the same
+    // quantity — the keeper wrote strategy-stats/vault-latest/ and the economy board read
+    // storage/vaults/ — so a fleet whose vaults were being cached every trip rendered a
+    // page of "never read". Same reading, written once to each, rather than a second
+    // measurement that can disagree with the first.
+    try { new StorageCache().writeVault(who, snapshot.items, { at: snapshot.at }); }
+    catch { /* the record is a convenience; never let it interrupt the errand */ }
+    if (settings) this.detailEvent('vault_accumulation', 'snapshot', snapshot);
     return snapshot;
   }
 
