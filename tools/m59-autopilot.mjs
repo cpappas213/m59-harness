@@ -4647,12 +4647,31 @@ export class Autopilot {
     return { retired: true, attempt, limit };
   }
 
-  // Contact happened, so whatever we are standing on works. Called from the fight path.
-  pullConverted() {
+  // Contact with THE THING WE PULLED happened, so the pull converted. An unrelated
+  // attacker reaching the wall proves only that it can reach us; it says nothing about
+  // the groundworm (or other named quarry) whose full follow window is pending. Treating
+  // any defensive swing as conversion reset the quarry's attempt to one forever in
+  // mixed-spawn rooms.
+  pullConverted(foeId = null, foeName = null) {
+    if (this.pendingPull?.target_id != null && foeId !== this.pendingPull.target_id) {
+      if (!this.pendingPull.otherContactNoted) {
+        this.pendingPull.otherContactNoted = true;
+        this.note('another creature reached the wall â€” the pull test is still open', {
+          pulled: this.pendingPull.target,
+          pulled_id: this.pendingPull.target_id,
+          fought: foeName,
+          fought_id: foeId,
+          why: 'contact is evidence only for the creature that made contact; unrelated ' +
+               'defensive combat cannot prove that the pulled quarry followed',
+        });
+      }
+      return false;
+    }
     this.pullsWithoutContact = 0;
     this.pendingPull = null;
     this.pulledLastPass = false; // clear state left by an older in-process keeper
     this.pullFailures?.clear();
+    return true;
   }
 
   // DOES WHAT WE ARE KILLING STILL PAY FOR WHAT WE SAID WE WERE FARMING?
@@ -8615,7 +8634,7 @@ export class Autopilot {
       }
       // We got a fight. Whatever we are standing on can be fought from, so the cliff
       // counter resets — this is the only evidence that actually settles the question.
-      if (f.rounds > 0) this.pullConverted();
+      if (f.rounds > 0) this.pullConverted(claimedSwing, f.target ?? engageName);
       this.swungAt = Date.now();
       this.foeId = f.foe_id ?? null;
       // fight() can now tell death apart from a stale object id. If it is the

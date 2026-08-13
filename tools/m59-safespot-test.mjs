@@ -174,6 +174,26 @@ console.log('\n--- a room does not become an unbounded wall experiment ---');
      !stopped.took && stopped.unreachable_terrain && /stopping the wall search/.test(stopped.why));
 }
 
+console.log('\n--- unrelated combat does not erase a pending pull ---');
+{
+  const w = world();
+  const p = keeper(w);
+  p.pullsWithoutContact = 2;
+  p.pendingPull = { target: 'groundworm larva', target_id: 10, waitUntil: Date.now() + 5000 };
+
+  ok('hitting a different attacker does not convert the pulled quarry',
+     p.pullConverted(11, 'centipede') === false);
+  ok('the quarry follow window and attempt count survive defensive combat',
+     p.pendingPull?.target_id === 10 && p.pullsWithoutContact === 2);
+  ok('the reason is explicit in telemetry rather than hidden in a reset',
+     p.journal.some(e => e.what === 'another creature reached the wall â€” the pull test is still open' &&
+       e.pulled_id === 10 && e.fought_id === 11));
+
+  ok('contact with the actual pulled quarry converts and clears the experiment',
+     p.pullConverted(10, 'groundworm larva') === true &&
+       p.pendingPull === null && p.pullsWithoutContact === 0);
+}
+
 console.log('\n--- proving a spot that works ---');
 {
   const w = world();
