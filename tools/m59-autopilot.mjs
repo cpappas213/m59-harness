@@ -705,6 +705,8 @@ export class Autopilot {
       // NOT renamed (weapon.kod:788 changes only the icon), so it keeps out-scoring the
       // working one in the pack and cannot be recognised except by having been refused.
       dropJunk: true,
+      // How often to look for and drop broken gear, independently of the pack being full.
+      dropBrokenEverySec: 120,
       // How many COMPLETE pulls that never turn into a fight before the square is
       // written off. Geometry only ranks candidates; this live test is the veto.
       pullsBeforeBarren: 4,
@@ -7643,6 +7645,16 @@ export class Autopilot {
       // seconds for as long as you left it — a third of one run spent announcing a
       // problem it could have solved. Sell to anyone here who buys; failing that,
       // drop the biggest pile of junk. Keep money, gems, and anything in use.
+      // BROKEN GEAR IS DEAD WEIGHT FROM THE MOMENT IT BREAKS, and until now the only thing
+      // that cleared it was `makeRoom`, which fires when the pack is FULL. So a character
+      // carried its broken swords for however long it took to fill fifty slots — Floyd had
+      // six and Kermit eight — and every one of them was weight and bulk spent on nothing.
+      //
+      // There is no reason to wait for a full pack to drop something that is useless at
+      // every pack size, so this runs on its own clock. `inspectForBroken` is the cheap
+      // half and is asked only about SPARES, never the weapon in hand.
+      await this.sweepBroken().catch(() => {});
+
       if (c.inventory.length >= this.policy.maxCarry) {
         const freed = await this.makeRoom();
         this.note('bags full — ' + freed.did, { carrying: c.inventory.length, max: this.policy.maxCarry, ...freed.detail });
@@ -10737,6 +10749,45 @@ export class Autopilot {
   // Free up carrying space rather than announcing that we cannot. Sell if anyone
   // here buys; otherwise drop the largest pile of the least valuable thing. Money,
   // gems and anything we are wearing or wielding are never touched.
+  // Drop what is broken, on a timer rather than on a full pack.
+  //
+  // Bounded three ways so it cannot become a tax on the pass: it runs at most once every
+  // `dropBrokenEverySec`, it inspects only unworn weapons, and it drops at most a few per
+  // sweep — a character with fifteen broken swords clears them over several sweeps rather
+  // than spending a whole pass dropping. `dropJunk: false` turns it off with everything
+  // else that discards.
+  async sweepBroken() {
+    if (this.policy.dropJunk === false) return null;
+    const every = Number(this.policy.dropBrokenEverySec);
+    const gapMs = (Number.isFinite(every) && every > 0 ? every : 120) * 1000;
+    if (Date.now() - (this.lastBrokenSweep ?? 0) < gapMs) return null;
+    this.lastBrokenSweep = Date.now();
+    const s = this.s, c = s.need();
+    const worn = skills.equippedNow(c) ?? new Set();
+    const spares = (c.inventory || [])
+      .filter(o => !worn.has(o.id) && skills.weaponScore(c.rsc.get(o.nameRsc) || '') > 0)
+      .map(o => o.id);
+    // ASKING IS WHAT MAKES IT KNOWN. A spare is never swung, so nothing ever discovers it
+    // is broken unless somebody looks — which is the loop that let those swords accumulate.
+    if (spares.length) await skills.inspectForBroken(s, spares).catch(() => null);
+    // `junkAndBroken` reports WHY, not a flag — there is no `d.broken`, and filtering on
+    // one would have matched nothing and swept nothing, silently, for ever. Junk is left to
+    // makeRoom: this sweep is only about gear the server will refuse to wield.
+    const dead = skills.junkAndBroken(c).filter(d => /broken/.test(d.why || ''));
+    if (!dead.length) return null;
+    const dropped = [];
+    for (const d of dead.slice(0, 3)) {
+      await s.pacer.submit('drop', () => c.drop([this.dropSpec(d)])).catch(() => {});
+      await new Promise(r => setTimeout(r, 700));
+      dropped.push(d.name);
+    }
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+    this.note('dropped broken gear', { dropped, still_broken: Math.max(0, dead.length - dropped.length),
+      why: 'broken gear is weight and bulk spent on nothing at every pack size' });
+    return { dropped };
+  }
+
   async makeRoom() {
     this.doing = 'trading';
     const s = this.s, c = s.need();

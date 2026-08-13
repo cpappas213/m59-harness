@@ -1315,8 +1315,15 @@ export class M59Client {
       case BP.OBJECT_CONTENTS: {
         const res = parseObjectContents(body);
         if (!this.check('OBJECT_CONTENTS', res)) break;
+        // STRUCTURED, like `shop` and `vault-list` beside it — `describeObject` returns a
+        // human STRING ("chest (id 2578) x1 [get]"), and emitting that made every consumer
+        // read `o.name` as undefined while `o.amount || 1` quietly produced a 1. A reading
+        // of two items with no names is indistinguishable from a container holding two
+        // things nobody can identify, which is how the guild chests mapped as empty.
         this.emit('container', { id: res.containerId,
-                                 items: res.objects.map(o => describeObject(o, this.lookup)) });
+          items: res.objects.map(o => ({ id: o.id, name: this.rsc.get(o.nameRsc),
+                                         amount: o.amount || undefined })),
+          described: res.objects.map(o => describeObject(o, this.lookup)) });
         break;
       }
 
