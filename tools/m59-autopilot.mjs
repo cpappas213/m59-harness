@@ -2160,8 +2160,12 @@ export class Autopilot {
       const arrival = fine
         ? await skills.returnToSpot(s, { col: spot.col, row: spot.row, ...fine }, { maxSteps: 24 })
                       .catch(e => ({ arrived: false, why: e.message }))
-        : await s.walkTo(spot.col, spot.row, { maxSteps: 24 })
-                 .catch(e => ({ arrived: false, why: e.message }));
+        // Claiming a safe square is a correctness boundary, just like returning to one
+        // after a pull. A plain walk can finish on a predicted position which a delayed
+        // server update revokes on the next pass; use the shared confirmed arrival
+        // contract for both remembered and newly-derived spots.
+        : await skills.returnToSpot(s, { col: spot.col, row: spot.row }, { maxSteps: 24 })
+                      .catch(e => ({ arrived: false, why: e.message }));
       this.movedAt = Date.now();
       if (!arrival.arrived) {
         releaseSpot(this.s.name);      // hand the reservation back

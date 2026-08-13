@@ -1349,12 +1349,33 @@ export async function turnInPlace(s, { degrees = null, verify = true } = {}) {
 export async function returnToSpot(s, spot, { maxSteps = 20, tolerance = 12 } = {}) {
   const c = s.need();
   if (!spot) return { arrived: false, why: 'no spot given' };
+  // A normal square walk is dead-reckoned for speed. That is appropriate while
+  // crossing a room, but a predicted arrival is not evidence that we regained a
+  // particular safe square: a delayed server position can still replace it and leave
+  // the keeper holding a square it is not on. This exact race made pull() report that
+  // it was back at the wall, only for observe() to release and reacquire the same wall
+  // on the next pass forever.
+  //
+  // Pay for one authoritative read at this boundary. Fine movement already confirms
+  // every step, so this is needed only while the current position is explicitly marked
+  // as predicted. Test doubles and older sessions without confirmPosition retain the
+  // old behaviour rather than becoming unusable.
+  const confirmPrediction = async () => {
+    if (c.self?.predicted && typeof s.confirmPosition === 'function')
+      await s.confirmPosition();
+    return c.self;
+  };
   const at = () => {
     const me = c.self;
     if (!me) return null;
-    if (spot.x == null) return me.col === spot.col && me.row === spot.row ? 0 : Infinity;
+    // The hold belongs to the coarse square even when an exact fine position was
+    // recorded. Requiring both keeps inconsistent/stale position fields from turning a
+    // nearby square into a successful return that observe() must revoke one pass later.
+    if (me.col !== spot.col || me.row !== spot.row) return Infinity;
+    if (spot.x == null) return 0;
     return Math.hypot(me.x - spot.x, me.y - spot.y);
   };
+  await confirmPrediction();
   const d0 = at();
   if (d0 !== null && d0 <= tolerance) return { arrived: true, already: true, off_by: d0 };
 
@@ -1363,6 +1384,7 @@ export async function returnToSpot(s, spot, { maxSteps = 20, tolerance = 12 } = 
   if (c.self && (c.self.col !== spot.col || c.self.row !== spot.row)) {
     const w = await s.walkTo(spot.col, spot.row, { maxSteps }).catch(e => ({ arrived: false, reason: e.message }));
     if (!w.arrived) return { arrived: false, why: w.reason || 'could not walk back to the square' };
+    await confirmPrediction();
   }
   if (spot.x != null && s.walkFine) {
     await s.walkFine(spot.x, spot.y, { maxSteps: 6, stride: 40, arriveWithin: tolerance })
