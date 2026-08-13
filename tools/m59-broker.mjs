@@ -58,7 +58,7 @@ import { factionAssignment, factionJoinConfirmed, factionJoinSpec,
          visibleTokenFromProfile, isCouncilToken, soldierAssignment,
          soldierPromotionConfirmed, COUNCIL_TOKEN_DESTINATIONS } from './m59-factions.mjs';
 import { FactionStatusCache } from './m59-faction-status.mjs';
-import { StorageCache, GUILD_CHEST_SLOTS } from './m59-storage.mjs';
+import { StorageCache, GUILD_CHEST_SLOTS, chestFullness } from './m59-storage.mjs';
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
          POSTMORTEM_DIR, setPilotLookup } from './m59-autopilot.mjs';
@@ -9367,6 +9367,52 @@ const TOOLS = [
         default:
           throw new Error(`unknown guild action "${a.action}"`);
       }
+    },
+  },
+  {
+    name: 'container',
+    description:
+      'LOOK INSIDE A CONTAINER — a guild chest, a store box, anything that holds things. ' +
+      'This is BP_SEND_OBJECT_CONTENTS (43) answered by BP_OBJECT_CONTENTS (135), and it is a ' +
+      'different question from `look`, which returns prose. `activate` is NOT the verb: that ' +
+      'path checks the object owner against yours and answers "it is no longer accessible" ' +
+      '(user.kod:4482), which reads like a permission problem and is not one. ' +
+      'A GUILD CHEST IS RECORDED WHEN slot IS GIVEN. Chest contents are not pushed and there is ' +
+      'no other way to learn them, so a reading taken while somebody is standing there is the ' +
+      'only thing that can answer later — cached exactly as a bank balance and a vault are, and ' +
+      'read back by the economy board without anybody walking to Barloque again.',
+    inputSchema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      target: { type: ['string', 'number'], description: 'object id, or a name in this room' },
+      slot: { type: 'number',
+        description: `1..${GUILD_CHEST_SLOTS}: record this reading as that guild chest. Omit to just look.` },
+    }, required: ['agent', 'target'] },
+    run: async a => {
+      const s = session(a.agent), c = s.need();
+      const target = typeof a.target === 'number' || /^\d+$/.test(String(a.target))
+        ? Number(a.target)
+        : exactRoomObject(c, a.target, { player: false })?.id;
+      if (!target) return { ok: false, reason: `nothing here matches "${a.target}"` };
+      const before = c.evSeq;
+      await s.pacer.submit('read', () => c.contents(target));
+      const reply = await c.waitFor({ since: before, kinds: ['container', 'message'], timeoutMs: 5000 })
+        .catch(() => ({ events: [] }));
+      const box = reply.events?.find(e => e.kind === 'container' && e.id === target)
+               ?? reply.events?.find(e => e.kind === 'container');
+      if (!box) return { ok: false, target,
+        said: reply.events?.filter(e => e.text).map(e => String(e.text)).slice(0, 4),
+        reason: 'no contents came back — a container answers this, and anything else says why out loud' };
+      const items = (box.items || []).map(o => ({ id: o.id, name: o.name,
+        amount: o.amount || 1 }));
+      const out = { ok: true, target, items, count: items.length };
+      if (a.slot !== undefined) {
+        const room = c.room?.id ?? s.world?.room?.num ?? null;
+        storage.writeChest(a.slot, { object_id: target, room, items,
+          by: c.me?.name ?? s.name });
+        out.recorded_as_chest = Number(a.slot);
+        out.fullness = chestFullness(items);
+      }
+      return out;
     },
   },
   {
