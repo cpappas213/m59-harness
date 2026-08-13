@@ -735,6 +735,13 @@ export class Autopilot {
       // How many COMPLETE pulls that never turn into a fight before the square is
       // written off. Geometry only ranks candidates; this live test is the veto.
       pullsBeforeBarren: 4,
+      // Do not turn a room with hundreds of wall candidates into a multi-hour research
+      // project. Each entry in this sample has already failed `pullsBeforeBarren`
+      // complete pulls with a distance-sized follow window. After several independent,
+      // top-ranked walls agree, make the existing room-scoped safety decision: fight in
+      // the open only when the open-fight gates permit it, otherwise relocate. This is
+      // deliberately a room decision, never a goal-wide block.
+      barrenSpotsBeforeRoomDecision: 3,
       // Give the quarry enough time to walk the same ground we just crossed. Decisions
       // run every second, while one square of movement takes about a second; counting
       // the very next decision as a failed pull condemned distant but working walls.
@@ -2106,6 +2113,13 @@ export class Autopilot {
     const s = this.s, c = s.client;
     const room = s.world?.room, geo = s.world?.geometry, me = c?.self;
     if (!geo || !me || !room) return { took: false, why: 'no geometry for this room' };
+    // Once several independently tested walls have all failed, continuing to scan the
+    // room is research, not survival. `noWallRooms` feeds the already-bounded choice
+    // below between a safe open fight and relocating; it does not block the strategic
+    // goal and is cleared with the keeper process.
+    const roomWallDecision = source === 'fight' ? this.noWallRooms?.get(room.num) : null;
+    if (roomWallDecision)
+      return { took: false, unreachable_terrain: true, why: roomWallDecision };
 
     // PLAYER REACH AND MONSTER REACH ARE DIFFERENT GRAPHS WHEN A ROOM HAS DOORS.
     //
@@ -4570,6 +4584,23 @@ export class Autopilot {
       const set = this.barrenSpots.get(room.num) ?? new Set();
       set.add(`${this.hold.col},${this.hold.row}`);
       this.barrenSpots.set(room.num, set);
+      const roomLimit = Math.max(1,
+        Math.floor(Number(this.policy.barrenSpotsBeforeRoomDecision) || 3));
+      if (set.size >= roomLimit) {
+        const reason = `${set.size} top-ranked walls each failed ${limit} complete pull ` +
+          `window(s); stopping the wall search in this room`;
+        const wasDecided = !!this.noWallRooms?.get(room.num);
+        (this.noWallRooms ??= new Map()).set(room.num, reason);
+        if (!wasDecided) this.note('ROOM WALL SEARCH EXHAUSTED', {
+          room: room.name, room_num: room.num, walls_tested: set.size,
+          pulls_per_wall: limit,
+          why: 'each wall survived a full distance-sized follow window repeatedly and none ' +
+               'produced contact; testing hundreds more would be an unbounded research loop',
+          doing_instead: 'using the existing room-scoped decision: fight open only if the ' +
+                         'health, vigor, and damage gates allow it; otherwise relocate',
+          goal_scope: 'unchanged — this does not block or fail the strategic goal',
+        });
+      }
     }
     // NOT recorded in the SafeSpotBook, deliberately. The book's `failed` means "we were
     // hit standing here" and feeds `discredited`, which is a SAFETY judgement. A cliff

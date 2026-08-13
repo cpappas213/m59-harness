@@ -146,6 +146,34 @@ const holdAt = (p, col, row, { settledMsAgo = 1000, takenMsAgo = settledMsAgo, .
   return p.hold;
 };
 
+console.log('\n--- a room does not become an unbounded wall experiment ---');
+{
+  const w = world();
+  const p = keeper(w);
+  p.policy.pullsBeforeBarren = 1;
+  p.policy.barrenSpotsBeforeRoomDecision = 2;
+
+  holdAt(p, 5, 5, { proven: true });
+  ok('one fully failed wall is retired without condemning the room',
+     p.pullDidNotConvert('nothing reached the first wall') && !p.noWallRooms?.get(999));
+
+  holdAt(p, 6, 5, { proven: true });
+  ok('a bounded sample of independent failed walls ends the room search',
+     p.pullDidNotConvert('nothing reached the second wall') &&
+       /2 top-ranked walls/.test(p.noWallRooms?.get(999) || ''),
+     p.noWallRooms?.get(999));
+  ok('the decision says it is room-scoped and leaves the strategic goal alone',
+     p.journal.some(e => e.what === 'ROOM WALL SEARCH EXHAUSTED' &&
+       /does not block/.test(e.goal_scope || '')));
+
+  // A truthy geometry is enough because the room decision must short-circuit before
+  // another candidate scan or route. Travel holds remain allowed to use walls here.
+  w.s.world.geometry = {};
+  const stopped = await p.takeSafeSpot('another fight wall', null);
+  ok('another combat pass does not start researching a third wall',
+     !stopped.took && stopped.unreachable_terrain && /stopping the wall search/.test(stopped.why));
+}
+
 console.log('\n--- proving a spot that works ---');
 {
   const w = world();
