@@ -23,7 +23,8 @@
 import * as skills from './m59-skills.mjs';
 import { OF, affordances, dropSpec as dropSpecFor } from './m59-parse.mjs';
 import { isFood, foodValue } from './m59-items.mjs';
-import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe } from './m59-spawns.mjs';
+import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe,
+         FORGIVING_RATING as GENTLE_RATING } from './m59-spawns.mjs';
 import { findPath, roomsWithin } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
@@ -286,8 +287,6 @@ const EAT_TO_AT_LEAST = 120;
 // difficulty is how often one lands, and only the table knows it.
 //
 // Unknown difficulty means unknown danger, and unknown is NOT gentle.
-const GENTLE_RATING = 210;                 // a fungus beast: level 50, difficulty 1
-
 // WHAT A KEEPER CAN BE OUT THERE FOR, and the list is closed on purpose — anything not on
 // it is reported as unrecognised rather than quietly skipping the yield check. `advance`
 // asks whether the prey can still raise what we are trying to raise; `equip` asks whether
@@ -301,6 +300,35 @@ function ratingOfCreature(name) {
   const hit = all[q] || Object.values(all).find(v => q.includes(String(v.name).toLowerCase()));
   return hit?.attack_rating ?? null;
 }
+
+// ONE SOURCE-DERIVED ENGAGEMENT DECISION FOR EVERY KEEPER PATH.
+//
+// The capped-room cleanup path and the retaliation path used to implement this rule
+// separately. Both read the same attack rating, but capBlockers() fell through from its
+// rating-aware branch into an unconditional level-only rejection. The result was an
+// impossible disagreement: a level-50/difficulty-1 fungus beast (rating 210) was safe to
+// hit back at and safe enough for huntingGrounds(), yet unsafe to clear from a capped
+// room. Once every alternate room was boundedly refused, that contradiction stopped the
+// whole keeper. Keep unknown data fail-closed, forgive only a known gentle rating, and
+// make every caller consume the same result.
+export function engagementRefusal(info, { name = info?.name ?? '', ceiling = null } = {}) {
+  const level = info?.level ?? null;
+  const rating = info?.attack_rating ?? null;
+  if (!info)
+    return { name, level: null, rating: null,
+             why: 'nothing is known about it — the spawn table has no row for this name, and ' +
+                  'an unrecognised creature is refused rather than assumed harmless' };
+  if (rating != null && rating <= GENTLE_RATING) return null;
+  if (ceiling != null && level != null && level > ceiling)
+    return { name, level, rating,
+             why: rating != null
+               ? `attack rating ${rating} is above the forgiving band of ${GENTLE_RATING} ` +
+                 `and level ${level} is above the safety band of ${ceiling}`
+               : `level ${level} is above the safety band of ${ceiling} and the table has no ` +
+                 'attack rating to judge it more kindly by' };
+  return null;
+}
+
 function vigorBarFor(names, policy) {
   const full = policy.openFightVigor ?? 130;
   const list = [].concat(names || []).filter(Boolean);
@@ -3517,25 +3545,17 @@ export class Autopilot {
       // to guess about — the Duke's soldiers alone account for 155 kills in the Tos
       // death record and appear in deaths that happened inside APPROVED safe squares.
       //
-      // Judge on attack_rating where we have it, because level is not danger
-      // (GetAttackAbility = 3*viLevel + 60*viDifficulty), and fall back to level only
-      // when the rating is missing. Unknown is refused either way.
-      const rating = info?.attack_rating ?? null;
+      // Judge through the same rating-aware predicate retaliation uses. The former
+      // fallback applied even when a gentle rating was known, making this path disagree
+      // with refuseEngagement() and huntingGrounds() about the same creature.
+      const refused = engagementRefusal(info, { name, ceiling });
       if (!karmaSafe(info?.karma, this.policy.karma)) {
         status.blocked.push({ ...row, why: `killing it moves karma the wrong way for a ` +
                                             `${this.policy.karma} character (its karma is ${info?.karma})` });
-      } else if (!info) {
-        status.blocked.push({ ...row, rating: null,
-          why: 'nothing is known about it — the spawn table has no row for this name, and ' +
-               'an unrecognised creature is refused rather than assumed harmless' });
-      } else if (rating != null && rating > GENTLE_RATING && lvl != null && lvl > ceiling) {
-        status.blocked.push({ ...row, rating,
-          why: `attack rating ${rating} is above the forgiving band of ${GENTLE_RATING} ` +
-               `and level ${lvl} is above the safety band of ${ceiling}` });
-      } else if (ceiling != null && lvl != null && lvl > ceiling) {
-        status.blocked.push({ ...row, rating, why: `level ${lvl} is above the safety band of ${ceiling}` });
+      } else if (refused) {
+        status.blocked.push({ ...row, rating: refused.rating, why: refused.why });
       } else {
-        status.clearable.push({ ...row, rating });
+        status.clearable.push({ ...row, rating: info?.attack_rating ?? null });
       }
     }
     // Most numerous first: the point is to free slots, and eight of one thing is where
@@ -4225,35 +4245,7 @@ export class Autopilot {
       .find(x => String(x.name).toLowerCase() === key);
     const level = this.s.client?.vitals?.()?.health?.max ?? 0;
     const ceiling = level ? level + (this.policy.maxThreatOver ?? 15) : null;
-    const lvl = info?.level ?? null, rating = info?.attack_rating ?? null;
-    if (!info)
-      return { name, level: null, rating: null,
-               why: 'nothing is known about it — the spawn table has no row for this name, and ' +
-                    'an unrecognised creature is refused rather than assumed harmless' };
-
-    // GENTLE BY RATING IS FAIR GAME WHATEVER ITS LEVEL, and this is deliberately NOT the
-    // same test capBlockers makes.
-    //
-    // capBlockers falls through to a level-only refusal, which reads a fungus beast —
-    // level 50, difficulty 1, attack rating 210 — as more dangerous than a centipede at
-    // level 30 and rating 390. CLAUDE.md is explicit that this is backwards: level is
-    // what a blow costs, difficulty is how often one lands, and the level-50 creature is
-    // the SAFER fight. There it is survivable, because a refusal only means "do not go
-    // out of your way to clear it".
-    //
-    // Here it is not survivable, because the alternative to hitting back is turning your
-    // back on something already swinging. Walking away from a gentle attacker costs free
-    // hits and gains nothing. So retaliation judges on the RATING, which is the number
-    // that actually describes danger, and refuses only what is genuinely above the band.
-    if (rating != null && rating <= GENTLE_RATING) return null;
-    if (ceiling != null && lvl != null && lvl > ceiling)
-      return { name, level: lvl, rating,
-               why: rating != null
-                 ? `attack rating ${rating} is above the forgiving band of ${GENTLE_RATING} ` +
-                   `and level ${lvl} is above the safety band of ${ceiling}`
-                 : `level ${lvl} is above the safety band of ${ceiling} and the table has no ` +
-                   `attack rating to judge it more kindly by` };
-    return null;
+    return engagementRefusal(info, { name, ceiling });
   }
 
   // ------------------------------------------------------------------ post-mortem

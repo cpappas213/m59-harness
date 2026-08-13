@@ -28,7 +28,8 @@ import {
 } from './m59-skills.mjs';
 import { Autopilot, bearingIn, DEBUG_STATES, belowRoomRetreatHealth,
          rankQuarries, claimQuarry, releaseQuarry,
-         restoredAutopilotPolicy, partialFightMadeProgress } from './m59-autopilot.mjs';
+         restoredAutopilotPolicy, partialFightMadeProgress,
+         engagementRefusal } from './m59-autopilot.mjs';
 import { isFood } from './m59-items.mjs';
 import { outages, outageAround, recoverCrash, readLedger, ACTIVE_FILE } from './m59-uptime.mjs';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -1133,6 +1134,19 @@ console.log('\nthe room that filled up with what nobody would kill');
      sst.clearable.length === 0 && sst.blocked[0]?.name === 'thrasher');
   ok('and says it was the safety band, not karma',
      /safety band/.test(sst.blocked[0].why), sst.blocked[0].why);
+
+  // This was the live disagreement: huntingGrounds() and retaliation allowed the
+  // level-50/difficulty-1 fungus beast by its rating of 210, but capBlockers() then
+  // rejected the same source row by level alone and eventually exhausted every room.
+  const gentle = mk({ 'fungus beast': 10 }, { hunt: 'mummy' }).capBlockers({ num: 554 });
+  ok('a capped room can clear a known gentle overlevel creature',
+     gentle.clearable[0]?.name === 'fungus beast' && gentle.blocked.length === 0,
+     JSON.stringify(gentle));
+  ok('capped-room cleanup and retaliation share one danger decision',
+     engagementRefusal(
+       { name: 'fungus beast', level: 50, attack_rating: 210 },
+       { name: 'fungus beast', ceiling: 31 },
+     ) === null);
 
   // Most numerous first: the point is freeing slots.
   // Ten, because nine would not be full and the whole block would silently test nothing.
