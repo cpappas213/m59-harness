@@ -24,10 +24,11 @@ import {
   brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit, signetRings, returnSignetRings,
   signetPayout, signetOwnerOf, SIGNET_OWNERS,
   parseDeathBroadcast, deathBroadcastFor,
+  landedHitSummary,
 } from './m59-skills.mjs';
 import { Autopilot, bearingIn, DEBUG_STATES, belowRoomRetreatHealth,
          rankQuarries, claimQuarry, releaseQuarry,
-         restoredAutopilotPolicy } from './m59-autopilot.mjs';
+         restoredAutopilotPolicy, partialFightMadeProgress } from './m59-autopilot.mjs';
 import { isFood } from './m59-items.mjs';
 import { outages, outageAround, recoverCrash, readLedger, ACTIVE_FILE } from './m59-uptime.mjs';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -46,6 +47,36 @@ const ok = (what, cond, extra = '') => {
   if (cond) { pass++; console.log(`  ok   ${what}`); }
   else { fail++; console.log(`  FAIL ${what}${extra ? ` — ${extra}` : ''}`); }
 };
+
+console.log('\npartial exchanges and stall progress');
+{
+  const landed = landedHitSummary([
+    'You hit the giant rat for 4 damage.',
+    'The giant rat avoids your blow.',
+    'you hit the giant rat for 3',
+  ]);
+  ok('server-confirmed hits and damage are counted',
+     landed.hits === 2 && landed.damage === 7 && landed.damage_known_hits === 2,
+     JSON.stringify(landed));
+
+  const missed = landedHitSummary([
+    'The giant rat hits you for 2 damage.',
+    'The giant rat avoids your blow.',
+  ]);
+  ok('incoming hits and avoided blows are not our progress',
+     missed.hits === 0 && missed.damage === null, JSON.stringify(missed));
+
+  const unquantified = landedHitSummary(['You hit the mummy.']);
+  ok('an unquantified server-confirmed hit still counts',
+     unquantified.hits === 1 && unquantified.damage === null,
+     JSON.stringify(unquantified));
+  ok('a landed partial exchange resets the idle counter',
+     partialFightMadeProgress({ killed: false, died: false, landed_hits: 1 }));
+  ok('an all-miss break remains no progress',
+     !partialFightMadeProgress({ killed: false, died: false, landed_hits: 0 }));
+  ok('a death never masquerades as partial progress',
+     !partialFightMadeProgress({ died: true, landed_hits: 2 }));
+}
 
 {
   const k = new Autopilot({ name: 'danger-margin-default', world: {}, client: null }, {});

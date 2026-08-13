@@ -59,6 +59,13 @@ import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 // for why two answers here meant two books and a fleet that tithed twice a day.
 const TITHE_FLEET = titheFleet();
 
+// Keep the stall-accounting decision independently testable. A partial exchange is
+// useful only when the server confirms that we damaged the still-retained quarry;
+// neither attempted swings nor dying during the exchange qualify as progress.
+export function partialFightMadeProgress(result = {}) {
+  return !result?.died && Number(result?.landed_hits || 0) > 0;
+}
+
 // Built by: node tools/m59-spawns.mjs
 const SPAWN_FILE = process.env.M59_SPAWN_FILE ||
   new URL('../substrate/m59-spawns.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
@@ -8800,12 +8807,29 @@ export class Autopilot {
         if (room?.num != null) this.homeRoom = room.num;
         this.progress('killed something');
       } else {
-        if (f.died) releaseQuarry(this.s.name);
-        this.noProgress(f.died ? 'died in a fight' : 'broke off without a kill');
+        if (f.died) {
+          releaseQuarry(this.s.name);
+          this.noProgress('died in a fight');
+        } else if (partialFightMadeProgress(f)) {
+          // THE QUARRY MOVING OUT OF REACH IS NOT THE FIGHT FAILING.
+          //
+          // fight() preserves foe_id so the next pull resumes this exact wounded object.
+          // A landed hit is therefore durable progress toward the same kill even when the
+          // exchange ends because it stepped 3.2 squares away. The old unconditional
+          // noProgress() turned five such damaging exchanges into STALLED and the
+          // controller stopped healthy keepers after about a minute. Count only the
+          // server-confirmed landed blow, never the attempted swing: all-miss breaks still
+          // accumulate and expose a genuinely ineffective fight.
+          this.progress('damaged the current quarry');
+        } else {
+          this.noProgress('broke off without a landed hit or a kill');
+        }
       }
       this.countLoot(looted);
       this.note(f.killed ? 'killed' : (f.died ? 'died' : 'broke off'), {
         target: f.target, rounds: f.rounds, looted,
+        landed_hits: f.landed_hits ?? 0,
+        damage_dealt: f.damage_dealt ?? null,
         health: f.health?.after?.value, why: f.note,
         ...(holding ? { from_safe_spot: { col: this.hold?.col, row: this.hold?.row,
                                           proven: this.holdWorks() } } : {}),
