@@ -1,14 +1,42 @@
-// /dum and /harness — THE TWO AUTOMATION LOOPS, VISIBLE BESIDE THE FLEET THEY MOVE.
+// /dum and /harness -- THE TWO AUTOMATION LOOPS, VISIBLE BESIDE THE FLEET THEY MOVE.
 //
 // DUM owns directional interventions. The harness owns the keeper's second-by-second
 // activity. They run on different clocks and neither total makes sense buried inside a
 // different application, so these two read-only boards put both in the broker dashboard's
 // ordinary navigation beside Tougher and Economy.
 
+import { readFileSync, existsSync } from 'node:fs';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { ago, esc, NAV, STYLE } from './m59-page-chrome.mjs';
 
 const { label: FLEET_LABEL } = resolveFleet();
+
+// The AI director is an OPTIONAL external process (tools/m59-ai-director.mjs). When
+// it is running it writes substrate/ai-director-status.json once per pass; this
+// board reads that file directly so the page does not need to know the director's
+// port or even whether it is on the same host. A missing or stale file means
+// "stopped", which is rendered as such and not as an error.
+const DIRECTOR_STATUS_PATH = new URL('../substrate/ai-director-status.json', import.meta.url);
+const DIRECTOR_STALE_MS = 5 * 60 * 1000;
+
+function readDirectorStatus() {
+  try {
+    if (!existsSync(DIRECTOR_STATUS_PATH)) return { running: false, reason: 'no status file' };
+    const raw = JSON.parse(readFileSync(DIRECTOR_STATUS_PATH, 'utf8'));
+    if (!raw?.running) return { running: false, reason: 'stopped', stopped_at: raw?.stopped_at ?? null };
+    const lastMs = raw.last_pass ? Date.parse(raw.last_pass) : 0;
+    const ageMs = lastMs ? Date.now() - lastMs : null;
+    const stale = ageMs != null && ageMs > DIRECTOR_STALE_MS;
+    return { running: !stale, stale,
+      pid: raw.pid ?? null, last_pass: raw.last_pass ?? null,
+      last_assessment: raw.last_assessment ?? '',
+      directives_issued: Number(raw.directives_issued) || 0,
+      errors: Number(raw.errors) || 0,
+      age_ms: ageMs };
+  } catch (e) {
+    return { running: false, reason: 'status file unreadable: ' + e.message };
+  }
+}
 
 const EXTRA_STYLE = `
   .metric-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr));
@@ -61,7 +89,7 @@ const detail = (summary, at, body) => `<details class="record"><summary><strong>
   `<span class="when">${esc(stamp(at))}</span></summary><div class="inside">${body}</div></details>`;
 const itemLabel = items => (items ?? []).length
   ? items.map(item => `${item.amount ?? 1}× ${item.name ?? item.what ?? 'item'}`).join(', ') : 'none';
-const emptyDetail = 'No detailed records in this window. Enable “Detailed strategy stats” for selected units to begin collecting them.';
+const emptyDetail = 'No detailed records in this window. Enable "Detailed strategy stats" for selected units to begin collecting them.';
 
 export function renderDumBoard({ metrics = null, details = null, hours = 2, error = null } = {}) {
   const m = metrics ?? {};
@@ -71,28 +99,28 @@ export function renderDumBoard({ metrics = null, details = null, hours = 2, erro
   const since = m.since ? new Date(m.since).toLocaleString() : null;
   const through = m.through ? ago(m.through) : null;
   const crateRecords = (d.crate?.records ?? []).map(row => detail(
-    `${row.character ?? row.agent ?? 'unknown'} · ${row.found ? `found ${itemLabel(row.reward)}` : row.reached ? 'rummaged; nothing ready' : 'did not reach the mechanic'}`,
+    `${row.character ?? row.agent ?? 'unknown'} * ${row.found ? `found ${itemLabel(row.reward)}` : row.reached ? 'rummaged; nothing ready' : 'did not reach the mechanic'}`,
     row.at,
     `<div><strong>reward:</strong> ${esc(itemLabel(row.reward))}</div>` +
     `<div><strong>result:</strong> ${esc(row.stopped ?? (row.reached ? 'crate answered' : 'no crate response'))}</div>` +
     ((row.transcript ?? []).length ? `<div class="log">${row.transcript.map(line => `<div>${esc(line)}</div>`).join('')}</div>` : '')
   )).join('');
   const foodRecords = (d.create_food?.records ?? []).map(row => detail(
-    `${row.character ?? row.agent ?? 'unknown'} · ${row.event === 'attempt' ? `created ${itemLabel(row.created)}` : `blocked by ${(row.readiness?.blocked_by ?? []).join(', ') || 'unknown'}`}`,
+    `${row.character ?? row.agent ?? 'unknown'} * ${row.event === 'attempt' ? `created ${itemLabel(row.created)}` : `blocked by ${(row.readiness?.blocked_by ?? []).join(', ') || 'unknown'}`}`,
     row.at,
-    `<div><strong>food aboard:</strong> ${esc(row.readiness?.meals ?? '—')} · <strong>mana:</strong> ${esc(row.readiness?.mana ?? '—')}</div>` +
+    `<div><strong>food aboard:</strong> ${esc(row.readiness?.meals ?? '--')} * <strong>mana:</strong> ${esc(row.readiness?.mana ?? '--')}</div>` +
     `<div><strong>reagents:</strong> ${esc(JSON.stringify(row.readiness?.reagents ?? {}))}</div>` +
     (row.cast ? `<div><strong>cast:</strong> ${esc(row.cast.what_the_mana_says ?? row.cast.reason ?? 'sent')}</div>` : '')
   )).join('');
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DUM bot — ${esc(FLEET_LABEL)} fleet</title>
+<title>DUM bot -- ${esc(FLEET_LABEL)} fleet</title>
 <meta http-equiv="refresh" content="30">
 <style>${STYLE}${EXTRA_STYLE}</style>
 </head><body><div class="wrap">
   <h1>DUM bot</h1>
-  <div class="sub">Directional strategy interventions · ${esc(FLEET_LABEL)} fleet · refreshes every 30s</div>
+  <div class="sub">Directional strategy interventions * ${esc(FLEET_LABEL)} fleet * refreshes every 30s</div>
   ${NAV('dum')}
   ${windowLinks('/dum', hours)}
   ${error ? `<div class="caveat status-note"><strong>DUM observability is unavailable.</strong> ${esc(error)}</div>` : ''}
@@ -135,7 +163,7 @@ export function renderDumBoard({ metrics = null, details = null, hours = 2, erro
     <section class="panel">${foodRecords || `<div class="empty">${esc(emptyDetail)}</div>`}</section>
   </div>
   <div class="caveat">These are current-process counters${since ? ` since ${esc(since)}` : ''}${
-    through ? ` · last updated ${esc(through)}` : ''}. Detailed records are opt-in, retained per selected unit (24h default), and this view is ${esc(hours)}h. This page is read-only.</div>
+    through ? ` * last updated ${esc(through)}` : ''}. Detailed records are opt-in, retained per selected unit (24h default), and this view is ${esc(hours)}h. This page is read-only.</div>
 </div></body></html>`;
 }
 
@@ -153,7 +181,7 @@ export function keeperActivity(fleet = []) {
   const rows = (Array.isArray(fleet) ? fleet : []).map(unit => ({
     agent: unit.agent ?? '',
     character: unit.character ?? unit.agent ?? 'unknown',
-    activity: unit.activity ?? '—',
+    activity: unit.activity ?? '--',
     time: Object.fromEntries(TIME_FIELDS.map(([key]) => [key, count(unit.time?.[key])])),
   }));
   const totals = Object.fromEntries(TIME_FIELDS.map(([key]) =>
@@ -188,42 +216,42 @@ export function renderHarnessBoard({ fleet = [], details = null, hours = 2, erro
     <tr><td class="name">${esc(row.character)}</td>${TIME_FIELDS.map(([key]) =>
       `<td>${esc(durationLabel(row.time[key]))}</td>`).join('')}<td>${esc(row.activity)}</td></tr>`).join('');
   const mapTable = maps => `<div class="scroller"><table><thead><tr><th>map</th><th>duration</th><th>damage</th><th>safe</th></tr></thead><tbody>${
-    (maps ?? []).map(map => `<tr><td>${esc(map.name ?? 'map')} (${esc(map.room ?? '—')})</td>` +
+    (maps ?? []).map(map => `<tr><td>${esc(map.name ?? 'map')} (${esc(map.room ?? '--')})</td>` +
       `<td>${esc(durationLabel((map.duration_ms ?? 0) / 1000))}</td><td>${esc(map.damage ?? 0)}</td>` +
-      `<td>${map.from_safe_spot == null ? '—' : map.from_safe_spot ? 'yes' : 'no'}</td></tr>`).join('') ||
+      `<td>${map.from_safe_spot == null ? '--' : map.from_safe_spot ? 'yes' : 'no'}</td></tr>`).join('') ||
       '<tr><td colspan="4" class="empty">no per-map rows</td></tr>'}</tbody></table></div>`;
   const travelRecords = (d.travel?.records ?? []).map(row => detail(
-    `${row.character ?? row.agent ?? 'unknown'} · ${row.arrived ? 'arrived' : 'stopped'} after ${durationLabel((row.duration_ms ?? 0) / 1000)} · ${row.damage ?? 0} damage`,
-    row.at, `<div><strong>destination:</strong> ${esc(row.to ?? '—')} · <strong>safe-spot stops:</strong> ${esc(row.safe_spot_stops ?? 0)}</div>${mapTable(row.maps)}`)).join('');
+    `${row.character ?? row.agent ?? 'unknown'} * ${row.arrived ? 'arrived' : 'stopped'} after ${durationLabel((row.duration_ms ?? 0) / 1000)} * ${row.damage ?? 0} damage`,
+    row.at, `<div><strong>destination:</strong> ${esc(row.to ?? '--')} * <strong>safe-spot stops:</strong> ${esc(row.safe_spot_stops ?? 0)}</div>${mapTable(row.maps)}`)).join('');
   const fightRecords = (d.fighting?.records ?? []).map(row => detail(
-    `${row.character ?? row.agent ?? 'unknown'} · ${durationLabel((row.duration_ms ?? 0) / 1000)} fighting · ${row.safe_spot_pct ?? 0}% from proven safe spots`,
-    row.at, `<div><strong>target:</strong> ${esc(row.target ?? '—')} · <strong>damage:</strong> ${esc(row.damage ?? 0)}</div>${mapTable(row.maps)}`)).join('');
+    `${row.character ?? row.agent ?? 'unknown'} * ${durationLabel((row.duration_ms ?? 0) / 1000)} fighting * ${row.safe_spot_pct ?? 0}% from proven safe spots`,
+    row.at, `<div><strong>target:</strong> ${esc(row.target ?? '--')} * <strong>damage:</strong> ${esc(row.damage ?? 0)}</div>${mapTable(row.maps)}`)).join('');
   const tradeRecords = (d.trading?.records ?? []).map(row => detail(
-    `${row.character ?? row.agent ?? 'unknown'} · earned ${count(row.earned).toLocaleString('en-GB')} · spent ${count(row.spent).toLocaleString('en-GB')} · banked ${count(row.banked).toLocaleString('en-GB')}`,
-    row.at, `<div><strong>room:</strong> ${esc(row.room_name ?? row.room ?? '—')} · <strong>duration:</strong> ${esc(durationLabel((row.duration_ms ?? 0) / 1000))}</div>` +
+    `${row.character ?? row.agent ?? 'unknown'} * earned ${count(row.earned).toLocaleString('en-GB')} * spent ${count(row.spent).toLocaleString('en-GB')} * banked ${count(row.banked).toLocaleString('en-GB')}`,
+    row.at, `<div><strong>room:</strong> ${esc(row.room_name ?? row.room ?? '--')} * <strong>duration:</strong> ${esc(durationLabel((row.duration_ms ?? 0) / 1000))}</div>` +
       `<div><strong>sold:</strong> ${esc(itemLabel(row.sold))}</div><div><strong>bought:</strong> ${esc(itemLabel(row.bought))}</div>`)).join('');
   const vaultRecords = (d.vault?.latest ?? []).map(row => detail(
-    `${row.character ?? 'unknown'} · ${count((row.items ?? []).reduce((n, item) => n + (Number(item.amount) || 1), 0)).toLocaleString('en-GB')} vaulted items in latest read`,
+    `${row.character ?? 'unknown'} * ${count((row.items ?? []).reduce((n, item) => n + (Number(item.amount) || 1), 0)).toLocaleString('en-GB')} vaulted items in latest read`,
     row.at, `<div>${esc(itemLabel(row.items))}</div>`)).join('');
   const cleanupRecords = (d.farm_cleanup?.records ?? []).map(row => detail(
-    `${row.character ?? row.agent ?? 'unknown'} Â· picked ${count((row.picked ?? []).length)} floor stack(s) worth about ${count(row.value).toLocaleString('en-GB')}`,
+    `${row.character ?? row.agent ?? 'unknown'} Â* picked ${count((row.picked ?? []).length)} floor stack(s) worth about ${count(row.value).toLocaleString('en-GB')}`,
     row.at, `<div><strong>dropped:</strong> ${esc(itemLabel(row.dropped))}</div>` +
       `<div><strong>picked:</strong> ${esc(itemLabel(row.picked))}</div>` +
-      `<div><strong>protected first:</strong> ${esc(itemLabel(row.protected))} Â· <strong>refused:</strong> ${esc((row.refused ?? []).length)}</div>`)).join('');
+      `<div><strong>protected first:</strong> ${esc(itemLabel(row.protected))} Â* <strong>refused:</strong> ${esc((row.refused ?? []).length)}</div>`)).join('');
   const deliveryRecords = (d.farm_delivery?.records ?? []).map(row => detail(
-    `${row.character ?? row.agent ?? 'unknown'} Â· delivered ${(row.delivered ?? []).reduce((n, rec) => n + count(rec.delivered?.herb) + count(rec.delivered?.elderberry), 0)} reagents to room ${row.to_room ?? 'â€”'}`,
+    `${row.character ?? row.agent ?? 'unknown'} Â* delivered ${(row.delivered ?? []).reduce((n, rec) => n + count(rec.delivered?.herb) + count(rec.delivered?.elderberry), 0)} reagents to room ${row.to_room ?? 'â€"'}`,
     row.at, `<div><strong>bought:</strong> herbs ${esc(row.bought?.herb ?? 0)}, elderberries ${esc(row.bought?.elderberry ?? 0)}</div>` +
       `<div><strong>retained:</strong> herbs ${esc(row.retained?.herb ?? 0)}, elderberries ${esc(row.retained?.elderberry ?? 0)}</div>` +
       `<div class="log">${(row.delivered ?? []).map(rec => `<div>${esc(rec.character ?? rec.agent ?? 'farmer')}: requested ${esc(JSON.stringify(rec.requested ?? {}))}; delivered ${esc(JSON.stringify(rec.delivered ?? {}))}${rec.why ? `; ${esc(rec.why)}` : ''}</div>`).join('')}</div>`)).join('');
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Harness — ${esc(FLEET_LABEL)} fleet</title>
+<title>Harness -- ${esc(FLEET_LABEL)} fleet</title>
 <meta http-equiv="refresh" content="30">
 <style>${STYLE}${EXTRA_STYLE}</style>
 </head><body><div class="wrap">
   <h1>Harness</h1>
-  <div class="sub">Keeper activity clock · ${esc(FLEET_LABEL)} fleet · ${rows.length} unit(s) · refreshes every 30s</div>
+  <div class="sub">Keeper activity clock * ${esc(FLEET_LABEL)} fleet * ${rows.length} unit(s) * refreshes every 30s</div>
   ${NAV('harness')}
   ${windowLinks('/harness', hours)}
   ${error ? `<div class="caveat status-note"><strong>Keeper activity is unavailable.</strong> ${esc(error)}</div>` : ''}
@@ -248,7 +276,7 @@ export function renderHarnessBoard({ fleet = [], details = null, hours = 2, erro
     ${metricCard('sessions', count(d.fighting?.sessions).toLocaleString('en-GB'))}
     ${metricCard('fighting time', durationLabel(count(d.fighting?.duration_ms) / 1000))}
     ${metricCard('damage taken', count(d.fighting?.damage).toLocaleString('en-GB'))}
-    ${metricCard('from safe spots', d.fighting?.safe_spot_pct == null ? '—' : `${d.fighting.safe_spot_pct}%`)}
+    ${metricCard('from safe spots', d.fighting?.safe_spot_pct == null ? '--' : `${d.fighting.safe_spot_pct}%`)}
   </div>
   <div class="panel">${fightRecords || `<div class="empty">${esc(emptyDetail)}</div>`}</div>
   <h2>Trading sessions</h2>
@@ -283,9 +311,29 @@ export function renderHarnessBoard({ fleet = [], details = null, hours = 2, erro
     ${metricCard('herbs delivered', deliveryNow.delivered.herb.toLocaleString('en-GB'))}
     ${metricCard('elderberries delivered', deliveryNow.delivered.elderberry.toLocaleString('en-GB'))}
     ${metricCard('cargo retained', (deliveryNow.retained.herb + deliveryNow.retained.elderberry).toLocaleString('en-GB'))}
-    ${metricCard('fleet fighting share', fightingShare == null ? 'â€”' : `${fightingShare}%`, 'current keeper process')}
+    ${metricCard('fleet fighting share', fightingShare == null ? 'â€"' : `${fightingShare}%`, 'current keeper process')}
   </div>
   <div class="panel">${deliveryRecords || `<div class="empty">No farm delivery has completed in this window.</div>`}</div>
+  <h2>AI director</h2>
+  ${(() => {
+    const d = readDirectorStatus();
+    const card = (k, v, n = '') => metricCard(k, v, n);
+    const state = d.running ? (d.stale ? 'stale' : 'running')
+                 : (d.reason ? `stopped (${d.reason})` : 'stopped');
+    const lastSeen = d.last_pass ? new Date(d.last_pass).toLocaleString() : '\u2014';
+    const age = d.age_ms != null ? durationLabel(d.age_ms / 1000) : '\u2014';
+    const assessment = d.last_assessment || '(no assessment recorded yet)';
+    return `
+      <div class="metric-grid">
+        ${card('status', state)}
+        ${card('last pass', lastSeen)}
+        ${card('age', age)}
+        ${card('directives issued', (d.directives_issued ?? 0).toLocaleString('en-GB'))}
+        ${card('errors', (d.errors ?? 0).toLocaleString('en-GB'))}
+        ${card('pid', d.pid ?? '\u2014')}
+      </div>
+      <div class="panel"><div><strong>last assessment:</strong> ${esc(assessment)}</div></div>`;
+  })()}
   <div class="caveat">The top clock is current-process. Drill-ins are opt-in disk records, retained per selected unit (24h default), and this view is ${esc(hours)}h. Damage comes from the server-pushed hit record, not net health change, so healing cannot erase it.</div>
 </div></body></html>`;
 }
