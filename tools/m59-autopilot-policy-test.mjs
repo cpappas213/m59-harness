@@ -3,6 +3,7 @@ import {
   applyFightAboveVigor,
   Autopilot,
   effectiveFightVigor,
+  effectiveTravelHoldVigor,
   STRATEGIES,
 } from './m59-autopilot.mjs';
 
@@ -34,6 +35,10 @@ console.log('\n--- food behavior is caller-owned ---');
   ok('paid food acquisition defaults off', keeper.policy.buyFood === false);
   ok('food consumption defaults off', keeper.policy.eatBeforeFighting === false);
   ok('the default fight floor is naturally rest-reachable', keeper.fightFloor() === 80);
+  ok('the default travel hold gate is naturally rest-reachable',
+     effectiveTravelHoldVigor(keeper.policy) === 80);
+  ok('an explicit travel hold gate remains caller-owned',
+     effectiveTravelHoldVigor({ travelHoldVigor: 120 }) === 120);
   applyFightAboveVigor(keeper.policy, 140);
   const result = await keeper.provision(
     STRATEGIES.baseline,
@@ -53,4 +58,4 @@ if (failed) {
   console.error(`\n${failed} failed`);
   process.exit(1);
 }
-console.log('\n13 passed');
+console.log('\n15 passed');
