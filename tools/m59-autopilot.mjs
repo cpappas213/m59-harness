@@ -53,6 +53,7 @@ import { CITY_INNS } from './m59-underworld.mjs';
 import { loadoutFor, keepTest, sellTest, dropRank, wantsOf, norm,
          reconcile, equipYield } from './m59-loadout.mjs';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // One resolver, shared with the broker's `tithe` tool — see titheFleet in m59-tithe.mjs
 // for why two answers here meant two books and a fleet that tithed twice a day.
@@ -60,13 +61,13 @@ const TITHE_FLEET = titheFleet();
 
 // Built by: node tools/m59-spawns.mjs
 const SPAWN_FILE = process.env.M59_SPAWN_FILE ||
-  new URL('../substrate/m59-spawns.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  fileURLToPath(new URL('../substrate/m59-spawns.json', import.meta.url));
 // Learned by standing in them. See SafeSpotBook.
 const SAFESPOT_FILE = process.env.M59_SAFESPOT_FILE ||
-  new URL('../substrate/m59-safespots.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  fileURLToPath(new URL('../substrate/m59-safespots.json', import.meta.url));
 // One file per death. Gitignored, like everything a running fleet writes.
 export const POSTMORTEM_DIR = process.env.M59_POSTMORTEM_DIR ||
-  new URL('../substrate/postmortems', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  fileURLToPath(new URL('../substrate/postmortems', import.meta.url));
 
 // MONSTER-FREE RETREATS THAT ARE NOT TRUE SANCTUARIES.
 //
@@ -451,8 +452,7 @@ const reagentTargetFor = (kind, policyTarget) =>
 // zero, which reads as "not worth a walk" and is the safe direction to fail in.
 const ITEM_VALUE = (() => {
   try {
-    const p = new URL('../substrate/m59-values.json', import.meta.url)
-                .pathname.replace(/^\/([A-Za-z]:)/, '$1');
+    const p = fileURLToPath(new URL('../substrate/m59-values.json', import.meta.url));
     return JSON.parse(readFileSync(p, 'utf8')).values ?? {};
   } catch { return {}; }
 })();

@@ -6,6 +6,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { fleetName } from './m59-fleetpath.mjs';
 
 // WHICH FLEET'S BOOK, ANSWERED ONCE.
@@ -49,7 +50,7 @@ export function parseRentHours(lines) {
 }
 
 export const TITHE_DIR = process.env.M59_TITHE_DIR ||
-  new URL('../substrate/guild-tithes', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  fileURLToPath(new URL('../substrate/guild-tithes', import.meta.url));
 
 const safe = value => String(value ?? '').replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 64) || 'unnamed';
 
