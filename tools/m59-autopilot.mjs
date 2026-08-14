@@ -256,13 +256,6 @@ const INERT_MAX_MS = 15 * 60_000;
 // needs longer EXTENDS, which is cheap and proves it is still there.
 const BUSY_MAX_MS = INERT_MAX_MS;
 
-// Where to eat to when no strategy names a target. Resting stops awarding vigor at 80 of
-// 200 (REST_VIGOR_CAP), and the death rate falls roughly thirtyfold once a character is
-// clear of it — 101.8 deaths per thousand observations at or below 85, against 4.4 from
-// 86 to 120. So the default is "get off the cap", not "fill the bar": it is the cheap
-// part of the curve, and the stomach only admits 100 filling at a time anyway.
-const EAT_TO_AT_LEAST = 120;
-
 // HOW RESTED YOU HAVE TO BE TO FIGHT WITHOUT A WALL, WHICH DEPENDS ON WHAT YOU ARE FIGHTING.
 //
 // A flat 130 closed a loop the fleet could not get out of. A character with no food sits
@@ -480,29 +473,10 @@ const vigorPct = v => {
   return g.value / (g.scale_max ?? 200);
 };
 
-// NOBODY STARTS A FIGHT TIRED.
-//
-// Attacking costs half a point a swing at one a second — thirty a minute — and vigor
-// is also what sets how fast health comes back between fights. Below about a third of
-// the bar a character cannot finish what it starts: it swings, runs dry, breaks off,
-// and recovers slower than it would have if it had simply waited.
-//
-// Seventy WAS chosen to be reachable without food, and that turned out to be the wrong
-// thing to optimise. Resting alone stops at 80 of 200, so a floor of 70 meant every
-// character fought permanently exhausted — not occasionally, by accident, but as the
-// designed steady state — and then recovered slowly between fights because vigor is
-// what sets the regeneration rate. The floor was reachable; it was also useless.
-//
-// So the floor is now set by what a character needs to FIGHT WELL, and the food supply
-// is expected to meet it. That is not a free choice — everything above 80 has to be
-// eaten — which is exactly why the larder and the vigor floor are one problem.
-const MIN_FIGHT_VIGOR = 100;      // never start a fight below this while there is food
+// The natural resting ceiling is the default and is always reachable without supplies.
+// Higher vigor is an explicit caller-owned food tactic, never an inventory side effect.
+const DEFAULT_FIGHT_VIGOR = REST_VIGOR_CAP * skills.VIGOR_MAX;
 const WANT_FIGHT_VIGOR = 140;     // what every pattern aims to set out at
-// THE ESCAPE HATCH, and the reason a hard floor of 100 does not deadlock the fleet.
-// With an empty larder the floor is unreachable by any action the keeper can take, and
-// holding out for it idles the character for ever — so an empty larder drops it to what
-// resting alone can actually deliver. This is a SUPPLY failure and is counted as one.
-const STARVED_FIGHT_VIGOR = 70;
 
 // WHERE THE MONEY GOES. Jasper and Tos share one banking system, so either counter
 // pays into the same balance and the only question is which is nearer — which really
@@ -576,18 +550,8 @@ export const MODES = ['survive', 'farm', 'idle'];
 // HOUR, not kills. Kills are cheap to produce and easy to fool yourself with — a
 // character killing something at or below its own level gains nothing at all.
 export const STRATEGIES = {
-  // WHAT THE VIGOR FLOORS NO LONGER VARY BY.
-  //
-  // These patterns used to disagree about how tired a character may be when it starts
-  // a fight — baseline and fieldrest said "any", wellfed said 120, trader and coop
-  // said 100 — and that comparison is finished. Nothing beats not fighting tired:
-  // swinging costs about thirty vigor a minute, vigor sets how fast health returns
-  // between fights, and a character that engages below the floor breaks off part-way
-  // and then recovers slower than if it had simply waited.
-  //
-  // So every pattern now starts from MIN_FIGHT_VIGOR and the strategies differ only in
-  // what they do about FOOD, which is the part still worth measuring: the floor is
-  // reachable by resting, everything above it has to be eaten.
+  // These are optional food experiments. Their eating behavior is used only
+  // after the caller explicitly opts in with eat_before_fighting.
 
   // Control. Rest when hurt, fight from whatever vigor resting gives you.
   baseline: {
@@ -648,6 +612,15 @@ export function applyFightAboveVigor(policy, value) {
   return policy;
 }
 
+export function effectiveFightVigor(policy = {}, plan = {}) {
+  const raw = policy.vigorFloor ?? policy.fightAboveVigor
+           ?? plan.vigorFloor ?? plan.fightAboveVigor ?? DEFAULT_FIGHT_VIGOR;
+  const value = Number(raw);
+  return Number.isFinite(value)
+    ? Math.max(0, Math.min(skills.VIGOR_MAX, value))
+    : DEFAULT_FIGHT_VIGOR;
+}
+
 export function restoredAutopilotPolicy(policy = {}) {
   const restored = { ...(policy && typeof policy === 'object' ? policy : {}) };
   // Six was the former hard-coded default and was copied into every roster.
@@ -701,9 +674,10 @@ export class Autopilot {
       maxWeapons: 2,
       // Paying a merchant is independently selectable from creating, looting, sharing,
       // eating, or equipping the same item classes.
-      buyFood: true,
+      buyFood: false,
       buyWeapons: true,
       buyReagents: true,
+      eatBeforeFighting: false,
       // Independent DUM coordination strategies. null is deliberately inert: assigning
       // either strategy is what widens the keeper's behaviour, not merely installing it.
       farmCleanup: null,
@@ -810,7 +784,7 @@ export class Autopilot {
       strategy: 'baseline',
       // Vigor to reach before picking a fight. Resting alone tops out at the rest
       // threshold (80 of 200); anything above it has to be eaten.
-      fightAboveVigor: MIN_FIGHT_VIGOR,
+      fightAboveVigor: DEFAULT_FIGHT_VIGOR,
       // Disconnect rather than die when a single exchange could finish us. Set false
       // to forbid it — but it is the most effective survival move available when we
       // have nowhere safe to stand, and the penalties the game attaches to logging
@@ -1114,25 +1088,11 @@ export class Autopilot {
   // character swing at fightAboveVigor, so `wellfed` ate its way to 120 and then
   // engaged at 70 anyway, and the whole strategy comparison was measuring nothing.
   fightFloor(plan = STRATEGIES[this.policy.strategy] || {}) {
-    const p = this.policy;
-    // fightAboveVigor was the old single knob; it still works, as the floor.
-    const want = Math.max(MIN_FIGHT_VIGOR,
-      p.vigorFloor ?? plan.vigorFloor ?? p.fightAboveVigor ?? plan.fightAboveVigor ?? 0);
-    // An empty larder puts the floor out of reach — resting stops at 80 — so holding
-    // out for it would idle the character for ever. Fall back to what resting can
-    // deliver, and COUNT it: this is the food supply failing, not a fighting decision,
-    // and it should show up as a supply number rather than as a quiet slowdown.
-    if (!this.larder(this.s.client).length) {
-      this.vigor.starved_passes++;
-      return Math.min(want, STARVED_FIGHT_VIGOR);
-    }
-    return want;
+    return effectiveFightVigor(this.policy, plan);
   }
 
   // TELL THE REST OF THE FLEET WHAT WE ARE SHORT OF AND WHAT WE CAN SPARE.
-  //
-  // Cheap, and called every pass, because the whole value is in it being current when
-  // somebody else is standing at a merchant deciding what to sell.
+  // Cheap and current on every pass so deliveries act on explicit policy.
   declareInterest() {
     const c = this.s.client;
     if (!c) return;
@@ -1145,7 +1105,8 @@ export class Autopilot {
       else if (have > want) spare.set(kind, have - want);
     }
     // No food and nothing to cook with is a want somebody else can answer directly.
-    if (!this.larder(c).length && (r.elderberry < 2 || r.herbs < 2)) wants.push('food');
+    if (this.policy.eatBeforeFighting === true && this.policy.buyFood === true &&
+        !this.larder(c).length && (r.elderberry < 2 || r.herbs < 2)) wants.push('food');
     if (!skills.weaponsOf(c).length) wants.push('weapon');
     // AND WHATEVER THIS CHARACTER'S OWN LIST ASKS FOR. Until now the board could only
     // speak about elderberry and herbs, because they were the only two things with a
@@ -1403,25 +1364,14 @@ export class Autopilot {
 
   async provision(plan, v) {
     const p = this.policy;
+    // Eating is an explicit caller decision. Inventory and strategy defaults
+    // never grant permission to consume or manufacture food.
+    if (p.eatBeforeFighting !== true) {
+      this.climbing = false;
+      return false;
+    }
     const floor = this.fightFloor(plan);
-    // EATING IS NOT A STRATEGY OPTION.
-    //
-    // This returned before it ever looked at the larder unless the policy named a fight
-    // floor or a vigor ceiling — so `fightAboveVigor: 0`, which means "no minimum vigor
-    // required to fight", silently also meant "never eat". Twelve of twenty-one
-    // characters were running exactly that and had not eaten in hours; ten of them sat
-    // at 78-80, which is the resting cap, with the fleet's food and reagents idle.
-    //
-    // What that costs is now measured rather than assumed. Across 6,800 armed
-    // observations a character at or below 85 vigor died at 101.8 per thousand against
-    // 4.4 in the 86-120 band — and carrying food changed nothing (94.7 without, 133.3
-    // with), because carrying is not eating. The single cheapest thing any character can
-    // do for its survival is swallow what is already in its pack.
-    //
-    // So when nothing sets a target, eat to just clear of the cap rather than not at all.
-    // A named floor or ceiling still wins; this only fills the silence.
-    const ceiling = p.vigorCeiling ?? plan.vigorCeiling
-                 ?? (floor ? 0 : (p.eatToAtLeast ?? EAT_TO_AT_LEAST));
+    const ceiling = p.vigorCeiling ?? plan.vigorCeiling ?? floor;
     if (!floor && !ceiling) return false;              // only if someone set it to zero on purpose
 
     const s = this.s;
@@ -7068,8 +7018,9 @@ export class Autopilot {
         this.fledInARow = (this.fledInARow || 0) + 1;
         await skills.restUntil(s, { health: 0.95, vigor: REST_VIGOR_CAP, maxSeconds: 90 })
                     .catch(() => {});
-        await this.cookSomething('got out of a bad room and need food before going back')
-                  .catch(() => {});
+        if (this.policy.eatBeforeFighting === true)
+          await this.cookSomething('planner enabled food preparation after a retreat')
+                    .catch(() => {});
         this.progress('left a room I could neither fight nor rest in');
         // FLEEING TWICE IS A SUPPLY PROBLEM WEARING A TACTICS PROBLEM'S CLOTHES.
         //

@@ -6545,7 +6545,9 @@ const TOOLS = [
       max_weapons: { type: ['number', 'null'],
         description: 'weapons retained after selling, including the equipped weapon. Default 2; null removes the limit' },
       buy_food: { type: 'boolean',
-        description: 'allow paid food purchases; false also suppresses food-only town trips and withdrawals' },
+        description: 'planner-owned paid food acquisition; default false. true allows food-only town trips and withdrawals' },
+      eat_before_fighting: { type: 'boolean',
+        description: 'planner-owned food consumption; default false. true lets the keeper eat or create food toward fight_above_vigor' },
       buy_weapons: { type: 'boolean',
         description: 'allow paid weapon purchases by rearming and outfitting automation; creating and sharing remain available' },
       buy_reagents: { type: 'boolean',
@@ -6677,10 +6679,9 @@ const TOOLS = [
           'per hour by strategy rather than anyone having to argue about which ought to work. ' +
           'baseline is the control' },
       fight_above_vigor: { type: 'number', minimum: 0, maximum: 200,
-        description: 'eat until vigor reaches this before picking a fight. Resting alone tops out at ' +
-          'the rest threshold of 80 out of 200; above that only food will do it, and vigor is what ' +
-          'sets the health regeneration rate. An explicit value overrides both the selected ' +
-          'strategy floor and its provisioning ceiling' },
+        description: 'minimum vigor before picking a fight. The default is the reachable rest threshold ' +
+          'of 80 out of 200. Values above 80 require the caller to deliberately enable ' +
+          'eat_before_fighting; an explicit value overrides the strategy floor and ceiling' },
       use_safe_spots: { type: 'boolean',
         description: 'fight from a wall whenever the kill would pay (default true). Turning this off ' +
           'gives up the largest survival advantage in the game and is almost never right' },
@@ -6767,6 +6768,8 @@ const TOOLS = [
         p.policy.maxWeapons = a.max_weapons == null
           ? null : Math.max(0, Math.floor(Number(a.max_weapons) || 0));
       if (a.buy_food !== undefined) p.policy.buyFood = !!a.buy_food;
+      if (a.eat_before_fighting !== undefined)
+        p.policy.eatBeforeFighting = !!a.eat_before_fighting;
       if (a.buy_weapons !== undefined) p.policy.buyWeapons = !!a.buy_weapons;
       if (a.buy_reagents !== undefined) p.policy.buyReagents = !!a.buy_reagents;
       if (a.vault_items !== undefined) {
@@ -6882,6 +6885,8 @@ const TOOLS = [
         // and the strategy is only a default.
         const plan = STRATEGIES[a.strategy];
         if (a.fight_above_vigor === undefined) p.policy.fightAboveVigor = plan.fightAboveVigor ?? 0;
+        if (a.eat_before_fighting === undefined)
+          p.policy.eatBeforeFighting = !!plan.eatBeforeFighting;
         if (a.max_carry === undefined && plan.maxCarry) p.policy.maxCarry = plan.maxCarry;
       }
       if (a.fight_above_vigor !== undefined)
