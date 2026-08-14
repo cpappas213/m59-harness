@@ -17,7 +17,8 @@
 // If someone "simplifies" goalYield by making skills read `ability`, these fail. That is
 // the point of them.
 
-import { goalYield, scorePrey, healthCeiling, PURPOSES,
+import { goalYield, scorePrey, healthCeiling, PURPOSES, huntingGrounds,
+         creatureMatchesHunt,
          whoDrops, suggestDrops, moneyPerKill } from './m59-spawns.mjs';
 
 let pass = 0, fail = 0;
@@ -65,6 +66,20 @@ const SPAWNS = {
 };
 
 const CH = { maxHealth: 30, stamina: 20 };   // ceiling 121, so hp is still live
+
+console.log('\ncreature identity — orders are not substring searches');
+{
+  const grounds = huntingGrounds(SPAWNS, 'ant', { limit: 20 });
+  ok('ant selects only the exact ant creature',
+     grounds.length === 1 && grounds[0].room === 563,
+     JSON.stringify(grounds.map(r => `${r.creature}:${r.room}`)));
+  ok('ant does not match the letters inside giant rat',
+     !creatureMatchesHunt(rat, 'ant'));
+  ok('ant does not silently broaden to mutant ant',
+     !creatureMatchesHunt({ name: 'mutant ant', cls: 'MutantAnt' }, 'ant'));
+  ok('catalogue class and display-name formatting normalize to one identity',
+     creatureMatchesHunt(rat, 'GiantRat') && creatureMatchesHunt(rat, 'giant rat'));
+}
 
 console.log('\nhit points — AdvancementCheck only rolls above your max health');
 {

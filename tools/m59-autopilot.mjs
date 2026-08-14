@@ -23,7 +23,8 @@
 import * as skills from './m59-skills.mjs';
 import { OF, affordances, dropSpec as dropSpecFor } from './m59-parse.mjs';
 import { isFood, foodValue } from './m59-items.mjs';
-import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe } from './m59-spawns.mjs';
+import { loadSpawns, huntingGrounds, creatureMatchesHunt, roomThreats, goalYield,
+         roomCap, karmaSafe } from './m59-spawns.mjs';
 import { findPath, roomsWithin } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
@@ -7592,8 +7593,7 @@ export class Autopilot {
       if (room) {
         const spawns0 = loadSpawns(SPAWN_FILE);
         const here = (spawns0?.rooms?.[room.num] || []).filter(x => x.huntable);
-        const want0 = String(this.policy.hunt || '').toLowerCase();
-        const preyHere = here.some(x => (x.creature || '').toLowerCase().includes(want0));
+        const preyHere = here.some(x => creatureMatchesHunt(x, this.policy.hunt));
         const offAssignment = shouldRelocateToAssignedRoom(this.policy, room);
         if (!preyHere || offAssignment) {
           const known = this.preyRooms(room);
