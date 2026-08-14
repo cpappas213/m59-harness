@@ -36,7 +36,7 @@ import { randomBytes } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { M59Client, KOD_FINENESS } from './m59-client.mjs';
+import { M59Client, KOD_FINENESS, BPNAME } from './m59-client.mjs';
 import { loadResources } from './m59-rsc.mjs';
 import { describeObject, affordances, OF, dropSpec } from './m59-parse.mjs';
 import { World, sharedWorldMap, spreadEdges } from './m59-world.mjs';
@@ -129,7 +129,16 @@ const skyReading = () => {
       // Only the sun inverts cleanly — the moon's angle carries a day term and is refused
       // by `hourFromSunAngle` rather than misread as an hour.
       if (hour == null || !isFresh(body.at)) continue;
-      if (!best || body.at > best.at) best = { hour, at: body.at, from: s.name };
+      // A BOUNDARY READING BEATS A NEWER LOGIN READING. `change` is pushed by
+      // `NewGameHour` and therefore lands exactly on an hour boundary; `add` arrives at
+      // login somewhere inside one. Preferring the most RECENT reading regardless would
+      // let a character logging in mid-hour overwrite a second-accurate calibration with
+      // one that is up to five minutes out — and five minutes of a thirty-five minute
+      // window is the whole reason the lead time exists.
+      const better = !best
+        || (body.via === 'change' && best.via !== 'change')
+        || (body.via === best.via && body.at > best.at);
+      if (better) best = { hour, at: body.at, from: s.name, via: body.via ?? 'add' };
     }
   }
   return best;
@@ -161,7 +170,9 @@ const graveyardPhase = () => {
       const a = Date.parse(readAnchor()?.night_starts_at ?? '');
       if (Number.isFinite(a)) anchored = phaseAt(a);
     } catch { /* no anchor is fine; the sky does not need one */ }
-    return { ...phase, seen_by: sky.from,
+    return { ...phase, seen_by: sky.from, via: sky.via,
+      // An `add` reading fixes the hour but not the moment inside it.
+      boundary_exact: sky.via === 'change',
       // A one-line disagreement report rather than a silent choice. Null when there is
       // nothing to compare against.
       anchor_agrees: anchored ? anchored.night === phase.night : null };
@@ -12371,6 +12382,21 @@ function serveDashboard(port) {
     // Where the wall-clock went, split into pacing (deliberate), queueing (contention)
     // and blocking (waiting for a reply — the only part that is waste). Read-only, and
     // cumulative since the broker started; `?reset=1` zeroes it to time one experiment.
+    // WHICH OPCODES HAVE ACTUALLY ARRIVED, across every session. This is the one
+    // question that separates "the server never sent it" from "we never parsed it", and
+    // this repository has now been caught by that distinction three times —
+    // UC_LOOK_PLAYER, BP_WITHDRAWAL_LIST, and the sun and moon. The client has always
+    // counted every opcode it dispatched; nothing exposed the census.
+    if (url.pathname === '/opcodes') {
+      const total = new Map();
+      for (const s of sessions.values()) {
+        for (const [op, n] of s.client?.opcodeCounts ?? []) total.set(op, (total.get(op) ?? 0) + n);
+      }
+      const rows = [...total.entries()].sort((a, b) => b[1] - a[1])
+        .map(([op, n]) => ({ opcode: op, name: BPNAME[op] ?? null, count: n }));
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ sessions: sessions.size, opcodes: rows }, null, 2));
+    }
     if (url.pathname === '/budget') {
       const rows = [...Pacer.budget.entries()]
         .map(([k, v]) => ({ bucket: k, ms: v.ms, n: v.n, mean_ms: Math.round(v.ms / v.n) }))

@@ -81,9 +81,14 @@ export const GAME_DAY_MS = HOURS * GAME_HOUR_MS;
  * The whole phase, from one sun reading and the moment it was taken.
  *
  * `into_hour_ms` is how far into the current game hour the reading is, which is what makes
- * the estimate usable between packets: the hour ticks at a known rate, so a reading two
- * minutes old still says where the boundary is. It is deliberately NOT extrapolated past
- * one game hour — see `STALE_MS`.
+ * the answer usable between packets: the hour ticks at a known rate, so a reading two
+ * minutes old still says exactly where the boundary is.
+ *
+ * A CHANGE push lands ON an hour boundary, so a reading taken from one is calibrated to
+ * the second. An ADD push arrives at login, at an arbitrary point inside an hour, so that
+ * one places the boundary only within five minutes. Both are recorded the same way and the
+ * difference shows up as `into_hour_ms` being wrong by up to one game hour after a login —
+ * which the next hourly push corrects on its own.
  */
 export function phaseFromSun(hour, { at = Date.now(), now = Date.now() } = {}) {
   if (hour == null) return null;
@@ -113,12 +118,28 @@ export function phaseFromSun(hour, { at = Date.now(), now = Date.now() } = {}) {
   };
 }
 
-// HOW LONG A SKY READING IS TRUSTED. One game hour: the sun pushes every game hour, so a
-// reading older than that means the packets stopped — the character logged out, the
-// session dropped, the parser broke — and extrapolating across an unknown number of
-// missed pushes is exactly how a derived clock ends up confidently wrong. Past this the
-// caller falls back to the declared anchor, which is at least honest about being a guess.
-export const STALE_MS = GAME_HOUR_MS;
+// HOW LONG A SKY READING IS TRUSTED — AND A READING IS A CALIBRATION, NOT A SAMPLE.
+//
+// This was one game hour, on the reasoning that the sun pushes every game hour so anything
+// older meant the packets had stopped. The push is real — measured live, BP_ADD_BG_OVERLAY
+// at login and BP_CHANGE_BG_OVERLAY on each hour — but tying the shelf life to it was
+// still wrong, because it made a missed push or a quiet moment fall all the way back to
+// the hand-typed anchor when the reading in hand was still perfectly good.
+//
+// The right model is the one the anchor itself uses. The game hour advances at a FIXED
+// KNOWN RATE — five real minutes, `system.kod` — so one observed hour plus elapsed time
+// gives every later hour, exactly. That is precisely what the anchor does, except the
+// anchor's starting moment is a person with a stopwatch and this one is the server stating
+// its own hour. Extrapolating is not a degradation of a sky reading; it IS the sky reading.
+//
+// So this is long enough to span a quiet night, and `age_ms` rides on every answer so a
+// caller can see how old the calibration is. What genuinely invalidates it is a SERVER
+// restart — piHour is a stored property, not a pure function of wall-clock time, so a
+// restart can put the hour anywhere — and that is what a fresh reading at the next login
+// corrects. Losing an hour to a stale calibration after a server bounce is the cost;
+// falling back to a hand-typed anchor that has the same problem and no self-correction is
+// not an improvement on it.
+export const STALE_MS = 12 * 60 * 60_000;
 
 export const isFresh = (readAt, now = Date.now()) =>
   readAt != null && now - readAt < STALE_MS;

@@ -93,7 +93,7 @@ export const BP = {
   BUY_LIST: 216, CREATE: 217, REMOVE: 218, CHANGE: 219,
   LIGHT_AMBIENT: 220, INVALIDATE_DATA: 228,
 };
-const BPNAME = Object.fromEntries(Object.entries(BP).map(([k, v]) => [v, k]));
+export const BPNAME = Object.fromEntries(Object.entries(BP).map(([k, v]) => [v, k]));
 
 // BP_USERCOMMAND sub-opcodes, include/proto.h:222. A whole second command space
 // reached through one opcode, holding the things the real client's slash commands
@@ -1262,6 +1262,12 @@ export class M59Client {
           height: body.readUInt16LE(17),
         };
         sky.name = this.rsc.get(sky.nameRsc) || null;
+        // WHICH PUSH THIS WAS, because the two carry different precision. A CHANGE lands
+        // ON an hour boundary (`NewGameHour` is what sends it), so it calibrates the clock
+        // to the second. An ADD arrives at login, at an arbitrary point inside an hour, so
+        // it fixes the hour but places the boundary only within five minutes. A consumer
+        // timing a departure to the start of a 35-minute window cares about the difference.
+        sky.via = op === BP.CHANGE_BG_OVERLAY ? 'change' : 'add';
         this.sky.set(sky.id, { ...sky, at: Date.now() });
         this.emit('sky', { what: sky.name, ...sky });
         break;
