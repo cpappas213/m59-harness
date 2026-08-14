@@ -386,6 +386,30 @@ export function loadSpawns(file) {
 // produce something too strong, which is the check that distinguishes room 566 from
 // room 603. Both list giant rats; one of them also rolls a level-35 groundworm larva
 // seven times in ten.
+// ROOMS THAT GENERATE ON PAPER AND PRODUCE NOTHING IN FACT.
+//
+// The spawn index describes what a room's GENERATORS are configured to make. It cannot
+// describe what is standing in the room, and a room can be permanently full of something
+// that never appears in its generator list at all — at which point the shared
+// `piMonster_count_max` is already met and the generators never fire again.
+//
+// 2601, the Resting place of Marion's ancestors, is the case that found this. Looked at
+// on 2026-08-14 it held 26 statues, of which TWENTY-THREE offer only `look` and no
+// `attack`: Monster instances on the server, counted against the cap, and unkillable from
+// the wire. `PlaceStatues` (marcryp2.kod:161) additionally refuses to reset the room while
+// any statue remains, so it never recovers. The index still ranks it the BEST skeleton
+// room in the game — 80% of rolls at a cap of 25 — so every keeper offered it walks back
+// to it, and nine characters held safe walls there for hours killing nothing.
+//
+// This is deliberately a short, cited list and not a heuristic. "The room looks full of
+// things we cannot hit" is a reasonable live observation and belongs in the keeper, where
+// it can be measured; this is for the handful of rooms where the answer is permanent and
+// already known, and where leaving them in the ranking costs a fleet its day.
+export const DEAD_ROOMS = new Map([
+  [2601, 'permanently over its cap: 23 of its 26 statues expose no attack verb, and ' +
+         'PlaceStatues will not reset the room while any statue remains'],
+]);
+
 export function huntingGrounds(spawns, want, { maxDanger = null, limit = 12 } = {}) {
   if (!spawns) return [];
   const needle = String(want).toLowerCase();
@@ -399,6 +423,7 @@ export function huntingGrounds(spawns, want, { maxDanger = null, limit = 12 } = 
   const rows = [];
   for (const c of hits) {
     for (const s of c.sites) {
+      if (DEAD_ROOMS.has(s.room)) continue;
       if (s.how && s.how !== 'generator' && !generates(s.room, c.name)) continue;
       const here = spawns.rooms[s.room] || [];
       // THE THREAT CEILING IS ABOUT BYSTANDERS, NOT ABOUT THE PREY.
