@@ -80,6 +80,11 @@ export const BP = {
   SKILLS: 144, SKILL_ADD: 145, SKILL_REMOVE: 146,
   ADD_ENCHANTMENT: 147, REMOVE_ENCHANTMENT: 148,
   QUIT: 149, BACKGROUND: 150,
+  // THE SUN AND THE MOON. Pushed to every logged-on user on every game hour — five real
+  // minutes — by sun.kod:44 and moon.kod:89, and never parsed here until now, which is
+  // the third time this repository has found a whole fact arriving and being dropped
+  // because nothing looked at the opcode. The sun's angle IS the game hour.
+  ADD_BG_OVERLAY: 152, REMOVE_BG_OVERLAY: 153, CHANGE_BG_OVERLAY: 154,
   USERCOMMAND: 155,
   MOVE: 200, TURN: 201, SHOOT: 202, USE: 203, UNUSE: 204, USE_LIST: 205,
   SAID: 206, LOOK: 207, INVENTORY: 208, INVENTORY_ADD: 209, INVENTORY_REMOVE: 210,
@@ -233,6 +238,10 @@ export class M59Client {
     this.tradeRevision = 0;
     this.pendingOfferTo = null;
     this.playersOnline = new Map();                 // object id -> {name, flags}
+    // THE SKY. Background overlays by object id — the Sun and the Moon, and nothing else
+    // has ever been one. Pushed on every game hour, so this is a live reading rather than
+    // something to poll, and it is the only clock on the wire.
+    this.sky = new Map();                           // object id -> {angle, height, ...}
     this.statsById = new Map();                     // stat number -> value/text
     this.events = [];                               // recent world events, newest last
     this.maxEvents = 500;
@@ -1222,6 +1231,44 @@ export class M59Client {
         if (!this.check('TURN', res)) break;
         const o = this.room.objects.get(res.id);
         if (o) Object.assign(o, { angle: res.angle, degrees: res.degrees });
+        break;
+      }
+
+      // THE SKY, WHICH IS A CLOCK. Both bodies use one 19-byte layout
+      // (`ExtractNewBackgroundOverlay`, server.c:443):
+      //
+      //   id u32 | icon u32 | name u32 | animType u8 | group u16 | angle u16 | height u16
+      //
+      // The palette field the C client reads between `name` and the animation consumes
+      // ZERO bytes here: `ExtractPaletteTranslation` peeks one byte and REWINDS unless it
+      // is ANIMATE_TRANSLATION (9) or ANIMATE_EFFECT (10), and the server writes
+      // ANIMATE_NONE (1). Getting that wrong would shift everything after it by a byte and
+      // produce plausible, wrong hours — which is why it is spelled out rather than
+      // inferred from the kod's AddPacket calls alone.
+      //
+      // Height is read as an UNSIGNED word by the real client and cast to int, so the
+      // documented -200 floor arrives as 65336 rather than a negative. It is kept as sent
+      // and left to the reader; the angle is the field that carries the time.
+      case BP.ADD_BG_OVERLAY:
+      case BP.CHANGE_BG_OVERLAY: {
+        if (body.length < 19) { this.check('BG_OVERLAY', null); break; }
+        const sky = {
+          id: body.readUInt32LE(0),
+          iconRsc: body.readUInt32LE(4),
+          nameRsc: body.readUInt32LE(8),
+          animation: body.readUInt8(12),
+          group: body.readUInt16LE(13),
+          angle: body.readUInt16LE(15),
+          height: body.readUInt16LE(17),
+        };
+        sky.name = this.rsc.get(sky.nameRsc) || null;
+        this.sky.set(sky.id, { ...sky, at: Date.now() });
+        this.emit('sky', { what: sky.name, ...sky });
+        break;
+      }
+
+      case BP.REMOVE_BG_OVERLAY: {
+        if (body.length >= 4) this.sky.delete(body.readUInt32LE(0));
         break;
       }
 

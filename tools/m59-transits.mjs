@@ -180,3 +180,82 @@ if (process.argv[1]?.endsWith('m59-transits.mjs')) {
   console.log('A map that cannot be crossed in under a minute is a map with a problem in ' +
               'it, not a big map.');
 }
+
+// HOW LONG A JOURNEY WILL TAKE, FROM HOW LONG THE SAME HOPS HAVE TAKEN BEFORE.
+//
+// The graveyard is the reason this exists. It generates for 35 real minutes in every 120
+// and nothing at all in between, so a shift that sets off when the window OPENS spends a
+// chunk of it walking — and the walk from the King's Way is not short. Setting off early
+// by the length of the walk turns travel time into window time.
+//
+// PER-EDGE, NOT PER-JOURNEY. Journeys are between arbitrary pairs and most pairs have
+// never been walked, but the EDGES repeat constantly — the same corridors carry every
+// trip. So the estimate is the sum of each hop's own history, which means a route nobody
+// has ever taken end to end still gets a real number as long as its pieces are familiar.
+//
+// The median, not the mean: transit times have a long tail (a blocked square, a monster in
+// a doorway, a replan) and a handful of 40-second hops would drag a mean far above what a
+// journey normally costs. The tail is real, which is what `p90JourneyMs` is for — a shift
+// that wants to be THERE on time should leave on the pessimistic number, not the typical
+// one.
+const edgeKey = (from, to) => `${from}->${to}`;
+
+export function edgeTimes(books, { since = 0 } = {}) {
+  const edges = new Map();
+  for (const b of books) {
+    for (const t of b.transits || []) {
+      // A failed crossing is not a duration — it is a crossing that did not happen, and
+      // averaging it in would price a route by how often it goes wrong rather than how
+      // long it takes when it works. Failure belongs in `byRoom`, which is about exactly
+      // that, and not here.
+      if (!t.ok || t.at < since || t.room == null || t.to == null) continue;
+      const k = edgeKey(t.room, t.to);
+      if (!edges.has(k)) edges.set(k, []);
+      edges.get(k).push(t.ms);
+    }
+  }
+  const out = new Map();
+  for (const [k, times] of edges) {
+    const s = times.sort((a, b) => a - b);
+    out.set(k, { samples: s.length, median_ms: pctile(s, 0.5), p90_ms: pctile(s, 0.9) });
+  }
+  return out;
+}
+
+// What a hop costs when this pair has never been walked. Measured across the fleet's whole
+// history rather than guessed, and recomputed from the same books, so it moves when the
+// world does. The fallback matters more than it looks: a route into an unfamiliar corner
+// is exactly when an estimate is most needed and least informed.
+export function typicalHopMs(edges) {
+  const all = [...edges.values()].flatMap(e => Array(e.samples).fill(e.median_ms))
+    .sort((a, b) => a - b);
+  return all.length ? pctile(all, 0.5) : 6000;
+}
+
+/**
+ * Estimate a journey from its hops. `hops` is what `findPath` returns.
+ *
+ * Reports how much of the answer is real history — `known_hops` against `hops` — because
+ * an estimate assembled mostly from the fallback is a different kind of number from one
+ * assembled from a hundred crossings of the same corridor, and a caller deciding when to
+ * set off should be able to tell them apart.
+ */
+export function estimateJourney(hops = [], edges, { percentile = 'p90' } = {}) {
+  const fallback = typicalHopMs(edges);
+  const field = percentile === 'median' ? 'median_ms' : 'p90_ms';
+  let total = 0, known = 0, samples = 0;
+  for (const hop of hops) {
+    const e = edges.get(edgeKey(hop.from, hop.to));
+    if (e) { total += e[field]; known += 1; samples += e.samples; }
+    else total += fallback;
+  }
+  return { ms: Math.round(total), hops: hops.length, known_hops: known, samples,
+           fallback_hop_ms: fallback, basis: percentile,
+           confidence: hops.length ? known / hops.length : 0 };
+}
+
+/** Every character with a transit book on disk. */
+export function allCharacters() {
+  try { return readdirSync(TRANSIT_DIR).filter(f => f.endsWith('.json')).map(f => f.slice(0, -5)); }
+  catch { return []; }
+}

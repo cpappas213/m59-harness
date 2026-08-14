@@ -40,7 +40,7 @@ import { M59Client, KOD_FINENESS } from './m59-client.mjs';
 import { loadResources } from './m59-rsc.mjs';
 import { describeObject, affordances, OF, dropSpec } from './m59-parse.mjs';
 import { World, sharedWorldMap, spreadEdges } from './m59-world.mjs';
-import { loadMap, resolveRoom, forgetInferredExit } from './m59-map.mjs';
+import { loadMap, resolveRoom, forgetInferredExit, findPath } from './m59-map.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
 import * as skills from './m59-skills.mjs';
@@ -62,6 +62,7 @@ import { factionAssignment, factionJoinConfirmed, factionJoinSpec,
          LOYALTY_TRIGGER, withinQuestReach, QUEST_NPC_REACH_SQUARES } from './m59-factions.mjs';
 import { FactionStatusCache } from './m59-faction-status.mjs';
 import { readAnchor, phaseAt } from './m59-dayclock.mjs';
+import { hourFromSunAngle, phaseFromSun, isFresh } from './m59-skyclock.mjs';
 import { StorageCache, GUILD_CHEST_SLOTS, chestFullness } from './m59-storage.mjs';
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
@@ -111,7 +112,60 @@ const factionStatuses = new FactionStatusCache();
 // until somebody has watched a night begin and written it down — and null stays null here,
 // because an invented anchor would report a window that is not open and send a shift to
 // stand in an empty field.
+// THE SKY BEATS THE ANCHOR, AND THE ANSWER SAYS WHICH IT USED.
+//
+// The sun pushes its angle to every logged-on character every game hour and that angle IS
+// the hour (sun.kod:53), so any session holding a fresh reading knows the time exactly.
+// The declared anchor is arithmetic on real time and is correct only while somebody's
+// hand-typed start moment still is — across a server restart it is quietly wrong.
+//
+// Both are reported when both exist, because a disagreement between them is worth seeing
+// rather than resolving silently: it means the anchor has drifted and should be re-declared.
+const skyReading = () => {
+  let best = null;
+  for (const s of sessions.values()) {
+    for (const body of s.client?.sky?.values() ?? []) {
+      const hour = hourFromSunAngle(body.angle);
+      // Only the sun inverts cleanly — the moon's angle carries a day term and is refused
+      // by `hourFromSunAngle` rather than misread as an hour.
+      if (hour == null || !isFresh(body.at)) continue;
+      if (!best || body.at > best.at) best = { hour, at: body.at, from: s.name };
+    }
+  }
+  return best;
+};
+
+// EDGE TIMES, CACHED FOR A MINUTE. Reading twenty-three transit books on every call would
+// make a "free" estimate the most expensive thing on the board; a minute is far shorter
+// than the histories move and far longer than a burst of estimates during one fleet tick.
+let edgeCache = { at: 0, edges: null };
+const transitEdges = () => {
+  const now = Date.now();
+  if (edgeCache.edges && now - edgeCache.at < 60_000) return edgeCache.edges;
+  const books = [];
+  for (const name of transits.allCharacters?.() ?? []) {
+    try { books.push(transits.loadBook(name)); } catch { /* one unreadable book is not fatal */ }
+  }
+  edgeCache = { at: now, edges: transits.edgeTimes(books) };
+  return edgeCache.edges;
+};
+
+const estimateJourney = (hops, edges, opts) => transits.estimateJourney(hops, edges, opts);
+
 const graveyardPhase = () => {
+  const sky = skyReading();
+  if (sky) {
+    const phase = phaseFromSun(sky.hour, { at: sky.at });
+    let anchored = null;
+    try {
+      const a = Date.parse(readAnchor()?.night_starts_at ?? '');
+      if (Number.isFinite(a)) anchored = phaseAt(a);
+    } catch { /* no anchor is fine; the sky does not need one */ }
+    return { ...phase, seen_by: sky.from,
+      // A one-line disagreement report rather than a silent choice. Null when there is
+      // nothing to compare against.
+      anchor_agrees: anchored ? anchored.night === phase.night : null };
+  }
   try {
     const anchor = readAnchor();
     // THE FIELD IS `night_starts_at`, AND READING IT AS `at` FAILS SILENTLY — the helper
@@ -120,7 +174,7 @@ const graveyardPhase = () => {
     // from the function name and the failure has no symptom.
     const at = Date.parse(anchor?.night_starts_at ?? '');
     if (!Number.isFinite(at)) return null;
-    return { ...phaseAt(at), anchor_at: at, anchor_by: anchor.by ?? null };
+    return { ...phaseAt(at), source: 'anchor', anchor_at: at, anchor_by: anchor.by ?? null };
   } catch { return null; }
 };
 // Vault contents, guild chest contents and the guild's rent position. None of the three is
@@ -11455,6 +11509,33 @@ const TOOLS = [
         world_clock: graveyardPhase(),
         note: rows.length ? undefined : 'no sessions — join some characters first',
       };
+    },
+  },
+  {
+    name: 'travel_estimate',
+    description:
+      'How long a walk between two rooms should take, from this fleet\'s own transit history. ' +
+      'PURE LOCAL COMPUTATION — it reads the recorded per-hop times and the room graph and ' +
+      'sends nothing to the game server, so it is free to call. Per-EDGE rather than ' +
+      'per-journey: most room pairs have never been walked end to end, but the corridors ' +
+      'between them are crossed constantly, so a novel route still gets a real number. ' +
+      'Defaults to the p90 rather than the median, because the caller is usually deciding ' +
+      'when to SET OFF to arrive by a deadline, and the typical case is the wrong one to ' +
+      'plan a deadline against. `confidence` is the fraction of hops backed by history.',
+    schema: { type: 'object', properties: {
+      from: { type: 'number' }, to: { type: 'number' },
+      basis: { type: 'string', enum: ['median', 'p90'] },
+    }, required: ['from', 'to'] },
+    run: async (a) => {
+      const map = loadMap();
+      const from = Number(a.from), to = Number(a.to);
+      if (from === to) return { ms: 0, hops: 0, confidence: 1, same_room: true };
+      const path = findPath(map, from, to);
+      if (!path.found) return { ms: null, hops: null, reason: path.reason };
+      const edges = transitEdges();
+      return { ...estimateJourney(path.hops, edges, { basis: a.basis ?? 'p90',
+                 percentile: a.basis ?? 'p90' }),
+               from, to, worst_room_rating: path.worst_rating ?? null };
     },
   },
   {
