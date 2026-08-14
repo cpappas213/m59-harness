@@ -123,10 +123,11 @@ console.log('\nthe gate that decides a candidate moment');
   ok('healthy enough is not a candidate', ask(keeper(40, 44, 150)).candidate === false);
   ok('ARRIVING HURT IS FINE — the last room of a journey is somebody else\'s decision',
      ask(keeper(20, 44, 150), 0).candidate === false);
-  ok('TOO TIRED FOR THE POINTS TO COME. At the resting cap a 15-point top-up costs 87s, ' +
-     'as long as a whole p90 journey, so holding there pays full price for nothing',
-     ask(keeper(20, 44, 80)).candidate === false &&
-     /too tired/.test(ask(keeper(20, 44, 80)).why));
+  ok('the natural resting cap is enough to use a travel hold',
+     ask(keeper(20, 44, 80)).candidate === true);
+  ok('below the natural resting cap it is too tired for the points to come',
+     ask(keeper(20, 44, 79)).candidate === false &&
+     /too tired/.test(ask(keeper(20, 44, 79)).why));
   ok('something already swinging is a fight, not a pause — the ordinary pass is better ' +
      'at both halves of that than a hold is',
      ask(keeper(20, 44, 150, 2)).candidate === false);
@@ -134,7 +135,7 @@ console.log('\nthe gate that decides a candidate moment');
      ask({ ...keeper(20, 44, 150), s: { client: { vitals: () => ({}) } } }).candidate === false);
   ok('and every refusal says why, because a gate that silently never fires is an ' +
      'experiment that measures nothing',
-     [keeper(40, 44, 150), keeper(20, 44, 80), keeper(20, 44, 150, 2)]
+     [keeper(40, 44, 150), keeper(20, 44, 79), keeper(20, 44, 150, 2)]
        .every(k => typeof ask(k).why === 'string' && ask(k).why.length > 0));
 }
 
