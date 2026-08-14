@@ -537,6 +537,118 @@ function bfsPath(map, fromNum, toNum, avoid) {
   return { found: false, hops: [], reason: `no route from ${fromNum} to ${toNum} in the graph` };
 }
 
+// HOW DANGEROUS EACH ROOM IS TO WALK THROUGH, FROM THE SPAWN TABLE.
+//
+// A ROUTE IS AS DANGEROUS AS ITS WORST ROOM, so this is the MAXIMUM attack rating a room
+// can generate and never an average. Averaging is the tempting mistake and it is wrong in
+// the fatal direction: a corridor of six harmless rooms and one narthyl worm room averages
+// to something mild, and the fleet dies in the one room.
+//
+// Attack rating rather than level, for the reason CLAUDE.md gives at length: level is what
+// a blow costs and difficulty is how often one lands, so a level-50 fungus beast at 210 is
+// a safer room than a level-30 centipede at 390. `GetAttackAbility = 3*viLevel +
+// 60*viDifficulty` is the number that actually describes danger.
+//
+// Only `huntable` generators count. A room's placed-once residents — a blacksmith, a
+// statue — are not what makes a corridor lethal, and counting them would rate every shop
+// in the game as hostile.
+const SPAWNS_FILE = process.env.M59_SPAWNS ||
+  path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')),
+            '..', 'substrate', 'm59-spawns.json');
+
+let dangerCache = null;
+export function roomDanger({ refresh = false } = {}) {
+  if (dangerCache && !refresh) return dangerCache;
+  const danger = new Map();
+  try {
+    const spawns = JSON.parse(fs.readFileSync(SPAWNS_FILE, 'utf8'));
+    for (const [num, list] of Object.entries(spawns.rooms ?? {})) {
+      const worst = (list ?? [])
+        .filter(x => x?.huntable && Number.isFinite(Number(x.attack_rating)))
+        .reduce((max, x) => Math.max(max, Number(x.attack_rating)), 0);
+      if (worst > 0) danger.set(Number(num), worst);
+    }
+  } catch { /* no spawn table is "nothing is known", which routes exactly as it used to */ }
+  dangerCache = danger;
+  return danger;
+}
+
+// A room nothing is known about rates 0 — NOT "unknown, therefore avoid". Most of the
+// world's rooms generate nothing and are the safe ones; treating silence as hazardous
+// would make every town square look like a battlefield and route around all of them.
+const dangerOf = (danger, room) => danger.get(Number(room)) ?? 0;
+
+// HOW FAR OUT OF ITS WAY A CHARACTER MAY GO TO AVOID A ROOM.
+//
+// A detour is not free, and this is the whole reason the safer path is bounded rather than
+// simply preferred: EVERY EXTRA ROOM IS ANOTHER ROOM THAT CAN CHOOSE A FIGHT. That is what
+// the 534 note below is about — the deaths were in a corridor nobody meant to fight in —
+// so a route that crosses nine mild rooms instead of three has traded one known hazard for
+// six new chances at an unknown one. Doubling plus two hops is generous enough to walk
+// around a bad room or a bad pair, and tight enough that nothing crosses the world twice.
+const DETOUR_FACTOR = 2;
+const DETOUR_SLACK = 2;
+
+/**
+ * The least-dangerous route, where "least dangerous" means the lowest worst room on it.
+ *
+ * This is a bottleneck (minimax) search rather than a sum-of-weights one, because danger
+ * does not add up along a path — walking through two rooms rated 300 is not worse than
+ * walking through one rated 700. Ties on the bottleneck are broken by hop count, so the
+ * answer is the SHORTEST of the SAFEST routes.
+ *
+ * `avoid` stays a hard exclusion on top, because it is a measured fact about specific
+ * rooms that the spawn table cannot express: 534 is deadly in transit because of how many
+ * things gang up in it, not because its worst single generator is remarkable.
+ */
+function safestPath(map, fromNum, toNum, avoid, danger, budget) {
+  // Dijkstra on (worst room so far, hops). The frontier is small enough — the whole world
+  // is a few hundred rooms — that a sorted insert beats a heap in both speed and reading.
+  const best = new Map([[fromNum, { worst: 0, hops: 0 }]]);
+  const queue = [{ at: fromNum, worst: 0, hops: 0, path: [] }];
+  let answer = null;
+  while (queue.length) {
+    queue.sort((a, b) => a.worst - b.worst || a.hops - b.hops);
+    const cur = queue.shift();
+    // Once a complete answer exists, anything whose bottleneck is already worse than it
+    // cannot improve on it — and neither can anything longer than the detour budget.
+    if (answer && (cur.worst > answer.worst ||
+        (cur.worst === answer.worst && cur.hops >= answer.hops))) continue;
+    if (budget != null && cur.hops > budget) continue;
+    const room = map.rooms[cur.at];
+    if (!room) continue;
+    for (const ex of [...exitsOf(room), ...inferredExits(map, cur.at), ...codeExits(cur.at)]) {
+      if (ex.to == null) continue;
+      const hop = { from: cur.at, fromName: room.name, to: ex.to,
+                    toName: map.rooms[ex.to]?.name || `room ${ex.to}`, ...ex };
+      const path = [...cur.path, hop];
+      if (ex.to === toNum) {
+        // THE ARRIVING HOP COUNTS AGAINST THE BUDGET TOO. Checking only `cur.hops` lets a
+        // route one hop over the limit through, because the last step is taken here rather
+        // than by the loop below — which made a seven-hop detour pass a budget of six.
+        if (budget != null && path.length > budget) continue;
+        // The destination's own danger is not counted: a character sent to a hunting room
+        // is meant to be in it, and counting it would make every route to a good farm look
+        // like a bad route.
+        if (!answer || cur.worst < answer.worst ||
+            (cur.worst === answer.worst && path.length < answer.hops))
+          answer = { worst: cur.worst, hops: path.length, path };
+        continue;
+      }
+      if (avoid?.has(ex.to)) continue;
+      const worst = Math.max(cur.worst, dangerOf(danger, ex.to));
+      const seen = best.get(ex.to);
+      if (seen && (seen.worst < worst || (seen.worst === worst && seen.hops <= path.length)))
+        continue;
+      best.set(ex.to, { worst, hops: path.length });
+      queue.push({ at: ex.to, worst, hops: path.length, path });
+    }
+  }
+  return answer
+    ? { found: true, hops: answer.path, worst_rating: answer.worst }
+    : { found: false, hops: [], reason: `no route from ${fromNum} to ${toNum} in the graph` };
+}
+
 // TRY THE SAFER WAY FIRST, THEN THE ONLY WAY.
 //
 // Two passes rather than edge weights, deliberately. A weighted search is the textbook
@@ -544,13 +656,40 @@ function bfsPath(map, fromNum, toNum, avoid) {
 // route only when a hazard-free one exists, and falls back to exactly the path it would
 // have returned before. So the worst case is today's behaviour, which is the property
 // worth having in the most load-bearing function in the repository.
-export function findPath(map, fromNum, toNum, { avoid = AVOID_IN_TRANSIT } = {}) {
+export function findPath(map, fromNum, toNum,
+                         { avoid = AVOID_IN_TRANSIT, danger = true } = {}) {
   if (fromNum === toNum) return { found: true, hops: [] };
   // Never avoid where we are or where we are going: a character standing IN a hazard has
   // to be able to leave it, and one sent to it has to be able to arrive.
   const skip = avoid && avoid.size
     ? new Set([...avoid].filter(r => r !== fromNum && r !== toNum))
     : null;
+
+  // THE ORDER HERE IS THE SAFETY ARGUMENT, and it is the same one the two-pass version
+  // made: every step down this list is strictly more permissive than the one above, and
+  // the last of them is exactly what this function returned before danger existed. So the
+  // worst case is unchanged behaviour, which is the property worth having in the most
+  // load-bearing function in the repository.
+  //
+  // The shortest route is computed first only to price the detour — a bottleneck search
+  // with no length bound will happily cross the world to shave one rating point, and the
+  // rooms it crosses to do it are rooms that can each choose a fight.
+  if (danger !== false) {
+    const table = danger instanceof Map ? danger : roomDanger();
+    if (table.size) {
+      const shortest = bfsPath(map, fromNum, toNum, skip?.size ? skip : null);
+      if (shortest.found) {
+        const budget = shortest.hops.length * DETOUR_FACTOR + DETOUR_SLACK;
+        const safest = safestPath(map, fromNum, toNum, skip, table, budget);
+        // Only worth reporting as a different route when it actually is one.
+        if (safest.found) return { ...safest,
+          shortest_hops: shortest.hops.length,
+          detoured: safest.hops.length > shortest.hops.length };
+        return shortest;
+      }
+    }
+  }
+
   if (skip?.size) {
     const safer = bfsPath(map, fromNum, toNum, skip);
     if (safer.found) return safer;
