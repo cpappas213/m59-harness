@@ -1797,6 +1797,11 @@ export class M59Client {
   }
 
   sendLogin() {
+    if (!this.user || !this.pass) {
+      this.log(`AP.GETLOGIN arrived before credentials were set — closing`);
+      try { this.sock?.destroy(); } catch { /* gone */ }
+      return;
+    }
     this.log(`sending login as "${this.user}"`);
     this.send(AP.LOGIN, Buffer.from([MAJOR_REV, MINOR_REV]), sysinfo(),
               pstr(this.user), pbuf(mdpass(this.pass)));

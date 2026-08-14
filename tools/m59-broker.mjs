@@ -85,6 +85,7 @@ import { renderDashboard } from './m59-dashboard.mjs';
 import { renderDeaths, renderTougher, deathReportJSON } from './m59-deaths-page.mjs';
 import { renderEconomy } from './m59-economy-page.mjs';
 import { renderSkills } from './m59-skills-page.mjs';
+import { renderPlayers } from './m59-players-page.mjs';
 import { renderStatsBoard } from './m59-stats-page.mjs';
 import { renderDumBoard, renderHarnessBoard } from './m59-observability-page.mjs';
 import { strategyStatsReport } from './m59-strategy-stats.mjs';
@@ -7324,6 +7325,9 @@ const TOOLS = [
         description: 'drop junk and weapons the server has refused as broken, default true. A ' +
                      'broken weapon is NOT renamed, so it otherwise outranks the working one for ever' },
       roam: { type: 'boolean', description: 'when the room is cleared, move to a neighbouring one instead of waiting for respawns. Off by default because it changes where the character is.' },
+      fight_rounds: { type: 'number',
+        description: 'how many rounds to fight a target before breaking off. Default 30. ' +
+          'Increase for characters without weapon skills who deal low damage per swing.' },
       bank_above: { type: ['number', 'null'],
         description: 'carry more than this many shillings and the character stops what it is doing ' +
           'and walks to Jasper or Tos, whichever is nearer, to deposit down to walking money. ' +
@@ -7619,6 +7623,8 @@ const TOOLS = [
       if (a.max_bots_per_safe_spot !== undefined)
         p.policy.maxBotsPerSafeSpot = a.max_bots_per_safe_spot == null
           ? null : Math.max(1, Math.floor(Number(a.max_bots_per_safe_spot) || 1));
+      if (a.fight_rounds !== undefined)
+        p.policy.fightRounds = Math.max(1, Math.floor(Number(a.fight_rounds) || 30));
       if (a.bank_above !== undefined)
         p.policy.bankAbove = a.bank_above == null ? null : Number(a.bank_above);
       if (a.walking_money !== undefined)
@@ -10031,7 +10037,8 @@ const TOOLS = [
       action: { type: 'string', enum: ['plan', 'verify', 'reroll'] },
       agent: { type: 'string', description: 'the session to re-roll, or the spare to verify on' },
       name: { type: 'string', description: 'name for the new character' },
-      stats: { type: 'string', description: 'preset: melee, caster, archer, balanced. Default melee.' },
+      stats: { description: 'preset name (melee, caster, archer, balanced) OR a custom object with keys might/intellect/stamina/agility/mysticism/aim, each 1..50, summing to at most 200. Default melee.' },
+      skills: { type: 'array', items: { type: 'string' }, description: 'skills to start with, e.g. ["dodge","slash","punch"]. Each costs 10 points from the 45-point ability budget.' },
       loadout: { type: 'string', description: 'spells: selfSufficient, healer, none. Default selfSufficient — ' +
         'create weapon needs no reagents so the character can never be unarmed, and create food needs ' +
         'elderberries and herbs, which is what it will be picking up anyway' },
@@ -10043,7 +10050,8 @@ const TOOLS = [
     }, required: ['action'] },
     run: async (a) => {
       const plan = planCharacter({
-        name: a.name, stats: a.stats || 'melee', loadout: a.loadout || 'selfSufficient' });
+        name: a.name, stats: a.stats || 'melee', loadout: a.loadout || 'selfSufficient',
+        skills: a.skills || [] });
       if (a.action === 'plan') return plan;
       if (!plan.ok) return { done: false, plan, note: 'the plan is invalid; nothing was sent' };
 
@@ -12537,6 +12545,15 @@ function serveDashboard(port) {
           res.end('/economy failed: ' + e.message);
         });
       return;
+    }
+    if (url.pathname === '/players') {
+      try {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        return res.end(renderPlayers());
+      } catch (e) {
+        res.writeHead(500, { 'content-type': 'text/plain' });
+        return res.end('/players failed: ' + e.message);
+      }
     }
     if (url.pathname !== '/' && !url.pathname.startsWith('/fleet')) {
       res.writeHead(404); return res.end('not found');

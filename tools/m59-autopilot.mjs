@@ -23,7 +23,7 @@
 import * as skills from './m59-skills.mjs';
 import { OF, affordances, dropSpec as dropSpecFor } from './m59-parse.mjs';
 import { isFood, foodValue } from './m59-items.mjs';
-import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe } from './m59-spawns.mjs';
+import { loadSpawns, huntingGrounds, roomThreats, goalYield, roomCap, karmaSafe, scorePrey } from './m59-spawns.mjs';
 import { findPath, roomsWithin } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
@@ -41,6 +41,8 @@ import { StorageCache, BOOKMAKERS_HALL_ROOM } from './m59-storage.mjs';
 import * as uptime from './m59-uptime.mjs';
 import * as party from './m59-party.mjs';
 import { mayShareSpot } from './m59-party.mjs';
+import { recordSightings, addTarget, recordTargetKill, targetsFor,
+         declareConflict, clearConflict, activeConflicts } from './m59-intel.mjs';
 // The pre-registered table the keeper consults at the three moments it has no opinion
 // about. A LOOKUP, never a request — see the note above checkAttackedByPlayer().
 import * as playbook from './m59-playbook.mjs';
@@ -786,6 +788,18 @@ export class Autopilot {
       // generate the prey — an assignment is a preference, not a way to make a
       // character stand in a shop for ever.
       assignedRoom: null,
+      // LEVEL-TRIGGERED ROUTING — applied the moment a character gains a point of max
+      // health and lands on the given level. Avoids a human having to notice and re-task.
+      //
+      // Each entry: { at_level: N, hunt: 'creature name', assigned_room: roomNum }
+      // `hunt` and `assigned_room` are both optional — omit either to leave it unchanged.
+      //
+      // The default route moves a new character from whatever they were doing before
+      // (typically fungus beasts or Raza-area prey) onto giant rats at the Tos gate the
+      // moment they hit level 25:
+      levelRoutes: [
+        { at_level: 25, hunt: 'giant rat', assigned_room: 586 },
+      ],
       // WHICH FARMING PATTERN THIS CHARACTER IS RUNNING. These exist to be compared
       // against each other — the ledger records the strategy with every sample, so
       // `history` can report health gained per hour by strategy rather than anyone
@@ -909,6 +923,12 @@ export class Autopilot {
       // The threshold is not really about the amount. It is about how much of the fleet's
       // total is riding on one character that can die in the next eight seconds.
       bankAbove: 500,
+      // HOW MANY ROUNDS TO FIGHT BEFORE BREAKING OFF.
+      //
+      // Default 12 is enough for a character with weapon skills, but a skill-less
+      // character doing 3-6 damage per swing against a mummy's ~125 HP needs 20-40
+      // rounds to land a kill. Increase this for characters without weapon skills.
+      fightRounds: 30,
       ...policy,
     };
     // What we believe is in the stomach. Nothing reports it, so it is modelled from
@@ -1355,6 +1375,10 @@ export class Autopilot {
       const eq = await skills.equipBest(this.s, { priority: this.weaponPriorityNow() }).catch(() => null);
       if (eq?.wielding) return true;
     }
+    // If the server's own use list already has something equipped, treat that as armed
+    // even when the rsc table can't resolve its name (e.g. missing resource table).
+    const using = skills.equippedNow(c);
+    if (using?.size) return true;
     return await this.makeWeapon('about to fight with nothing in hand').catch(() => false);
   }
 
@@ -1637,8 +1661,15 @@ export class Autopilot {
     const c = this.s.client;
     const eq = c?.equipment?.();
     if (!eq || eq.known === false) return true;
-    return (eq.equipped || []).some(o =>
-      skills.weaponScore(o.name ?? c.rsc?.get?.(o.nameRsc) ?? '') > 0);
+    return (eq.equipped || []).some(o => {
+      const name = o.name ?? c.rsc?.get?.(o.nameRsc) ?? '';
+      if (skills.weaponScore(name) > 0) return true;
+      // When the rsc table is absent the name is an unresolved "<rsc N>" placeholder.
+      // The server already confirmed the item is equipped — treat it as potentially a
+      // weapon rather than looping forever waiting for mana to conjure one.
+      if (/^<rsc \d+>$/.test(name)) return true;
+      return false;
+    });
   }
 
   // THE SAME QUESTION, FAILING THE OTHER WAY.
@@ -3686,6 +3717,22 @@ export class Autopilot {
         .filter(o => o.id !== c.selfId && (o.flags & OF.PLAYER))
         .map(o => c.rsc.get(o.nameRsc)).slice(0, 6),
     };
+
+    // Record non-fleet player sightings for intel tracking.
+    {
+      const myName = c.me?.name ?? this.s?.name ?? this.who();
+      const strangerObjs = [...c.room.objects.values()]
+        .filter(o => o.id !== c.selfId && (o.flags & OF.PLAYER));
+      if (strangerObjs.length) {
+        recordSightings(
+          myName,
+          strangerObjs.map(o => ({ id: o.id, name: c.rsc.get(o.nameRsc) })),
+          this.s.world?.room?.num ?? null,
+          null,  // intel derives fleet names from fleet-state.json
+        );
+      }
+    }
+
     this.recent5 = (this.recent5 || []);
     // WHEN THE RECORD LAST BREATHED. The watchdog spaces its own frames against this, so
     // an ordinary busy pass costs nothing extra and only a genuinely blind stretch does.
@@ -4102,6 +4149,16 @@ export class Autopilot {
                   : 'no playbook covers this, so the ordinary survival ladder applies — ' +
                     'which treats this exactly as it treats a giant rat',
     });
+    // Auto-add attacker to intel target list and declare a conflict.
+    // Fleet members are excluded — two keepers sharing a room fight the same monster
+    // and one registers as attacking the other. knownFleetNames() reads fleet-state.json.
+    if (facts.who && !knownFleetNames().has(facts.who)) {
+      addTarget(facts.who, {
+        auto_attack: true,
+        reason: `attacked ${this.s?.name ?? this.who()} in room ${facts.room}`,
+      });
+      declareConflict(this.s?.name ?? this.who(), facts.who, facts.room);
+    }
     if (!action) return null;
     return this.runPlaybook('attacked_by_player', action, facts);
   }
@@ -4214,6 +4271,196 @@ export class Autopilot {
    *
    * Attacked-by-player is NOT queued, because its whole value is being immediate.
    */
+
+  /**
+   * ENGAGE A PLAYER TARGET ON SIGHT.
+   *
+   * When an intel auto-attack target is present in the room and health is above the
+   * engage threshold, fight them. Returns true if we acted (caller should return
+   * immediately), false if not applicable.
+   *
+   * Gated on health for the same reason as the monster fight gate: a hurt character
+   * retreats rather than trading blows. A character assigned to another keeper does
+   * not engage (assigned_to check). A target whose object-id has changed since the
+   * sighting is found by name match — exactTargetId is preferred when available.
+   */
+  async engagePlayerTarget() {
+    const c = this.s.client;
+    if (!c) return false;
+    const v = c.vitals?.();
+    const hp = pct(v?.health);
+    const safe = this.safety();
+    if (hp !== null && hp < safe.engageAt) return false;  // too hurt — retreat first
+
+    const myName = c.me?.name ?? this.s?.name ?? this.who();
+    const tList = targetsFor(myName);
+    if (!tList.length) return false;
+
+    // Check if any target is visible in the current room
+    const roomObjs = c.room?.objects;
+    if (!roomObjs) return false;
+
+    for (const tEntry of tList) {
+      const tName = tEntry.name;
+      // Find them in the room by name
+      const found = [...roomObjs.values()].find(o =>
+        o.id !== c.selfId && (o.flags & OF.PLAYER) && (o.flags & OF.ATTACKABLE) &&
+        (c.rsc.get(o.nameRsc) || '') === tName);
+      if (!found) continue;
+
+      this.note('engaging player target', {
+        target: tName, id: found.id, room: this.s.world?.room?.num,
+        health: hp == null ? null : Math.round(hp * 100) + '%',
+        why: 'intel auto-attack target is in this room and we are healthy enough to engage',
+      });
+
+      const f = await skills.fight(this.s, {
+        target: tName,
+        exactTargetId: found.id,
+        includePlayers: true,
+        rounds: this.policy.fightRounds ?? 30,
+        disengageAt: safe.fleeAt,
+        loot: false,           // do not loot a player — they keep their inventory
+        holdPosition: !!this.hold,
+        reach: REACH,
+        weaponPriority: this.weaponPriorityNow(),
+      }).catch(e => ({ killed: false, died: false, note: e.message }));
+
+      // Announce the conflict so other fleet members can converge.
+      const roomNum = this.s.world?.room?.num ?? null;
+      declareConflict(myName, tName, roomNum);
+
+      if (f.killed) {
+        recordTargetKill(myName, tName);
+        clearConflict(tName);
+        this.note('killed player target', { target: tName });
+        this.progress('killed a player target');
+      } else if (f.died) {
+        clearConflict(tName);
+        this.noProgress('died fighting a player target');
+      } else {
+        this.note('broke off player target engagement', { target: tName, why: f.note });
+        this.noProgress('broke off from player target');
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * CONVERGE ON AN ACTIVE CONFLICT.
+   *
+   * If another fleet member has declared a conflict (is fighting a target player) and
+   * this character is eligible to help, travel to that room and engage.
+   *
+   * Eligibility:
+   *   - level (max health) > 30
+   *   - not committed to an errand in flight
+   *   - health above the engage threshold
+   *   - not already in the conflict room (engagePlayerTarget handles that)
+   *   - within conflict_response_hops of the conflict room (0 = unlimited)
+   *
+   * Returns true if we acted.
+   */
+  async respondToConflict() {
+    const c = this.s.client;
+    if (!c) return false;
+
+    const vit   = c.vitals?.();
+    const hp    = pct(vit?.health);
+    const level = vit?.health?.max ?? 0;
+    if (level <= 30) return false;                     // only level > 30 responds
+    if (hp !== null && hp < this.safety().engageAt) return false;  // too hurt
+
+    // Not if committed to something that must not be interrupted.
+    const comm = this.commitment();
+    if (comm && comm.takeable === false) return false;
+
+    const myRoom    = this.s.world?.room?.num ?? null;
+    const conflicts = activeConflicts();
+    if (Object.keys(conflicts).length === 0) return false;
+
+    // Pick the conflict this character is not already the reporter of, in the nearest room.
+    const myName    = c.me?.name ?? this.s?.name ?? this.who();
+    const maxHops   = this.policy.conflict_response_hops ?? 0;  // 0 = unlimited
+
+    // Sort by how recently updated so we prefer active fights over stale ones.
+    const candidates = Object.values(conflicts)
+      .filter(cf => cf.reporter !== myName && cf.room !== myRoom)
+      .sort((a, b) => b.updated_at - a.updated_at);
+
+    if (!candidates.length) return false;
+
+    for (const cf of candidates) {
+      // Hop limit check — skip if a limit is set and we can't measure distance.
+      if (maxHops > 0) {
+        const path = findPath(myRoom, cf.room, { maxHops });
+        if (!path || path.length > maxHops) continue;
+      }
+
+      this.note('converging on conflict', {
+        target: cf.target, conflict_room: cf.room, reporter: cf.reporter,
+        why: `${cf.reporter} is fighting ${cf.target} — travelling to assist`,
+        max_hops: maxHops || 'unlimited',
+      });
+      this.doing = 'converging';
+
+      const tResult = await this.travel(cf.room, {
+        maxHops: maxHops > 0 ? maxHops : 50,
+      }).catch(() => ({ arrived: false }));
+      const arrived = tResult?.arrived ?? false;
+
+      if (!arrived) {
+        this.note('could not reach conflict room', { room: cf.room, target: cf.target });
+        return false;
+      }
+
+      // Now in the room — engagePlayerTarget will fire on the next pass if the target is
+      // still here. Return true so the caller does not also start farming this pass.
+      this.progress('arrived at conflict room');
+      return true;
+    }
+    return false;
+  }
+
+  // LEVEL-TRIGGERED ROUTING — fires once per gain, immediately after the playbook sees it.
+  //
+  // A playbook can say `logoff` or `say` at this moment; this runs after it so the two
+  // are independent. The route only applies when the new level EXACTLY matches `at_level`
+  // — not ">= at_level", because the same route would then re-fire on every subsequent
+  // gain and reset a manually re-assigned room. One threshold, one trigger.
+  applyLevelRoute(facts) {
+    const routes = this.policy.levelRoutes;
+    if (!Array.isArray(routes) || !routes.length) return;
+    const level = facts?.to;
+    if (!Number.isFinite(level)) return;
+
+    const route = routes.find(r => r.at_level === level);
+    if (!route) return;
+
+    const changes = {};
+    if (route.hunt != null && route.hunt !== this.policy.hunt) {
+      changes.hunt = route.hunt;
+      this.policy.hunt = route.hunt;
+    }
+    if (route.assigned_room != null && route.assigned_room !== this.policy.assignedRoom) {
+      changes.assigned_room = route.assigned_room;
+      this.policy.assignedRoom = route.assigned_room;
+    }
+    if (!Object.keys(changes).length) return;
+
+    // A fresh start for the new hunting ground — old unreachable entries from the
+    // previous area do not apply to the new one.
+    this.unreachable.clear();
+
+    this.note('level-route applied', {
+      level,
+      was: { hunt: facts.hunting, assigned_room: null },
+      now: changes,
+      hint: 'policy.levelRoutes fired on this level gain — the keeper will relocate on the next pass',
+    });
+  }
+
   async consultPlaybook() {
     const pb = playbook.playbookFor(this.who());
 
@@ -4228,6 +4475,7 @@ export class Autopilot {
       const facts = this.pendingImprovement; this.pendingImprovement = null;
       const action = playbook.decide('improved', pb, facts);
       if (action) await this.runPlaybook('improved', action, facts);
+      this.applyLevelRoute(facts);
     }
     // A DELIBERATE LOGOFF IS NOT A DROP, and the keeper has to stop driving for the
     // window it asked for or it walks straight back into whoever it left.
@@ -6747,6 +6995,17 @@ export class Autopilot {
     //     before this existed.
     await this.consultPlaybook();
 
+    // 1b. PLAYER TARGET. If an intel auto-attack target is in the room and we are
+    //     healthy enough to engage, fight them now — before the survival ladder and
+    //     before normal farming. This is opt-in per target (auto_attack flag) and
+    //     gated on being above the engage threshold so a hurt character retreats first.
+    if (await this.engagePlayerTarget()) return;
+
+    // 1c. CONFLICT RESPONSE. If another fleet member has declared a conflict with a
+    //     target player, eligible characters (level > 30, healthy, uncommitted) travel
+    //     to that room to assist. engagePlayerTarget fires on arrival.
+    if (await this.respondToConflict()) return;
+
     // 2. In danger. "Something attackable is adjacent and we are hurt" is the only
     //    threat signal available — the protocol does not say who is targeting us.
     //
@@ -7577,6 +7836,67 @@ export class Autopilot {
       // the floor, so this cannot send anyone into combat empty.
       const plan = STRATEGIES[this.policy.strategy] || STRATEGIES.baseline;
       if (await this.provision(plan, v) === 'ate') return;
+
+      // AUTO-RETARGET WHEN PURPOSE + GOALS SAY THE CURRENT PREY PAYS NOTHING.
+      //
+      // yieldCheck() is surfaced on the board as "PAYS NOTHING" but the keeper never
+      // acted on it — the hint even said so. Now it does: when purpose and goals are
+      // both set, the current hunt is paying zero, and scorePrey finds a better one,
+      // policy.hunt is updated here. The room-relocation block below will then see
+      // the current room cannot generate the new prey and travel there on the same
+      // pass, exactly as if a human had run the `prey` tool.
+      //
+      // NEVER switches automatically without purpose+goals set. The check produces no
+      // action when purpose is null (the default), when it comes back null/undefined,
+      // when yieldCheck says paying:true, or when scorePrey finds no candidates. A
+      // character just out for money or items with no purpose set keeps doing what it
+      // was doing.
+      if (this.policy.purpose && this.policy.hunt) {
+        const yc = this.yieldCheck();
+        if (yc && yc.paying === false) {
+          const spawnsForRetarget = loadSpawns(SPAWN_FILE);
+          const maxHealth = this.s.client?.vitals?.()?.health?.max ?? 0;
+          const stamina   = this.s.client?.statsById?.get?.('stamina')?.value;
+          if (spawnsForRetarget && maxHealth) {
+            const result = scorePrey(
+              spawnsForRetarget,
+              { maxHealth, stamina: Number.isFinite(stamina) && stamina > 0 ? stamina : 0 },
+              {
+                purpose: this.policy.purpose,
+                goals:   this.policy.goals ?? [],
+                over:    typeof this.policy.maxThreatOver === 'number' ? this.policy.maxThreatOver : 6,
+                limit:   1,
+              }
+            );
+            const best = result.candidates?.[0];
+            if (best && best.creature !== this.policy.hunt) {
+              this.note('auto-retarget: prey pays nothing, switching', {
+                was:         this.policy.hunt,
+                now:         best.creature,
+                reason:      (yc.why ? [].concat(yc.why).join('; ') : 'yieldCheck: paying=false'),
+                best_room:   best.best_room,
+                room_name:   best.best_room_name,
+                purpose:     this.policy.purpose,
+              });
+              this.policy.hunt = best.creature;
+              // Clear any assignment that was specific to the old prey — the operator
+              // assigned us to farm X; if X is done, let scorePrey pick the next room
+              // rather than pinning us to a room that generates nothing we need.
+              if (this.policy.assignedRoom != null) {
+                this.note('auto-retarget: clearing assignedRoom that was for old prey', {
+                  cleared: this.policy.assignedRoom });
+                this.policy.assignedRoom = null;
+              }
+              this.unreachable.clear();   // fresh start for the new prey
+            } else if (!best) {
+              this.note('auto-retarget: yieldCheck says paying=false but scorePrey found no candidate', {
+                purpose: this.policy.purpose, max_health: maxHealth,
+                hint: 'nothing in the band can advance this character — check goals and band settings',
+              });
+            }
+          }
+        }
+      }
 
       // NEVER STAND IN A ROOM THAT CANNOT PRODUCE THE PREY.
       //
@@ -8471,6 +8791,7 @@ export class Autopilot {
       if (this.policy.partner) party.declareTarget(this.s.name, claimedSwing, engageName);
       const f = await skills.fight(s, { target: engageName,
                                         preferId: claimedSwing,
+                                        rounds: this.policy.fightRounds ?? 30,
                                         disengageAt: safe.fleeAt, loot: true,
                                         holdPosition: holding, reach: REACH,
                                         weaponPriority: this.weaponPriorityNow() });
@@ -8604,6 +8925,7 @@ export class Autopilot {
           creature: f.target, room: room?.name ?? null, room_num: room?.num ?? null,
           level: v.health?.max ?? null, rounds: f.rounds, looted, from_safe_spot: !!holding,
         });
+        if (f.target) recordTargetKill(this.s?.name ?? this.who(), f.target);
         // AND INTO THE LONG RECORD, because every in-process count of a kill is wiped
         // constantly. `tally.kills` and `killTimes` are both fields on this object, and
         // the supervisor restarts keepers about once a minute — so both really mean

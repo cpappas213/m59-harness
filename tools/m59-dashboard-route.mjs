@@ -7,7 +7,7 @@
 
 const EXACT = new Set([
   '/budget', '/deaths', '/deaths/report', '/dum', '/economy', '/harness',
-  '/skills', '/stats', '/tougher',
+  '/players', '/skills', '/stats', '/tougher',
 ]);
 
 export function isDashboardOnlyPath(pathname) {
