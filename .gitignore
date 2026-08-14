@@ -197,3 +197,11 @@ __pycache__/
 # to be read, and the passwords in it are placeholders that match no account anywhere.
 /scenarios/*.json
 !/scenarios/*.example.json
+
+# THIS CHECKOUT'S OPINIONS, not this repository's. Vigor floors, rest and flee
+# thresholds, carry limits — numbers that are a bet about one roster on one server on
+# one afternoon, and that become advice to a stranger the moment they are committed.
+# The committed defaults in m59-supervise.mjs stay as they are and remain what a fresh
+# clone runs; this file is how a machine says something different. Absent means the
+# committed behaviour, unchanged. See tools/m59-localpolicy.mjs.
+/substrate/policy.local.json

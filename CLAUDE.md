@@ -1451,6 +1451,70 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   at 0 bytes for ever. This looks exactly like a hook not firing. The container
   turns it on; a native build may not have.
 
+## A NUMBER THAT IS THIS CHECKOUT'S OPINION DOES NOT BELONG IN GIT
+
+`fight_above_vigor: 180` was two different claims wearing one coat, and they have
+opposite homes.
+
+One is **mechanics**: resting stops awarding vigor at 80 of 200 (`RestTimer`, and
+`REST_VIGOR_CAP` here), so everything above 80 has to be EATEN, and `create food` costs 2
+elderberry **and** 2 herbs. That is not an opinion, it is what the game does, and it
+belongs in the repository with its citation.
+
+The other is a **bet**: that this fleet's apothecary run is working well enough to keep
+twenty-one characters fed past the cap. That is true on a good afternoon and false on a
+bad one — measured 2026-08-14, herbs were **zero on all 21 characters** with 10
+elderberry between them, so not one of them could cast it — and it was never true for
+anybody else's roster at all. Committed, it ships as advice to a stranger whose fleet it
+will get killed, and the history fills with an argument about a number that was only ever
+local.
+
+So the bet moves out:
+
+```bash
+node tools/m59-localpolicy.mjs             # what this checkout overrides, and what it does not
+node tools/m59-localpolicy.mjs --explain   # the overridable surface, and the mechanics behind each key
+node tools/m59-localpolicy.mjs --example   # a starter file to copy
+```
+
+`substrate/policy.local.json` is gitignored and holds this machine's answer, per block —
+`valley_orders` and `lowland_orders` are the two `m59-supervise.mjs` deploys with. The
+committed defaults in that file are untouched and remain **exactly what a fresh clone
+runs**. `meridian59-dum-bot` has the same split already and now uses it the same way: the
+committed doctrine keeps 180 as its documented example, `doctrines/local/` carries what
+prod actually runs, and `loadDoctrine`'s provenance names the local file so you can see
+which one won.
+
+Four properties, each of which is the cheap mistake:
+
+- **Silence means the behaviour that was already there, never an empty policy.** An
+  absent file, an empty one, a block this build has no name for — all three return the
+  committed orders object unchanged. Returning `{}` would strip every flee threshold off
+  a live fleet while looking like doing nothing, which is the same failure the loadout
+  overlay is built to avoid.
+- **A file that will not parse is not an empty file.** It keeps the committed defaults
+  *and says so*, because the operator who just edited it is the last person who would
+  suspect that their broken JSON silently reverted the fleet.
+- **An unusable value keeps the committed one rather than unsetting it.** `flee_below: 35`
+  is somebody typing a percentage; it must not become a threshold of 3500% and it must not
+  quietly remove the floor. Falling back to the default is the safe direction.
+- **An unrecognised key is reported, never applied and never dropped.** A setting that
+  silently does nothing is how `purpose` stayed out of a schema for a year while every
+  keeper in the fleet ran with an audit switched off that everyone believed was on.
+
+And the **mechanics are not overridable**. `VIGOR_MAX`, `REST_VIGOR_CAP` and
+`MIN_FIGHT_VIGOR` are exported for citation and a local file naming one is refused —
+but a floor **above** the cap is *allowed* and **warned about**, naming the recipe,
+because a fleet holding out for a vigor no amount of resting can deliver looks on the
+board exactly like a fleet that is working. That warning is the whole reason the module
+exists: it is the sentence that would have been printed on the round the fleet sat at
+exactly 80 vigor with an empty larder, reading as twenty-one healthy characters.
+
+`MIN_FIGHT_VIGOR` (100) sits **above** `REST_VIGOR_CAP` (80), so the two are not the ends
+of a quiet middle band — there is no setting that clears both. Written as an either/or,
+every value warned about something, which reads the same as nothing. They are independent
+remarks and a value may collect both.
+
 ## Working in this repository
 
 - **A CLAIM THAT CONTRADICTS WHAT IS ALREADY WRITTEN DOWN NEEDS A REPRODUCTION BEFORE
@@ -1504,6 +1568,12 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-chat-test.mjs` (128) and
   `node tools/m59-rest-test.mjs` (38) and
   `node tools/m59-ledger-test.mjs` (25) and
+  `node tools/m59-localpolicy-test.mjs` (71 — **the contract test for the overlay that
+  separates this checkout's opinions from this repository's**: that an absent, empty or
+  unparseable local file all mean the committed behaviour rather than an empty policy,
+  that an unusable value keeps the committed one instead of unsetting it, that an
+  unrecognised key is reported rather than dropped, and that no local file can move a
+  mechanic or throw hard enough to stop a supervisor round) and
   `node tools/m59-escape-test.mjs` (70) and
   `node tools/m59-combat-test.mjs` (383) and
   `node tools/m59-playbook-test.mjs` (37 — the three moments, the closed verb set, and

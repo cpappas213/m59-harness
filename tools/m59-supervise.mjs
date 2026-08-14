@@ -27,6 +27,7 @@
 // also what lets this repository be public.
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { localise } from './m59-localpolicy.mjs';
 
 const arg = (n, d = null) => {
   const i = process.argv.indexOf('--' + n);
@@ -271,10 +272,21 @@ const LOWLANDS = [
 
 // The orders a graduated pair runs. Everything here is a deliberate departure from the
 // low-level loop, and each one is load-bearing:
+//
+// THESE ARE A STARTING POINT, NOT THIS FLEET'S ANSWER. Every key below can be overridden
+// per checkout in `substrate/policy.local.json` under the block `valley_orders`, which is
+// gitignored — see tools/m59-localpolicy.mjs. Tune there, not here: a number that is
+// right for one roster on one server is not advice, and editing this file makes it advice
+// to everybody who clones. What stays committed is what a fresh clone should run and the
+// MECHANICS behind each number, which are not opinions.
 const VALLEY_ORDERS = {
   mode: 'farm',
   strategy: 'wellfed',          // vigor IS the healing rate, and healing is the tactic
-  fight_above_vigor: 180,       // set out near the 200 ceiling, not at the 140 floor
+  // Set out near the 200 ceiling rather than at the 140 floor. Reachable only by EATING —
+  // resting stops awarding vigor at 80 of 200 — so this number is a bet on the food chain
+  // rather than on courage, and a fleet with no reagents cannot honour it. That is why it
+  // belongs in a local file: the bet is about one fleet's apothecary, not about the game.
+  fight_above_vigor: 180,
   rest_below: 0.75,             // break off early; there is a partner to carry it
   flee_below: 0.35,
   max_carry: 14,   // the pack holds about 14 STACKS; 40 is unreachable, see m59-autopilot sellInTown
@@ -406,6 +418,7 @@ export function assignRooms(pairs, rooms = CAVE) {
 // the food chain a graduated pair has; a slightly earlier flee, because 25 max health
 // gives no room to be wrong; and use_safe_spots on, because the wall is worth more to
 // something this fragile than to anything else in the fleet.
+// Overridable per checkout under the block `lowland_orders`; see VALLEY_ORDERS above.
 const LOWLAND_ORDERS = {
   mode: 'farm',
   strategy: 'wellfed',
@@ -418,9 +431,43 @@ const LOWLAND_ORDERS = {
   hold_resume_above: 0.9,
 };
 
+// WHICH BLOCK OF substrate/policy.local.json EACH SET OF COMMITTED ORDERS ANSWERS TO.
+//
+// A WeakMap rather than a field on the object, because these blocks are SPREAD into the
+// autopilot call — a `__block` key would travel with them and arrive at the broker as an
+// unrecognised argument, which is exactly the class of silent junk this file spends its
+// comments warning about.
+const POLICY_BLOCK = new WeakMap([
+  [VALLEY_ORDERS, 'valley_orders'],
+  [LOWLAND_ORDERS, 'lowland_orders'],
+]);
+
+// Say a refusal ONCE, not sixty times an hour. This loop prints every round, and an
+// operator who has learned to skim a repeated line is an operator who will skim the one
+// that matters. Keyed on the message, so a file that is edited and still wrong says so
+// again.
+const said = new Set();
+const sayOnce = (line) => { if (!said.has(line)) { said.add(line); console.log(line); } };
+
+// Let this checkout's own numbers win over the committed ones. Committed defaults are
+// what a fresh clone runs; substrate/policy.local.json is what THIS fleet believes, and
+// it is gitignored so the belief never ships as advice. See tools/m59-localpolicy.mjs.
+function localOrders(base) {
+  const block = POLICY_BLOCK.get(base);
+  if (!block) return base;                       // an orders block nobody may override
+  const r = localise(block, base);
+  for (const x of r.refused)
+    sayOnce(`  local policy [${block}] REFUSED ${x.key}: ${x.why}`);
+  for (const w of r.warnings)
+    sayOnce(`  local policy [${block}] ${w.key}=${JSON.stringify(w.value)} — ${w.why}`);
+  for (const a of r.applied.filter((x) => !x.same))
+    sayOnce(`  local policy [${block}] ${a.key}: ${JSON.stringify(a.from)} -> ${JSON.stringify(a.to)}`);
+  return r.orders;
+}
+
 async function orders(agent, room, hunt, partner, base = VALLEY_ORDERS) {
   return call('autopilot', {
-    agent, action: 'start', ...base,
+    agent, action: 'start', ...localOrders(base),
     hunt, assigned_room: room, partner,
   });
 }
