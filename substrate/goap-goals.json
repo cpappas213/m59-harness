@@ -1,38 +1,15 @@
 {
+  "_comment": "Per-character GOAP goals. shape: { kind: 'advance'|'equip', target: creature_or_item_name, priority: positive_int }. The planner reads this; the broker never sees it. Backwards-compatible: legacy { condition, then } entries are tolerated but ignored.",
   "Gountrug": [
-    {
-      "condition": "level >= 30",
-      "then": { "hunt": "zombie", "room": 70, "mode": "farm" }
-    }
+    { "kind": "advance", "target": "zombie",     "priority": 10 }
   ],
   "Kage": [
-    {
-      "condition": "reagents.elderberry < 4 || reagents.herbs < 4",
-      "then": { "resupply": true }
-    },
-    {
-      "condition": "level >= 30",
-      "then": { "hunt": "zombie", "room": 70, "mode": "farm" }
-    }
+    { "kind": "advance", "target": "zombie",     "priority": 10 }
   ],
   "JayB": [
-    {
-      "condition": "level <= 25 && room >= 1006 && room <= 1018",
-      "then": { "hunt": "giant rat", "room": 586, "mode": "farm" }
-    },
-    {
-      "condition": "level >= 30",
-      "then": { "hunt": "zombie", "room": 70, "mode": "farm" }
-    }
+    { "kind": "advance", "target": "giant rat", "priority": 5  }
   ],
   "Lee": [
-    {
-      "condition": "level <= 25 && room >= 1006 && room <= 1018",
-      "then": { "hunt": "giant rat", "room": 586, "mode": "farm" }
-    },
-    {
-      "condition": "level >= 30",
-      "then": { "hunt": "zombie", "room": 70, "mode": "farm" }
-    }
+    { "kind": "advance", "target": "giant rat", "priority": 5  }
   ]
 }
