@@ -26,7 +26,8 @@ import {
   parseDeathBroadcast, deathBroadcastFor,
 } from './m59-skills.mjs';
 import { Autopilot, bearingIn, DEBUG_STATES, belowRoomRetreatHealth,
-         rankQuarries, claimQuarry, releaseQuarry } from './m59-autopilot.mjs';
+         rankQuarries, claimQuarry, releaseQuarry,
+         shouldWaitForProvision } from './m59-autopilot.mjs';
 import { isFood } from './m59-items.mjs';
 import { outages, outageAround, recoverCrash, readLedger, ACTIVE_FILE } from './m59-uptime.mjs';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -45,6 +46,37 @@ const ok = (what, cond, extra = '') => {
   if (cond) { pass++; console.log(`  ok   ${what}`); }
   else { fail++; console.log(`  FAIL ${what}${extra ? ` — ${extra}` : ''}`); }
 };
+
+console.log('\nprovisioning without long post-floor stalls');
+{
+  ok('keeps waiting while still below the configured fighting floor',
+     shouldWaitForProvision({ vigor: 90, floor: 100, wait: 127, hurt: false }));
+  ok('sets out above the floor instead of waiting minutes for the ceiling',
+     !shouldWaitForProvision({ vigor: 131, floor: 100, wait: 127, hurt: false }));
+  ok('waits above the floor when the next top-up is close',
+     shouldWaitForProvision({ vigor: 131, floor: 100, wait: 45, hurt: false }));
+  ok('waits above the floor when digestion time also heals damage',
+     shouldWaitForProvision({ vigor: 131, floor: 100, wait: 127, hurt: true }));
+}
+
+console.log('\nimpossible self-arm recovery');
+{
+  const spells = names => {
+    const resources = new Map(names.map((name, index) => [index + 1, name]));
+    const keeper = Object.create(Autopilot.prototype);
+    keeper.s = {
+      client: {
+        spells: names.map((_, index) => ({ nameRsc: index + 1 })),
+        rsc: { get: id => resources.get(id) },
+      },
+    };
+    return keeper;
+  };
+  ok('a character that knows create weapon can use the mana recovery path',
+     spells(['Blink', 'Create Weapon']).knowsCreateWeapon() === true);
+  ok('other spells do not justify waiting forever for create weapon',
+     spells(['Blink']).knowsCreateWeapon() === false);
+}
 
 // A client whose inventory is a list of [id, name], and whose `use` replies the way the
 // server does: either a refusal text from the script, or silence and the id joining the
