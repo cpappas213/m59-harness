@@ -702,6 +702,12 @@ export function effectiveFightVigor(policy = {}, plan = {}) {
     : DEFAULT_FIGHT_VIGOR;
 }
 
+export function effectiveTravelHoldVigor(policy = {}) {
+  const value = Number(policy.travelHoldVigor ?? DEFAULT_FIGHT_VIGOR);
+  return Number.isFinite(value)
+    ? Math.max(0, Math.min(skills.VIGOR_MAX, value))
+    : DEFAULT_FIGHT_VIGOR;
+}
 export class Autopilot {
   constructor(session, { mode = 'survive', policy = {} } = {}) {
     this.s = session;
@@ -3874,7 +3880,7 @@ export class Autopilot {
     // a rate set by vigor (player.kod:5611): at 80 it is ~6s a point and a useful top-up
     // costs longer than the whole journey, so holding at the resting cap buys almost
     // nothing and pays full price in exposure.
-    const minVigor = this.policy.travelHoldVigor ?? 100;
+    const minVigor = effectiveTravelHoldVigor(this.policy);
     if (vig != null && vig < minVigor)
       return { candidate: false, why: `vigor ${vig} — too tired for the points to come`, frac, vigor: vig };
     // Something already swinging at us is a fight or a flight, and the ordinary pass
