@@ -61,6 +61,7 @@ import { factionAssignment, factionJoinConfirmed, factionJoinSpec,
          loyaltyOfferAllowed, loyaltyRenewalConfirmed, loyaltyFailed, loyaltyDebt, loyaltyPurchase,
          LOYALTY_TRIGGER, withinQuestReach, QUEST_NPC_REACH_SQUARES } from './m59-factions.mjs';
 import { FactionStatusCache } from './m59-faction-status.mjs';
+import { readAnchor, phaseAt } from './m59-dayclock.mjs';
 import { StorageCache, GUILD_CHEST_SLOTS, chestFullness } from './m59-storage.mjs';
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
@@ -105,6 +106,23 @@ import { COMMANDER_SCHEMA, COMMERCE_SCHEMA, COMMANDER_FACULTIES,
 const HOST = process.env.M59_HOST || '127.0.0.1';
 const PORT = Number(process.env.M59_PORT || 5959);
 const factionStatuses = new FactionStatusCache();
+
+// The graveyard window, as arithmetic rather than observation. `readAnchor` returns null
+// until somebody has watched a night begin and written it down — and null stays null here,
+// because an invented anchor would report a window that is not open and send a shift to
+// stand in an empty field.
+const graveyardPhase = () => {
+  try {
+    const anchor = readAnchor();
+    // THE FIELD IS `night_starts_at`, AND READING IT AS `at` FAILS SILENTLY — the helper
+    // returns null, the board reports no clock, and every night-gated rule stands down for
+    // ever while looking perfectly healthy. Written down because the shape is not obvious
+    // from the function name and the failure has no symptom.
+    const at = Date.parse(anchor?.night_starts_at ?? '');
+    if (!Number.isFinite(at)) return null;
+    return { ...phaseAt(at), anchor_at: at, anchor_by: anchor.by ?? null };
+  } catch { return null; }
+};
 // Vault contents, guild chest contents and the guild's rent position. None of the three is
 // pushed by the server, so this file is their only record between visits.
 const storage = new StorageCache();
@@ -11423,6 +11441,18 @@ const TOOLS = [
         stalled_count: stuck.length,
         needs_attention: stuck.map(r => r.agent),
         fleet: rows,
+        // WHAT TIME IT IS IN THE WORLD, ON THE FREE CALL.
+        //
+        // The undead generators are gated on `SYS.GetHour` and open for 35 minutes in
+        // every 120, so anything that wants to work them has to know the phase — and it
+        // is pure arithmetic on an anchor, with no packet behind it and nothing to ask
+        // the server. Published here rather than as its own tool because every consumer
+        // already reads the board, and a clock fetched separately is a clock that can
+        // disagree with the rows it was fetched beside.
+        //
+        // Null when no anchor has been declared. That is "nobody has watched a window
+        // begin", which is a different fact from "it is daytime" and must not read as one.
+        world_clock: graveyardPhase(),
         note: rows.length ? undefined : 'no sessions — join some characters first',
       };
     },
