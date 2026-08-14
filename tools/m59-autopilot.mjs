@@ -2485,7 +2485,17 @@ export class Autopilot {
     // A null reading is "no such bar", not "empty" — blocking on one would be the
     // retirement this is careful about everywhere else.
     const whole = (hp ?? 0) >= 0.95 && (mp ?? 1) >= 0.95 && (vig ?? 1) >= REST_VIGOR_CAP;
-    if (armed && whole) {
+    // AFTER A BROKER RESTART the connection is still settling and vitals read as null
+    // for several seconds. A character parked in the WRONG room (assignedRoom differs
+    // from current) cannot afford to wait it out — that is exactly the situation the
+    // broker restart is most likely to catch (characters woke up somewhere safe and
+    // were never moved). Treat unknown vitals as whole when relocation is required;
+    // the keeper still wants a real rest when there is no assignment to honour.
+    const vitalsUnknown = hp == null || mp == null || vig == null;
+    const mustRelocate = this.policy.assignedRoom != null &&
+      this.s.world?.room?.num != null &&
+      this.policy.assignedRoom !== this.s.world?.room?.num;
+    if (armed && (whole || (vitalsUnknown && mustRelocate))) {
       this.sanctuaryHoldSince = null;
       this.sanctuaryHoldNoted = false;
       return true;
