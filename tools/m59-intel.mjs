@@ -1,19 +1,19 @@
 #!/usr/bin/env node
-// m59-intel.mjs — player sighting tracker, target manager, and conflict coordinator.
+// m59-intel.mjs -- player sighting tracker, target manager, and conflict coordinator.
 //
 // Storage layout:
-//   substrate/players-seen.json          — index: one entry per player, last-seen summary
-//   substrate/player-history/<name>.jsonl — full append-only sighting trail per player
-//   substrate/targets.json               — auto-attack target list
-//   substrate/active-conflicts.json      — live fleet conflicts (TTL-based)
+//   substrate/players-seen.json          -- index: one entry per player, last-seen summary
+//   substrate/player-history/<name>.jsonl -- full append-only sighting trail per player
+//   substrate/targets.json               -- auto-attack target list
+//   substrate/active-conflicts.json      -- live fleet conflicts (TTL-based)
 //
 // CLI:
-//   node tools/m59-intel.mjs                     — sightings summary
-//   node tools/m59-intel.mjs --player <name>     — full history for one player
-//   node tools/m59-intel.mjs --targets           — target list
+//   node tools/m59-intel.mjs                     -- sightings summary
+//   node tools/m59-intel.mjs --player <name>     -- full history for one player
+//   node tools/m59-intel.mjs --targets           -- target list
 //   node tools/m59-intel.mjs --add <name> [--auto-attack]
 //   node tools/m59-intel.mjs --remove <name>
-//   node tools/m59-intel.mjs --heatmap <name>    — room frequency for one player
+//   node tools/m59-intel.mjs --heatmap <name>    -- room frequency for one player
 
 import { readFileSync, writeFileSync, existsSync, statSync,
          mkdirSync, appendFileSync, readdirSync } from 'node:fs';
@@ -336,6 +336,110 @@ export function playerStats(name) {
     confirmed_kills:  index?.confirmed_kills ?? 0,
     top_rooms:        heat.slice(0, 5),
     most_seen_by:     Object.entries(observers).sort((a,b) => b[1]-a[1])[0]?.[0] ?? null,
+  };
+}
+
+// Static room-to-zone grouping. Curated from the known world layout.
+// Rooms not in the map fall through to "Other".
+export const ZONE_MAP = {
+  // Ileria (barrows/clearing)
+  534: 'Ileria', 535: 'Ileria', 536: 'Ileria', 544: 'Ileria',
+  545: 'Ileria', 556: 'Ileria', 557: 'Ileria',
+  // Raza
+  1016: 'Raza', 1017: 'Raza', 1018: 'Raza',
+  // Tos-area
+  586: 'Tos', 596: 'Tos', 597: 'Tos',
+  // Graveyard
+  623: 'Graveyard', 624: 'Graveyard', 625: 'Graveyard', 626: 'Graveyard',
+  // Marion / main areas
+  301: 'Marion', 302: 'Marion', 303: 'Marion', 304: 'Marion',
+  // Haven
+  1: 'Haven', 2: 'Haven', 3: 'Haven',
+  // Underworld
+  900: 'Underworld', 901: 'Underworld', 902: 'Underworld',
+};
+
+// Hourly sighting distribution from per-player history. UTC hours 0..23.
+// Returns a 24-element array of counts. Empty histories yield all zeros.
+export function timeOfDayPattern(name) {
+  const hist = readHistory(name).filter(r => r.at != null);
+  const hours = new Array(24).fill(0);
+  for (const r of hist) {
+    const d = new Date(r.at);
+    if (Number.isNaN(d.getTime())) continue;
+    hours[d.getUTCHours()] += 1;
+  }
+  return hours;
+}
+
+// Per-zone frequency, derived from history and a room -> zone map.
+// Rooms not present in zoneMap fall into "Other".
+// Returns: { zone_name: count, ... } sorted by frequency desc.
+export function zonePattern(name, zoneMap = ZONE_MAP) {
+  const hist  = readHistory(name).filter(r => r.room != null);
+  const freq  = {};
+  for (const r of hist) {
+    const zone = zoneMap[r.room] ?? 'Other';
+    freq[zone] = (freq[zone] ?? 0) + 1;
+  }
+  return Object.fromEntries(
+    Object.entries(freq).sort((a, b) => b[1] - a[1])
+  );
+}
+
+// Detect whether `name` may be following a fleet member. Compares their histories
+// and counts cases where this player entered the same room within 60s of the fleet
+// member doing the same. Confidence = matches / total_fleet_moves_in_window.
+// fleetHistory may be:
+//   - an array of history records (preferred), or
+//   - a name whose history file we will read ourselves.
+// Returns: { following, confidence, matches, fleet_moves, evidence: [...] }
+// evidence is capped at 10 entries.
+export function followingDetection(name, fleetHistory) {
+  let fleet;
+  if (Array.isArray(fleetHistory)) {
+    fleet = fleetHistory;
+  } else if (typeof fleetHistory === 'string') {
+    fleet = readHistory(fleetHistory);
+  } else {
+    return { following: false, confidence: 0, matches: 0, fleet_moves: 0, evidence: [] };
+  }
+
+  const player = readHistory(name);
+  if (!player.length || !fleet.length) {
+    return { following: false, confidence: 0, matches: 0, fleet_moves: 0, evidence: [] };
+  }
+
+  // Index player room changes by room for quick lookup.
+  const playerByRoom = {};
+  for (const r of player) {
+    if (r.room == null || r.at == null) continue;
+    (playerByRoom[r.room] ??= []).push(r.at);
+  }
+  for (const room of Object.keys(playerByRoom)) playerByRoom[room].sort((a, b) => a - b);
+
+  let matches = 0;
+  const evidence = [];
+  for (const f of fleet) {
+    if (f.room == null || f.at == null) continue;
+    const candidates = playerByRoom[f.room];
+    if (!candidates) continue;
+    // Find a player entry within +/- 60s of the fleet entry.
+    const hit = candidates.find(t => Math.abs(t - f.at) <= 60_000);
+    if (hit != null) {
+      matches += 1;
+      if (evidence.length < 10) evidence.push({ at: hit, room: f.room, fleet_at: f.at });
+    }
+  }
+
+  const fleet_moves  = fleet.filter(f => f.room != null && f.at != null).length;
+  const confidence   = fleet_moves > 0 ? matches / fleet_moves : 0;
+  return {
+    following:   confidence > 0.3 && matches >= 3,
+    confidence:  Number(confidence.toFixed(3)),
+    matches,
+    fleet_moves,
+    evidence,
   };
 }
 
