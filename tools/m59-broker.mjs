@@ -40,7 +40,7 @@ import { fileURLToPath } from 'node:url';
 import { M59Client, KOD_FINENESS, BPNAME } from './m59-client.mjs';
 import { loadResources } from './m59-rsc.mjs';
 import { describeObject, affordances, OF, prepareActTarget } from './m59-parse.mjs';
-import { World, sharedWorldMap, spreadEdges } from './m59-world.mjs';
+import { World, sharedWorldMap, spreadEdges, boundedSilentGo } from './m59-world.mjs';
 import { loadMap, resolveRoom, forgetInferredExit, findPath } from './m59-map.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -3006,30 +3006,38 @@ class Session {
                             exit.stand_on.row * KOD_FINENESS + half).catch(() => null);
         leaned = true;
       }
-      const before = c.evSeq;
       await this.standBeforeGo();
-      await this.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
       // Wait for the ROOM CHANGE specifically. A door announces itself first —
       // "You open the door and walk through." arrives as a message a beat before
       // BP_PLAYER reports the new room — and waitFor returns on the first match of
       // ANY listed kind. Listening for 'message' too therefore returned the
       // announcement of success and called it a failure, every single time.
-      const tGo = Date.now();
-      const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 });
-      Pacer.note('go', 'blocked', Date.now() - tGo);
-      const entered = ev.events.find(e => e.kind === 'room-entered');
-      const messages = c.eventsSince(before).filter(e => e.text).map(e => e.text);
+      const go = await boundedSilentGo({
+        sequence: () => c.evSeq,
+        eventsSince: since => c.eventsSince(since),
+        cancelled: () => this.movementWasCancelled(movementGeneration, controlToken),
+        send: () => this.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS),
+        waitForEntry: async since => {
+          const started = Date.now();
+          const observed = await c.waitFor({ since, kinds: ['room-entered'], timeoutMs: 4000 });
+          Pacer.note('go', 'blocked', Date.now() - started);
+          return observed.events.find(event => event.kind === 'room-entered') ?? null;
+        },
+      });
+      if (go.cancelled)
+        return this.cancelledMovement({ go_attempts: go.attempts });
+      const entered = go.entered, messages = go.messages, goAttempts = go.attempts;
       return { left: !!entered, arrived_in: entered ? entered.roomName : null,
+               go_attempts: goAttempts,
                ...(leaned && entered
                    ? { note: 'the exit square is not walkable in this room\'s grid, so this ' +
                              'leaned into the doorway from the square beside it' } : {}),
                ...(entered ? {} : {
                  reason: messages.length ? messages.join('; ')
                        : leaned ? `leaned into (${exit.stand_on.col},${exit.stand_on.row}) from beside ` +
-                                  'it and the server did not open a door there'
-                       : 'sent go and the server answered nothing at all — no room change ' +
-                         'and no refusal, which is not a door problem but a lost packet ' +
-                         'or a reply that did not arrive inside 4s' }),
+                                  `it and the server did not open a door there after ${goAttempts} attempts`
+                       : `sent go ${goAttempts} time${goAttempts === 1 ? '' : 's'} and the server ` +
+                         'answered nothing at all — no room change and no refusal' }),
                messages };
     }
 
