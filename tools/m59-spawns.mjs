@@ -415,12 +415,26 @@ export const DEAD_ROOMS = new Map([
          'PlaceStatues will not reset the room while any statue remains'],
 ]);
 
-// Creature orders are identities, not free-text searches.  Substring matching made
-// `ant` match giANT rat, so an ant keeper ranked rat rooms ahead of its assignment and
-// could alternate between them forever.  Normalize punctuation and spacing so a
-// catalogue name ("giant rat") and its class ("GiantRat") remain interchangeable,
-// but require the whole identity to match.  Broader names need an explicit alias at
-// the order boundary rather than silently changing which creature the keeper fights.
+// AN ORDER IS AN IDENTITY IF ANYTHING ANSWERS TO IT EXACTLY, AND A FAMILY ONLY WHEN
+// NOTHING DOES. This is the one rule, and it has to be the one rule everywhere.
+//
+// Substring matching made `ant` match giANT rat, so an ant keeper ranked rat rooms
+// ahead of its assignment and alternated between them forever. Strict equality alone is
+// not the fix either: all three faction troops are `... soldier` — `rebel soldier`,
+// `soldier of the Duke's army`, `soldier of the Princess' army` — nothing in the
+// catalogue is called just "soldier", and one substring is what catches them as a
+// family. Both readings are needed and they must never be chosen independently.
+//
+// So: normalize punctuation and case (a catalogue name "giant rat" and its class
+// "GiantRat" are the same identity), look for an exact answer, and fall back to
+// substring ONLY when the catalogue has none. `ant` resolves exactly, so `giant rat` can
+// never satisfy it; `soldier` resolves to nothing, so it stays the family it always was.
+//
+// This used to be spelt four different ways — huntingGrounds, the keeper's in-room prey
+// check, capBlockers, the bystander test and findCreature each had their own — which is
+// this repository's oldest failure mode: a quantity with two homes ends up with two
+// answers. `huntedCreatures` answers it for the CATALOGUE and `huntMatcher` for a LIVE
+// display name we hold no row for; both go through the same resolution.
 const creatureIdentity = (value) => String(value ?? '').toLowerCase()
   .replace(/[^a-z0-9]+/g, '');
 
@@ -431,10 +445,45 @@ export function creatureMatchesHunt(creature, want) {
     .some(value => creatureIdentity(value) === needle);
 }
 
+// Which catalogue rows an order names. Exact answers win outright; the substring family
+// is reached only when there are none.
+export function huntedCreatures(spawns, want) {
+  if (!creatureIdentity(want) || !spawns?.creatures) return [];
+  const all = Object.values(spawns.creatures);
+  const exact = all.filter(c => creatureMatchesHunt(c, want));
+  if (exact.length) return exact;
+  const loose = String(want).toLowerCase();
+  return all.filter(c => String(c.name).toLowerCase().includes(loose));
+}
+
+// The same question asked of a name off the wire. A live room object carries a display
+// name and nothing else, so this closes over the catalogue resolution once and then
+// answers per object — it is called for every monster in the room on every pass.
+//
+// The exact branch accepts every identity the resolved rows carry, not just the word
+// that was typed: an order given as a CLASS (`RebelTroop`) has to match the display name
+// the server sends (`rebel soldier`), and the two are the same creature.
+//
+// With no catalogue it degrades to substring, which is what the order meant before any
+// of this existed — a missing spawn table must not silently stop a keeper recognising
+// its own prey.
+export function huntMatcher(spawns, want) {
+  const needle = creatureIdentity(want);
+  if (!needle) return () => false;
+  const hits = huntedCreatures(spawns, want);
+  const identity = hits.some(c => creatureMatchesHunt(c, want));
+  if (identity) {
+    const names = new Set([needle,
+      ...hits.flatMap(c => [c.name, c.cls].map(creatureIdentity))].filter(Boolean));
+    return name => names.has(creatureIdentity(name));
+  }
+  const loose = String(want).toLowerCase();
+  return name => String(name ?? '').toLowerCase().includes(loose);
+}
+
 export function huntingGrounds(spawns, want, { maxDanger = null, limit = 12 } = {}) {
   if (!spawns) return [];
-  const hits = Object.values(spawns.creatures)
-    .filter(c => creatureMatchesHunt(c, want));
+  const hits = huntedCreatures(spawns, want);
   // Only rooms that GENERATE the creature are hunting grounds. A room that merely
   // had one placed at construction will never make another, so it is a location,
   // not a source.

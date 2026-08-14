@@ -18,7 +18,7 @@
 // the point of them.
 
 import { goalYield, scorePrey, healthCeiling, PURPOSES, huntingGrounds,
-         creatureMatchesHunt,
+         creatureMatchesHunt, huntedCreatures, huntMatcher,
          whoDrops, suggestDrops, moneyPerKill } from './m59-spawns.mjs';
 
 let pass = 0, fail = 0;
@@ -52,17 +52,33 @@ const ant      = { name: 'ant', cls: 'Ant', level: 40, karma: -10,
                                 { min: 40, max: 120, per_roll_percent: 12, cite: 'trestype.kod:302' }) };
 const spider   = { name: 'giant spider', cls: 'Spider', level: 50, karma: -20,
                    sites: [{ room: 900, room_name: 'Deep Cave', how: 'generator', chance: 70, cap: 5 }] };
+// THE FAMILY CASE, and it is why strict equality on its own is the wrong rule. Nothing
+// in the catalogue is called just "soldier": all three faction troops are `... soldier`,
+// so that order can only ever be a family and one substring is what catches them. Two of
+// the three are kept here, so a fallback that quietly settles on one is a failure rather
+// than a pass.
+const rebel    = { name: 'rebel soldier', cls: 'RebelTroop', level: 145, karma: null,
+                   sites: [{ room: 378, room_name: 'Sewers of Jasper', how: 'generator',
+                             chance: 1, cap: 25 }] };
+const dukeman  = { name: "soldier of the Duke's army", cls: 'DukeTroop', level: 120, karma: null,
+                   sites: [{ room: 596, room_name: 'Outskirts of Tos', how: 'generator',
+                             chance: 5, cap: 12 }] };
 
 const SPAWNS = {
-  creatures: { rat, centiped, ant, spider },
+  creatures: { rat, centiped, ant, spider, rebel, dukeman },
   rooms: {
     566: [{ creature: 'giant rat', cls: 'GiantRat', level: 30, chance: 60, huntable: true },
           { creature: 'centipede', cls: 'Centipede', level: 25, chance: 40, huntable: true }],
     563: [{ creature: 'ant', cls: 'Ant', level: 40, chance: 50, huntable: true }],
     900: [{ creature: 'giant spider', cls: 'Spider', level: 50, chance: 70, huntable: true }],
+    378: [{ creature: 'rebel soldier', cls: 'RebelTroop', level: 145, chance: 1, huntable: true }],
+    596: [{ creature: "soldier of the Duke's army", cls: 'DukeTroop', level: 120,
+            chance: 5, huntable: true }],
   },
   danger: { 566: { toughest: 'giant rat', level: 30 }, 563: { toughest: 'ant', level: 40 },
-            900: { toughest: 'giant spider', level: 50 } },
+            900: { toughest: 'giant spider', level: 50 },
+            378: { toughest: 'rebel soldier', level: 145 },
+            596: { toughest: "soldier of the Duke's army", level: 120 } },
 };
 
 const CH = { maxHealth: 30, stamina: 20 };   // ceiling 121, so hp is still live
@@ -79,6 +95,45 @@ console.log('\ncreature identity — orders are not substring searches');
      !creatureMatchesHunt({ name: 'mutant ant', cls: 'MutantAnt' }, 'ant'));
   ok('catalogue class and display-name formatting normalize to one identity',
      creatureMatchesHunt(rat, 'GiantRat') && creatureMatchesHunt(rat, 'giant rat'));
+}
+
+// The half that strict equality on its own would have thrown away. `soldier` names no
+// catalogue row, so it has to go on meaning the family — and the moment an order DOES
+// name a row, the family must stop being reachable through it.
+console.log('\nand a family only when the catalogue has no exact answer');
+{
+  const troops = huntedCreatures(SPAWNS, 'soldier').map(c => c.name).sort();
+  ok('an order nothing answers to exactly still catches its whole family',
+     troops.length === 2 && troops[0] === 'rebel soldier', JSON.stringify(troops));
+  const grounds = huntingGrounds(SPAWNS, 'soldier', { limit: 20 }).map(r => r.room).sort();
+  ok('and every one of their rooms is a hunting ground',
+     JSON.stringify(grounds) === JSON.stringify([378, 596]), JSON.stringify(grounds));
+  ok('naming one of them exactly stops the family being reachable',
+     huntedCreatures(SPAWNS, 'rebel soldier').length === 1);
+  ok('an exact order is never widened by a longer name that contains it',
+     huntedCreatures(SPAWNS, 'ant').length === 1 &&
+       huntedCreatures(SPAWNS, 'ant')[0].name === 'ant');
+}
+
+// The same rule asked of a name off the wire, which is all any in-room check has: the
+// keeper's prey test, capBlockers, the bystander test and findCreature each used to
+// answer it with their own substring.
+console.log('\nand the same answer for a live display name');
+{
+  const isAnt = huntMatcher(SPAWNS, 'ant');
+  ok('an ant is our prey and a giant rat beside it is not',
+     isAnt('ant') && !isAnt('giant rat'));
+  const byClass = huntMatcher(SPAWNS, 'RebelTroop');
+  ok('an order given as a class recognises the name the server actually sends',
+     byClass('rebel soldier') && !byClass("soldier of the Duke's army"));
+  const isSoldier = huntMatcher(SPAWNS, 'soldier');
+  ok('a family order recognises every member off the wire',
+     isSoldier('rebel soldier') && isSoldier("soldier of the Duke's army"));
+  ok('and still refuses everything outside it', !isSoldier('giant rat'));
+  ok('no order matches nothing, rather than everything',
+     !huntMatcher(SPAWNS, null)('ant'));
+  ok('with no catalogue it degrades to what the order meant before any of this',
+     huntMatcher(null, 'rat')('giant rat'));
 }
 
 console.log('\nhit points — AdvancementCheck only rolls above your max health');

@@ -1573,14 +1573,23 @@ export async function standUp(s) {
 //
 // Excluding players by default is right for every caller here — you hunt creatures —
 // and PvP, if it is ever wanted, should have to say so out loud.
-export function findCreature(s, needle, { attackableOnly = true, includePlayers = false } = {}) {
+//
+// THE SUBSTRING IS THE DEFAULT BECAUSE A PERSON TYPED IT, AND `match` IS HOW A KEEPER
+// SAYS OTHERWISE. An agent asking for "spider" wants whatever spider is here, and that
+// is the right answer for a one-shot tool call. A keeper acting on `policy.hunt` is not
+// typing: its order came from the spawn catalogue, and answering it with a different
+// creature whose name happens to contain the letters is how an `ant` keeper spent its
+// day on giant rats. Callers with a catalogue pass `huntMatcher(spawns, want)` in.
+export function findCreature(s, needle, { attackableOnly = true, includePlayers = false,
+                                          match = null } = {}) {
   const c = s.need();
   const me = c.self;
   const low = String(needle ?? '').toLowerCase();
   let list = [...c.room.objects.values()].filter(o => o.id !== c.selfId);
   if (!includePlayers) list = list.filter(o => !(o.flags & OF.PLAYER));
   if (attackableOnly) list = list.filter(o => o.flags & OF.ATTACKABLE);
-  if (low) list = list.filter(o => c.rsc.get(o.nameRsc).toLowerCase().includes(low));
+  if (match) list = list.filter(o => match(c.rsc.get(o.nameRsc) || ''));
+  else if (low) list = list.filter(o => c.rsc.get(o.nameRsc).toLowerCase().includes(low));
   if (me) {
     const d = o => Math.hypot(o.col - me.col, o.row - me.row);
     list.sort((a, b) => d(a) - d(b));

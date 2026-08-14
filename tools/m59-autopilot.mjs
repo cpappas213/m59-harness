@@ -23,8 +23,8 @@
 import * as skills from './m59-skills.mjs';
 import { OF, affordances, dropSpec as dropSpecFor } from './m59-parse.mjs';
 import { isFood, foodValue } from './m59-items.mjs';
-import { loadSpawns, huntingGrounds, creatureMatchesHunt, roomThreats, goalYield,
-         roomCap, karmaSafe,
+import { loadSpawns, huntingGrounds, huntMatcher, huntedCreatures,
+         roomThreats, goalYield, roomCap, karmaSafe,
          FORGIVING_RATING as GENTLE_RATING } from './m59-spawns.mjs';
 import { findPath, roomsWithin } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
@@ -3619,6 +3619,22 @@ export class Autopilot {
   // was still sending bare ids. See dropSpec there for what the server actually does.
   dropSpec(o, want = null) { return dropSpecFor(o, want); }
 
+  // "IS THIS THING WHAT WE WERE SENT FOR" — ONE ANSWER, FOR EVERY PLACE THAT ASKS.
+  //
+  // Five places asked it and four of them spelt it `name.includes(hunt)`: the in-room
+  // prey check, capBlockers twice, the bystander test, and findCreature. `ant` therefore
+  // sent a keeper to rooms full of giANT rats, and yieldCheck — which had already been
+  // fixed to prefer an exact name — was judging a creature the character was not
+  // fighting. Every one of those is the same question, so it goes through the same
+  // resolution: see huntMatcher in m59-spawns.mjs for why an exact answer wins outright
+  // and why the substring family survives for `soldier`.
+  //
+  // Cheap enough for the hot path: loadSpawns is cached on mtime, and the catalogue is
+  // resolved once here and then asked per object.
+  huntMatch(want = this.policy.hunt) {
+    return huntMatcher(loadSpawns(SPAWN_FILE), want);
+  }
+
   // THE ROOM HAS FILLED UP WITH THINGS WE DECLINED TO KILL.
   //
   // The cap is a room-wide TOTAL (monsroom.kod:242) and the generator is gated on it
@@ -3644,9 +3660,10 @@ export class Autopilot {
     const mons = [...c.room.objects.values()].filter(o =>
       o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER));
     const present = mons.length;
-    const want = String(this.policy.hunt || '').toLowerCase();
-    const preyPresent = want
-      ? mons.filter(o => (c.rsc.get(o.nameRsc) || '').toLowerCase().includes(want)).length : 0;
+    const want = this.policy.hunt || null;
+    const isPrey = want ? huntMatcher(spawns, want) : null;
+    const preyPresent = isPrey
+      ? mons.filter(o => isPrey(c.rsc.get(o.nameRsc) || '')).length : 0;
     const status = { cap, present, prey_present: preyPresent,
                      full: present >= cap, clearable: [], blocked: [] };
     if (!status.full) return status;
@@ -3659,7 +3676,7 @@ export class Autopilot {
       const key = name.toLowerCase();
       if (!name || seen.has(key)) continue;
       seen.add(key);
-      if (want && key.includes(want)) continue;          // our prey is not a blocker
+      if (isPrey?.(name)) continue;                      // our prey is not a blocker
       const info = Object.values(spawns.creatures ?? {})
         .find(x => x.name.toLowerCase() === key);
       const lvl = info?.level ?? null;
@@ -4777,11 +4794,13 @@ export class Autopilot {
     // faction troops are `... soldier`, and one substring is what catches them as a
     // family. So this is exact name, then exact class, then the old behaviour — a
     // deliberately loose name keeps working and a precise one stops being approximated.
-    const needle = String(hunt).toLowerCase();
-    const all = Object.values(spawns.creatures);
-    const c = all.find(x => x.name.toLowerCase() === needle)
-      ?? all.find(x => x.cls.toLowerCase() === needle)
-      ?? all.find(x => x.name.toLowerCase().includes(needle));
+    //
+    // That rule is now huntedCreatures() in m59-spawns.mjs, and this reads it rather
+    // than keeping its own copy: it was the third spelling of the same question and the
+    // only one that had been got right, which is precisely how the other four went on
+    // being wrong. A family order still lands on the first of its members here — one
+    // audit cannot describe three creatures — and that is unchanged.
+    const c = huntedCreatures(spawns, hunt)[0];
     if (!c) return null;
 
     // FARMING TO CLOSE THE GEAR GAP IS A REAL JOB, AND IT OUTLIVES ADVANCEMENT.
@@ -7757,7 +7776,8 @@ export class Autopilot {
       if (room) {
         const spawns0 = loadSpawns(SPAWN_FILE);
         const here = (spawns0?.rooms?.[room.num] || []).filter(x => x.huntable);
-        const preyHere = here.some(x => creatureMatchesHunt(x, this.policy.hunt));
+        const isPrey0 = huntMatcher(spawns0, this.policy.hunt);
+        const preyHere = here.some(x => isPrey0(x.creature));
         const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms);
         const assignmentDenied = this.policy.assignedRoom != null
           ? deniedFarmRooms.get(this.policy.assignedRoom) : null;
@@ -7858,7 +7878,7 @@ export class Autopilot {
         if (freed.ok) this.progress('made room in bags'); else this.noProgress('bags full and could not make room');
         return;
       }
-      let found = skills.findCreature(s, this.policy.hunt);
+      let found = skills.findCreature(s, this.policy.hunt, { match: this.huntMatch() });
       this.clearing = null;
 
       // IS THIS ROOM STILL WORTH HUNTING IN, or is it silting up?
@@ -7871,7 +7891,9 @@ export class Autopilot {
         const capped = this.capBlockers(room);
         if (capped?.should_clear) {
           const target = capped.clearable[0];
-          const shot = skills.findCreature(s, target.name);
+          // target.name came out of the catalogue, so it is an identity and must not be
+          // widened back into a substring on the way to the room.
+          const shot = skills.findCreature(s, target.name, { match: this.huntMatch(target.name) });
           if (shot.length) {
             this.clearing = target.name;
             found = shot;
@@ -8488,9 +8510,13 @@ export class Autopilot {
       const here = c.self;
       // See inReachOfUs() for why fleetmates are excluded and why the radius is 3.
       const adjacent = here ? this.inReachOfUs() : [];
-      const want = String(this.clearing || this.policy.hunt || '').toLowerCase();
-      const bystander = adjacent.find(o =>
-        !(c.rsc.get(o.nameRsc) || '').toLowerCase().includes(want));
+      // WITH NO ORDER, NOTHING IS A BYSTANDER. The old spelling got this for free —
+      // every string contains the empty string, so an absent hunt made everything "the
+      // prey" — and a matcher that answers false to everything would invert it and make
+      // the whole room a bystander. Say it out loud rather than relying on either.
+      const want = this.clearing || this.policy.hunt || null;
+      const isOurs = want ? this.huntMatch(want) : () => true;
+      const bystander = adjacent.find(o => !isOurs(c.rsc.get(o.nameRsc) || ''));
 
       // HITTING BACK IS STILL A CHOICE, AND IT IS NOT ALWAYS THE RIGHT ONE.
       //
