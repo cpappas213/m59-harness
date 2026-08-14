@@ -189,3 +189,11 @@ __pycache__/
 # Verified daily guild payments are live per-character operational state. They name the
 # local fleet and characters and exist only to prevent a restart from charging twice.
 /substrate/guild-tithes/
+
+# TEST-BED SCENARIOS ARE CREDENTIALS. A tools/m59-testbed.mjs spec carries an account and
+# a password per character — it has to, because creating the account is the one step that
+# cannot go over the game protocol — so a real scenario is as secret as a roster and stays
+# on the machine that owns it. The *.example.json beside them is the exception: it exists
+# to be read, and the passwords in it are placeholders that match no account anywhere.
+/scenarios/*.json
+!/scenarios/*.example.json

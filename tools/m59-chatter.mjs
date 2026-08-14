@@ -25,6 +25,7 @@
 // engineer through it, and because the alternative is having the fleet lie to people.
 
 import { inboxFor, AUTO_REPLY_CHANNELS, sanitizeOutbound } from './m59-inbox.mjs';
+import { isLoopbackHost } from './m59-dm.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const pct = v => (v && v.max ? v.value / v.max : null);
@@ -119,6 +120,60 @@ export function matchSmallTalk(text) {
   return null;
 }
 
+// ------------------------------------------------ calling a bot into the arena
+//
+// SAY A CHARACTER'S NAME IN THE ARENA AND IT ENTERS THE BOUT. Registering five bots as
+// combatants means five `say challenge`s through the broker, which is a script and a
+// terminal for something that should be a word. This makes it a word.
+//
+// It is NOT a small-talk rule, and it could not be: every entry in that table is a fixed
+// regex over the sentence alone, and this one has to match a name the table cannot know
+// and then check where in the world the character is standing. Keeping SMALL_TALK static
+// is worth more than the reuse — a table of constant patterns is a table nothing typed by
+// a stranger can reach into.
+//
+// THREE GUARDS, AND THE FIRST TWO ARE WHY THIS IS SAFE TO HAVE ON BY DEFAULT.
+//
+//  * THE SERVER MUST BE ON THIS MACHINE. `challenge` is a word spoken out loud to the
+//    room, and on `prod` the room contains real people — a fleet that shouts a game
+//    command at strangers because somebody said its name is a fleet that has to be
+//    turned off. prod is 76.214.42.186, so this cannot fire there by construction rather
+//    than by remembering to configure it.
+//  * IT MUST BE STANDING IN AN ARENA. Outside one the word means nothing to anybody and
+//    is just noise in the room.
+//  * THE WHOLE UTTERANCE MUST BE THE NAME. Not a substring: a bot called Echo would
+//    otherwise answer "echo location", and — worse — the keeper's own status reply opens
+//    with the character's name, so a substring test would let two bots call each other
+//    into the ring for ever. Trailing punctuation is allowed because people type "Alpha!"
+//    and mean the same thing.
+//
+// The reply is the LITERAL `challenge`, which is what the Watcher matches with
+// StringEqual (`tswatch.kod:224`). Not a template, and not `challenger` — near misses
+// match nothing and the Watcher says nothing about it, which is indistinguishable from
+// having worked.
+
+export const ARENA_ROOMS = new Set([60, 73]);
+export const ARENA_CHALLENGE_WORD = 'challenge';
+
+// Imported rather than restated: m59-dm.mjs owns "is this server on this machine",
+// because its own DM socket gates on the same fact and two copies of that answer is
+// exactly how one of them ends up permissive.
+export const isLocalServer = isLoopbackHost;
+
+// Pure, so the guards can be argued about without a server or a socket in the room.
+// Returns the word to say, or null.
+export function arenaCall({ text, character, roomNum, host } = {}) {
+  if (!character) return null;
+  if (!isLocalServer(host)) return null;
+  if (!ARENA_ROOMS.has(Number(roomNum))) return null;
+  // Strip surrounding whitespace and the punctuation people put round a name when they
+  // are calling someone. Nothing else: no substring search, see the note above.
+  const said = String(text ?? '').trim().replace(/^[\s"'!.,:;?-]+|[\s"'!.,:;?-]+$/g, '');
+  if (!said) return null;
+  return said.toLowerCase() === String(character).trim().toLowerCase()
+    ? ARENA_CHALLENGE_WORD : null;
+}
+
 // ------------------------------------------------------------------- acks
 
 // What to say when we have noticed someone but have nothing prepared. Deliberately not
@@ -144,6 +199,10 @@ export const DEFAULT_CHATTER_POLICY = {
   smallTalk: true,
   // Turn to face whoever spoke, when they are in the room. Free, and unambiguous.
   faceSpeaker: true,
+  // Answer to our own name, in an arena, on a server running on this machine, by saying
+  // `challenge`. See arenaCall — the guards are what make this safe to default on, and
+  // this switch exists for turning it off during a test that wants the silence.
+  arenaChallenge: true,
   // Hand unmatched speech to the model tier. Off makes this the whole system: the
   // character answers six things and records the rest without ever calling a model.
   escalate: true,
@@ -260,6 +319,15 @@ export class Chatter {
     return {
       character: c?.me?.name ?? this.agent,
       room: view?.room?.name ?? (c ? c.rsc.get(c.roomNameRsc) : null),
+      // The room NUMBER, which is not `client.room.id` — that is the room object's id.
+      // The view resolves the number through the map, which is the only place the two
+      // are related.
+      roomNum: view?.room?.num ?? null,
+      // WHICH SERVER THIS CHARACTER IS ON, from the session's own credentials rather
+      // than from M59_HOST: one broker can hold characters on several servers at once,
+      // so an environment variable is an answer about the process, not about the
+      // character. arenaCall gates on this.
+      host: this.s.credentials?.host ?? null,
       speakerName: item.speaker_name,
       speakerInRoom: view ? view.objects.some(o => o.id === item.speaker) : false,
       speakerObject: view?.objects.find(o => o.id === item.speaker) ?? null,
@@ -369,6 +437,32 @@ export class Chatter {
 
     const hit = this.policy.smallTalk ? matchSmallTalk(item.text) : null;
     const channel = this.channelFor(item, ctx);
+
+    // CALLED INTO THE RING BY NAME.
+    //
+    // Answered on `say` WHATEVER CHANNEL THE CALL ARRIVED ON, and that is the part worth
+    // getting right. The Watcher hears the room — SomeoneSaid (tswatch.kod:1375) tests
+    // the words and nothing else, no distance and no addressee — so a `challenge` sent
+    // back as a tell would reach the one person who asked and register nothing. It would
+    // look exactly like it had worked: the reply is in the transcript, the Watcher is
+    // silent, and the Watcher is silent when it succeeds too.
+    //
+    // channelFor is therefore bypassed, which means its two refusals have to be made
+    // here instead: playing dead outranks this (speech spends the entry grace period and
+    // wakes the room), and the reply budget still applies.
+    const called = this.policy.arenaChallenge
+      ? arenaCall({ text: item.text, character: ctx.character,
+                    roomNum: ctx.roomNum, host: ctx.host })
+      : null;
+    if (called && budget.ok && !ctx.frozen) {
+      const spoken = await this.send(called, { kind: 'say' });
+      this.inbox.noteReply(item.speaker);
+      this.inbox.resolve(id, 'answered', { tier: 0, reply: spoken, note: 'arena: called by name' });
+      this.did.answered++;
+      this.note('answered', 'arena-challenge',
+                { to: item.speaker_name, said: item.text, reply: spoken });
+      return;
+    }
 
     // DEAD AND ASKED "WHERE?" — ANSWER WITH THE PLACE, NOTHING ELSE.
     //

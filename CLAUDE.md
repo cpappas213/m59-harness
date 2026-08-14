@@ -358,6 +358,64 @@ as the originals; and **a roster that would shrink is refused outright** unless 
 
 `node tools/m59-backup-test.mjs` (42) pins all of that against scratch directories.
 
+## Setting a test scenario up — DM powers, and a scenario in one file
+
+Everything in this section is for a server running **on this machine**, and all three tools
+refuse a host that is not loopback rather than trusting you to remember. The maintenance
+port is unauthenticated and IP-restricted and that is its entire security model, so
+pointing it at `prod` — somebody else's machine, with real players on it — is not a
+configuration choice.
+
+```bash
+node tools/m59-dm.mjs where TESTER Alpha           # names -> object ids
+node tools/m59-dm.mjs relocate Alpha,Bravo 60 --at 13,16 --verify
+node tools/m59-dm.mjs kit TESTER --stats 50 --health 151 --karma -60 --spells 99
+node tools/m59-dm.mjs heal Alpha,Bravo
+node tools/m59-testbed.mjs up    scenarios/arena.json     # the whole scenario
+node tools/m59-testbed.mjs reset scenarios/arena.json     # between rounds
+node tools/m59-patrol.mjs --agents arena1,arena2 --room 60 --radius 5
+```
+
+**WALKING IS THE WRONG TOOL FOR PLACING A TEST CHARACTER.** Getting six characters from the
+newbie island to the Tos arena by travelling took about twenty minutes and failed halfway
+on five of them; the same placement over this socket is **0.22 seconds, verified**. The
+primitive is `System.UtilGoNearSquare` (`util.kod:20`), whose own docstring is "Move any
+object anywhere in any room" and which is what the DM rescue spell uses.
+
+**A SCENARIO FILE IS A CREDENTIAL STORE**, because creating the account is the one step that
+cannot go over the game protocol. `/scenarios/*.json` is gitignored for the same reason a
+roster is; `*.example.json` is the exception and its passwords are placeholders.
+
+Five things these tools do that are not obvious:
+
+- **THE SOCKET NEEDS NO PACING AT ALL, and every other caller in this repository paces
+  itself.** 70ms in `m59-godmode.mjs`, 400ms in `m59-makefleet.mjs` — and that pacing IS
+  their runtime. Measured: **2000 commands written as one buffer got 2000 replies**, with
+  no elapsed time beyond the settle wait the measurement itself imposed. `m59-dm.mjs`
+  writes a batch in one go and reads until a sentinel, so a full character kit went from
+  fourteen seconds to under one.
+- **OBJECT IDS ARE NOT STABLE. The server renumbers them when it garbage-collects, which it
+  does on every save** — `[Auto] SavePeriod` is 15 minutes here. In one session a character
+  resolved as 7218, was configured as 7218 successfully, and half an hour later object 7218
+  was a heartstone while the character had become 7124. Nothing errored. So resolve names in
+  the same batch that uses them and **never cache an id across a call**; a broker holding
+  stale ids goes quietly deaf and the cure is `m59-service.mjs restart`.
+- **`reset` IS THE VERB THAT MATTERS**, because it runs between every round rather than once
+  per scenario. It is deliberately the cheap one — ceilings, heal, place, all pure
+  maintenance-socket batches, no broker, no walking, no logins.
+- **A SPEC STATES AN END STATE, NOT AN ERRAND** — the same shape as the guild wants, and for
+  the same reason. `reagents: 50` means "carries 50", so `give` reads the pack and creates
+  only the shortfall. The first live `up` re-run doubled every stack to 100 before this was
+  fixed, which is what a delivery does and not what a spec means. It tops up and never takes
+  away: trimming would mean deleting objects out of a character to satisfy a number.
+- **SAY A BOT'S NAME IN AN ARENA AND IT SAYS `challenge`.** `arenaCall` in `m59-chatter.mjs`,
+  guarded on a loopback server AND an arena room AND the whole utterance being the name —
+  not a substring, or a bot called Echo answers "echo location" and the keeper's own status
+  line (which opens with the character's name) calls every bot in the room into the ring for
+  ever. The keeper's `social()` stands down when it matches rather than answering first,
+  which it used to: asked to challenge, Alpha replied "Alpha: not hunting anything, 88/50
+  health."
+
 ## Asked to shut down, stop the server, or "we're done for now"?
 
 ```bash
@@ -410,6 +468,42 @@ not mean anything can be built. If the daemon is down, say so and ask the user t
 start Docker Desktop; do not try to start it yourself unless they ask.
 
 ## Traps that will waste your time if you do not know them
+
+- **A `send` REPLY NAMES ITS RECEIVER BEFORE IT NAMES ITS ANSWER, so a bare
+  `/OBJECT (\d+)/` reads the wrong number.** The maintenance socket answers
+
+      :< return from OBJECT 0 MESSAGE FindRoomByNum (10268)
+      : OBJECT 267
+      :   is CLASS TosArena (10374)
+
+  and the first match in that is the object the message was SENT TO. Asking for the arena
+  therefore returned **0**, and six characters were relocated into the system object while
+  every reply said success — because `UtilGoNearSquare` never says no either: handed a
+  target square of (99,99) in a 24x24 room it searches outward, lands somewhere else, and
+  returns 1. `returnedObject` in `m59-dm.mjs` takes the line that is only a colon and an
+  object; `m59-godmode.mjs` had the same fallback for its money lookup, where it would have
+  matched the player. **Verify a placement by reading the character back**, which
+  `relocate --verify` does — a reply of 1 means "somebody was moved somewhere".
+
+- **THREE MESSAGES FOR REFILLING A VITAL LOOK RIGHT AND ARE NOT.** `GainHealth` is not the
+  one whose docstring says it stops at the maximum: it caps at **twice** `piMax_health`
+  ("some attempt here to quell the vamp touch bugs"), so a flat `GainHealth 10000` leaves a
+  50-health character reading **88/50**. `GainMana` does not clamp **at all** unless passed
+  `bCapped`, which defaults FALSE. And `GainHealthNormal`, the one that does clamp, returns
+  0 and changes nothing when health is already over the maximum — so it cannot undo the
+  first. `m59-dm.mjs heal` reads each character's own ceiling and SETS the property, which
+  is the only thing that brings an over-max character back down.
+
+- **MAX MANA IS DERIVED, AND IT LOOKS STORED.** `piMax_Mana` is declared at 20 and the only
+  thing that visibly writes it is `GainMaxMana`, so grepping for writers says "stored" —
+  which is what this file's author concluded out loud, and it is wrong.
+  `ComputeMaxMana` (`player.kod:6116`) throws the number away and rebuilds it from
+  `GetInitialMaxMana = 15 + mysticism/5`, plus melded mana nodes, worn items and
+  enchantments; it runs **on login**, on an equipment change and on an enchantment change.
+  So a character set to 200 reads 200 for as long as you watch it and comes back from the
+  next relog at 25. The durable lever is mana nodes — `piNodelist`, what `m59-mananode.mjs`
+  exists to earn. For a test character the ceiling is the test bed's to maintain, which is
+  why `m59-testbed.mjs reset` re-asserts it before healing.
 
 - **`create automated` makes a character with ZERO in every attribute.**
   Attributes are fixed at creation and never move, and stamina *is* the
@@ -1461,6 +1555,12 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   carry arithmetic have one home. Runs against scratch sheets, never the fleet's own) and
   `node tools/m59-backup-test.mjs` (42 — backing the rosters up and putting them back,
   against scratch directories; never touches a real fleet) and
+  `node tools/m59-testbed-test.mjs` (104 — the DM command vocabulary, the patrol ring, the
+  scenario spec and the arena reply. **Opens no socket, deliberately**: every live failure
+  these three tools have had was "the command we sent was not the command we meant" — a
+  room object id read out of a reply header, a karma figure a hundred times too small, a
+  name with a digit in it that the server accepts and silently replaces — and all of those
+  are decidable from a string) and
   `node tools/m59-merchants-test.mjs` (77, dropping to 43 without `M59_ROOT`) and
   `node tools/m59-roo-test.mjs` (57, of which 9 skip without a copy of the game's
   `resource/rooms`). The rest need a live server —

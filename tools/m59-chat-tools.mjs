@@ -83,6 +83,7 @@ export function chatTools({ session, sessions, num, autopilotIfAny }) {
     if (a.small_talk !== undefined) p.smallTalk = !!a.small_talk;
     if (a.face_speaker !== undefined) p.faceSpeaker = !!a.face_speaker;
     if (a.escalate !== undefined) p.escalate = !!a.escalate;
+    if (a.arena_challenge !== undefined) p.arenaChallenge = !!a.arena_challenge;
     return p;
   };
   const applyInboxPolicy = (name, a) => {
@@ -127,6 +128,12 @@ export function chatTools({ session, sessions, num, autopilotIfAny }) {
         face_speaker: { type: 'boolean', description: 'turn toward whoever spoke (default true)' },
         escalate: { type: 'boolean',
                     description: 'hand unmatched speech to the model tier (default true). false makes this the whole system: six answers and a record of everything else' },
+        arena_challenge: { type: 'boolean',
+                    description: 'answer to our own name, in an arena, on a server running on this ' +
+                                 'machine, by saying `challenge` (default true). The two guards are what ' +
+                                 'make it safe on by default: it cannot fire on a remote server, where ' +
+                                 'the room contains real people, and it cannot fire outside an arena, ' +
+                                 'where the word means nothing. Turn it off for a test that wants silence' },
         replies_per_min: { type: 'number', description: 'default 6' },
         speaker_cooldown_ms: { type: 'number', description: 'default 8000' },
         per_speaker_per_min: { type: 'number', description: 'admission limit per speaker, default 8' },

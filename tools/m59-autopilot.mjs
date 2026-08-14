@@ -29,7 +29,8 @@ import { loadSpawns, huntingGrounds, huntMatcher, huntedCreatures,
 import { findPath, roomsWithin } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
-import { inboxIfAny } from './m59-inbox.mjs';
+import { inboxIfAny, unwrapSpeech } from './m59-inbox.mjs';
+import { arenaCall } from './m59-chatter.mjs';
 import { describeCommitment } from './m59-commitment.mjs';
 import * as tougher from './m59-tougher.mjs';
 import { recordEvent } from './m59-ledger.mjs';
@@ -8941,6 +8942,28 @@ export class Autopilot {
     const toMe = evs.filter(e => e.speaker !== c.selfId &&
                                  String(e.text || '').toLowerCase().includes(myName));
     if (!toMe.length) return;
+
+    // BEING CALLED INTO THE RING IS NOT SMALL TALK, AND THIS RAN FIRST.
+    //
+    // Saying a character's name in an arena on a local server means "enter the bout" —
+    // m59-chatter.mjs owns that reply, because speech is the chatter's job and it is the
+    // layer with the budget, the frozen check and the tests. But this responder reads the
+    // event stream directly, matches the name as a SUBSTRING, and got there first: asked
+    // to challenge, Alpha answered "Alpha: not hunting anything, 88/50 health."
+    //
+    // So the keeper stands down rather than duplicating the answer. `arenaCall` is
+    // imported rather than restated so there is one definition of when this applies.
+    const called = toMe.some(e => arenaCall({
+      text: unwrapSpeech(String(e.text || '')).said,
+      character: c.me?.name, roomNum: s.view?.()?.room?.num ?? null,
+      host: s.credentials?.host ?? null,
+    }));
+    if (called) {
+      this.note('called into the ring', { by: toMe[toMe.length - 1].text?.slice(0, 80),
+                                          note: 'left to the chatter, which answers with `challenge`' });
+      return;
+    }
+
     if (Date.now() - (this.lastReply || 0) < 25000) return;
     this.lastReply = Date.now();
 
