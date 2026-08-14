@@ -36,7 +36,7 @@ const recoverCrashAt = (activeFile, ledgerFile) => recoverCrash({ activeFile, le
 const readLedgerAt = (f) => readLedger(f);
 import { RoomGeometry } from './m59-roo.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
-import { roomCap, karmaSafe } from './m59-spawns.mjs';
+import { inheritsClass, roomCap, karmaSafe } from './m59-spawns.mjs';
 import { OF } from './m59-parse.mjs';
 import { nearestSafeSpot, safeSpots, exposureAt, lineOfSight, MAX_ATTACKERS } from './m59-safespots.mjs';
 
@@ -1125,6 +1125,37 @@ console.log('\nthe room that filled up with what nobody would kill');
   ok('and says it was the missing row, not the safety band',
      /nothing is known about it/.test(ust.blocked.find(x => x.name === 'rat')?.why ?? ''),
      ust.blocked.find(x => x.name === 'rat')?.why);
+
+  // A catalogued faction troop is still conditional political opposition, not
+  // housekeeping prey. Attackability means the server permits an initiated swing;
+  // it does not prove that clearing the actor is safe or appropriate.
+  const rebels = mk({ 'rebel soldier': 8, centipede: 2 }, { characterLevel: 100 });
+  const rst = rebels.capBlockers({ num: 554 });
+  ok('a catalogued political troop is excluded from incidental clearing',
+     rst.clearable.length === 0 && rst.blocked[0]?.name === 'rebel soldier', JSON.stringify(rst));
+  ok('and the reason distinguishes faction behavior from raw combat level',
+     /political faction troop/.test(rst.blocked[0]?.why ?? ''), rst.blocked[0]?.why);
+}
+
+console.log('\nsource-derived political troop classification');
+{
+  const parents = new Map([
+    ['duketroop', 'factiontroop'],
+    ['princesstroop', 'factiontroop'],
+    ['veteranduke', 'duketroop'],
+    ['factiontroop', 'monster'],
+    ['ant', 'monster'],
+    ['cyclea', 'cycleb'],
+    ['cycleb', 'cyclea'],
+  ]);
+  ok('direct faction-troop subclasses are recognized',
+     inheritsClass(parents, 'DukeTroop', 'FactionTroop'));
+  ok('deeper subclasses inherit the classification without another hardcoded name',
+     inheritsClass(parents, 'VeteranDuke', 'FactionTroop'));
+  ok('ordinary monsters are not political troops',
+     !inheritsClass(parents, 'Ant', 'FactionTroop'));
+  ok('a malformed parent cycle terminates and fails closed',
+     !inheritsClass(parents, 'CycleA', 'FactionTroop'));
 }
 
 

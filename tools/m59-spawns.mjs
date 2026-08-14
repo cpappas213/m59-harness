@@ -176,14 +176,14 @@ export function rolledTroopStats(base) {
 // sees one class. A case-sensitive walk stops at the first hop — silently, and in the
 // direction that looks like a legitimate "no, it does not descend from that" — which is
 // exactly how m59-merchants.mjs reported a stationary merchant as a wanderer for months.
-function descendsFrom(cls, ancestor, parentOf) {
-  const want = String(ancestor).toLowerCase();
-  let cur = String(cls || '').toLowerCase();
-  // Bounded rather than tracking a visited set: the kod tree is a tree, and a cycle here
-  // would mean the class graph itself is broken. Depth 24 clears the deepest real chain.
-  for (let i = 0; i < 24 && cur; i++) {
-    if (cur === want) return true;
-    cur = String(parentOf.get(cur) || '').toLowerCase();
+export function inheritsClass(parentByClass, child, ancestor) {
+  const wanted = String(ancestor || '').toLowerCase();
+  let current = String(child || '').toLowerCase();
+  const visited = new Set();
+  while (current && !visited.has(current)) {
+    if (current === wanted) return true;
+    visited.add(current);
+    current = String(parentByClass.get(current) || '').toLowerCase();
   }
   return false;
 }
@@ -267,7 +267,8 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
   const parentOf = new Map();
   for (const m of mons) if (m.class) parentOf.set(m.class.toLowerCase(), m.parent || '');
   for (const [cls, meta] of info) {
-    if (!descendsFrom(cls, 'FactionTroop', parentOf)) continue;
+    meta.political_troop = inheritsClass(parentOf, cls, 'FactionTroop');
+    if (!meta.political_troop) continue;
     // A troop that declares neither number has nothing to re-roll FROM. Leaving it null
     // keeps it in the "unrecognised, therefore refused" bucket, which is the safe one.
     if (meta.level == null || meta.difficulty == null) continue;
@@ -309,6 +310,8 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
                                            difficulty: meta.difficulty,
                                            attack_rating: attackRating(meta),
                                            karma: meta.karma, sites,
+                                           ...(meta.political_troop
+                                                 ? { political_troop: true } : {}),
                                            ...(meta.rolled ? { rolled: meta.rolled } : {}),
                                            ...(meta.equipment_drops
                                                  ? { equipment_drops: meta.equipment_drops } : {}),
@@ -339,6 +342,7 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
     if (creatures[key]) continue;
     creatures[key] = { name: meta.name, cls: meta.cls, level: meta.level, difficulty: meta.difficulty,
                        attack_rating: attackRating(meta), karma: meta.karma, sites: [],
+                       political_troop: true,
                        rolled: meta.rolled,
                        ...(meta.equipment_drops
                              ? { equipment_drops: meta.equipment_drops } : {}),
