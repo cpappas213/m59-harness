@@ -631,6 +631,31 @@ export const STRATEGIES = {
   },
 };
 
+// AN EXPLICIT BROKER THRESHOLD IS THE FLOOR, AND IT HAS TO OUTRANK THE STRATEGY.
+//
+// `fight_above_vigor` was advertised as the value a keeper eats to before fighting, and
+// then stored only in the legacy `fightAboveVigor` field — which fightFloor() consults
+// LAST, behind `plan.vigorFloor`. Every strategy in the table sets `vigorFloor`, so the
+// public argument was never once the number that decided anything.
+//
+// THE CEILING IS DELIBERATELY LEFT ALONE, and an earlier version of this clamped it to
+// the same value. A ceiling equal to the floor turns provisioning into a threshold, and
+// the whole point of the band is stated in `wellfed`: set out at the TOP of it with an
+// empty enough stomach to keep eating while fighting. Health returns as
+// ((200-vigor)^2/6 + 1000) ms a point, so pinning a character at its floor throws away
+// most of the regeneration rate it just paid food for. The symptom that motivated the
+// clamp — a character at 127 sitting in an inn waiting on the strategy's 200 — is
+// shouldWaitForProvision()'s job, and it now sets out once the floor is satisfied and
+// the next mouthful is far away.
+export function applyFightAboveVigor(policy, value) {
+  const threshold = Number(value);
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 200)
+    throw new Error('fight_above_vigor must be a finite number from 0 to 200');
+  policy.fightAboveVigor = threshold;
+  policy.vigorFloor = threshold;
+  return policy;
+}
+
 export class Autopilot {
   constructor(session, { mode = 'survive', policy = {} } = {}) {
     this.s = session;
