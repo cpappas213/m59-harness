@@ -411,11 +411,26 @@ export const DEAD_ROOMS = new Map([
          'PlaceStatues will not reset the room while any statue remains'],
 ]);
 
+// Creature orders are identities, not free-text searches.  Substring matching made
+// `ant` match giANT rat, so an ant keeper ranked rat rooms ahead of its assignment and
+// could alternate between them forever.  Normalize punctuation and spacing so a
+// catalogue name ("giant rat") and its class ("GiantRat") remain interchangeable,
+// but require the whole identity to match.  Broader names need an explicit alias at
+// the order boundary rather than silently changing which creature the keeper fights.
+const creatureIdentity = (value) => String(value ?? '').toLowerCase()
+  .replace(/[^a-z0-9]+/g, '');
+
+export function creatureMatchesHunt(creature, want) {
+  const needle = creatureIdentity(want);
+  if (!needle || !creature) return false;
+  return [creature.name, creature.creature, creature.cls]
+    .some(value => creatureIdentity(value) === needle);
+}
+
 export function huntingGrounds(spawns, want, { maxDanger = null, limit = 12 } = {}) {
   if (!spawns) return [];
-  const needle = String(want).toLowerCase();
   const hits = Object.values(spawns.creatures)
-    .filter(c => c.name.toLowerCase().includes(needle) || c.cls.toLowerCase() === needle);
+    .filter(c => creatureMatchesHunt(c, want));
   // Only rooms that GENERATE the creature are hunting grounds. A room that merely
   // had one placed at construction will never make another, so it is a location,
   // not a source.
