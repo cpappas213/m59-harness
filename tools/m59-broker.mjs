@@ -2480,10 +2480,28 @@ class Session {
   async confirmPosition() {
     const c = this.need();
     this.lastRoomRead = Date.now();
-    await this.pacer.submit('read', () => c.roomContents());
+    // There may already be a fire-and-forget room read in flight. Waiting for merely
+    // "the next room-contents event" can consume that older snapshot and certify the
+    // exact stale position this method was called to correct. The protocol returns
+    // these reads in request order, so wait through any older replies until the local
+    // ordinal for this request has arrived.
+    //
+    // A TIMED-OUT READ ANSWERS null, IT DOES NOT THROW. Callers already treat an
+    // unknown position as a wrong one — goThrough leans into the doorway in fine units
+    // rather than sending a `go` it has no evidence for — and that is the whole design.
+    // Throwing here would turn a transient dropped reply into an exception out of the
+    // middle of a walk, which is a worse answer than "I do not know where I am".
+    const since = c.evSeq;
+    const request = await this.pacer.submit('read', () => c.roomContents());
     const t0 = Date.now();
-    await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2000 });
+    let cursor = since, fresh = true;
+    while ((c.roomContentsReceived ?? request) < request) {
+      const reply = await c.waitFor({ since: cursor, kinds: ['room-contents'], timeoutMs: 2000 });
+      if (reply.timedOut) { fresh = false; break; }
+      cursor = reply.seq;
+    }
     Pacer.note('confirm_position', 'blocked', Date.now() - t0);
+    if (!fresh) return null;
     return c.self ? { col: c.self.col, row: c.self.row } : null;
   }
 
@@ -7429,6 +7447,10 @@ const TOOLS = [
       pull_within: { type: 'number',
         description: 'how many steps it may go to fetch a monster that will not come to the wall, ' +
           'default 8. It hits it once and walks straight back' },
+      barren_spots_before_room_decision: { type: 'number',
+        description: 'how many top-ranked walls may each fail repeated, fully-waited pulls before ' +
+          'the keeper stops searching this room (default 3). This makes a room-scoped choice to ' +
+          'fight open when the safety gates permit it or relocate; it never blocks the goal' },
       break_out_via_logoff: { type: 'boolean',
         description: 'reconnect before stepping off a crowded safe spot, default true. The entry ' +
           'grace period means the swarm has to notice you one at a time instead of all at once' },
@@ -7689,6 +7711,9 @@ const TOOLS = [
       if (a.pull_within !== undefined)
         p.policy.pullWithin = (a.pull_within === null || Number(a.pull_within) <= 0)
           ? null : Number(a.pull_within);
+      if (a.barren_spots_before_room_decision !== undefined)
+        p.policy.barrenSpotsBeforeRoomDecision = Math.max(1,
+          Math.floor(Number(a.barren_spots_before_room_decision) || 1));
       if (a.break_out_via_logoff !== undefined) p.policy.breakOutViaLogoff = !!a.break_out_via_logoff;
       if (p.mode === 'farm' && !p.policy.hunt)
         return { started: false, reason: 'farm mode needs something to hunt — pass hunt with a creature name' };

@@ -14,8 +14,10 @@
 // away the largest advantage in the game — a free heal to full in a monster room.
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import { unlinkSync } from 'node:fs';
-import { Autopilot } from './m59-autopilot.mjs';
+import { Autopilot, farmRoomDenials,
+         shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
 import { SafeSpotBook } from './m59-safespots.mjs';
+import { returnToSpot } from './m59-skills.mjs';
 
 const BOOK = `${process.env.TEMP || '/tmp'}/m59-safespot-test-${process.pid}.json`;
 let pass = 0, fail = 0;
@@ -61,6 +63,40 @@ function world({ col = 5, row = 5, health = 30, max = 30, room = 999 } = {}) {
 
 const { OF } = await import('./m59-parse.mjs');
 const MONSTER = OF.ATTACKABLE;
+
+console.log('\n--- safe-spot arrival is confirmed, not predicted ---');
+{
+  // The dead-reckoned position says we are home. The authoritative read says the
+  // server still has us one square away; returnToSpot must not accept the first claim.
+  const me = { col: 5, row: 5, x: 352, y: 352, predicted: true };
+  let confirms = 0, fineWalks = 0;
+  const c = { get self() { return me; } };
+  const s = {
+    need: () => c,
+    confirmPosition: async () => {
+      confirms++;
+      Object.assign(me, { col: 6, row: 5, x: 416, y: 352, predicted: false });
+      return { col: me.col, row: me.row };
+    },
+    walkTo: async (col, row) => {
+      Object.assign(me, { col, row, x: col * 64 + 32, y: row * 64 + 32, predicted: true });
+      return { arrived: true };
+    },
+    walkFine: async (x, y) => {
+      fineWalks++;
+      Object.assign(me, { col: (x / 64) | 0, row: (y / 64) | 0, x, y, predicted: false });
+      return { arrived: true };
+    },
+  };
+  const back = await returnToSpot(s, { col: 5, row: 5, x: 352, y: 352 });
+  ok('a predicted match is checked with the server', confirms === 2,
+     `confirmed ${confirms} time(s): before routing and after its predicted arrival`);
+  ok('the stale prediction is corrected rather than accepted as already home',
+     back.arrived && !back.already && fineWalks === 1,
+     JSON.stringify({ back, fineWalks }));
+  ok('success means the final coarse and fine position both match the hold',
+     me.col === 5 && me.row === 5 && me.x === 352 && me.y === 352 && !me.predicted);
+}
 
 function keeper(w) {
   const p = new Autopilot(w.s, { mode: 'farm', policy: { hunt: 'giant rat' } });
@@ -110,6 +146,80 @@ const holdAt = (p, col, row, { settledMsAgo = 1000, takenMsAgo = settledMsAgo, .
              failures: 0, mostAttackers: 0, proven: false, ...extra };
   return p.hold;
 };
+
+console.log('\n--- a room does not become an unbounded wall experiment ---');
+{
+  const w = world();
+  const p = keeper(w);
+  p.policy.pullsBeforeBarren = 1;
+  p.policy.barrenSpotsBeforeRoomDecision = 2;
+
+  holdAt(p, 5, 5, { proven: true });
+  ok('one fully failed wall is retired without condemning the room',
+     p.pullDidNotConvert('nothing reached the first wall') && !p.noWallRooms?.get(999));
+
+  holdAt(p, 6, 5, { proven: true });
+  ok('a bounded sample of independent failed walls ends the room search',
+     p.pullDidNotConvert('nothing reached the second wall') &&
+       /2 top-ranked walls/.test(p.noWallRooms?.get(999) || ''),
+     p.noWallRooms?.get(999));
+  ok('the decision says it is room-scoped and leaves the strategic goal alone',
+     p.journal.some(e => e.what === 'ROOM WALL SEARCH EXHAUSTED' &&
+       /does not block/.test(e.goal_scope || '')));
+
+  // A truthy geometry is enough because the room decision must short-circuit before
+  // another candidate scan or route. Travel holds remain allowed to use walls here.
+  w.s.world.geometry = {};
+  const stopped = await p.takeSafeSpot('another fight wall', null);
+  ok('another combat pass does not start researching a third wall',
+     !stopped.took && stopped.unreachable_terrain && /stopping the wall search/.test(stopped.why));
+}
+
+console.log('\n--- unrelated combat does not erase a pending pull ---');
+{
+  const w = world();
+  const p = keeper(w);
+  p.pullsWithoutContact = 2;
+  p.pendingPull = { target: 'groundworm larva', target_id: 10, waitUntil: Date.now() + 5000 };
+
+  ok('hitting a different attacker does not convert the pulled quarry',
+     p.pullConverted(11, 'centipede') === false);
+  ok('the quarry follow window and attempt count survive defensive combat',
+     p.pendingPull?.target_id === 10 && p.pullsWithoutContact === 2);
+  ok('the reason is explicit in telemetry rather than hidden in a reset',
+     p.journal.some(e => e.what === 'another creature reached the wall — the pull test is still open' &&
+       e.pulled_id === 10 && e.fought_id === 11));
+
+  ok('contact with the actual pulled quarry converts and clears the experiment',
+     p.pullConverted(10, 'groundworm larva') === true &&
+       p.pendingPull === null && p.pullsWithoutContact === 0);
+}
+
+console.log('\n--- a denied assignment cannot fight its own relocation ---');
+{
+  const policy = { assignedRoom: 566 };
+  const elsewhere = { num: 557 };
+  ok('an available assignment still pulls the keeper back',
+     shouldRelocateToAssignedRoom(policy, elsewhere, new Map()) === true);
+  ok('a successful room probe stored as false also leaves the assignment active',
+     shouldRelocateToAssignedRoom(policy, elsewhere, new Map([[566, false]])) === true);
+  ok('a session-denied assignment is deferred instead of causing room oscillation',
+     shouldRelocateToAssignedRoom(policy, elsewhere,
+       new Map([[566, 'three wall samples failed']])) === false);
+  ok('standing in the assigned room never requests relocation',
+     shouldRelocateToAssignedRoom(policy, { num: 566 },
+       new Map([[566, 'three wall samples failed']])) === false);
+
+  const denied = farmRoomDenials(
+    new Map([[566, false], [557, 'three wall samples failed']]),
+    new Map([[563, 'spawn cap 8/8 is occupied by 1x rebel soldier']]));
+  ok('a successful wall probe is not merged into room refusals', !denied.has(566));
+  ok('wall and spawn-cap refusals share the relocation decision',
+     denied.has(557) && denied.has(563) && denied.size === 2,
+     JSON.stringify([...denied.entries()]));
+  ok('a cap-blocked assignment is deferred just like a wall-refused assignment',
+     shouldRelocateToAssignedRoom({ assignedRoom: 563 }, elsewhere, denied) === false);
+}
 
 console.log('\n--- proving a spot that works ---');
 {

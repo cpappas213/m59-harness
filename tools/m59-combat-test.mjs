@@ -24,10 +24,12 @@ import {
   brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit, signetRings, returnSignetRings,
   signetPayout, signetOwnerOf, SIGNET_OWNERS,
   parseDeathBroadcast, deathBroadcastFor,
+  landedHitSummary,
 } from './m59-skills.mjs';
 import { Autopilot, bearingIn, DEBUG_STATES, belowRoomRetreatHealth,
          rankQuarries, claimQuarry, releaseQuarry,
-         shouldWaitForProvision } from './m59-autopilot.mjs';
+         shouldWaitForProvision, partialFightMadeProgress,
+         engagementRefusal } from './m59-autopilot.mjs';
 import { isFood } from './m59-items.mjs';
 import { outages, outageAround, recoverCrash, readLedger, ACTIVE_FILE } from './m59-uptime.mjs';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -78,6 +80,35 @@ console.log('\nimpossible self-arm recovery');
      spells(['Blink']).knowsCreateWeapon() === false);
 }
 
+console.log('\npartial exchanges and stall progress');
+{
+  const landed = landedHitSummary([
+    'You hit the giant rat for 4 damage.',
+    'The giant rat avoids your blow.',
+    'you hit the giant rat for 3',
+  ]);
+  ok('server-confirmed hits and damage are counted',
+     landed.hits === 2 && landed.damage === 7 && landed.damage_known_hits === 2,
+     JSON.stringify(landed));
+
+  const missed = landedHitSummary([
+    'The giant rat hits you for 2 damage.',
+    'The giant rat avoids your blow.',
+  ]);
+  ok('incoming hits and avoided blows are not our progress',
+     missed.hits === 0 && missed.damage === null, JSON.stringify(missed));
+
+  const unquantified = landedHitSummary(['You hit the mummy.']);
+  ok('an unquantified server-confirmed hit still counts',
+     unquantified.hits === 1 && unquantified.damage === null,
+     JSON.stringify(unquantified));
+  ok('a landed partial exchange resets the idle counter',
+     partialFightMadeProgress({ killed: false, died: false, landed_hits: 1 }));
+  ok('an all-miss break remains no progress',
+     !partialFightMadeProgress({ killed: false, died: false, landed_hits: 0 }));
+  ok('a death never masquerades as partial progress',
+     !partialFightMadeProgress({ died: true, landed_hits: 2 }));
+}
 // A client whose inventory is a list of [id, name], and whose `use` replies the way the
 // server does: either a refusal text from the script, or silence and the id joining the
 // use list.
@@ -1162,6 +1193,19 @@ console.log('\nthe room that filled up with what nobody would kill');
      sst.clearable.length === 0 && sst.blocked[0]?.name === 'thrasher');
   ok('and says it was the safety band, not karma',
      /safety band/.test(sst.blocked[0].why), sst.blocked[0].why);
+
+  // This was the live disagreement: huntingGrounds() and retaliation allowed the
+  // level-50/difficulty-1 fungus beast by its rating of 210, but capBlockers() then
+  // rejected the same source row by level alone and eventually exhausted every room.
+  const gentle = mk({ 'fungus beast': 10 }, { hunt: 'mummy' }).capBlockers({ num: 554 });
+  ok('a capped room can clear a known gentle overlevel creature',
+     gentle.clearable[0]?.name === 'fungus beast' && gentle.blocked.length === 0,
+     JSON.stringify(gentle));
+  ok('capped-room cleanup and retaliation share one danger decision',
+     engagementRefusal(
+       { name: 'fungus beast', level: 50, attack_rating: 210 },
+       { name: 'fungus beast', ceiling: 31 },
+     ) === null);
 
   // Most numerous first: the point is freeing slots.
   // Ten, because nine would not be full and the whole block would silently test nothing.

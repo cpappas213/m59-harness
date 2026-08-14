@@ -24,7 +24,8 @@ import * as skills from './m59-skills.mjs';
 import { OF, affordances, dropSpec as dropSpecFor } from './m59-parse.mjs';
 import { isFood, foodValue } from './m59-items.mjs';
 import { loadSpawns, huntingGrounds, creatureMatchesHunt, roomThreats, goalYield,
-         roomCap, karmaSafe } from './m59-spawns.mjs';
+         roomCap, karmaSafe,
+         FORGIVING_RATING as GENTLE_RATING } from './m59-spawns.mjs';
 import { findPath, roomsWithin } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
@@ -59,6 +60,13 @@ import { fileURLToPath } from 'node:url';
 // One resolver, shared with the broker's `tithe` tool — see titheFleet in m59-tithe.mjs
 // for why two answers here meant two books and a fleet that tithed twice a day.
 const TITHE_FLEET = titheFleet();
+
+// Keep the stall-accounting decision independently testable. A partial exchange is
+// useful only when the server confirms that we damaged the still-retained quarry;
+// neither attempted swings nor dying during the exchange qualify as progress.
+export function partialFightMadeProgress(result = {}) {
+  return !result?.died && Number(result?.landed_hits || 0) > 0;
+}
 
 // Built by: node tools/m59-spawns.mjs
 const SPAWN_FILE = process.env.M59_SPAWN_FILE ||
@@ -103,8 +111,14 @@ function preferredQuietRetreat(world, { maxHops = Infinity } = {}) {
 // the quarry. A bot assigned to Castle Victoria while standing in Marion's crypt could
 // therefore hunt the same skeleton there forever: status said assigned_room=39 while
 // the character never took one step toward 39.
-export function shouldRelocateToAssignedRoom(policy, room) {
-  return policy?.assignedRoom != null && room?.num != null && room.num !== policy.assignedRoom;
+export function shouldRelocateToAssignedRoom(policy, room, deniedRooms = null) {
+  const assigned = policy?.assignedRoom;
+  if (assigned == null || room?.num == null || room.num === assigned) return false;
+  // An assignment is strong, not absolute. If this same keeper has already denied the
+  // room under a bounded safety experiment, forcing the assignment and the denial to
+  // alternate makes both rules useless: leave 566, immediately aim at 566, repeat.
+  // `false` means the room was probed and accepted; only a truthy reason defers it.
+  return !deniedRooms?.get(assigned);
 }
 
 // Keep an explicit placement reachable even when it is not one of the globally
@@ -149,6 +163,29 @@ export function reachableOpenFightVigorBar(dangerBar, fightFloor) {
   if (dangerBar == null) return fightFloor;
   if (fightFloor == null) return dangerBar;
   return Math.min(dangerBar, fightFloor);
+}
+
+// EVERY ROOM-SCOPED FARM REFUSAL HAS TO PARTICIPATE IN THE SAME DECISION.
+//
+// A wall refusal used to be the only denial, so assignment deferral and prey-room
+// ranking read `noWallRooms` directly.  Spawn-cap refusals were later recorded in a
+// separate `cappedRooms` collection, but none of those readers consulted it.  The
+// keeper could therefore announce that it was giving a capped room up, then stay
+// there (with roam:false) or select it again on the next relocation.
+//
+// Keep the evidence separate at the source so status can say what happened, but merge
+// it at the decision boundary.  False wall entries mean a room was tested and accepted,
+// so only truthy reasons are denials.  Everything here is session-local: this chooses a
+// different room for the current keeper and never blocks the strategic goal.
+export function farmRoomDenials(noWallRooms = null, cappedRooms = null) {
+  const denied = new Map();
+  for (const [room, why] of noWallRooms?.entries?.() ?? []) {
+    if (why) denied.set(room, why);
+  }
+  for (const [room, why] of cappedRooms?.entries?.() ?? []) {
+    if (why) denied.set(room, why);
+  }
+  return denied;
 }
 
 // How long a spot must go quiet, with something adjacent to us that wants to kill us,
@@ -305,8 +342,6 @@ const EAT_TO_AT_LEAST = 120;
 // difficulty is how often one lands, and only the table knows it.
 //
 // Unknown difficulty means unknown danger, and unknown is NOT gentle.
-const GENTLE_RATING = 210;                 // a fungus beast: level 50, difficulty 1
-
 // WHAT A KEEPER CAN BE OUT THERE FOR, and the list is closed on purpose — anything not on
 // it is reported as unrecognised rather than quietly skipping the yield check. `advance`
 // asks whether the prey can still raise what we are trying to raise; `equip` asks whether
@@ -320,6 +355,35 @@ function ratingOfCreature(name) {
   const hit = all[q] || Object.values(all).find(v => q.includes(String(v.name).toLowerCase()));
   return hit?.attack_rating ?? null;
 }
+
+// ONE SOURCE-DERIVED ENGAGEMENT DECISION FOR EVERY KEEPER PATH.
+//
+// The capped-room cleanup path and the retaliation path used to implement this rule
+// separately. Both read the same attack rating, but capBlockers() fell through from its
+// rating-aware branch into an unconditional level-only rejection. The result was an
+// impossible disagreement: a level-50/difficulty-1 fungus beast (rating 210) was safe to
+// hit back at and safe enough for huntingGrounds(), yet unsafe to clear from a capped
+// room. Once every alternate room was boundedly refused, that contradiction stopped the
+// whole keeper. Keep unknown data fail-closed, forgive only a known gentle rating, and
+// make every caller consume the same result.
+export function engagementRefusal(info, { name = info?.name ?? '', ceiling = null } = {}) {
+  const level = info?.level ?? null;
+  const rating = info?.attack_rating ?? null;
+  if (!info)
+    return { name, level: null, rating: null,
+             why: 'nothing is known about it — the spawn table has no row for this name, and ' +
+                  'an unrecognised creature is refused rather than assumed harmless' };
+  if (rating != null && rating <= GENTLE_RATING) return null;
+  if (ceiling != null && level != null && level > ceiling)
+    return { name, level, rating,
+             why: rating != null
+               ? `attack rating ${rating} is above the forgiving band of ${GENTLE_RATING} ` +
+                 `and level ${level} is above the safety band of ${ceiling}`
+               : `level ${level} is above the safety band of ${ceiling} and the table has no ` +
+                 'attack rating to judge it more kindly by' };
+  return null;
+}
+
 function vigorBarFor(names, policy) {
   const full = policy.openFightVigor ?? 130;
   const list = [].concat(names || []).filter(Boolean);
@@ -744,6 +808,13 @@ export class Autopilot {
       // How many COMPLETE pulls that never turn into a fight before the square is
       // written off. Geometry only ranks candidates; this live test is the veto.
       pullsBeforeBarren: 4,
+      // Do not turn a room with hundreds of wall candidates into a multi-hour research
+      // project. Each entry in this sample has already failed `pullsBeforeBarren`
+      // complete pulls with a distance-sized follow window. After several independent,
+      // top-ranked walls agree, make the existing room-scoped safety decision: fight in
+      // the open only when the open-fight gates permit it, otherwise relocate. This is
+      // deliberately a room decision, never a goal-wide block.
+      barrenSpotsBeforeRoomDecision: 3,
       // Give the quarry enough time to walk the same ground we just crossed. Decisions
       // run every second, while one square of movement takes about a second; counting
       // the very next decision as a failed pull condemned distant but working walls.
@@ -2129,6 +2200,13 @@ export class Autopilot {
     const s = this.s, c = s.client;
     const room = s.world?.room, geo = s.world?.geometry, me = c?.self;
     if (!geo || !me || !room) return { took: false, why: 'no geometry for this room' };
+    // Once several independently tested walls have all failed, continuing to scan the
+    // room is research, not survival. `noWallRooms` feeds the already-bounded choice
+    // below between a safe open fight and relocating; it does not block the strategic
+    // goal and is cleared with the keeper process.
+    const roomWallDecision = source === 'fight' ? this.noWallRooms?.get(room.num) : null;
+    if (roomWallDecision)
+      return { took: false, unreachable_terrain: true, why: roomWallDecision };
 
     // PLAYER REACH AND MONSTER REACH ARE DIFFERENT GRAPHS WHEN A ROOM HAS DOORS.
     //
@@ -2295,8 +2373,12 @@ export class Autopilot {
       const arrival = fine
         ? await skills.returnToSpot(s, { col: spot.col, row: spot.row, ...fine }, { maxSteps: 24 })
                       .catch(e => ({ arrived: false, why: e.message }))
-        : await s.walkTo(spot.col, spot.row, { maxSteps: 24 })
-                 .catch(e => ({ arrived: false, why: e.message }));
+        // Claiming a safe square is a correctness boundary, just like returning to one
+        // after a pull. A plain walk can finish on a predicted position which a delayed
+        // server update revokes on the next pass; use the shared confirmed arrival
+        // contract for both remembered and newly-derived spots.
+        : await skills.returnToSpot(s, { col: spot.col, row: spot.row }, { maxSteps: 24 })
+                      .catch(e => ({ arrived: false, why: e.message }));
       this.movedAt = Date.now();
       if (!arrival.arrived) {
         releaseSpot(this.s.name);      // hand the reservation back
@@ -3600,29 +3682,26 @@ export class Autopilot {
       // to guess about — the Duke's soldiers alone account for 155 kills in the Tos
       // death record and appear in deaths that happened inside APPROVED safe squares.
       //
-      // Judge on attack_rating where we have it, because level is not danger
-      // (GetAttackAbility = 3*viLevel + 60*viDifficulty), and fall back to level only
-      // when the rating is missing. Unknown is refused either way.
-      const rating = info?.attack_rating ?? null;
+      // Judge through the same rating-aware predicate retaliation uses. The former
+      // fallback applied even when a gentle rating was known, making this path disagree
+      // with refuseEngagement() and huntingGrounds() about the same creature.
+      const refused = engagementRefusal(info, { name, ceiling });
       if (!karmaSafe(info?.karma, this.policy.karma)) {
         status.blocked.push({ ...row, why: `killing it moves karma the wrong way for a ` +
                                             `${this.policy.karma} character (its karma is ${info?.karma})` });
-      } else if (!info) {
-        status.blocked.push({ ...row, rating: null,
-          why: 'nothing is known about it — the spawn table has no row for this name, and ' +
-               'an unrecognised creature is refused rather than assumed harmless' });
       } else if (politicalTroop) {
-        status.blocked.push({ ...row, rating,
+        // AND THIS ONE IS AHEAD OF THE DANGER TEST ON PURPOSE. `engagementRefusal`
+        // forgives anything with a gentle rating, and a troop rolls its level and
+        // difficulty at creation (troop.kod:215) — so the weakest roll can come out
+        // gentle and be cleared for slot-freeing. Attackability permits an initiated
+        // swing; it does not make a political actor housekeeping prey.
+        status.blocked.push({ ...row, rating: info?.attack_rating ?? null,
           why: 'political faction troop; attackability permits an initiated swing but does not ' +
                'prove aggression, so it is never incidental room-clearing prey' });
-      } else if (rating != null && rating > GENTLE_RATING && lvl != null && lvl > ceiling) {
-        status.blocked.push({ ...row, rating,
-          why: `attack rating ${rating} is above the forgiving band of ${GENTLE_RATING} ` +
-               `and level ${lvl} is above the safety band of ${ceiling}` });
-      } else if (ceiling != null && lvl != null && lvl > ceiling) {
-        status.blocked.push({ ...row, rating, why: `level ${lvl} is above the safety band of ${ceiling}` });
+      } else if (refused) {
+        status.blocked.push({ ...row, rating: refused.rating, why: refused.why });
       } else {
-        status.clearable.push({ ...row, rating });
+        status.clearable.push({ ...row, rating: info?.attack_rating ?? null });
       }
     }
     // Most numerous first: the point is to free slots, and eight of one thing is where
@@ -4348,37 +4427,8 @@ export class Autopilot {
     const spawns = loadSpawns(SPAWN_FILE);
     const info = Object.values(spawns.creatures ?? {})
       .find(x => String(x.name).toLowerCase() === key);
-    const level = this.s.client?.vitals?.()?.health?.max ?? 0;
     const ceiling = this.threatCeiling();
-    const lvl = info?.level ?? null, rating = info?.attack_rating ?? null;
-    if (!info)
-      return { name, level: null, rating: null,
-               why: 'nothing is known about it — the spawn table has no row for this name, and ' +
-                    'an unrecognised creature is refused rather than assumed harmless' };
-
-    // GENTLE BY RATING IS FAIR GAME WHATEVER ITS LEVEL, and this is deliberately NOT the
-    // same test capBlockers makes.
-    //
-    // capBlockers falls through to a level-only refusal, which reads a fungus beast —
-    // level 50, difficulty 1, attack rating 210 — as more dangerous than a centipede at
-    // level 30 and rating 390. CLAUDE.md is explicit that this is backwards: level is
-    // what a blow costs, difficulty is how often one lands, and the level-50 creature is
-    // the SAFER fight. There it is survivable, because a refusal only means "do not go
-    // out of your way to clear it".
-    //
-    // Here it is not survivable, because the alternative to hitting back is turning your
-    // back on something already swinging. Walking away from a gentle attacker costs free
-    // hits and gains nothing. So retaliation judges on the RATING, which is the number
-    // that actually describes danger, and refuses only what is genuinely above the band.
-    if (rating != null && rating <= GENTLE_RATING) return null;
-    if (ceiling != null && lvl != null && lvl > ceiling)
-      return { name, level: lvl, rating,
-               why: rating != null
-                 ? `attack rating ${rating} is above the forgiving band of ${GENTLE_RATING} ` +
-                   `and level ${lvl} is above the safety band of ${ceiling}`
-                 : `level ${lvl} is above the safety band of ${ceiling} and the table has no ` +
-                   `attack rating to judge it more kindly by` };
-    return null;
+    return engagementRefusal(info, { name, ceiling });
   }
 
   // ------------------------------------------------------------------ post-mortem
@@ -4594,6 +4644,23 @@ export class Autopilot {
       const set = this.barrenSpots.get(room.num) ?? new Set();
       set.add(`${this.hold.col},${this.hold.row}`);
       this.barrenSpots.set(room.num, set);
+      const roomLimit = Math.max(1,
+        Math.floor(Number(this.policy.barrenSpotsBeforeRoomDecision) || 3));
+      if (set.size >= roomLimit) {
+        const reason = `${set.size} top-ranked walls each failed ${limit} complete pull ` +
+          `window(s); stopping the wall search in this room`;
+        const wasDecided = !!this.noWallRooms?.get(room.num);
+        (this.noWallRooms ??= new Map()).set(room.num, reason);
+        if (!wasDecided) this.note('ROOM WALL SEARCH EXHAUSTED', {
+          room: room.name, room_num: room.num, walls_tested: set.size,
+          pulls_per_wall: limit,
+          why: 'each wall survived a full distance-sized follow window repeatedly and none ' +
+               'produced contact; testing hundreds more would be an unbounded research loop',
+          doing_instead: 'using the existing room-scoped decision: fight open only if the ' +
+                         'health, vigor, and damage gates allow it; otherwise relocate',
+          goal_scope: 'unchanged — this does not block or fail the strategic goal',
+        });
+      }
     }
     // NOT recorded in the SafeSpotBook, deliberately. The book's `failed` means "we were
     // hit standing here" and feeds `discredited`, which is a SAFETY judgement. A cliff
@@ -4640,12 +4707,31 @@ export class Autopilot {
     return { retired: true, attempt, limit };
   }
 
-  // Contact happened, so whatever we are standing on works. Called from the fight path.
-  pullConverted() {
+  // Contact with THE THING WE PULLED happened, so the pull converted. An unrelated
+  // attacker reaching the wall proves only that it can reach us; it says nothing about
+  // the groundworm (or other named quarry) whose full follow window is pending. Treating
+  // any defensive swing as conversion reset the quarry's attempt to one forever in
+  // mixed-spawn rooms.
+  pullConverted(foeId = null, foeName = null) {
+    if (this.pendingPull?.target_id != null && foeId !== this.pendingPull.target_id) {
+      if (!this.pendingPull.otherContactNoted) {
+        this.pendingPull.otherContactNoted = true;
+        this.note('another creature reached the wall — the pull test is still open', {
+          pulled: this.pendingPull.target,
+          pulled_id: this.pendingPull.target_id,
+          fought: foeName,
+          fought_id: foeId,
+          why: 'contact is evidence only for the creature that made contact; unrelated ' +
+               'defensive combat cannot prove that the pulled quarry followed',
+        });
+      }
+      return false;
+    }
     this.pullsWithoutContact = 0;
     this.pendingPull = null;
     this.pulledLastPass = false; // clear state left by an older in-process keeper
     this.pullFailures?.clear();
+    return true;
   }
 
   // DOES WHAT WE ARE KILLING STILL PAY FOR WHAT WE SAID WE WERE FARMING?
@@ -5168,6 +5254,7 @@ export class Autopilot {
   }
 
   status({ full = false } = {}) {
+    const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms);
     return {
       running: this.running, mode: this.mode, policy: this.policy,
       // Null unless a fleet update is waiting on this character. See park().
@@ -5284,13 +5371,14 @@ export class Autopilot {
       // limit: a keeper that quietly declines half the map looks identical to one that
       // is simply unlucky with spawns, and the fleet would slowly stop working with no
       // single thing to point at. This is the list to read when output falls.
-      denied_rooms: this.noWallRooms?.size
-        ? { count: this.noWallRooms.size,
-            rooms: [...this.noWallRooms.entries()].filter(([, v]) => v !== false)
-                     .map(([room, why]) => ({ room, why })),
-            note: 'refused for having no safe wall this keeper could find. Not proof there is ' +
-                  'none — see requireSafeWall. Cleared on restart, so a better detector wins ' +
-                  'them back without anything to undo' }
+      denied_rooms: deniedFarmRooms.size
+        ? { count: deniedFarmRooms.size,
+            rooms: [...deniedFarmRooms.entries()].map(([room, why]) => ({
+              room, why,
+              kind: this.cappedRooms?.has(room) ? 'spawn_cap_blocked' : 'no_safe_wall',
+            })),
+            note: 'session-local room refusals only. The keeper tries other hunting grounds; ' +
+                  'these do not block or fail the strategic goal' }
         : null,
       // IS THE MONEY GETTING TO A BANK. banked is the total put away; carried_at_death
       // is what was lost on the floor anyway, and is the number to drive to zero.
@@ -5314,6 +5402,10 @@ export class Autopilot {
       // case and must not read as 0%.
       placement: this.policy.assignedRoom == null && !this.placement.relocations ? null : {
         assigned_room: this.policy.assignedRoom,
+        assignment_deferred: this.policy.assignedRoom != null
+          ? deniedFarmRooms.has(this.policy.assignedRoom) : false,
+        assignment_deferred_reason: this.policy.assignedRoom != null
+          ? deniedFarmRooms.get(this.policy.assignedRoom) || null : null,
         standing_where_assigned: this.policy.assignedRoom != null
           ? this.s.world?.room?.num === this.policy.assignedRoom : null,
         held: this.placement.relocations
@@ -7666,7 +7758,22 @@ export class Autopilot {
         const spawns0 = loadSpawns(SPAWN_FILE);
         const here = (spawns0?.rooms?.[room.num] || []).filter(x => x.huntable);
         const preyHere = here.some(x => creatureMatchesHunt(x, this.policy.hunt));
-        const offAssignment = shouldRelocateToAssignedRoom(this.policy, room);
+        const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms);
+        const assignmentDenied = this.policy.assignedRoom != null
+          ? deniedFarmRooms.get(this.policy.assignedRoom) : null;
+        const offAssignment = shouldRelocateToAssignedRoom(this.policy, room, deniedFarmRooms);
+        if (preyHere && assignmentDenied && this.warnedAssignmentDeferred !== this.policy.assignedRoom) {
+          this.warnedAssignmentDeferred = this.policy.assignedRoom;
+          this.note('working an alternate room while the assignment is deferred', {
+            room: room.name, room_num: room.num,
+            assigned_room: this.policy.assignedRoom,
+            why_assignment_deferred: assignmentDenied,
+            why: 'the assigned room was denied by this keeper\'s bounded room evidence; ' +
+                 'sending it straight back would oscillate between assignment and refusal',
+            scope: 'session-only — the configured assignment is unchanged and a fresh keeper ' +
+                   'can reconsider it',
+          });
+        }
         if (!preyHere || offAssignment) {
           const known = this.preyRooms(room);
           if (known.length) {
@@ -7780,15 +7887,59 @@ export class Autopilot {
           // Cannot clear it, so the room is finished for us — and it will still be
           // finished when we come back, because an abandoned full room keeps its
           // generator switched off. Go, and prefer somewhere else next time.
+          const reason = `spawn cap ${capped.present}/${capped.cap} is occupied by ` +
+            capped.blocked.map(b => `${b.count}x ${b.name}`).join(', ') +
+            ' that this keeper will not safely fight';
+          (this.cappedRooms ??= new Map()).set(room.num, reason);
+          this.tally.rooms_denied = farmRoomDenials(this.noWallRooms, this.cappedRooms).size;
           this.note('this room is capped by things we will not fight', {
             room: room?.name, at_cap: `${capped.present}/${capped.cap}`,
             blocked_by: capped.blocked.map(b => `${b.count}x ${b.name} — ${b.why}`),
             why: 'the generator is gated on the room total, so nothing new spawns while ' +
                  'these are alive. Leaving does NOT reset it (monsroom.kod:353 only ' +
-                 'reloads a room left with zero monsters) — this is giving it up.' });
-          this.cappedRooms = (this.cappedRooms ?? new Set()).add(room?.num);
-          if (this.policy.roam) { await this.roam(room); return; }
+                 'reloads a room left with zero monsters) — this is giving it up.',
+            doing_instead: 'leaving for a different room that generates the prey',
+            goal_scope: 'this refuses only the current room for this keeper session; the ' +
+                        'strategic goal remains active',
+          });
+
+          // GIVING UP A ROOM MUST ACTUALLY LEAVE IT. `roam` is deliberately false for
+          // assigned keepers, so gating this transition on policy.roam turned the line
+          // above into narration rather than behavior. Select through preyRooms(), which
+          // now excludes both wall-refused and cap-blocked rooms, and use the same bounded
+          // travel path as the no-wall refusal below.
+          const elsewhere = this.preyRooms(room);
+          if (elsewhere.length) {
+            this.doing = 'travelling';
+            await this.leaveHold('leaving a room whose spawn cap cannot recover',
+                                 { force: true }).catch(() => {});
+            const go = elsewhere[0];
+            const moved = await this.travel(go.room, { maxHops: 14 })
+                                    .catch(e => ({ arrived: false, reason: e.message }));
+            if (moved.arrived) {
+              this.homeRoom = go.room;
+              this.emptyPasses = 0;
+              this.placement.relocations++;
+              this.note('left a spawn-blocked hunting room', {
+                from: room.name, to: go.room_name, room: go.room,
+                why: reason,
+                note: 'the abandoned room stays denied only for this keeper session',
+              });
+              this.progress('left a room whose spawn cap cannot recover');
+              return;
+            }
+            this.note('could not leave the spawn-blocked room', {
+              room: room.name, tried: go.room_name, why: moved.reason,
+            });
+          } else {
+            this.note('no alternate room remains for this prey', {
+              room: room.name, hunting: this.policy.hunt,
+              why: 'every generated hunting ground is unreachable or has a session-local ' +
+                   'room refusal; this does not block the goal from being replanned',
+            });
+          }
           this.noProgress('room capped by creatures we will not fight');
+          return;
         }
       }
 
@@ -8626,7 +8777,7 @@ export class Autopilot {
       }
       // We got a fight. Whatever we are standing on can be fought from, so the cliff
       // counter resets — this is the only evidence that actually settles the question.
-      if (f.rounds > 0) this.pullConverted();
+      if (f.rounds > 0) this.pullConverted(claimedSwing, f.target ?? engageName);
       this.swungAt = Date.now();
       this.foeId = f.foe_id ?? null;
       // fight() can now tell death apart from a stale object id. If it is the
@@ -8697,12 +8848,29 @@ export class Autopilot {
         if (room?.num != null) this.homeRoom = room.num;
         this.progress('killed something');
       } else {
-        if (f.died) releaseQuarry(this.s.name);
-        this.noProgress(f.died ? 'died in a fight' : 'broke off without a kill');
+        if (f.died) {
+          releaseQuarry(this.s.name);
+          this.noProgress('died in a fight');
+        } else if (partialFightMadeProgress(f)) {
+          // THE QUARRY MOVING OUT OF REACH IS NOT THE FIGHT FAILING.
+          //
+          // fight() preserves foe_id so the next pull resumes this exact wounded object.
+          // A landed hit is therefore durable progress toward the same kill even when the
+          // exchange ends because it stepped 3.2 squares away. The old unconditional
+          // noProgress() turned five such damaging exchanges into STALLED and the
+          // controller stopped healthy keepers after about a minute. Count only the
+          // server-confirmed landed blow, never the attempted swing: all-miss breaks still
+          // accumulate and expose a genuinely ineffective fight.
+          this.progress('damaged the current quarry');
+        } else {
+          this.noProgress('broke off without a landed hit or a kill');
+        }
       }
       this.countLoot(looted);
       this.note(f.killed ? 'killed' : (f.died ? 'died' : 'broke off'), {
         target: f.target, rounds: f.rounds, looted,
+        landed_hits: f.landed_hits ?? 0,
+        damage_dealt: f.damage_dealt ?? null,
         health: f.health?.after?.value, why: f.note,
         ...(holding ? { from_safe_spot: { col: this.hold?.col, row: this.hold?.row,
                                           proven: this.holdWorks() } } : {}),
@@ -11116,19 +11284,17 @@ export class Autopilot {
     if (!want) return [];
     const spawns = loadSpawns(SPAWN_FILE);
     if (!spawns) return [];
-    const level = this.s.client?.vitals?.()?.health?.max ?? 0;
     const ceiling = this.threatCeiling();
+    const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms);
     // Do not truncate before looking for the assignment.  Ranking is global, whereas
     // assignedRoom is an operator/fleet decision and must be allowed to outrank it.
     const rooms = huntingGrounds(spawns, want,
       { maxDanger: ceiling, limit: Number.MAX_SAFE_INTEGER })
       .filter(r => !r.rejected && r.room !== room?.num && !this.unreachable.has(r.room))
-      // And not one we have already refused for having no wall. Without this the
-      // keeper walks out of a wall-less room straight into the next wall-less room and
-      // back again, because the spawn table ranks them identically and has no opinion
-      // about whether either can be fought in.
-      .filter(r => this.noWallRooms?.get(r.room) === undefined ||
-                   this.noWallRooms.get(r.room) === false);
+      // And not one we have already refused for having no usable wall or an irrecoverably
+      // blocked spawn cap. Without this the keeper walks out and ranks the room it just
+      // abandoned as the best destination again.
+      .filter(r => !deniedFarmRooms.has(r.room));
     // AN ASSIGNMENT OUTRANKS THE SPAWN TABLE. Every caller takes [0], so putting the
     // assigned room at the front is the whole of "go back where you were put" — and
     // it stays subject to the same filters above, so an assignment to somewhere that
