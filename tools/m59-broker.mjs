@@ -53,7 +53,7 @@ import * as transits from './m59-transits.mjs';
 import * as descriptions from './m59-describe.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { loadoutFor, reconcile as reconcileLoadout, plannedAbilities } from './m59-loadout.mjs';
-import { resolveItemNames } from './m59-items.mjs';
+import { resolveItemNames, weighItem } from './m59-items.mjs';
 import { factionAssignment, factionJoinConfirmed, factionJoinSpec,
          factionOfferAllowed, FACTION_SOLDIER, factionFromProfile,
          visibleTokenFromProfile, isCouncilToken, soldierAssignment,
@@ -6799,7 +6799,12 @@ const TOOLS = [
       'list. Returns item ids and prices; pass buy_ids to purchase.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' }, seller: { type: ['string', 'number'] },
-      buy_ids: { type: 'array', items: { type: 'number' } } }, required: ['agent', 'seller'] },
+      buy_ids: { type: 'array',
+                 description: 'what to buy: a bare id means one, {id, amount} means that many. ' +
+                   'Repeated ids are summed, and every line is cut to what the purse, the weight ' +
+                   'ceiling and the bulk ceiling actually allow — whatever is cut comes back under ' +
+                   '`clamped` rather than being dropped quietly.',
+                 items: { type: ['number', 'object'] } } }, required: ['agent', 'seller'] },
     run: async (a) => {
       const s = session(a.agent), c = s.need();
       const t = resolveTarget(s, a.seller);
@@ -6820,13 +6825,85 @@ const TOOLS = [
       // That is why this fleet has ZERO successful purchases in its entire recorded
       // history while selling worked fine — sell takes no quantity. The trade path was
       // fixed for the same reason earlier; the shop path was not.
-      const wanted = a.buy_ids.map(id => (typeof id === 'object' && id)
-        ? { id: Number(id.id), amount: Math.max(1, Number(id.amount) || 1) }
-        : { id: Number(id), amount: 1 });
+      // ONE LINE PER ITEM, WITH THE QUANTITY WORKED OUT — not the same id repeated.
+      //
+      // Callers used to express "forty herbs" as the herb id forty times, and that is not
+      // an unreasonable thing to have arrived at: a buy can fail for THREE different
+      // reasons that all look alike from out here — no money, no weight, no bulk — and
+      // buying one at a time gets you as far as whichever ceiling you hit first instead of
+      // losing the whole order. It is still the wrong shape. It is forty lines on the wire
+      // where one would do, it is slow enough that the keeper starts dragging the
+      // character back to what it was doing mid-purchase, and a long enough run risks the
+      // server's own packet throttle (INCOMING_PACKET_THROTTLE, user.kod:50) discarding the
+      // tail in silence.
+      //
+      // So: merge duplicate ids, then work out what actually fits and ask for that once.
+      // The three ceilings are all knowable here — `cost` comes with the offer, `c.money`
+      // is the purse, and carryCapacity() reports the weight and bulk headroom off the
+      // same table the pack is weighed with. What gets clamped is REPORTED rather than
+      // quietly dropped, because "asked for 40, bought 12" and "asked for 40, bought 40"
+      // must not read the same.
+      const merged = new Map();
+      for (const e of a.buy_ids) {
+        const id = Number(typeof e === 'object' && e ? e.id : e);
+        const amt = Math.max(1, Number(typeof e === 'object' && e ? e.amount : 1) || 1);
+        if (Number.isFinite(id)) merged.set(id, (merged.get(id) || 0) + amt);
+      }
+      const offer = new Map((shop.items || []).map(i => [Number(i.id), i]));
+      const cap = skills.carryCapacity(c);
+      // THE PURSE IS A STACK IN THE PACK, NOT A FIELD ON THE CLIENT. `c.money` does not
+      // exist; reading it returned null, `Number(null) || 0` made that a hard zero, and
+      // every line was then clamped to nothing — the buy answered "nothing was bought"
+      // while the character stood at the counter with 115 shillings and the tool above
+      // reported `spent 0sh` twice at two different counters. An unreadable ceiling must
+      // not clamp AT ALL, which is the rule the weight and bulk checks below already
+      // follow; the money check was the one place it was not applied.
+      const purseStack = (c.inventory || [])
+        .filter(o => /shilling/i.test(c.rsc?.get?.(o.nameRsc) || ''));
+      let purse = purseStack.length
+        ? purseStack.reduce((n, o) => n + (Number(o.amount) || 1), 0)
+        : Infinity;
+      const purseKnown = Number.isFinite(purse);
+      // Only clamp on space when the load is exact. An unweighed item means the headroom
+      // is a guess, and guessing DOWN here silently under-buys; the server refusing is the
+      // honest failure in that case.
+      let roomW = cap?.room_for ? cap.room_for.weight : Infinity;
+      let roomB = cap?.room_for ? cap.room_for.bulk : Infinity;
+      const clamped = [];
+      const wanted = [];
+      for (const [id, askedFor] of merged) {
+        const o = offer.get(id);
+        const unit = Number(o?.cost) || 0;
+        const w = o?.name ? weighItem(o.name) : null;
+        let amount = askedFor;
+        const limits = [];
+        if (unit > 0 && purseKnown) {
+          const afford = Math.floor(purse / unit);
+          if (afford < amount) { amount = afford; limits.push('purse'); }
+        }
+        if (w?.weight > 0 && Number.isFinite(roomW)) {
+          const fits = Math.floor(roomW / w.weight);
+          if (fits < amount) { amount = fits; limits.push('weight'); }
+        }
+        if (w?.bulk > 0 && Number.isFinite(roomB)) {
+          const fits = Math.floor(roomB / w.bulk);
+          if (fits < amount) { amount = fits; limits.push('bulk'); }
+        }
+        if (amount < 1) { clamped.push({ id, name: o?.name ?? null, asked_for: askedFor, buying: 0, limited_by: limits }); continue; }
+        if (amount < askedFor) clamped.push({ id, name: o?.name ?? null, asked_for: askedFor, buying: amount, limited_by: limits });
+        purse -= unit * amount;
+        if (w?.weight > 0 && Number.isFinite(roomW)) roomW -= w.weight * amount;
+        if (w?.bulk > 0 && Number.isFinite(roomB)) roomB -= w.bulk * amount;
+        wanted.push({ id, amount });
+      }
+      if (!wanted.length)
+        return { seller: shop.sellerId, bought: [], clamped, purse: purseKnown ? purse : null,
+                 note: 'nothing was bought — every line was cut to zero by purse, weight or bulk' };
       const before = c.evSeq;
       await s.pacer.submit('buy', () => c.buyItems(shop.sellerId, wanted));
       const after = await c.waitFor({ since: before, timeoutMs: 4000 });
-      return { seller: shop.sellerId, bought: a.buy_ids,
+      return { seller: shop.sellerId, bought: wanted,
+               ...(clamped.length ? { clamped } : {}),
                messages: after.events.filter(e => e.text).map(e => e.text),
                got: after.events.filter(e => e.kind === 'got').flatMap(e => e.items) };
     },
