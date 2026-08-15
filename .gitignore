@@ -192,3 +192,22 @@ __pycache__/
 # Verified daily guild payments are live per-character operational state. They name the
 # local fleet and characters and exist only to prevent a restart from charging twice.
 /substrate/guild-tithes/
+
+# Player observation logs — sightings of other players on the live server (name, room,
+# object_id, timestamps). One server's data, not reference material, and identifying
+# to the players observed.
+/substrate/player-history/
+/substrate/players-seen.json
+
+# Runtime state files written by swarm agents or director processes.
+/substrate/ai-director-status.json
+/substrate/targets.json
+
+# Local machine config files. .mcp.json carries the broker port (a local choice) and
+# start-broker.sh carries the full server host — both are regenerated per machine.
+# The initial-commit .mcp.json template uses 127.0.0.1 and is the only committed form.
+start-broker.sh
+
+# Swarm agent working artifacts — not part of the project.
+PROJECT_CLOSURE.md
+.claude/worktrees/
