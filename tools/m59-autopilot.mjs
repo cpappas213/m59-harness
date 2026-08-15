@@ -55,6 +55,10 @@ import { CITY_INNS } from './m59-underworld.mjs';
 // existed, and every call below is guarded on the null that says so.
 import { loadoutFor, keepTest, sellTest, dropRank, wantsOf, norm,
          reconcile, equipYield } from './m59-loadout.mjs';
+// Behavior-tree subtree factories and the blackboard helper. Only getArmedTree is
+// wired today, behind a per-character policy.useBT opt-in. The rest (handle_threat,
+// farm, etc.) come later, gated on the m59-combat-test suite per docs/BT-PLAN.md.
+import { getArmedTree, updateBlackboard } from './m59-bt-nodes.mjs';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -6270,6 +6274,42 @@ export class Autopilot {
     const s = this.s;
     if (!s.live) { this.note('not in game'); return; }
     const c = s.client;
+    // ------------------------------------------------------------------
+    // BEHAVIOR-TREE GET-ARMED SUBTREE (opt-in via policy.useBT)
+    //
+    // When policy.useBT is true and the character is NOT yet wielding a weapon at
+    // tick start, hand control to the BT for this one decision: try the pack, try
+    // conjuring, fall through to travelling to a smith and buying. This is a
+    // per-character flag -- the fleet stays on the proven sequential code unless
+    // somebody flipped the lever on a specific character, so the BT path is tested
+    // in isolation before any fleet-wide rollout.
+    //
+    // Out of scope here (per docs/BT-PLAN.md): the threat ladder / handle_threat
+    // subtree, which is gated on the 383 passing m59-combat-test cases and is the
+    // last subtree to land. Event-driven reflexes (watchdog, flee, rest-on-damage,
+    // fight-back, death/Underworld) stay on the client and are NEVER moved into the
+    // BT.
+    // ------------------------------------------------------------------
+    if (this.policy && this.policy.useBT === true &&
+        c && typeof c.armed === 'function' && !c.armed()) {
+      const bb = updateBlackboard(
+        this._btBlackboard || (this._btBlackboard = {}),
+        { client: c, session: this, policy: this.policy },
+      );
+      const tree = getArmedTree({ session: { keeper: this } });
+      const btResult = await tree.tick(bb);
+      if (c.armed()) { if (this.inert) this.revive('BT armed us'); this.progress('armed itself'); return; }
+      if (btResult === 'RUNNING' || Object.keys(bb._bt || {}).length > 0) { return; }
+    }
+
+    // APPLY THE LOADOUT POLICY OVERLAY FIRST. Every decision in this pass reads
+    // `this.policy`, and the loadout file is the source of truth for per-character
+    // settings (karma, buy_reagents, hunt, assigned_room, pulls_before_barren). Without
+    // this, a broker restart silently demotes every planned character to defaults and
+    // the next farm run does the wrong thing until somebody re-applies overrides.
+    // Done before declareInterest so the board this character posts is consistent with
+    // the policy the rest of the pass is about to act on.
+    this.applyLoadoutPolicyOverlay();
     // Post where we are, every pass. Cheap, and it is the only way one keeper can find
     // another that has wandered — see runProvision, where a quartermaster arrives to
     // find the supplicant has roamed off and would otherwise abandon the errand.
