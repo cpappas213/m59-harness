@@ -134,6 +134,32 @@ function yesno(v, { yes = 'Y', no = 'N' } = {}) {
   return v ? `<span class="good">${yes}</span>` : `<span class="bad">${no}</span>`;
 }
 
+// GEAR CONDITION CELL. Shows the item name (shortened) plus a coloured condition badge.
+//
+// Level scale from m59-skills.mjs parseConditionLevel:
+//   4 = flawless, 3 = good, 2 = worn, 1 = poor (nearly broken), 0 = broken
+//
+// When gear_condition is null (never inspected) we fall back to the old boolean display.
+// When the slot is null (nothing equipped) it renders as a dash.
+const COND_LABEL = ['broken', 'poor', 'worn', 'good', '★'];
+const COND_CLS   = ['bad',    'bad',  'warn',  '',   'good'];
+
+function gearCell(slotData, fallbackBool) {
+  if (slotData === undefined) {
+    // gear_condition not present on row — legacy broker without this feature
+    return `<span class="dim">${fallbackBool == null ? '?' : fallbackBool ? 'Y' : 'N'}</span>`;
+  }
+  if (slotData === null) return '<span class="dim">—</span>';
+  const { name, level } = slotData;
+  const shortName = (name || '').replace(/\b(leather|chain|scale|plate)\b.*/i, m => m.split(' ')[0]);
+  if (level == null) {
+    return `<span title="${esc(name)}">${esc(shortName)}</span><span class="dim" title="condition not yet read"> ?</span>`;
+  }
+  const label = COND_LABEL[level] ?? '?';
+  const cls   = COND_CLS[level]  ?? '';
+  return `<span title="${esc(name)}">${esc(shortName)}</span> <span class="${cls || 'dim'}" title="condition: ${label}">${label}</span>`;
+}
+
 // Vitals arrive from the ledger as "16/23" strings, because that is what the fleet
 // snapshot reports and the ledger stores rows verbatim.
 function pair(s) {
@@ -169,6 +195,9 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
     return current ? { ...row,
       learning: current.learning?.progress ?? row.learning ?? null,
       planned_learning: current.learning?.planned ?? row.planned_learning ?? null,
+      gear_condition: current.gear_condition ?? row.gear_condition ?? undefined,
+      has_weapon: current.has_weapon ?? row.has_weapon,
+      wielding: current.wielding ?? row.wielding,
     } : row;
   });
 
@@ -274,7 +303,8 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
       <td class="vital">${bar(mp.value, mp.max, 'mp')}<span class="vnum">${esc(r.mana ?? '—')}</span></td>
       <td class="vital">${bar(vg.value, vg.max, 'vg')}<span class="vnum">${esc(r.vigor ?? '—')}</span></td>
       <td class="num">${yesno(r.has_food)}</td>
-      <td class="num">${yesno(r.has_weapon)}</td>
+      <td class="gear">${gearCell(r.gear_condition?.weapon, r.has_weapon)}</td>
+      <td class="gear">${gearCell(r.gear_condition?.armor,  null)}</td>
       <td>${esc(r.strategy ?? '—')}</td>
       <td class="num ${r.deaths ? 'bad' : 'dim'}">${r.deaths}</td>
       <td class="num dim">${r.kills ?? 0}</td>
@@ -363,6 +393,8 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
                  font-weight:700; letter-spacing:.04em; text-transform:uppercase;
                  background:var(--accent); color:#000; vertical-align:middle; }
   .doing { color:var(--dim); max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gear { white-space:nowrap; font-size:.82rem; }
+  .warn { color:#c8960a; }
   .learning { min-width:105px; white-space:nowrap; }
   .learning strong { display:inline-block; min-width:2.1em; margin-right:.35rem;
     text-align:right; font-variant-numeric:tabular-nums; }
@@ -453,18 +485,18 @@ ${controls}
       still farm, because farming is combat <em>over time</em> — swinging costs about thirty vigor a
       minute, and vigor is also what sets how fast health comes back between fights. A character at
       full health and low vigor is not ready, it is queuing for a meal. <em>Food?</em> and
-      <em>weapon?</em> are the two things that fail silently: an unarmed character punches monsters
+      <em>weapon</em> and <em>armor</em> are the two things that fail silently: an unarmed character punches monsters
       instead of erroring, and one with no food never gets vigor above the 80 that resting alone
       reaches. Rooms link to the compendium.</p>
     <table class="${offlineForMs == null ? '' : 'stale'}">
       <thead><tr><th>character</th><th class="num">level</th><th class="num">gained</th>
         <th title="combined previous-level ability percentage still required">points to next</th>
         <th>health</th><th>mana</th><th>vigor</th>
-        <th class="num">food?</th><th class="num">weapon?</th>
+        <th class="num">food?</th><th class="gear">weapon</th><th class="gear">armor</th>
         <th>strategy</th><th class="num">deaths</th><th class="num">kills</th>
         <th class="num" title="kills in the last 30 minutes, counted from the ledger — the column to its left is a high-water mark over the whole window, because a keeper restart zeroes that counter">kills/30m</th><th>where</th>
         <th>doing</th></tr></thead>
-      <tbody>${fleetRows || '<tr><td colspan="15" class="dim">nothing recorded yet</td></tr>'}</tbody>
+      <tbody>${fleetRows || '<tr><td colspan="16" class="dim">nothing recorded yet</td></tr>'}</tbody>
     </table>
   </section>
 
