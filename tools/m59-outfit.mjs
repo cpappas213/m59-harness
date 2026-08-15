@@ -721,9 +721,26 @@ async function outfit(row) {
       if (!opt) { log.push(`${w.what}: not sold here`); continue; }
       const cost = opt.cost ?? opt.price ?? 0;
       if (cost > money) { log.push(`${w.what}: ${cost}sh, only ${money}sh`); continue; }
-      await call('shop', { agent: row.agent, seller: seller.id, buy_ids: [opt.id] }).catch(() => null);
+      // SAY WHAT ARRIVED, NOT WHAT WAS ORDERED. This logged `bought X @N` unconditionally
+      // with the reply thrown away, so a purchase that took the money and delivered
+      // nothing read exactly like one that worked. Measured: Rizzo withdrew 1744sh, the
+      // line said `bought hammer @810`, and its pack held no weapon at all afterwards —
+      // 810 shillings gone, still fighting with its fists, and the only hint was the
+      // verification further down saying STILL MISSING.
+      //
+      // `got` is the broker's list of what actually entered the pack, off the server's own
+      // `got` events. An empty one is the silent refusal this whole file exists to catch:
+      // a merchant declining is a sentence spoken to the room, never an error on the wire.
+      const res = await call('shop', { agent: row.agent, seller: seller.id, buy_ids: [opt.id] })
+                          .catch(e => ({ error: e.message }));
+      const got = Array.isArray(res?.got) ? res.got : [];
       money -= cost;
-      log.push(`bought ${nameOf(opt)} @${cost}`);
+      if (got.length) log.push(`bought ${nameOf(opt)} @${cost}`);
+      else log.push(`*** ASKED FOR ${nameOf(opt)} @${cost} AND GOT NOTHING` +
+                    (res?.clamped?.length ? ` — clamped by ${[...new Set(res.clamped
+                       .flatMap(c => c.limited_by || []))].join('/') || 'purse/weight/bulk'}` : '') +
+                    (res?.messages?.length ? ` — the counter said: ${res.messages.join('; ').slice(0, 80)}` : '') +
+                    ' ***');
     }
 
     // LEARN IT. The same list and the same purchase — a skill in the offer list is an
