@@ -62,6 +62,14 @@ const URL = `http://127.0.0.1:${PORT}/`;
 const DRY = !!arg('dry-run', false);
 const AT = arg('at', null) == null ? null : Number(arg('at'));
 const WITHDRAW = Number(arg('withdraw', 1000));
+// How many weapons a character may carry away from the smith: the wielded one and one
+// spare. A spare matters more than it looks — a weapon that SHATTERS is unequipped and
+// left in the pack (weapon.kod:547 unuses it, nothing deletes it), and the pack sweep
+// then drops it as junk, so a character with no spare falls back to whatever it last
+// looted. That is how a fleet re-armed with maces ends up wielding long swords again.
+// `--keep-weapons N` overrides; it is passed to sell_all rather than left to default,
+// because that default is null and null keeps every weapon in the pack.
+const WEAPONS_TO_KEEP = Number(arg('keep-weapons', 2));
 // Planned-learning buttons know the exact fixed ability price before leaving. In that
 // mode, carry the bill rather than the outfitter's ordinary 200-shilling contingency;
 // the character is going to one teacher for one purchase, not shopping speculatively.
@@ -659,9 +667,49 @@ async function outfit(row) {
     if (!arrived) return `${who}: no ${toLearn.length ? 'teacher' : 'smith'} worked out — tried ${tried.join('; ')}`;
     log.push(`at ${shopRoom}`);
 
-    // FUND IT. The purse first, then the bank we are standing next to, then a partner.
+    // SELL FIRST, ALWAYS, AND BEFORE THE BANK. Two reasons, and the second is the one
+    // that was costing the fleet every trip:
+    //
+    //   The money. What a farming character carries is usually worth more than the
+    //   armour, so a sale often removes the need for a bank trip entirely.
+    //
+    //   THE SPACE. `ReqNewHold` refuses a purchase when the pack cannot hold the goods,
+    //   and the merchant answers "Perhaps you carry too much?" — a sentence spoken to the
+    //   room, not an error, so the buy reports nothing wrong and the errand walks home
+    //   empty. Measured this session: Kermit at Rook, Fozzie and Floyd at Quintor, Lew at
+    //   Fehr'loi Qan, all refused in one run, while Floyd carried SEVEN long swords it had
+    //   looted and never sold. Selling afterwards cannot help — by then the buy has failed.
+    //
+    // AND THE OLD `keep` LIST WAS THE REASON THEY PILED UP. It held back anything matching
+    // sword/mace/axe/hammer/armor/shield, which is exactly the loot this trip exists to
+    // convert, so a character could sell reagents to fund a mace it then had no room for.
+    // It is gone rather than trimmed: `sell_all` already honours this character's LOADOUT
+    // — which names the spares to shed and the floors to protect — and what is worn or
+    // wielded is protected by the server's own use list, which no list here can override.
+    // A second, coarser opinion about what to keep could only disagree with the loadout,
+    // and when it did the loadout lost.
     items = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
     let money = purseOf(items);
+    // MAX_WEAPONS MUST BE SAID OUT LOUD HERE. `sell_all` defaults it to null, and null
+    // means "no weapon limit is configured" — which keeps EVERY weapon in the pack. The
+    // keeper always passes its own policy (2 on this fleet) so its town trips shed spares;
+    // an errand calling the tool directly gets the permissive default instead. Floyd hit
+    // exactly that: seven looted long swords, all "held back", a pack too full to accept
+    // the mace this trip existed to buy, and a sale that reported nothing to sell.
+    // Equipped and wielded weapons are kept regardless — plUsing is the server's list.
+    const preSale = await call('sell_all', { agent: row.agent, merchant: seller.id,
+                                             max_weapons: WEAPONS_TO_KEEP })
+                          .catch(() => null);
+    if (preSale?.total_received) {
+      money += preSale.total_received;
+      log.push(`sold ${(preSale.sold || []).length} item(s) for ${preSale.total_received}sh`);
+    } else if (preSale?.not_offered?.length) {
+      // Nothing this counter deals in. Worth saying, because it is the difference between
+      // "there was nothing to sell" and "we brought the wrong goods to the wrong shop".
+      log.push(`nothing ${preSale.merchant?.class || 'here'} buys (${preSale.not_offered.length} held back)`);
+    }
+
+    // FUND IT. The purse first, then the bank we are standing next to, then a partner.
     if (money < WITHDRAW / 2) {
       const b = await call('bank', { agent: row.agent, action: 'withdraw', amount: WITHDRAW })
                       .catch(e => ({ error: e.message }));
@@ -675,16 +723,6 @@ async function outfit(row) {
         // account may be in another town. Say which, and carry on with what we carry.
         log.push('no withdrawal here (each town banks separately)');
       }
-    }
-
-    // Sell what we are carrying if that is what it takes. A character that has been
-    // farming carries reagents and drops worth more than the armour costs.
-    // `seller` was found above, as part of deciding this shop was worth stopping at.
-    if (money < Math.max(400, bill)) {
-      const sold = await call('sell_all', { agent: row.agent, merchant: seller.id,
-        keep: ['flask', 'mace', 'sword', 'axe', 'hammer', 'armor', 'armour', 'shield', 'helm'] })
-        .catch(() => null);
-      if (sold?.total_received) { money += sold.total_received; log.push(`sold for ${sold.total_received}sh`); }
     }
 
     const shop = await call('shop', { agent: row.agent, seller: seller.id }).catch(() => ({}));
