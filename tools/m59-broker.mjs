@@ -40,7 +40,8 @@ import { fileURLToPath } from 'node:url';
 import { M59Client, KOD_FINENESS, BPNAME } from './m59-client.mjs';
 import { loadResources } from './m59-rsc.mjs';
 import { describeObject, affordances, OF, prepareActTarget } from './m59-parse.mjs';
-import { World, sharedWorldMap, spreadEdges, boundedSilentGo } from './m59-world.mjs';
+import { World, sharedWorldMap, spreadEdges, boundedSilentGo, doorSettleMs,
+         remainingDoorSettle } from './m59-world.mjs';
 import { loadMap, resolveRoom, forgetInferredExit, findPath } from './m59-map.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -230,6 +231,12 @@ const ATTACK_INTERVAL_MS = 1050;     // IsOkayAttackTime, plus a little
 // past something is walking past it rather than standing beside it.
 const MOVE_INTERVAL_MS = Number(process.env.M59_MOVE_INTERVAL_MS || 250);
 
+// The server may silently discard UserGo when it follows the final movement packet
+// too closely. Preserve normal 250ms walking, but leave half a second between the
+// most recent movement packet and every door request. Pacer waits only the remaining
+// portion of this interval, so slow position confirmation does not add another 500ms.
+const DOOR_SETTLE_MS = doorSettleMs(process.env.M59_DOOR_SETTLE_MS);
+
 // HOW OFTEN THE ROOM MAY BE RE-READ WHILE WALKING. A hard cap, not a target.
 //
 // `step()` used to re-read the whole room after every single square, and that round trip
@@ -354,7 +361,9 @@ class Pacer {
         const now = Date.now();
         const waitGlobal = Math.max(0, this.lastSent + this.minGapMs - now);
         const lastKind = this.lastByKind.get(job.kind) || 0;
-        const waitKind = Math.max(0, lastKind + job.minGapForKind - now);
+        const waitKind = job.kind === 'move' && job.minGapForKind === DOOR_SETTLE_MS
+          ? remainingDoorSettle({ lastMovementAt: lastKind, now, settleMs: job.minGapForKind })
+          : Math.max(0, lastKind + job.minGapForKind - now);
         const wait = Math.max(waitGlobal, waitKind);
         // Queued behind other traffic, versus deliberately paced. The first is
         // contention and the second is the point, and they are not the same problem.
@@ -3035,7 +3044,7 @@ class Session {
         sequence: () => c.evSeq,
         eventsSince: since => c.eventsSince(since),
         cancelled: () => this.movementWasCancelled(movementGeneration, controlToken),
-        send: () => this.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS),
+        send: () => this.pacer.submit('move', () => c.go(), DOOR_SETTLE_MS),
         waitForEntry: async since => {
           const started = Date.now();
           const observed = await c.waitFor({ since, kinds: ['room-entered'], timeoutMs: 4000 });
@@ -3156,7 +3165,7 @@ class Session {
       // failed the same way against all four food shops in the same run.
       const beforeGo = c.evSeq;
       await this.standBeforeGo();
-      await this.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
+      await this.pacer.submit('move', () => c.go(), DOOR_SETTLE_MS);
       const ev2 = await c.waitFor({ since: beforeGo, kinds: ['room-entered'], timeoutMs: 4000 });
       const entered2 = ev2.events.find(e => e.kind === 'room-entered');
       if (entered2)
@@ -8259,7 +8268,7 @@ const TOOLS = [
         throw new Error('amount is only valid for drop');
       if (a.verb === 'go') {
         await s.standBeforeGo();          // PFLAG_NO_MOVE, same as every other `go`
-        await s.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
+        await s.pacer.submit('move', () => c.go(), DOOR_SETTLE_MS);
       } else {
         const t = resolveTarget(s, a.target);
         // A STACK IS DROPPED BY {id, amount}, NEVER BY A BARE ID. This sent the bare id

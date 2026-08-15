@@ -99,7 +99,7 @@ function underworld({ resting = false, deaf = false, portals = [], unwalkable = 
   return { s, log };
 }
 
-import { boundedSilentGo, retrySilentGo, spreadEdges } from './m59-world.mjs';
+import { boundedSilentGo, doorSettleMs, remainingDoorSettle, retrySilentGo, spreadEdges } from './m59-world.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -390,6 +390,13 @@ function safeSpot({ resting = false, deaf = false, hits = 3 } = {}) {
 
 console.log('\na silent go request gets one bounded retry');
 {
+  ok('door requests settle for half a second by default', doorSettleMs() === 500);
+  ok('the door settle delay can be configured', doorSettleMs('650') === 650);
+  ok('invalid door settle configuration keeps the safe default', doorSettleMs('nope') === 500);
+  ok('only the unelapsed part of the movement-to-door gap is waited',
+     remainingDoorSettle({ lastMovementAt: 1000, now: 1300, settleMs: 500 }) === 200);
+  ok('an already elapsed movement-to-door gap adds no delay',
+     remainingDoorSettle({ lastMovementAt: 1000, now: 1700, settleMs: 500 }) === 0);
   ok('the first silent request is retried',
      retrySilentGo({ attempt: 1, entered: false, messages: [] }) === true);
   ok('silence after the second request is final',
