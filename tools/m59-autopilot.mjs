@@ -10977,7 +10977,21 @@ export class Autopilot {
         if (entry.min <= 0) continue;
         const held = pack.filter(i => norm(i.name) === norm(entry.item))
                          .reduce((t, i) => t + i.amount, 0);
-        const short = Math.max(0, entry.min - held);
+        // GO WHEN YOU ARE UNDER THE FLOOR, AND COME BACK FULL. The floor and the target
+        // are different questions and this used `min` for both, so a character bought up
+        // to its floor — which is the level that sent it shopping in the first place.
+        //
+        // With floor 6 and ceiling 80 that meant buying ONE elderberry: Robin held 5,
+        // `min - held` was 1, and the trip ended there. Three castings later it was under
+        // the floor again and set off again. Measured across the fleet while that held:
+        // every character at or below 3 castings ran 76-100% travel-and-trade with 0-8%
+        // fighting, and trading reached 54% of all active time.
+        //
+        // So: buy nothing while above the floor — topping up constantly is the churn this
+        // whole arrangement exists to stop — and once under it, fill to the ceiling. A
+        // loadout with no ceiling keeps exactly its old behaviour.
+        const target = Number.isFinite(entry.max) && entry.max > entry.min ? entry.max : entry.min;
+        const short = held < entry.min ? Math.max(0, target - held) : 0;
         const kind = skills.shareKind(entry.item);
         if (kind) need[kind] = short; else askedFor[norm(entry.item)] = short;
       }
