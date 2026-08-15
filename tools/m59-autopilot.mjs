@@ -1319,6 +1319,32 @@ export class Autopilot {
     return { elderberry: n(/elder\s?berry/i), herbs: n(/^herbs?$/i) };
   }
 
+  // WHAT THIS CHARACTER IS SHORT OF, against its own loadout floors rather than a
+  // constant. Returns short:false when there is no loadout to read, because an absent
+  // floor is not a floor of zero — it is nobody having said, and the safe reading of
+  // nobody having said is "carry on as before".
+  //
+  // Food counts as well as reagents: a pack with meals in it can raise vigor without
+  // casting at all, so a character with bread is not out of supply just because the
+  // reagents are gone. That is the whole point of carrying prepared food.
+  supplyShortfall() {
+    const l = this.loadout();
+    if (!l?.carry?.length) return { short: false, missing: [], why: 'no loadout floor to read' };
+    const c = this.s.client;
+    const items = (c?.inventory || []).map(o => ({ name: c.rsc.get(o.nameRsc), amount: o.amount }));
+    const want = wantsOf(l, items);
+    const reagents = this.reagentCount();
+    const meals = this.larder(c).length;
+    // Only the two halves of `create food` are treated as supply. A loadout may ask for
+    // anything, and being short of a spare shield is not a reason to stop fighting.
+    const missing = (want?.wants || []).filter(n => /elder\s?berry|^herbs?$/i.test(n));
+    if (!missing.length) return { short: false, missing: [], reagents, meals };
+    // With food still aboard the character can eat rather than cook, so the trip can wait
+    // until that runs out too — which is what makes prepared food worth the pack space.
+    if (meals > 0) return { short: false, missing, reagents, meals, why: 'still has meals' };
+    return { short: true, missing, reagents, meals };
+  }
+
   // COOK. Returns true if we cast and something appeared, meaning the pass was spent.
   //
   // `why` is the decision that brought us here, carried into the record. It defaults to
@@ -9241,6 +9267,34 @@ export class Autopilot {
                why: `pack is ${Math.round(fullness * 100)}% of capacity` };
     if (stacks >= (this.policy.maxCarry ?? 14))
       return { sell: true, trigger: 'stacks', stacks, why: `${stacks} stacks, at the pack ceiling` };
+
+    // RUNNING OUT IS A REASON TO GO. A PART-FULL PACK IS NOT.
+    //
+    // The two triggers above are both about the pack, and they were the only way a
+    // character ever set off for a market — so "when do we stop farming" was answered
+    // entirely by how much loot had piled up, which has nothing to do with whether the
+    // character can still work. Fullness is already handled where it stands: makeRoom()
+    // sells to any local buyer and otherwise drops the biggest pile of junk, keeping
+    // money, gems and anything in use.
+    //
+    // Being out of elderberry and herbs is the fact that actually stops it. `create food`
+    // is 2 + 2 from this pack and refuses SILENTLY without them, so an empty pair means no
+    // food, and no food means vigor stops at the 80 that resting alone reaches — every
+    // fight after that is fought tired, indefinitely, while the keeper reports itself
+    // healthy. Measured on this fleet with only the pack triggers live: twenty-one of
+    // twenty-one below their reagent floor and NOT ONE on a town errand.
+    //
+    // THE FLOOR IS THE LOADOUT'S, not a constant here. A caster that burns forty a day and
+    // a fighter that burns none should not be sent on the same errand, which is the whole
+    // argument for loadouts; `wantsOf` already answers "what is this character short of"
+    // against its own floors. With no loadout there is no floor and this trigger stays
+    // quiet — silence means the behaviour that was already there, never a new opinion.
+    const supply = this.supplyShortfall();
+    if (supply.short)
+      return { sell: true, trigger: 'supply', missing: supply.missing,
+               reagents: supply.reagents, meals: supply.meals,
+               why: `out of ${supply.missing.join(' and ')} — cannot make food, so vigor is ` +
+                    `capped at what resting gives` };
 
     // POVERTY IS A JUDGEMENT AND IS OFF UNLESS ASKED FOR. It also never outranks an open
     // window: a round trip to a market is most of a 35-minute shift, and the shift is the
