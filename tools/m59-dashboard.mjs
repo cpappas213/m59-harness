@@ -151,7 +151,7 @@ const COND_MAX   = 4;  // matches the 4-step scale
 function condBar(level, name) {
   // Not yet inspected — show placeholder in gear colour
   if (level == null)
-    return `<span class="bar-cells gr none" title="${esc(name)} — condition not yet read">${'█'.repeat(COND_MAX)}</span>`;
+    return `<span class="bar-cells gr none" title="${name ? esc(name) + ' — ' : ''}condition not yet read">${'█'.repeat(COND_MAX)}</span>`;
   const pct = Math.max(0, Math.min(1, level / COND_MAX));
   const label = COND_LABEL[level] ?? '?';
   let out = '';
@@ -163,12 +163,26 @@ function condBar(level, name) {
   return `<span class="bar-cells gr" title="${esc(name)} — ${label}">${out}</span>`;
 }
 
-function gearCell(slotData, fallbackBool) {
-  if (slotData === undefined) {
-    // gear_condition not present on row — legacy broker without this feature
+// gearCondition is the whole gear_condition object (or undefined if absent from row).
+// slot is 'weapon' or 'armor'. fallbackBool is has_weapon for the weapon slot.
+//
+// Three states:
+//   gearCondition === undefined  — old broker, field not present; fall back to Y/N
+//   gearCondition === null       — broker present but sweepGearCondition hasn't run yet;
+//                                  show placeholder bar (grey squares)
+//   gearCondition[slot] === null — sweep ran but nothing equipped in that slot; dash
+//   gearCondition[slot]          — show name + condition bar
+function gearCell(gearCondition, slot, fallbackBool) {
+  if (gearCondition === undefined) {
+    // legacy broker without this feature
     return `<span class="dim">${fallbackBool == null ? '?' : fallbackBool ? 'Y' : 'N'}</span>`;
   }
-  if (slotData === null) return '<span class="dim">—</span>';
+  if (gearCondition === null) {
+    // broker supports it but sweep hasn't run yet — show pending placeholder
+    return condBar(null, null);
+  }
+  const slotData = gearCondition[slot];
+  if (!slotData) return '<span class="dim">—</span>';
   const { name, level } = slotData;
   const shortName = (name || '').replace(/\b(leather|chain|scale|plate)\b.*/i, m => m.split(' ')[0]);
   return `<span class="gear-name" title="${esc(name)}">${esc(shortName)}</span>${condBar(level, name)}`;
@@ -209,7 +223,7 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
     return current ? { ...row,
       learning: current.learning?.progress ?? row.learning ?? null,
       planned_learning: current.learning?.planned ?? row.planned_learning ?? null,
-      gear_condition: current.gear_condition ?? row.gear_condition ?? undefined,
+      gear_condition: 'gear_condition' in current ? current.gear_condition : row.gear_condition,
       has_weapon: current.has_weapon ?? row.has_weapon,
       wielding: current.wielding ?? row.wielding,
     } : row;
@@ -327,8 +341,8 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
         : ''}>${bar(vg.value, vg.max, 'vg')}<span class="vnum">${esc(r.vigor ?? '—')}</span>${
         r.holding_token ? '<span class="tokenflag">TOKEN</span>' : ''}</td>
       <td class="num">${yesno(r.has_food)}</td>
-      <td class="gear">${gearCell(r.gear_condition?.weapon, r.has_weapon)}</td>
-      <td class="gear">${gearCell(r.gear_condition?.armor,  null)}</td>
+      <td class="gear">${gearCell(r.gear_condition, 'weapon', r.has_weapon)}</td>
+      <td class="gear">${gearCell(r.gear_condition, 'armor',  null)}</td>
       <td>${esc(r.strategy ?? '—')}</td>
       <td class="num ${r.deaths ? 'bad' : 'dim'}">${r.deaths}</td>
       <td class="num dim">${r.kills ?? 0}</td>
