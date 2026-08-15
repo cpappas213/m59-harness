@@ -66,19 +66,19 @@
   },
   {
    "item": "elderberry",
-   "min": 40,
+   "min": 6,
    "max": 80,
    "match": "exact",
-   "why": "create food, 2 per casting; floor 40 to ship out, ceiling 80 so one town trip lasts ~20 castings",
+   "why": "create food, 2 per casting; floor 6 so the trip home is triggered by running OUT, not by a part-full pack — ceiling 80 is what one trip refills to (~37 castings of runway)",
    "weight": 3,
    "kind": "reagent"
   },
   {
    "item": "herb",
-   "min": 40,
+   "min": 6,
    "max": 80,
    "match": "exact",
-   "why": "create food, 2 per casting; herbs are the binding half; floor 40 to ship out, ceiling 80 so one town trip lasts ~20 castings",
+   "why": "create food, 2 per casting; herbs are the binding half; floor 6 so the trip home is triggered by running OUT, not by a part-full pack — ceiling 80 is what one trip refills to (~37 castings of runway)",
    "weight": 2,
    "kind": "reagent"
   },
