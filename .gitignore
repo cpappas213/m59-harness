@@ -205,3 +205,10 @@ __pycache__/
 # clone runs; this file is how a machine says something different. Absent means the
 # committed behaviour, unchanged. See tools/m59-localpolicy.mjs.
 /substrate/policy.local.json
+
+# Bearer capabilities that let another machine — or another person — drive some of
+# this fleet through the gateway, for a while. A grant file names who was trusted and
+# with what; the token itself is never stored, only a salted hash. Gitignored for the
+# same reason the roster is: it is this machine's authority, not the repository's.
+# See tools/m59-handoff.mjs.
+/substrate/grants/
