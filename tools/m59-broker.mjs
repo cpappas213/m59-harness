@@ -46,6 +46,7 @@ import { loadMap, resolveRoom, forgetInferredExit, findPath } from './m59-map.mj
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
 import * as skills from './m59-skills.mjs';
+import * as buyers from './m59-buyers.mjs';
 import * as abilities from './m59-abilities.mjs';
 import { RemainingRequiredToLearnNewSkills, PointsToNextLevelOfTarget } from '../compendium/tools/learn.mjs';
 import * as bankbook from './m59-bank.mjs';
@@ -7455,6 +7456,37 @@ const TOOLS = [
                                  maxWeapons: a.max_weapons == null ? null : Number(a.max_weapons),
                                  weaponPriority: Array.isArray(a.weapon_priority)
                                    ? a.weapon_priority.map(String) : null });
+    },
+  },
+  {
+    name: 'who_buys',
+    description:
+      'WHICH MERCHANTS DEAL IN WHAT, before you walk. Every merchant class declares what it will ' +
+      'take (ObjectDesired) and a refusal is a sentence spoken to the room rather than an error on ' +
+      'the wire, so offering a smith a mushroom costs a full round trip and returns a silence. ' +
+      'Pass items to learn who buys them; pass merchant to learn what one counter deals in; pass ' +
+      'both to see what would be offered and what would be held back. Reads a table, moves nobody, ' +
+      'and needs no character in the room.\n' +
+      'CANNOT SAY IS NOT NO: an unrecognised merchant or an item missing from the index answers ' +
+      'null, and sell_all offers those anyway rather than silently skipping a sale.',
+    schema: { type: 'object', properties: {
+      items: { type: 'array', items: { type: 'string' },
+        description: 'item names as they appear in the pack' },
+      merchant: { type: 'string', description: 'merchant name, e.g. Quintor' },
+      merchant_id: { type: 'number', description: 'live object id, resolved through the merchant index' },
+    } },
+    run: async (a) => {
+      const items = (a.items || []).map(String);
+      const index = loadMerchants();
+      if (a.merchant || a.merchant_id != null) {
+        const p = buyers.partition(items.map(name => ({ name })),
+          { name: a.merchant || null, id: a.merchant_id ?? null, index });
+        return items.length ? p : { merchant: p.merchant };
+      }
+      if (!items.length) return { table: Object.entries(buyers.BUY_RULES).map(([cls, r]) => ({
+        class: cls, buys: r.all ? ['any category'] : [...(r.any || []), ...(r.onlyClasses || [])],
+        but_not: r.not ?? null, cite: r.cite })) };
+      return { items: items.map(i => buyers.whoBuys(i)) };
     },
   },
   {

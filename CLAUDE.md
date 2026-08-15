@@ -946,6 +946,60 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   — it drives both ends and verifies the receiver actually holds the goods afterwards, which
   is the whole reason it exists.
 
+- **A SMITH DOES NOT BUY MUSHROOMS, AND OFFERING HIM ONE IS A SUCCESSFUL CALL THAT RETURNS
+  A SILENCE.** What a merchant deals in is `ObjectDesired`, declared per class.
+  `Monster.ObjectDesired` (`monster.kod:4707`) returns TRUE and its own docstring says
+  *"This is set in individual buyers. It allows them to pick and choose what they want to
+  buy."* — **fifteen classes in the tree override it**, each in a couple of lines of
+  category tests. That is the whole vocabulary, and `m59-buyers.mjs` is it with citations.
+
+  The categories are **not** the item kinds, and nothing else groups them this way:
+
+  | predicate | is | `monster.kod` |
+  |---|---|---|
+  | `IsObjectWeapon` | Weapon | :4142 |
+  | `IsObjectWearable` | Armor, Helmet, Gauntlet, Necklace, **Shield**, Pants | :4183 |
+  | `IsObjectSundry` | Torch, Flask, Mug, **Food** | :4152 |
+  | `IsObjectMisc` | Chalice, Scepter, SpecialWand, SpellItem, Book, Arsenic, SpiderEgg(Shell), Key | :4165 |
+  | `IsObjectGem` | JewelofFroz, Emerald, Ruby, Sapphire, Diamond, **Ring** | :4198 |
+  | `IsObjectReagent` | `IsItemType(ITEMTYPE_REAGENT)` — asks the item | :4213 |
+
+  **A GEM IS ALSO A REAGENT**, which is why three of the four apothecaries name the
+  exclusion explicitly (`TsApoth.kod:66`, `bqapoth.kod:128`, `kcapoth.kod:49`) and why
+  **Hazar is the only apothecary that takes one** (`hzapoth.kod:55`). `Ring` counting as a
+  gem is how a signet ring gets refused by a counter buying every other reagent. And the
+  smiths are not interchangeable: five buy weapons *and* wearables, but **Marion's buys
+  weapons and shields and no body armour** (`MrSmith.kod:80`), so folding the six into one
+  rule sells his leather to a silence.
+
+  **`buys_anything` on the merchant row does not answer this and inverts it.** It is
+  computed as "did this class override `ObjectDesired`", which is accurate and is a
+  different question: it is TRUE for the bankers who take your goods and thank you, and
+  FALSE for every merchant actually worth walking to.
+
+  This cost real trips. `sell_all` offered whatever the loadout marked sellable to whoever
+  was standing there, so a run at Quintor's Smithy in Jasper offered him sapphires,
+  mushrooms and water skins — each a full offer/cancel round trip plus 900ms of pacing,
+  each returning `no counteroffer came back`, and together burying the one line that
+  mattered. It now partitions first and returns **`not_offered`** beside `sold` and
+  `refused`, with a reason and a citation per item.
+
+  ```bash
+  node tools/m59-buyers.mjs                              # the whole table
+  node tools/m59-buyers.mjs Quintor "long sword" sapphire
+  node tools/m59-buyers.mjs --who-buys sapphire          # who takes it — ask BEFORE the walk
+  ```
+
+  The MCP tool is `who_buys`, and it moves nobody. **`refused` and `not_offered` are
+  different facts**: the first was turned down at the counter, the second never left the
+  pack and is still saleable somewhere else.
+
+  **CANNOT SAY IS NOT NO, and that asymmetry is the whole safety argument.** An
+  unrecognised merchant class or an item missing from the index answers `null`, and every
+  caller offers it anyway. Being wrong about a category costs a round trip; holding
+  something back that would have sold costs the sale **invisibly** — the trip reports
+  success, the goods are still in the pack, and nothing says why.
+
 - **TWO MERCHANTS HOLD A REAL INVENTORY AND CAN RUN OUT — OF STOCK, AND OF SHELF SPACE.**
   Every other merchant assembles its list on demand and cannot run dry: `monster.kod`
   declares `vbSellFromInventory = FALSE` and only two classes in the whole tree override
@@ -1803,6 +1857,12 @@ remarks and a value may collect both.
   room object id read out of a reply header, a karma figure a hundred times too small, a
   name with a digit in it that the server accepts and silently replaces — and all of those
   are decidable from a string) and
+  `node tools/m59-buyers-test.mjs` (38 — **what a merchant will actually buy**: that a gem
+  is also a reagent and the apothecaries' exclusion turns on it, that Marion's smith takes
+  no body armour, that an exclusive rule excludes a sibling of the same family, and above
+  all that "cannot say" falls through to OFFERING. The two failure directions are not
+  symmetric — a wasted offer costs a round trip, a wrongly withheld item costs the sale and
+  is invisible) and
   `node tools/m59-merchants-test.mjs` (77, dropping to 43 without `M59_ROOT`) and
   `node tools/m59-roo-test.mjs` (57, of which 9 skip without a copy of the game's
   `resource/rooms`). The rest need a live server —

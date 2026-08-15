@@ -26,6 +26,23 @@ import { weighPack, isWeaponName, itemNameKey } from './m59-items.mjs';
 // predicates only — this file does not go looking for the file, because the caller knows
 // which character it is and this one does not.
 import { keepTest as keepTestFor, sellTest as sellTestFor } from './m59-loadout.mjs';
+import * as buyers from './m59-buyers.mjs';
+import { readFileSync } from 'node:fs';
+
+// The merchant index resolves a live object id to the class whose buying rule applies.
+// Read once and kept: it is a built artefact that changes when somebody rebuilds it, and
+// `sellAll` is on a town trip rather than a hot loop. A missing file is not an error —
+// `classOf` falls back to the name, and an unresolved merchant means "offer everything",
+// which is what this code did before the index existed.
+let MERCHANT_INDEX;
+function merchantIndex() {
+  if (MERCHANT_INDEX !== undefined) return MERCHANT_INDEX;
+  try {
+    MERCHANT_INDEX = JSON.parse(readFileSync(
+      new URL('../substrate/m59-merchants.json', import.meta.url), 'utf8'));
+  } catch { MERCHANT_INDEX = null; }
+  return MERCHANT_INDEX;
+}
 
 // Health fractions. Chosen from what the game does rather than taste: a monster that
 // can take you from half to nothing in one exchange is common, and the server's
@@ -2320,9 +2337,31 @@ export async function sellAll(s, { merchant, keep = [], protect = [], minPrice =
     return false;
   });
 
+  // DO NOT OFFER A SMITH A MUSHROOM. Every merchant class declares what it deals in
+  // (`ObjectDesired`), a refusal is a sentence spoken to the room rather than an error,
+  // and each wasted offer costs a full offer/cancel round trip plus 900ms of pacing —
+  // so a trip to a smith carrying reagents used to collect a column of silences with the
+  // one real sale buried in it. `m59-buyers.mjs` holds the table and its citations.
+  //
+  // IT ONLY EVER HOLDS THINGS BACK. An unknown merchant class, or an item missing from
+  // the index, answers "cannot say" and is offered exactly as before — silence means the
+  // behaviour that was already there, never a seller that has stopped selling.
+  const merchantId = typeof merchant === 'object' && merchant !== null ? merchant.id : merchant;
+  const merchantObj = c.room?.objects?.get?.(Number(merchantId)) ?? null;
+  const merchantName = (typeof merchant === 'object' && merchant?.name) ||
+    (merchantObj ? c.rsc.get(merchantObj.nameRsc) : null);
+  const plan = buyers.partition(items.map(x => ({ ...x, name: x.name })),
+    { id: Number(merchantId), name: merchantName, index: merchantIndex() });
+  const notOffered = plan.not_offered;
+  items = plan.offer;
+
   if (!items.length) return { sold: [], kept_for_the_fleet: held,
+    ...(notOffered.length ? { not_offered: notOffered, merchant: plan.merchant } : {}),
     ...(loadout ? { loadout: loadout.character } : {}),
-    note: held.length
+    note: notOffered.length
+      ? `nothing here that ${plan.merchant.class || 'this merchant'} deals in — it buys ` +
+        `${plan.merchant.buys?.join(', ') || 'nothing known'}; ask who_buys for a counter that takes these`
+      : held.length
       ? 'nothing left to sell — what is in the pack is either yours to keep or wanted by another character'
       : 'nothing to sell that is not money, equipment you are wearing, or a weapon you are carrying' };
 
@@ -2341,7 +2380,16 @@ export async function sellAll(s, { merchant, keep = [], protect = [], minPrice =
     await sleep(900);
   }
   return { sold, refused, total_received: total, kept_for_the_fleet: held,
-           note: refused.length ? 'refusals are usually "this merchant does not deal in that" — check merchants for who does' : undefined };
+           merchant: plan.merchant,
+           // WHAT WAS NEVER OFFERED, AND WHY. Distinct from `refused`, which is what the
+           // merchant turned down after we asked: these were held back before the walk to
+           // the counter, so a bot reading this knows the goods are still in the pack and
+           // still saleable — somewhere else. `whoBuys` names where.
+           ...(notOffered.length ? { not_offered: notOffered } : {}),
+           note: refused.length
+             ? 'these were offered and refused anyway — a merchant with a real inventory ' +
+               'can be full, and condition or stack size can also draw a no'
+             : undefined };
 }
 
 // Deposit matching inventory into a VAULTMAN in one server transaction. Success is
