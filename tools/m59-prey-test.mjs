@@ -17,6 +17,8 @@
 // If someone "simplifies" goalYield by making skills read `ability`, these fail. That is
 // the point of them.
 
+import { readFileSync } from 'node:fs';
+
 import { goalYield, scorePrey, healthCeiling, PURPOSES, huntingGrounds,
          creatureMatchesHunt,
          whoDrops, suggestDrops, moneyPerKill } from './m59-spawns.mjs';
@@ -66,6 +68,17 @@ const SPAWNS = {
 };
 
 const CH = { maxHealth: 30, stamina: 20 };   // ceiling 121, so hp is still live
+
+console.log('\nhunting-ground safety guidance — one current formula everywhere');
+{
+  const broker = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+  const primer = readFileSync(new URL('../docs/m59-agent-primer.md', import.meta.url), 'utf8');
+  const formula = 'current max HP plus 50%';
+  ok('the MCP tool description gives the current max-danger formula', broker.includes(formula));
+  ok('the agent primer gives the same current max-danger formula', primer.includes(formula));
+  ok('the obsolete fixed six-level guidance is gone',
+     !broker.includes('level plus about six') && !primer.includes('level plus about six'));
+}
 
 console.log('\ncreature identity — orders are not substring searches');
 {

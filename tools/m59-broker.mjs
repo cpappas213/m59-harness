@@ -10723,7 +10723,8 @@ const TOOLS = [
       'Rooms come back best-chance-first with the spawn percentage and the population cap.\n' +
       'THE FIELD THAT MATTERS MOST IS also_here, and the reason is that two rooms can both list ' +
       'giant rats at 60-70% while only one of them also rolls a level-35 groundworm larva. Pass ' +
-      'max_danger — normally your own level plus about six — and rooms above it come back under ' +
+      'max_danger — normally current max HP plus 50% (1.5 × current max HP) — and rooms above it ' +
+      'come back under ' +
       'rejected WITH THE REASON rather than being dropped, so you can see why the obvious room was ' +
       'skipped instead of trying it again.\n' +
       'Give a room number instead of a creature to ask the reverse: everything that room generates, ' +
@@ -10742,7 +10743,7 @@ const TOOLS = [
       for_level: { type: 'number', description: 'ask what a character of this level should hunt next' },
       karma: { type: 'string', enum: ['evil', 'good', 'neutral'],
                description: 'restrict to prey whose death pushes karma this way (Qor: evil, Shal\'ille: good)' },
-      max_danger: { type: 'number', description: 'skip rooms that can generate something above this level' },
+      max_danger: { type: 'number', description: 'skip rooms that can generate something above this level; normally current max HP plus 50% (1.5 × current max HP)' },
       limit: { type: 'number' },
     } },
     run: async (a) => {
