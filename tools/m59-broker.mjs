@@ -11607,6 +11607,10 @@ const TOOLS = [
           holding_token: c.equipment().known
             ? c.equipment().equipped.some(e => /^token$/i.test(String(e.name || '')))
             : undefined,
+          // CONDITION OF WORN WEAPON AND ARMOUR — 0 (broken) to 4 (flawless), null = unknown.
+          // Populated by sweepGearCondition() which does look_at on equipped items every 90s.
+          // Not pushed by the server; never looked up = null (renders as dash, not 0).
+          gear_condition: ap ? ap.gearConditionStatus() : null,
           // WHAT THIS CHARACTER CAN DO FOR THE OTHERS.
           //
           // Both Kraanan level-1 creation spells are services rather than personal

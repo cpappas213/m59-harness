@@ -61,6 +61,7 @@ import { loadoutFor, keepTest, sellTest, dropRank, wantsOf, norm,
 import { getArmedTree, updateBlackboard } from './m59-bt-nodes.mjs';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 // One resolver, shared with the broker's `tithe` tool — see titheFleet in m59-tithe.mjs
 // for why two answers here meant two books and a fleet that tithed twice a day.
@@ -1288,7 +1289,7 @@ export class Autopilot {
   // slot in a roster; "Kermit" is the character, and the loadout follows the character
   // across checkouts and re-rolls of the roster file.
   loadout() {
-    const who = this.s.client?.me?.name;
+    const who = this.s.client?.me?.name ?? this.s.credentials?.character;
     return who ? loadoutFor(who) : null;
   }
 
@@ -5975,6 +5976,7 @@ export class Autopilot {
     }
     if (this.running) return this.status();
     this.running = true; this.stopping = false; this.startedAt = Date.now();
+    this._lastOutfitAt = null;   // allow a fresh outfit attempt on every new keeper run
     // The independent eye. Started with the keeper and stopped with it, because it exists
     // to watch this keeper's blind spots and has nothing to watch when there is no keeper.
     this.startWatchdog();
@@ -6274,6 +6276,9 @@ export class Autopilot {
     const s = this.s;
     if (!s.live) { this.note('not in game'); return; }
     const c = s.client;
+    // Apply loadout policy overlay BEFORE the BT check so that useBT (and other
+    // loadout-driven policy fields) are live on the first pass after a restart.
+    this.applyLoadoutPolicyOverlay();
     // ------------------------------------------------------------------
     // BEHAVIOR-TREE GET-ARMED SUBTREE (opt-in via policy.useBT)
     //
@@ -6297,9 +6302,17 @@ export class Autopilot {
         { client: c, session: this, policy: this.policy },
       );
       const tree = getArmedTree({ session: { keeper: this } });
+      // tick is synchronous against the slot pattern (m59-bt-nodes.mjs Action
+      // factories deliberately avoid returning Promises so the slot is honoured).
       const btResult = await tree.tick(bb);
+      // SUCCESS: BT armed us this tick. Clear any inert state the sequential path may
+      // have set on a previous pass (stop() calls goInert, which the BT overrides).
       if (c.armed()) { if (this.inert) this.revive('BT armed us'); this.progress('armed itself'); return; }
+      // RUNNING: an async action (e.g. travelAndBuy) is in flight. Return now so the
+      // sequential body does not race it — in particular, so it cannot call stop() while
+      // the buy trip is still walking to the smith.
       if (btResult === 'RUNNING' || Object.keys(bb._bt || {}).length > 0) { return; }
+      // FAILURE: BT gave up (e.g. no buy method wired yet). Fall through to the sequential path.
     }
 
     // APPLY THE LOADOUT POLICY OVERLAY FIRST. Every decision in this pass reads
@@ -6307,9 +6320,7 @@ export class Autopilot {
     // settings (karma, buy_reagents, hunt, assigned_room, pulls_before_barren). Without
     // this, a broker restart silently demotes every planned character to defaults and
     // the next farm run does the wrong thing until somebody re-applies overrides.
-    // Done before declareInterest so the board this character posts is consistent with
-    // the policy the rest of the pass is about to act on.
-    this.applyLoadoutPolicyOverlay();
+    // Already applied above (before the BT gate) so loadout fields are live on tick 1.
     // Post where we are, every pass. Cheap, and it is the only way one keeper can find
     // another that has wandered — see runProvision, where a quartermaster arrives to
     // find the supplicant has roamed off and would otherwise abandon the errand.
@@ -6467,6 +6478,17 @@ export class Autopilot {
       }
     } else this.selfMissingPasses = 0;
 
+    if (await this.passUnderworld(s, c, room)) return;
+    if (await this.passArm(s, c)) return;
+    if (await this.passPlaybook()) return;
+    if (await this.passFleeAndRest(s, c, room, v, hp)) return;
+    if (await this.passOutside()) return;
+    if (await this.passErrand()) return;
+    await this.passFarm(s, c, room, v, hp);
+  }
+
+  // ── passUnderworld: extracted from pass() ────────────────────────────────
+  async passUnderworld(s, c, room) {
     // 1. Dead. The Underworld has no graph exits, so a character left there stays
     //    there forever unless something walks it onto a portal.
     if (room && /underworld/i.test(room.name)) {
@@ -6750,7 +6772,7 @@ export class Autopilot {
         this.noProgress('stuck in the Underworld: ' + (e.reason || 'no portal took us'));
         this.note('could not escape — will keep trying', { why: e.reason, tried: e.tried });
       }
-      return;
+      return true;
     }
 
     // ============================ INERT STOPS HERE ============================
@@ -6781,8 +6803,8 @@ export class Autopilot {
       } else {
         // NOT A STALL. The supervisor restarts keepers that report no progress, and an
         // inert keeper is doing exactly what it was asked to do.
-        this.progress('inert — something else is driving');
-        return;
+        this.progress('inert -- something else is driving');
+        return true;
       }
     }
 
@@ -6794,7 +6816,7 @@ export class Autopilot {
     if (this.needsRecovery) {
       this.needsRecovery = false;
       await this.askForHelp();
-      return;
+      return true;
     }
 
     // AND THEN SIT DOWN SOMEWHERE SAFE UNTIL WHOLE. THIS IS THE POINT OF THE FLAG.
@@ -6819,7 +6841,7 @@ export class Autopilot {
         // conjure, and the conjure is why the mana in hibernate's bar is there.
         if (!this.armedForSure()) await this.armSelf().catch(() => false);
         this.progress('recovering after a death');
-        return;
+        return true;
       }
       // Not somewhere safe yet. Walk to the nearest room that spawns nothing rather than
       // recovering where we stand — resting in the open is how a rest becomes a death,
@@ -6843,6 +6865,41 @@ export class Autopilot {
       // character here would only add a way to do nothing.
     }
 
+    return false;
+  }
+
+  // Walk to a smith, buy a weapon, and wield it. Spawns m59-outfit.mjs as a child
+  // process the same way the broker does for ability buying. The outfit script stops
+  // the keeper, does the shopping trip, then restarts it — so this method just waits
+  // for the child to exit and reports whether the character is now armed.
+  async buyWeaponsAtNearestSmith({ why = 'unarmed' } = {}) {
+    const httpAt = process.argv.indexOf('--http');
+    const brokerPort = httpAt >= 0 ? process.argv[httpAt + 1]
+      : process.env.M59_BROKER_PORT || '8901';
+    const script = fileURLToPath(new URL('./m59-outfit.mjs', import.meta.url));
+    this.note('buying a weapon at the nearest smith', {
+      why, port: brokerPort, agent: this.s.name,
+    });
+    const ok = await new Promise(resolve => {
+      const child = spawn(process.execPath, [
+        script, '--port', String(brokerPort), '--agents', this.s.name,
+      ], { stdio: 'ignore', windowsHide: true });
+      child.on('close', code => resolve(code === 0));
+      child.on('error', () => resolve(false));
+    });
+    // The outfit script restarts the keeper before it exits, but the BP_USE packet
+    // confirming the wield may not have arrived yet. Give the wire a moment and then
+    // resync so armed() reads the server's current use-list, not a stale snapshot.
+    await sleep(1500);
+    await this.s.pacer.submit('read', () => this.s.client.requestInventory()).catch(() => {});
+    await this.s.client.waitFor({ kinds: ['inventory'], timeoutMs: 2000 }).catch(() => {});
+    const armed = this.armed();
+    this.note('outfit run finished', { exit_ok: ok, armed, why });
+    return armed;
+  }
+
+  // ── passArm: extracted from pass() ────────────────────────────────
+  async passArm(s, c) {
     // NO WEAPON: FIX IT BEFORE ANYTHING ELSE, and never walk out to hunt without one.
     //
     // armSelf() already wields from the pack and falls back to conjuring, and makeWeapon
@@ -6864,15 +6921,32 @@ export class Autopilot {
         await sleep(400);
       }
       if (!this.knowsCreateWeapon() && this.sanctuary()) {
-        const why = 'unarmed and does not know create weapon — external weapon acquisition required';
+        const now = Date.now();
+        const cooldown = 5 * 60_000;  // don't hammer the smith every pass
+        if (!this._lastOutfitAt || now - this._lastOutfitAt >= cooldown) {
+          const why = 'unarmed and does not know create weapon — going to buy one';
+          this.noProgress(why);
+          this.note('cannot self-arm via spell, buying a weapon instead', {
+            mana: c.vitals?.()?.mana?.value ?? null,
+            why,
+          });
+          this._lastOutfitAt = now;
+          await this.buyWeaponsAtNearestSmith({ why });
+          if (this.armed()) return true;
+        }
+        // Outfit ran (or is on cooldown) and character still unarmed — fall through
+        // to the original stop() so the board shows the right state and a human can
+        // intervene (hand over a weapon, top up the bank, etc.).
+        const why = 'unarmed, does not know create weapon, outfit did not arm us';
         this.noProgress(why);
         this.note('cannot self-arm', {
           why,
           mana: c.vitals?.()?.mana?.value ?? null,
           action_needed: 'buy, recover, or receive a weapon before restarting combat',
+          next_outfit_attempt_in_s: Math.round((cooldown - (now - (this._lastOutfitAt ?? now))) / 1000),
         });
         this.stop(why);
-        return;
+        return true;
       }
       // Not enough mana to conjure one yet. SIT DOWN — and do not let settle() decide
       // whether that happens.
@@ -6998,10 +7072,15 @@ export class Autopilot {
         why: `unarmed — ${manaNow} mana, needs 15 to make one`,
         remedy: 'hand it a weapon, or leave it alone until it can cast one',
         retryAfterMs: 60_000 });
-      this.noProgress(`unarmed — ${manaNow} mana, needs 15 to make one`);
-      return;
+      this.noProgress(`unarmed -- ${manaNow} mana, needs 15 to make one`);
+      return true;
     }
 
+    return false;
+  }
+
+  // ── passPlaybook: extracted from pass() ────────────────────────────────
+  async passPlaybook() {
     // 1.9 THE THREE MOMENTS THE FLEET'S DIRECTOR MAY HAVE AN OPINION ABOUT.
     //
     //     ABOVE the danger ladder, because a player attacking us is the one case where
@@ -7016,6 +7095,21 @@ export class Autopilot {
     //     before this existed.
     await this.consultPlaybook();
 
+    // 1b. PLAYER TARGET. If an intel auto-attack target is in the room and we are
+    //     healthy enough to engage, fight them now -- before the survival ladder and
+    //     before normal farming. This is opt-in per target (auto_attack flag) and
+    //     gated on being above the engage threshold so a hurt character retreats first.
+    if (await this.engagePlayerTarget()) return;
+
+    // 1c. CONFLICT RESPONSE. If another fleet member has declared a conflict with a
+    //     target player, eligible characters (level > 30, healthy, uncommitted) travel
+    //     to that room to assist. engagePlayerTarget fires on arrival.
+    if (await this.respondToConflict()) return;
+    return false;
+  }
+
+  // ── passFleeAndRest: extracted from pass() ────────────────────────────────
+  async passFleeAndRest(s, c, room, v, hp) {
     // 2. In danger. "Something attackable is adjacent and we are hurt" is the only
     //    threat signal available — the protocol does not say who is targeting us.
     //
@@ -7128,7 +7222,7 @@ export class Autopilot {
         because: 'below the flee threshold in the open',
         from: near.map(o => c.rsc.get(o.nameRsc)),
       });
-      return;
+      return true;
     }
     if (hp !== null && hp < this.policy.fleeBelow && near.length && sheltered) {
       this.tally.mulligans = (this.tally.mulligans || 0) + 1;
@@ -7329,7 +7423,7 @@ export class Autopilot {
         vigor: vigorNow2, monsters_in_room: hostiles.length,
       });
       this.progress('moved toward somewhere I can heal');
-      return;
+      return true;
     }
 
     // AND BELOW THE RESTING CEILING: GET OFF THE MAP ENTIRELY.
@@ -7456,7 +7550,7 @@ export class Autopilot {
             why: 'the walk failed because twelve things were already swinging; after a ' +
                  'reconnect only about one of them has noticed' });
           await gotOut(r);
-          return;
+          return true;
         }
       }
       // EAT BEFORE DECLARING YOURSELF TRAPPED — IT IS USUALLY THE WHOLE PROBLEM.
@@ -7483,13 +7577,13 @@ export class Autopilot {
         this.note('ate rather than reporting myself trapped', {
           why: 'could not fight, rest or leave — and "cannot fight" here is usually vigor ' +
                'below the fight floor, which food fixes and a rescue does not' });
-        return;
+        return true;
       }
       // Nowhere to go and nothing to eat. Say what is actually needed rather than looping
       // silently — the interest board is what the almoner and the quartermaster read.
       this.declareInterest();
-      this.noProgress('trapped: cannot fight, cannot rest, cannot leave — needs food or a rescue');
-      return;
+      this.noProgress('trapped: cannot fight, cannot rest, cannot leave -- needs food or a rescue');
+      return true;
     }
 
     if ((!combatZone || sheltered || testing) && hurt) {
@@ -7665,11 +7759,15 @@ export class Autopilot {
                 'that recovers nothing is the square failing quietly rather than loudly — ' +
                 'the same conclusion as `interrupted`, reached without waiting for a big hit' });
         await this.restBroken(room, near).catch(() => {});
-        return;
+        return true;
       }
-      return;
+      return true;
     }
+    return false;
+  }
 
+  // ── passOutside: extracted from pass() ────────────────────────────────
+  async passOutside() {
     // AN OUTSIDE OPERATION OWNS EVERYTHING DIRECTIONAL FROM HERE DOWN.
     //
     // Keep this below death, danger and recovery: those are the keeper's protected
@@ -7680,8 +7778,8 @@ export class Autopilot {
     // pass that begins afterwards.
     const outside = this.busyStatus();
     if (outside) {
-      this.progress(`busy — ${outside.label ?? outside.kind ?? 'something else is driving'}`);
-      return;
+      this.progress(`busy -- ${outside.label ?? outside.kind ?? 'something else is driving'}`);
+      return true;
     }
 
     // PARKED. This is the point the keeper would otherwise choose a new action — the
@@ -7694,6 +7792,10 @@ export class Autopilot {
     // the errand is still in `this.errand` and the keeper on the far side of the restart
     // picks it up from the roster.
     if (this.parking) {
+      // Recompute hostiles here: the parking check needs to know what is in the room.
+      const c = this.s.client;
+      const hostiles = [...c.room.objects.values()].filter(o =>
+        o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER));
       const p = this.parking;
       // Somewhere hostile? Get a wall. `takeSafeSpot` is the same call the rest gate
       // uses, so a parked character ends up in exactly the state resting requires.
@@ -7736,9 +7838,13 @@ export class Autopilot {
                       .catch(() => {});
         }
       }
-      return;
+      return true;
     }
+    return false;
+  }
 
+  // ── passErrand: extracted from pass() ────────────────────────────────
+  async passErrand() {
     // An errand outranks farming and is outranked by everything above it: we are past
     // the death, danger and rest branches, so a runner in trouble has already dealt
     // with the trouble.
@@ -7769,9 +7875,13 @@ export class Autopilot {
     // because nobody gave us a task is throwing away the one thing idle time is for.
     if (this.mode === 'idle') {
       if (await this.hibernate('idle: no job to do').catch(() => false)) return;
-      return;
+      return true;
     }
+    return false;
+  }
 
+  // ── passFarm: extracted from pass() ────────────────────────────────
+  async passFarm(s, c, room, v, hp) {
     // 4. Work. Only in farm mode, and only on what we were told to hunt.
     //
     // AND ONLY IF NOBODY ELSE OWNS IT. This is the seam the carve-out is cut along: every
@@ -7956,6 +8066,7 @@ export class Autopilot {
       // every pack size, so this runs on its own clock. `inspectForBroken` is the cheap
       // half and is asked only about SPARES, never the weapon in hand.
       await this.sweepBroken().catch(() => {});
+      await this.sweepGearCondition().catch(() => {});
 
       if (c.inventory.length >= this.policy.maxCarry) {
         const freed = await this.makeRoom();
@@ -9018,6 +9129,7 @@ export class Autopilot {
 
     this.note('nothing to do', { health: v.health, vigor: v.vigor, room: room?.name });
   }
+
 
   // BE ANSWERABLE. A character that never replies is not just rude, it is a dead
   // end: someone offering a newly-killed bot a weapon has no way to tell whether
@@ -11350,6 +11462,51 @@ export class Autopilot {
     this.note('dropped broken gear', { dropped, still_broken: Math.max(0, dead.length - dropped.length),
       why: 'broken gear is weight and bulk spent on nothing at every pack size' });
     return { dropped };
+  }
+
+  // CONDITION OF WHAT THE CHARACTER IS ACTUALLY WEARING, read from look_at descriptions.
+  //
+  // The server never pushes condition — it is appended to the look_at description text.
+  // We check worn weapon and worn armour at most every 90s, parse the condition phrase
+  // into a 0-4 level, and cache the result on _gearCondition so the broker's fleet row
+  // can surface it without an extra round trip.
+  //
+  // This only looks at EQUIPPED gear (plUsing), not inventory spares.  inspectForBroken
+  // already watches the spares for broken detection; this is for the dashboard display.
+  async sweepGearCondition() {
+    const gapMs = 90_000;
+    if (Date.now() - (this._lastGearConditionAt ?? 0) < gapMs) return;
+    this._lastGearConditionAt = Date.now();
+    const s = this.s, c = s.need();
+    const eq = c.equipment();
+    if (!eq.known) return;
+
+    const weaponItem = eq.equipped.find(e => e.name && skills.weaponScore(e.name) > 0);
+    const armorItem  = eq.equipped.find(e => {
+      const n = (e.name || '').toLowerCase();
+      return /leather|chain|scale|plate|cloth|robe|breastplate|cuirass|hauberk/i.test(n)
+          && !skills.weaponScore(e.name);
+    });
+
+    const result = {
+      weapon: weaponItem ? { name: weaponItem.name, id: weaponItem.id, level: null } : null,
+      armor:  armorItem  ? { name: armorItem.name,  id: armorItem.id,  level: null } : null,
+    };
+
+    for (const slot of ['weapon', 'armor']) {
+      const item = result[slot];
+      if (!item) continue;
+      await s.pacer.submit('look', () => c.look(item.id)).catch(() => {});
+      const { events } = await c.waitFor({ kinds: ['look'], timeoutMs: 3000 }).catch(() => ({ events: [] }));
+      const desc = events.find(e => e.id === item.id)?.description ?? null;
+      item.level = skills.parseConditionLevel(desc);
+    }
+
+    this._gearCondition = result;
+  }
+
+  gearConditionStatus() {
+    return this._gearCondition ?? null;
   }
 
   async makeRoom() {

@@ -198,14 +198,11 @@ export function castCreateWeaponAction(keeper) {
 }
 castCreateWeaponAction._key = 'bt_cast_create_weapon';
 
-// travel_and_buy: walks the character to the nearest smith (room 374 Quintor
-// in Jasper, or room 154 Rook in Cor Noth) and buys the cheapest weapon the
-// smith has in stock. The implementation here delegates to the keeper so the
-// travel planner, the merchant protocol, and the inventory refresh all stay
-// where they already live. A keeper that has not yet been wired to a "go buy
-// a weapon" routine will fall back to a no-op that returns FAILURE -- the BT
-// re-ticks the action on the next pass, and the selector above will not move
-// on until SUCCESS lands.
+// travel_and_buy: walks the character to the nearest smith and buys the
+// cheapest weapon the smith has in stock. Delegates to keeper.buyWeaponsAtNearestSmith,
+// which spawns m59-outfit.mjs as a child process — the same mechanism the broker
+// uses for ability buying. The outfit script stops the keeper, walks to the smith,
+// buys, then restarts the keeper. Returns SUCCESS when the character is armed afterwards.
 export function travelAndBuyAction(keeper) {
   const key = 'bt_travel_and_buy';
   return new Action((bb, slot) => {
@@ -216,11 +213,6 @@ export function travelAndBuyAction(keeper) {
         .then(() => {
           if (typeof keeper.buyWeaponsAtNearestSmith === 'function')
             return keeper.buyWeaponsAtNearestSmith({ why: 'BT: travel and buy' });
-          if (typeof keeper.buyWeapons === 'function')
-            return keeper.buyWeapons({ why: 'BT: travel and buy' });
-          // No buy routine wired up yet -- the BT can't proceed, but it
-          // should not pretend success either. Returning false here turns
-          // this tick into FAILURE; the action will be reticked next pass.
           return false;
         })
         .then(r => { slot.ok = !!r; slot.done = true; })

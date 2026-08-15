@@ -161,6 +161,51 @@ export const brokenWeaponText = (t) => WEAPON_SHATTERED.test(t || '') || WEAPON_
                                     || WEAPON_USE_BROKEN.test(t || '') || WEAPON_CONDITION.test(t || '')
                                     || ARMOUR_CONDITION.test(t || '');
 
+// CONDITION LEVELS FROM LOOK_AT DESCRIPTIONS.
+//
+// The server appends one condition sentence to the item description when vbShow_condition
+// is TRUE. Weapons and armour both have five levels (exc → good → med → poor → broken).
+// "exc_mended" is treated the same as "exc" — a repaired piece is fully functional.
+// These patterns are matched in priority order: broken first, then degrading, then good.
+// An empty or null description returns null (never looked or item not found).
+//
+// Sources: weapon.kod:87-92, armor.kod:19-24, shield.kod:23-28, helmet.kod:19-24
+//
+// Level scale: 4=flawless, 3=good, 2=battle-worn, 1=poor (nearly broken), 0=broken
+export function parseConditionLevel(desc) {
+  if (!desc) return null;
+  // Broken first — both weapon and armour
+  if (/shattered by a powerful blow/i.test(desc)) return 0;
+  if (/is useless[.,]/i.test(desc)) return 0;
+  if (/shattered by a forceful blow/i.test(desc)) return 0;
+  if (/cleft in two/i.test(desc)) return 0;
+  // Poor / nearly broken
+  if (/may not last much longer/i.test(desc)) return 1;
+  if (/cracked in several places/i.test(desc)) return 1;
+  if (/dented and worn nearly to the point/i.test(desc)) return 1;
+  // Battle-worn but functional
+  if (/notched and stained/i.test(desc)) return 2;
+  if (/nicked and scarred/i.test(desc)) return 2;
+  if (/deeply scarred from battle/i.test(desc)) return 2;
+  if (/marked with the scars/i.test(desc)) return 2;
+  // Good condition
+  if (/slightly tarnished/i.test(desc)) return 3;
+  if (/dent or two/i.test(desc)) return 3;
+  if (/deep gouge/i.test(desc)) return 3;
+  if (/stained with blood but otherwise/i.test(desc)) return 3;
+  // Excellent / flawless (including mended)
+  if (/flawless condition/i.test(desc)) return 4;
+  if (/without blemish/i.test(desc)) return 4;
+  if (/smooth perfection/i.test(desc)) return 4;
+  if (/excellent condition/i.test(desc)) return 4;
+  if (/great condition/i.test(desc)) return 4;
+  return null; // description present but no condition phrase recognised
+}
+
+// Label for a condition level, for display.
+export const CONDITION_LABEL = ['broken', 'poor', 'worn', 'good', 'flawless'];
+export const CONDITION_CSS   = ['bad',    'bad',  'warn', '',     'good'];  // CSS class hints
+
 // Learned, per client, because it cannot be read. A weapon enters this set the moment
 // the server refuses it or announces it shattering, and leaves only when it leaves the
 // pack. Without it every pass re-picks the same dead sword — it still scores highest.
