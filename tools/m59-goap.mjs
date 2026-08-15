@@ -489,33 +489,6 @@ export function buildActionLibrary() {
       },
     }),
     mk({
-      name:   'leave_capped_room',
-      // Room is at spawn cap and all creatures in it are ones the keeper refuses to
-      // fight (wrong prey, wrong karma, etc.) — nothing will ever spawn. Clear the
-      // assigned room and immediately pick a new one so the character doesn't stay
-      // here while avoid_crowded_room and retarget_on_stall take turns.
-      // Requires assignedRoom !== null: once cleared, the next-best actions take over.
-      cost:   4,
-      pre:    'inGame && keeperRunning && stallRoomCapped && !busy && assignedRoom !== null',
-      effect: 'leave_capped_room',
-      run:    async (state) => {
-        console.log(`[goap] ${state.character} leave_capped_room: room ${state.room} capped — picking new room`);
-        await callTool('autopilot', { agent: state.agent, action: 'set', assigned_room: null });
-        // Immediately retarget so we don't stay in the capped room an extra pass.
-        const result = await callTool('prey', { agent: state.agent, goals: [{ kind: 'hp' }], ...(state.karma ? { karma: state.karma } : {}) });
-        const candidates = result?.candidates ?? [];
-        const next = candidates.find(c => c.best_room != null && c.best_room !== state.room);
-        if (next) {
-          await callTool('autopilot', { agent: state.agent, action: 'set',
-                                        hunt: next.creature, assigned_room: next.best_room });
-          console.log(`[goap] ${state.character} leave_capped_room: reassigned to ${next.creature} room ${next.best_room}`);
-          return { note: `leave_capped_room: capped room ${state.room} → ${next.creature} room ${next.best_room}` };
-        }
-        console.log(`[goap] ${state.character} leave_capped_room: no alternative prey — operator needed`);
-        return { note: `leave_capped_room: cleared assignment, no alternative found` };
-      },
-    }),
-    mk({
       name:   'relocate_no_safe_wall',
       // No safe wall in this room and nowhere better to go. Clearing the assigned room
       // lets the keeper's own room-selection pick somewhere with a usable wall.
