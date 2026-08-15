@@ -67,6 +67,76 @@ const READ_ONLY = new Set(['fleet', 'status', 'look', 'look_at', 'inventory', 'e
 
 const log = (...a) => { if (!QUIET) console.log(new Date().toISOString().slice(11, 19), ...a); };
 
+// ---------------------------------------------------------------------------
+// TAKING THE WHEEL, AND GIVING IT BACK WITHOUT BEING ASKED.
+//
+// This is the whole point of driving through a proxy rather than moving the fleet. The
+// broker never moves, so "who holds the fleet" is never a question and there is nothing to
+// arbitrate — no lock, no lease file, no second machine that has to be told anything. The
+// only question is whether somebody is driving REMOTELY right now, and the answer is
+// whether calls are still arriving.
+//
+// So a borrower's first order CLAIMS the directional faculties for the characters their
+// grant covers, and every order after that renews the claim. Then the operator closes the
+// laptop, or the train goes into a tunnel, or the power cuts — and nothing has to notice.
+// The claim simply stops being renewed, the lease lapses, and the keeper takes the
+// character back on its own. `lease_ms` is documented as exactly this: "taken back by the
+// keeper this long after the last heartbeat. Leases fail BACK to the keeper, never open."
+//
+// WHAT IS NEVER HANDED OVER, and this is what makes it safe to give to somebody who is not
+// going to be watching: `PROTECTED_FACULTIES` — identity, mortality, survival, recovery —
+// stay with the keeper at home no matter what. A borrowed character still runs from a
+// fight it is losing, still rests when hurt, still climbs out of the Underworld, even
+// while its driver is asleep or gone. The borrower gets work, movement, economy and
+// social: what to hunt, where to stand, what to buy, what to say.
+const CONTROL_FACULTIES = ['work', 'movement', 'economy', 'social'];
+// Long enough that a borrower thinking between orders does not lose the wheel; short
+// enough that a vanished one hands it back before the fleet notices. Two minutes is the
+// broker's own default for the same reason.
+const CONTROL_LEASE_MS = Number(arg('--lease-ms', 120_000));
+// Renew at a third of the lease, so one missed call does not drop control.
+const RENEW_AFTER_MS = CONTROL_LEASE_MS / 3;
+
+const lastClaim = new Map();          // agent -> when we last renewed for it
+
+async function takeWheel(agent, grant) {
+  const now = Date.now();
+  const prev = lastClaim.get(agent) ?? 0;
+  if (now - prev < RENEW_AFTER_MS) return;         // still comfortably held
+  lastClaim.set(agent, now);
+  const by = `lend:${grant.id}/${grant.label}`.slice(0, 80);
+  try {
+    const r = await brokerTool('autopilot', {
+      agent, action: 'claim', faculties: CONTROL_FACULTIES,
+      by, lease_ms: CONTROL_LEASE_MS,
+    });
+    if (prev === 0) log(`  ${agent}: wheel taken by ${by} (lease ${CONTROL_LEASE_MS / 1000}s, ` +
+                        `survival stays home)${r?.refused?.length ? ' refused=' + JSON.stringify(r.refused) : ''}`);
+  } catch (e) {
+    // A claim that fails must not block the order. Worst case the keeper and the borrower
+    // both steer for a moment, which is the ordinary pre-claim behaviour and self-corrects.
+    log(`  ${agent}: claim failed (${e.message}) — forwarding anyway`);
+  }
+}
+
+// A small typed call to the local broker, for our own bookkeeping rather than the
+// borrower's traffic.
+function brokerTool(name, args) {
+  const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call',
+                                params: { name, arguments: args } });
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: BROKER, method: 'POST', path: '/',
+      headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } },
+      (res) => { let d = ''; res.setEncoding('utf8');
+        res.on('data', c => (d += c));
+        res.on('end', () => { try { resolve(JSON.parse(JSON.parse(d).result.content[0].text)); }
+                              catch { resolve({}); } }); });
+    req.setTimeout(15_000, () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
 function forward(body) {
   return new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port: BROKER, method: 'POST', path: '/',
@@ -148,6 +218,10 @@ const server = http.createServer((req, res) => {
         return send(403, rpcError(id, -32003, verdict.why));
       }
     }
+
+    // TAKE THE WHEEL BEFORE THE ORDER, not after: the claim is what stops the local keeper
+    // steering into the same character on the pass that this order is about to change.
+    if (tool && agent && need === 'orders') await takeWheel(agent, grant);
 
     let out;
     try { out = await forward(raw); }

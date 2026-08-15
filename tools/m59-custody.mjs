@@ -7,6 +7,23 @@
 //   node tools/m59-custody.mjs release           # hand it over deliberately
 //   node tools/m59-custody.mjs watch --standby-only   # never take over, only observe
 //
+// PROBABLY NOT THE TOOL YOU WANT. READ THIS FIRST.
+//
+// This solves "two machines each want to BE the fleet's home, one at a time". It needs a
+// git remote, credentials on both machines, and somebody who knows what a rebase is — and
+// it was rejected for the ordinary case for exactly that reason: it does not just work for
+// somebody who is not a computer person.
+//
+// THE ORDINARY CASE IS `m59-lend.mjs`, AND IT NEEDS NO LOCK AT ALL. Keep the broker at
+// home, permanently, holding the roster and the sockets; drive it from wherever you are
+// through the lend door. "Who holds the fleet" never becomes a question, so there is
+// nothing to arbitrate — and when the remote machine goes quiet the faculty lease simply
+// lapses and the keeper resumes. No store, no push, no second copy of anything.
+//
+// Reach for THIS only when the fleet genuinely has to change homes: a machine being
+// retired, or a home connection that will be down long enough that driving through it is
+// not an option.
+//
 // THE PROBLEM THIS EXISTS FOR, AND WHY POLITENESS CANNOT SOLVE IT.
 //
 // Meridian allows ONE CONNECTION PER CHARACTER and has no notion of who owns an account.
