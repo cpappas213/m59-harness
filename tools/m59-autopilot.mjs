@@ -11054,12 +11054,26 @@ export class Autopilot {
     const emptyLarder = mayBuyFood && !this.larder(c).length;
     const hungryNow = emptyLarder ||
                       (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
-    const fullFloor = this.policy.walkingMoney ?? 400;
-    const floor = hungryNow ? Math.min(fullFloor, this.policy.hungryFloor ?? 100) : fullFloor;
+    // THE WALKING MONEY IS FOR SPENDING, AND THIS IS THE SHOP.
+    //
+    // The float exists so a character can pay its way home — but this function only ever
+    // runs standing at a counter, which is where home is. There is a bank in every town
+    // that has a merchant, so a character that spends its last shilling here re-banks on
+    // the way out; the reserve was being guarded in the one place it is not needed.
+    //
+    // Guarding it cost the fleet its supply. walkingMoney is also the level bankRun banks
+    // DOWN to, so the two met: a character banked to 400, walked to a merchant, found its
+    // purse at exactly the floor, declined, and walked back. Measured with the shipped
+    // 500/400: purses of 0 to 586 against bank balances of 10,000 to 36,000, restocks
+    // arriving 150 shillings at a time against a 3,360sh fill, trading at 54% of all
+    // active time against 17% fighting, and three characters that had not fought at all.
+    //
+    // So the floor here is zero. `hungryFloor` is kept for anyone who wants a reserve
+    // back — set it and it applies — but the default is that money brought to a shop is
+    // money to spend at the shop.
+    const floor = Math.max(0, Number(this.policy.shopFloor ?? 0));
     if (purse <= floor) {
-      this.declinedPurchase('purse is down to the walking float', { purse, float: floor,
-        ...(floor !== fullFloor ? { relaxed_from: fullFloor, why: 'hungry — reagents outrank the float' } : {}),
-        need });
+      this.declinedPurchase('purse is empty at the counter', { purse, float: floor, need });
       return [];
     }
 
