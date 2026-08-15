@@ -1,3 +1,6 @@
+# Server credentials — IP, port, account names and password. Never commit.
+.env
+
 # The client's own art: 5,355 PNGs decoded from its .bgf files, 40 MB of it, and
 # not ours to redistribute. Regenerate from any local client with
 #     python tools/pull-client-assets.py
