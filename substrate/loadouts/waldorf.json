@@ -2,7 +2,7 @@
  "format": "m59-loadout/1",
  "character": "Waldorf",
  "agent": "t4",
- "updated": "2026-08-12T06:57:46.551Z",
+ "updated": "2026-08-14T23:45:52.704Z",
  "note": "",
  "plan": {
   "schools": {},
@@ -45,7 +45,42 @@
   },
   "from": "Kermit, 2026-08-10 05:25"
  },
- "carry": [],
+ "carry": [
+  {
+   "item": "elderberry",
+   "min": 40,
+   "max": 80,
+   "match": "exact",
+   "why": "create food, 2 per casting; floor 40 to ship out, ceiling 80 so one town trip lasts ~20 castings",
+   "weight": 3,
+   "kind": "reagent"
+  },
+  {
+   "item": "herb",
+   "min": 40,
+   "max": 80,
+   "match": "exact",
+   "why": "create food, 2 per casting; herbs are the binding half; floor 40 to ship out, ceiling 80 so one town trip lasts ~20 castings",
+   "weight": 2,
+   "kind": "reagent"
+  },
+  {
+   "item": "loaf of bread",
+   "min": 4,
+   "max": 8,
+   "match": "exact",
+   "why": "prepared food to carry vigor above the 80 resting cap",
+   "kind": "food"
+  },
+  {
+   "item": "wheel of cheese",
+   "min": 4,
+   "max": 8,
+   "match": "exact",
+   "why": "prepared food to carry vigor above the 80 resting cap",
+   "kind": "food"
+  }
+ ],
  "sell": [],
  "keep": [],
  "purse": {
