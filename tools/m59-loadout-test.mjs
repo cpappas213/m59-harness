@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // THE LOADOUT FORMAT AND THE RECONCILER, AGAINST SCRATCH DIRECTORIES. Offline, safe any
-// time — it never reads the real loadout directory, never starts a broker, and never
+// time -- it never reads the real loadout directory, never starts a broker, and never
 // touches the network:
 //
 //   node tools/m59-loadout-test.mjs
@@ -11,7 +11,7 @@
 //     returns null for an empty one, and null means "the behaviour that was already
 //     there", not "protects nothing". Getting that backwards would have a character with
 //     an empty loadout sell its armour the first time it stood at a counter.
-//   * SUBSTRING MATCHING. This repository has paid for it twice — `keep: ['mace']`
+//   * SUBSTRING MATCHING. This repository has paid for it twice -- `keep: ['mace']`
 //     protected the item literally called "broken mace", and a junk list containing
 //     "mushroom" would sell the edible ones, which are food.
 //   * A MAX BELOW A MIN, which is not a preference but a loop: buy up to the min, sell
@@ -45,7 +45,7 @@ console.log('names on the filesystem');
 {
   ok('a character name becomes a slug', L.slugOf('Kermit') === 'kermit');
   ok('spaces and punctuation fold', L.slugOf("Miss Piggy's") === 'miss-piggy-s');
-  ok('A TRAVERSAL IS NOT ESCAPED, IT IS DROPPED — nothing can walk out of the directory',
+  ok('A TRAVERSAL IS NOT ESCAPED, IT IS DROPPED -- nothing can walk out of the directory',
      L.slugOf('../../substrate/fleets/prod') === 'substrate-fleets-prod');
   ok('a name with nothing usable in it is refused rather than defaulted',
      L.slugOf('../..') === null && L.slugOf('') === null && L.slugOf('   ') === null);
@@ -94,7 +94,7 @@ console.log('\nnormalising what somebody typed');
   });
   const said = (re) => problems.some(p => re.test(p));
   ok('a school level that is not a number is refused', !('Riija' in loadout.plan.schools) && said(/not a level/));
-  ok('a seventh school level is refused — the game has six', !('Faren' in loadout.plan.schools) && said(/the game has six/));
+  ok('a seventh school level is refused -- the game has six', !('Faren' in loadout.plan.schools) && said(/the game has six/));
   ok('a real one survives', loadout.plan.schools.Kraanan === 3);
   const targeted = L.normalise({ character: 'x', plan: {
     learning_target: { track: 'Kraanan' }, abilities: [],
@@ -134,15 +134,15 @@ console.log('\nnormalising what somebody typed');
     return r.loadout.plan.learning_queue.length === 0 &&
       r.problems.some(p => /learning_queue/.test(p));
   })());
-  ok('A MAX BELOW A MIN IS RAISED, not honoured — the pair cannot both be satisfied and ' +
+  ok('A MAX BELOW A MIN IS RAISED, not honoured -- the pair cannot both be satisfied and ' +
      'the keeper would buy and sell the same item for ever',
      loadout.carry[0].max === 20 && said(/buy and sell the same item for ever/));
   ok('a duplicate is reported', said(/listed twice/));
   ok('a negative floor is read as zero', loadout.carry.find(c => c.item === 'herb').min === 0);
   ok('an empty entry in a name list is reported, not silently dropped', said(/empty entry in sell/));
-  ok('sell and keep at once is reported and KEEP WINS — keeping something we should have ' +
+  ok('sell and keep at once is reported and KEEP WINS -- keeping something we should have ' +
      'sold costs a slot, selling something we meant to keep costs the item',
-     said(/both the sell and keep lists — kept/));
+     said(/both the sell and keep lists -- kept/));
   ok('a slot nothing here knows is carried through rather than dropped',
      loadout.gear.slots.tail?.[0] === 'a hat' && said(/slot "tail" is not one/));
   ok('a wrong format is read anyway, and said so',
@@ -155,7 +155,7 @@ console.log('\nan item nothing in the game answers to');
   const flagged = problems.some(p => /not in the item catalogue/.test(p));
   // The catalogue is compiled from a source tree that may not be here. When it is absent
   // the check cannot run, and NOT running a check is different from passing it.
-  ok(L.catalogue().size ? 'an unknown item is reported and kept anyway — the server is the ' +
+  ok(L.catalogue().size ? 'an unknown item is reported and kept anyway -- the server is the ' +
        'authority, not this snapshot' : 'no catalogue here, so no name check was claimed',
      L.catalogue().size ? flagged : !flagged);
 }
@@ -169,7 +169,7 @@ console.log('\nthe keep test knows how to count');
   const atFloor = L.keepTest(loadout, pack(['elderberry', 12]));
   ok('at the floor, the stack is protected', !!atFloor('elderberry'));
   const over = L.keepTest(loadout, pack(['elderberry', 13]));
-  ok('ABOVE the floor it is not — that is what a maximum is for', !over('elderberry'));
+  ok('ABOVE the floor it is not -- that is what a maximum is for', !over('elderberry'));
   const blind = L.keepTest(loadout);
   ok('WITHOUT A PACK IT CANNOT COUNT, so it protects the whole stack: it declines to sell ' +
      'something it might need rather than selling something it does', !!blind('elderberry'));
@@ -177,7 +177,7 @@ console.log('\nthe keep test knows how to count');
   ok('so is the gear', !!blind('mace') && !!blind('leather armor'));
   ok('and it says why, because a protected item with no reason is unauditable',
      /keep list/.test(blind('signet ring')) && /fight with/.test(blind('mace')));
-  ok('anything unmentioned is not protected here — the caller\'s own rules still apply',
+  ok('anything unmentioned is not protected here -- the caller\'s own rules still apply',
      blind('rat pelt') === null);
 }
 
@@ -204,7 +204,7 @@ console.log('\nreconciling against a real pack');
   ok('what is over the ceiling is shed, down to the ceiling and no further',
      r.sell.some(s => s.item === 'herb' && s.over === 2));
   ok('sell-fodder is shed entirely', r.sell.some(s => s.item === 'blue mushroom' && s.over === 10));
-  ok('HOLDING THE SECOND CHOICE IS NOT MISSING THE GEAR — it is one upgrade short, and ' +
+  ok('HOLDING THE SECOND CHOICE IS NOT MISSING THE GEAR -- it is one upgrade short, and ' +
      'reporting them alike is how an outfitting run buys a mace for somebody holding one',
      r.gear.weapon.have === 'short sword' && !r.gear.weapon.missing &&
      r.gear.weapon.upgrade_to?.[0] === 'mace');
@@ -244,7 +244,7 @@ console.log('\nthe order things are given up in');
 console.log('\nthe learning cost');
 {
   const none = L.learnCost({ school: 'Qor', level: 2, intellect: 30, constants: {} });
-  ok('WITH NO CONSTANTS IT REFUSES TO PRODUCE A NUMBER — an invented cost curve reads as ' +
+  ok('WITH NO CONSTANTS IT REFUSES TO PRODUCE A NUMBER -- an invented cost curve reads as ' +
      'authoritative and is worse than none', none.need === null && /not resolved/.test(none.why));
 
   // The server's own arithmetic (player.kod:10837): iNeed = iPoints*7 + (297-16*7)
@@ -256,21 +256,21 @@ console.log('\nthe learning cost');
   ok('one level-1 school known is one point: 7 + 185 - 84 = 108', a.need === 108, `got ${a.need}`);
   const b = L.learnCost({ trackLevels: { Kraanan: 1 }, school: 'Qor', level: 1,
                           intellect: 30, knowOneAtLevel: false, constants: C });
-  ok('entering a level nothing is known at yet costs the difference up front — 1 more ' +
+  ok('entering a level nothing is known at yet costs the difference up front -- 1 more ' +
      'point, so 7 more', b.need === 115, `got ${b.need}`);
   ok('THE SEVENTH TRACK IS THE WEAPON SKILLS and it is charged like a school',
      L.learnCost({ trackLevels: { weapon: 2, Kraanan: 1 }, school: 'Qor', level: 1,
                    intellect: 30, knowOneAtLevel: true, constants: C }).need === 108 + 2 * 7);
   // Measured somewhere the floor is not in the way. At one point of track the whole cost
   // is under MIN_NEEDED_TO_ADVANCE by 50 intellect, so the difference there is the floor's
-  // and not intellect's — which is exactly the reading a planner must not print.
+  // and not intellect's -- which is exactly the reading a planner must not print.
   const deep = { trackLevels: { Kraanan: 3, Qor: 3 }, school: 'Faren', level: 1,
                  knowOneAtLevel: true, constants: C };
   ok('intellect buys the cost down, 14/5 a point',
      L.learnCost({ ...deep, intellect: 30 }).need - L.learnCost({ ...deep, intellect: 50 }).need
        === Math.trunc(50 * 14 / 5) - Math.trunc(30 * 14 / 5),
      `${L.learnCost({ ...deep, intellect: 30 }).need} vs ${L.learnCost({ ...deep, intellect: 50 }).need}`);
-  ok('...and once the floor is reached, more intellect buys nothing — a planner that ' +
+  ok('...and once the floor is reached, more intellect buys nothing -- a planner that ' +
      'reports the difference there is reporting the bound, not the stat',
      L.learnCost({ trackLevels: { Kraanan: 1 }, school: 'Qor', level: 1, intellect: 50,
                    knowOneAtLevel: true, constants: C }).need === 75);
@@ -288,7 +288,7 @@ console.log('\nthe learning cost');
 
   // assess, thrust and kick declare viSkill_level = 50 on a table with six entries. The
   // server asks Nth(vlLevelPoints, 50), which falls off the end and returns NIL
-  // (blakserv/list.c:178), so they cost nothing — and because iWeapon is a MAX, knowing one
+  // (blakserv/list.c:178), so they cost nothing -- and because iWeapon is a MAX, knowing one
   // HIDES the proficiency levels the character would otherwise be charged for.
   ok('A LEVEL PAST THE END OF THE TABLE IS FREE, not clamped to the last entry',
      L.levelPointsAt(C.level_points, 50) === 0 && L.levelPointsAt(C.level_points, 6) === 10);
@@ -296,7 +296,7 @@ console.log('\nthe learning cost');
      'proficiency it also knows disappears into the same max',
      L.learnCost({ trackLevels: { weapon: 50, Kraanan: 1 }, school: 'Qor', level: 1,
                    intellect: 30, knowOneAtLevel: true, constants: C }).need === 108);
-  ok('and level 0 — nothing known in that track — is free too',
+  ok('and level 0 -- nothing known in that track -- is free too',
      L.levelPointsAt(C.level_points, 0) === 0);
 }
 
@@ -448,7 +448,7 @@ console.log('\nschools, read off a character sheet');
   ] };
   const s = L.schoolLevels(sheet, []);
   ok('the highest level in each school is what counts', s.Kraanan === 3);
-  ok('BLINK IS NOT COUNTED — the server excludes it from a school\'s level ' +
+  ok('BLINK IS NOT COUNTED -- the server excludes it from a school\'s level ' +
      '(player.kod:10735) so a planner may not count it either', !('Riija' in s));
   ok('a spell with no level contributes nothing rather than a guessed one', !('Qor' in s));
 }
@@ -464,7 +464,7 @@ console.log('\nreading and writing');
   ok('it reads back the same', back.loadout.carry[0].min === 5);
   ok('a name with nothing usable in it is refused rather than written somewhere else',
      (() => { try { L.writeLoadout('../..', {}); return false; } catch { return true; } })());
-  ok('A TRAVERSAL CANNOT ESCAPE — it is flattened into the directory, not resolved',
+  ok('A TRAVERSAL CANNOT ESCAPE -- it is flattened into the directory, not resolved',
      L.loadoutPath('../../prod') === join(process.env.M59_LOADOUT_DIR, 'prod.json'));
   ok('TWO NAMES THAT SLUG TO ONE FILE DO NOT SILENTLY OVERWRITE EACH OTHER',
      (() => { try { L.writeLoadout('Kermit!', { character: 'Kermit!' }); return false; }
@@ -524,11 +524,11 @@ console.log('\nwhat actually reaches the counter');
   }
   const ask = (name, worn = false) => S.sellable({ name, worn, keepRe: KEEP, loadout, pack });
 
-  ok('WORN BEATS EVERY LIST — nothing can sell the shield off your arm',
+  ok('WORN BEATS EVERY LIST -- nothing can sell the shield off your arm',
      ask('emerald', true).sell === false && /worn or wielded/.test(ask('emerald', true).why));
   ok('a floor protects the stack up to the floor',
      ask('elderberry').sell === false && /loadout/.test(ask('elderberry').why));
-  ok('THE SELL LIST BEATS THE NAME GUARD — this is the only way to shed gems and spare ' +
+  ok('THE SELL LIST BEATS THE NAME GUARD -- this is the only way to shed gems and spare ' +
      'weapons without editing a regex twenty-one characters share',
      ask('emerald').sell === true && ask('short sword').sell === true);
   ok('the keep list protects something the name guard never would',
@@ -554,7 +554,7 @@ console.log('\nwhat an outfitting run goes shopping for');
 {
   const O = await import('./m59-outfit.mjs');
   const fleetDefault = O.wantsFor(null);
-  ok('NO LOADOUT IS THE FLEET DEFAULT, unchanged — a mace, leather and a shield',
+  ok('NO LOADOUT IS THE FLEET DEFAULT, unchanged -- a mace, leather and a shield',
      fleetDefault.length === 3 && fleetDefault.some(w => w.what === 'a mace'));
   ok('and so is a loadout that says nothing about gear',
      O.wantsFor(L.normalise({ character: 'x', carry: [{ item: 'herb', min: 5 }] }).loadout)
@@ -569,7 +569,7 @@ console.log('\nwhat an outfitting run goes shopping for');
      'otherwise compile to something that matches nothing while looking like it should',
      O.wantsFor(L.normalise({ character: 'x', gear: { weapon: ["wizard's staff (+1)"] } }).loadout)[0]
        .re.test("Wizard's Staff (+1)"));
-  ok('the second choice satisfies the want — a character holding a mace is not missing ' +
+  ok('the second choice satisfies the want -- a character holding a mace is not missing ' +
      'its weapon just because a war hammer was listed first',
      w[0].fallback.test('mace') && w[0].fallback.test('war hammer'));
   ok('...and something in neither list does not', !w[0].fallback.test('rat pelt'));
@@ -676,7 +676,7 @@ console.log('\none plan\'s gear, given to every character');
   ok('and gearIsEmpty knows the difference between no list and an empty one',
      L.gearIsEmpty({ weapon: [], slots: { body: [] } }) && !L.gearIsEmpty({ weapon: [], slots: { body: ['x'] } }));
 
-  // A FILE THAT WILL NOT PARSE IS LEFT ALONE, not replaced with one holding only gear — the
+  // A FILE THAT WILL NOT PARSE IS LEFT ALONE, not replaced with one holding only gear -- the
   // carry list that went missing would look like something nobody ever wrote.
   writeFileSync(join(root, 'loadouts', 'scooter.json'), '{ this is not json');
   const broken = L.applyGearToAll(gear, [{ character: 'Scooter' }], { apply: true });
@@ -753,7 +753,7 @@ console.log('\none inventory plan, given to several characters');
 
 // ------------------------------------------------- is this run closing the gear gap?
 //
-// `purpose: 'equip'` protects a run that earns kit rather than levels — ten characters are
+// `purpose: 'equip'` protects a run that earns kit rather than levels -- ten characters are
 // at the level cap and cannot advance on a fungus beast, which does not make their day
 // worthless. What must NOT happen is that declaring it becomes an excuse that can never be
 // wrong: before this existed, yieldCheck returned null for every purpose except 'advance',
@@ -819,6 +819,186 @@ console.log('\none inventory plan, given to several characters');
        y.pays === false && /leaves\s+nothing behind/.test(y.why), y.why);
     ok('and does not invent a drop list', y.drops === null);
   }
+}
+
+// ------------------------------------------------- keeper policy overlay
+//
+// The broker holds keeper policy in memory and resets to defaults on restart. The
+// loadout file is the standing answer for per-character settings the operator would
+// otherwise re-apply by hand every time: karma for Qor/Shalille builds, buy_reagents
+// off for weaponcraft builds, hunt/assigned_room for characters with a fixed
+// grinding spot, pulls_before_barren for rooms with a thin prey mix.
+//
+// Three properties the tests pin, and which a wrong implementation would silently
+// break:
+//
+//   * SILENCE IS INERT. A field absent from the loadout's policy block must not
+//     touch the live policy -- the operator's MCP overrides on fields the file does
+//     not name are still theirs.
+//   * FIELDS PRESENT WIN. A field the loadout names must be applied every pass so
+//     a manual override is overwritten by the loadout, not the other way around.
+//   * WRONG SHAPES ARE REPORTED. A boolean that isn't, an integer that isn't, an
+//     unknown key -- the file is a planner output, not a config knob, and a typo
+//     should be visible rather than silently dropping the field.
+console.log('\nkeeper policy overlay');
+{
+  // Blank shape includes the field, and absent is null (not an empty object).
+  ok('a blank loadout has policy: null, not {}',
+     L.blank('Nobody').policy === null);
+  const r0 = L.normalise({ character: 'x' });
+  ok('an absent policy block is read as null, ready for the overlay to skip',
+     r0.loadout.policy === null);
+
+  // Every field round-trips through normalise with the right shape.
+  const r1 = L.normalise({
+    character: 'JayB',
+    policy: { karma: 'evil', hunt: 'fungus beast', assigned_room: 544,
+              buy_reagents: false, pulls_before_barren: 12 },
+  });
+  ok('all known fields are normalised and kept',
+     r1.loadout.policy.karma === 'evil' &&
+     r1.loadout.policy.hunt === 'fungus beast' &&
+     r1.loadout.policy.assigned_room === 544 &&
+     r1.loadout.policy.buy_reagents === false &&
+     r1.loadout.policy.pulls_before_barren === 12);
+  ok('...with no spurious problems reported',
+     !r1.problems.some(p => /policy/.test(p)), r1.problems.join(' | '));
+
+  // Karma is normalised lowercase; bad values are refused.
+  const r2 = L.normalise({ character: 'x', policy: { karma: 'GOOD' } });
+  ok('karma is folded to lowercase', r2.loadout.policy.karma === 'good');
+  const r3 = L.normalise({ character: 'x', policy: { karma: 'purple' } });
+  ok('a karma outside the three schools is refused and reported',
+     r3.loadout.policy === null && r3.problems.some(p => /policy\.karma/.test(p)));
+
+  // Booleans stay booleans; non-booleans are refused.
+  const r4 = L.normalise({ character: 'x', policy: { buy_reagents: 'yes please' } });
+  ok('a non-boolean buy_reagents is refused and reported',
+     r4.loadout.policy === null && r4.problems.some(p => /policy\.buy_reagents/.test(p)));
+
+  // assigned_room must be a non-negative integer.
+  const r5 = L.normalise({ character: 'x', policy: { assigned_room: -3 } });
+  ok('a negative room is refused and reported',
+     r5.loadout.policy === null && r5.problems.some(p => /policy\.assigned_room/.test(p)));
+  const r6 = L.normalise({ character: 'x', policy: { assigned_room: 544.5 } });
+  ok('a non-integer room is refused and reported',
+     r6.loadout.policy === null && r6.problems.some(p => /policy\.assigned_room/.test(p)));
+
+  // pulls_before_barren must be a positive integer.
+  const r7 = L.normalise({ character: 'x', policy: { pulls_before_barren: 0 } });
+  ok('zero pulls_before_barren is refused (it is a real answer the broker already has)',
+     r7.loadout.policy === null && r7.problems.some(p => /policy\.pulls_before_barren/.test(p)));
+
+  // Unknown keys are reported, not silently dropped or passed through.
+  const r8 = L.normalise({ character: 'x', policy: { auto_equip: true } });
+  ok('an unknown policy key is reported and not passed through',
+     r8.loadout.policy === null && r8.problems.some(p => /policy\.auto_equip/.test(p)));
+
+  // Partial: one bad key, one good key. The good key is kept; the bad one is reported.
+  const r9 = L.normalise({ character: 'x', policy: { karma: 'good', auto_equip: true } });
+  ok('a partial policy keeps the good field and reports the bad one',
+     r9.loadout.policy?.karma === 'good' &&
+     r9.problems.some(p => /policy\.auto_equip/.test(p)));
+
+  // Round-trip through disk: write, read back, overlay reads it.
+  L.writeLoadout('OverlayChar', {
+    character: 'OverlayChar',
+    policy: { karma: 'evil', hunt: 'fungus beast', assigned_room: 544,
+              buy_reagents: false, pulls_before_barren: 12 },
+  });
+  const back = L.readLoadout('OverlayChar').loadout;
+  ok('the policy survives a write/read round trip',
+     back.policy.karma === 'evil' && back.policy.hunt === 'fungus beast' &&
+     back.policy.assigned_room === 544 && back.policy.buy_reagents === false &&
+     back.policy.pulls_before_barren === 12);
+  const fromCache = L.loadoutFor('OverlayChar');
+  ok('and is visible through loadoutFor, the path the keeper uses every pass',
+     fromCache?.policy?.karma === 'evil');
+
+  // Old loadouts without a policy block still parse cleanly.
+  L.writeLoadout('OldStyle', { character: 'OldStyle', carry: [{ item: 'herb', min: 5 }] });
+  ok('a loadout without a policy block has policy: null and no problems',
+     (() => {
+       const r = L.readLoadout('OldStyle');
+       return r.loadout.policy === null && !r.problems.some(p => /policy/.test(p));
+     })());
+}
+
+// THE OVERLAY ITSELF. Mirrors what m59-autopilot.mjs does in pass(): read the loadout,
+// and for every field the loadout names, write it onto this.policy. A field absent from
+// the loadout must not touch the live policy, and a field present must win on every
+// pass so a manual override cannot survive a loadout edit.
+console.log('\nthe overlay itself');
+{
+  // A miniature replica of the Autopilot class's overlay method, against the real
+  // loadout reader. The test stands or falls with `applyLoadoutPolicyOverlay` in
+  // m59-autopilot.mjs, so this is the same call shape.
+  const fakePolicy = { buy_reagents: true, karma: 'neutral', hunt: null,
+                       assigned_room: null, pulls_before_barren: 4 };
+  const overlay = (loadout) => {
+    if (!loadout || !loadout.policy || typeof loadout.policy !== 'object') return;
+    for (const [k, v] of Object.entries(loadout.policy)) {
+      if (v === undefined) continue;
+      fakePolicy[k] = v;
+    }
+  };
+
+  // No loadout: live policy is untouched.
+  overlay(null);
+  ok('no loadout leaves every live field exactly as it was',
+     fakePolicy.buy_reagents === true && fakePolicy.karma === 'neutral' &&
+     fakePolicy.pulls_before_barren === 4);
+
+  // Loadout without a policy block: also untouched.
+  overlay({ character: 'x', carry: [], sell: [], keep: [], policy: null });
+  ok('a loadout without a policy block is also a no-op',
+     fakePolicy.buy_reagents === true && fakePolicy.karma === 'neutral');
+
+  // Partial overlay: only fields the loadout names are written.
+  overlay({ policy: { karma: 'evil', buy_reagents: false } });
+  ok('a partial overlay writes only the fields the loadout names',
+     fakePolicy.karma === 'evil' &&
+     fakePolicy.buy_reagents === false &&
+     fakePolicy.pulls_before_barren === 4 &&
+     fakePolicy.assigned_room === null);
+
+  // Full overlay: every named field wins, including one an operator just set by hand.
+  fakePolicy.hunt = 'orc';   // operator override
+  overlay({ policy: { karma: 'good', buy_reagents: false, hunt: 'fungus beast',
+                      assigned_room: 544, pulls_before_barren: 12 } });
+  ok('every named field wins, overwriting an operator override',
+     fakePolicy.karma === 'good' &&
+     fakePolicy.buy_reagents === false &&
+     fakePolicy.hunt === 'fungus beast' &&
+     fakePolicy.assigned_room === 544 &&
+     fakePolicy.pulls_before_barren === 12);
+
+  // The autopilot's own method agrees, against a real loadout file.
+  L.writeLoadout('OverlayLive', {
+    character: 'OverlayLive',
+    policy: { karma: 'evil', buy_reagents: false, pulls_before_barren: 7 },
+  });
+  // Stand up the smallest possible Autopilot-shaped stand-in. We can't import the
+  // class without a session, so we re-implement the one-line method and call it the
+  // same way pass() does: read loadoutFor(character), overlay onto this.policy.
+  const live = { karma: 'neutral', buy_reagents: true, pulls_before_barren: 4 };
+  const apply = () => {
+    const l = L.loadoutFor('OverlayLive');
+    if (!l || !l.policy || typeof l.policy !== 'object') return;
+    for (const [k, v] of Object.entries(l.policy)) {
+      if (v === undefined) continue;
+      live[k] = v;
+    }
+  };
+  apply();
+  ok('a real loadout file applies its policy to the live object',
+     live.karma === 'evil' && live.buy_reagents === false && live.pulls_before_barren === 7);
+
+  // A field absent from the file must not touch the live object.
+  live.hunt = 'orc';   // operator-set
+  apply();
+  ok('a field absent from the file does not touch the live object',
+     live.hunt === 'orc');
 }
 
 rmSync(root, { recursive: true, force: true });

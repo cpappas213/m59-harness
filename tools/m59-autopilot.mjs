@@ -1202,6 +1202,36 @@ export class Autopilot {
     return who ? loadoutFor(who) : null;
   }
 
+  // ------------------------------------------------------------------ loadout policy overlay
+  //
+  // THE LOADOUT IS THE SOURCE OF TRUTH FOR PER-CHARACTER KEEPER SETTINGS THAT THE BROKER
+  // HOLDS IN MEMORY AND LOSES ON RESTART. The broker defaults are fine for characters
+  // somebody has not planned, but Gountrug never buys reagents (weaponcraft, no spells),
+  // JayB filters to evil karma (Qor), Kage filters to good (Shalille), Gountrug needs
+  // twelve pulls in a 70% room before declaring it barren, and so on. Without this every
+  // restart silently demotes each of them to defaults, and the next farm run does the
+  // wrong thing until somebody notices and types the override in again.
+  //
+  // IT IS AN OVERLAY. A field absent from the loadout's policy block must not touch the
+  // live policy -- the operator's own MCP overrides are still theirs, on a field the file
+  // did not name. A field present must win on every pass, so a manual override is
+  // overwritten by the loadout and the loadout is what the character actually does. That
+  // is the property the planner file is for: the loadout is the standing answer, the MCP
+  // knob is the temporary one, and they are separated by which side of this overlay they
+  // sit on.
+  //
+  // Called from pass() before any decision that reads `this.policy`, so the same fields
+  // the rest of the keeper consults are the ones the file just wrote. Empty loadout, no
+  // file, no policy block -- all three are no-ops, and the live policy is untouched.
+  applyLoadoutPolicyOverlay() {
+    const l = this.loadout();
+    if (!l || !l.policy || typeof l.policy !== 'object') return;
+    for (const [k, v] of Object.entries(l.policy)) {
+      if (v === undefined) continue;
+      this.policy[k] = v;
+    }
+  }
+
   // The pack in the shape the loadout helpers read: {name, amount}. They are shared with
   // the CLI, which sees inventories over the wire, so they speak display names rather than
   // the client's resource ids.
@@ -6382,6 +6412,14 @@ export class Autopilot {
     const s = this.s;
     if (!s.live) { this.note('not in game'); return; }
     const c = s.client;
+    // APPLY THE LOADOUT POLICY OVERLAY FIRST. Every decision in this pass reads
+    // `this.policy`, and the loadout file is the source of truth for per-character
+    // settings (karma, buy_reagents, hunt, assigned_room, pulls_before_barren). Without
+    // this, a broker restart silently demotes every planned character to defaults and
+    // the next farm run does the wrong thing until somebody re-applies overrides.
+    // Done before declareInterest so the board this character posts is consistent with
+    // the policy the rest of the pass is about to act on.
+    this.applyLoadoutPolicyOverlay();
     // Post where we are, every pass. Cheap, and it is the only way one keeper can find
     // another that has wandered -- see runProvision, where a quartermaster arrives to
     // find the supplicant has roamed off and would otherwise abandon the errand.

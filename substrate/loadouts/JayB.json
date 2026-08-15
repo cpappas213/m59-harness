@@ -1,0 +1,33 @@
+{
+ "format": "m59-loadout/1",
+ "character": "JayB",
+ "agent": "t3",
+ "updated": "2026-08-14T00:00:00.000Z",
+ "note": "Qor caster build. karma=evil filter: only kills positive-karma creatures so JayB moves toward evil. Level 30: fungus beast (karma +10, room 544). Next: living tree (karma +40, room 534) or frogman (karma +80, room 552). Qor level 1 spells unlock at karma <= -10.",
+ "plan": {
+  "schools": {},
+  "weapon_level": null,
+  "learning_target": null,
+  "learning_queue": [],
+  "abilities": []
+ },
+ "gear": {
+  "weapon": ["long sword", "short sword", "mace"],
+  "slots": {
+   "body": ["leather armor"],
+   "shield": ["knight's shield", "gold round shield", "small round shield"]
+  }
+ },
+ "carry": [],
+ "sell": [],
+ "keep": [],
+ "purse": {
+  "float": null,
+  "bank_above": null
+ },
+ "policy": {
+  "karma": "evil",
+  "hunt": "fungus beast",
+  "assigned_room": 544
+ }
+}
