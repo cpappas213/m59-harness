@@ -67,18 +67,18 @@
   {
    "item": "elderberry",
    "min": 6,
-   "max": 80,
+   "max": 150,
    "match": "exact",
-   "why": "create food, 2 per casting; floor 6 so the trip home is triggered by running OUT, not by a part-full pack — ceiling 80 is what one trip refills to (~37 castings of runway)",
+   "why": "create food, 2 per casting; floor 6 triggers the trip, ceiling 150 fills it — 75 castings, about half the pack, hours of farming before the next one",
    "weight": 3,
    "kind": "reagent"
   },
   {
    "item": "herb",
    "min": 6,
-   "max": 80,
+   "max": 150,
    "match": "exact",
-   "why": "create food, 2 per casting; herbs are the binding half; floor 6 so the trip home is triggered by running OUT, not by a part-full pack — ceiling 80 is what one trip refills to (~37 castings of runway)",
+   "why": "create food, 2 per casting; herbs are the binding half; floor 6 triggers the trip, ceiling 150 fills it — 75 castings, about half the pack, hours of farming before the next one",
    "weight": 2,
    "kind": "reagent"
   },

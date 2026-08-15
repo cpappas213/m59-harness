@@ -363,7 +363,12 @@ async function stockUp(row) {
           // seconds — the same bet the banking threshold makes, and this is the other half
           // of it. 4,000 is the operator's number, set to cover one full outfitting
           // (reagents, prepared food, a piece of armour) in a SINGLE trip.
-          const WITHDRAW_MAX = Number(process.env.M59_WITHDRAW_MAX || 4000);
+          // A DEEP TRIP, NOT A TOP-UP. 150 elderberry and 150 herbs is 6,300sh at counter prices
+          // and 75 castings — hours of farming — against roughly half the pack. 4,000 bought 40
+          // castings and sent the character back within the hour, which is the churn the whole
+          // supply-limited arrangement exists to stop. Bank balances on this fleet run 10,000 to
+          // 36,000, so the money is there; the cap was the only thing rationing it.
+          const WITHDRAW_MAX = Number(process.env.M59_WITHDRAW_MAX || 8000);
           const want = Math.min(WITHDRAW_MAX, balance == null ? WITHDRAW_MAX : balance);
           if (want <= 0) break;
           await call('bank', { agent: row.agent, action: 'withdraw', amount: want }).catch(() => null);
