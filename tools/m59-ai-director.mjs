@@ -181,11 +181,14 @@ export function readJsonOrEmpty(path) {
 
 export async function callLLM(routerBase, model, summary) {
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
-  const client = new Anthropic({ apiKey: 'local', baseURL: routerBase });
+  // The Anthropic SDK appends /v1 itself, so strip it from the base URL if present.
+  const base = routerBase.replace(/\/v1\/?$/, '');
+  const client = new Anthropic({ apiKey: 'local', baseURL: base });
   const system =
     'You are the AI director for a Meridian 59 fleet of player characters. ' +
-    'You monitor their status and issue directives. Reply ONLY with valid JSON matching the schema. ' +
-    'Issue 0-3 directives per pass. Prefer no action over a risky one.';
+    'You monitor their status and issue directives. ' +
+    'Reply ONLY with valid JSON: {"assessment":"...","directives":[{"kind":"say"|"tell"|"allhands"|"autopilot"|"none","character":"name","params":{}}]}. ' +
+    'The field is called "kind", not "action". Issue 0-3 directives per pass. Prefer no action over a risky one.';
   const user = JSON.stringify(summary);
   const resp = await client.messages.create({
     model, max_tokens: 1024,
@@ -227,6 +230,8 @@ function validateFleetMember(name, roster) {
 
 export function validateDirective(d, roster, counters, maxMessage) {
   if (!d || typeof d !== 'object') return { ok: false, reason: 'not an object' };
+  // Normalise: small models sometimes emit `action` instead of `kind`.
+  if (d.action && !d.kind) d = { ...d, kind: d.action };
   const kind = d.kind;
   if (!DIRECTIVE_KINDS.has(kind)) return { ok: false, reason: `unknown kind: ${kind}` };
   if (kind === 'none') return { ok: true };
@@ -245,7 +250,11 @@ export function validateDirective(d, roster, counters, maxMessage) {
   if (kind === 'say' || kind === 'tell') {
     if (!validateFleetMember(character, roster))
       return { ok: false, reason: `character ${character} not in fleet` };
-    if (typeof params.message !== 'string') return { ok: false, reason: `${kind} needs message` };
+    // Normalise: small models sometimes use `msg` or `text` instead of `message`.
+    if (!params.message && (params.msg || params.text))
+      d = { ...d, params: { ...params, message: params.msg ?? params.text } };
+    const params2 = d.params ?? params;
+    if (typeof params2.message !== 'string') return { ok: false, reason: `${kind} needs message` };
     if (hasTemplateSyntax(params.message)) return { ok: false, reason: 'template syntax in message' };
     if (kind === 'tell' && !validateFleetMember(params.to, roster))
       return { ok: false, reason: `tell target ${params.to} not in fleet` };

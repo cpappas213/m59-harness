@@ -19,6 +19,15 @@ const { label: FLEET_LABEL } = resolveFleet();
 const DIRECTOR_STATUS_PATH = new URL('../substrate/ai-director-status.json', import.meta.url);
 const DIRECTOR_STALE_MS = 5 * 60 * 1000;
 
+const NEEDS_OPERATOR_PATH = new URL('../substrate/needs-operator.json', import.meta.url);
+
+function readNeedsOperator() {
+  try {
+    if (!existsSync(NEEDS_OPERATOR_PATH)) return {};
+    return JSON.parse(readFileSync(NEEDS_OPERATOR_PATH, 'utf8')) ?? {};
+  } catch { return {}; }
+}
+
 function readDirectorStatus() {
   try {
     if (!existsSync(DIRECTOR_STATUS_PATH)) return { running: false, reason: 'no status file' };
@@ -62,6 +71,14 @@ const EXTRA_STYLE = `
   details.record table { min-width:0; margin-top:.45rem; }
   .section-note { color:var(--dim); font-size:.8rem; margin:-.25rem 0 .65rem; }
   @media (max-width:700px) { .metric-columns { grid-template-columns:1fr; } }
+  .operator-alert { background:#3d0000; border:1px solid #8b0000; border-radius:6px;
+                    padding:.75rem 1rem; margin-bottom:1.25rem; }
+  .operator-alert h3 { color:#ff6b6b; margin:0 0 .5rem; font-size:1rem; }
+  .operator-alert table { width:100%; }
+  .operator-alert td, .operator-alert th { padding:.2rem .5rem; text-align:left; }
+  .operator-alert th { color:#ff9999; font-weight:600; font-size:.8rem; }
+  .operator-alert td { color:#ffcccc; font-size:.85rem; }
+  .operator-alert td:nth-child(3), .operator-alert th:nth-child(3) { text-align:right; }
 `;
 
 const count = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -254,6 +271,27 @@ export function renderHarnessBoard({ fleet = [], details = null, hours = 2, erro
   <div class="sub">Keeper activity clock * ${esc(FLEET_LABEL)} fleet * ${rows.length} unit(s) * refreshes every 30s</div>
   ${NAV('harness')}
   ${windowLinks('/harness', hours)}
+  ${(() => {
+    const alerts = Object.entries(readNeedsOperator());
+    if (!alerts.length) return '';
+    const rows = alerts.map(([char, info]) => {
+      const secs = Number(info.stalled_seconds) || 0;
+      return `<tr>
+        <td><strong>${esc(char)}</strong></td>
+        <td>${esc(info.reason ?? '—')}</td>
+        <td>${secs > 0 ? esc(durationLabel(secs)) : '—'}</td>
+        <td>${info.room != null ? esc(String(info.room)) : '—'}</td>
+        <td>${esc(info.hunt ?? '—')}</td>
+        <td>${info.at ? esc(new Date(info.at).toLocaleTimeString()) : '—'}</td>
+      </tr>`;
+    }).join('');
+    return `<div class="operator-alert">
+      <h3>&#9888; Needs operator attention — ${alerts.length} character(s)</h3>
+      <table><thead><tr>
+        <th>character</th><th>reason</th><th>stalled</th><th>room</th><th>hunt</th><th>since</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+    </div>`;
+  })()}
   ${error ? `<div class="caveat status-note"><strong>Keeper activity is unavailable.</strong> ${esc(error)}</div>` : ''}
   <div class="metric-grid">${TIME_FIELDS.map(([key, label]) =>
     metricCard(label, durationLabel(totals[key]), `across ${rows.length} keeper(s)`) ).join('')}</div>

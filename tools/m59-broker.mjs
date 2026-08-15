@@ -7378,6 +7378,7 @@ const TOOLS = [
           'uncheckable rather than passing silently. Ignored by purpose:"equip", which ' +
           'takes its list from the loadout instead' },
       roam_limit: { type: 'number', description: 'how many rooms it may wander before stopping, default 6' },
+      pulls_before_barren: { type: 'number', description: 'how many empty pull attempts before declaring a room barren and leaving, default 4. Raise this when the target creature is a minority spawn in the room — e.g. 30% slime in a 70% giant rat room needs at least 10-12 to survive a full respawn cycle.' },
       decide_ms: { type: 'number', description:
         'HOW OFTEN THE KEEPER RE-DECIDES, default 1000. This is nearly free: the server pushes the ' +
         'world (BP.CREATE / BP.REMOVE / BP.MOVE keep room.objects live, stats arrive on change), so ' +
@@ -7661,6 +7662,7 @@ const TOOLS = [
       if (a.purpose !== undefined) p.policy.purpose = a.purpose == null ? null : String(a.purpose);
       if (a.goals !== undefined) p.policy.goals = Array.isArray(a.goals) ? a.goals : [];
       if (a.roam_limit !== undefined) p.policy.roamLimit = Number(a.roam_limit);
+      if (a.pulls_before_barren !== undefined) p.policy.pullsBeforeBarren = Math.max(1, Number(a.pulls_before_barren));
       if (a.decide_ms !== undefined) p.policy.decideMs = Math.max(250, Number(a.decide_ms));
       if (a.resync_ms !== undefined) p.policy.resyncMs = Math.max(1000, Number(a.resync_ms));
       // PAIRING IS TWO THINGS AND BOTH HAVE TO HAPPEN: the instruction on the policy,
