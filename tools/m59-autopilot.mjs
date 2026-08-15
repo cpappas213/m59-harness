@@ -8,9 +8,9 @@
 // room bleeds out, or sits at full health doing nothing for an hour.
 //
 // So: a small always-on loop per character with no language model in it at all. It
-// makes only the decisions that are genuinely mechanical — rest when hurt and safe,
+// makes only the decisions that are genuinely mechanical -- rest when hurt and safe,
 // break off and withdraw when losing, get out of the Underworld after dying, re-wield
-// a weapon — and it writes down everything it did so the model can read the history
+// a weapon -- and it writes down everything it did so the model can read the history
 // and take over whenever it likes.
 //
 // Two rules it follows, both of them about not surprising its owner:
@@ -44,19 +44,19 @@ import { mayShareSpot } from './m59-party.mjs';
 import { recordSightings, addTarget, recordTargetKill, targetsFor,
          declareConflict, clearConflict, activeConflicts } from './m59-intel.mjs';
 // The pre-registered table the keeper consults at the three moments it has no opinion
-// about. A LOOKUP, never a request — see the note above checkAttackedByPlayer().
+// about. A LOOKUP, never a request -- see the note above checkAttackedByPlayer().
 import * as playbook from './m59-playbook.mjs';
 import { CITY_INNS } from './m59-underworld.mjs';
 // WHAT THIS PARTICULAR CHARACTER IS SUPPOSED TO BE CARRYING, if anybody has said. Every
 // buy, sell, keep and drop rule below used to be one constant for twenty-one characters;
 // a loadout is that answer per character, written in the compendium's planner. It is an
-// OVERLAY — a character with no loadout behaves exactly as it did before this import
+// OVERLAY -- a character with no loadout behaves exactly as it did before this import
 // existed, and every call below is guarded on the null that says so.
 import { loadoutFor, keepTest, sellTest, dropRank, wantsOf, norm,
          reconcile, equipYield } from './m59-loadout.mjs';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 
-// One resolver, shared with the broker's `tithe` tool — see titheFleet in m59-tithe.mjs
+// One resolver, shared with the broker's `tithe` tool -- see titheFleet in m59-tithe.mjs
 // for why two answers here meant two books and a fleet that tithed twice a day.
 const TITHE_FLEET = titheFleet();
 
@@ -142,7 +142,7 @@ export function openFightReadiness({ healthValue, healthMax, vigor, vigorBar, pr
 // An empty larder makes the ordinary fighting floor deliberately fall back to the
 // strongest value rest alone can reach. The open-room gate used its independent 130
 // bar instead, so a starved character was allowed to fight by the general gate at 70
-// but denied its assigned room by this one at 129 — and answered the supply shortage
+// but denied its assigned room by this one at 129 -- and answered the supply shortage
 // with a trip across the world. The danger-specific bar can make a fight cheaper; it
 // must not make the already-adjusted, reachable fighting floor impossible again.
 export function reachableOpenFightVigorBar(dangerBar, fightFloor) {
@@ -159,14 +159,14 @@ const PROOF_MS = 12_000;
 //
 // Being hit is resolved on the server and arrives here as a packet. Our arrival is also
 // a packet, travelling the other way. So a blow the server resolved while we were still
-// a square short can land in our lap after we have reported standing on the spot — and
+// a square short can land in our lap after we have reported standing on the spot -- and
 // the reading blames the wall for a hit that was already in the air before we reached it.
 // A failure is PERMANENT (see discredited() in m59-safespots.mjs), so one such reading
 // retires a good square for ever, and nothing about it looks wrong afterwards.
 //
 // The walked-in path was already covered by accident: takeSafeSpot stamps movedAt on
 // arrival, so the whole first window is thrown out for "we moved in this window", which
-// at a 1s pass cadence tolerates about a second of skew. The hole was the OTHER path —
+// at a 1s pass cadence tolerates about a second of skew. The hole was the OTHER path --
 // `steps_away === 0`, taking a hold on a square we are already standing on, which walks
 // nowhere and therefore stamps no movement. There the first window could open the
 // instant the hold was taken, with the approach's damage still arriving.
@@ -174,7 +174,7 @@ const PROOF_MS = 12_000;
 // So the clock is the later of "we stopped moving" and "we claimed the square", and a
 // window that opens inside this grace is discarded rather than counted either way.
 // Discarded, not merely forgiven, because a window whose damage we do not trust is a
-// window whose quiet we do not trust either — the same packet delay that hides a hit
+// window whose quiet we do not trust either -- the same packet delay that hides a hit
 // until later is what would make the square look quiet now.
 //
 // 250ms rather than the fuller half-second the round trip can take, deliberately. The
@@ -187,7 +187,7 @@ const SETTLE_GRACE_MS = 250;
 //
 // THREE, NOT 1.5. Reach is `SquaredDistanceTo <= GetAttackRange^2` on square
 // coordinates (nomoveon.kod:121), and GetAttackRange is `Bound(2 + viDifficulty/6,2,3)`
-// (monster.kod:1682) — so the shortest-armed thing in the game reaches two squares and
+// (monster.kod:1682) -- so the shortest-armed thing in the game reaches two squares and
 // a difficulty-6 one reaches three. 1.5 was the diagonal of a single square, i.e. the
 // assumption that melee is adjacency, and it made this blind to more than half of what
 // could hit us: a centipede sitting two squares away was not counted as adjacent at all.
@@ -195,24 +195,24 @@ const SETTLE_GRACE_MS = 250;
 // That mattered most where it was least visible. observe() only credits a quiet reading
 // as proof of a square when something that wants us dead is in reach, so under-counting
 // reach meant sieges that proved nothing, and the damage that did arrive was attributed
-// to a square with "0 adjacent" — a contradiction that was written into the book as
+// to a square with "0 adjacent" -- a contradiction that was written into the book as
 // fact.
 const REACH = 3;
 const CROWD_RADIUS = 4;
 // Where resting alone runs out. RestTimer stops awarding vigor at its threshold of 80
-// out of 200, so 0.4 is the ceiling of what sitting down can ever buy — asking for
+// out of 200, so 0.4 is the ceiling of what sitting down can ever buy -- asking for
 // more is asking to sit until the timeout expires. The rest comes from food.
 const REST_VIGOR_CAP = 0.4;
 
 // HOW LONG A POST-DEATH RECOVERY IS ALLOWED TO TAKE before the character goes back out
 // anyway. recovered() waits on health, mana AND vigor, and each of the three is a way to
-// wait for something that is not arriving — a health point that never lands, a mana bar
+// wait for something that is not arriving -- a health point that never lands, a mana bar
 // held down by something chipping at us in a room we believed was safe.
 //
 // Twelve minutes is well clear of a real recovery. A character that walks to a corner of
 // an inn and sits reaches full health and the 80 vigor resting can give in about two, and
 // a full mana bar from empty in five or six. Anything past that is not recovering, it is
-// stuck — and a stuck character should show up as a stall, not vanish into an inn for the
+// stuck -- and a stuck character should show up as a stall, not vanish into an inn for the
 // rest of the session.
 const RECOVER_MAX_MS = 12 * 60_000;
 
@@ -221,7 +221,7 @@ const RECOVER_MAX_MS = 12 * 60_000;
 // Far shorter than RECOVER_MAX_MS, because the two waits are not the same. That one is a
 // character sitting in an INN, where nothing can reach it and waiting costs only time.
 // This one is standing on a wall in a monster room, which is safe on the thesis but is
-// still a room with monsters in it — so the cap is set where a real recovery has clearly
+// still a room with monsters in it -- so the cap is set where a real recovery has clearly
 // failed rather than where patience runs out. Full health from the rest threshold takes
 // well under a minute at any decent vigor; three is generous and still bounded.
 const HOLD_WHILE_HURT_MAX_MS = 3 * 60_000;
@@ -233,7 +233,7 @@ const HOLD_WHILE_HURT_MAX_MS = 3 * 60_000;
 // damage can arrive, so nothing lands between two ticks unseen.
 const WATCHDOG_MS = Number(process.env.M59_WATCHDOG_MS || 500);
 // How long a pass may be inside one await before the watchdog will interrupt it. Three
-// seconds is three normal passes — long enough that an ordinary slow call is not treated
+// seconds is three normal passes -- long enough that an ordinary slow call is not treated
 // as a stall, short enough that a character bleeding out is not left to it.
 const WATCHDOG_BLOCKED_MS = Number(process.env.M59_WATCHDOG_BLOCKED_MS || 3_000);
 // The longest the record may go without a frame while nothing is changing. Matches the
@@ -243,7 +243,7 @@ const WATCHDOG_BLOCKED_MS = Number(process.env.M59_WATCHDOG_BLOCKED_MS || 3_000)
 // should not disagree about what it is.
 const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
 
-// RESTING AT A WALL PART-WAY THROUGH A JOURNEY — 'ab' | 'observe' | 'off'.
+// RESTING AT A WALL PART-WAY THROUGH A JOURNEY -- 'ab' | 'observe' | 'off'.
 //
 //   ab       half the journeys hold, half walk on, decided per journey. The experiment.
 //   observe  decide and write down what would have happened; change nothing.
@@ -252,7 +252,7 @@ const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
 // It defaults to the experiment because the fleet is where the question is: 61% of the
 // damage it takes and eight of thirteen deaths in a day happen while travelling, and
 // nothing offline can say whether stopping at a wall helps. Settable live per character
-// over the `autopilot` tool (`travel_hold`), which is the kill switch — it needs no
+// over the `autopilot` tool (`travel_hold`), which is the kill switch -- it needs no
 // restart, and a restart is the one thing that costs a fleet more deaths.
 const TRAVEL_HOLD_MODE = process.env.M59_TRAVEL_HOLD || 'ab';
 
@@ -260,23 +260,23 @@ const TRAVEL_HOLD_MODE = process.env.M59_TRAVEL_HOLD || 'ab';
 //
 // Every caller that holds a keeper pairs the hold with a revive, and the pairing is the
 // bug: `m59-outfit.mjs` has died between the two and left a character standing, and the
-// supervisor's own log carries the line `COULD NOT RESTART ITS KEEPER — it is standing
-// unattended` for exactly that. Inert is a better state to be abandoned in than stopped —
-// it is still recording — but it is not a state to be abandoned in for ever.
+// supervisor's own log carries the line `COULD NOT RESTART ITS KEEPER -- it is standing
+// unattended` for exactly that. Inert is a better state to be abandoned in than stopped --
+// it is still recording -- but it is not a state to be abandoned in for ever.
 //
 // Fifteen minutes is longer than any errand here: the slowest is a cross-town outfit run
 // at three or four. An errand still going at fifteen has already failed.
 const INERT_MAX_MS = 15 * 60_000;
 // THE LONGEST AN OUTSIDE HOLDER MAY MARK A CHARACTER HANDS-OFF IN ONE ASK. Matched to
-// INERT_MAX_MS on purpose: both answer the same question — how long may something else
-// hold a character before this repository takes it back — and two different answers to
+// INERT_MAX_MS on purpose: both answer the same question -- how long may something else
+// hold a character before this repository takes it back -- and two different answers to
 // that would be two different opinions about when a fleet is unattended. A holder that
 // needs longer EXTENDS, which is cheap and proves it is still there.
 const BUSY_MAX_MS = INERT_MAX_MS;
 
 // Where to eat to when no strategy names a target. Resting stops awarding vigor at 80 of
 // 200 (REST_VIGOR_CAP), and the death rate falls roughly thirtyfold once a character is
-// clear of it — 101.8 deaths per thousand observations at or below 85, against 4.4 from
+// clear of it -- 101.8 deaths per thousand observations at or below 85, against 4.4 from
 // 86 to 120. So the default is "get off the cap", not "fill the bar": it is the cheap
 // part of the curve, and the stomach only admits 100 filling at a time anyway.
 const EAT_TO_AT_LEAST = 120;
@@ -291,7 +291,7 @@ const EAT_TO_AT_LEAST = 120;
 // killing.
 //
 // The way out is to notice that "fighting in the open" is not one risk. A giant rat is
-// the gentlest thing in this world — level 30, difficulty 1, attack rating 150 — and a
+// the gentlest thing in this world -- level 30, difficulty 1, attack rating 150 -- and a
 // level-23 character swinging at one from open floor is not the same act as taking on a
 // centipede at 390. Damage still scales with level, so `blowsWeCanTake` stays the hard
 // floor; this only says how much vigor to demand before allowing it at all.
@@ -299,7 +299,7 @@ const EAT_TO_AT_LEAST = 120;
 // Gentle prey (at or under a fungus beast's 210, the same bar the room filter uses) is
 // allowed from the resting cap. Anything harder still wants the full 130.
 // The rating MUST come from the spawn table, which carries the real viDifficulty. My
-// first attempt derived it from level alone as 3*level + 60 — that is the difficulty-1
+// first attempt derived it from level alone as 3*level + 60 -- that is the difficulty-1
 // case, so it called a centipede (really 390) and an ant (360) gentle and would have sent
 // characters at the resting cap against them in the open. Level is what a blow costs;
 // difficulty is how often one lands, and only the table knows it.
@@ -307,7 +307,7 @@ const EAT_TO_AT_LEAST = 120;
 // Unknown difficulty means unknown danger, and unknown is NOT gentle.
 const GENTLE_RATING = 210;                 // a fungus beast: level 50, difficulty 1
 
-// WHAT A KEEPER CAN BE OUT THERE FOR, and the list is closed on purpose — anything not on
+// WHAT A KEEPER CAN BE OUT THERE FOR, and the list is closed on purpose -- anything not on
 // it is reported as unrecognised rather than quietly skipping the yield check. `advance`
 // asks whether the prey can still raise what we are trying to raise; `equip` asks whether
 // it can still drop what we are still short of. A character at the level cap doing the
@@ -343,8 +343,8 @@ const pct = v => (v && v.max ? v.value / v.max : null);
 // doing nothing until something eats it. The one thing they have in common is that the
 // journal line does not carry enough to tell what the character could actually SEE.
 //
-// So: flag the state, keep the full detail on the keeper, and — only when a human has a
-// client open on one of the fleet's own characters — send it as a tell. Standing next to
+// So: flag the state, keep the full detail on the keeper, and -- only when a human has a
+// client open on one of the fleet's own characters -- send it as a tell. Standing next to
 // the thing while it explains itself is a different debugging instrument from reading a
 // post-mortem afterwards, which is the whole point.
 export const DEBUG_STATES = {
@@ -354,7 +354,7 @@ export const DEBUG_STATES = {
 };
 // FIVE MINUTES PER CHARACTER PER CONDITION. Measured across 425 post-mortem journals the
 // three states fire 2.12 times per character-minute, which across 21 characters is about
-// 2,675 tells an hour at one mana each — unreadable, and expensive. The cooldown is per
+// 2,675 tells an hour at one mana each -- unreadable, and expensive. The cooldown is per
 // (character, condition) so one noisy character cannot mask another's first report, and
 // what it suppresses is COUNTED and stated in the next tell rather than dropped, because
 // "the 40th time in five minutes" is itself the finding.
@@ -373,7 +373,7 @@ const tellSuppressed = new Map();   // "character|state" -> how many since then
 // WHO IS AT THE CONTROLS, if anyone.
 //
 // Registered by the broker rather than imported from it, because the pilot claim is
-// bound to a local process id and that is broker state — and because importing
+// bound to a local process id and that is broker state -- and because importing
 // m59-broker.mjs RUNS it (it takes the fleet lock and starts rejoin timers), which is
 // the trap CLAUDE.md warns about. The keeper only needs the answer.
 //
@@ -387,7 +387,7 @@ export function pilotedNow() { try { return pilotLookup(); } catch { return null
 
 // WHERE IN THE ROOM, IN WORDS. A tell that says "col 16, row 11" is a tell you have to go
 // and look up; standing in the room you want "far north-west". Rows count from the north
-// (LEAVE.NORTH aims at row 1) and columns from the west (LEAVE.WEST aims at col 1) —
+// (LEAVE.NORTH aims at row 1) and columns from the west (LEAVE.WEST aims at col 1) --
 // taken from the boundary candidates in World.exits(), not assumed.
 export function bearingIn(row, col, rows, cols) {
   if (!rows || !cols || row == null || col == null) return null;
@@ -405,7 +405,7 @@ export function bearingIn(row, col, rows, cols) {
 // quietly disabling every vigor decision in this file.
 //
 // Health and mana report {value, max}. Vigor reports {value, scale_max, rest_threshold}
-// — there is no `max`, because its fourth field is the level the game counts as RESTED
+// -- there is no `max`, because its fourth field is the level the game counts as RESTED
 // (80 of 200) rather than a ceiling. So `pct(vitals.vigor)` returned null, every
 // `vig !== null` guard was false, and no character has ever rested because it was
 // tired. Morgan sat at 14 vigor on full health "fighting from a proven safe spot",
@@ -414,7 +414,7 @@ const vigorOf = v => (v?.vigor?.value ?? null);
 // HOW MANY REAGENTS TO KEEP. Six is three casts of create food, which a character gets
 // through in an hour and then declines every cast until it happens past another shop.
 // The fleet declined 278 casts for want of reagents in three hours, against 21 for mana,
-// while holding eight elderberry across twenty-one characters — and create food is the
+// while holding eight elderberry across twenty-one characters -- and create food is the
 // only route to vigor for anyone not standing in a town.
 //
 // Twenty is ten casts. Elderberry and herbs are 10 weight each, so both targets together
@@ -431,8 +431,8 @@ const REAGENT_TARGET = 20;
 // castable pairs across twenty-one characters, one of whom can cook, and `create food`
 // declined for want of reagents 785 times in that window alone (3,816 lifetime).
 //
-// The inversion is structural, not luck. The hunting grounds DROP elderberry — every
-// fungus beast pays in it — and nothing anywhere drops herbs, so the only herb in the
+// The inversion is structural, not luck. The hunting grounds DROP elderberry -- every
+// fungus beast pays in it -- and nothing anywhere drops herbs, so the only herb in the
 // world arrives by being bought at an apothecary. One number for both kinds therefore
 // buys the thing that is free and rations the thing that is scarce, and the surplus is
 // dead weight: 999 elderberries are ~48 a character of carry allowance spent on the half
@@ -441,14 +441,14 @@ const REAGENT_TARGET = 20;
 // So the floor is per kind. Herbs are bought deep because a visit to Joguer is rare and
 // each casting burns two; elderberry keeps the old target because the field refills it
 // for nothing. This changes only HOW MUCH is bought at a counter the character is already
-// standing at — it opens no new trip, which is the failure mode the last two changes to
+// standing at -- it opens no new trip, which is the failure mode the last two changes to
 // this file had to be walked back from.
 const REAGENT_TARGET_BY_KIND = { elderberry: REAGENT_TARGET, herb: 60 };
 const reagentTargetFor = (kind, policyTarget) =>
   policyTarget != null ? policyTarget
                        : (REAGENT_TARGET_BY_KIND[kind] ?? REAGENT_TARGET);
 
-// WHAT A THING IS WORTH, from viValue_average in the kod — the number a merchant prices
+// WHAT A THING IS WORTH, from viValue_average in the kod -- the number a merchant prices
 // around, before markup. Read once at load; a missing file simply makes every pile value
 // zero, which reads as "not worth a walk" and is the safe direction to fail in.
 const ITEM_VALUE = (() => {
@@ -459,7 +459,7 @@ const ITEM_VALUE = (() => {
   } catch { return {}; }
 })();
 
-// What `create food` costs to cast — viMana on the Kraanan spell, the same number the
+// What `create food` costs to cast -- viMana on the Kraanan spell, the same number the
 // broker's `spells` tool reports out of the kod source. Reagents alone never made a cast
 // affordable, and treating them as the only precondition is what put the fleet in the
 // state where reagents were delivered to characters too tired to spend them.
@@ -473,30 +473,30 @@ const vigorPct = v => {
 
 // NOBODY STARTS A FIGHT TIRED.
 //
-// Attacking costs half a point a swing at one a second — thirty a minute — and vigor
+// Attacking costs half a point a swing at one a second -- thirty a minute -- and vigor
 // is also what sets how fast health comes back between fights. Below about a third of
 // the bar a character cannot finish what it starts: it swings, runs dry, breaks off,
 // and recovers slower than it would have if it had simply waited.
 //
 // Seventy WAS chosen to be reachable without food, and that turned out to be the wrong
 // thing to optimise. Resting alone stops at 80 of 200, so a floor of 70 meant every
-// character fought permanently exhausted — not occasionally, by accident, but as the
-// designed steady state — and then recovered slowly between fights because vigor is
+// character fought permanently exhausted -- not occasionally, by accident, but as the
+// designed steady state -- and then recovered slowly between fights because vigor is
 // what sets the regeneration rate. The floor was reachable; it was also useless.
 //
 // So the floor is now set by what a character needs to FIGHT WELL, and the food supply
-// is expected to meet it. That is not a free choice — everything above 80 has to be
-// eaten — which is exactly why the larder and the vigor floor are one problem.
+// is expected to meet it. That is not a free choice -- everything above 80 has to be
+// eaten -- which is exactly why the larder and the vigor floor are one problem.
 const MIN_FIGHT_VIGOR = 100;      // never start a fight below this while there is food
 const WANT_FIGHT_VIGOR = 140;     // what every pattern aims to set out at
 // THE ESCAPE HATCH, and the reason a hard floor of 100 does not deadlock the fleet.
 // With an empty larder the floor is unreachable by any action the keeper can take, and
-// holding out for it idles the character for ever — so an empty larder drops it to what
+// holding out for it idles the character for ever -- so an empty larder drops it to what
 // resting alone can actually deliver. This is a SUPPLY failure and is counted as one.
 const STARVED_FIGHT_VIGOR = 70;
 
 // WHERE THE MONEY GOES. Jasper and Tos share one banking system, so either counter
-// pays into the same balance and the only question is which is nearer — which really
+// pays into the same balance and the only question is which is nearer -- which really
 // does flip across this fleet's rooms: Jasper is closer to the Merchant Way rooms,
 // Tos to the gate rooms. Ko'catan keeps a separate account and is deliberately not
 // here; banking into it would strand the money somewhere nobody goes.
@@ -507,7 +507,7 @@ const BANKS = [
 
 // WHERE A FULL PACK IS ACTUALLY WORTH SOMETHING.
 //
-// Roq — RID_ASSHQ, room 110, "A shadowy corner" in Barloque — is the only NPC known to
+// Roq -- RID_ASSHQ, room 110, "A shadowy corner" in Barloque -- is the only NPC known to
 // buy an unlimited quantity of anything, and it is NOT IN THE MERCHANT INDEX: its class
 // is Assassin, it has no for-sale list, and `merchants show:Roq` returns nothing. So the
 // one general buyer in the world was invisible to every tool here while the fleet walked
@@ -518,13 +518,13 @@ const BANKS = [
 // and the elderberry a crewmate wanted. That is the shape a town trip should have.
 //
 // A bank is where MONEY goes; this is where GOODS go. Which one a trip aims at depends on
-// which threshold opened it — see bankRun.
+// which threshold opened it -- see bankRun.
 const MARKETS = [
   { room: 110, name: 'A shadowy corner (Roq, Barloque)' },
 ];
 
 // The bread. 103 is the one shelf in the world carrying cheese, meat pie, bread and
-// apples together (144/144/108/45), and it is a short hop from Roq — so the sell leg and
+// apples together (144/144/108/45), and it is a short hop from Roq -- so the sell leg and
 // the eat leg are the same trip. Tos cheese at 112 for 30 vigor is cheaper per point,
 // but Barloque is where the selling happens and a second town is a second walk.
 const FOOD_SHOP = { room: 103, name: 'The Bhrama & Falcon, Barloque' };
@@ -533,7 +533,7 @@ const FOOD_SHOP = { room: 103, name: 'The Bhrama & Falcon, Barloque' };
 //
 // The bread shop is an inn and an inn sells bread. `restockReagents` buys elderberry and
 // herbs at whatever counter the trip happened to end at, and the two counters a town trip
-// ends at are a bank and Roq — a bank is a bank, and Roq stocks nothing. So the fleet
+// ends at are a bank and Roq -- a bank is a bank, and Roq stocks nothing. So the fleet
 // bought food and never once bought a reagent, and the two halves diverged in the way a
 // one-sided flow always does: over four passes elderberry went 368 -> 406 -> 534 while
 // herbs went 41 -> 33, because elderberry is what the hunting grounds drop and herbs are
@@ -564,14 +564,14 @@ export const MODES = ['survive', 'farm', 'idle'];
 // sixth is a row and so that the differences between them are readable side by side.
 //
 // The one thing they all share: what is being measured is MAX HEALTH GAINED PER
-// HOUR, not kills. Kills are cheap to produce and easy to fool yourself with — a
+// HOUR, not kills. Kills are cheap to produce and easy to fool yourself with -- a
 // character killing something at or below its own level gains nothing at all.
 export const STRATEGIES = {
   // WHAT THE VIGOR FLOORS NO LONGER VARY BY.
   //
   // These patterns used to disagree about how tired a character may be when it starts
-  // a fight — baseline and fieldrest said "any", wellfed said 120, trader and coop
-  // said 100 — and that comparison is finished. Nothing beats not fighting tired:
+  // a fight -- baseline and fieldrest said "any", wellfed said 120, trader and coop
+  // said 100 -- and that comparison is finished. Nothing beats not fighting tired:
   // swinging costs about thirty vigor a minute, vigor sets how fast health returns
   // between fights, and a character that engages below the floor breaks off part-way
   // and then recovers slower than if it had simply waited.
@@ -589,14 +589,14 @@ export const STRATEGIES = {
   // Eat up to the stomach limit before going back out. Costs food; buys a faster
   // health regeneration rate and more margin in every fight.
   //
-  // A ZONE, NOT A THRESHOLD. See provision() — the point of the ceiling is to set out
+  // A ZONE, NOT A THRESHOLD. See provision() -- the point of the ceiling is to set out
   // at the top of the band with an empty enough stomach to keep eating while
   // fighting, so the fighting stretch lasts as long as the food does.
   wellfed: {
     vigorFloor: WANT_FIGHT_VIGOR, vigorCeiling: 200,
     eatBeforeFighting: true, restInTown: true, sellLoot: true,
     why: 'vigor sets the regeneration rate, so being well fed should mean both ' +
-         'shorter recovery and more survivable fights — at the cost of food',
+         'shorter recovery and more survivable fights -- at the cost of food',
   },
   // Never walk back to town. Withdraw within the hunting area and rest there.
   fieldrest: {
@@ -610,7 +610,7 @@ export const STRATEGIES = {
     vigorFloor: WANT_FIGHT_VIGOR, vigorCeiling: 200,
     eatBeforeFighting: true, restInTown: true, sellLoot: true,
     maxCarry: 40,
-    why: 'tests whether the money loop pays for itself — reagents and drops fund the ' +
+    why: 'tests whether the money loop pays for itself -- reagents and drops fund the ' +
          'food that funds the vigor that funds the uptime',
   },
   // Cooperative: heal each other, and hand herbs to the Shal'ille casters who need
@@ -634,9 +634,9 @@ export class Autopilot {
       // Break off and withdraw at this. Deliberately higher than fight()'s own
       // threshold: the keeper is not watching a fight, it is watching a character.
       fleeBelow: 0.4,
-      // What to hunt in `farm` mode. Never guessed — if it is empty, farm does nothing.
+      // What to hunt in `farm` mode. Never guessed -- if it is empty, farm does nothing.
       hunt: null,
-      // WHAT THE FARMING IS FOR — 'money' | 'items' | 'advance' | null. See scorePrey in
+      // WHAT THE FARMING IS FOR -- 'money' | 'items' | 'advance' | null. See scorePrey in
       // m59-spawns.mjs, which is where the rules live.
       //
       // This does NOT make the keeper choose prey. `hunt` is still never guessed, and
@@ -646,7 +646,7 @@ export class Autopilot {
       //
       // What it buys is the check in yieldCheck(): whether the thing we are already
       // killing still pays for the thing we said we were farming. That gap is the reason
-      // this exists. A keeper grinding worthless prey looks EXACTLY like a healthy one —
+      // this exists. A keeper grinding worthless prey looks EXACTLY like a healthy one --
       // it kills something every pass, so progress() fires, so the stall detector never
       // trips, and the board reads `hunting: giant rat` for as long as you leave it.
       // Twenty-one characters can farm nothing for an afternoon that way.
@@ -691,7 +691,7 @@ export class Autopilot {
       strategyStats: null,
       // WHICH WEAPON TO REACH FOR. null ranks by the character's proficiency in each
       // weapon's own skill (m59-skills.mjs weaponRanking). A list of name fragments
-      // overrides it — ['axe'] trains the axe on a character who would otherwise wield
+      // overrides it -- ['axe'] trains the axe on a character who would otherwise wield
       // its 90% sword for ever, because ranking by proficiency is a feedback loop that
       // only ever rewards what you are already good at.
       weaponPriority: null,
@@ -701,7 +701,7 @@ export class Autopilot {
       // ground, which is what it did.
       clearWeak: true,
       // The karma school this character is protecting: 'good', 'evil', 'neutral', or
-      // null for none. Only ever used to REFUSE a kill — it never picks prey.
+      // null for none. Only ever used to REFUSE a kill -- it never picks prey.
       karma: null,
       // Drop junk, and weapons the server has told us are broken. A broken weapon is
       // NOT renamed (weapon.kod:788 changes only the icon), so it keeps out-scoring the
@@ -719,7 +719,7 @@ export class Autopilot {
       pullFollowPerStepMs: 1_100,
       pullFollowMaxMs: 60_000,
       // WHICH MOVEMENT GRID THE SERVER PUTS MONSTERS ON. room.kod:2102 reads one
-      // server-wide setting: 0 LOS_OLD (default — everyone coarse), 1 monsters fine,
+      // server-wide setting: 0 LOS_OLD (default -- everyone coarse), 1 monsters fine,
       // 2 players fine, 3 both. Getting this wrong in the permissive direction is what
       // put five characters on a clifftop, so it defaults to the server's own default
       // rather than to the value that would let the keeper roam most freely.
@@ -727,8 +727,8 @@ export class Autopilot {
       // DECIDING IS FREE. ASKING IS NOT. These were the same number and should never
       // have been.
       //
-      // A pass used to open with roomContents() + stats(1) — two requests and up to
-      // four seconds waiting for the replies — so re-deciding meant re-polling, and
+      // A pass used to open with roomContents() + stats(1) -- two requests and up to
+      // four seconds waiting for the replies -- so re-deciding meant re-polling, and
       // eight seconds between decisions looked like the price of not hammering the
       // server. It was not. The server PUSHES the world: BP.CREATE adds an object to
       // room.objects, BP.REMOVE deletes it, BP.MOVE moves it, and stats arrive on
@@ -736,7 +736,7 @@ export class Autopilot {
       // RESYNC against drift, not the source of truth.
       //
       // And the poll is not passive. It counts as an action and calls
-      // NotifyMonstersOfPresence — which is why playing dead forbids it. Polling every
+      // NotifyMonstersOfPresence -- which is why playing dead forbids it. Polling every
       // second would wake the room eight times as often, in a safe spot whose entire
       // value is that nothing attacks until you swing.
       //
@@ -748,7 +748,7 @@ export class Autopilot {
       // that cadence was never the problem.
       resyncMs: 8000,
       // Kept so an existing roster, and anything that set it, still means something.
-      // Read as the resync interval — which is what it always actually controlled.
+      // Read as the resync interval -- which is what it always actually controlled.
       idleMs: 8000,
       // Move to a neighbouring room when this one has nothing left to hunt. Monsters
       // do come back, but slowly, and a keeper that stands in a cleared room for an
@@ -771,28 +771,28 @@ export class Autopilot {
       // for the small and timid for the large. 150% is the same bet at every level.
       // Either a PROPORTION of max health or a FLAT number of levels above it, and the mode
       // is explicit so the two can never silently disagree. Percent is the default because
-      // a flat band is a different bet at each end of a roster — +24 widens a 45-health
-      // character by 53% and an 88-health one by 27% — but flat is the right answer when a
+      // a flat band is a different bet at each end of a roster -- +24 widens a 45-health
+      // character by 53% and an 88-health one by 27% -- but flat is the right answer when a
       // fleet is levelling past a fixed prey and wants the band to stop growing with it.
       threatCeiling: { mode: 'percent', value: 150 },
       // WHERE THIS CHARACTER IS SUPPOSED TO FARM. null means "wherever ranks best".
       //
       // Without it a fleet cannot be spread out, and not because anyone moves it back
-      // by hand — the keeper does it. Standing anywhere its prey does not spawn (a
+      // by hand -- the keeper does it. Standing anywhere its prey does not spawn (a
       // town, an inn, the room it woke up in after dying) the keeper leaves for
       // preyRooms()[0], and that is the same room for every character hunting the same
       // thing. Twenty-one characters were placed across six rooms and were back in two
       // within the hour, one death at a time, each one individually behaving correctly.
       //
       // Set this and the keeper goes HERE instead. It still refuses a room that cannot
-      // generate the prey — an assignment is a preference, not a way to make a
+      // generate the prey -- an assignment is a preference, not a way to make a
       // character stand in a shop for ever.
       assignedRoom: null,
-      // LEVEL-TRIGGERED ROUTING — applied the moment a character gains a point of max
+      // LEVEL-TRIGGERED ROUTING -- applied the moment a character gains a point of max
       // health and lands on the given level. Avoids a human having to notice and re-task.
       //
       // Each entry: { at_level: N, hunt: 'creature name', assigned_room: roomNum }
-      // `hunt` and `assigned_room` are both optional — omit either to leave it unchanged.
+      // `hunt` and `assigned_room` are both optional -- omit either to leave it unchanged.
       //
       // The default route moves a new character from whatever they were doing before
       // (typically fungus beasts or Raza-area prey) onto giant rats at the Tos gate the
@@ -801,7 +801,7 @@ export class Autopilot {
         { at_level: 25, hunt: 'giant rat', assigned_room: 586 },
       ],
       // WHICH FARMING PATTERN THIS CHARACTER IS RUNNING. These exist to be compared
-      // against each other — the ledger records the strategy with every sample, so
+      // against each other -- the ledger records the strategy with every sample, so
       // `history` can report health gained per hour by strategy rather than anyone
       // having to argue about which ought to work. See STRATEGIES below.
       strategy: 'baseline',
@@ -809,7 +809,7 @@ export class Autopilot {
       // threshold (80 of 200); anything above it has to be eaten.
       fightAboveVigor: MIN_FIGHT_VIGOR,
       // Disconnect rather than die when a single exchange could finish us. Set false
-      // to forbid it — but it is the most effective survival move available when we
+      // to forbid it -- but it is the most effective survival move available when we
       // have nowhere safe to stand, and the penalties the game attaches to logging
       // off exist for PvP, not for this.
       panicLogoff: true,
@@ -822,12 +822,12 @@ export class Autopilot {
       //
       // Out in the open, health is spent capital: recovering it means disengaging,
       // walking somewhere quiet and sitting down, so it is worth fighting well down
-      // the bar before paying that. In a safe spot none of that is true — stopping
-      // costs a pause and nothing else — so there is no reason to ever swing at
+      // the bar before paying that. In a safe spot none of that is true -- stopping
+      // costs a pause and nothing else -- so there is no reason to ever swing at
       // anything below this. It is much higher than restBelow on purpose.
       holdResumeAbove: 0.9,
       // How far to go to fetch a monster that will not come to us. UNSET: there is no
-      // limit, because distance was never the thing that made a pull dangerous — see
+      // limit, because distance was never the thing that made a pull dangerous -- see
       // pull(). It went 8, then 14 when the Tos gate turned out to be 58 by 44 and every
       // pull in it was being refused, and each of those numbers was a room-shaped guess
       // standing in for the reasoning. Set `pull_within` to put a ceiling back.
@@ -840,7 +840,7 @@ export class Autopilot {
       // class of creature the wall exists for.
       //
       // This is stronger than that, on purpose. A room we cannot find a wall in is
-      // written off entirely — not just for hard prey — and the fleet goes elsewhere.
+      // written off entirely -- not just for hard prey -- and the fleet goes elsewhere.
       // The reasoning is at the check itself: the wall IS the survival model, and this
       // detector is known to miss plain wall edges, so "no wall found" is not the same
       // as "no wall". Treating the room as denied under-uses the world, which is
@@ -869,20 +869,20 @@ export class Autopilot {
       // HOW MANY TIMES A SESSION TO STOP AND ACTUALLY TEST A SPOT.
       //
       // Proof used to arrive only by accident: a character that swings every pass
-      // never produces a quiet window, so the one state that can prove a wall — being
-      // next to something and not hitting it — happened only when it got hurt enough
+      // never produces a quiet window, so the one state that can prove a wall -- being
+      // next to something and not hitting it -- happened only when it got hurt enough
       // to sit down. That is exactly backwards, because the proof is worth most BEFORE
       // the fight goes badly.
       //
       // So: when a monster has come to the wall and the spot is untested, hold the
       // swing for a couple of passes and watch. It costs a few seconds, once per
-      // fight, for the first few fights of a session. Not once ever — walls do not
+      // fight, for the first few fights of a session. Not once ever -- walls do not
       // move but maps get rebuilt and rooms get renumbered, so a handful of fresh
       // readings each session is what keeps the book honest.
       spotTestsPerSession: 3,
       // Below this fraction of health, in a safe spot, panic-logoff anyway. Out in
       // the open the trigger is two of the biggest hit the game can land, which is
-      // around 70% for these characters — far too eager once a wall is doing the
+      // around 70% for these characters -- far too eager once a wall is doing the
       // work, and every false alarm costs a minute of not healing. See the doomed
       // check in pass().
       doomedInSpotBelow: 0.35,
@@ -894,29 +894,29 @@ export class Autopilot {
       // in pockets across twenty-one characters, one of them holding 5,840, all of it
       // dropped on a corpse the moment anything killed them. Two thousand is roughly
       // where a player stops what they are doing and walks to Jasper or Tos.
-      // Set 0 or null to keep the old behaviour — bank only if you happen to walk past one.
+      // Set 0 or null to keep the old behaviour -- bank only if you happen to walk past one.
       // BANK EARLY, BECAUSE DYING IS NOT RARE HERE.
       //
       // Everything carried drops where you die and a bank balance does not. Across 30
-      // hours and 21 characters this fleet died 259 times — 0.41 deaths per character per
-      // hour, a death every two and a half hours — so money held for an hour has roughly
+      // hours and 21 characters this fleet died 259 times -- 0.41 deaths per character per
+      // hour, a death every two and a half hours -- so money held for an hour has roughly
       // a 41% chance of being dropped.
       //
       // At 2000 almost nothing was ever banked: a character carrying 1,900 shillings kept
       // carrying them and lost the lot at the next death, and the journal line for it was
       // a cheerful "carrying, but under the banking threshold". Expected loss on 1,000
-      // carried is about 410 an hour, against one trip to a town — which is a sanctuary,
+      // carried is about 410 an hour, against one trip to a town -- which is a sanctuary,
       // so the trip itself is the safest walking the fleet does.
       //
       // 800 is twice the walking float, so a character still keeps enough to shop with.
       //
       // CHANGING THIS DOES NOT REACH KEEPERS THAT ALREADY EXIST. Each keeper's policy is
       // persisted with the roster and restored by resumeFleet, so a new default applies
-      // only to keepers created afterwards — I changed this to 800, restarted, and found
+      // only to keepers created afterwards -- I changed this to 800, restarted, and found
       // every keeper still reporting "carrying, but under the banking threshold ...
       // banks_at: 2000". Use the autopilot tool's `bank_above` to move the live ones.
-      // Lowered again to 500 after Rowlf — the fleet's best character, ten levels gained
-      // in a session — was found at 8 of 30 health carrying 731 shillings, which was 46%
+      // Lowered again to 500 after Rowlf -- the fleet's best character, ten levels gained
+      // in a session -- was found at 8 of 30 health carrying 731 shillings, which was 46%
       // of everything the fleet owned. At 800 it would not bank, and one bad fight would
       // have put nearly half the fleet's money on the floor of a monster room.
       //
@@ -970,7 +970,7 @@ export class Autopilot {
     // because both spells it relies on refuse SILENTLY: `create food` without 2
     // ElderBerry and 2 Herbs, `create weapon` below 15 mana. Neither says a word, so a
     // character that cast forty times and got nothing looks exactly like one that cast
-    // forty times and ate well — and a character that never cast at all looks exactly
+    // forty times and ate well -- and a character that never cast at all looks exactly
     // like one that does not know the spell. A count of actions cannot separate those;
     // the OUTCOME and the REFUSAL have to be recorded with the attempt.
     //
@@ -983,15 +983,15 @@ export class Autopilot {
     // the mix is readable rather than inferred from a shrinking purse.
     this.spending = { bought: [], spent: 0, by_kind: {}, declined: {} };
     // HOW WELL THE ASSIGNMENT IS HOLDING. Read by `status` and by the spread tool.
-    //   effective  — returned_to_assignment / relocations
-    //   consistent — drifted, and drifted_to says WHERE it keeps losing them to
-    //   robust     — failed + why_not, the verbatim reason travel gave up
+    //   effective  -- returned_to_assignment / relocations
+    //   consistent -- drifted, and drifted_to says WHERE it keeps losing them to
+    //   robust     -- failed + why_not, the verbatim reason travel gave up
     this.placement = { relocations: 0, aimed_at_assignment: 0, returned_to_assignment: 0,
                        drifted: 0, drifted_to: {}, failed: 0, why_not: [] };
     // Consecutive failed attempts to reach a room, so a single transient miss does not
     // get mistaken for the room being unreachable. Cleared the moment one succeeds.
     this.relocFails = new Map();
-    // WHAT VIGOR THE FIGHTS ACTUALLY START AT — the number the floor exists to move,
+    // WHAT VIGOR THE FIGHTS ACTUALLY START AT -- the number the floor exists to move,
     // reported rather than assumed. `below_want` is the one to read: a floor nobody
     // reaches is a wish, and the commonest reason to miss it is an empty larder.
     this.vigor = { engagements: 0, total_at_engage: 0, lowest_at_engage: null,
@@ -1011,19 +1011,19 @@ export class Autopilot {
     // WHERE THE TIME ACTUALLY GOES.
     //
     // "Stalled" was doing too much work as a word. The commonest reason a keeper
-    // reported it was `waiting to be healthy enough to fight` — a character sitting
+    // reported it was `waiting to be healthy enough to fight` -- a character sitting
     // down and regenerating, which is the correct thing to be doing and is not stuck
     // in any sense. Counting that as a stall makes the fleet look broken while it is
     // working, and hides the cases where it genuinely is.
     //
-    // So: seconds by activity, and STALLED means only one thing — standing about not
+    // So: seconds by activity, and STALLED means only one thing -- standing about not
     // knowing what to do, while NOT recovering.
     this.time = { fighting: 0, pulling: 0, waiting: 0,
                   recovering: 0, zoning: 0, travelling: 0, trading: 0, stalled: 0 };
     this.doing = null;             // set during a pass; decides which bucket it lands in
     this.visited = new Set();
     // Where the hunting was actually good. Roaming without this wanders off down a
-    // one-way gradient and never comes back — it walked a character five rooms out
+    // one-way gradient and never comes back -- it walked a character five rooms out
     // of a rat warren into a town and oscillated there for twenty minutes.
     this.homeRoom = null;
     // Consecutive passes that achieved nothing. A keeper that has done nothing for
@@ -1051,7 +1051,7 @@ export class Autopilot {
     this.movedAt = 0;
     // When we last did anything at all that ends the entry grace period, and when we
     // last reconnected. The pair exists to stop the keeper proving a safe spot with
-    // the grace period rather than with the walls — see observe(). That would be a
+    // the grace period rather than with the walls -- see observe(). That would be a
     // false positive in the one direction that gets a character killed: believing a
     // bad square is good, on evidence collected while nothing was allowed to hit us.
     this.turnedAt = 0;
@@ -1063,9 +1063,9 @@ export class Autopilot {
     // EVERY WINDOW WE ADJUDICATED, INCLUDING THE ONES WE THREW AWAY.
     //
     // The verdict is the cheap thing to report and the useless thing to check. If
-    // this measurement is wrong it will be wrong in the DISCARDS — a window dropped
+    // this measurement is wrong it will be wrong in the DISCARDS -- a window dropped
     // as "we swung in it" that we did not swing in, a grace period believed over when
-    // it was not, an adjacent monster that was actually a corpse — and a log of
+    // it was not, an adjacent monster that was actually a corpse -- and a log of
     // conclusions cannot show that, because the conclusion is what is in doubt.
     //
     // So every window records its inputs and what became of them, counted or not, and
@@ -1079,23 +1079,23 @@ export class Autopilot {
   //
   // A lawful hit is capped at (base_max_health + 2) / 3 (player.kod:4612), so a
   // single blow can take A THIRD of a 25-health character's bar. Breaking off is not
-  // instant either — the withdraw walk is a round or two during which it keeps
+  // instant either -- the withdraw walk is a round or two during which it keeps
   // swinging.
   //
   // A flat "flee at 40%" ignores all three. Forty percent of 25 is ten health, which
   // is one hit plus change: Isolde was killed by a BABY SPIDER while nominally
   // obeying that threshold. Three hits of margin is the number that actually
-  // survives, and before 30 it should never be tested at all — every death costs a
+  // survives, and before 30 it should never be tested at all -- every death costs a
   // point of max health permanently, which is the very thing being farmed.
   // PROVISIONING: A ZONE AND A CYCLE, NOT A THRESHOLD.
   //
-  // The old rule was one number — top up if below it, then fight regardless. That is
+  // The old rule was one number -- top up if below it, then fight regardless. That is
   // not how the mechanic rewards you. Three facts from the kod set the shape:
   //
   //   the stomach caps at 100 and drains 0.12 a second, so a full one takes 13.9
   //     minutes to clear (player.kod:45-51, 1347, 5703)
   //   eating converts nutrition to vigor by removing exertion (player.kod:5738)
-  //   "Need empty stomach to get vigor boost from food" — the kod's own note
+  //   "Need empty stomach to get vigor boost from food" -- the kod's own note
   //
   // So vigor is not a tap you open when low. Stomach room is the scarce resource,
   // and it refills on a clock you cannot hurry. Eating at 199 vigor wastes the room;
@@ -1104,7 +1104,7 @@ export class Autopilot {
   // What a player does, and what this now does:
   //
   //   CLIMB    eat what fits, wait for room, eat again, until vigor reaches the
-  //            ceiling. The waiting is not idleness — it is the digestion clock.
+  //            ceiling. The waiting is not idleness -- it is the digestion clock.
   //   TOP OFF  at the ceiling, wait until there is room for one more meal before
   //            setting out, so the fighting stretch can be fed as it goes.
   //   FIGHT    eat opportunistically whenever there is room and vigor is off the
@@ -1125,7 +1125,7 @@ export class Autopilot {
     // fightAboveVigor was the old single knob; it still works, as the floor.
     const want = Math.max(MIN_FIGHT_VIGOR,
       p.vigorFloor ?? plan.vigorFloor ?? p.fightAboveVigor ?? plan.fightAboveVigor ?? 0);
-    // An empty larder puts the floor out of reach — resting stops at 80 — so holding
+    // An empty larder puts the floor out of reach -- resting stops at 80 -- so holding
     // out for it would idle the character for ever. Fall back to what resting can
     // deliver, and COUNT it: this is the food supply failing, not a fighting decision,
     // and it should show up as a supply number rather than as a quiet slowdown.
@@ -1156,7 +1156,7 @@ export class Autopilot {
     if (!skills.weaponsOf(c).length) wants.push('weapon');
     // AND WHATEVER THIS CHARACTER'S OWN LIST ASKS FOR. Until now the board could only
     // speak about elderberry and herbs, because they were the only two things with a
-    // target — so a caster short of forty mushrooms had no way to stop a crewmate selling
+    // target -- so a caster short of forty mushrooms had no way to stop a crewmate selling
     // them at a counter. A loadout gives every listed item a target, which is exactly what
     // the board needs to protect it.
     const l = this.loadout();
@@ -1168,7 +1168,7 @@ export class Autopilot {
       // the one mechanism that fetches things. `needs` is what `demandsForRoom` filters and
       // returns, so a shortfall that never reached it was invisible to farm delivery no
       // matter how loudly the loadout asked. Only the two reagents above had a target, so
-      // only they were ever delivered — the fleet ran 14 elderberry against 215 herbs while
+      // only they were ever delivered -- the fleet ran 14 elderberry against 215 herbs while
       // couriers kept buying herbs, because herbs were what the board could say.
       //
       // The reagent targets above win on a tie: they are this character's own floor for the
@@ -1179,8 +1179,8 @@ export class Autopilot {
     skills.interest.declare(this.name ?? this.s.name, { wants, needs, spare,
       room: this.s.world?.room?.num ?? null, character: c.me?.name ?? null,
       farming: this.mode === 'farm' && this.running && !this.inert });
-    // Kept for the party register too. The fleet-wide board is a broadcast — anyone may
-    // read it — while a partner needs the same list addressed to it specifically, so
+    // Kept for the party register too. The fleet-wide board is a broadcast -- anyone may
+    // read it -- while a partner needs the same list addressed to it specifically, so
     // that "one of us is short" can become "both of us go to town" rather than each
     // discovering the same shortage separately twenty minutes apart.
     this.wantsNow = wants;
@@ -1188,7 +1188,7 @@ export class Autopilot {
 
   // ------------------------------------------------------------------ the loadout
   //
-  // THIS CHARACTER'S OWN LIST, or null when nobody has written one — and null means "carry
+  // THIS CHARACTER'S OWN LIST, or null when nobody has written one -- and null means "carry
   // on exactly as before", which is why every caller guards on it rather than substituting
   // a default. `loadoutFor` caches on the file's mtime, so this is a stat() on the common
   // path and a parse only when somebody has just saved from the planner. That matters: it
@@ -1211,8 +1211,8 @@ export class Autopilot {
     return (c.inventory || []).map(o => ({ name: c.rsc.get(o.nameRsc) || '', amount: o.amount || 1 }));
   }
 
-  // WHICH WEAPON TO REACH FOR. An explicit `weapon_priority` over MCP still wins — that is
-  // somebody typing an instruction at this character right now — and below it sits the
+  // WHICH WEAPON TO REACH FOR. An explicit `weapon_priority` over MCP still wins -- that is
+  // somebody typing an instruction at this character right now -- and below it sits the
   // loadout's own preference order, which is the standing answer. Null falls through to
   // ranking by proficiency, which is a feedback loop that only ever rewards what the
   // character is already good at.
@@ -1223,7 +1223,7 @@ export class Autopilot {
   }
 
   // What `create food` eats: 2 ElderBerry and 2 Herbs, from OUR pack, and it refuses
-  // SILENTLY without them — so the count has to be checked before casting rather than
+  // SILENTLY without them -- so the count has to be checked before casting rather than
   // inferred from a failure.
   reagentCount() {
     const c = this.s.client;
@@ -1244,7 +1244,7 @@ export class Autopilot {
     if (r.elderberry < 2 || r.herbs < 2)
       return this.declinedCast('create food', 'not enough reagents',
         { have: r, needs: '2 elderberry + 2 herbs' });
-    // c.spells is empty until asked for — reading it cold is the phantom "the spell
+    // c.spells is empty until asked for -- reading it cold is the phantom "the spell
     // did not encode" bug.
     await s.pacer.submit('read', () => c.requestSpells()).catch(() => {});
     await new Promise(x => setTimeout(x, 400));
@@ -1256,12 +1256,12 @@ export class Autopilot {
     // that cannot afford itself is refused silently and looks exactly like every other
     // silent refusal.
     //
-    // `create food` costs 10 mana (viMana, Kraanan school — the same number the `spells`
+    // `create food` costs 10 mana (viMana, Kraanan school -- the same number the `spells`
     // tool reports from the kod source). This function checked reagents and never mana,
-    // and then the failure note blamed "the reagents having been spent or sold" — so the
+    // and then the failure note blamed "the reagents having been spent or sold" -- so the
     // record actively pointed away from the cause. Of twelve failures on the live fleet,
     // eleven were cast under 10 mana: Pepe at 2, 2, 2 and 3, Lew at 6, 7, 7 and 8,
-    // Fozzie at 8 and 9 — while Lew was carrying 16 elderberry and 8 herbs and Zoot 30
+    // Fozzie at 8 and 9 -- while Lew was carrying 16 elderberry and 8 herbs and Zoot 30
     // and 102. Reagents were never short; the fleet had been delivering them to
     // characters that could not afford to use them.
     const manaBefore = c.vitals?.()?.mana?.value ?? null;
@@ -1283,7 +1283,7 @@ export class Autopilot {
       this.note('create food produced nothing', { had: r, mana: c.vitals?.()?.mana,
         mana_before: manaBefore, needs_mana: CREATE_FOOD_MANA,
         why: 'it refuses silently. Mana is checked before we get here, so reaching this ' +
-             'means the cast was affordable and still made nothing — reagents spent or ' +
+             'means the cast was affordable and still made nothing -- reagents spent or ' +
              'sold between the count and the cast, or the food merged into a stack we ' +
              'already carried and so shows up as no new object id' });
       return false;
@@ -1302,7 +1302,7 @@ export class Autopilot {
   // things: GetWeapon returns nothing for an empty hand and UserAttack quietly falls
   // back to a punch, so nothing about it reads as broken from the outside. The keeper
   // used to answer that by wielding whatever survived and, failing that, broadcasting
-  // for charity — while carrying a spell that makes a weapon out of nothing but mana.
+  // for charity -- while carrying a spell that makes a weapon out of nothing but mana.
   //
   // `create weapon` costs 15 mana and refuses SILENTLY below it, so the check is on
   // mana before the cast rather than on the absence of an item afterwards. What it
@@ -1321,12 +1321,12 @@ export class Autopilot {
     if (!spell)
       return this.declinedCast('create weapon', 'the character does not have the spell');
     // STAND UP. This is the whole reason the spell appeared not to work: a sitting
-    // character's cast is swallowed entirely — no mana, no message, no effect — and
+    // character's cast is swallowed entirely -- no mana, no message, no effect -- and
     // "make a weapon" is reached almost exclusively from resting, so it was sitting
     // nearly every time. Scooter cast it forty times from an inn for nothing; standing
     // first produced a mace on the next attempt. See standToAct.
     await skills.standToAct(s).catch(() => null);
-    // Standing invalidates any rest in progress, so stop believing we are seated — else
+    // Standing invalidates any rest in progress, so stop believing we are seated -- else
     // the unarmed branch will not sit again and the mana never comes back.
     this.sittingFor = null;
     // And shed anything already known dead, because the mana is spent whether or not the
@@ -1348,9 +1348,9 @@ export class Autopilot {
       // means the cast did not happen at all, half means it rolled and failed, full
       // means it worked and something downstream refused the weapon.
       this.note('create weapon produced nothing', { mana: mana?.value, mana_spent: spent,
-        why: spent === 0 ? 'NOTHING was spent — the cast did not happen. Still sitting, frozen, or blocked.'
-           : spent != null && spent < 15 ? 'half cost — it was cast and failed its roll'
-           : 'full cost — it was cast and succeeded, so the weapon was refused on being handed over' });
+        why: spent === 0 ? 'NOTHING was spent -- the cast did not happen. Still sitting, frozen, or blocked.'
+           : spent != null && spent < 15 ? 'half cost -- it was cast and failed its roll'
+           : 'full cost -- it was cast and succeeded, so the weapon was refused on being handed over' });
       return false;
     }
     const eq = await skills.equipBest(s, { priority: this.weaponPriorityNow() }).catch(() => null);
@@ -1359,7 +1359,7 @@ export class Autopilot {
       mana_before: mana?.value ?? null, mana_after: c.vitals?.()?.mana?.value ?? null });
     this.note('conjured a weapon', { made: made.map(o => c.rsc.get(o.nameRsc)),
       now_wielding: eq?.wielding, mana_left: c.vitals?.()?.mana?.value,
-      caveat: 'a made weapon is temporary — it buys this fight and the walk to a shop' });
+      caveat: 'a made weapon is temporary -- it buys this fight and the walk to a shop' });
     this.progress('armed itself');
     return true;
   }
@@ -1390,8 +1390,8 @@ export class Autopilot {
   // twenty-five characters were once found wearing nothing at all.
   //
   // COSTS NOTHING WHEN THERE IS NOTHING TO DO. Both halves of the comparison are
-  // already in the client's cache — armourOf reads the inventory we hold, equippedNow
-  // reads the use list the server volunteers — so the common case is arithmetic and
+  // already in the client's cache -- armourOf reads the inventory we hold, equippedNow
+  // reads the use list the server volunteers -- so the common case is arithmetic and
   // sends no request at all. Only an actual mismatch pays for a `use`.
   async wearArmourIfNeeded() {
     const c = this.s.client;
@@ -1418,14 +1418,14 @@ export class Autopilot {
     // EATING IS NOT A STRATEGY OPTION.
     //
     // This returned before it ever looked at the larder unless the policy named a fight
-    // floor or a vigor ceiling — so `fightAboveVigor: 0`, which means "no minimum vigor
+    // floor or a vigor ceiling -- so `fightAboveVigor: 0`, which means "no minimum vigor
     // required to fight", silently also meant "never eat". Twelve of twenty-one
     // characters were running exactly that and had not eaten in hours; ten of them sat
     // at 78-80, which is the resting cap, with the fleet's food and reagents idle.
     //
     // What that costs is now measured rather than assumed. Across 6,800 armed
     // observations a character at or below 85 vigor died at 101.8 per thousand against
-    // 4.4 in the 86-120 band — and carrying food changed nothing (94.7 without, 133.3
+    // 4.4 in the 86-120 band -- and carrying food changed nothing (94.7 without, 133.3
     // with), because carrying is not eating. The single cheapest thing any character can
     // do for its survival is swallow what is already in its pack.
     //
@@ -1442,26 +1442,26 @@ export class Autopilot {
     // AND THE SMALLEST, WHICH IS THE ONE THAT DECIDES WHETHER WE CAN EAT AT ALL.
     //
     // larderOf sorts by nutrition per unit of FILLING, so larder[0] is the most
-    // efficient item — not the smallest. Every stomach gate below asked "is there room
+    // efficient item -- not the smallest. Every stomach gate below asked "is there room
     // for the best one", and when there was not, the character ate NOTHING and set out
     // at the resting cap with a full pack. Eleven of twenty-one sat at exactly 80 vigor
     // that way, each carrying 30 to 147 vigor of food, while a single edible mushroom
     // (filling 5) would have gone down every time.
     //
     // `eat` already refuses anything that would overshoot 200, so gating on the smallest
-    // cannot waste a big item — it just stops one large loaf from vetoing the meal.
+    // cannot waste a big item -- it just stops one large loaf from vetoing the meal.
     const smallest = larder.reduce((m, x) => (!m || x.food.filling < m.filling ? x.food : m), null);
 
     if (!best) {
       // MAKE SOME, IF WE CAN. Out of food used to be treated as purely a supply
-      // problem, which was true of a fleet that could not cast — and false of this
+      // problem, which was true of a fleet that could not cast -- and false of this
       // one, where every character knows `create food` and spends all day picking up
       // the two things it consumes. A cast is cheaper than a merchant, cheaper than
       // asking another character, and available in the field where the alternative
       // is a walk back through the rooms that keep killing them.
       if (await this.cookSomething()) return 'ate';  // spend this pass eating instead
       // Genuinely nothing to eat and nothing to make it from. Say it once and carry
-      // on fighting at whatever vigor resting gives — refusing to fight would idle
+      // on fighting at whatever vigor resting gives -- refusing to fight would idle
       // the character for ever. fightFloor() has already dropped to the starved floor.
       if (!this.warnedNoFood) {
         this.warnedNoFood = true;
@@ -1477,7 +1477,7 @@ export class Autopilot {
 
     // Hysteresis: fall through the floor to start climbing, reach the ceiling to stop.
     // With no floor set there is nothing to fall through, so the latch also trips on the
-    // ceiling — otherwise the implicit target above would be computed and never used.
+    // ceiling -- otherwise the implicit target above would be computed and never used.
     if (vigor < floor || (!floor && vigor < ceiling)) this.climbing = true;
 
     if (this.climbing) {
@@ -1500,7 +1500,7 @@ export class Autopilot {
         this.note('waiting to get hungry', {
           vigor, ceiling, stomach: Math.round(this.stomach.level),
           room_for_next_in_s: wait, next: larder[0].name,
-          why: 'the stomach drains 0.12/s and food is refused above 100 — vigor above ' +
+          why: 'the stomach drains 0.12/s and food is refused above 100 -- vigor above ' +
                'the resting threshold of 80 can only come from eating' });
         return 'waiting';
       }
@@ -1530,7 +1530,7 @@ export class Autopilot {
     }
 
     // FIGHTING: EAT EVERY TIME THERE IS ROOM. This is where the strategy actually
-    // pays, and the old code missed it — it topped up once before setting out and
+    // pays, and the old code missed it -- it topped up once before setting out and
     // then let vigor sag for the whole hunt, which is the expensive half.
     //
     // Health regeneration goes as ((200-vigor)^2/6 + 1000) ms a point
@@ -1539,7 +1539,7 @@ export class Autopilot {
     // of 200 is most of a healing rate thrown away.
     //
     // Stomach room is the throttle, so take all of it whenever it appears rather than
-    // one item per pass — a pass is eight seconds and the room reappears on a clock
+    // one item per pass -- a pass is eight seconds and the room reappears on a clock
     // measured in minutes. `eat` declines anything that would overshoot 200.
     if (ceiling && this.stomach.roomFor(smallest.filling)) {
       const e = await skills.eat(s, { stomach: this.stomach, upToVigor: ceiling,
@@ -1554,7 +1554,7 @@ export class Autopilot {
 
     // Say once whether the larder can actually sustain a hunt. The stomach drains
     // 0.12 filling a second, so the best food in the pack sets a hard ceiling on
-    // vigor per minute — and it is well under what swinging costs.
+    // vigor per minute -- and it is well under what swinging costs.
     if (!this.warnedThroughput) {
       this.warnedThroughput = true;
       const perMin = +(best.nutrition / best.filling * 0.12 * 60).toFixed(1);
@@ -1577,14 +1577,14 @@ export class Autopilot {
     // Two hits of margin, not three. (base+2)/3 is the CAP on a single blow rather
     // than what a giant rat typically lands, so budgeting three of them leaves so
     // little of the bar to fight in that the character spends its life healing.
-    // Two is the number that survives the realistic bad case — one hit landing as
-    // the withdraw begins, and one more before it is out of reach — while still
+    // Two is the number that survives the realistic bad case -- one hit landing as
+    // the withdraw begins, and one more before it is out of reach -- while still
     // leaving a usable window to actually fight in.
     const fleeAt = Math.max(this.policy.fleeBelow, Math.min(0.7, (2 * maxHit) / max));
     return {
       maxHit, fleeAt,
       // Do not start a fight that cannot be finished. Below this, heal or rest
-      // first — going in at half health is how a survivable creature kills you.
+      // first -- going in at half health is how a survivable creature kills you.
       engageAt: max < 30 ? 0.9 : 0.75,
     };
   }
@@ -1602,7 +1602,7 @@ export class Autopilot {
   //                there is nothing to flee: stop swinging and the damage stops.
   //   logging off  buys a minute of safety at the price of not healing, because the
   //                same flag gates the grace period and HealthTimer. From a spot we
-  //                can spend the flag — turn, wake them, let them come, and heal to
+  //                can spend the flag -- turn, wake them, let them come, and heal to
   //                full anyway, because none of them can reach us.
   //   a swarm      is the commonest death in this fleet. Seven of the eight squares
   //                a swarm needs are wall.
@@ -1613,7 +1613,7 @@ export class Autopilot {
 
   // WHO IS ACTUALLY TRYING TO KILL US.
   //
-  // The protocol never says, and there is no packet to ask with — the server keeps
+  // The protocol never says, and there is no packet to ask with -- the server keeps
   // targeting on the monster's side and sends us positions and damage. So this is two
   // estimates, and they answer different questions:
   //
@@ -1649,13 +1649,13 @@ export class Autopilot {
   // unproven spot is treated exactly like open floor, which is what it might be.
   holdWorks() { return !!(this.hold && this.hold.proven); }
 
-  // IS THERE A WEAPON IN OUR HAND — asked of the server, never of our own intentions.
+  // IS THERE A WEAPON IN OUR HAND -- asked of the server, never of our own intentions.
   //
   // plUsing is the only authority (see equipment()): "the last use we sent was not
   // refused" has been wrong every time it mattered, because a weapon that shatters
   // mid-fight leaves the use list without anything being sent at all. A character that
   // cannot answer is treated as ARMED, because refusing to fight on a failed read would
-  // idle the whole fleet the first time an inventory request timed out — the guard is
+  // idle the whole fleet the first time an inventory request timed out -- the guard is
   // meant to catch the empty hand, not to become a new way to stop.
   armed() {
     const c = this.s.client;
@@ -1665,7 +1665,7 @@ export class Autopilot {
       const name = o.name ?? c.rsc?.get?.(o.nameRsc) ?? '';
       if (skills.weaponScore(name) > 0) return true;
       // When the rsc table is absent the name is an unresolved "<rsc N>" placeholder.
-      // The server already confirmed the item is equipped — treat it as potentially a
+      // The server already confirmed the item is equipped -- treat it as potentially a
       // weapon rather than looping forever waiting for mana to conjure one.
       if (/^<rsc \d+>$/.test(name)) return true;
       return false;
@@ -1679,11 +1679,11 @@ export class Autopilot {
   // whether to WALK OUT OF AN INN, and that difference killed characters.
   //
   // `known` is false until the first BP_USE_LIST lands, which is precisely the window
-  // just after a login — and a resume logs in twenty-one characters at once. So on the
+  // just after a login -- and a resume logs in twenty-one characters at once. So on the
   // pass right after a restart, every character answers "armed" on no evidence at all,
   // the farm branch reads that as permission, and marches an empty-handed character out
   // of the sanctuary it woke up in. Zoot did it with ten mana and no weapon: pass 0
-  // "started", pass 2 "this room spawns nothing at all — going back to work", and dead
+  // "started", pass 2 "this room spawns nothing at all -- going back to work", and dead
   // in the Yonder Inn's back yard four minutes later without one unarmed note in the
   // journal, because nothing ever asked a question this could answer no to.
   //
@@ -1700,14 +1700,14 @@ export class Autopilot {
 
   // WHOLE ENOUGH TO GO BACK OUT, asked only after a death.
   //
-  // Health to nearly full, and vigor to what RESTING CAN ACTUALLY DELIVER — not to
+  // Health to nearly full, and vigor to what RESTING CAN ACTUALLY DELIVER -- not to
   // full. Everything above REST_VIGOR_CAP (80 of 200) has to be eaten, so demanding
   // more than that here would demand a number sitting down can never reach and the
   // character would rest in an inn for ever. That is the same trap `vigorRestAt`
   // exists to avoid a few lines below, and it is worth saying twice: getting it wrong
   // does not error, it silently retires the character.
   //
-  // 0.95 rather than 1 because health arrives in whole points — a 29-max character
+  // 0.95 rather than 1 because health arrives in whole points -- a 29-max character
   // sits at 28/29 for a long time, and the last point is not worth blocking on.
   // Deliberately the same pair of numbers as the sanctuary check at the top of rest().
   //
@@ -1715,15 +1715,15 @@ export class Autopilot {
   // needed because nothing needs it to swing. That is true and it is beside the point:
   // `create weapon` costs 15, it is the only route to a weapon for a character that
   // just lost everything it owned, and a character that leaves the inn at 10 mana
-  // cannot cast it and cannot get back above 10 anywhere else — mana barely moves while
+  // cannot cast it and cannot get back above 10 anywhere else -- mana barely moves while
   // something is hitting you.
   //
   // That is the loop this closes. Zoot, Rizzo and Animal were all released by the old
-  // bar — full health, vigor at the cap, ten-odd mana, no weapon — walked to a hunting
+  // bar -- full health, vigor at the cap, ten-odd mana, no weapon -- walked to a hunting
   // ground they could not fight in, and died there. Unlike vigor, mana genuinely does
   // refill on its own while sitting, so waiting for it is a wait that ends.
   //
-  // Vigor stays at what RESTING CAN ACTUALLY DELIVER — not full. Everything above
+  // Vigor stays at what RESTING CAN ACTUALLY DELIVER -- not full. Everything above
   // REST_VIGOR_CAP (80 of 200) has to be eaten, so demanding more would demand a number
   // sitting down can never reach and the character would rest in an inn for ever. That
   // trap is why this is worth saying twice: getting it wrong does not error, it
@@ -1731,19 +1731,19 @@ export class Autopilot {
   // provision()/cookSomething() are what answer it.
   //
   // AND A DEADLINE, for the same reason. Three vitals means three ways to wait for
-  // something that is not coming — a mana bar that will not fill because the character
+  // something that is not coming -- a mana bar that will not fill because the character
   // is being nibbled, a health point that never lands. RECOVER_MAX_MS is long enough
   // that a genuine recovery always finishes inside it and short enough that a stuck one
   // is a stall rather than a retirement.
   recovered() {
     const v = this.s.client?.vitals?.();
     const hp = pct(v?.health);
-    if (hp === null) return false;                     // cannot tell — keep resting
+    if (hp === null) return false;                     // cannot tell -- keep resting
     const done = (why) => { this.recoverUntilWhole = false; this.recoverSince = null;
                             if (why) this.note('going back out before fully recovered', why);
                             return true; };
     // The deadline is checked FIRST, so a character that cannot reach the bar leaves
-    // rather than sitting for ever — and says which vital it gave up on.
+    // rather than sitting for ever -- and says which vital it gave up on.
     const since = this.recoverSince ?? null;
     if (since && Date.now() - since > RECOVER_MAX_MS)
       return done({ waited_s: Math.round((Date.now() - since) / 1000),
@@ -1754,7 +1754,7 @@ export class Autopilot {
                          'is a character retired by accident' });
     if (hp < 0.95) return false;
     if ((vigorPct(v) ?? 1) < REST_VIGOR_CAP) return false;
-    // A zero or unreadable mana ceiling is not a shortfall — it is a character that has
+    // A zero or unreadable mana ceiling is not a shortfall -- it is a character that has
     // no bar to fill, and blocking on it would be the retirement this guards against.
     const mp = pct(v?.mana);
     if (mp !== null && mp < 0.95) return false;
@@ -1764,7 +1764,7 @@ export class Autopilot {
   // The experiment, run once per pass, for free, out of readings we already take.
   //
   // Between the last look and this one: did we stand still, did we refrain from
-  // swinging, was there something adjacent that wants us dead — and did our health
+  // swinging, was there something adjacent that wants us dead -- and did our health
   // hold? All four have to be true for the answer to mean anything, which is why this
   // tracks when we last moved and last swung. Damage arriving after a swing is
   // retaliation and says nothing at all about the square.
@@ -1790,7 +1790,7 @@ export class Autopilot {
       this.releaseHold('we are not standing on it any more');
     if (this.hold && me && me.x != null) { this.hold.x = me.x; this.hold.y = me.y; }
 
-    // ARE THEY EVEN ALLOWED TO HIT US YET? On entry — including every reconnect —
+    // ARE THEY EVEN ALLOWED TO HIT US YET? On entry -- including every reconnect --
     // the server withholds the monsters until the player acts. A quiet window inside
     // that period says nothing about the walls, and counting it would let the single
     // most dangerous mistake in this file happen quietly: a bad square proved safe by
@@ -1806,7 +1806,7 @@ export class Autopilot {
     const stillness = prev ? (this.swungAt < prev.at && this.movedAt < prev.at) : false;
     const company = (prev?.adjacentIds || []).length;
     const lost = prev && health != null && prev.health != null ? prev.health - health : null;
-    // HOW LONG WE HAD BEEN STANDING STILL ON THIS SQUARE WHEN THIS WINDOW OPENED — see
+    // HOW LONG WE HAD BEEN STANDING STILL ON THIS SQUARE WHEN THIS WINDOW OPENED -- see
     // SETTLE_GRACE_MS. The later of the two clocks, because either one being recent
     // means damage from before we settled can still be arriving: `movedAt` covers
     // walking in, `hold.takenAt` covers claiming a square we were already on.
@@ -1845,15 +1845,15 @@ export class Autopilot {
       return trial;
     };
 
-    if (!this.hold) settle('not holding a spot — nothing to test');
+    if (!this.hold) settle('not holding a spot -- nothing to test');
     else if (!prev) settle('no previous reading to compare against');
     else if (health == null || prev.health == null) settle('health unreadable in one of the two readings');
-    else if (!awake) settle('inside the entry grace period — the server is holding them back, so quiet proves nothing');
-    else if (!stillness) settle(this.swungAt >= prev.at ? 'we swung in this window — damage would be retaliation'
-                                                        : 'we moved in this window — we were not standing here throughout');
-    else if (company === 0) settle('nothing was in swing range — a quiet window with nothing to be quiet about');
+    else if (!awake) settle('inside the entry grace period -- the server is holding them back, so quiet proves nothing');
+    else if (!stillness) settle(this.swungAt >= prev.at ? 'we swung in this window -- damage would be retaliation'
+                                                        : 'we moved in this window -- we were not standing here throughout');
+    else if (company === 0) settle('nothing was in swing range -- a quiet window with nothing to be quiet about');
     else if (!settled) settle(`only ${Math.max(0, settledMs)}ms settled on this square when the window ` +
-                              `opened, under the ${SETTLE_GRACE_MS}ms grace — a blow resolved before we ` +
+                              `opened, under the ${SETTLE_GRACE_MS}ms grace -- a blow resolved before we ` +
                               'got here can still be arriving, and it is not this square\'s fault');
 
     if (this.hold && awake && prev && health != null && prev.health != null) {
@@ -1878,19 +1878,19 @@ export class Autopilot {
             settled_ms: Math.max(0, settledMs),
             why: 'we were hit while standing still and not swinging, which is the one thing ' +
                  'that cannot happen in a working spot',
-            caveat: 'poison and archers look the same from here, so this reading can be wrong — ' +
+            caveat: 'poison and archers look the same from here, so this reading can be wrong -- ' +
                     'but it is still permanent, and deliberately so. See discredited() in ' +
                     'm59-safespots.mjs: the two-failure rule this used to describe is what left ' +
                     'a square recommended after it killed somebody' });
           // Settle the reading BEFORE letting the hold go, or the record loses the
           // very state it is a record of.
-          settle(`HIT for ${lost} while standing still with ${company} adjacent — this square does not work`, true);
+          settle(`HIT for ${lost} while standing still with ${company} adjacent -- this square does not work`, true);
           // And stop standing in it. Keeping the hold would mean fighting from a
-          // square we have just watched fail — refusing to approach, refusing to
+          // square we have just watched fail -- refusing to approach, refusing to
           // withdraw, and taking hits the whole time. Letting it go puts the next
           // pass back on the ordinary path, which will either find a better square or
           // fight in the open with the flee threshold live.
-          this.releaseHold('it does not work — we were hit standing still in it');
+          this.releaseHold('it does not work -- we were hit standing still in it');
         } else {
           this.hold.quietMs += now - prev.at;
           const alreadyProven = this.hold.proven;
@@ -1919,15 +1919,15 @@ export class Autopilot {
               `${this.hold.mostAttackers} adjacent, nothing landed`
             : alreadyProven
               ? `still holding: ${company} adjacent, nothing landed`
-              : `quiet with ${company} adjacent — ${Math.round(this.hold.quietMs / 1000)}s of the ` +
+              : `quiet with ${company} adjacent -- ${Math.round(this.hold.quietMs / 1000)}s of the ` +
                 `${PROOF_MS / 1000}s needed`, true);
         }
       }
     }
 
     // Where we were standing, kept briefly after the hold itself is gone. A death
-    // releases the hold before anything gets to ask about it — the Underworld is a
-    // different room, so observe() drops it on the very pass that discovers we died —
+    // releases the hold before anything gets to ask about it -- the Underworld is a
+    // different room, so observe() drops it on the very pass that discovers we died --
     // and "were we in a spot when we were killed?" is the question the whole thesis
     // turns on. Thirty seconds is long enough to survive that ordering and short
     // enough that it cannot be mistaken for where we are now.
@@ -1975,7 +1975,7 @@ export class Autopilot {
   // it from a safe spot.
   //
   // AdvancementCheck only rolls when monster_level > base_max_health, and max health
-  // IS the level here — so "this kill can make me stronger" and "this creature is at
+  // IS the level here -- so "this kill can make me stronger" and "this creature is at
   // or above my level" are the same statement, and something at or above your level
   // is something that can take a third of your bar in one blow. The two halves of the
   // rule are the same fact read from either end.
@@ -1996,14 +1996,14 @@ export class Autopilot {
       return { hold: true, level: worst, my_level: mine, crowd,
                why: `a level ${worst} kill can raise our maximum health of ${mine}. Anything that ` +
                     'pays is by definition at or above our level, and anything at our level can ' +
-                    'take a third of the bar in one blow — so fight it from a wall' };
+                    'take a third of the bar in one blow -- so fight it from a wall' };
     if (crowd >= 3)
       return { hold: true, level: worst, my_level: mine, crowd,
                why: `we outclass a level ${worst}, but there are ${crowd} of them within four ` +
                     'squares and swarms are what actually kills characters here' };
     return { hold: false, level: worst, my_level: mine, crowd,
-             why: `level ${worst} against our ${mine}: the kill pays nothing — AdvancementCheck ` +
-                  'needs the monster above our max health — and we are strong enough that the ' +
+             why: `level ${worst} against our ${mine}: the kill pays nothing -- AdvancementCheck ` +
+                  'needs the monster above our max health -- and we are strong enough that the ' +
                   'walk to a corner costs more than the fight does' };
   }
 
@@ -2099,10 +2099,10 @@ export class Autopilot {
       !skills.itemIsProtected(item.name, this.protectedItemNames()));
   }
 
-  // Go and stand somewhere defensible, preferring somewhere we have already proved —
+  // Go and stand somewhere defensible, preferring somewhere we have already proved --
   // and somewhere the fight can actually be brought to.
   // `source` is what will be written into the safe-spot book alongside any verdict this
-  // hold produces — 'fight' by default, 'travel' when the hold is a pause part-way through
+  // hold produces -- 'fight' by default, 'travel' when the hold is a pause part-way through
   // a journey. A failure still discredits the square permanently either way: a blow that
   // got through is a bad square however we came to be standing on it. The tag is so the
   // travel-only rejections can be told apart afterwards without reconstructing anything.
@@ -2156,7 +2156,7 @@ export class Autopilot {
     // SEARCH THE WHOLE ROOM. A RADIUS IS THE WRONG SHAPE OF ANSWER.
     //
     // `within` was a flat 12 squares from wherever the character happened to be
-    // standing — a fact about the character, not about the room. Measured against the
+    // standing -- a fact about the character, not about the room. Measured against the
     // live fleet, the rooms it was declaring wall-less hold 210 to 549 defensible
     // squares each, of which 124 to 206 are plain wall edges, and the book had tried
     // between 60 and 129. Nothing was exhausted. The search simply was not looking:
@@ -2164,7 +2164,7 @@ export class Autopilot {
     //
     // NEAR IS STILL PREFERRED, and it does not need a cutoff to be. The ranking already
     // pays 0.5 per step from us and 1.2 per step from the fight, so a merely-adequate
-    // wall underfoot beats an excellent one thirty squares away on the arithmetic —
+    // wall underfoot beats an excellent one thirty squares away on the arithmetic --
     // which is the behaviour the radius was reaching for, expressed as a preference
     // instead of a wall. Searching wide changes what is CONSIDERED, not what is chosen.
     //
@@ -2181,7 +2181,7 @@ export class Autopilot {
     //
     // Cheap because the expensive part is per-candidate pathfinding inside
     // nearestSafeSpot, and a re-run only happens when the first pass rejected everything
-    // — which in an uncrowded room never occurs.
+    // -- which in an uncrowded room never occurs.
     const configuredShareCap = Number.isFinite(this.policy.maxBotsPerSafeSpot) &&
       this.policy.maxBotsPerSafeSpot > 0
       ? Math.max(1, Math.floor(this.policy.maxBotsPerSafeSpot)) : null;
@@ -2259,12 +2259,12 @@ export class Autopilot {
       // exist on every object, and the only thing in the game that reads them is
       // MonsterOrient, to choose the angle a monster is DRAWN facing (monster.kod:2189).
       // So the offset could not have helped at any size, and 1 or 0 would have been no
-      // better than 24 — the lever was not connected to anything.
+      // better than 24 -- the lever was not connected to anything.
       //
       // The book agrees, having accidentally run the experiment: of 411 recorded
       // positions the 72 taken at a hugged offset held 52% of the time against 87% for
       // the 339 taken at the square centre, and the gap survives excluding the retests.
-      // It was not merely inert either — returnToSpot arrives within 12 fine units, so a
+      // It was not merely inert either -- returnToSpot arrives within 12 fine units, so a
       // target 24 off centre costs up to six extra move packets shuffling at the wall,
       // can finish out of tolerance, and then releases the claim and reports a perfectly
       // good square unreachable.
@@ -2296,10 +2296,10 @@ export class Autopilot {
       x: now?.x ?? null, y: now?.y ?? null,
       takenAt: Date.now(), quietMs: 0, damageWhileIdle: 0, failures: 0, mostAttackers: 0,
       // Walls do not move, so a square that held on a previous visit is believed on
-      // arrival — that is the entire point of writing the book down. The experiment
+      // arrival -- that is the entire point of writing the book down. The experiment
       // still runs, and a single failure takes the belief straight back off it.
       // Inherit belief only from a CLEAN record. A square that has ever failed is
-      // discredited for good, and nearestSafeSpot will not offer one — but this is also
+      // discredited for good, and nearestSafeSpot will not offer one -- but this is also
       // reached by hand-picked and remembered spots, and trusting `held` alone would
       // walk a character back onto the square that killed the last one.
       proven: trusted, inherited: trusted, provenAt: trusted ? Date.now() : null,
@@ -2311,14 +2311,14 @@ export class Autopilot {
     this.note('took a safe spot', {
       where: { col: spot.col, row: spot.row }, why,
       can_reach_you: spot.can_reach_you, free_shots: spot.free_shots, back_cover: spot.back_cover,
-      proven_before: known?.failed ? `DISCREDITED — failed ${known.failed} time(s) here`
+      proven_before: known?.failed ? `DISCREDITED -- failed ${known.failed} time(s) here`
                    : known?.held   ? `held ${known.held} time(s) before`
                    :                 'never tested',
       note: trusted
         ? 'this square has held under attack before and never failed, so it is trusted on arrival'
         : known?.failed
         ? 'this square has failed before; it is treated as open floor and should not have ' +
-          'been offered — a failure is permanent'
+          'been offered -- a failure is permanent'
         : 'unproven: it will be treated as open floor until something stands next to us ' +
           'for ' + Math.round(PROOF_MS / 1000) + 's without landing a blow',
     });
@@ -2330,7 +2330,7 @@ export class Autopilot {
   // A safe spot only pays if the fight happens AT it, and monsters do not queue up:
   // the generator drops them where it likes and plenty will simply stand there. So
   // the move a player makes is to run out, hit it once so that it follows, and run
-  // back — the fight then happens where we chose rather than where it spawned.
+  // back -- the fight then happens where we chose rather than where it spawned.
   //
   // The single swing is the whole purpose of the trip. Standing out there trading
   // blows is precisely what walking to the wall was meant to avoid.
@@ -2340,7 +2340,7 @@ export class Autopilot {
     const spot = { ...this.hold };
     // NEVER TRUST A CAPTURED OBJECT'S COORDINATES. BP_ROOM_CONTENTS replaces the
     // whole object map with fresh instances, so anything picked up earlier in the
-    // pass — before we walked to the wall, say — still holds the position it was at
+    // pass -- before we walked to the wall, say -- still holds the position it was at
     // then. Routing to that is routing to where the monster used to be.
     const foe = c.room.objects.get(want.id);
     if (!foe) return { pulled: false, why: 'it is not in the room any more' };
@@ -2352,7 +2352,7 @@ export class Autopilot {
     // This refused anything more than `pullWithin` steps away as "too far to fetch and
     // get back", which reads as prudence and is not. The walk out is taken before the
     // thing has noticed us and the walk back is the only part that costs anything, so a
-    // long pull is not more dangerous than a short one — it is the same danger for
+    // long pull is not more dangerous than a short one -- it is the same danger for
     // longer, and it ends with the fight happening at the wall instead of in the open,
     // which is the entire point. Refusing it does not avoid the fight; it leaves the
     // keeper standing at a good spot with nothing to kill, which is how a character
@@ -2362,10 +2362,10 @@ export class Autopilot {
     // the trip and nothing here needs a ceiling to stay bounded. Patience is the
     // correct behaviour: walk however far it is, hit it once, walk back.
     //
-    // `pullWithin` survives as an explicit override for anyone who wants one — the
-    // broker still exposes it as `pull_within` — but it is unset by default.
+    // `pullWithin` survives as an explicit override for anyone who wants one -- the
+    // broker still exposes it as `pull_within` -- but it is unset by default.
     if (approach.steps > (this.policy.pullWithin ?? Infinity))
-      return { pulled: false, why: `${approach.steps} steps away — beyond the pull_within override` };
+      return { pulled: false, why: `${approach.steps} steps away -- beyond the pull_within override` };
 
     this.doing = 'fighting';
     const out = await s.walkTo(approach.col, approach.row, { maxSteps: approach.steps + 8 })
@@ -2408,7 +2408,7 @@ export class Autopilot {
   // Everything that makes the spot good makes stepping off it bad. The things that
   // could not reach us are standing in exactly the squares we have to walk through,
   // and every one of them gets its attacks back the moment we come out from behind
-  // the wall — which is how a character survives twenty minutes of siege and then
+  // the wall -- which is how a character survives twenty minutes of siege and then
   // dies in the four seconds after it decides to leave.
   //
   // A reconnect resets that. The entry grace period is handed out again and monsters
@@ -2445,13 +2445,13 @@ export class Autopilot {
   // THIS IS THE COMMONEST DEATH IN THE FLEET AND IT IS NOT CLOSE. Of the last fifty
   // deaths, twenty-three happened with the keeper mid-travel and blind; of those,
   // SEVENTEEN WERE OUTBOUND TO A HUNTING GROUND and only four were escapes. Eleven of
-  // them set off on the line "this room cannot produce our prey — leaving now". The
+  // them set off on the line "this room cannot produce our prey -- leaving now". The
   // shape is always the same: a character standing perfectly safely in an inn, which the
   // keeper marches to room 586 or 562 because an inn spawns nothing, and which arrives
   // hurt, unarmed, or both, into eight-plus monsters.
   //
   // Neither departure branch asked anything about the character before setting off. They
-  // asked about the ROOM — does this room make what we hunt — which is a fine question
+  // asked about the ROOM -- does this room make what we hunt -- which is a fine question
   // and the wrong one to leave on.
   //
   // Three conditions, and each one has a body count:
@@ -2461,13 +2461,13 @@ export class Autopilot {
   //   once. See armedForSure for why the optimistic answer is right everywhere else and
   //   catastrophic here.
   //
-  //   WHOLE. Health, mana AND vigor — the same bar recovered() uses, for the same
+  //   WHOLE. Health, mana AND vigor -- the same bar recovered() uses, for the same
   //   reasons, and mana is in it because `create weapon` costs 15 and a character that
   //   leaves at ten cannot arm itself anywhere it is going.
   //
   //   AND A DEADLINE ON BOTH, because a rule that can never be satisfied is a character
   //   retired into an inn, and this fleet has retired characters that way before. After
-  //   RECOVER_MAX_MS it goes anyway and says which condition it gave up on — a stall a
+  //   RECOVER_MAX_MS it goes anyway and says which condition it gave up on -- a stall a
   //   human can read beats a character quietly parked for the rest of the session.
   //
   // When it says no it does not merely refuse: it SITS THE CHARACTER DOWN IN A CORNER
@@ -2475,19 +2475,19 @@ export class Autopilot {
   // job is to stop.
   async readyToLeaveSanctuary(going_to = null) {
     // Only ever a gate on leaving somewhere SAFE. A character standing in a monster room
-    // must never be held there by this — that would be the same bug pointing the other
+    // must never be held there by this -- that would be the same bug pointing the other
     // way, and it is the worse direction.
     if (!this.sanctuary()) return true;
 
     const v = this.s.client?.vitals?.();
     const hp = pct(v?.health), mp = pct(v?.mana), vig = vigorPct(v);
     const armed = this.armedForSure();
-    // A null reading is "no such bar", not "empty" — blocking on one would be the
+    // A null reading is "no such bar", not "empty" -- blocking on one would be the
     // retirement this is careful about everywhere else.
     const whole = (hp ?? 0) >= 0.95 && (mp ?? 1) >= 0.95 && (vig ?? 1) >= REST_VIGOR_CAP;
     // AFTER A BROKER RESTART the connection is still settling and vitals read as null
     // for several seconds. A character parked in the WRONG room (assignedRoom differs
-    // from current) cannot afford to wait it out — that is exactly the situation the
+    // from current) cannot afford to wait it out -- that is exactly the situation the
     // broker restart is most likely to catch (characters woke up somewhere safe and
     // were never moved). Treat unknown vitals as whole when relocation is required;
     // the keeper still wants a real rest when there is no assignment to honour.
@@ -2511,7 +2511,7 @@ export class Autopilot {
     this.sanctuaryHoldSince ??= Date.now();
     const held = Date.now() - this.sanctuaryHoldSince;
     if (held > RECOVER_MAX_MS) {
-      this.note('going out anyway — waited long enough', {
+      this.note('going out anyway -- waited long enough', {
         waited_s: Math.round(held / 1000), still_short: blocked, going_to,
         health: v?.health?.pct ?? null, mana: v?.mana?.pct ?? null, vigor: vigorOf(v),
         why: 'a condition that cannot be met is a character retired into an inn by ' +
@@ -2537,7 +2537,7 @@ export class Autopilot {
 
     this.doing = 'recovering';
     // Sit in a corner and fill the bars. hibernate() settles first, which is what arms
-    // the health timer — a character that walked in and stopped regenerates nothing.
+    // the health timer -- a character that walked in and stopped regenerates nothing.
     await this.hibernate('waiting to be whole and armed before going back out')
               .catch(() => false);
     // THEN ARM, because the resting is what pays for it: armSelf() wields from the pack
@@ -2545,8 +2545,8 @@ export class Autopilot {
     // of the 15 mana this branch has just been sitting for.
     if (!this.armedForSure()) await this.armSelf().catch(() => false);
     // PROGRESS, NOT A STALL. The supervisor restarts keepers that report no progress, and
-    // it was doing exactly that to characters sitting for mana — `restarted Animal:
-    // {"why":"unarmed — 10 mana, needs 15 to make one"}` — which threw away the sit and
+    // it was doing exactly that to characters sitting for mana -- `restarted Animal:
+    // {"why":"unarmed -- 10 mana, needs 15 to make one"}` -- which threw away the sit and
     // started the climb again. Recovering on purpose is the keeper working.
     this.progress('resting in safety until whole and armed');
     return false;
@@ -2557,7 +2557,7 @@ export class Autopilot {
   // Bots do not merely share an inn, they stack: they all arrive by the same route
   // and stop on the same square, so four of them end up on the identical coordinate.
   // That is not cosmetic. Every character is ATTACKABLE, so a pile of friendly bots
-  // reads to each of them as a crowd of things that can kill it — which is exactly
+  // reads to each of them as a crowd of things that can kill it -- which is exactly
   // how one of them spent half an hour panic-logging-off at four health next to three
   // of its own fleet.
   //
@@ -2573,7 +2573,7 @@ export class Autopilot {
       ? Math.min(...others.map(o => Math.hypot(o.col - col, o.row - row))) : 99;
     // SIT IN A CORNER, AND IN THE EMPTIEST ONE THERE IS.
     //
-    // It is what a person does — you take the corner table, not the middle of the floor —
+    // It is what a person does -- you take the corner table, not the middle of the floor --
     // and here it is also the only free tactical improvement available while sitting. A
     // corner has two of its four approaches walled off, so anything that wants to reach
     // the character has half as many squares to do it from; the same asymmetry the safe
@@ -2585,7 +2585,7 @@ export class Autopilot {
     //
     // A PERPENDICULAR PAIR IS A CORNER; TWO OPPOSITE WALLS ARE A CORRIDOR. Scoring
     // "blocked neighbours" alone would rank the middle of a passage equal to a corner and
-    // it is not — a corridor is open at both ends and things come down it.
+    // it is not -- a corridor is open at both ends and things come down it.
     const corner = (col, row) => {
       const n = !geo.walkable(row - 1, col), s2 = !geo.walkable(row + 1, col);
       const w = !geo.walkable(row, col - 1), e = !geo.walkable(row, col + 1);
@@ -2598,8 +2598,8 @@ export class Autopilot {
     // The movement grid is one byte per square, and a room full of furniture and
     // doorways narrower than a square comes out of it disconnected: in the Limping
     // Toad, 76 squares are both free and clear of everyone, and the grid says NOT ONE
-    // of them can be walked to from the middle of the floor. It is wrong — people sit
-    // at those tables — but it is wrong in the direction that makes a keeper conclude
+    // of them can be walked to from the middle of the floor. It is wrong -- people sit
+    // at those tables -- but it is wrong in the direction that makes a keeper conclude
     // there is nowhere to go and stand in the doorway for ever.
     //
     // The server does not use that grid; it validates against the fine BSP geometry.
@@ -2615,7 +2615,7 @@ export class Autopilot {
         const space = gap(col, row);
         if (space < clear) continue;
         const p = s.world.reach(col, row);
-        // Elbow room first, then closeness — but cap the value of space, because the
+        // Elbow room first, then closeness -- but cap the value of space, because the
         // far corner of an inn is no safer than a clear table and costs the walk.
         //
         // The corner bonus is weighted to be worth about three squares of elbow room, so
@@ -2644,7 +2644,7 @@ export class Autopilot {
     if (!room) return { settled: false };
     if (this.settledIn === room.num) return { settled: false, already: true };
     // A FAILED ATTEMPT IS NOT A SEAT. Marking the room settled up front meant the
-    // first try was the only try — and the first try is exactly the one that fails,
+    // first try was the only try -- and the first try is exactly the one that fails,
     // because the pass right after a reconnect can run before room contents have come
     // back, so we do not yet know where we are standing and every square looks
     // unreachable. Isolde spent that pass concluding there was nowhere to sit in a
@@ -2660,7 +2660,7 @@ export class Autopilot {
           know_where_we_are: !!this.s.client?.self,
           note: tries === 2
             ? 'giving up on finding a clear corner in this room'
-            : 'resting anyway, but crowded — health regeneration still needs us to have moved' });
+            : 'resting anyway, but crowded -- health regeneration still needs us to have moved' });
       if (tries >= 2) this.settledIn = room.num;     // stop trying, but only after trying
       return { settled: false };
     }
@@ -2672,7 +2672,7 @@ export class Autopilot {
     this.doing = 'recovering';
     // Fine movement when the grid refuses the route, because in an inn the grid is
     // usually the thing that is wrong. FINENESS is 64 units to the square and the
-    // centre is the half — the same arithmetic moveToSquare does.
+    // centre is the half -- the same arithmetic moveToSquare does.
     const w = spot.viaFine
       ? await this.s.walkFine(spot.col * 64 + 32, spot.row * 64 + 32,
                               { maxSteps: 24, stride: 48, arriveWithin: 48 })
@@ -2687,9 +2687,9 @@ export class Autopilot {
       room: room.name, why, to: { col: spot.col, row: spot.row },
       seat: spot.seat ?? null,
       nearest_other_character: spot.clearance, steps: spot.steps, reason: w.reason,
-      routed: w.fine ? 'in fine coordinates — the square grid called this room disconnected'
+      routed: w.fine ? 'in fine coordinates -- the square grid called this room disconnected'
                      : 'through the movement grid',
-      because: 'characters stack on the square they arrive at, and every character is attackable — ' +
+      because: 'characters stack on the square they arrive at, and every character is attackable -- ' +
                'a pile of friendly bots reads as a crowd of threats to every one of them. Walking ' +
                'clear also arms the health timer, which sitting still never does.' });
     return { settled: !!w.arrived, spot };
@@ -2702,7 +2702,7 @@ export class Autopilot {
   // will be the same. See the note at the call site for how that state is manufactured.
   //
   // FED AND RESTED CHARACTERS ARE EXEMPT. Above 140 vigor with food in the pack, the
-  // fleeing is tactical — a bad room, a bad crowd — and hauling it to town would throw
+  // fleeing is tactical -- a bad room, a bad crowd -- and hauling it to town would throw
   // away a working session for nothing.
   // THE NEAREST ROOM NOTHING IS GENERATED IN, by hops.
   //
@@ -2710,25 +2710,25 @@ export class Autopilot {
   // does a bank, a shop and a stretch of road, and "tavern" is not a flag on anything.
   //
   // Extracted from townTripIfCornered because the post-death recovery asks the identical
-  // question — where is the nearest place I can sit down safely — and a second copy of
+  // question -- where is the nearest place I can sit down safely -- and a second copy of
   // this would be a second place for the hop limit to drift.
   // AN INN IS NOT IN THE SPAWN INDEX, WHICH IS WHY THIS NEVER SENT ANYBODY TO ONE.
   //
-  // The candidate list was built from `Object.keys(spawns.rooms)` — every room the spawn
-  // index KNOWS ABOUT — then filtered down to those with nothing huntable. A room that
+  // The candidate list was built from `Object.keys(spawns.rooms)` -- every room the spawn
+  // index KNOWS ABOUT -- then filtered down to those with nothing huntable. A room that
   // generates nothing at all has no entry in that index, so every inn in the world was
   // invisible to it. What survived the filter was outdoor rooms that happen to carry only
   // non-huntable spawns, and those are neighbours of the wilderness rather than refuges.
   //
   // Measured: a character fled the Graveyard of Tos at 2 health and set off for the
-  // Twisted Wood — which holds trolls at attack rating 750 — while Familiars, the Tos inn,
+  // Twisted Wood -- which holds trolls at attack rating 750 -- while Familiars, the Tos inn,
   // sat two rooms away and was never a candidate. The route to a distant "safe" room is
   // the part that kills, because a planned trip is not reconsidered and goes THROUGH
   // whatever is on the way.
   //
   // `CITY_INNS` is the answer and was already imported into this file. Inns are real
   // sanctuaries: nothing spawns, resting is safe, and the counters sell the bread that is
-  // the only way past the vigor cap of 80 — which is the whole reason this function is
+  // the only way past the vigor cap of 80 -- which is the whole reason this function is
   // called. They are listed FIRST and win ties, so a refuge is preferred over a merely
   // quiet field at the same distance.
   nearestSanctuary({ maxHops = 3 } = {}) {
@@ -2753,7 +2753,7 @@ export class Autopilot {
       if (hops > maxHops) continue;           // further than that is its own expedition
       const isInn = inns.includes(room);
       // Strictly closer wins; at equal distance the inn wins, because only an inn can
-      // actually fix the thing that drove us out — food, and a safe place to eat it.
+      // actually fix the thing that drove us out -- food, and a safe place to eat it.
       if (!best || hops < best.hops || (hops === best.hops && isInn && !best.isInn))
         best = { room, hops, isInn, preferred: false,
                  safety: isInn ? 'true sanctuary' : 'no huntable monsters spawn here',
@@ -2776,12 +2776,12 @@ export class Autopilot {
     if (!best) {
       // DO NOT FORGET THAT WE ARE CORNERED. The first version reset the counter here,
       // so a character with no town within three hops re-decided from zero every third
-      // flee and could never escalate — it just fled for ever, which is precisely what
+      // flee and could never escalate -- it just fled for ever, which is precisely what
       // this was written to stop. The count is kept and only the SEARCH is rate-limited.
       this.noTownUntil = Date.now() + 120_000;
       this.note('cornered but no town within reach', {
         fled_in_a_row: this.fledInARow, vigor: vig, has_food: fed,
-        why: 'nothing unhuntable within three hops — carrying on in the wilderness ' +
+        why: 'nothing unhuntable within three hops -- carrying on in the wilderness ' +
              'because the alternative is a long walk through worse, but still counting ' +
              'the flees, because this is not a state to sit in' });
       return false;
@@ -2794,7 +2794,7 @@ export class Autopilot {
       why: best.preferred
         ? 'fled more than twice; Outside Castle Victoria has no monster spawns and is ' +
           'close enough to rest in, though another player can still attack there'
-        : 'fled more than twice with neither the vigor nor the food to fight — the ' +
+        : 'fled more than twice with neither the vigor nor the food to fight -- the ' +
           'wilderness cannot fix that, and a town can: resting is safe there and the ' +
           'counters sell bread, which is the only way past the resting cap of 80' });
     const t = await this.travel(best.room, { maxHops: 6 }).catch(e => ({ arrived: false, reason: e.message }));
@@ -2809,12 +2809,12 @@ export class Autopilot {
 
   // Nothing to do and nowhere to be: sit down somewhere safe and get the bar back up.
   // Vigor is what a character actually leaves an inn with, and resting is the only way
-  // to raise it without food — so idling on your feet is throwing away the one thing
+  // to raise it without food -- so idling on your feet is throwing away the one thing
   // idle time is good for.
   // MANA IS THE THIRD BAR AND IT IS THE ONE THAT MATTERS MOST AFTER A DEATH.
   //
   // This used to leave when health and vigor were back, which released characters at ten
-  // mana — below the 15 `create weapon` needs, and with everything they owned lying on the
+  // mana -- below the 15 `create weapon` needs, and with everything they owned lying on the
   // floor of the room that killed them, that spell is the whole plan. They walked out
   // bare-handed and died again. Mana genuinely does refill by sitting, unlike vigor, so
   // waiting for it is a wait that ends.
@@ -2829,7 +2829,7 @@ export class Autopilot {
     this.doing = 'recovering';
     const r = await skills.restUntil(s, {
       health: 0.98,
-      // Resting stops at 80 of 200 — RestTimer will not take vigor past its threshold,
+      // Resting stops at 80 of 200 -- RestTimer will not take vigor past its threshold,
       // so asking for more is asking to sit until the timeout. Everything above this
       // has to be eaten, which is a supply problem and not something to wait out.
       vigor: REST_VIGOR_CAP, mana,
@@ -2867,7 +2867,7 @@ export class Autopilot {
   //
   // Both creation spells are self-only: creaweap.kod:117 and creafood.kod do
   // Send(who,@NewHold,#what=...) where `who` is the CASTER, and lTargets is never
-  // read. So there is no such thing as casting a weapon onto someone else — the
+  // read. So there is no such thing as casting a weapon onto someone else -- the
   // quartermaster casts for itself and then hands the result over, which is the same
   // two-sided trade a loot run uses to pay a farmer.
   //
@@ -2903,7 +2903,7 @@ export class Autopilot {
       const now = whereIs(e.supplicant);
       if (now && now.room !== e.room && (e.chases || 0) < 2) {
         e.chases = (e.chases || 0) + 1;
-        this.note('supplicant has moved — following', {
+        this.note('supplicant has moved -- following', {
           wanted: e.supplicant_name, expected: e.room_name, now: now.name ?? now.room,
           chase: e.chases });
         e.room = now.room; e.room_name = now.name ?? String(now.room);
@@ -2917,9 +2917,9 @@ export class Autopilot {
     }
 
     // Cast it for ourselves, then find what appeared. Comparing inventory before and
-    // after is the only reliable way to know WHICH object to hand over — the spell
+    // after is the only reliable way to know WHICH object to hand over -- the spell
     // rolls a random weapon or foodstuff and tells us nothing machine-readable.
-    // c.spells is empty until it is asked for — reading it cold is the phantom
+    // c.spells is empty until it is asked for -- reading it cold is the phantom
     // "the spell did not encode" bug.
     await s.pacer.submit('read', () => c.requestSpells()).catch(() => {});
     await new Promise(x => setTimeout(x, 500));
@@ -2937,8 +2937,8 @@ export class Autopilot {
 
     // DO NOT CAST TWICE FOR ONE ERRAND.
     //
-    // The hand-over can fail on its own — a supplicant in the middle of a fight does
-    // not reach the branch that accepts gifts within our window — and the retry used to
+    // The hand-over can fail on its own -- a supplicant in the middle of a fight does
+    // not reach the branch that accepts gifts within our window -- and the retry used to
     // start again from the cast. Kraanite made a weapon, failed to hand it over, cast a
     // second one at fifteen mana, and then had nothing left to cast with while carrying
     // a perfectly good weapon it had already made. If what we made last pass is still in
@@ -2962,7 +2962,7 @@ export class Autopilot {
       made = (c.inventory || []).filter(o => !had.has(o.id));
       e.made_ids = made.map(o => o.id);
       // Recorded as a cast for SOMEBODY ELSE. Same spell, same mana, entirely different
-      // decision — a quartermaster spending its reagents on a crewmate is not the same
+      // decision -- a quartermaster spending its reagents on a crewmate is not the same
       // event as one feeding itself, and the audit should not have to guess from timing.
       this.recordCast(e.service, { ok: made.length > 0, target: e.supplicant_name,
         why: 'errand: a crewmate asked for one', reagents_before: reagentsBefore,
@@ -2985,7 +2985,7 @@ export class Autopilot {
 
     const before = c.evSeq;
     await s.pacer.submit('trade', () => c.offer(them.id, made.map(o => o.id)));
-    // Their keeper counters from social(), which runs once per pass — so the window has
+    // Their keeper counters from social(), which runs once per pass -- so the window has
     // to be wider than one of their passes or a supplicant that is mid-fight never
     // answers in time and we conclude, wrongly, that nobody is home.
     const ev = await c.waitFor({ since: before, kinds: ['countered', 'trade-ended'], timeoutMs: 20000 })
@@ -3007,7 +3007,7 @@ export class Autopilot {
     e.gave = made.map(o => c.rsc.get(o.nameRsc));
     this.note('provisioned', { to: e.supplicant_name, service: e.service, gave: e.gave,
       caveat: e.service === 'create weapon'
-        ? 'a made weapon is temporary — it buys the walk to a shop, it is not a repair' : undefined });
+        ? 'a made weapon is temporary -- it buys the walk to a shop, it is not a repair' : undefined });
     this.progress('provisioned someone');
     return true;
   }
@@ -3022,8 +3022,8 @@ export class Autopilot {
   //
   // IT IS DISPATCHED TO THE CHARACTER THAT GETS PAID MOST, which is what makes the whole
   // thing worth building. Under 30 max health the ring pays ten times its value; at or
-  // over, one times. So the fleet moves rings DOWN to its smallest characters first —
-  // `signets` action=redistribute — and only then sends them walking.
+  // over, one times. So the fleet moves rings DOWN to its smallest characters first --
+  // `signets` action=redistribute -- and only then sends them walking.
   //
   // The last step is not optional. This errand deliberately hands a four-figure sum to
   // the most fragile character in the fleet, in a purse, in a world where death drops
@@ -3034,7 +3034,7 @@ export class Autopilot {
 
     // 0. IS THE RING STILL IN THE PACK? The first live dispatch died on the way and
     //    dropped both rings on a corpse, and the errand carried on walking to Tos to hand
-    //    over something it no longer had — twenty-five minutes of a small character
+    //    over something it no longer had -- twenty-five minutes of a small character
     //    crossing the world for nothing, ending in the same two failures a missing owner
     //    produces. Death is not the only way to lose it either: the opportunistic check
     //    hands rings back whenever the owner walks past, and the world deletes the oldest
@@ -3052,7 +3052,7 @@ export class Autopilot {
         e.why_done = 'the ring is gone';
         this.note('no signet ring left to return', {
           was_for: e.owner, to: e.where,
-          why: 'dropped on death, handed over already, or deleted by the world — either way ' +
+          why: 'dropped on death, handed over already, or deleted by the world -- either way ' +
                'there is nothing to walk anywhere for' });
         return true;
       }
@@ -3081,7 +3081,7 @@ export class Autopilot {
 
     // 2. Hand it over. returnSignetRings matches the owner named on each ring against the
     //    objects in this room, so it gives back every ring this character is carrying that
-    //    belongs here — not only the one the errand was cut for. That is free and it is
+    //    belongs here -- not only the one the errand was cut for. That is free and it is
     //    the whole reason redistribution groups rings by town before dispatching.
     const gave = await skills.returnSignetRings(s).catch(x => ({ returned: [], why: x.message }));
     if (!gave.returned?.length) {
@@ -3091,7 +3091,7 @@ export class Autopilot {
       this.note('the ring\'s owner was not here', {
         owner: e.owner, room: e.where, attempt: e.failures, why: gave.why,
         note: 'CheckWhyWanted names the correct owner out loud when the wrong NPC is ' +
-              'offered a ring — read the journal if this keeps happening' });
+              'offered a ring -- read the journal if this keeps happening' });
       if (e.failures >= 2) { e.done = true; e.why_done = 'the owner was not there'; }
       return true;
     }
@@ -3107,7 +3107,7 @@ export class Autopilot {
     this.progress('returned a signet ring');
 
     // 3. BANK IT BEFORE ANYTHING ELSE HAPPENS. bankSurplus() only acts when there is a
-    //    teller in the room, which is exactly right for Yevitan — he stands in the Royal
+    //    teller in the room, which is exactly right for Yevitan -- he stands in the Royal
     //    Bank of Jasper, so a Jasper ring pays out and is banked without moving. Anywhere
     //    else this is a no-op and the ordinary bankRun picks it up on a later pass, which
     //    it will: the default threshold is 500 and this just cleared four figures.
@@ -3179,7 +3179,7 @@ export class Autopilot {
     //    each: sharing a spot is pointless when both parties are fighting, and it is
     //    exactly right when one is fighting and the other is picking up behind them.
     //    The runner is the fragile one in the room and it is about to spend several
-    //    passes stationary with its hands full — the wall is worth more to it than to
+    //    passes stationary with its hands full -- the wall is worth more to it than to
     //    anyone. Players have done this forever.
     //
     //    It is the farmer's claim, so we do not take it in the register; we just go
@@ -3195,7 +3195,7 @@ export class Autopilot {
           this.movedAt = Date.now();
           if (w.arrived) this.note('sheltering beside the farmer', {
             farmer: e.farmer_name, their_spot: { col: farmerSpot.col, row: farmerSpot.row },
-            why: 'a loot run is several passes of standing still with full hands — the safest ' +
+            why: 'a loot run is several passes of standing still with full hands -- the safest ' +
                  'place to do that is the wall the farmer already proved' });
         }
       }
@@ -3226,7 +3226,7 @@ export class Autopilot {
   }
 
   // Hand over every edible thing we are carrying. A runner is chosen for being poor,
-  // so this is usually nothing — and that is fine, it becomes a debt instead. When
+  // so this is usually nothing -- and that is fine, it becomes a debt instead. When
   // there IS food, giving all of it is correct: the runner is about to walk to a shop
   // and the farmer is not going anywhere.
   async payFarmer(e) {
@@ -3244,7 +3244,7 @@ export class Autopilot {
     // FINISH THE HANDSHAKE. An offer alone moves nothing: the sequence is
     // offer -> they counter (empty, which is how a gift is accepted) -> WE ACCEPT.
     // Stopping at the counter leaves the food sitting on the table until the trade
-    // is cancelled, while the journal says "paid the farmer in food" — a hand-over
+    // is cancelled, while the journal says "paid the farmer in food" -- a hand-over
     // that reads as done in every log we keep and never happened in the world. The
     // farmer's own keeper counters for us in social(), so the only missing half was
     // this one.
@@ -3263,7 +3263,7 @@ export class Autopilot {
   // EVERY RECONNECT GOES THROUGH HERE, because a reconnect establishes two things and
   // both of them are easy to establish in only three of the four places it happens:
   //
-  //   every object id we are holding is stale — the server reissues them at login
+  //   every object id we are holding is stale -- the server reissues them at login
   //   the entry grace period has been handed back, so from now until we act again,
   //     nothing that fails to hit us proves anything about where we are standing
   //
@@ -3291,25 +3291,25 @@ export class Autopilot {
   //
   // Camilla, 2026-08-06 23:59. At −18.0s the keeper saw 69% health, took a safe spot, and
   // refused to rest in the open. TWO HUNDRED MILLISECONDS LATER, in the same pass, the
-  // room check fired — "this room cannot produce our prey — leaving now" — and this
+  // room check fired -- "this room cannot produce our prey -- leaving now" -- and this
   // method gave up the wall it had just taken, `held_s: 0`. She walked out at 20/29 with
   // two monsters on her and was dead 17.8 seconds later, without swinging once.
   //
   // Both decisions were individually right and nothing arbitrated between them. So the
   // arbitration lives here, at the one place they both go through: A DISCRETIONARY
   // DEPARTURE FROM A HELD SPOT IS REFUSED WHILE HURT. Routing, roaming, banking and
-  // errands are all discretionary — the room will still be the wrong room in thirty
+  // errands are all discretionary -- the room will still be the wrong room in thirty
   // seconds. Withdrawing from a fight is not, and passes `force`.
   //
   // `readyToLeaveSanctuary` is the same rule for inns and does not cover this: it returns
   // true immediately unless `sanctuary()`, and a monster room with a proven wall in it is
-  // not a sanctuary. It is, however, the safest place in the world for a hurt character —
-  // nothing can hit you there unless you swing first — which is exactly why leaving is
+  // not a sanctuary. It is, however, the safest place in the world for a hurt character --
+  // nothing can hit you there unless you swing first -- which is exactly why leaving is
   // the mistake.
   //
   // IT CANNOT DEADLOCK. Refusing returns the pass, the rest gate above sees `hurt` and
   // `sheltered` and rests to full on the wall, and the next attempt is allowed. If that
-  // somehow never happens the wait is capped and it goes anyway, saying so — the same
+  // somehow never happens the wait is capped and it goes anyway, saying so -- the same
   // shape as the sanctuary hold, and for the same reason: a condition that cannot be met
   // is a character retired by accident.
   async leaveHold(why, { force = false } = {}) {
@@ -3324,19 +3324,19 @@ export class Autopilot {
           // Once per hold rather than once per pass: this fires every second otherwise.
           if (!this.holdKeptNoted) {
             this.holdKeptNoted = true;
-            this.note('staying on the wall — too hurt to go anywhere discretionary', {
+            this.note('staying on the wall -- too hurt to go anywhere discretionary', {
               wanted_to: why, health: Math.round(hp * 100) + '%',
               rest_below: Math.round(floor * 100) + '%',
               proven: this.holdWorks?.() ?? null,
               why: 'a held safe spot is the safest square available and the errand is not ' +
-                   'urgent. Rest here first — this is the decision that killed Camilla, ' +
+                   'urgent. Rest here first -- this is the decision that killed Camilla, ' +
                    'who gave up a proven wall at 69% and died 17.8s later',
             });
           }
           this.holdKept = (this.holdKept || 0) + 1;
           return { left: false, refused: true, health: hp, wanted_to: why };
         }
-        this.note('leaving the wall anyway — waited long enough', {
+        this.note('leaving the wall anyway -- waited long enough', {
           wanted_to: why, health: Math.round(hp * 100) + '%',
           waited_s: Math.round(kept / 1000),
           why: 'held for the cap without recovering. A wait that cannot end is a stall ' +
@@ -3353,13 +3353,13 @@ export class Autopilot {
   // HOLD THE SWING AND WATCH.
   //
   // The one state that can prove a wall is being next to something that wants to kill
-  // you and NOT hitting it — and a keeper that attacks every pass never enters it. So
+  // you and NOT hitting it -- and a keeper that attacks every pass never enters it. So
   // proof used to arrive only by accident, when a fight went badly enough to force a
   // rest, which is precisely the moment the proof is too late to be worth anything.
   //
   // This makes it deliberate: a monster has walked to the wall, the spot is untested,
   // so hold the attack for a pass or two and let observe() adjudicate. It costs a few
-  // seconds and it buys holdWorks() for the whole rest of the fight — which is what
+  // seconds and it buys holdWorks() for the whole rest of the fight -- which is what
   // makes breaking off free, and resting to full possible.
   //
   // Budgeted per session rather than done once and trusted for ever: walls do not
@@ -3388,7 +3388,7 @@ export class Autopilot {
     // Two passes covers the proof window; three is the cap, so a creature that
     // wanders off again cannot leave us standing here indefinitely.
     if (this.spotTest.passes > 3) {
-      this.note('stopped testing this spot — nothing conclusive', {
+      this.note('stopped testing this spot -- nothing conclusive', {
         where: { col: this.hold.col, row: this.hold.row },
         why: 'three passes without a clean verdict; getting on with the fight' });
       this.spotTest = null;
@@ -3402,20 +3402,20 @@ export class Autopilot {
 
   // WHAT THIS CHARACTER IS DOING, in the words someone watching would use.
   //
-  // `doing` is the time-accounting bucket and is too coarse to read — "recovering"
+  // `doing` is the time-accounting bucket and is too coarse to read -- "recovering"
   // covers eating, resting and waiting out a digestion clock. This is the one-line
   // answer to "what is it up to?", which is the question a fleet page is for.
   // PARK: FINISH WHAT YOU ARE DOING, GET BEHIND A WALL, AND STOP.
   //
   // A broker restart stops all twenty-one keepers at once, and a stopped keeper is not
-  // a paused character — it is a character held still in whatever fight it was in while
+  // a paused character -- it is a character held still in whatever fight it was in while
   // everything already swinging at it carries on. That is why deaths arrive in waves
   // after a restart, and it is the whole reason m59-uptime.mjs exists.
   //
   // Parking is the fix, and the only part of it that matters is WHEN it takes effect:
   // not mid-swing, not mid-route, but at the next point the keeper would have chosen a
   // new action anyway. So the check sits in pass() exactly where the mode dispatch does
-  // — past death, danger and rest — and everything above it still runs. A parked
+  // -- past death, danger and rest -- and everything above it still runs. A parked
   // character that is attacked still defends itself, still flees, still escapes the
   // Underworld. It simply stops picking new fights.
   //
@@ -3447,13 +3447,13 @@ export class Autopilot {
   }
 
   // How long we will keep trying for a wall before reporting ready without one. A
-  // character that cannot find a wall must not hold the whole fleet's update hostage —
+  // character that cannot find a wall must not hold the whole fleet's update hostage --
   // and standing still in the open is still strictly better than being stopped mid-fight
   // there, because a parked keeper is awake and a stopped one is not.
   static PARK_GRACE_MS = 90_000;
 
   // How many kills inside the last `ms`. Survives a keeper restart no better than the
-  // total does — the array lives on the keeper — but the WINDOW is what saves it: a
+  // total does -- the array lives on the keeper -- but the WINDOW is what saves it: a
   // restart five minutes ago and an idle hour both read as a low number, and both mean
   // "this character is not earning right now", which is the same answer.
   killsSince(ms) {
@@ -3471,11 +3471,11 @@ export class Autopilot {
     // BEFORE ANYTHING ELSE IT WOULD OTHERWISE CLAIM TO BE DOING. An inert keeper still
     // holds a safe spot, a mode and a hunt, and reporting any of those on the board would
     // say a character is working when something else is walking it across the world.
-    if (this.inert) return `inert — ${this.inert.why || 'something else is driving'}`;
+    if (this.inert) return `inert -- ${this.inert.why || 'something else is driving'}`;
     if (this.parking)
       return this.parking.ready
         ? (this.hold ? 'parked behind a wall, ready for the update' : 'parked in the open, ready for the update')
-        : 'parking — getting behind a wall before the update';
+        : 'parking -- getting behind a wall before the update';
     if (this.frozenUntil && Date.now() < this.frozenUntil) return 'playing dead';
     if (this.hold) {
       const proven = this.holdWorks() ? 'proven' : 'untested';
@@ -3485,7 +3485,7 @@ export class Autopilot {
       if (this.doing === 'waiting') return `waiting at a ${proven} safe spot`;
       return `holding a ${proven} safe spot`;
     }
-    // One wording for the errand, shared with the commitment the board greys rows on —
+    // One wording for the errand, shared with the commitment the board greys rows on --
     // a character described as "loot run for Rowlf" in one place and "an errand" in the
     // other is two facts where there is one.
     if (this.errand)
@@ -3509,8 +3509,8 @@ export class Autopilot {
       // drop what it needs is burning an afternoon. Both are "not paying"; only the
       // second is bad news.
       return y.done
-        ? `hunting: ${this.policy.hunt} — list complete, nothing left to fetch`
-        : `hunting: ${this.policy.hunt} — PAYS NOTHING for ${this.policy.purpose}`;
+        ? `hunting: ${this.policy.hunt} -- list complete, nothing left to fetch`
+        : `hunting: ${this.policy.hunt} -- PAYS NOTHING for ${this.policy.purpose}`;
     }
     return this.stalledSince ? `stuck: ${this.stalledWhy}` : 'waiting';
   }
@@ -3532,13 +3532,13 @@ export class Autopilot {
   //
   // The cap is a room-wide TOTAL (monsroom.kod:242) and the generator is gated on it
   // before it rolls the table at all, so ignoring a creature does not leave more room
-  // for the one you want — it leaves less. A fleet hunting centipedes and stepping over
+  // for the one you want -- it leaves less. A fleet hunting centipedes and stepping over
   // baby spiders ends up in a room of baby spiders and then a room of nothing.
   //
   // AND LEAVING DOES NOT FIX IT. This is the part that reads backwards: LastUserLeft
   // (monsroom.kod:353) starts the 3-minute reload timer ONLY when piMonster_count = 0,
-  // and otherwise just deletes the generation timer. The comment says why — "to prevent
-  // endless exp boosting" — the game is deliberately stopping you from resetting a room
+  // and otherwise just deletes the generation timer. The comment says why -- "to prevent
+  // endless exp boosting" -- the game is deliberately stopping you from resetting a room
   // by walking out of it. A room abandoned while full stays full, with the generator
   // switched off, for as long as nobody kills anything in it.
   //
@@ -3579,7 +3579,7 @@ export class Autopilot {
       // A CREATURE WE HAVE NEVER HEARD OF IS DANGEROUS, NOT SAFE.
       //
       // `lvl` is null whenever the spawn table has no row for the name, and the level
-      // test was written as `lvl != null && lvl > ceiling` — so an unknown creature
+      // test was written as `lvl != null && lvl > ceiling` -- so an unknown creature
       // skipped the test and fell straight through to clearable. The table holds 120
       // creatures and exactly one faction soldier ("rebel soldier", level 50); there is
       // no row for "soldier of the Duke's army", so a level-27 character with a safety
@@ -3587,7 +3587,7 @@ export class Autopilot {
       //
       // That is the same shape as every other silent default in this tree: the absence
       // of information read as permission. Faction soldiers are the worst possible thing
-      // to guess about — the Duke's soldiers alone account for 155 kills in the Tos
+      // to guess about -- the Duke's soldiers alone account for 155 kills in the Tos
       // death record and appear in deaths that happened inside APPROVED safe squares.
       //
       // Judge on attack_rating where we have it, because level is not danger
@@ -3599,7 +3599,7 @@ export class Autopilot {
                                             `${this.policy.karma} character (its karma is ${info?.karma})` });
       } else if (!info) {
         status.blocked.push({ ...row, rating: null,
-          why: 'nothing is known about it — the spawn table has no row for this name, and ' +
+          why: 'nothing is known about it -- the spawn table has no row for this name, and ' +
                'an unrecognised creature is refused rather than assumed harmless' });
       } else if (rating != null && rating > GENTLE_RATING && lvl != null && lvl > ceiling) {
         status.blocked.push({ ...row, rating,
@@ -3634,14 +3634,14 @@ export class Autopilot {
       : preyPresent === 0
         ? `the room is at ${present}/${cap} and none of it is what we hunt`
         : `${blockerCount} of the ${present} here are not our prey and only ${preyPresent} ` +
-          `are — at cap that composition only gets worse`;
+          `are -- at cap that composition only gets worse`;
     return status;
   }
 
   // ONE ATTEMPT AT FINDING A SQUARE, at a given tolerance for sharing.
   //
   // Extracted from takeSafeSpot only so the search can be re-run at a higher share cap
-  // without duplicating the option block — a second copy of these arguments is exactly
+  // without duplicating the option block -- a second copy of these arguments is exactly
   // how the two would come to disagree about `los` or the book.
   searchSafeSpot(geo, me, room, { within, quarryReach, strictQuarryReach = false,
                                   los, quarry, barren, stats, shareCap = 1 }) {
@@ -3650,7 +3650,7 @@ export class Autopilot {
       // WHAT MAKES A SQUARE A CANDIDATE. `wall` asks for a wall to stand against and
       // ranks by how much of it there is; `disc` is the old attackers_avoided >= 20
       // gate, kept so the two can be compared rather than swapped on faith. See
-      // SPOT_RULES — the disc threshold turned out to sit in a trough in the book, and
+      // SPOT_RULES -- the disc threshold turned out to sit in a trough in the book, and
       // most of the evidence that put it there was written by a bug in restBroken.
       //
       // `los` has to be the same setting quarryReach uses, or the two disagree about
@@ -3675,14 +3675,14 @@ export class Autopilot {
   // ONE FRAME. Extracted from the pass so a JOURNEY CAN LEAVE A TRAIL.
   //
   // Frames were written once per pass and nowhere else, and travel is a single await
-  // INSIDE a pass — so a character that set off across four rooms and died on the way
+  // INSIDE a pass -- so a character that set off across four rooms and died on the way
   // recorded nothing between the room it left and the Underworld. The post-mortem then
   // reconstructed the death from "the last frame that was not the Underworld", which was
   // the room it had left minutes earlier.
   //
   // Janice is the worked example: her record says she died in the Brownestone Inn at
   // 30/30 health, with `threats: 0`. Her last decision there was "this room cannot
-  // produce our prey — leaving now, going to Valley of Ileria", and 92 seconds later a
+  // produce our prey -- leaving now, going to Valley of Ileria", and 92 seconds later a
   // frogman killed her. Inns have no frogmen and nobody dies at full health; every field
   // in that record was true about somewhere she was no longer standing.
   //
@@ -3714,7 +3714,7 @@ export class Autopilot {
       swung_ms: this.swungAt ? nowT - this.swungAt : null,
       // COUNT SEPARATELY FROM NAMING, because the cap on the names was silently becoming
       // the answer. `most_at_once` is derived from this list's LENGTH, and the list was
-      // sliced to 6 — so every swarm death recorded "6 on them at the end", 55 times out
+      // sliced to 6 -- so every swarm death recorded "6 on them at the end", 55 times out
       // of 55 in room 586, and the real number was never written down. A constant that
       // appears in 100% of your records is a measurement artefact, not a finding.
       //
@@ -3750,14 +3750,14 @@ export class Autopilot {
     this.recent5.push(f);
     // Deep enough to cover the whole of a death rather than its last few seconds. At an
     // 8s pass this is about three minutes, which is longer than any fight that kills one
-    // of these characters — and a multi-hop journey now spends frames from the same
+    // of these characters -- and a multi-hop journey now spends frames from the same
     // budget, which is the trade this exists to make.
     //
     // WIDENED FOR THE WATCHDOG. It writes a frame per health change during a blind walk,
     // which is the resolution the record most wants and also the fastest it can be spent:
     // a character under attack while travelling can burn twenty frames in twenty seconds,
     // and at 24 that evicted the entire run-up to the death being explained. Forty-eight
-    // frames is about 12KB in a post-mortem — the text log is already larger.
+    // frames is about 12KB in a post-mortem -- the text log is already larger.
     if (this.recent5.length > 48) this.recent5.shift();
     return f;
   }
@@ -3768,7 +3768,7 @@ export class Autopilot {
   // are both observations rather than a silence with a conclusion drawn from whichever
   // side of it a pass happened to land on. The wrapper returns the same promise shape, so
   // the ten call sites keep their own `.catch(...)` exactly as they were, and the arrival
-  // frame is written in a `finally` — a journey that THREW is the case where knowing
+  // frame is written in a `finally` -- a journey that THREW is the case where knowing
   // where it stopped matters most.
   // ------------------------------------------------- resting at walls while travelling
   //
@@ -3782,7 +3782,7 @@ export class Autopilot {
   // through it: the hold costs exposure, the spot is a geometric guess that has never been
   // stood on (the safe-spot book covers 29 rooms the fleet FIGHTS in, and none of the ones
   // it walks through), and at the resting cap of 80 vigor a 15-point top-up costs 87
-  // seconds — as long as an entire p90 journey.
+  // seconds -- as long as an entire p90 journey.
   //
   // RANDOMISED PER JOURNEY, NOT PER CHARACTER. The characters differ by max health, by
   // hunting ground and by strategy, and with twenty-one of them a split by character would
@@ -3793,13 +3793,13 @@ export class Autopilot {
   // rather than by reading.
   //
   // FNV-1a finishes with `h = h * 16777619`. That constant is ODD, and the low bit of a
-  // product with an odd number is the low bit of the other operand — so the final low bit
+  // product with an odd number is the low bit of the other operand -- so the final low bit
   // is just (running hash) XOR (last character), and nothing else in the seed reaches it.
   // Measured: seeds differing only in their last character alternated arms exactly with
   // that character's parity, and forty seeds from one character all landed in one arm.
   //
   // In production the seed ends in a millisecond timestamp, so the split would have looked
-  // fine — 50/50, because `Date.now() % 2` is a decent coin. That is what makes it
+  // fine -- 50/50, because `Date.now() % 2` is a decent coin. That is what makes it
   // dangerous: the experiment would have been randomising on one bit of the clock, the
   // character and pass number would have contributed NOTHING, and any later change to the
   // seed's tail could have frozen every journey into a single arm without the split
@@ -3817,7 +3817,7 @@ export class Autopilot {
   }
 
   // Is this a moment where a hold is even the question? Cheap, and asked at every hop
-  // boundary in BOTH arms — the control has to log the counterfactual or the comparison is
+  // boundary in BOTH arms -- the control has to log the counterfactual or the comparison is
   // between "journeys where we held" and "all journeys", which is not a comparison.
   travelHoldCandidate(at) {
     const c = this.s.client;
@@ -3826,7 +3826,7 @@ export class Autopilot {
     if (!hp?.max) return { candidate: false, why: 'health unreadable' };
     const frac = hp.value / hp.max;
     const below = this.policy.travelHoldBelow ?? 0.75;
-    // ARRIVING HURT IS FINE — the destination is somebody's decision and there is usually
+    // ARRIVING HURT IS FINE -- the destination is somebody's decision and there is usually
     // a reason to be there. Only the rooms in the MIDDLE are ours to stop in.
     if (!(at.remaining > 0)) return { candidate: false, why: 'last room of the journey' };
     if (frac >= below) return { candidate: false, why: `healthy enough (${Math.round(frac * 100)}%)`, frac };
@@ -3836,12 +3836,12 @@ export class Autopilot {
     // nothing and pays full price in exposure.
     const minVigor = this.policy.travelHoldVigor ?? 100;
     if (vig != null && vig < minVigor)
-      return { candidate: false, why: `vigor ${vig} — too tired for the points to come`, frac, vigor: vig };
+      return { candidate: false, why: `vigor ${vig} -- too tired for the points to come`, frac, vigor: vig };
     // Something already swinging at us is a fight or a flight, and the ordinary pass
     // decides both far better than a hold does.
     const inReach = this.inReachOfUs();
     if (inReach.length)
-      return { candidate: false, why: `${inReach.length} already in reach — this is a fight, not a pause`, frac };
+      return { candidate: false, why: `${inReach.length} already in reach -- this is a fight, not a pause`, frac };
     return { candidate: true, frac, vigor: vig, health: hp.value, max: hp.max };
   }
 
@@ -3864,7 +3864,7 @@ export class Autopilot {
         // a square the book has already discredited is never offered to travel either.
         //
         // Writing back happens too, through the ordinary hold machinery, and a square that
-        // fails under a travel hold is discredited PERMANENTLY — a blow that got through is
+        // fails under a travel hold is discredited PERMANENTLY -- a blow that got through is
         // a bad square however we came to be standing on it, and being wrong about a bad
         // square costs a character while being wrong about a good one costs a walk to the
         // next corner. The verdict is tagged `failed_by.travel` so the travel-only
@@ -3883,10 +3883,10 @@ export class Autopilot {
     // THE CONTROL ARM STOPS HERE, having written down exactly what the other arm would
     // have done. That record is the whole comparison.
     if (arm === 'walk' || mode === 'observe' || !spot) {
-      this.ledgerEvent('travel_pause', { ...base, did: spot ? 'walked on' : 'walked on — no spot here',
+      this.ledgerEvent('travel_pause', { ...base, did: spot ? 'walked on' : 'walked on -- no spot here',
         why: !spot ? 'nothing in this room scored as a wall'
            : mode === 'observe' ? 'observing only'
-           : 'control arm — walked on to measure against holding' });
+           : 'control arm -- walked on to measure against holding' });
       return;
     }
 
@@ -3894,7 +3894,7 @@ export class Autopilot {
     const budget = this.policy.travelHoldBudgetMs ?? 180_000;
     this.travelHeldMs ??= 0;
     if (this.travelHeldMs >= budget) {
-      this.ledgerEvent('travel_pause', { ...base, did: 'walked on — out of holding budget',
+      this.ledgerEvent('travel_pause', { ...base, did: 'walked on -- out of holding budget',
         held_so_far_ms: this.travelHeldMs,
         why: 'a journey that keeps stopping is a journey that never arrives' });
       return;
@@ -3989,7 +3989,7 @@ export class Autopilot {
       // 'setting off' and 'arrived' bracket the whole thing, which tells you when the
       // blindness started and nothing about what happened inside it. Camilla's last frame
       // read `why: "setting off"` 17.8 seconds before she died. The watchdog fixed the
-      // record's cadence — a frame at least every 8s — but a timer frame says only what
+      // record's cadence -- a frame at least every 8s -- but a timer frame says only what
       // the vitals were; it cannot say which room the character was in, because the pass
       // is the only thing that knows where it has got to.
       //
@@ -3997,7 +3997,7 @@ export class Autopilot {
       // watchdog's clock and the journey's geography.
       // PUBLISHED ON THE KEEPER FOR AS LONG AS THE JOURNEY LASTS, so that a death can be
       // attributed to the arm that was running when it happened. Deaths are the outcome
-      // this experiment is measured on and they are rare — one per 1,180 journeys — so an
+      // this experiment is measured on and they are rare -- one per 1,180 journeys -- so an
       // unattributable death is a real loss of power, not a rounding error.
       // Zoning is not part of the travel-safety experiment. There is no intermediate
       // room in which its treatment can fire, and including it only inflates the
@@ -4015,7 +4015,7 @@ export class Autopilot {
             map = { room: at.room?.num ?? null, name: at.room?.name ?? null,
               started_at: Date.now(), damage_at_start: this.hitDamageTotal(), health_start: hp };
           }
-          this.recordFrame(`travelling — ${at.hops_done + 1} room(s) in, ${at.remaining} to go`);
+          this.recordFrame(`travelling -- ${at.hops_done + 1} room(s) in, ${at.remaining} to go`);
           await this.travelHold(at, arm).catch(e => this.note('travel hold failed', { why: e.message }));
           if (opts?.onHop) await opts.onHop(at);
         },
@@ -4025,11 +4025,11 @@ export class Autopilot {
       if (detailed) closeMap();
       this.recordFrame('arrived');
       const v1 = this.s.client?.vitals?.()?.health;
-      // ONE ROW PER JOURNEY — the denominator. Deaths per journey is the measurement, and
+      // ONE ROW PER JOURNEY -- the denominator. Deaths per journey is the measurement, and
       // without the journeys written down there is nothing to divide by.
       //
       // Damage is recorded too and is NOT the outcome. The hypothesis players state is
-      // that fighting from a wall means you take MORE damage and die LESS — so a fix that
+      // that fighting from a wall means you take MORE damage and die LESS -- so a fix that
       // works is expected to look worse on damage, and judging it on damage would reject
       // exactly the intervention worth having. It is here as a mechanism check: if the
       // treatment arm is not taking more damage, the holds are not doing anything.
@@ -4038,7 +4038,7 @@ export class Autopilot {
         ms: Date.now() - startedAt,
         held_ms: this.travelHeldMs ?? 0,
         hp_start: hpStart, hp_end: v1?.value ?? null, hp_max: hpMax ?? v1?.max ?? null,
-        // Whether this journey ended in a death is not knowable here — the keeper is still
+        // Whether this journey ended in a death is not knowable here -- the keeper is still
         // alive to write this line. It is joined afterwards, from the postmortem's own
         // `travel_arm`, which is why that field exists.
       });
@@ -4061,7 +4061,7 @@ export class Autopilot {
   // WHAT IS ACTUALLY IN REACH OF US RIGHT NOW.
   //
   // NOT FLEETMATES. Without the player filter this chose a fleetmate 131 times out of
-  // 132 — the characters stand next to each other by design, on walls and in inns, and
+  // 132 -- the characters stand next to each other by design, on walls and in inns, and
   // every one of them is ATTACKABLE. They cannot hurt each other while their guardian
   // angels hold, so it never showed as damage; it showed as twenty-five characters busy
   // all night and three kills between them.
@@ -4070,8 +4070,8 @@ export class Autopilot {
   // tests: SquaredDistanceTo <= GetAttackRange^2 (nomoveon.kod:121). Up to 28 squares can
   // hit you, not the 8 that touch you.
   //
-  // Extracted because two branches ask this question — the retaliation path and the
-  // no-wall-nowhere-to-go dead end — and a copy that drifts would mean one of them
+  // Extracted because two branches ask this question -- the retaliation path and the
+  // no-wall-nowhere-to-go dead end -- and a copy that drifts would mean one of them
   // quietly disagreeing with the other about whether the character is under attack.
   inReachOfUs() {
     const c = this.s.client, me = c?.self;
@@ -4084,7 +4084,7 @@ export class Autopilot {
   // ------------------------------------------------------- the moments we ask about
   //
   // THREE PLACES WHERE THE KEEPER HAS NO OPINION AND SHOULD NOT INVENT ONE. Each asks a
-  // PLAYBOOK the fleet's director wrote in advance — `m59-playbook.mjs`, read from disk
+  // PLAYBOOK the fleet's director wrote in advance -- `m59-playbook.mjs`, read from disk
   // and cached on mtime, consulted with a synchronous function call and no network.
   //
   // The lookup is deliberately not a request. The first of the three is a player
@@ -4095,7 +4095,7 @@ export class Autopilot {
   //
   // NOTHING DECLARED MEANS THE BEHAVIOUR THAT WAS ALREADY THERE. `decide` returns null
   // and every one of these returns without acting, which for an attack means the ordinary
-  // survival ladder — flee when losing, rest when hurt and safe. There is no verb for
+  // survival ladder -- flee when losing, rest when hurt and safe. There is no verb for
   // standing still and there must not be one.
 
   /**
@@ -4105,7 +4105,7 @@ export class Autopilot {
    * the retaliation branch chose a FLEETMATE 131 times out of a sample, and a fleet that
    * hits back at players on a shared server is a different kind of project. But the
    * filter meant a stranger standing over a character was not merely unanswered, it was
-   * unobserved — the keeper read the damage as coming from the room and applied the same
+   * unobserved -- the keeper read the damage as coming from the room and applied the same
    * ladder it applies to a giant rat.
    *
    * A monster and a player are not the same problem. A monster does not follow you to
@@ -4114,7 +4114,7 @@ export class Autopilot {
    * THE EVIDENCE IS TWO FACTS TOGETHER, because either alone is ordinary. A stranger
    * standing near us is a Tuesday on `prod`; losing health next to one is not. So this
    * fires on an attackable non-fleetmate player within reach AND health that has gone
-   * down since the last look — and it is deliberately cheap enough to ask every pass.
+   * down since the last look -- and it is deliberately cheap enough to ask every pass.
    */
   async checkAttackedByPlayer() {
     const c = this.s?.client, me = c?.self;
@@ -4129,7 +4129,7 @@ export class Autopilot {
       o.id !== c.selfId && (o.flags & OF.PLAYER) && (o.flags & OF.ATTACKABLE) &&
       Math.hypot(o.col - me.col, o.row - me.row) <= REACH &&
       // A FLEETMATE IS NOT AN ATTACKER. `party.knownCharacters()` is every character
-      // whose keeper has reported this run — and a keeper that has not had a pass yet is
+      // whose keeper has reported this run -- and a keeper that has not had a pass yet is
       // ABSENT from it, so this can call one of ours a stranger for a few seconds after a
       // restart. That is why the playbook's answers are withdraw-and-wait rather than
       // anything that hits back: being wrong here must cost a walk, not a fight.
@@ -4142,7 +4142,7 @@ export class Autopilot {
       health_pct: pct(hp), room: this.s.world?.room?.num ?? null,
       attackers: strangers.length,
       // `this.hold` is the square we have claimed; `proven` is whether it has been stood
-      // in and held. A playbook that wants the difference asks holdWorks() — this is the
+      // in and held. A playbook that wants the difference asks holdWorks() -- this is the
       // weaker "we are on a wall at all", which is the one that matters against a player,
       // because a wall proven against monsters is no wall at all against somebody who can
       // walk round it.
@@ -4151,16 +4151,16 @@ export class Autopilot {
     const action = playbook.decide('attacked_by_player', pb, facts);
     // RECORDED WHETHER OR NOT ANYTHING WAS DECLARED. A fleet being picked on by one
     // player, with nobody having written a playbook, is exactly the thing that should be
-    // visible afterwards — and with no note it looks like a run of bad luck with monsters.
+    // visible afterwards -- and with no note it looks like a run of bad luck with monsters.
     this.note('a player is attacking us', {
       ...facts, lost: before - now,
       declared: action ? `${action.verb}` : null,
       why: action ? action.why
-                  : 'no playbook covers this, so the ordinary survival ladder applies — ' +
+                  : 'no playbook covers this, so the ordinary survival ladder applies -- ' +
                     'which treats this exactly as it treats a giant rat',
     });
     // Auto-add attacker to intel target list and declare a conflict.
-    // Fleet members are excluded — two keepers sharing a room fight the same monster
+    // Fleet members are excluded -- two keepers sharing a room fight the same monster
     // and one registers as attacking the other. knownFleetNames() reads fleet-state.json.
     if (facts.who && !knownFleetNames().has(facts.who)) {
       addTarget(facts.who, {
@@ -4174,7 +4174,7 @@ export class Autopilot {
   }
 
   /**
-   * EXECUTE ONE PLAYBOOK VERB. The closed set from m59-playbook.mjs and nothing else —
+   * EXECUTE ONE PLAYBOOK VERB. The closed set from m59-playbook.mjs and nothing else --
    * a bot may not hand the keeper an arbitrary act, which is the whole reason the verbs
    * are a vocabulary rather than a tool call.
    *
@@ -4204,12 +4204,12 @@ export class Autopilot {
         case 'logoff': {
           // THE ANSWER TO A GRIEFER, AND THE HALF THAT MATTERS IS THE WAITING. Logging
           // off and straight back on hands the character back to whoever was hitting it.
-          // So the stay-off window is published for the broker's rejoin sweep to honour —
+          // So the stay-off window is published for the broker's rejoin sweep to honour --
           // otherwise the sweep, which exists to put back characters that fall out, would
           // put this one back in forty-five seconds and read the next drop as contention.
           const s = Number(action.args.stay_off_s) || 0;
           this.stayOffUntil = Date.now() + s * 1000;
-          this.goInert(`playbook: ${trigger} — staying off for ${s}s`, { maxMs: (s + 60) * 1000 });
+          this.goInert(`playbook: ${trigger} -- staying off for ${s}s`, { maxMs: (s + 60) * 1000 });
           const out = await this.breakOut(`playbook: ${trigger}`).catch(e => ({ did: false, why: e.message }));
           return done(out?.did ? `logged off for ${s}s` : `could not log off (${out?.why ?? 'refused'})`,
                       { stay_off_s: s, until: this.stayOffUntil });
@@ -4219,11 +4219,11 @@ export class Autopilot {
         case 'tell': {
           // A LITERAL SOMEBODY CHOSE, SENT VERBATIM. `prod` has real players on it and
           // anything said is attributable to whoever owns the account, so the text comes
-          // out of the playbook exactly as written — never assembled here, and never from
+          // out of the playbook exactly as written -- never assembled here, and never from
           // anything the world said back to us. m59-playbook.mjs refuses a message that
           // looks like a template for this reason.
           const text = String(action.args.message ?? '');
-          if (!text) return done('nothing — no message was written');
+          if (!text) return done('nothing -- no message was written');
           const c = this.s.client;
           if (action.verb === 'say') await this.s.pacer.submit('say', () => c.say(text));
           else {
@@ -4259,10 +4259,75 @@ export class Autopilot {
                       { waited_s: waitS, answered });
         }
 
+        case 'fight_back': {
+          // ONE-SHOT FIGHT AGAINST THE NAMED ATTACKER. facts.who is the player name the
+          // attacked_by_player trigger observed in the room (already filtered to be
+          // attackable, non-fleetmate and within REACH). The fight() call below
+          // resolves that name once, passes the object id through as exactTargetId
+          // so a stale re-read of the room cannot drift onto a different player, and
+          // sets includePlayers:true so the ordinary creature-only filter lets it
+          // through. The OF.PLAYER filter in inReachOfUs() STAYS -- it is the everyday
+          // bystander check and was wrong to relax; fight_back is an explicit answer
+          // to a specific trigger, not an opening for the retaliation branch.
+          const target = String(facts?.who ?? '').trim();
+          if (!target) return done('nothing -- no attacker name was on the facts');
+          const c = this.s.client;
+          const safe = this.safety();
+          const obj = [...(c.room?.objects?.values?.() ?? [])]
+            .find(o => o.id !== c.selfId && (o.flags & OF.PLAYER) &&
+                       (o.flags & OF.ATTACKABLE) &&
+                       (c.rsc.get(o.nameRsc) || '') === target);
+          if (!obj) return done(`nothing -- "${target}" is no longer in reach`);
+          this.note('fighting back', {
+            target, id: obj.id, room: this.s.world?.room?.num ?? null,
+            why: 'playbook answered the attacked_by_player trigger with fight_back',
+          });
+          const f = await skills.fight(this.s, {
+            target,
+            exactTargetId: obj.id,
+            includePlayers: true,
+            rounds: this.policy.fightRounds ?? 30,
+            disengageAt: safe.fleeAt,
+            loot: false,
+            holdPosition: !!this.hold,
+            reach: REACH,
+            weaponPriority: this.weaponPriorityNow(),
+          }).catch(e => ({ killed: false, died: false, note: e.message }));
+          if (f.killed) {
+            clearConflict(target);
+            this.note('killed attacker', { target });
+            this.progress('killed the attacker');
+          } else if (f.died) {
+            clearConflict(target);
+            this.noProgress('died fighting back');
+          } else {
+            this.note('broke off', { target, why: f.note });
+          }
+          return done(f.killed ? `killed ${target}` : `fought ${target}`, { target });
+        }
+
+        case 'fleet_alert': {
+          // PUBLISH THE CONFLICT SO OTHERS COME. The broker keeps an activeConflicts
+          // table (m59-intel.mjs) and the keeper's own respondToConflict already
+          // travels to a reported conflict when it is healthy and within hops. The
+          // verb only needs to DECLARE the row -- the converging machinery exists and
+          // will pick it up next pass.
+          const target = String(facts?.who ?? '').trim();
+          const room   = facts?.room ?? this.s.world?.room?.num ?? null;
+          if (!target) return done('nothing -- no attacker name was on the facts');
+          const myName = this.s?.name ?? this.who();
+          declareConflict(myName, target, room);
+          this.note('fleet_alert', {
+            target, room, reporter: myName,
+            why: `playbook declared this character is under attack by ${target} in room ${room}`,
+          });
+          return done(`signalled the fleet: ${target} in ${room}`, { target, room });
+        }
+
         default:
           // Unreachable through `decide`, which skips verbs it does not know. Here for
           // the day somebody calls this directly.
-          return done(`nothing — "${action.verb}" is not a verb this keeper executes`);
+          return done(`nothing -- "${action.verb}" is not a verb this keeper executes`);
       }
     } catch (e) {
       return done(`failed: ${e.message}`);
@@ -4270,7 +4335,7 @@ export class Autopilot {
   }
 
   /**
-   * ASK THE PLAYBOOK ABOUT WHATEVER JUST HAPPENED — one call, from one place in the pass.
+   * ASK THE PLAYBOOK ABOUT WHATEVER JUST HAPPENED -- one call, from one place in the pass.
    *
    * The two queued triggers fire here rather than where they are detected, and for the
    * same reason in both cases: the moment of detection is the wrong moment to act. A
@@ -4292,7 +4357,7 @@ export class Autopilot {
    * Gated on health for the same reason as the monster fight gate: a hurt character
    * retreats rather than trading blows. A character assigned to another keeper does
    * not engage (assigned_to check). A target whose object-id has changed since the
-   * sighting is found by name match — exactTargetId is preferred when available.
+   * sighting is found by name match -- exactTargetId is preferred when available.
    */
   async engagePlayerTarget() {
     const c = this.s.client;
@@ -4300,7 +4365,7 @@ export class Autopilot {
     const v = c.vitals?.();
     const hp = pct(v?.health);
     const safe = this.safety();
-    if (hp !== null && hp < safe.engageAt) return false;  // too hurt — retreat first
+    if (hp !== null && hp < safe.engageAt) return false;  // too hurt -- retreat first
 
     const myName = c.me?.name ?? this.s?.name ?? this.who();
     const tList = targetsFor(myName);
@@ -4330,7 +4395,7 @@ export class Autopilot {
         includePlayers: true,
         rounds: this.policy.fightRounds ?? 30,
         disengageAt: safe.fleeAt,
-        loot: false,           // do not loot a player — they keep their inventory
+        loot: false,           // do not loot a player -- they keep their inventory
         holdPosition: !!this.hold,
         reach: REACH,
         weaponPriority: this.weaponPriorityNow(),
@@ -4402,7 +4467,7 @@ export class Autopilot {
     if (!candidates.length) return false;
 
     for (const cf of candidates) {
-      // Hop limit check — skip if a limit is set and we can't measure distance.
+      // Hop limit check -- skip if a limit is set and we can't measure distance.
       if (maxHops > 0) {
         const path = findPath(myRoom, cf.room, { maxHops });
         if (!path || path.length > maxHops) continue;
@@ -4410,7 +4475,7 @@ export class Autopilot {
 
       this.note('converging on conflict', {
         target: cf.target, conflict_room: cf.room, reporter: cf.reporter,
-        why: `${cf.reporter} is fighting ${cf.target} — travelling to assist`,
+        why: `${cf.reporter} is fighting ${cf.target} -- travelling to assist`,
         max_hops: maxHops || 'unlimited',
       });
       this.doing = 'converging';
@@ -4425,7 +4490,7 @@ export class Autopilot {
         return false;
       }
 
-      // Now in the room — engagePlayerTarget will fire on the next pass if the target is
+      // Now in the room -- engagePlayerTarget will fire on the next pass if the target is
       // still here. Return true so the caller does not also start farming this pass.
       this.progress('arrived at conflict room');
       return true;
@@ -4433,11 +4498,11 @@ export class Autopilot {
     return false;
   }
 
-  // LEVEL-TRIGGERED ROUTING — fires once per gain, immediately after the playbook sees it.
+  // LEVEL-TRIGGERED ROUTING -- fires once per gain, immediately after the playbook sees it.
   //
   // A playbook can say `logoff` or `say` at this moment; this runs after it so the two
   // are independent. The route only applies when the new level EXACTLY matches `at_level`
-  // — not ">= at_level", because the same route would then re-fire on every subsequent
+  // -- not ">= at_level", because the same route would then re-fire on every subsequent
   // gain and reset a manually re-assigned room. One threshold, one trigger.
   applyLevelRoute(facts) {
     const routes = this.policy.levelRoutes;
@@ -4459,7 +4524,7 @@ export class Autopilot {
     }
     if (!Object.keys(changes).length) return;
 
-    // A fresh start for the new hunting ground — old unreachable entries from the
+    // A fresh start for the new hunting ground -- old unreachable entries from the
     // previous area do not apply to the new one.
     this.unreachable.clear();
 
@@ -4467,7 +4532,7 @@ export class Autopilot {
       level,
       was: { hunt: facts.hunting, assigned_room: null },
       now: changes,
-      hint: 'policy.levelRoutes fired on this level gain — the keeper will relocate on the next pass',
+      hint: 'policy.levelRoutes fired on this level gain -- the keeper will relocate on the next pass',
     });
   }
 
@@ -4507,7 +4572,7 @@ export class Autopilot {
       .find(o => (c.rsc.get(o.nameRsc) || '').toLowerCase() === want) ?? null;
   }
 
-  // IS THIS THING TOO DANGEROUS TO SWING AT — asked of ONE creature, by name.
+  // IS THIS THING TOO DANGEROUS TO SWING AT -- asked of ONE creature, by name.
   //
   // capBlockers answers this for a whole room and only when the room is at cap, so the
   // judgement it makes was unreachable from anywhere else. That gap is what killed
@@ -4527,7 +4592,7 @@ export class Autopilot {
   // THE ONE HOME OF THE ENGAGEMENT CEILING.
   //
   // It had four, all spelling the same expression, which is how this repository has always
-  // ended up with two answers to one quantity — and this is the quantity that decides what
+  // ended up with two answers to one quantity -- and this is the quantity that decides what
   // a character is allowed to be hit by, so a fifth copy drifting is a character dying.
   //
   // MAX HEALTH IS THE LEVEL here (101 + stamina caps it, and the game treats max health as
@@ -4556,14 +4621,14 @@ export class Autopilot {
     const lvl = info?.level ?? null, rating = info?.attack_rating ?? null;
     if (!info)
       return { name, level: null, rating: null,
-               why: 'nothing is known about it — the spawn table has no row for this name, and ' +
+               why: 'nothing is known about it -- the spawn table has no row for this name, and ' +
                     'an unrecognised creature is refused rather than assumed harmless' };
 
     // GENTLE BY RATING IS FAIR GAME WHATEVER ITS LEVEL, and this is deliberately NOT the
     // same test capBlockers makes.
     //
-    // capBlockers falls through to a level-only refusal, which reads a fungus beast —
-    // level 50, difficulty 1, attack rating 210 — as more dangerous than a centipede at
+    // capBlockers falls through to a level-only refusal, which reads a fungus beast --
+    // level 50, difficulty 1, attack rating 210 -- as more dangerous than a centipede at
     // level 30 and rating 390. CLAUDE.md is explicit that this is backwards: level is
     // what a blow costs, difficulty is how often one lands, and the level-50 creature is
     // the SAFER fight. There it is survivable, because a refusal only means "do not go
@@ -4589,8 +4654,8 @@ export class Autopilot {
   // WHAT WAS HAPPENING WHEN IT DIED, written down while it is still true.
   //
   // `lastDeath` already said where and to what. It could not say WHY, because the two
-  // things that answer why were never joined to it: the text the server sent — which is
-  // where "you are hit for 11 damage" and "your sword shatters into pieces" live — and
+  // things that answer why were never joined to it: the text the server sent -- which is
+  // where "you are hit for 11 damage" and "your sword shatters into pieces" live -- and
   // the keeper's own decisions, which is where "gave up the safe spot" lives. Both were
   // being kept, in separate buffers, and neither survived the process.
   //
@@ -4598,7 +4663,7 @@ export class Autopilot {
   // the keeper already keeps 200 journal entries; this is a join and a file.
 
   // The last N lines of text the server actually sent us, newest last. `said` is speech,
-  // `message` is everything else — combat, refusals, the weapon breaking.
+  // `message` is everything else -- combat, refusals, the weapon breaking.
   recentText(limit = 30) {
     const evs = this.s.client?.events || [];
     const out = [];
@@ -4622,10 +4687,10 @@ export class Autopilot {
     return +(((f[f.length - 1].health - f[0].health) / dt).toFixed(2));
   }
 
-  // The whole record, as one object. Written on death, and readable any time — calling
+  // The whole record, as one object. Written on death, and readable any time -- calling
   // it while alive is how you check the recorder works without killing anything.
   // Listen for our own death broadcast. Bounded and short: it normally lands within a
-  // second, and everything after this point — the Underworld, the walk back — destroys
+  // second, and everything after this point -- the Underworld, the walk back -- destroys
   // the evidence, so waiting long is worse than missing it.
   //
   // Matched on OUR name. A fleet of twenty-one dies often enough that "the most recent
@@ -4639,8 +4704,8 @@ export class Autopilot {
     // TIGHT FIRST, THEN THE WHOLE BUFFER.
     //
     // The windowed search is the precise answer when the death was noticed promptly, and
-    // it is worth keeping for the `dt` it reports. But noticing is the slow part — death
-    // is inferred from the Underworld on a LATER pass — so when the keeper is a journey
+    // it is worth keeping for the `dt` it reports. But noticing is the slow part -- death
+    // is inferred from the Underworld on a LATER pass -- so when the keeper is a journey
     // behind, the broadcast scrolled past the window before anything looked for it, and
     // the record lost the killer in exactly the cases where it is hardest to reconstruct
     // by hand. That was 69% of attended deaths: the line was sitting in `text` the whole
@@ -4659,7 +4724,7 @@ export class Autopilot {
   postMortem(reason = 'died') {
     const frames = (this.recent5 || []).filter(f => !/underworld/i.test(f.room || ''));
     const last = frames[frames.length - 1] || null;
-    // Rank frames on the true count, not the capped name list — otherwise every frame
+    // Rank frames on the true count, not the capped name list -- otherwise every frame
     // with 6-or-more ties at 6 and "the worst moment" is just the first one that
     // saturated the cap. Falls back to the list length for records written before
     // threat_count existed.
@@ -4693,8 +4758,8 @@ export class Autopilot {
         // Prefer the real count; fall back to the capped list length for frames written
         // before threat_count existed, and say which it is so a mixed record is readable.
         most_at_once: worst?.threat_count ?? worst?.threats?.length ?? 0,
-        most_at_once_is: worst?.threat_count != null ? 'a true count' : 'capped at 6 — old record',
-        // Who else was standing there. Not a threat — these are ours — but it answers
+        most_at_once_is: worst?.threat_count != null ? 'a true count' : 'capped at 6 -- old record',
+        // Who else was standing there. Not a threat -- these are ours -- but it answers
         // "was anyone with it", which is the second question after "what killed it".
         players_present: last?.players_present ?? [],
       },
@@ -4706,8 +4771,8 @@ export class Autopilot {
       //
       // Frames are one per pass and a pass can be a multi-minute travel await, so the
       // record of a travelling death is a before and an after with the death in the gap.
-      // These come off the event stream instead — health is pushed, one packet per change
-      // — so they keep arriving through exactly that gap, and through an errand holding
+      // These come off the event stream instead -- health is pushed, one packet per change
+      // -- so they keep arriving through exactly that gap, and through an errand holding
       // the keeper inert. The last twenty segments are about the last few minutes of
       // trouble, which is longer than any fight that kills one of these characters.
       //
@@ -4717,9 +4782,9 @@ export class Autopilot {
       hits: (this.s.hits?.segments || []).slice(-20),
       note: 'frames are one keeper pass each, oldest first. `text` is what the server ' +
             'sent, `decisions` is what the keeper chose, `hits` is where damage landed ' +
-            'and comes off the event stream rather than the keeper — so it is the only ' +
+            'and comes off the event stream rather than the keeper -- so it is the only ' +
             'one of the four that keeps recording during a travel or an errand. Read ' +
-            'them side by side against the timestamps — the interesting moment is ' +
+            'them side by side against the timestamps -- the interesting moment is ' +
             'usually where they disagree.',
     };
   }
@@ -4762,7 +4827,7 @@ export class Autopilot {
     return { ...p, remaining_ms: remaining, ready: remaining === 0 };
   }
 
-  // THE SPOT NOTHING CAN ACTUALLY REACH — the cliff.
+  // THE SPOT NOTHING CAN ACTUALLY REACH -- the cliff.
   //
   // A whole band of the fleet stood on the clifftop above West Merchant Way, taking a
   // swing at things below, walking back to the wall, and waiting for a fight that could
@@ -4772,8 +4837,8 @@ export class Autopilot {
   // neither, for hours.
   //
   // Nothing caught it, and the reason is precise. barrenSpots is written when pull()
-  // FAILS. Here pull() SUCCEEDED every time — it reached the monster, hit it, and walked
-  // back, which is exactly what it claims to do — so `progress('pulled something to the
+  // FAILS. Here pull() SUCCEEDED every time -- it reached the monster, hit it, and walked
+  // back, which is exactly what it claims to do -- so `progress('pulled something to the
   // wall')` fired every pass and cleared the stall counter. The keeper was busy, honest,
   // and completely stuck, and its own health check said so.
   //
@@ -4800,11 +4865,11 @@ export class Autopilot {
     }
     // NOT recorded in the SafeSpotBook, deliberately. The book's `failed` means "we were
     // hit standing here" and feeds `discredited`, which is a SAFETY judgement. A cliff
-    // square is perfectly safe — it is useless, which is the opposite problem — and
+    // square is perfectly safe -- it is useless, which is the opposite problem -- and
     // filing it under failed would teach the book a lie to get one convenient effect.
     // The cost is that this knowledge is per-process and a restart re-learns it, four
     // fully-waited pulls at a time. Worth fixing with a second book, not with a wrong flag.
-    this.note('SPOT UNUSABLE — nothing can reach it', {
+    this.note('SPOT UNUSABLE -- nothing can reach it', {
       at: this.hold ? { col: this.hold.col, row: this.hold.row } : null,
       room: room?.num, attempts: this.pullsWithoutContact,
       why: 'every pull reached the target and none of them ever produced a fight. The ' +
@@ -4837,7 +4902,7 @@ export class Autopilot {
     const set = this.barrenSpots.get(spot.room) ?? new Set();
     set.add(`${spot.col},${spot.row}`);
     this.barrenSpots.set(spot.room, set);
-    this.note('SPOT UNUSABLE — could not complete a pull from it', {
+    this.note('SPOT UNUSABLE -- could not complete a pull from it', {
       at: { col: spot.col, row: spot.row }, room: spot.room, attempts: attempt, why,
       note: 'excluded only after repeated failed approaches; one refused walk is transient' });
     return { retired: true, attempt, limit };
@@ -4858,15 +4923,15 @@ export class Autopilot {
   // They are different failures and they need different words, because the second one
   // wears the first one's healthy face.
   //
-  // Returns null when it cannot know — no purpose set, no spawn index, prey not in the
+  // Returns null when it cannot know -- no purpose set, no spawn index, prey not in the
   // index, vitals not read yet. Null means "no opinion", never "fine".
   yieldCheck() {
     const { purpose, goals, hunt } = this.policy;
     if (!purpose || !hunt) return null;
     // AN UNRECOGNISED PURPOSE IS REPORTED, NOT IGNORED.
     //
-    // This read `if (purpose !== 'advance') return null`, so every other value — a typo, a
-    // purpose added later, or `equip` before it existed — silently turned the check OFF
+    // This read `if (purpose !== 'advance') return null`, so every other value -- a typo, a
+    // purpose added later, or `equip` before it existed -- silently turned the check OFF
     // and rendered as an ordinary healthy row. That is the exact failure this function was
     // written to catch, reachable by misspelling one word.
     if (!YIELD_PURPOSES.includes(purpose))
@@ -4874,7 +4939,7 @@ export class Autopilot {
                why: `\`${purpose}\` is not a purpose this keeper knows how to check ` +
                     `(${YIELD_PURPOSES.join(', ')}), so nothing is being measured`,
                hint: 'a purpose nobody recognises must not read the same as a purpose ' +
-                     'being served — fix the spelling or clear policy.purpose' };
+                     'being served -- fix the spelling or clear policy.purpose' };
 
     const spawns = loadSpawns(SPAWN_FILE);
     if (!spawns) return null;
@@ -4882,17 +4947,17 @@ export class Autopilot {
     // USUALLY DID.
     //
     // This was one `.find` on `name.includes(needle)`, so `hunt: "skeleton"` returned
-    // whichever qualifying creature came first in the map — **battered skeleton**, level
-    // 60 — rather than the skeleton, level 75. Observed live: the Castle fleet was
+    // whichever qualifying creature came first in the map -- **battered skeleton**, level
+    // 60 -- rather than the skeleton, level 75. Observed live: the Castle fleet was
     // retargeted from the battered skeleton it had outgrown onto the full one, arrived in
-    // room 38, and every row rendered `hunting: skeleton — PAYS NOTHING for advance`
+    // room 38, and every row rendered `hunting: skeleton -- PAYS NOTHING for advance`
     // while the kills it was making paid perfectly well. The audit was judging a creature
     // the character was not fighting, and the one it picked is the weakest of the four
-    // that match — so the error is always in the direction of understating the prey.
+    // that match -- so the error is always in the direction of understating the prey.
     //
     // THE SUBSTRING FALLBACK STAYS, because it is load-bearing elsewhere: all three
     // faction troops are `... soldier`, and one substring is what catches them as a
-    // family. So this is exact name, then exact class, then the old behaviour — a
+    // family. So this is exact name, then exact class, then the old behaviour -- a
     // deliberately loose name keeps working and a precise one stops being approximated.
     const needle = String(hunt).toLowerCase();
     const all = Object.values(spawns.creatures);
@@ -4904,7 +4969,7 @@ export class Autopilot {
     // FARMING TO CLOSE THE GEAR GAP IS A REAL JOB, AND IT OUTLIVES ADVANCEMENT.
     //
     // Ten characters here are at max health 50, and a level-50 fungus beast cannot advance
-    // any of them — the rule is strictly greater. That does not make their day worthless:
+    // any of them -- the rule is strictly greater. That does not make their day worthless:
     // they are out for gear and coin. `equip` is how a keeper says so, and it is checked
     // rather than merely declared, because "farming for kit" is otherwise an excuse that
     // can never be wrong. See equipYield in m59-loadout.mjs.
@@ -4912,7 +4977,7 @@ export class Autopilot {
 
     if (!goals?.length)
       return { paying: false, why: 'purpose is `advance` but no goals are set, so nothing ' +
-                                   'can be checked — set policy.goals or clear policy.purpose' };
+                                   'can be checked -- set policy.goals or clear policy.purpose' };
     const maxHealth = this.s.client?.vitals?.()?.health?.max ?? 0;
     if (!maxHealth) return null;
     // Stamina only moves the hit-point CEILING. Unknown is reported as unknown rather
@@ -4930,14 +4995,14 @@ export class Autopilot {
     if (!trustworthy.length) return null;
     return {
       paying: false, creature: c.name, level: c.level,
-      why: trustworthy.map(y => `${y.goal} — ${y.why}`),
+      why: trustworthy.map(y => `${y.goal} -- ${y.why}`),
       hint: 'this keeper is working and gaining nothing. Re-target it with the `prey` ' +
             'tool; nothing in here will re-target it for you.',
       ...(known ? {} : { caveat: 'stamina unknown, so the hit-point ceiling was not checked' }),
     };
   }
 
-  // The `equip` half of yieldCheck. Costs a stat() and some arithmetic — no request — so
+  // The `equip` half of yieldCheck. Costs a stat() and some arithmetic -- no request -- so
   // it is safe on the path that renders the board every few seconds.
   equipCheck(creature) {
     const l = this.loadout();
@@ -4963,7 +5028,7 @@ export class Autopilot {
   }
 
   // What the SERVER says is worn, in the shape reconcile() reads. The use list is the
-  // authority — see wearArmourIfNeeded — because a pack holding leather and a character
+  // authority -- see wearArmourIfNeeded -- because a pack holding leather and a character
   // fighting in its shirt look identical from the inventory alone.
   equippedNames() {
     const c = this.s.client;
@@ -4995,16 +5060,16 @@ export class Autopilot {
   // A REFUSAL IS NOT A STALL, AND SAYING SO IN PROSE MADE SOMETHING ELSE PARSE PROSE.
   //
   // A keeper that will not fight in a room with no safe wall, or that is sitting to
-  // accumulate the 15 mana `create weapon` needs, is doing exactly the right thing — and
+  // accumulate the 15 mana `create weapon` needs, is doing exactly the right thing -- and
   // from outside it is indistinguishable from a character doing nothing. The external
   // supervisor told the two apart with regular expressions over this file's own sentences:
   //
-  //     if (/no safe wall|refusing to fight/i.test(reason)) …
-  //     if (/needs \d+ to make one|resting for the mana|regain mana|unarmed —/i.test(reason)) …
+  //     if (/no safe wall|refusing to fight/i.test(reason)) ...
+  //     if (/needs \d+ to make one|resting for the mana|regain mana|unarmed --/i.test(reason)) ...
   //
   // Both exist because of recorded loops. Restarting a keeper that refused a room throws
   // away the session record of WHICH rooms it refused, so the fresh keeper walks back in,
-  // re-probes, refuses again and reports a stall again — once a minute, for ever, with
+  // re-probes, refuses again and reports a stall again -- once a minute, for ever, with
   // every log line looking like the supervisor working. Eight characters were caught in
   // that inside a minute. The mana one is the same shape: Sweetums sat at 4 of 18, Animal
   // at 11, Zoot at 13, each restarted every 90 seconds, each re-deciding rather than
@@ -5017,7 +5082,7 @@ export class Autopilot {
   // people.
   //
   // `refusals` are conditions that persist until cleared. `waitingOn` is the outward half
-  // of progress() — the difference between STUCK and DELIBERATELY WAITING, which is the
+  // of progress() -- the difference between STUCK and DELIBERATELY WAITING, which is the
   // distinction the whole supervisor problem turns on.
   refuse(code, { faculty = 'work', blocking = true, why = '', remedy = null,
                  retryAfterMs = null } = {}) {
@@ -5035,7 +5100,7 @@ export class Autopilot {
 
   clearRefusal(code) { this.refusals?.delete(code); }
 
-  // Deliberately waiting for something that arrives on its own — mana, a stomach, a
+  // Deliberately waiting for something that arrives on its own -- mana, a stomach, a
   // respawn. One at a time, because a character waits for one thing.
   waitFor(code, { expectedMs = null, why = '' } = {}) {
     this.waitingOn = { code, expected_ms: expectedMs, why, since: Date.now() };
@@ -5044,7 +5109,7 @@ export class Autopilot {
 
   // A DETAIL FIELD MUST NOT BE ABLE TO EAT THE RECORD'S OWN KEYS.
   //
-  // This was `{ at: Date.now(), pass, what, ...detail }` — spread LAST — which is the
+  // This was `{ at: Date.now(), pass, what, ...detail }` -- spread LAST -- which is the
   // same shape CLAUDE.md documents for `emit(kind, data)` and for `recordEvent`, and it
   // failed the same way. `note('hitting back', { at: engageName, ... })` overwrote the
   // timestamp with "soldier of the Princess' army", so the one journal line that
@@ -5053,7 +5118,7 @@ export class Autopilot {
   //
   // Reserved keys are therefore applied AFTER the spread, so a colliding detail field is
   // inert rather than silent. It is preserved under `detail_<key>` rather than dropped,
-  // because a caller that passed it meant something by it — see `detail_at` on the
+  // because a caller that passed it meant something by it -- see `detail_at` on the
   // retaliation note, which is the creature's name.
   note(what, detail = {}) {
     const e = { ...detail };
@@ -5096,14 +5161,14 @@ export class Autopilot {
   }
 
   // The full state as lines of prose, which is what both the tell and the in-game answer
-  // want. Everything the journal entry carries is here — the entry is spread last so a
+  // want. Everything the journal entry carries is here -- the entry is spread last so a
   // state-specific field (`considered`, `unreachable`, `spot`, `left_s`) is never lost.
   debugLines(d = this.debug) {
-    if (!d) return ['nothing flagged — I am not in one of the three states being chased.'];
+    if (!d) return ['nothing flagged -- I am not in one of the three states being chased.'];
     const at = d.col != null ? `col ${d.col}/${d.grid?.cols ?? '?'}, row ${d.row}/${d.grid?.rows ?? '?'}` : 'position unknown';
     const lines = [
       `[${d.label}] ${d.room ?? 'unknown room'} (${d.room_num ?? '?'})`,
-      `at ${d.bearing ?? 'somewhere'} — ${at}${d.on_floor === false ? ' — STANDING OFF THE FLOOR' : ''}`,
+      `at ${d.bearing ?? 'somewhere'} -- ${at}${d.on_floor === false ? ' -- STANDING OFF THE FLOOR' : ''}`,
       `doing: ${d.doing ?? '?'} | mode ${d.mode} | hunting ${d.hunting ?? 'nothing'}`,
       `hp ${d.health ?? '?'}/${d.health_max ?? '?'} | vigor ${d.vigor ?? '?'} (rest cap ${d.rest_ceiling})`,
       `monsters here: ${d.monsters ?? '?'} | holding: ${d.holding ? `${d.holding.col},${d.holding.row}` : 'no spot'}`,
@@ -5123,7 +5188,7 @@ export class Autopilot {
   //
   // The recipient is not configured and cannot be: it is whichever of the fleet's own
   // characters a desktop client is currently piloting, which the broker knows because IT
-  // spawned that client and can see the pid. No pilot means no tell — this must never
+  // spawned that client and can see the pid. No pilot means no tell -- this must never
   // pick a name and message a stranger on a shared server.
   async tellPilot(d) {
     // OFF UNLESS SOMEBODY ASKS FOR IT, AND ASKING IS PER-SESSION.
@@ -5131,8 +5196,8 @@ export class Autopilot {
     // This speaks in-game, on a live server shared with other players, from twenty-one
     // characters at once. Even rate-limited to one tell per character per condition per
     // five minutes, three conditions across twenty-one characters is a steady trickle of
-    // chatter that a person standing nearby sees, that costs mana, and that — per the
-    // note below about UserSayGroup — is an ACTION, so it wakes the room's AIs.
+    // chatter that a person standing nearby sees, that costs mana, and that -- per the
+    // note below about UserSayGroup -- is an ACTION, so it wakes the room's AIs.
     //
     // A debugging instrument should not be the fleet's default voice. It stays available
     // for the case it was built for (stand next to a character and have it explain
@@ -5159,7 +5224,7 @@ export class Autopilot {
     //
     // UserSay carries the identical guard at user.kod:4052. So speech IS an action in the
     // one state where that matters: between the reconnect and the unfreeze the flag is
-    // clear, and a single tell hands back the grace period the freeze exists to buy — on
+    // clear, and a single tell hands back the grace period the freeze exists to buy -- on
     // a character that is, by definition, too hurt to survive the room noticing it.
     //
     // The freeze report is therefore sent from playDead() BEFORE the reconnect, where the
@@ -5168,7 +5233,7 @@ export class Autopilot {
     // caller that has not been through that path, and it is refused rather than trusted.
     if (this.frozenUntil && Date.now() < this.frozenUntil) {
       tellSuppressed.set(key, (tellSuppressed.get(key) ?? 0) + 1);
-      return { sent: false, why: 'playing dead — a tell would wake the room (user.kod:4171)' };
+      return { sent: false, why: 'playing dead -- a tell would wake the room (user.kod:4171)' };
     }
 
     const last = tellCooldown.get(key) ?? 0;
@@ -5204,7 +5269,7 @@ export class Autopilot {
     const lines = [head, ...this.debugLines(d).slice(1)];
     const MAX = 6;
     const send = lines.slice(0, MAX);
-    if (lines.length > MAX) send.push(`(+${lines.length - MAX} more lines — ask me "debug" in game)`);
+    if (lines.length > MAX) send.push(`(+${lines.length - MAX} more lines -- ask me "debug" in game)`);
     for (const line of send) {
       try {
         await this.s.pacer.submit('say', () => c.sayGroup([id], line.slice(0, 200)));
@@ -5215,7 +5280,7 @@ export class Autopilot {
 
   // Into the LONG record, keyed by character name, so it survives the keeper.
   //
-  // The journal above is the flight recorder — 200 entries, gone when the broker
+  // The journal above is the flight recorder -- 200 entries, gone when the broker
   // restarts, and the broker restarts often. An audit of what a character decided over
   // a week cannot live there. Bookkeeping must never break play, so this swallows
   // everything: a character with no name yet is simply not recorded.
@@ -5237,7 +5302,7 @@ export class Autopilot {
   // A CAST THAT HAPPENED, with what it cost and what came back.
   //
   // `ok` is decided by the CALLER, from an inventory diff or a stat change, never from
-  // the absence of an error — the server does not send one. `why` is the decision that
+  // the absence of an error -- the server does not send one. `why` is the decision that
   // led here, and it is the field the audit is actually for: "cast create food" is a
   // fact, "cast create food because the larder was empty and a shop was four rooms
   // away" is a decision someone can disagree with.
@@ -5249,7 +5314,7 @@ export class Autopilot {
     if (ok) b.produced++; else b.nothing++;
     // Only when both readings are real and the mana went DOWN. A cast that completes as
     // the character regenerates can read as negative, and a guessed cost is worse than
-    // no cost — it would be summed into a fleet total and quietly believed.
+    // no cost -- it would be summed into a fleet total and quietly believed.
     const cost = (typeof mana_before === 'number' && typeof mana_after === 'number'
                   && mana_before >= mana_after) ? mana_before - mana_after : null;
     if (cost != null) b.mana_spent += cost;
@@ -5270,7 +5335,7 @@ export class Autopilot {
   // Counted every time; written to the long ledger at most once every ten minutes per
   // (spell, reason). provision() runs every pass and a pass is eight seconds, so a
   // character that has been two herbs short since lunch would otherwise write four
-  // hundred identical lines a day — twenty-one of those, into a file nothing rotates.
+  // hundred identical lines a day -- twenty-one of those, into a file nothing rotates.
   // The count is the interesting part anyway; the line is only there to date it.
   declinedCast(spell, why, detail = {}) {
     const name = String(spell || 'unknown').toLowerCase();
@@ -5287,7 +5352,7 @@ export class Autopilot {
 
   // WHAT IT BOUGHT AND WHY, one line per item.
   //
-  // `kind` is the audit's actual question — reagent or food. The fleet's supply plan is
+  // `kind` is the audit's actual question -- reagent or food. The fleet's supply plan is
   // to cast rather than shop, and reagents at a counter it is already standing at are
   // the cheap top-up that makes casting possible; food bought outright is the fallback
   // that admits the casting loop is not keeping up. Which of those is happening is not
@@ -5302,8 +5367,8 @@ export class Autopilot {
     this.tradeFact({ spent: price, bought: [{ what, cost: price, item_kind: k, from }] });
     if (this.spending.bought.length > 60)
       this.spending.bought.splice(0, this.spending.bought.length - 60);
-    // `item_kind`, NOT `kind`. The ledger record has a `kind` of its own — the event
-    // type — and a detail field of the same name used to overwrite it, filing every
+    // `item_kind`, NOT `kind`. The ledger record has a `kind` of its own -- the event
+    // type -- and a detail field of the same name used to overwrite it, filing every
     // purchase under 'elderberry' or 'herb' so that nothing looking for 'bought' ever
     // found one. recordEvent now refuses to be clobbered, but the field still reads
     // better named for what it is.
@@ -5316,7 +5381,7 @@ export class Autopilot {
   // literal 'flask' otherwise (m59-skills.mjs healUp), so that is the discriminator.
   //
   // Recorded from here rather than inside healUp so that module keeps no opinion about
-  // bookkeeping — it is called by tools that have no keeper and no ledger.
+  // bookkeeping -- it is called by tools that have no keeper and no ledger.
   recordHealUse(h, why) {
     for (const used of h?.used || []) {
       if (/^flask$/i.test(used)) continue;
@@ -5343,7 +5408,7 @@ export class Autopilot {
         mana_spent: b.mana_spent || undefined,
         declined: Object.keys(b.declined).length ? b.declined : undefined,
       })).sort((a, b) => b.cast - a.cast),
-      // Spells it only ever declined appear above with cast: 0 — that is the point.
+      // Spells it only ever declined appear above with cast: 0 -- that is the point.
       bought: bought.length
         ? { total_spent: this.spending.spent,
             by_kind: Object.fromEntries(bought.map(([k, v]) => [k, v])),
@@ -5352,7 +5417,7 @@ export class Autopilot {
       never_bought_food: !this.spending.by_kind.food,
       note: 'nothing in this fleet buys prepared food: restockReagents filters the shop ' +
             'list through skills.SHAREABLE, which is elderberry and herbs only. So an ' +
-            'empty larder is answered by casting or by looting, never by shopping — if ' +
+            'empty larder is answered by casting or by looting, never by shopping -- if ' +
             'that is not what you want, the list is the place to change it',
     };
   }
@@ -5376,7 +5441,7 @@ export class Autopilot {
       // Null unless a fleet update is waiting on this character. See park().
       parked: this.parkStatus(),
       // Null unless something else is driving this character. `running: true` with
-      // `inert` set is the normal shape of an errand in progress — the loop is watching
+      // `inert` set is the normal shape of an errand in progress -- the loop is watching
       // and recording, and it is not the thing moving the character.
       inert: this.inertStatus(),
       // WHO OWNS WHICH HALF OF THIS CHARACTER. Always present, never undefined: a reader
@@ -5385,12 +5450,12 @@ export class Autopilot {
       // every entry is the string 'keeper', which is the case m59-faculty-test pins.
       faculties: this.facultyStatus(),
       // What it is up to, in the words someone watching would use. Belongs here rather
-      // than only on the fleet snapshot: anything reading a keeper's status — the
-      // terminal board, another agent — wants the sentence, not the time buckets.
+      // than only on the fleet snapshot: anything reading a keeper's status -- the
+      // terminal board, another agent -- wants the sentence, not the time buckets.
       activity: this.activity(),
       town_service: this.lastTownServiceAt ? { last_at: this.lastTownServiceAt } : null,
       // IS THE FLEET ALREADY USING THIS CHARACTER FOR SOMETHING? Null for nearly all of
-      // them, and never absent — a board that greys committed rows has to be able to tell
+      // them, and never absent -- a board that greys committed rows has to be able to tell
       // "free" from "this broker does not answer that question", and undefined is what it
       // reads as the second. See m59-commitment.mjs for what counts and why the answer is
       // computed there rather than here.
@@ -5415,7 +5480,7 @@ export class Autopilot {
         // THIS KEEPER'S OWN VIEW, AND IT IS NARROWER THAN ITS NAME. `killTimes` starts
         // empty in the constructor and the supervisor restarts keepers about once a
         // minute, so this really means "kills since the last restart, capped at 30
-        // minutes" — it is the keeper's opinion of its own run, not a fleet-wide rate.
+        // minutes" -- it is the keeper's opinion of its own run, not a fleet-wide rate.
         // Anything rendering a kills/30m column must use countKills() in m59-ledger.mjs,
         // which counts `killed` events off disk and therefore survives a keeper. The
         // fleet rows do; this stays because a returning model reading `did` wants to
@@ -5440,7 +5505,7 @@ export class Autopilot {
       // wrong in practice was invisible: it kept running, kept journalling, and did
       // no work. If this is set, it has been going through the motions.
       // The second invisible failure, alongside `stalled`: working perfectly and earning
-      // nothing. Null when there is no opinion to give — never a quiet "fine".
+      // nothing. Null when there is no opinion to give -- never a quiet "fine".
       yield_check: this.yieldCheck(),
       stalled: this.stalledSince
         ? { since_seconds: Math.round((Date.now() - this.stalledSince) / 1000),
@@ -5450,7 +5515,7 @@ export class Autopilot {
       //
       // Always arrays/null rather than absent, because a reader has to be able to tell
       // "this keeper reports no refusals" from "this broker does not answer that
-      // question" — undefined reads as the second and is what makes a new field
+      // question" -- undefined reads as the second and is what makes a new field
       // invisible to whoever forgot to redeploy. See refuse().
       refusals: [...(this.refusals?.values() ?? [])],
       waiting_on: this.waitingOn ?? null,
@@ -5476,7 +5541,7 @@ export class Autopilot {
       // WHAT IT CAST, WHAT IT REFUSED TO CAST, AND WHAT IT BOUGHT INSTEAD.
       //
       // Since the broker restarts this is only the current session; `history spells:true`
-      // is the same question over days. Both, because they answer different ones — this
+      // is the same question over days. Both, because they answer different ones -- this
       // says what the keeper in front of you is doing, that says whether it has ever
       // worked. Null when it has neither cast nor declined anything, so an idle keeper
       // does not render an empty table that reads as "casting nothing on purpose".
@@ -5492,7 +5557,7 @@ export class Autopilot {
             rooms: [...this.noWallRooms.entries()].filter(([, v]) => v !== false)
                      .map(([room, why]) => ({ room, why })),
             note: 'refused for having no safe wall this keeper could find. Not proof there is ' +
-                  'none — see requireSafeWall. Cleared on restart, so a better detector wins ' +
+                  'none -- see requireSafeWall. Cleared on restart, so a better detector wins ' +
                   'them back without anything to undo' }
         : null,
       // IS THE MONEY GETTING TO A BANK. banked is the total put away; carried_at_death
@@ -5539,7 +5604,7 @@ export class Autopilot {
               : `nothing landed in ${Math.round(this.hold.quietMs / 1000)}s with ` +
                 `${this.hold.mostAttackers} thing(s) standing next to us`)
           : (this.hold.failures
-              ? `hit ${this.hold.failures} time(s) while standing still — this square does not work`
+              ? `hit ${this.hold.failures} time(s) while standing still -- this square does not work`
               : 'untested: treated as open floor until something stands next to us without landing a blow'),
         // Not "sides open" any more: how many of the 28 squares within melee reach can
         // actually swing at this one, and how many we can hit from it for free.
@@ -5547,7 +5612,7 @@ export class Autopilot {
         back_cover: this.hold.backCover,
         held_s: Math.round((Date.now() - this.hold.takenAt) / 1000),
       } : false,
-      // Who is on us, and how that is known — the protocol never says outright.
+      // Who is on us, and how that is known -- the protocol never says outright.
       threat: (() => {
         const t = this.threat();
         return { could_reach_us: t.near.length, camped_on_us: t.engaged,
@@ -5600,7 +5665,7 @@ export class Autopilot {
   // stop() only sets a flag; the loop notices it when the pass it is in finishes,
   // which can be most of a minute later if that pass is walking across the world. So
   // the ordinary "stop it, move it, start it again" sequence lands its start while
-  // the old loop is still winding down — and the old code took `running` at face
+  // the old loop is still winding down -- and the old code took `running` at face
   // value, returned "already running", and was then switched off by the very loop it
   // had just declined to replace. The keeper reported itself started and did nothing
   // for ever after, which is exactly the silent stall the rest of this file exists to
@@ -5611,12 +5676,12 @@ export class Autopilot {
   // INERT: STILL WATCHING, JUST NOT ACTING.
   //
   // Almost every "stop the keeper" in this repository does not want the keeper gone. It
-  // wants the keeper to stop DRIVING, because something else is about to — an errand
+  // wants the keeper to stop DRIVING, because something else is about to -- an errand
   // walking the character to a smith, a supply trade, a person taking the controls. Only
   // one thing may drive a character at a time, and that is the whole requirement.
   //
   // Stopping is a very expensive way to get it. A stopped keeper writes no frames, runs
-  // no observe(), records no death and files no post-mortem — so the character keeps
+  // no observe(), records no death and files no post-mortem -- so the character keeps
   // playing and the instruments go dark, which is precisely when we most want them. It is
   // why the post-mortem carries `during_keeper_outage` at all: deaths kept happening in
   // exactly the windows we had chosen to stop looking. Three of the last fourteen death
@@ -5629,8 +5694,8 @@ export class Autopilot {
   // MOVE, SWING, SPEAK, TRADE or CAST is skipped.
   //
   // THE ONE EXEMPTION IS DEATH, and it is not a compromise. A character in the Underworld
-  // has no exits, cannot be observed and cannot be recorded — a corpse produces no
-  // telemetry at all — so escaping is what makes the rest of this state worth having.
+  // has no exits, cannot be observed and cannot be recorded -- a corpse produces no
+  // telemetry at all -- so escaping is what makes the rest of this state worth having.
   // Whatever errand was driving has already failed by then; its travel calls are the
   // thing reporting so.
   //
@@ -5647,8 +5712,8 @@ export class Autopilot {
     // DIFFERENT event from 'stop': the whole point is that this outage is not one.
     uptime.record(this.s.name, 'inert', { why, room: this.s.world?.room?.num ?? null });
     this.note('going inert', {
-      why, what_happens: 'the keeper keeps looking and keeps recording — frames, ' +
-        'observations, the death record — and stops moving, swinging, speaking and trading. ' +
+      why, what_happens: 'the keeper keeps looking and keeps recording -- frames, ' +
+        'observations, the death record -- and stops moving, swinging, speaking and trading. ' +
         'Something else is driving now',
       until: 'revive(), start(), or ' + Math.round(maxMs / 60_000) + ' minutes, whichever is first' });
     return this.inertStatus();
@@ -5664,17 +5729,17 @@ export class Autopilot {
   }
 
   // The name the world knows this character by, falling back to the agent name before
-  // login has answered. Everything keyed per character — the feed, the gains, the hits
-  // book — has to agree on this or it silently keeps two sets of books.
+  // login has answered. Everything keyed per character -- the feed, the gains, the hits
+  // book -- has to agree on this or it silently keeps two sets of books.
   who() { return this.s.client?.me?.name ?? this.s.name ?? null; }
 
-  // "YOU SUDDENLY FEEL A LITTLE TOUGHER." — the only announcement of the only thing this
+  // "YOU SUDDENLY FEEL A LITTLE TOUGHER." -- the only announcement of the only thing this
   // fleet is for, and nothing was listening for it.
   //
   // The point is rolled inside the killing blow (player.kod:7827) and announced on the
   // spot, so this scans the client's own event ring for the line and hands it to the
   // record, which attributes it to the kill on either side of it. Everything else about
-  // a gain — the full heal, the 200 nutrition — is a consequence the server applies for
+  // a gain -- the full heal, the 200 nutrition -- is a consequence the server applies for
   // free; it is this string that says a point was earned rather than restored.
   //
   // Watermarked rather than time-windowed. A pass can take minutes (a travel is one
@@ -5685,7 +5750,7 @@ export class Autopilot {
     if (!c) return;
     const evs = c.events || [];
     // THE FIRST CALL ONLY SETS THE WATERMARK. The client keeps its last 500 events and
-    // outlives the keeper — `autopilot stop` then `start` hands back the same client —
+    // outlives the keeper -- `autopilot stop` then `start` hands back the same client --
     // so starting from zero would re-scan a ring that may already contain a gain this
     // record has, and write it twice. A keeper that starts mid-session is not entitled
     // to claim what happened before it was watching.
@@ -5710,11 +5775,11 @@ export class Autopilot {
       this.progress('gained a point of maximum health');
       this.note('TOUGHER', {
         now: max, room: room?.name,
-        why: 'the server announced a maximum-health gain — the one thing being farmed',
+        why: 'the server announced a maximum-health gain -- the one thing being farmed',
       });
       // MAX HEALTH IS THE LEVEL, SO A GAIN CAN INVALIDATE THE REASON WE ARE STANDING
       // HERE. Advancement needs the creature's level STRICTLY above base max health, so
-      // the prey that was paying a minute ago may now be worth nothing — and the keeper's
+      // the prey that was paying a minute ago may now be worth nothing -- and the keeper's
       // own answer to that is to carry on hunting it, reporting kills, indefinitely.
       // Which monster to switch to is a directional decision and belongs to whoever is
       // directing; this is where they get told the question has been asked.
@@ -5730,8 +5795,8 @@ export class Autopilot {
   }
 
   // WHAT THE FLEET IS USING THIS CHARACTER FOR, if anything. One place, because two
-  // things ask it — the keeper's own status, and the terminal that greys the row and
-  // steps over it — and an operation the board misses is one somebody takes a character
+  // things ask it -- the keeper's own status, and the terminal that greys the row and
+  // steps over it -- and an operation the board misses is one somebody takes a character
   // out of without knowing there was another end to it.
   commitment() {
     return describeCommitment({
@@ -5739,7 +5804,7 @@ export class Autopilot {
       inert: this.inertStatus(),
       parked: this.parkStatus(),
       partner: this.policy?.partner ?? null,
-      // THE TWO HALVES OF "SOMETHING OUTSIDE IS DRIVING THIS", kept apart on purpose —
+      // THE TWO HALVES OF "SOMETHING OUTSIDE IS DRIVING THIS", kept apart on purpose --
       // see the long note in m59-commitment.mjs. `held` is ownership and is takeable;
       // `busy` is an operation in flight and is not.
       held: this.heldStatus(),
@@ -5751,7 +5816,7 @@ export class Autopilot {
   //
   // WHO IS DRIVING, derived from the faculty claims rather than stored a second time. A
   // second field would be a second answer, and the two would disagree the first time a
-  // lease expired — `facultyOwner` already drops an expired claim on read, so deriving it
+  // lease expired -- `facultyOwner` already drops an expired claim on read, so deriving it
   // means the ownership line goes away exactly when the ownership does.
   heldStatus() {
     const held = [];
@@ -5769,7 +5834,7 @@ export class Autopilot {
    *
    * This is the field that was missing, and its absence had a specific cost: an external
    * errand walks a character with the keeper inert by design, so every stall detector in
-   * the fleet reads `ms_since_moved` — which measures the KEEPER — as a character standing
+   * the fleet reads `ms_since_moved` -- which measures the KEEPER -- as a character standing
    * still, and restarts it out from under the errand. There was no way to say "this is
    * supposed to look like that."
    *
@@ -5783,13 +5848,13 @@ export class Autopilot {
    */
   declareBusy({ by = null, kind = null, label = null, detail = null, leaseMs = 300_000 } = {}) {
     const held = this.heldStatus();
-    if (!held) return { busy: null, refused: 'nothing is claimed on this character — claim a ' +
+    if (!held) return { busy: null, refused: 'nothing is claimed on this character -- claim a ' +
                                              'faculty first, so that "busy" has an owner and a lease' };
     if (by && held.by !== by)
       return { busy: null, refused: `${held.by} holds this character, not ${by}` };
     // A CEILING, BECAUSE THE LEASE IS THE ONLY THING PROTECTING THE FLEET FROM A BOT THAT
     // STOPPED ANSWERING. A holder asks for the window its errand expects and extends as it
-    // goes — that is the intended shape and it is why the number varies — but "an hour"
+    // goes -- that is the intended shape and it is why the number varies -- but "an hour"
     // from a process that then crashed is an hour of a character every stall detector
     // steps politely over. Clamped rather than refused, and SAID SO, because refusing
     // would leave the errand unannounced, which is the worse of the two.
@@ -5827,7 +5892,7 @@ export class Autopilot {
 
   freeBusy({ by = null } = {}) {
     if (!this.busy) return { busy: null, was: null };
-    // A null `by` is an operator taking it back, which is always allowed — the same rule
+    // A null `by` is an operator taking it back, which is always allowed -- the same rule
     // releaseFaculties uses for a bot that is gone.
     if (by && this.busy.by !== by) return { busy: this.busyStatus(), refused: `${this.busy.by} owns it` };
     const was = this.busyStatus();
@@ -5845,8 +5910,8 @@ export class Autopilot {
 
   // RELEASE IT, whatever is holding it. The override key on the fleet board is the only
   // caller, and it is an emergency key: a character is about to die on a loot run, or the
-  // person wants it NOW. So this is deliberately blunt — cancel the errand, drop the
-  // pairing on this side, revive an inert keeper — and it reports each thing it undid so
+  // person wants it NOW. So this is deliberately blunt -- cancel the errand, drop the
+  // pairing on this side, revive an inert keeper -- and it reports each thing it undid so
   // the terminal can say what it just cost. It does not touch the OTHER end of a pairing:
   // that character's keeper finds its partner gone on its next pass and goes back to
   // fighting alone, which is the behaviour it already has for a partner that logs out.
@@ -5890,7 +5955,7 @@ export class Autopilot {
   //
   // goInert() is the right primitive and its reasoning is exactly right: a STOPPED keeper
   // writes no frames, runs no observe(), records no death and files no post-mortem, so the
-  // character keeps playing while the instruments go dark — which is precisely when they
+  // character keeps playing while the instruments go dark -- which is precisely when they
   // are wanted. `during_keeper_outage` exists on the post-mortem because deaths kept
   // happening in the windows this file had chosen to stop looking.
   //
@@ -5901,7 +5966,7 @@ export class Autopilot {
   // THREE PROPERTIES MATTER MORE THAN THE SHAPE:
   //
   //  1. `inert` is exactly `claim(['work','movement','economy','social'])`. Every existing
-  //     caller — the errands, the supply hold, the pilot claim, the supervisor — keeps
+  //     caller -- the errands, the supply hold, the pilot claim, the supervisor -- keeps
   //     working unchanged, because this is a refactor with a compatibility alias and not a
   //     second concept sitting beside the first.
   //  2. LEASES FAIL BACK TO THE KEEPER, NEVER OPEN. A bot that crashes, is Ctrl-C'd, or was
@@ -5972,7 +6037,7 @@ export class Autopilot {
     for (const f of list) {
       const c = this.claims?.get(f);
       if (!c) continue;
-      // Only the holder may release, or anyone may release everything on a null list —
+      // Only the holder may release, or anyone may release everything on a null list --
       // an operator taking a character back from a bot that is gone.
       if (by && c.owner !== by && !all) continue;
       this.claims.delete(f); released.push(f);
@@ -6023,7 +6088,7 @@ export class Autopilot {
     this.startWatchdog();
     // WRITTEN OUTSIDE THE KEEPER, because a keeper that is gone cannot record that it is
     // gone. Without this there is no way to tell a death the strategy caused from one
-    // that happened while nothing was driving — and a broker restart stops all twenty-one
+    // that happened while nothing was driving -- and a broker restart stops all twenty-one
     // at once, which is exactly why deaths arrive in waves. See m59-uptime.mjs.
     uptime.record(this.s.name, 'start', { mode: this.mode, hunt: this.policy?.hunt ?? null });
     // A fresh start is a new job: whatever room was worth hunting under the last
@@ -6035,8 +6100,8 @@ export class Autopilot {
     // perfectly reachable from this one.
     this.unreachable.clear();
     // Whatever we believed about where we were standing was believed under the last
-    // orders and possibly in another room. The BOOK survives — walls do not move, and
-    // that is the whole reason it is written down — but the claim to be standing on
+    // orders and possibly in another room. The BOOK survives -- walls do not move, and
+    // that is the whole reason it is written down -- but the claim to be standing on
     // one does not.
     this.hold = null;
     this.lastObs = null;
@@ -6055,8 +6120,8 @@ export class Autopilot {
 
   // STOPPING NOW MEANS GOING INERT, and a real stop has to be asked for.
   //
-  // Every caller of this wanted the same thing — stop driving, something else is about to
-  // — and none of them wanted the instruments switched off, which is what they were
+  // Every caller of this wanted the same thing -- stop driving, something else is about to
+  // -- and none of them wanted the instruments switched off, which is what they were
   // getting. So the default is the one that keeps looking, and `hard` is for the case
   // where the keeper genuinely has to end: the object is being discarded, or the process
   // is going away and the loop must not outlive it.
@@ -6099,8 +6164,8 @@ export class Autopilot {
     // WHAT THE PASS TURNED OUT TO BE, kept after the reset.
     //
     // `doing` is set part-way through a pass and cleared here at the end of it, so
-    // anything reading it at the START of a pass — which is where the post-mortem frame
-    // is written — sees null, always. Nine frames of a live character all said "doing:
+    // anything reading it at the START of a pass -- which is where the post-mortem frame
+    // is written -- sees null, always. Nine frames of a live character all said "doing:
     // null" while it was plainly farming, and the unit tests missed it because they set
     // the field by hand. This is the pass that just finished, which is the honest answer
     // to "what was it doing" for a frame taken before the next one decides anything.
@@ -6165,12 +6230,12 @@ export class Autopilot {
   // NOT FIX IT.
   //
   // Measured over 715 deaths: 645 had a keeper the uptime ledger says was running, and
-  // 521 of those — 81% — had it blind at the moment of death. Median gap 18 seconds,
+  // 521 of those -- 81% -- had it blind at the moment of death. Median gap 18 seconds,
   // p90 219. The cause is structural rather than a missing call: `pass()` is one long
   // async function and a single `await this.travel(...)` inside it can run for minutes,
   // during which nothing re-decides anything.
   //
-  // travel() ALREADY records a frame either side of itself — 'setting off' and 'arrived' —
+  // travel() ALREADY records a frame either side of itself -- 'setting off' and 'arrived' --
   // and Camilla's post-mortem is the proof that this is not enough. Her last frame reads
   // `why: "setting off"`, 17.8 seconds before she died: the 'arrived' frame in the
   // `finally` never described anything, because she died inside the await. Bracketing a
@@ -6188,14 +6253,14 @@ export class Autopilot {
   //      WATCHDOG_FRAME_MS regardless, so a post-mortem is never a bracket around a hole.
   //   2. IT CAN PULL THE HANDBRAKE. `Session.cancelMovement()` bumps the movement
   //      generation, and travel checks it in twelve places including inside the paced
-  //      step loops — so a walk stops within about a second of being told to. If health
+  //      step loops -- so a walk stops within about a second of being told to. If health
   //      crosses the flee line while the pass is blocked in a walk, the walk ends and the
   //      next pass gets to make a survival decision with fresh numbers instead of
   //      arriving as a corpse.
   //
   // What it deliberately does NOT do is decide anything. It has no policy, it never
   // fights, rests or moves, and it cannot take a safe spot. It interrupts, and the
-  // ordinary pass — which already knows how to flee, rest and find a wall — does the rest.
+  // ordinary pass -- which already knows how to flee, rest and find a wall -- does the rest.
   // A second decision-maker running concurrently with the first is how you get two
   // keepers arguing over one body.
   startWatchdog() {
@@ -6262,14 +6327,14 @@ export class Autopilot {
     const stopped = (() => {
       try { return s.cancelMovement(); } catch (e) { return { cancelled: false, why: e.message }; }
     })();
-    this.note('WATCHDOG — pulled the character out of a blind walk', {
+    this.note('WATCHDOG -- pulled the character out of a blind walk', {
       health: `${hp.value}/${hp.max}`, at_fraction: Math.round(frac * 100) + '%',
       flee_at: Math.round(fleeAt * 100) + '%',
       pass_blocked_for_s: Math.round(blockedFor / 1000),
       interrupted: stopped.interrupted ?? null,
       why: 'the pass has been inside one await long enough to have stopped looking, and ' +
            'health crossed the withdraw threshold while it was not. The walk is cancelled ' +
-           'so the next pass can decide with real numbers — this keeper does not decide ' +
+           'so the next pass can decide with real numbers -- this keeper does not decide ' +
            'anything itself',
     });
     this.progress('watchdog interrupted a blind walk');
@@ -6278,7 +6343,7 @@ export class Autopilot {
   async loop() {
     // The outer loop is the other half of start()'s cancellation. Between leaving the
     // inner loop and admitting we have stopped there is no await, so a start() can
-    // only ever be observed by the outer test — which means a cancelled stop is picked
+    // only ever be observed by the outer test -- which means a cancelled stop is picked
     // up rather than racing us to the exit.
     do {
       while (!this.stopping) {
@@ -6296,7 +6361,7 @@ export class Autopilot {
           this.spend(Date.now() - began);
         } catch (e) {
           this.spend(Date.now() - began);
-          // A pass that throws must not kill the keeper — the session may simply have
+          // A pass that throws must not kill the keeper -- the session may simply have
           // gone away underneath it, and the next pass will find out properly.
           this.lastError = e.message;
           this.note('pass failed', { why: e.message });
@@ -6318,7 +6383,7 @@ export class Autopilot {
     if (!s.live) { this.note('not in game'); return; }
     const c = s.client;
     // Post where we are, every pass. Cheap, and it is the only way one keeper can find
-    // another that has wandered — see runProvision, where a quartermaster arrives to
+    // another that has wandered -- see runProvision, where a quartermaster arrives to
     // find the supplicant has roamed off and would otherwise abandon the errand.
     if (s.world?.room?.num != null) noteWhere(s.name, s.world.room.num, s.world.room.name);
     // And post what we need and what we can spare, for the same reason: the sell and
@@ -6364,7 +6429,7 @@ export class Autopilot {
     }
     if (this.frozenUntil) {
       this.frozenUntil = null;
-      this.note('unfreezing', { note: 'moving again — monsters can see us from here on' });
+      this.note('unfreezing', { note: 'moving again -- monsters can see us from here on' });
     }
 
     // RESYNC ON A CLOCK, NOT EVERY PASS. See decideMs/resyncMs above: room.objects is
@@ -6391,8 +6456,8 @@ export class Autopilot {
     const hp = pct(v.health);
 
     // BEFORE ANY DECISION: do we still know where we are standing, and is it working?
-    // Every branch below reads differently depending on the answer — fleeing, resting
-    // and logging off all invert inside a working safe spot — so it has to be settled
+    // Every branch below reads differently depending on the answer -- fleeing, resting
+    // and logging off all invert inside a working safe spot -- so it has to be settled
     // first and from evidence, not from what the geometry hoped.
     this.observe();
 
@@ -6412,7 +6477,7 @@ export class Autopilot {
     this.recordFrame();
 
     // DID WE GET TOUGHER? Read before any branch that can return, because most passes
-    // end early — in a safe spot, resting, mid-errand — and a gain announced during one
+    // end early -- in a safe spot, resting, mid-errand -- and a gain announced during one
     // of those is still a gain. It is a scan of an in-memory ring against a watermark
     // and sends nothing.
     this.noteToughness();
@@ -6429,7 +6494,7 @@ export class Autopilot {
     //
     // THIS IS THE FALLBACK NOW, NOT THE WHOLE STRATEGY. I said the owners wander and that
     // an NPC-location table would not help. Four of the nineteen wander; the other fifteen
-    // stand in a fixed room in a town — see SIGNET_OWNERS in m59-skills.mjs — so the ring
+    // stand in a fixed room in a town -- see SIGNET_OWNERS in m59-skills.mjs -- so the ring
     // usually names a destination, and `signets` dispatches an errand that goes there. This
     // branch is what catches the four that roam, and what catches a routed ring early if
     // its owner happens to walk past first.
@@ -6457,12 +6522,12 @@ export class Autopilot {
     //    session that was live across one keeps a selfId the server no longer uses.
     //    Nothing errors. Position reads null, our own object is missing from room
     //    contents, and every check written as "am I still in the room?" concludes we
-    //    died — forever, at full health. Re-logging in is the whole fix, because the
+    //    died -- forever, at full health. Re-logging in is the whole fix, because the
     //    id is handed out fresh at login.
     if (!c.self) {
       this.selfMissingPasses++;
       if (this.selfMissingPasses >= 3) {
-        this.note('lost our own object id — reconnecting',
+        this.note('lost our own object id -- reconnecting',
                   { passes: this.selfMissingPasses,
                     why: 'not in room contents; usually a save-game renumber' });
         const again = await this.reconnect('recovering a renumbered object id');
@@ -6480,7 +6545,7 @@ export class Autopilot {
       this.tally.deaths++;
       this.deathsThisRun = (this.deathsThisRun || 0) + 1;
       // WHAT THE PURSE WAS WORTH WHEN IT HIT THE FLOOR. Recorded from the last frame
-      // before the Underworld, because by now the inventory is already gone — and it
+      // before the Underworld, because by now the inventory is already gone -- and it
       // is the only honest score for whether the banking trips are worth their walk.
       const lastPurse = this.lastSeenPurse ?? 0;
       if (lastPurse > 0) {
@@ -6488,7 +6553,7 @@ export class Autopilot {
         this.note('died carrying money', { shillings: lastPurse,
           bank_above: this.policy.bankAbove,
           why: lastPurse > (this.policy.bankAbove ?? Infinity)
-            ? 'over the banking threshold — the trip did not happen in time'
+            ? 'over the banking threshold -- the trip did not happen in time'
             : 'under the banking threshold, so this was the float we accept losing' });
       }
 
@@ -6525,7 +6590,7 @@ export class Autopilot {
           // about it. Four travelling deaths in a day spent several samples below the
           // flee line before dying, and nothing on disk could say whether the watchdog
           // interrupted and the character died anyway, whether it never fired, or whether
-          // it stood down because an errand owned the character — three different faults
+          // it stood down because an errand owned the character -- three different faults
           // with three different fixes, all rendering identically as "died travelling".
           //
           // `interrupted_this_pass` is the one that matters: the watchdog fires at most
@@ -6563,13 +6628,13 @@ export class Autopilot {
           })(),
           // WHAT WAS ON THE FLOOR WHEN WE FELL, so something can decide whether the walk
           // back is worth making. Dying drops the whole inventory, and until now nothing
-          // recorded what that was — so a recovery errand had to treat every death site
+          // recorded what that was -- so a recovery errand had to treat every death site
           // as equally promising and walk to all of them. It sent couriers to sites that
           // held nothing, through the two rooms this fleet dies in most, and the trips
           // cost more lives than the drops were worth.
           //
           // Counted from the last inventory the client saw, because the corpse is already
-          // gone by the time anything asks. Names kept for the notable kinds only — a
+          // gone by the time anything asks. Names kept for the notable kinds only -- a
           // weapon or reagent is worth a walk, four mushrooms are not.
           carrying: (() => {
             try {
@@ -6578,7 +6643,7 @@ export class Autopilot {
                                             amount: o.amount > 0 ? o.amount : 1 }));
               // WHAT IT IS WORTH, NOT HOW MANY THINGS IT WAS. A stack count cannot tell
               // four mushrooms from four swords. viValue_average is declared per item
-              // class in the kod — emerald 30, sapphire 60, mace 50, mushroom 10 — so the
+              // class in the kod -- emerald 30, sapphire 60, mace 50, mushroom 10 -- so the
               // pile has an actual number and the walk back can be judged against it.
               let value = 0;
               for (const it of names) {
@@ -6614,7 +6679,7 @@ export class Autopilot {
           this.book.save();
         }
         // THE FULL RECORD, WRITTEN BEFORE ANYTHING ELSE HAPPENS. Everything below this
-        // point — escaping the Underworld, walking back, rejoining — overwrites the
+        // point -- escaping the Underworld, walking back, rejoining -- overwrites the
         // evidence: the client's event buffer fills with the Underworld, the frames roll
         // over, and the journal moves on. `lastDeath` is the summary; this is the thing
         // somebody can actually read afterwards.
@@ -6622,7 +6687,7 @@ export class Autopilot {
         // Assembled from `lastDeath` rather than beside it, so the two cannot drift.
         // WAIT FOR THE SERVER TO SAY WHO DID IT.
         //
-        // The death is broadcast to the whole world and the broadcast NAMES THE KILLER —
+        // The death is broadcast to the whole world and the broadcast NAMES THE KILLER --
         // the one that struck the final blow, not the crowd (system.kod:49-57). It
         // arrives a moment after we notice we are dead, so the record used to be written
         // just before the single most authoritative fact about the death showed up, and
@@ -6630,7 +6695,7 @@ export class Autopilot {
         //
         // That is a different question and it answers it badly. Against 249 deaths with a
         // matching broadcast, the crowd's most common member was the actual killer 51% of
-        // the time — a coin flip, written into the record as a cause of death. It also
+        // the time -- a coin flip, written into the record as a cause of death. It also
         // manufactured a culprit: twelve deaths at the border of the Badlands were blamed
         // on "soldier of the Duke's army" purely for being nearby, when the broadcasts say
         // groundworm and troll, and faction soldiers do not start fights with the
@@ -6641,7 +6706,7 @@ export class Autopilot {
         const bcast = await this.awaitDeathBroadcast().catch(() => null);
         // WAS ANYTHING DRIVING WHEN THIS HAPPENED? A character whose keeper stopped
         // stands still in whatever fight it was in; attributing that to a hunting
-        // decision charges the strategy for an operator restart. Marked, not excluded —
+        // decision charges the strategy for an operator restart. Marked, not excluded --
         // it is still a real death, it just should not be read as evidence about how the
         // fleet fights.
         const unattended = uptime.outageAround(this.s.name, Date.now());
@@ -6649,7 +6714,7 @@ export class Autopilot {
                      killed_by_broadcast: bcast,
                      during_keeper_outage: unattended };
         if (bcast) {
-          // The authoritative answer wins, and what was nearby is kept beside it — the
+          // The authoritative answer wins, and what was nearby is kept beside it -- the
           // crowd is still the right answer to "how outnumbered were we".
           this.lastDeath.was_nearby = this.lastDeath.killed_by;
           this.lastDeath.killed_by = bcast.killer ? [bcast.killer] : [];
@@ -6658,12 +6723,12 @@ export class Autopilot {
         } else {
           this.lastDeath.killed_by_is_a_guess = true;
           this.lastDeath.note_killer = 'no death broadcast arrived within the wait, so ' +
-            'killed_by is only what was standing nearby — right about half the time';
+            'killed_by is only what was standing nearby -- right about half the time';
         }
         if (unattended) {
           this.lastDeath.unattended = true;
           this.lastDeath.keeper_was_down_for_seconds = Math.round(unattended.ms / 1000);
-          this.lastDeath.note_unattended = 'nothing was driving this character when it died — ' +
+          this.lastDeath.note_unattended = 'nothing was driving this character when it died -- ' +
             'do not read this as evidence about the hunting strategy';
         }
         const file = this.writePostMortem(pm);
@@ -6672,7 +6737,7 @@ export class Autopilot {
         // WHAT THE FLEET DOES ABOUT A DEATH IS NOT A ONE-SECOND DECISION AND THE KEEPER
         // CANNOT MAKE IT. Getting back out of the Underworld is `mortality` and stays
         // here, unchanged. Whether somebody rich re-arms this character, whether the room
-        // is now off the list, whether anyone is told — none of that is answerable from
+        // is now off the list, whether anyone is told -- none of that is answerable from
         // inside one character, and today nothing asks.
         //
         // Queued rather than run here: this branch is inside the death handling, the
@@ -6683,7 +6748,7 @@ export class Autopilot {
           // THE ONE DISTINCTION A FLEET MOST LIKELY WANTS TO ACT ON DIFFERENTLY, and it
           // is read off the ARTICLE rather than off a field, because there is no field.
           // `system.kod` broadcasts `### X was just killed by a troll.` for a creature and
-          // `### X was just killed by Yorick.` for a person — the parser strips the
+          // `### X was just killed by Yorick.` for a person -- the parser strips the
           // article, so the raw text is the only place the difference survives.
           //
           // A HEURISTIC, AND LABELLED AS ONE. A proper noun with no article is the
@@ -6697,7 +6762,7 @@ export class Autopilot {
           purse_lost: this.lastDeath.purse ?? null,
           level: this.s.client?.vitals?.()?.health?.max ?? null,
         };
-        // ON THE FEED TOO, beside the kills, and only now — after the broadcast has had
+        // ON THE FEED TOO, beside the kills, and only now -- after the broadcast has had
         // its couple of seconds. Recording it any earlier would put the 51%-accurate
         // guess on the live feed while the authoritative answer arrived a moment later
         // and went only into the file.
@@ -6713,14 +6778,14 @@ export class Autopilot {
       // A tell costs nothing and we have no mana for anything else.
       await this.answerWhere().catch(() => {});
 
-      // NEVER SIT HERE. The Underworld has no exits in the room graph — only
-      // portals you walk onto — so a character left in it stays in it until
+      // NEVER SIT HERE. The Underworld has no exits in the room graph -- only
+      // portals you walk onto -- so a character left in it stays in it until
       // something acts. One failed attempt is not a reason to stop trying: one or
       // two of the five fixed portals are unlit at random and the sixth changes
       // destination every few seconds, so trying again IS the strategy.
       this.underworldTries = (this.underworldTries || 0) + 1;
       // COME OUT NEAR THE CORPSE. Everything the character was carrying is on the floor
-      // where it died, and the walk back is the real cost of dying — a keeper that comes
+      // where it died, and the walk back is the real cost of dying -- a keeper that comes
       // out at the far end of the world has turned a recoverable death into an
       // unrecoverable one. The room is in the post-mortem we just wrote, which is
       // deliberately taken before the Underworld overwrites the frames.
@@ -6733,7 +6798,7 @@ export class Autopilot {
         this.needsRecovery = true;      // we lost everything we were carrying
         // AND DO NOT GO BACK OUT UNTIL WHOLE. A character comes out of the Underworld
         // at a fraction of its health, with mana and vigor to match, and the ordinary
-        // rest threshold lets it leave again long before any of that is back — which is
+        // rest threshold lets it leave again long before any of that is back -- which is
         // how Scooter died twice inside forty minutes, the second time at 5 health with
         // no weapon, having been sent straight back to the room that killed it.
         //
@@ -6755,7 +6820,7 @@ export class Autopilot {
         });
       } else {
         this.noProgress('stuck in the Underworld: ' + (e.reason || 'no portal took us'));
-        this.note('could not escape — will keep trying', { why: e.reason, tried: e.tried });
+        this.note('could not escape -- will keep trying', { why: e.reason, tried: e.tried });
       }
       return;
     }
@@ -6763,7 +6828,7 @@ export class Autopilot {
     // ============================ INERT STOPS HERE ============================
     //
     // Everything above this line is looking: where we are, what we need, what our partner
-    // should know, the observation, the frame, and — if it came to it — the death record
+    // should know, the observation, the frame, and -- if it came to it -- the death record
     // and the walk out of the Underworld. Everything below is DOING, and while something
     // else is driving this character we must not.
     //
@@ -6777,7 +6842,7 @@ export class Autopilot {
         const held = Math.round((Date.now() - this.inert.at) / 1000);
         const why = this.inert.why;
         this.revive('nobody came back for it');
-        this.note('reviving myself — nobody came back', {
+        this.note('reviving myself -- nobody came back', {
           was_inert_for_s: held, was_held_for: why,
           why: 'whatever took the controls has not given them back inside the deadline, and ' +
                'an unattended character is worse than a contested one. If that errand is ' +
@@ -6788,7 +6853,7 @@ export class Autopilot {
       } else {
         // NOT A STALL. The supervisor restarts keepers that report no progress, and an
         // inert keeper is doing exactly what it was asked to do.
-        this.progress('inert — something else is driving');
+        this.progress('inert -- something else is driving');
         return;
       }
     }
@@ -6796,7 +6861,7 @@ export class Autopilot {
     // Just came back from the dead. Everything carried dropped where we fell, so
     // the character is unarmed and unarmoured and cannot fight anything. A human
     // in this position rests somewhere safe and asks for help, which is a real and
-    // surprisingly effective move in a populated world — so do that rather than
+    // surprisingly effective move in a populated world -- so do that rather than
     // walk a naked character back into a monster room.
     if (this.needsRecovery) {
       this.needsRecovery = false;
@@ -6807,7 +6872,7 @@ export class Autopilot {
     // AND THEN SIT DOWN SOMEWHERE SAFE UNTIL WHOLE. THIS IS THE POINT OF THE FLAG.
     //
     // recoverUntilWhole was already set here and already refused fights and raised the
-    // resting bar — but nothing ever put the character in a chair. It relied on the
+    // resting bar -- but nothing ever put the character in a chair. It relied on the
     // ordinary rest branch further down, and that branch is satisfied by health and
     // vigor, so a character at full health, 80 vigor and ten mana was "not hurt", never
     // rested, and dropped through to the farm branch, which walked it out of the inn.
@@ -6815,12 +6880,12 @@ export class Autopilot {
     //
     // So make it explicit and put it AHEAD of everything else: while recovering, the job
     // is to be somewhere nothing spawns, sitting in a corner, until health, mana and
-    // vigor are all back — and then to be holding a weapon before anything else happens.
+    // vigor are all back -- and then to be holding a weapon before anything else happens.
     // hibernate() waits on all three now; recovered() clears the flag and has its own
     // deadline, so this cannot become a character parked for ever.
     if (this.recoverUntilWhole && !this.recovered()) {
       if (this.sanctuary()) {
-        await this.hibernate('recovering after a death — health, mana and vigor')
+        await this.hibernate('recovering after a death -- health, mana and vigor')
                   .catch(() => false);
         // Everything we owned is on the floor where we died, so this is usually a
         // conjure, and the conjure is why the mana in hibernate's bar is there.
@@ -6829,7 +6894,7 @@ export class Autopilot {
         return;
       }
       // Not somewhere safe yet. Walk to the nearest room that spawns nothing rather than
-      // recovering where we stand — resting in the open is how a rest becomes a death,
+      // recovering where we stand -- resting in the open is how a rest becomes a death,
       // and that is doubly true for a character that has just lost its weapon.
       const safe = this.nearestSanctuary({ maxHops: 3 });
       if (safe) {
@@ -6845,7 +6910,7 @@ export class Autopilot {
         if (t.arrived) { this.progress('reached somewhere safe to recover'); return; }
         this.note('could not reach somewhere safe', { to_room: safe.room, why: t.reason });
       }
-      // No sanctuary in reach. Fall through — the danger and rest branches below are the
+      // No sanctuary in reach. Fall through -- the danger and rest branches below are the
       // right handlers for "hurt in a bad room with nowhere to go", and holding the
       // character here would only add a way to do nothing.
     }
@@ -6853,7 +6918,7 @@ export class Autopilot {
     // NO WEAPON: FIX IT BEFORE ANYTHING ELSE, and never walk out to hunt without one.
     //
     // armSelf() already wields from the pack and falls back to conjuring, and makeWeapon
-    // already exists — but nothing was GATING on the result, so a character whose weapon
+    // already exists -- but nothing was GATING on the result, so a character whose weapon
     // shattered simply carried on hunting bare-handed. Scooter did it three times today,
     // Rowlf, Gonzo and Animal once each. An empty hand still swings and still reports
     // fighting, so it never reads as broken from outside.
@@ -6863,13 +6928,13 @@ export class Autopilot {
     if (!this.armed()) {
       const ok = await this.armSelf().catch(() => false);
       if (ok && this.armed()) { this.progress('armed itself'); return; }
-      // Not enough mana to conjure one yet. SIT DOWN — and do not let settle() decide
+      // Not enough mana to conjure one yet. SIT DOWN -- and do not let settle() decide
       // whether that happens.
       //
       // Rowlf spent twenty minutes and 1078 passes stuck on exactly this. settle()
       // answered "nowhere clear to rest here" three times and gave up, so the character
       // stayed on its feet, where mana regenerates slowly enough that it climbed 1 to 14
-      // in twenty minutes — and needed 15. It then failed the roll (half cost) and began
+      // in twenty minutes -- and needed 15. It then failed the roll (half cost) and began
       // the climb again. settle() is choosing a good square with elbow room, which is
       // the right question when picking a spot to fight from and the wrong one here:
       // sitting anywhere in a room nothing spawns in beats standing in the best square
@@ -6877,7 +6942,7 @@ export class Autopilot {
       this.doing = 'recovering';
       // AN UNARMED CHARACTER IN A SPAWN ROOM CANNOT WAIT WHERE IT IS STANDING.
       //
-      // Everything below sits down and waits for the 15 mana, which is right — but the
+      // Everything below sits down and waits for the 15 mana, which is right -- but the
       // sit-anywhere fallback is gated on sanctuary(), so a character stuck in a room
       // that generates monsters got neither: settle() refuses because there is no clear
       // floor, the fallback declines because the room spawns, and the pass ends with it
@@ -6890,13 +6955,13 @@ export class Autopilot {
       // weapon and all four shut.
       //
       // So walk out first. townTripIfCornered already knows how to find the nearest room
-      // nothing huntable spawns in and hibernate there, which is exactly the errand — a
+      // nothing huntable spawns in and hibernate there, which is exactly the errand -- a
       // character with nothing in its hands has no business in a monster room, and the
       // walk is the cheapest of the four routes because it needs no money, no donor and
       // no meeting.
       if (!this.sanctuary()) {
         const went = await this.townTripIfCornered().catch(() => false);
-        this.note('unarmed and in a room that spawns — leaving to regain mana', {
+        this.note('unarmed and in a room that spawns -- leaving to regain mana', {
           mana: this.s.client?.vitals?.()?.mana?.value ?? null,
           needs: 15, went_to_town: !!went,
           why: 'create weapon needs 15 mana and mana barely moves while standing in a ' +
@@ -6904,7 +6969,7 @@ export class Autopilot {
                'gets armed again when it has no weapon, no money and no donor' });
         if (went) return;
       }
-      // settle() returns {settled}, not a boolean — reading it as one would make this
+      // settle() returns {settled}, not a boolean -- reading it as one would make this
       // fallback dead code, which is exactly the kind of silent no-op this branch exists
       // to stop happening.
       const sat = await this.settle('no weapon, resting for the mana to make one')
@@ -6917,7 +6982,7 @@ export class Autopilot {
         // mana" while its mana crawled from 2 to 4, and wrote the same journal line
         // hundreds of times, which buries everything else.
         //
-        // WHAT A REST ACTUALLY NEEDS is PFLAG_MOVED_SINCE_ENTRY — set by having moved
+        // WHAT A REST ACTUALLY NEEDS is PFLAG_MOVED_SINCE_ENTRY -- set by having moved
         // since arriving in the room. A character that walked in and stopped regenerates
         // nothing however long it sits, which is why settle() walks to its square rather
         // than resting where it lands. Re-sending REST every second is noise rather than
@@ -6936,19 +7001,19 @@ export class Autopilot {
           this.note('sitting down anywhere to regain mana', {
             mana: c.vitals?.()?.mana?.value ?? null, needs: 15,
             why: 'settle() found nowhere it liked, and standing regenerates mana far too ' +
-                 'slowly to ever reach the 15 this needs — sitting is what matters, not where',
+                 'slowly to ever reach the 15 this needs -- sitting is what matters, not where',
           });
         }
         // CHECK THAT THE REST IS ACTUALLY PAYING, rather than assuming it.
         //
-        // Resting is only awarded while PFLAG_MOVED_SINCE_ENTRY is set — a character that
+        // Resting is only awarded while PFLAG_MOVED_SINCE_ENTRY is set -- a character that
         // walked into a room and stopped regenerates nothing, however long it sits, and
         // nothing in its own journal would ever say so. "Sitting down to regain mana" is
         // a report of an INTENTION; the number moving is the report of an effect, and the
         // two came apart for twenty-nine consecutive rest attempts once already.
         //
         // So take a reading a few seconds after sitting and compare. If it has not moved,
-        // say that plainly — the cure is to move and sit again, which is what standing up
+        // say that plainly -- the cure is to move and sit again, which is what standing up
         // and re-entering this branch does.
         if (this.restWatch && now - this.restWatch.at > 8_000) {
           const manaNow = c.vitals?.()?.mana?.value ?? null;
@@ -6964,7 +7029,7 @@ export class Autopilot {
                    'having walked buys nothing and looks identical to resting',
               doing: 'standing and re-seating so the flag is set again' });
             this.sittingFor = null;          // let the next pass sit again, after a step
-            // skills.nudge(s), NOT c.nudge() — nudge is a skill helper and the client has
+            // skills.nudge(s), NOT c.nudge() -- nudge is a skill helper and the client has
             // no such method, so `c.nudge?.()` would have been an optional call on
             // undefined: silent, inert, and indistinguishable from working.
             await skills.nudge(s).catch(() => {});
@@ -6984,29 +7049,29 @@ export class Autopilot {
         why: `unarmed with no donor; ${manaNow} of the 15 mana create weapon needs` });
       this.refuse('UNARMED_NO_DONOR', {
         faculty: 'work', blocking: true,
-        why: `unarmed — ${manaNow} mana, needs 15 to make one`,
+        why: `unarmed -- ${manaNow} mana, needs 15 to make one`,
         remedy: 'hand it a weapon, or leave it alone until it can cast one',
         retryAfterMs: 60_000 });
-      this.noProgress(`unarmed — ${manaNow} mana, needs 15 to make one`);
+      this.noProgress(`unarmed -- ${manaNow} mana, needs 15 to make one`);
       return;
     }
 
     // 1.9 THE THREE MOMENTS THE FLEET'S DIRECTOR MAY HAVE AN OPINION ABOUT.
     //
     //     ABOVE the danger ladder, because a player attacking us is the one case where
-    //     the ladder is answering the wrong question — it will flee to a wall, which
+    //     the ladder is answering the wrong question -- it will flee to a wall, which
     //     works on a monster and does nothing at all about somebody who can follow. And
     //     BELOW identity, mortality and the unarmed gate, which are not anybody's to
     //     redirect.
     //
     //     Free when nothing is declared: playbookFor is a stat() against an mtime cache,
     //     decide() is a loop over a list that is usually absent, and every one of these
-    //     returns null in that case — leaving the ladder below to run exactly as it did
+    //     returns null in that case -- leaving the ladder below to run exactly as it did
     //     before this existed.
     await this.consultPlaybook();
 
     // 1b. PLAYER TARGET. If an intel auto-attack target is in the room and we are
-    //     healthy enough to engage, fight them now — before the survival ladder and
+    //     healthy enough to engage, fight them now -- before the survival ladder and
     //     before normal farming. This is opt-in per target (auto_attack flag) and
     //     gated on being above the engage threshold so a hurt character retreats first.
     if (await this.engagePlayerTarget()) return;
@@ -7017,12 +7082,12 @@ export class Autopilot {
     if (await this.respondToConflict()) return;
 
     // 2. In danger. "Something attackable is adjacent and we are hurt" is the only
-    //    threat signal available — the protocol does not say who is targeting us.
+    //    threat signal available -- the protocol does not say who is targeting us.
     //
     //    OTHER PLAYERS ARE NOT THREATS, and leaving them in this list is not a
     //    conservative choice, it is a catastrophic one. Every character is ATTACKABLE,
     //    so a friendly bot standing next to you is indistinguishable from a monster
-    //    here — and they do not merely stand next to each other, they stack on the
+    //    here -- and they do not merely stand next to each other, they stack on the
     //    identical square, because they all walk to the same inn by the same route.
     //    Isolde sat at 4 of 25 health in the Limping Toad with Aurelia, Malig and
     //    Yorick all on square (8,15) beside her, concluded she was about to be killed
@@ -7048,14 +7113,14 @@ export class Autopilot {
       o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER));
 
     // ABOUT TO DIE. Below two hits of margin with something adjacent, withdrawing is
-    // a gamble — the walk takes seconds during which it keeps swinging, and losing
+    // a gamble -- the walk takes seconds during which it keeps swinging, and losing
     // that gamble costs a point of maximum health for ever. Logging off costs a
     // minute and cannot fail.
     //
     // UNLESS WE ARE IN A SPOT THAT WORKS, in which case none of that applies: we are
     // not about to die at all, we are merely hurt somewhere nothing can reach us. The
     // correct move is to stop swinging and sit down, which the rest branch below
-    // does. Note the test is holdWorks() and not "we are standing in a corner" —
+    // does. Note the test is holdWorks() and not "we are standing in a corner" --
     // spending this on an unproven square is exactly the mistake it exists to
     // prevent, and an unproven square gets us the logoff, which is also how we
     // survive long enough to prove it.
@@ -7063,7 +7128,7 @@ export class Autopilot {
     const sheltered = this.holdWorks();
     // THE TRIGGER IS DIFFERENT BEHIND A WALL, and it has to be, because the cost of a
     // false alarm is not zero. Two of the biggest hit the game can land works out at
-    // about 70% of health for these characters — sensible in the open, absurd in a
+    // about 70% of health for these characters -- sensible in the open, absurd in a
     // spot, where the things that could hit us are on squares they cannot reach us
     // from and we choose which one we swing at. Cedric logged off three times in five
     // minutes at 71%, and each of those minutes was a minute of not healing and not
@@ -7075,17 +7140,17 @@ export class Autopilot {
                    v.health.value <= doomedAt;
     // PLAY DEAD ONLY WHERE STANDING STILL IS ALREADY SAFE. FLEE EVERYWHERE ELSE.
     //
-    // This was gated on `!sheltered` — it froze precisely when the character was NOT
+    // This was gated on `!sheltered` -- it froze precisely when the character was NOT
     // behind a wall, which is the case where freezing helps least and costs most. A
     // freeze keeps the monsters off by not acting, and the same flag keeps HealthTimer
     // off with it, so the character comes back with the same health it went down with,
     // still standing in the open, still surrounded. That is why playDead needs its own
-    // "refusing to freeze again — it is not helping" guard: the tactic was being used in
+    // "refusing to freeze again -- it is not helping" guard: the tactic was being used in
     // the one place it cannot work.
     //
     // In a safe spot it is a different move entirely. Nothing can reach the square, so
-    // the character can turn in place — which sets PFLAG_MOVED_SINCE_ENTRY without giving
-    // up the square — and heal back to full while the room mills about outside its reach.
+    // the character can turn in place -- which sets PFLAG_MOVED_SINCE_ENTRY without giving
+    // up the square -- and heal back to full while the room mills about outside its reach.
     //
     // Out in the open with something adjacent, there is no version of standing still that
     // ends well. The only thing that changes the situation is distance: run for the
@@ -7096,7 +7161,7 @@ export class Autopilot {
         if (await this.playDead('at ' + v.health.value + ' health with ' + near.length +
                                 ' adjacent, behind a wall that holds')) return;
       } else {
-        this.note('hurt in the open — running for a town rather than playing dead', {
+        this.note('hurt in the open -- running for a town rather than playing dead', {
           health: v.health.value, adjacent: near.length, worst_single_hit: worstHit,
           why: 'a freeze recovers no health and leaves us exactly where we were, in reach ' +
                'of everything that put us here. Only distance changes this fight' });
@@ -7108,7 +7173,7 @@ export class Autopilot {
     }
 
     // WITHDRAWING IS FOR THE OPEN FLOOR. Walking away is the only thing a plain
-    // character can do about a fight it is losing — out in the open. In a working
+    // character can do about a fight it is losing -- out in the open. In a working
     // safe spot it is the single worst available move: it costs the wall, hands every
     // camped monster its attacks back, and spends several seconds being hit to reach
     // a square that is no safer than the one it left. Staying put and not swinging
@@ -7117,12 +7182,12 @@ export class Autopilot {
       this.tally.withdrawals++;
       // ALL THE WAY, NOT FOUR SQUARES. This called withdraw(), a move to a wall a few
       // squares off, and the town trip above only engages after THREE flees in a row
-      // (townTripIfCornered) — so the first two flees from a losing fight in the open
+      // (townTripIfCornered) -- so the first two flees from a losing fight in the open
       // were a shuffle that nothing was fooled by. Monster vision is 4 + difficulty/2
       // (monster.kod:1676): four squares is inside every creature in the game.
       this.note('running for safety', {
         health: Math.round(hp * 100) + '%', from: near.map(o => c.rsc.get(o.nameRsc)),
-        why: 'below the flee threshold in the open — distance is the only thing that ' +
+        why: 'below the flee threshold in the open -- distance is the only thing that ' +
              'stops this, and a wall four squares away is not distance' });
       await this.retreatToSafety({
         because: 'below the flee threshold in the open',
@@ -7142,7 +7207,7 @@ export class Autopilot {
 
     // SIT DOWN PROPERLY THE MOMENT WE ARRIVE SOMEWHERE SAFE.
     //
-    // Not when the resting eventually starts — on entry. The walk to a clear patch of
+    // Not when the resting eventually starts -- on entry. The walk to a clear patch of
     // floor is what sets PFLAG_MOVED_SINCE_ENTRY, and until it is set the character
     // recovers no health at all no matter how long it sits there. A bot that walks
     // into an inn and stops is not resting, it is waiting, and nothing in its own
@@ -7160,7 +7225,7 @@ export class Autopilot {
       this.settleTries = 0;
     }
 
-    // 3. Hurt but safe. Resting next to something hostile just feeds it — out in the
+    // 3. Hurt but safe. Resting next to something hostile just feeds it -- out in the
     //    open. In a proven safe spot "next to something hostile" is not a danger at
     //    all, and refusing to rest there is refusing the single largest advantage the
     //    game offers: a free heal to full, in the middle of a monster room, with
@@ -7169,7 +7234,7 @@ export class Autopilot {
     //    THIS IS THE MULLIGAN. A fight going badly stops being a death and becomes a
     //    draw we can re-take at full health.
     const vig = vigorPct(v);
-    // Sheltered, rest at whatever it takes to be fit to fight — never leave a gap
+    // Sheltered, rest at whatever it takes to be fit to fight -- never leave a gap
     // between "too hurt to start" and "hurt enough to rest", because a character
     // standing at a wall in that gap does neither and simply stops. engageAt is in
     // here for exactly that reason.
@@ -7178,7 +7243,7 @@ export class Autopilot {
     // This was applied to the sheltered case and not to the ordinary one, and the
     // ordinary one is where the whole fleet lives. restBelow is 0.6; engageAt is 0.9
     // for anything under thirty max health. A character at 64% is therefore too hurt
-    // to pick a fight and not hurt enough to sit down, so it does NEITHER — and the
+    // to pick a fight and not hurt enough to sit down, so it does NEITHER -- and the
     // branch that declines the fight calls progress(), so it does not even register
     // as stalled. Cedric held that state at the Tos gate with full vigor, a wall
     // available and centipedes wandering past, reporting a healthy-looking journal
@@ -7200,13 +7265,13 @@ export class Autopilot {
     //
     // The keeper sent unarmed characters out to hunt over and over: Scooter three times,
     // Rowlf, Gonzo, Animal. An unarmed character still swings, still reports fighting,
-    // and punches for almost nothing while everything hits back — so nothing about it
+    // and punches for almost nothing while everything hits back -- so nothing about it
     // reads as broken from outside, and the only reason it was ever caught is that a
     // human looked at the board.
     //
     // Weapons break constantly here and the pack usually has no spare, so this is not an
     // edge case. It is the steady state after a few hours. The answer is not to hunt
-    // anyway: it is to stop, make one, and go back out — which costs a couple of minutes
+    // anyway: it is to stop, make one, and go back out -- which costs a couple of minutes
     // and 15 mana, against a character that otherwise farms nothing until someone
     // notices. See armed() for why the server's own use list is the only acceptable
     // evidence here.
@@ -7220,8 +7285,8 @@ export class Autopilot {
     // NEVER SIT DOWN FOR SOMETHING SITTING DOWN CANNOT FIX.
     //
     // restBelow is one threshold used for two vitals that recover by different means.
-    // Resting restores vigor only as far as RestTimer's threshold — 80 of 200, which is
-    // REST_VIGOR_CAP — and everything above that has to be eaten. Comparing vigor
+    // Resting restores vigor only as far as RestTimer's threshold -- 80 of 200, which is
+    // REST_VIGOR_CAP -- and everything above that has to be eaten. Comparing vigor
     // against restBelow (0.6, i.e. 120) therefore asks for a level resting can never
     // reach, so the character was still "hurt" when it stood up and went straight back
     // down on the next pass. Hungry characters spent entire sessions in that loop.
@@ -7231,7 +7296,7 @@ export class Autopilot {
     const hurt = (hp !== null && hp < restAt) || (vig !== null && vig < vigorRestAt);
 
     // RUN THE EXPERIMENT ON PURPOSE. A spot is only proved by standing in it without
-    // swinging while something tries to kill us — and every other branch here is
+    // swinging while something tries to kill us -- and every other branch here is
     // gated on already having that proof, so without this the keeper can fight from
     // an untested corner forever and never find out whether it works.
     //
@@ -7244,39 +7309,39 @@ export class Autopilot {
     // RESTING IN A COMBAT ZONE IS SOMETHING YOU DO BEHIND A WALL OR NOT AT ALL.
     // Sheltered means the square is proven; testing means we are deliberately proving
     // it with margin in hand. Anything else, with anything hostile in the room, and the
-    // answer is to go and get a wall first — not to sit down and find out.
+    // answer is to go and get a wall first -- not to sit down and find out.
     const combatZone = hostiles.length > 0;
-    // Go and get a wall — but DO NOT CONSUME THE PASS DOING IT. The first version
+    // Go and get a wall -- but DO NOT CONSUME THE PASS DOING IT. The first version
     // returned as soon as takeSafeSpot() succeeded, and that deadlocked characters
     // outright: holding a square is not the same as the square being PROVEN, so
     // `sheltered` stayed false, the branch fired again next pass, and a character at
     // 100% health spent sixty consecutive passes taking a wall and doing nothing else.
     // It was `hurt` on VIGOR, not health, which is the state a keeper is in most of the
-    // time. Take the spot as a side effect and let the pass carry on — the rest gate
+    // time. Take the spot as a side effect and let the pass carry on -- the rest gate
     // below already refuses to rest in the open, which was the actual requirement.
-    // AN EMPTY SPAWN ROOM IS NOT AN EMPTY ROOM — IT IS A ROOM BETWEEN SPAWNS.
+    // AN EMPTY SPAWN ROOM IS NOT AN EMPTY ROOM -- IT IS A ROOM BETWEEN SPAWNS.
     //
     // This asked for a wall only when something hostile was ALREADY standing there, so a
     // character that sat down during the gap between spawns rested in the open with
     // nothing to fetch it a wall. That is how Waldorf died, and its own journal reads the
-    // sequence out: "hit while resting in the open — there was no wall at our back; this
+    // sequence out: "hit while resting in the open -- there was no wall at our back; this
     // is the case the safe spot exists for", then a reconnect to shed aggro, then "could
     // not reach the safe spot", then dead. The resting came first and the damage second.
     //
     // Across characters at or below the resting cap, resting ran 529 deaths per thousand
-    // observations against 7.5 for holding a proven safe spot — the same act of sitting
+    // observations against 7.5 for holding a proven safe spot -- the same act of sitting
     // still, differing only in whether a wall was at their back.
     //
     // sanctuary() is the existing test for "nothing huntable spawns here". This only
     // widens WHEN A WALL IS FETCHED; the rest gate below is untouched, so nothing that
-    // could rest before is forbidden from resting now — it just sits down behind
+    // could rest before is forbidden from resting now -- it just sits down behind
     // something first.
     const spawnsHere = !this.sanctuary();
     if (hurt && (combatZone || spawnsHere) && !sheltered && !testing && this.policy.useSafeSpots && !this.hold
         && (!this.wallTriedAt || Date.now() - this.wallTriedAt > 30_000)) {
       this.wallTriedAt = Date.now();
       const got = await this.takeSafeSpot(
-        'hurt in a room that spawns monsters — a wall before a rest', near[0] ?? hostiles[0] ?? null)
+        'hurt in a room that spawns monsters -- a wall before a rest', near[0] ?? hostiles[0] ?? null)
         .catch(() => false);
       this.note('will not rest in the open here', {
         health: hp === null ? null : Math.round(hp * 100) + '%',
@@ -7290,22 +7355,22 @@ export class Autopilot {
     // The deadlock this closes: hurt, something hostile somewhere in the room, no wall
     // to be had. The branch above tries for a wall once every thirty seconds; the rest
     // gate below refuses to sit down in a combat zone; and the fight path refuses to
-    // engage while too hurt. So the character does nothing at all — not resting, not
-    // fighting, not leaving — and it does not even register as a stall, because each
+    // engage while too hurt. So the character does nothing at all -- not resting, not
+    // fighting, not leaving -- and it does not even register as a stall, because each
     // individual refusal is correct.
     //
     // Piggy sat in it at 12 of 27 health with FULL VIGOR, nothing in swing range and
     // zero landing damage, in the room where the fleet has been dying. At 200 vigor she
     // would have healed to full in fifteen seconds anywhere safe.
     //
-    // 80 is the line because 80 is what RESTING alone can reach — the rest threshold.
+    // 80 is the line because 80 is what RESTING alone can reach -- the rest threshold.
     // Below it, standing still is at least buying back the vigor that walking spends.
     // Above it, waiting buys nothing at all: the vigor is already there, it is only in
     // the wrong place, and moving is the only thing that converts it into health.
     //
     // withdraw() retreats to a WALL now rather than to open floor, so this is a move
     // toward somewhere it can actually heal, not merely away from here.
-    // REST_VIGOR_CAP is a FRACTION (0.4), not a vigor value — it is passed to
+    // REST_VIGOR_CAP is a FRACTION (0.4), not a vigor value -- it is passed to
     // restUntil, which takes fractions. Comparing a raw vigor of 200 against 0.4 is
     // true for every character that has any vigor at all, which would have fired this
     // branch at 5 vigor: the precise opposite of the rule, and it would have sent
@@ -7314,11 +7379,11 @@ export class Autopilot {
     const restCeiling = REST_VIGOR_CAP * skills.VIGOR_MAX;      // 0.4 * 200 = 80
     if (hurt && combatZone && !sheltered && !testing && !this.hold &&
         vigorNow2 != null && vigorNow2 > restCeiling) {
-      this.note('not waiting this out — moving to somewhere I can heal', {
+      this.note('not waiting this out -- moving to somewhere I can heal', {
         health: hp === null ? null : Math.round(hp * 100) + '%',
         vigor: vigorNow2, rest_ceiling: restCeiling,
         monsters_in_room: hostiles.length, in_swing_range: near.length,
-        why: 'hurt, no wall here, and too much vigor for waiting to be worth anything — resting ' +
+        why: 'hurt, no wall here, and too much vigor for waiting to be worth anything -- resting ' +
              'cannot raise vigor past ' + restCeiling + ' and we are already above it, so the ' +
              'only thing standing still produces is time spent hurt in a monster room' });
       // "Somewhere I can heal" is an inn, not a wall in the same monster room. The
@@ -7335,14 +7400,14 @@ export class Autopilot {
     // AND BELOW THE RESTING CEILING: GET OFF THE MAP ENTIRELY.
     //
     // The other half of the same deadlock, and the worse one. Hurt, something hostile
-    // in the room, no wall — and now too little vigor to want a fight or to make a
+    // in the room, no wall -- and now too little vigor to want a fight or to make a
     // long walk pay. The branch above does not fire, the rest gate refuses (combat
     // zone), the fight path refuses (too hurt). Sweetums sat in it for 670 passes,
     // roughly three hours, and Piggy before her. Every individual refusal is correct
     // and the sum of them is a character quietly doing nothing until it dies.
     //
-    // Resting here is not an option — that is the one thing that turns this into a
-    // death — so the answer is to stop being here at all: LEAVE THE ROOM by the
+    // Resting here is not an option -- that is the one thing that turns this into a
+    // death -- so the answer is to stop being here at all: LEAVE THE ROOM by the
     // nearest exit. Out of the room the hostiles are not, and resting becomes legal.
     //
     // Then fix the actual cause, which is an empty larder: cook if we can, and
@@ -7354,7 +7419,7 @@ export class Autopilot {
     // `hurt` is true when EITHER health or vigor is short, which is right for deciding to
     // rest and badly wrong for deciding to abandon a room. Vigor does not fall because
     // there is a monster nearby; health does. So a character at full health and the
-    // vigor cap read as "hurt", found something hostile, and left — then did it again in
+    // vigor cap read as "hurt", found something hostile, and left -- then did it again in
     // the next room, for ever.
     //
     // Measured: of 107 room-flees, ALL 107 were by characters below 180 vigor and NONE
@@ -7363,8 +7428,8 @@ export class Autopilot {
     // works converted "die where you stand" into "run for ever", which is better and
     // still not farming.
     //
-    // The deadlock this branch exists to break is real — too hurt to fight, unable to
-    // rest because something is watching — but it is a HEALTH deadlock. At full health
+    // The deadlock this branch exists to break is real -- too hurt to fight, unable to
+    // rest because something is watching -- but it is a HEALTH deadlock. At full health
     // there is no deadlock: a tired character fights worse, not not-at-all, and the
     // answer to low vigor is food, which is somewhere else entirely.
     // Vigor is handled by provision() before quarry selection and by the single fight
@@ -7390,7 +7455,7 @@ export class Autopilot {
       // TRY EVERY WAY OUT, AND THEN STOP BEING SURROUNDED.
       //
       // THIS IS WHAT IS KILLING THE FLEET. Of 37 deaths since the reach model went in,
-      // 33 decided to leave and 13 recorded "could not leave" — and every single death
+      // 33 decided to leave and 13 recorded "could not leave" -- and every single death
       // was slow attrition: median -0.03 health per second, nothing worse than -0.22.
       // Nobody was killed in a fight. They chose correctly, failed to get out, and then
       // bled to death over minutes at 10-12 attackers, standing exactly where they were.
@@ -7403,7 +7468,7 @@ export class Autopilot {
       //
       //   NO FALLBACK. When the walk out failed it gave up and returned, and the pass
       //   ended with the character still standing in the room. But a walk failing while
-      //   surrounded is the EXPECTED case — that is what being surrounded does — and
+      //   surrounded is the EXPECTED case -- that is what being surrounded does -- and
       //   there is already a tool for it: a reconnect hands back the entry grace period,
       //   so we come back with about one of them aware of us instead of twelve. It was
       //   only ever wired to stepping off a safe spot, which is the same problem in a
@@ -7427,12 +7492,12 @@ export class Autopilot {
         // fight anywhere, and walking to a fourth wilderness room will not change that.
         // Animal proved it: 168 flees and 2 kills, because the supervisor graduates a
         // pair with fight_above_vigor 180 and a character at the resting cap of 80 can
-        // never meet it — so it refused every fight, fled every room, earned nothing,
+        // never meet it -- so it refused every fight, fled every room, earned nothing,
         // and therefore never got the food that would have let it fight. The loop is
         // closed and nothing inside the wilderness opens it.
         //
         // Town does open it: it is a sanctuary, so resting is legal and safe, and it
-        // has counters that sell bread — which is the only route past 80 vigor.
+        // has counters that sell bread -- which is the only route past 80 vigor.
         //
         // The exemption is for a character that is merely having a bad room: plenty of
         // vigor and food in the pack means the fleeing is tactical, not structural, and
@@ -7459,21 +7524,21 @@ export class Autopilot {
           return;
         }
       }
-      // EAT BEFORE DECLARING YOURSELF TRAPPED — IT IS USUALLY THE WHOLE PROBLEM.
+      // EAT BEFORE DECLARING YOURSELF TRAPPED -- IT IS USUALLY THE WHOLE PROBLEM.
       //
       // "Cannot fight" here almost always means BELOW THE FIGHT FLOOR rather than hurt:
       // the floor is 180 and sixteen of twenty-one characters sit under it at any moment,
       // median vigor 148. So a character at full health, in a room full of its own prey,
       // with food in its pack, declares itself trapped and waits for a rescue that is
-      // sitting in its own inventory. Rizzo did exactly that — 46 of 46 health, vigor 141,
-      // three fleet-mates and four fungus beasts in the room — and stalled for seventeen
+      // sitting in its own inventory. Rizzo did exactly that -- 46 of 46 health, vigor 141,
+      // three fleet-mates and four fungus beasts in the room -- and stalled for seventeen
       // minutes.
       //
       // The comment above this branch already names the loop, in Animal's case: refuse
       // every fight for want of vigor, flee every room, earn nothing, and therefore never
       // get the food that would have let it fight. Eating is the one move that opens it
       // from inside the wilderness, and the escape path already reaches for it AFTER a
-      // successful walk (`gotOut` calls cookSomething) — which is precisely the case that
+      // successful walk (`gotOut` calls cookSomething) -- which is precisely the case that
       // did not need it.
       //
       // So try the pack first, and only then say nobody can help. If it eats, the next
@@ -7481,14 +7546,14 @@ export class Autopilot {
       const plan0 = STRATEGIES[this.policy.strategy] || STRATEGIES.baseline;
       if (await this.provision(plan0, v).catch(() => false) === 'ate') {
         this.note('ate rather than reporting myself trapped', {
-          why: 'could not fight, rest or leave — and "cannot fight" here is usually vigor ' +
+          why: 'could not fight, rest or leave -- and "cannot fight" here is usually vigor ' +
                'below the fight floor, which food fixes and a rescue does not' });
         return;
       }
       // Nowhere to go and nothing to eat. Say what is actually needed rather than looping
-      // silently — the interest board is what the almoner and the quartermaster read.
+      // silently -- the interest board is what the almoner and the quartermaster read.
       this.declareInterest();
-      this.noProgress('trapped: cannot fight, cannot rest, cannot leave — needs food or a rescue');
+      this.noProgress('trapped: cannot fight, cannot rest, cannot leave -- needs food or a rescue');
       return;
     }
 
@@ -7504,19 +7569,19 @@ export class Autopilot {
       // them comes back by resting. RestTimer restores vigor and never touches
       // health (player.kod:10033). Having a high vigor then enhances your health regeneration.
       this.doing = 'recovering';
-      // Arm whenever we are here for HEALTH, at whichever threshold brought us — a
+      // Arm whenever we are here for HEALTH, at whichever threshold brought us -- a
       // sheltered character resting at 85% still needs the flag set, and gating this
       // on the open-floor threshold would have it sit there collecting vigor and
       // wondering why its health never moved.
       if (hp !== null && hp < restAt) {
         // ARM THE TIMER FIRST. HealthTimer only awards a point if
         // PFLAG_MOVED_SINCE_ENTRY is set, so a character that walked into an inn and
-        // stopped regenerates nothing at all — which is precisely what happened to one
+        // stopped regenerates nothing at all -- which is precisely what happened to one
         // of mine for twenty-nine consecutive rest attempts.
         //
         // HOW we arm it depends entirely on where we are standing. A step arms it and
         // gives up the square; a TURN arms it and does not. Out in the open that
-        // distinction does not exist, which is why the original only ever stepped —
+        // distinction does not exist, which is why the original only ever stepped --
         // but stepping off a safe spot to start healing is giving away the reason the
         // healing is safe, and it is worth being exact about.
         const n = this.hold
@@ -7534,12 +7599,12 @@ export class Autopilot {
           // it killed Animal: a proven spot at (23,6) in the Main gate to the city of Tos
           // that had held for 44 seconds, broken off from correctly at 34% health, then
           // abandoned on this line with the note "a turn moved us off the square". He
-          // healed in the open instead — 10 health, then 2, then dead, with three
+          // healed in the open instead -- 10 health, then 2, then dead, with three
           // centipedes and two of the Duke's soldiers in the room.
           //
           // And the detection cannot support the conclusion it draws. turnInPlace
           // compares position from before the turn against a read taken after a 300ms
-          // sleep and a room-contents round trip — up to 2.3 seconds of live combat. All
+          // sleep and a room-contents round trip -- up to 2.3 seconds of live combat. All
           // `moved` establishes is that the square changed at some point in that window;
           // it does not establish that the turn did it.
           //
@@ -7562,7 +7627,7 @@ export class Autopilot {
         } else if (n.turned) {
           this.note('turned to arm health regeneration', {
             ...n, kept: this.hold ? { col: this.hold.col, row: this.hold.row } : null,
-            why: 'this wakes the monsters, and in a working safe spot that costs nothing — ' +
+            why: 'this wakes the monsters, and in a working safe spot that costs nothing -- ' +
                  'they cannot reach us, and the flag it sets is what lets health come back' });
         } else if (n.moved) {
           this.note('stepped to arm health regeneration', n);
@@ -7574,7 +7639,7 @@ export class Autopilot {
           this.progress('healed');
           this.note('healed', { used: h.used, health: h.health });
         } else if (h.reason === 'nothing to heal with') {
-          // No flask and no heal spell is NOT a dead end — health comes back on its
+          // No flask and no heal spell is NOT a dead end -- health comes back on its
           // own now that we have moved. It is only slow, at roughly
           // ((200-vigor)^2/6 + 1000) milliseconds a point, which is why resting
           // matters: it is vigor, not time, that sets the rate. Only ask for help if
@@ -7590,7 +7655,7 @@ export class Autopilot {
       }
       this.tally.rests++;
       // Sheltered, resting is free and uninterruptible, so take it all the way to
-      // full rather than to a threshold — the next fight starts from whatever we
+      // full rather than to a threshold -- the next fight starts from whatever we
       // stand up with, and there is nothing to spend the difference on.
       const r = await skills.restUntil(s, {
         // Always finish above the threshold that sent us here, or the next pass sends
@@ -7605,7 +7670,7 @@ export class Autopilot {
         // of being hit with nobody watching.
         //
         // AND A PROOF IS ABOUT THE ROOM IT WAS TAKEN IN. The long leash is earned by
-        // evidence — this square held while N things stood next to it — and it stops
+        // evidence -- this square held while N things stood next to it -- and it stops
         // meaning anything once more than N are there. Twenty-one of our own characters
         // moved into the Mausoleum and the mummy cap is twenty; squares proven against
         // one or two attackers were suddenly being approached by four, from angles the
@@ -7613,8 +7678,8 @@ export class Autopilot {
         // spent it going from 17 health to 3.
         //
         // So the leash is the SHORT one whenever the present crowd is bigger than the
-        // one the square was proven against. Not a demotion — the square may well still
-        // work — just a refusal to bet two minutes of not looking on it.
+        // one the square was proven against. Not a demotion -- the square may well still
+        // work -- just a refusal to bet two minutes of not looking on it.
         maxSeconds: testing ? 15
                   : (sheltered ? (near.length > (this.hold?.mostAttackers ?? 0) ? 20 : 150)
                                : 90) });
@@ -7623,12 +7688,12 @@ export class Autopilot {
                             crowd: sheltered ? near.length : undefined,
                             interrupted: r.interrupted || undefined,
                             note: r.interrupted
-                              ? 'cut short — see interrupted'
+                              ? 'cut short -- see interrupted'
                               : sheltered
                               ? 'resting to full in a monster room, which the safe spot is what makes possible'
                               : 'resting restores vigor, and vigor sets how fast health regenerates' });
       // TAKING DAMAGE THROUGH A REST IS EVIDENCE, AND IT IS THE SAME EVIDENCE the hold
-      // evaluator acts on — hit while standing still and not swinging. It just arrived
+      // evaluator acts on -- hit while standing still and not swinging. It just arrived
       // three seconds after the fact instead of at the end of the leash, which is the
       // entire point. Give the square up now rather than resting into it again on the
       // next pass and waiting for observe() to reach the same conclusion a minute later.
@@ -7639,14 +7704,14 @@ export class Autopilot {
       // `interrupted` is set when a blow lands hard enough to break the rest, and that is
       // the loud version of the square not working. The quiet version killed Waldorf.
       //
-      // He held (7,41) in West Merchant Way — proven, six things in the room — and bled at
+      // He held (7,41) in West Merchant Way -- proven, six things in the room -- and bled at
       // 0.16 health a second, which is slow enough that no single blow ever tripped
       // `interrupted`. Every pass rested, gained nothing, and fell through this `return`
       // to rest again. restUntil reported it accurately each time: "nothing recovered for
-      // several checks — something may be preventing rest". His health trail is 20, 19,
-      // 20, 18 … 2, 1, and then twenty-five consecutive samples at 1 to 3 health, with the
+      // several checks -- something may be preventing rest". His health trail is 20, 19,
+      // 20, 18 ... 2, 1, and then twenty-five consecutive samples at 1 to 3 health, with the
       // keeper resting and refusing to freeze in turn and never once leaving. He was at 3%
-      // health against a flee threshold of 0.7 — `fled_in_time` came out at 2.9% — and
+      // health against a flee threshold of 0.7 -- `fled_in_time` came out at 2.9% -- and
       // what finally killed him was a reconnect: the session dropped, the rejoin put him
       // back at 1 health in a room with five giant rats, and he lasted 3.4 seconds.
       //
@@ -7658,11 +7723,11 @@ export class Autopilot {
       const after = r.vitals?.health;
       const afterHp = after?.max ? after.value / after.max : null;
       if (sheltered && r.reached_target !== true && afterHp != null && hp != null && afterHp <= hp) {
-        this.note('rested and gained nothing — giving the square up', {
+        this.note('rested and gained nothing -- giving the square up', {
           health_before: Math.round(hp * 100) + '%', health_after: Math.round(afterHp * 100) + '%',
           seconds: r.seconds, crowd: near.length, why: r.note,
           note: 'a safe spot is what makes resting in a monster room possible, so a rest ' +
-                'that recovers nothing is the square failing quietly rather than loudly — ' +
+                'that recovers nothing is the square failing quietly rather than loudly -- ' +
                 'the same conclusion as `interrupted`, reached without waiting for a big hit' });
         await this.restBroken(room, near).catch(() => {});
         return;
@@ -7680,12 +7745,12 @@ export class Autopilot {
     // pass that begins afterwards.
     const outside = this.busyStatus();
     if (outside) {
-      this.progress(`busy — ${outside.label ?? outside.kind ?? 'something else is driving'}`);
+      this.progress(`busy -- ${outside.label ?? outside.kind ?? 'something else is driving'}`);
       return;
     }
 
-    // PARKED. This is the point the keeper would otherwise choose a new action — the
-    // errand, the roam, the fight — and it is past death, danger and rest, so a parked
+    // PARKED. This is the point the keeper would otherwise choose a new action -- the
+    // errand, the roam, the fight -- and it is past death, danger and rest, so a parked
     // character has already handled anything that was happening to it. See park().
     //
     // Deliberately ABOVE the errand branch: an errand is a multi-minute walk across the
@@ -7698,7 +7763,7 @@ export class Autopilot {
       // Somewhere hostile? Get a wall. `takeSafeSpot` is the same call the rest gate
       // uses, so a parked character ends up in exactly the state resting requires.
       //
-      // `hostiles` is the whole room, not `near` — the same distinction the rest gate
+      // `hostiles` is the whole room, not `near` -- the same distinction the rest gate
       // makes and for the same reason: a room with four monsters in it and none beside
       // us right now is not a place to sit out an outage. And a room that merely SPAWNS
       // counts too, because an empty spawn room is a room between spawns.
@@ -7706,7 +7771,7 @@ export class Autopilot {
                        (hostiles.length > 0 || !this.sanctuary());
       if (wantWall && !p.ready) {
         p.tries++;
-        await this.takeSafeSpot('parking for a fleet update — a wall before the outage',
+        await this.takeSafeSpot('parking for a fleet update -- a wall before the outage',
                                 hostiles[0] ?? null).catch(() => false);
       }
       // READY WHEN WE ARE BEHIND SOMETHING, or when we have spent long enough failing to
@@ -7722,10 +7787,10 @@ export class Autopilot {
           attempts: p.tries,
           why: this.hold ? 'behind a wall, taking no new fights until the update is done'
              : !wantWall ? 'nothing here spawns or threatens, so a wall buys nothing'
-             : 'could not find a wall in ' + Math.round(Autopilot.PARK_GRACE_MS / 1000) + 's — ' +
+             : 'could not find a wall in ' + Math.round(Autopilot.PARK_GRACE_MS / 1000) + 's -- ' +
                'reporting ready rather than holding the whole fleet up, and saying so' });
       }
-      // Rest while we wait, but only where resting is legal — the same rule the rest
+      // Rest while we wait, but only where resting is legal -- the same rule the rest
       // gate applies, and for the same reason. Free health for the far side of the
       // restart when it is safe, and nothing at all when it is not.
       if (this.holdWorks() || !hostiles.length) {
@@ -7764,7 +7829,7 @@ export class Autopilot {
     if ((STRATEGIES[this.policy.strategy] || {}).medic) await this.medic().catch(() => {});
 
     // HIBERNATING IS NOT DOING NOTHING. A keeper with no job still has a bar to fill,
-    // and vigor is what a character walks out of an inn with — it sets the health
+    // and vigor is what a character walks out of an inn with -- it sets the health
     // regeneration rate and it is what swinging spends. Standing about at 30 of 200
     // because nobody gave us a task is throwing away the one thing idle time is for.
     if (this.mode === 'idle') {
@@ -7782,16 +7847,16 @@ export class Autopilot {
     // before reaching here.
     //
     // The check is deliberately at the TOP of the branch rather than sprinkled through it.
-    // Half-owned work — a bot picking the room while the keeper picks the prey — is two
+    // Half-owned work -- a bot picking the room while the keeper picks the prey -- is two
     // movers on one character, which is the configuration error this whole exercise exists
     // to avoid, and it reads as working from both sides.
-    // A CLAIM ON `work` IS OWNERSHIP OF THE DECISION, NOT A STOP ORDER — AND THE FIRST
+    // A CLAIM ON `work` IS OWNERSHIP OF THE DECISION, NOT A STOP ORDER -- AND THE FIRST
     // VERSION OF THIS GOT THAT BACKWARDS.
     //
     // It returned here when `work` was claimed, which reads as "something else is driving,
     // so stand down". That is right for `inert`, where another PROCESS is moving the
     // character step by step, and it is exactly wrong for a directional bot. DUM does not
-    // move anybody: it writes ORDERS — what to hunt, which room, which thresholds — and
+    // move anybody: it writes ORDERS -- what to hunt, which room, which thresholds -- and
     // the keeper executes them, on its own one-second clock, as it always has.
     //
     // So the early return would have idled every character it was applied to. Claiming
@@ -7801,7 +7866,7 @@ export class Autopilot {
     //
     // What the claim actually buys is COORDINATION. It records who owns the directional
     // fields so two writers cannot fight over them, it is visible on the board, and it
-    // expires back to the keeper. The keeper keeps working throughout — which is also what
+    // expires back to the keeper. The keeper keeps working throughout -- which is also what
     // makes the parity claim testable at all: a fleet under a doctrine that reproduces its
     // own settings should be indistinguishable from one with no bot attached.
     //
@@ -7812,18 +7877,18 @@ export class Autopilot {
         this.notedWorkOwner = owner;
         if (owner !== 'keeper') this.note('work is directed by something else', {
           owner, faculties: this.facultyStatus(),
-          note: 'that bot chooses the orders — quarry, room, thresholds. This keeper still ' +
+          note: 'that bot chooses the orders -- quarry, room, thresholds. This keeper still ' +
                 'carries them out, and still owns survival, resting, re-arming and the ' +
                 'Underworld, which are decided far above this branch' });
       }
     }
     if (this.mode === 'farm') {
-      // EAT FIRST — BEFORE THE ROOM, THE PREY, THE PACK OR THE WALL.
+      // EAT FIRST -- BEFORE THE ROOM, THE PREY, THE PACK OR THE WALL.
       //
       // provision() used to sit far below this, under the prey lookup, and every path that
       // does not end in a fight returns before reaching it: a room that cannot spawn the
-      // quarry, a relocation, an empty room, a sanctuary, a roam, a full pack, and — the
-      // one that mattered most — the too-tired-to-start branch, which rests to 80 and
+      // quarry, a relocation, an empty room, a sanctuary, a roam, a full pack, and -- the
+      // one that mattered most -- the too-tired-to-start branch, which rests to 80 and
       // returns. So a character only ate while standing in front of something it could
       // kill, which is both the moment it is least free to stop and eat and a small
       // fraction of the passes of a fleet that spends its day walking between grounds.
@@ -7832,13 +7897,13 @@ export class Autopilot {
       // here is 180; resting stops dead at 80 (REST_VIGOR_CAP); only food crosses the gap.
       // A character below its floor went to the rest branch, rested to 80, noted in its own
       // journal that "resting alone stops at 80; if this does not clear, the character needs
-      // food" — and returned, every eight seconds, for hours, with the food in its pack.
+      // food" -- and returned, every eight seconds, for hours, with the food in its pack.
       // Measured with food in all twenty-one packs: over four minutes vigor fell on fifteen
       // characters, rose on two by the +2 that resting alone gives, and seven sat at exactly
       // the cap. Eating one loaf by hand moved the same character 80 -> 99 immediately.
       //
       // ONLY A MOUTHFUL ENDS THE PASS. provision() also returns "wait, the stomach is full"
-      // — a legitimate answer, and a disastrous one to honour here: the stomach drains 0.12
+      // -- a legitimate answer, and a disastrous one to honour here: the stomach drains 0.12
       // a second, so a character below its floor with a full stomach would stand still for
       // up to fourteen minutes rather than walk to its hunting ground. Waiting to get hungry
       // is something to do WHILE travelling, so only a real meal is worth the pass. Nothing
@@ -7850,7 +7915,7 @@ export class Autopilot {
       // AUTO-RETARGET WHEN PURPOSE + GOALS SAY THE CURRENT PREY PAYS NOTHING.
       //
       // yieldCheck() is surfaced on the board as "PAYS NOTHING" but the keeper never
-      // acted on it — the hint even said so. Now it does: when purpose and goals are
+      // acted on it -- the hint even said so. Now it does: when purpose and goals are
       // both set, the current hunt is paying zero, and scorePrey finds a better one,
       // policy.hunt is updated here. The room-relocation block below will then see
       // the current room cannot generate the new prey and travel there on the same
@@ -7876,6 +7941,7 @@ export class Autopilot {
                 goals:   this.policy.goals ?? [],
                 over:    typeof this.policy.maxThreatOver === 'number' ? this.policy.maxThreatOver : 6,
                 limit:   1,
+                want:    this.policy.karma ?? null,
               }
             );
             const best = result.candidates?.[0];
@@ -7889,7 +7955,7 @@ export class Autopilot {
                 purpose:     this.policy.purpose,
               });
               this.policy.hunt = best.creature;
-              // Clear any assignment that was specific to the old prey — the operator
+              // Clear any assignment that was specific to the old prey -- the operator
               // assigned us to farm X; if X is done, let scorePrey pick the next room
               // rather than pinning us to a room that generates nothing we need.
               if (this.policy.assignedRoom != null) {
@@ -7901,7 +7967,7 @@ export class Autopilot {
             } else if (!best) {
               this.note('auto-retarget: yieldCheck says paying=false but scorePrey found no candidate', {
                 purpose: this.policy.purpose, max_health: maxHealth,
-                hint: 'nothing in the band can advance this character — check goals and band settings',
+                hint: 'nothing in the band can advance this character -- check goals and band settings',
               });
             }
           }
@@ -7913,7 +7979,7 @@ export class Autopilot {
       // This does not need to be discovered by waiting. The spawn table says up
       // front whether a giant rat can ever appear here, so tolerating three empty
       // passes first is three passes of pretending. Riven spent them standing in
-      // Quintor's Smithy "hunting giant rats" — a shop, where nothing is generated,
+      // Quintor's Smithy "hunting giant rats" -- a shop, where nothing is generated,
       // nothing can be fought, and no amount of patience would have changed either.
       //
       // The check is on GENERATORS, not on the room's object list: a smithy contains
@@ -7934,13 +8000,13 @@ export class Autopilot {
             // arrive at the right one in no state to be there.
             if (!await this.readyToLeaveSanctuary(target.room_name)) return;
             this.note(offAssignment ? 'leaving for the explicitly assigned farming room'
-                                    : 'this room cannot produce our prey — leaving now', {
+                                    : 'this room cannot produce our prey -- leaving now', {
               room: room.name, hunting: this.policy.hunt,
               generates: here.map(x => x.creature),
               going_to: target.room_name,
               why: offAssignment ? `room ${this.policy.assignedRoom} is the explicit fleet assignment`
                                : here.length ? 'none of what spawns here is what we hunt'
-                               : 'nothing is generated here at all — it is not a hunting ground' });
+                               : 'nothing is generated here at all -- it is not a hunting ground' });
             this.doing = 'travelling';
             if ((await this.leaveHold('travelling to a room that generates our prey')).refused) return;
             // THE THREE THINGS WE WANT TO KNOW ABOUT AN ASSIGNMENT, recorded where a
@@ -7969,7 +8035,7 @@ export class Autopilot {
               // how a spread fleet quietly re-collapses: the first transient failure
               // blacklists the ASSIGNED room, so the keeper never tries it again and
               // goes back to the top-ranked room for ever. Both failures seen in
-              // practice were transient — a crowded `go` square ("stood on the exit
+              // practice were transient -- a crowded `go` square ("stood on the exit
               // square and nothing happened"), and a route the planner picked through
               // an edge with no floor, which succeeds from a different starting room.
               const n = (this.relocFails.get(target.room) ?? 0) + 1;
@@ -7990,13 +8056,13 @@ export class Autopilot {
         return;
       }
       // Bags full. This used to stop and say so, and then say so again every eight
-      // seconds for as long as you left it — a third of one run spent announcing a
+      // seconds for as long as you left it -- a third of one run spent announcing a
       // problem it could have solved. Sell to anyone here who buys; failing that,
       // drop the biggest pile of junk. Keep money, gems, and anything in use.
       // BROKEN GEAR IS DEAD WEIGHT FROM THE MOMENT IT BREAKS, and until now the only thing
       // that cleared it was `makeRoom`, which fires when the pack is FULL. So a character
-      // carried its broken swords for however long it took to fill fifty slots — Floyd had
-      // six and Kermit eight — and every one of them was weight and bulk spent on nothing.
+      // carried its broken swords for however long it took to fill fifty slots -- Floyd had
+      // six and Kermit eight -- and every one of them was weight and bulk spent on nothing.
       //
       // There is no reason to wait for a full pack to drop something that is useless at
       // every pack size, so this runs on its own clock. `inspectForBroken` is the cheap
@@ -8005,7 +8071,7 @@ export class Autopilot {
 
       if (c.inventory.length >= this.policy.maxCarry) {
         const freed = await this.makeRoom();
-        this.note('bags full — ' + freed.did, { carrying: c.inventory.length, max: this.policy.maxCarry, ...freed.detail });
+        this.note('bags full -- ' + freed.did, { carrying: c.inventory.length, max: this.policy.maxCarry, ...freed.detail });
         if (freed.ok) this.progress('made room in bags'); else this.noProgress('bags full and could not make room');
         return;
       }
@@ -8014,7 +8080,7 @@ export class Autopilot {
 
       // IS THIS ROOM STILL WORTH HUNTING IN, or is it silting up?
       //
-      // Asked whether or not our prey is present — see capBlockers().should_clear. The
+      // Asked whether or not our prey is present -- see capBlockers().should_clear. The
       // first version only asked when the room held no prey at all, and so did nothing
       // in the case it was built for: two centipedes among eight baby spiders reads as
       // "prey available", and the keeper hunted the two while the eight held the cap.
@@ -8035,15 +8101,15 @@ export class Autopilot {
                     'stops our prey appearing. Leaving would not reset it.' });
           }
         } else if (capped?.full && !capped.clearable.length && capped.blocked.length) {
-          // Cannot clear it, so the room is finished for us — and it will still be
+          // Cannot clear it, so the room is finished for us -- and it will still be
           // finished when we come back, because an abandoned full room keeps its
           // generator switched off. Go, and prefer somewhere else next time.
           this.note('this room is capped by things we will not fight', {
             room: room?.name, at_cap: `${capped.present}/${capped.cap}`,
-            blocked_by: capped.blocked.map(b => `${b.count}x ${b.name} — ${b.why}`),
+            blocked_by: capped.blocked.map(b => `${b.count}x ${b.name} -- ${b.why}`),
             why: 'the generator is gated on the room total, so nothing new spawns while ' +
                  'these are alive. Leaving does NOT reset it (monsroom.kod:353 only ' +
-                 'reloads a room left with zero monsters) — this is giving it up.' });
+                 'reloads a room left with zero monsters) -- this is giving it up.' });
           this.cappedRooms = (this.cappedRooms ?? new Set()).add(room?.num);
           if (this.policy.roam) { await this.roam(room); return; }
           this.noProgress('room capped by creatures we will not fight');
@@ -8071,7 +8137,7 @@ export class Autopilot {
         // An empty pass means "nothing of ours is visible RIGHT NOW", and in a spawning
         // room that is the normal state between a kill and the next wanderer. Monsters
         // take their time crossing a big outdoor room, and the whole value of a safe spot
-        // is that waiting there costs nothing — nothing can reach the square, so patience
+        // is that waiting there costs nothing -- nothing can reach the square, so patience
         // is free and the alternative is walking around in the open looking for a fight.
         //
         // Counting those passes the same as fruitless ones is what makes a character give
@@ -8104,7 +8170,7 @@ export class Autopilot {
         // "They respawn eventually" is true of a hunting ground between spawns and false
         // of a tavern. This branch could not tell them apart, so a character that drifted
         // into an inn after a death or a shop trip stood there for the rest of the
-        // session logging "nothing to hunt here" — perfectly accurately — and roam:false
+        // session logging "nothing to hunt here" -- perfectly accurately -- and roam:false
         // meant it never left.
         //
         // Fourteen of twenty-one were doing exactly that: Kermit and Floyd in Cibilo
@@ -8112,13 +8178,13 @@ export class Autopilot {
         // Barloque. Three characters were producing every kill the fleet made.
         //
         // sanctuary() already answers "does anything huntable spawn here". When the
-        // answer is no, leaving is not roaming — it is going to work — so it does not
+        // answer is no, leaving is not roaming -- it is going to work -- so it does not
         // wait on the roam permission, which exists to stop characters wandering off
         // productive ground.
         const barren = this.sanctuary(room);
         if (barren && this.emptyPasses >= 2) {
           // policy.assignedRoom is where `spread` put us; homeRoom is where we last
-          // settled. `this.assignedRoom` does not exist — reading it would have made this
+          // settled. `this.assignedRoom` does not exist -- reading it would have made this
           // whole branch quietly do nothing, which is the failure mode this fix is about.
           const home = this.policy.assignedRoom ?? this.homeRoom;
           if (home != null && home !== room?.num) {
@@ -8128,7 +8194,7 @@ export class Autopilot {
             // they were already walking. Going back to work is right; going back to work
             // hurt and bare-handed is what the last twenty minutes of records are.
             if (!await this.readyToLeaveSanctuary(home)) return;
-            this.note('this room spawns nothing at all — going back to work', {
+            this.note('this room spawns nothing at all -- going back to work', {
               room: room?.name, room_num: room?.num, going_to: home,
               why: 'a tavern has no spawn table, so waiting for a respawn here waits for ' +
                    'something that cannot happen. This is not roaming; roam guards against ' +
@@ -8159,7 +8225,7 @@ export class Autopilot {
       // ARMED? Both of this fleet's characters-can-fix-it-themselves problems are
       // checked in the same place and for the same reason: they are silent. An empty
       // larder caps vigor at what resting gives, and an empty hand turns every fight
-      // into punching — and the server reports neither. `create food` and `create
+      // into punching -- and the server reports neither. `create food` and `create
       // weapon` are carried by every character here, so the first question when either
       // is missing is whether we can simply make one.
       if (skills.weaponsOf(this.s.client).length) {
@@ -8173,7 +8239,7 @@ export class Autopilot {
         if (!armed) {
           this.note('about to fight unarmed', {
             mana: this.s.client?.vitals?.()?.mana?.value,
-            why: 'no weapon in the pack and create weapon could not be cast — it needs 15 mana',
+            why: 'no weapon in the pack and create weapon could not be cast -- it needs 15 mana',
             note: 'UserAttack falls back to a punch silently, so this would otherwise look like ' +
                   'a character that is fighting badly rather than one that is not armed' });
         }
@@ -8181,12 +8247,12 @@ export class Autopilot {
 
       // Resume the creature we already hurt rather than whatever is nearest now. A
       // kill scores nothing unless we damaged it and it was our current target, and
-      // each new attack resets both flags — so breaking off at 40% health and then
+      // each new attack resets both flags -- so breaking off at 40% health and then
       // starting fresh on a different monster silently throws away every point of
       // progress the first fight earned.
 
       // Refuse the fight outright if we are not healthy enough to take it. Heal
-      // first — that is a real action now, not a euphemism for resting.
+      // first -- that is a real action now, not a euphemism for resting.
       const safe = this.safety();
       if (hp !== null && hp < safe.engageAt) {
         const h = await skills.healUp(s, { target: 0.95 }).catch(() => ({ healed: false }));
@@ -8199,13 +8265,13 @@ export class Autopilot {
             why: 'a single hit can take ' + safe.maxHit + ' of ' + (s.client.vitals()?.health?.max) +
                  ', and health does not come back on its own' });
           // ONLY WHEN ACTUALLY BADLY HURT. engageAt is a "do not START a fight" line,
-          // not a distress signal — for a character under thirty max health it sits at
+          // not a distress signal -- for a character under thirty max health it sits at
           // 90%, so this was broadcasting for a rescue at 89% health, every five
           // minutes, in front of everybody. Being unready to pick a fight and being in
           // trouble are different states and only one of them is worth asking about.
           if ((hp ?? 1) < 0.35)
             await this.askForHelp('badly hurt and out of flasks').catch(() => {});
-          // NOT A STALL — PROVIDED WE ARE ACTUALLY RECOVERING. Regenerating on the
+          // NOT A STALL -- PROVIDED WE ARE ACTUALLY RECOVERING. Regenerating on the
           // vigor timer is the most useful thing available and calling it a stall made
           // a working system look broken. But the claim has to be true: if we got here
           // it means the rest branch above declined, which now happens only when
@@ -8226,7 +8292,7 @@ export class Autopilot {
         }
       }
       // TOO TIRED TO START. Checked before choosing a wall, not after, because the
-      // answer is the same either way — go and sit down — and doing it here means a
+      // answer is the same either way -- go and sit down -- and doing it here means a
       // character that is out of vigor spends its pass recovering rather than walking
       // somewhere to be out of vigor in.
       //
@@ -8239,10 +8305,10 @@ export class Autopilot {
       if (vigorNow != null && vigorNow < vigorFloor) {
         this.vigor.waited++;
         this.doing = 'recovering';
-        // A wall first, if one is going and we do not already have it — resting with
+        // A wall first, if one is going and we do not already have it -- resting with
         // something adjacent is only safe behind one.
         if (!this.hold && this.policy.useSafeSpots && room)
-          await this.takeSafeSpot('too tired to fight — need somewhere safe to rest',
+          await this.takeSafeSpot('too tired to fight -- need somewhere safe to rest',
                                   found[0] ?? null).catch(() => {});
         const r = await skills.restUntil(s, {
           health: 0.98, vigor: REST_VIGOR_CAP, maxSeconds: 120 }).catch(() => null);
@@ -8266,7 +8332,7 @@ export class Autopilot {
       // actually the wrong test: it made the safe spot an emergency measure for when
       // things had already gone wrong, when it is really the normal way to fight.
       // Every fight the keeper picks on purpose is against something at or above its
-      // own level — that is what makes the kill pay at all — and something at your
+      // own level -- that is what makes the kill pay at all -- and something at your
       // own level can take a third of your bar in one blow.
       //
       // So the test is the owner's rule of thumb, which is also the game's own
@@ -8294,7 +8360,7 @@ export class Autopilot {
         }
       }
 
-      // NO WALL, NO FIGHT — AND THE ROOM IS WRITTEN OFF UNTIL SOMEONE FIXES DETECTION.
+      // NO WALL, NO FIGHT -- AND THE ROOM IS WRITTEN OFF UNTIL SOMEONE FIXES DETECTION.
       //
       // Not "prefer a wall". A room this keeper cannot find a defensible square in is
       // treated as UNUSABLE and left, whatever is standing in it and whatever its
@@ -8304,13 +8370,13 @@ export class Autopilot {
       // The wall is the entire survival model. In a spot that holds, nothing lands a
       // blow unless we swing first, so a fight is a sequence of exchanges we choose;
       // in the open it is a race between their damage and our health, which is the
-      // race the death log is made of — characters going from full health to dead
+      // race the death log is made of -- characters going from full health to dead
       // inside one eight-second pass, faster than any withdrawal could have helped.
       //
       // And this keeper's detection is known to be weak rather than merely unlucky.
       // The candidate ranking was, until recently, capped at the 400 best-scoring
       // squares in the room, which in a large outdoor room filled up with alcoves
-      // before a single plain wall edge was considered — and a plain edge is exactly
+      // before a single plain wall edge was considered -- and a plain edge is exactly
       // what the known-good squares are. So "found no wall here" has often meant "did
       // not look properly".
       //
@@ -8320,7 +8386,7 @@ export class Autopilot {
       // world is recoverable; the alternative is not.
       if (this.policy.requireSafeWall !== false && !this.hold && room?.num != null) {
         // Ask once per room, not once per pass. takeSafeSpot is a scan plus pathfinds,
-        // and the answer does not change while we stand here — but it DOES change when
+        // and the answer does not change while we stand here -- but it DOES change when
         // the book learns something, so this is per session rather than persisted.
         if (!this.noWallRooms) this.noWallRooms = new Map();
         let denied = this.noWallRooms.get(room.num);
@@ -8328,7 +8394,7 @@ export class Autopilot {
           const probe = await this.takeSafeSpot(
             'testing whether this room can be fought in at all', found[0] ?? null)
             .catch(() => ({ took: false, why: 'the search threw' }));
-          // DENY THE ROOM ONLY WHEN NO SQUARE WAS FOUND — not when we failed to WALK to
+          // DENY THE ROOM ONLY WHEN NO SQUARE WAS FOUND -- not when we failed to WALK to
           // one. Those are different facts about different things: the first is about
           // the room, the second is about us, and takeSafeSpot returns took:false for
           // both. Conflating them meant a character that could not cross the floor
@@ -8353,7 +8419,7 @@ export class Autopilot {
               retryAfterMs: 600_000 });
             else this.clearRefusal('NO_SAFE_WALL');
           }
-          else this.note('could not reach a wall this pass — not blaming the room', {
+          else this.note('could not reach a wall this pass -- not blaming the room', {
             room: room.name, why: probe.why,
             note: 'the room has candidate squares; getting to one failed, which is about us ' +
                   'and is retried next pass' });
@@ -8368,7 +8434,7 @@ export class Autopilot {
         //
         // Where the risk actually lives is now measurable rather than assumed. Across
         // 6,570 observations and 221 deaths, deaths per thousand observations ran 75.7
-        // below 85 vigor and 12.4 above 160 — a six-fold difference, and vigor is the
+        // below 85 vigor and 12.4 above 160 -- a six-fold difference, and vigor is the
         // variable, not the wall. Vigor sets how fast health returns between exchanges,
         // so a rested character in the open is in a different fight from a tired one.
         //
@@ -8379,11 +8445,11 @@ export class Autopilot {
         // HOW MANY BLOWS CAN WE TAKE, not how the two levels compare.
         //
         // holdWorthwhile asks `prey level > our max health`, which is the right test for
-        // whether a kill PAYS — AdvancementCheck uses exactly that — and the wrong one
+        // whether a kill PAYS -- AdvancementCheck uses exactly that -- and the wrong one
         // for whether it is survivable. A fungus beast is level 50 against our 32, so
         // that test says "wall required" for every one of them, and the fleet walked.
         //
-        // Damage is Fuzzy(viLevel / Random(10,15)) — about level/12 a blow — and it
+        // Damage is Fuzzy(viLevel / Random(10,15)) -- about level/12 a blow -- and it
         // depends on the LEVEL alone. Difficulty decides how often the blow lands and how
         // far it reaches, not how hard it hits. So the number that says whether an open
         // fight can be broken off is our health divided by that: a fungus beast does
@@ -8410,7 +8476,7 @@ export class Autopilot {
         const canFightOpen =
           // WHAT WE INTEND TO FIGHT, not what happens to be standing next to us.
           //
-          // This asked threat().names — creatures inside the crowd radius right now — and
+          // This asked threat().names -- creatures inside the crowd radius right now -- and
           // at the moment the room decision is taken that list is normally EMPTY, so the
           // bar fell back to the strict 130 every time and the relaxation never fired
           // once. Thirteen "REFUSING TO FIGHT HERE" entries and zero "fighting anyway"
@@ -8439,14 +8505,14 @@ export class Autopilot {
           //
           // Both branches shared `warnedOpenFight` and both SET it before logging, so a
           // character that refused a room once could never log fighting in it: the
-          // refusal wrote the room number, and every later pass — including every pass
-          // where the relaxation fired — found the flag already equal and said nothing.
+          // refusal wrote the room number, and every later pass -- including every pass
+          // where the relaxation fired -- found the flag already equal and said nothing.
           // "Fighting anyway" could only ever appear if the very first evaluation in a
           // room passed the gate, which for a fleet that starts tired is close to never.
           //
           // This cost two rounds of chasing a gate that was working. The counter sat at
           // 0 across both while kills broadened from three characters to seven and
-          // fighting time went 2% to 7% — the behaviour had changed and the instrument
+          // fighting time went 2% to 7% -- the behaviour had changed and the instrument
           // could not show it. A shared one-shot flag across two mutually exclusive
           // branches does not report a state, it reports whichever state was seen first.
           if (this.warnedFightingOpen !== room.num) {
@@ -8458,7 +8524,7 @@ export class Autopilot {
               prey_level: preyLvl, my_max_health: myMax,
               blows_we_can_take: Math.round(blowsWeCanTake * 10) / 10,
               why: 'whole, well above the vigor band where the death rate collapses, and it ' +
-                   'takes this thing seven or more blows to finish us — the wall is worth ' +
+                   'takes this thing seven or more blows to finish us -- the wall is worth ' +
                    'having and is not worth another twenty minutes of walking to find' });
           }
         } else if (denied !== false && !this.hold) {
@@ -8467,12 +8533,12 @@ export class Autopilot {
           if (this.warnedOpenFight !== room.num) {
             this.warnedOpenFight = room.num;
             this.warnedFightingOpen = null;   // so flipping back reports the change
-            this.note('REFUSING TO FIGHT HERE — no safe wall in this room', {
+            this.note('REFUSING TO FIGHT HERE -- no safe wall in this room', {
               room: room.name, room_num: room.num, why_no_spot: denied,
               prey_level: worth.level ?? null, my_level: worth.my_level ?? null,
               treated_as: 'a denial of service for this area until safe-wall detection improves',
               why: 'fighting in the open is the condition the wall exists to prevent, and this ' +
-                   'detector is known to miss plain wall edges — so a miss here is not evidence ' +
+                   'detector is known to miss plain wall edges -- so a miss here is not evidence ' +
                    'the room has no wall, which is exactly why we do not gamble on it',
               doing_instead: 'roaming to a room we can hold a square in' });
           }
@@ -8480,7 +8546,7 @@ export class Autopilot {
           //
           // The first version only set emptyPasses and reported no progress, which
           // assumed the roam logic would carry the character out. Most of this fleet
-          // runs roam:false so it stays in its assigned room — so the refusal became a
+          // runs roam:false so it stays in its assigned room -- so the refusal became a
           // permanent stall, the supervisor restarted the keeper, the fresh keeper
           // re-probed the same room and refused again, once a minute. Eight characters
           // did that within a minute of the rule going live.
@@ -8515,13 +8581,13 @@ export class Autopilot {
               room: room.name, hunting: this.policy.hunt,
               why: 'every room that generates it is either unreachable or has already been ' +
                    'refused for having no wall',
-              hint: 'this prey has no safely fightable room for this character — re-target it' });
+              hint: 'this prey has no safely fightable room for this character -- re-target it' });
           }
           // STANDING STILL WHILE SOMETHING CHEWS ON YOU IS NOT A DECISION, IT IS A GAP.
           //
           // This `return` sat four lines above "FIGHT WHAT IS ACTUALLY HITTING YOU", so a
           // character that found no wall and could not leave bailed out of the pass just
-          // before the branch that would have swung back — and then did it again next
+          // before the branch that would have swung back -- and then did it again next
           // pass, and the pass after that. Beaker was found in Valley of Ileria at 29/29
           // with monsters in the room, reporting STALLED once a second and never lifting
           // its weapon. Every refusal on the way here is individually correct and the sum
@@ -8545,7 +8611,7 @@ export class Autopilot {
           //
           // Deliberately NOT a blanket "always swing". The whole safe-spot mechanic is
           // that nothing can hit you until you swing first, so retaliating is exactly
-          // wrong while a spot is holding — which is why this lives in the branch where
+          // wrong while a spot is holding -- which is why this lives in the branch where
           // there is provably no spot and no hold, and nowhere else.
           const onUs = this.inReachOfUs();
           const lone = onUs.length === 1 ? onUs[0] : null;
@@ -8568,10 +8634,10 @@ export class Autopilot {
             this.noProgress('no safe wall here and nowhere better to go');
             return;
           }
-          this.note('no wall, nowhere to go, and one thing is on us — fighting back', {
+          this.note('no wall, nowhere to go, and one thing is on us -- fighting back', {
             room: room.name, what: loneName,
             health: hpNow == null ? null : Math.round(hpNow * 100) + '%',
-            why: 'one attacker, health we would open a fight at, and a target inside the band — ' +
+            why: 'one attacker, health we would open a fight at, and a target inside the band -- ' +
                  'there is no spot to protect by holding fire and no exit to walk to, so the ' +
                  'only thing standing still buys is being hit for free' });
         }
@@ -8584,7 +8650,7 @@ export class Autopilot {
       // Qor character can legally hunt in is 50-75% BABY SPIDER and only 25-50%
       // centipede, so a Qor student attacks its centipede while two or three spiders
       // it is deliberately ignoring chew on it from behind. Thirteen of the last
-      // twenty deaths in this fleet were the five Qor characters, and this is why —
+      // twenty deaths in this fleet were the five Qor characters, and this is why --
       // not their karma, which is the story I first reached for, but the fact that
       // they alone are hunting the MINORITY spawn in every room open to them.
       //
@@ -8607,8 +8673,8 @@ export class Autopilot {
       // because it asked nothing about what it was swinging at.
       //
       // So the same question capBlockers asks before CLEARING a room is now asked before
-      // RETALIATING in one. A refused attacker is not ignored — ignoring it really is how
-      // these characters die — it is escaped from: withdraw, which retreats to a wall
+      // RETALIATING in one. A refused attacker is not ignored -- ignoring it really is how
+      // these characters die -- it is escaped from: withdraw, which retreats to a wall
       // where the health timer can run, and failing that leaves the room. Standing and
       // trading blows with something outside our band is the one option removed.
       const refused = bystander ? this.refuseEngagement(c.rsc.get(bystander.nameRsc)) : null;
@@ -8616,14 +8682,14 @@ export class Autopilot {
         this.note('will not trade blows with this', {
           creature: refused.name, level: refused.level, rating: refused.rating,
           adjacent: adjacent.length, why: refused.why,
-          instead: 'leaving the room entirely — hitting back at something outside our ' +
+          instead: 'leaving the room entirely -- hitting back at something outside our ' +
                    'safety band is how a level-27 character dies at full health, and so is ' +
                    'stepping four squares away from it' });
         this.tally.refused_retaliation = (this.tally.refused_retaliation || 0) + 1;
         // WALKING A FEW SQUARES FROM A TROLL IS NOT ESCAPING A TROLL.
         //
         // This called withdraw(), which retreats to a wall a few squares off. Against
-        // something inside our band that is right — the wall is the whole advantage.
+        // something inside our band that is right -- the wall is the whole advantage.
         // Against something OUTSIDE it, which is exactly the case this branch has just
         // identified, it is not a retreat at all: GetVisionDistance is 4 + difficulty/2
         // (monster.kod:1676), so a troll at difficulty 8 sees eight squares and a
@@ -8631,11 +8697,11 @@ export class Autopilot {
         //
         // The border of the Badlands is what this costs. Measured over all history: a
         // successful crossing takes a median of 15.8 seconds, and the median DEATH
-        // there had been in the room 208 seconds — thirteen times longer. The fastest
+        // there had been in the room 208 seconds -- thirteen times longer. The fastest
         // of 24 was 32 seconds, still twice a crossing, and not one died faster than a
         // median crossing. Nobody dies passing through; they die refusing, shuffling
         // four squares, being followed, and refusing again. 51 of 52 of them were
-        // nominally hunting giant rats, in a room that generates none — only trolls at
+        // nominally hunting giant rats, in a room that generates none -- only trolls at
         // attack rating 750 and groundworms at 600.
         await this.retreatToSafety({
           because: 'refused to fight ' + refused.name + ' (rating ' + refused.rating + ')',
@@ -8645,7 +8711,7 @@ export class Autopilot {
         return;
       }
 
-      // `clearing` is a target for THIS PASS only — a creature we are killing to free
+      // `clearing` is a target for THIS PASS only -- a creature we are killing to free
       // the room's cap, not a change of orders. policy.hunt is never rewritten by it.
       let engageName = bystander ? c.rsc.get(bystander.nameRsc)
                                  : (this.clearing || this.policy.hunt);
@@ -8656,7 +8722,7 @@ export class Autopilot {
       // SWING AT WHAT MY PARTNER IS SWINGING AT.
       //
       // This is the whole of the party. Advancement needs that WE damaged it and that
-      // it was OUR current target when it died, per character — so two characters on
+      // it was OUR current target when it died, per character -- so two characters on
       // one creature both advance from one corpse, and two characters on two creatures
       // are two solo fights sharing a room, with the danger of both and the benefit of
       // neither.
@@ -8675,7 +8741,7 @@ export class Autopilot {
             this.note('joining my partner\'s fight', {
               target: engageName, partner: agreed.from,
               why: 'both of us have to land a hit on the same creature for both of us to ' +
-                   'advance from it — a kill only scores for a character that damaged it' });
+                   'advance from it -- a kill only scores for a character that damaged it' });
         }
       }
 
@@ -8685,7 +8751,7 @@ export class Autopilot {
       // characters: the damage is split between them while each regenerates on its own
       // clock, and it dies in half the time. One character doing it alone is not
       // running the plan at reduced efficiency, it is running a different and much
-      // worse plan — the whole margin is the second swinger.
+      // worse plan -- the whole margin is the second swinger.
       //
       // So a partnered character whose partner is elsewhere waits rather than engages.
       // The wait is cheap and self-correcting: the partner is walking to the same
@@ -8704,13 +8770,13 @@ export class Autopilot {
         // waiting 640 CONSECUTIVE PASSES. Every one of those waiting characters had zero
         // kills; the only three killing anything were the unpaired ones.
         //
-        // So bound it. First go to them — the pairing is worth keeping and the partner's
+        // So bound it. First go to them -- the pairing is worth keeping and the partner's
         // room is known. If that keeps failing, engage alone: a worse plan than the pair,
         // and an enormously better one than standing still for an hour.
         if (this.waitedForMate > 8 && mate?.room != null && mate.room !== room?.num) {
           this.note('going to my partner rather than waiting for it', {
             partner: this.policy.partner, they_are_in: mate.room, waited_passes: this.waitedForMate,
-            why: 'the wait assumed they were walking to meet us and they are not — 640 passes ' +
+            why: 'the wait assumed they were walking to meet us and they are not -- 640 passes ' +
                  'of waiting was the record before this was bounded' });
           const t = await this.travel(mate.room, { maxHops: 8 })
                               .catch(e => ({ arrived: false, reason: e.message }));
@@ -8721,7 +8787,7 @@ export class Autopilot {
           this.note('engaging without my partner', {
             partner: this.policy.partner, waited_passes: this.waitedForMate,
             why: 'we could neither meet nor reach them. Fighting this alone is the worse ' +
-                 'plan and standing here is not a plan at all — nothing has been earned ' +
+                 'plan and standing here is not a plan at all -- nothing has been earned ' +
                  'in twenty passes of waiting' });
           this.waitedForMate = 0;
           // fall through to the ordinary fight path
@@ -8729,12 +8795,12 @@ export class Autopilot {
         this.note('waiting for my partner before engaging', {
           waited_passes: this.waitedForMate,
           partner: this.policy.partner,
-          they_are_in: mate?.room ?? 'unknown — no fresh reading',
+          they_are_in: mate?.room ?? 'unknown -- no fresh reading',
           i_am_in: room?.num ?? null,
           why: 'this prey is only survivable as a pair: two of us split what it deals and each ' +
                'heal at our own rate. Alone it is simply a stronger monster',
           note: mate ? undefined
-            : 'no fresh report from them at all — they may be logged out, in which case the ' +
+            : 'no fresh report from them at all -- they may be logged out, in which case the ' +
               'broker rejoins them within 45s' });
         // Rest while waiting rather than standing about: arriving at full is the point.
         await skills.restUntil(this.s, { health: 0.98, vigor: REST_VIGOR_CAP, maxSeconds: 20 })
@@ -8749,12 +8815,12 @@ export class Autopilot {
 
       // WHOEVER IS BEING HURT STOPS SWINGING. The monster chooses who it hits and
       // nothing in the protocol tells us who that is, so there is no tanking rota to
-      // run — only the observable fact that one of us is losing health faster.
+      // run -- only the observable fact that one of us is losing health faster.
       //
       // CRITICALLY, BREAKING OFF MUST NOT RE-TARGET. Stopping costs nothing; switching
       // to something else resets both advancement flags and throws away the credit for
       // every hit already landed. So this returns without touching foeId, and the
-      // healing happens exactly where we stand — behind the wall we already hold.
+      // healing happens exactly where we stand -- behind the wall we already hold.
       if (this.policy.partner && this.hold) {
         const role = party.roleFor(this.s.name,
           { health: hp, floor: this.policy.partyHealBelow ?? 0.5 });
@@ -8793,7 +8859,7 @@ export class Autopilot {
       const holding = !!this.hold;
       // TELL THE PARTNER WHAT WE ARE ABOUT TO HIT, before hitting it. Declaring after
       // the swing means the first exchange of every fight is two characters choosing
-      // independently, which is the one moment convergence is worth most — whoever
+      // independently, which is the one moment convergence is worth most -- whoever
       // gets there first sets the target and the other joins on its next pass.
       const swingAt = bystander ? bystander.id : (partyFoe ? partyFoe.id : this.foeId);
       const claimedSwing = swingAt ?? found[0]?.id ?? null;
@@ -8823,7 +8889,7 @@ export class Autopilot {
         // to follow. Clear the experiment without charging the square and try whatever is
         // actually here now.
         if (waiting?.target_id != null && !c.room.objects.get(waiting.target_id)) {
-          this.note('the pulled quarry is gone — not blaming the wall', {
+          this.note('the pulled quarry is gone -- not blaming the wall', {
             target: waiting.target, target_id: waiting.target_id,
             why: 'a missing quarry cannot establish that the route to this square is blocked' });
           this.pendingPull = null;
@@ -8884,14 +8950,14 @@ export class Autopilot {
         return;
       }
       // We got a fight. Whatever we are standing on can be fought from, so the cliff
-      // counter resets — this is the only evidence that actually settles the question.
+      // counter resets -- this is the only evidence that actually settles the question.
       if (f.rounds > 0) this.pullConverted();
       this.swungAt = Date.now();
       this.foeId = f.foe_id ?? null;
       // fight() can now tell death apart from a stale object id. If it is the
       // latter, reconnecting fixes it; treating it as death would loop forever.
       if (f.stale_identity) {
-        this.note('stale object id during a fight — reconnecting', { why: f.note });
+        this.note('stale object id during a fight -- reconnecting', { why: f.note });
         await this.reconnect('clearing a stale object id mid-fight');
         this.noProgress('reconnected after a stale object id');
         return;
@@ -8908,7 +8974,7 @@ export class Autopilot {
       if (f.disengaged) {
         const hp = v.health?.max ? Math.round(100 * v.health.value / v.health.max) + '%' : null;
         if (holding && this.holdWorks?.()) {
-          this.note('broke off behind the wall — resting here rather than running', {
+          this.note('broke off behind the wall -- resting here rather than running', {
             at_health: f.disengaged.at_health, mid_round: !!f.disengaged.mid_round,
             why: 'nothing can hit us on this square unless we swing first, so standing still ' +
                  'is a free heal and walking off it would start the damage' });
@@ -8930,7 +8996,7 @@ export class Autopilot {
         if (this.killTimes.length > 500) this.killTimes.shift();
         // ON THE FEED, WITH THE CREATURE AND THE ROOM. The tally counts; this remembers
         // what and where, which is what makes a max-health gain attributable to the thing
-        // that paid for it. Ten per character, in memory — see m59-tougher.mjs.
+        // that paid for it. Ten per character, in memory -- see m59-tougher.mjs.
         tougher.recordKill(this.who(), {
           creature: f.target, room: room?.name ?? null, room_num: room?.num ?? null,
           level: v.health?.max ?? null, rounds: f.rounds, looted, from_safe_spot: !!holding,
@@ -8938,7 +9004,7 @@ export class Autopilot {
         if (f.target) recordTargetKill(this.s?.name ?? this.who(), f.target);
         // AND INTO THE LONG RECORD, because every in-process count of a kill is wiped
         // constantly. `tally.kills` and `killTimes` are both fields on this object, and
-        // the supervisor restarts keepers about once a minute — so both really mean
+        // the supervisor restarts keepers about once a minute -- so both really mean
         // "since the last restart", and the board column asking "is this character
         // earning RIGHT NOW" was answered from a counter that had been zeroed since the
         // last kill. Measured: the fleet killed at least 26 things in half an hour while
@@ -8983,7 +9049,7 @@ export class Autopilot {
 
     // 1. Take gifts. A trade where the other side has put something up and we have
     //    put up nothing is a hand-out, and the way to accept one is to counter with
-    //    nothing — countering is what grants the other side permission to accept.
+    //    nothing -- countering is what grants the other side permission to accept.
     //    Only ever counter EMPTY, so this can never give our own things away.
     const t = c.trade;
     if (t && t.withId && (t.theirs?.length) && !(t.ours?.length)) {
@@ -8992,7 +9058,7 @@ export class Autopilot {
         this.note('accepted a gift', { from: t.withName,
                                        items: t.theirs.map(i => i.name + (i.amount > 1 ? ` x${i.amount}` : '')) });
         this.progress('someone gave us something');
-        // Put it to use immediately — a donated sword is no help in the pack.
+        // Put it to use immediately -- a donated sword is no help in the pack.
         await skills.equipBest(s, { priority: this.weaponPriorityNow() }).catch(() => {});
       } catch (e) { this.note('could not accept a gift', { why: e.message }); }
     }
@@ -9028,7 +9094,7 @@ export class Autopilot {
   // Rearm after dying, and if we cannot, say so out loud where people are.
   //
   // Dying drops everything, so the character wakes with nothing. First try the
-  // obvious: re-wield whatever survived. If there is genuinely no weapon, ask —
+  // obvious: re-wield whatever survived. If there is genuinely no weapon, ask --
   // broadcasting for a hand-out at an inn is what a newly-dead player actually
   // does, and in a world with other agents in it, it is a strategy rather than a
   // gesture. Kept to one message per death: the same channel carries a mana cost
@@ -9039,7 +9105,7 @@ export class Autopilot {
   //     iHeal = random(1,5) + (power+1)/20 + target_karma/20, bounded to 10
   //     ... PLUS random(2,5) again if the target is not yet PKILL_ENABLE
   // Every character here is under 30 base health, so every one of them qualifies for
-  // that newbie bonus — up to ten points for three mana and one herb. It also pays
+  // that newbie bonus -- up to ten points for three mana and one herb. It also pays
   // the CASTER: healing someone whose karma is higher than yours awards karma, which
   // is exactly the direction a Shal'ille student needs to move.
   //
@@ -9058,7 +9124,7 @@ export class Autopilot {
       return this.declinedCast('heal', 'not enough mana', { mana: mana.value, needs: 4 });
 
     // Another player, not us, not a monster.
-    // Raw room objects carry flags, not the snapshot's derived booleans — `is_player`
+    // Raw room objects carry flags, not the snapshot's derived booleans -- `is_player`
     // is computed in the world model and does not exist here.
     const other = [...c.room.objects.values()]
       .find(o => o.id !== c.selfId && (o.flags & OF.PLAYER));
@@ -9087,7 +9153,7 @@ export class Autopilot {
   // A death is broadcast to the whole world ("### Yorick was just killed by a
   // troll."), and the usual reply is somebody asking "where?". The dead player is
   // the one person who cannot answer at scale: dying costs all your mana, and a
-  // broadcast costs mana. But a TELL is cheap, and whoever asked still has theirs —
+  // broadcast costs mana. But a TELL is cheap, and whoever asked still has theirs --
   // so the protocol players actually use is: the corpse tells one person, that
   // person broadcasts, and the room fills up.
   //
@@ -9110,7 +9176,7 @@ export class Autopilot {
       const at = d.room_num != null ? ` (room ${d.room_num})` : '';
       const spot = d.at_col != null ? `, around col ${d.at_col} row ${d.at_row}` : '';
       const text = `${where}${at}${spot}. Killed by ${d.killed_by?.join(' and ') || 'something'}. ` +
-                   `I have no mana to broadcast it — please pass it on if you would.`;
+                   `I have no mana to broadcast it -- please pass it on if you would.`;
       try {
         await s.pacer.submit('say', () => c.tell(m.from_id ?? m.fromId, text));
         this.note('told someone where the body is', { to: m.from ?? m.from_name, where, text });
@@ -9124,7 +9190,7 @@ export class Autopilot {
   // HIT WHILE RESTING. The one response that must never happen is the one that used
   // to: note it and rest again next pass on the same square.
   //
-  // Being hit while resting is proof that this is not a place to rest — resting is
+  // Being hit while resting is proof that this is not a place to rest -- resting is
   // standing still and not swinging, which is the one thing a working safe spot makes
   // free. So do the two things that change the situation, in the order that makes both
   // of them work:
@@ -9142,15 +9208,15 @@ export class Autopilot {
     this.tally.rests_broken = (this.tally.rests_broken || 0) + 1;
     // A BROKEN REST WITH NOTHING NEXT TO US IS NOT EVIDENCE ABOUT THE SQUARE.
     //
-    // observe() has always refused this reading — `nothing was in swing range, a quiet
-    // window with nothing to be quiet about` — and it refuses it for BOTH verdicts,
+    // observe() has always refused this reading -- `nothing was in swing range, a quiet
+    // window with nothing to be quiet about` -- and it refuses it for BOTH verdicts,
     // because a window with no attacker in it says nothing either way. This path never
     // had the guard, and it is the path that fires in a town: a character crosses Tos,
     // sits down, the rest is interrupted by something that is not a monster, and the
     // paving stone it happened to stop on is condemned for ever.
     //
-    // It wrote 130 of the book's 474 failures that way — 27% of all the evidence we had
-    // — and 116 of those are in five rooms with nothing hostile in them at all: 58 in
+    // It wrote 130 of the book's 474 failures that way -- 27% of all the evidence we had
+    // -- and 116 of those are in five rooms with nothing hostile in them at all: 58 in
     // The Streets of Tos, 17 in the Sparkling Stone Shop, 15 in South Barloque, 14 in
     // Familiars, 12 in Marion. Every recorded square in all five is a phantom, written
     // ten seconds apart along a walking route.
@@ -9163,7 +9229,7 @@ export class Autopilot {
     // The rest is still broken, and everything below still runs. All this refuses to do
     // is blame the square when nothing was there to blame it for.
     if (this.hold && !near.length) {
-      this.note('rest broken with nothing in reach — not counted against this square', {
+      this.note('rest broken with nothing in reach -- not counted against this square', {
         where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
         why: 'a rest can be interrupted by things that are not an attack, and a window ' +
              'with no attacker in it is not a reading. See observe(), which has always ' +
@@ -9178,7 +9244,7 @@ export class Autopilot {
       this.note('THIS IS NOT A SAFE SPOT', {
         where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
         attackers: near.length, proven_against: this.hold.mostAttackers ?? 0,
-        why: 'we were hit while resting, which is standing still and not swinging — the ' +
+        why: 'we were hit while resting, which is standing still and not swinging -- the ' +
              'one thing that cannot happen in a working spot',
         caveat: 'found by the rest rather than by observe(), so it is one reading like any ' +
                 'other: it demotes the square, and a second stops it being recommended' });
@@ -9187,14 +9253,14 @@ export class Autopilot {
       this.note('hit while resting in the open', { room: room?.num, attackers: near.length,
         why: 'there was no wall at our back; this is the case the safe spot exists for' });
     }
-    // The third case — holding a spot, rest broken, nothing in reach — is noted above and
+    // The third case -- holding a spot, rest broken, nothing in reach -- is noted above and
     // deliberately falls through without releasing the hold. There is no evidence against
     // the square, so giving it up would throw away a working wall over a hunger tick.
 
     // Shed the aggro before walking anywhere.
     let dropped = false;
     if (this.policy.breakOutViaLogoff !== false) {
-      const rc = await this.reconnect('hit while resting — shedding aggro before moving')
+      const rc = await this.reconnect('hit while resting -- shedding aggro before moving')
                            .catch(e => ({ ok: false, why: e.message }));
       dropped = !!rc?.ok;
       this.note(dropped ? 'reconnected to shed aggro' : 'could not reconnect', {
@@ -9205,7 +9271,7 @@ export class Autopilot {
     }
     // Then go and get a wall. Not resting again until we have one.
     if (this.policy.useSafeSpots) {
-      const got = await this.takeSafeSpot('hit while resting — need a square that holds',
+      const got = await this.takeSafeSpot('hit while resting -- need a square that holds',
                                           near[0] ?? null).catch(() => false);
       this.note('moving rather than resting again', { got_a_wall: !!got, shed_aggro: dropped,
         why: 'resting again where we were just hit is the loop that kills characters "while resting"' });
@@ -9215,7 +9281,7 @@ export class Autopilot {
 
   // MAKE THE TRIP, once there is enough in the purse to be worth it.
   //
-  // bankSurplus() only ever fired when a character HAPPENED to be standing in a bank —
+  // bankSurplus() only ever fired when a character HAPPENED to be standing in a bank --
   // sound for the strategies that pass through town, and dead code for `fieldrest`,
   // whose whole point is that it never goes. The fleet ran that way for hours and
   // accumulated 35,920 shillings in pockets, single characters holding five thousand,
@@ -9228,24 +9294,24 @@ export class Autopilot {
   //
   // No return leg is needed. A bank is a town room and generates no prey, so the
   // relocation in farm() sends the character back to its assignedRoom on the next pass
-  // — the same mechanism that used to scatter the fleet, working for us.
+  // -- the same mechanism that used to scatter the fleet, working for us.
   // SHOULD THIS CHARACTER BREAK OFF AND GO AND SELL? ONE FUNCTION, ONE ANSWER, AND A
   // POLICY CAN REPLACE EITHER THE NUMBERS OR THE WHOLE JUDGEMENT.
   //
   // This used to be four expressions inlined in bankRun(), which meant the only way to
-  // change "when do we sell" was to edit the keeper — and the numbers were wrong for this
+  // change "when do we sell" was to edit the keeper -- and the numbers were wrong for this
   // fleet in a way nobody could override: `purse + bank < 500` with four spare stacks sent
   // twenty characters to the same NPC at once, each carrying about ninety shillings of
   // mushroom, during a window they should have been farming.
   //
-  // The seam matters more than the defaults. Whoever owns `economy` — DUM, an LLM bot, or
-  // an operator setting policy by hand — supplies its own thresholds, and can supply a
+  // The seam matters more than the defaults. Whoever owns `economy` -- DUM, an LLM bot, or
+  // an operator setting policy by hand -- supplies its own thresholds, and can supply a
   // whole different rule by handing in `policy.shouldSell`, a function of the same shape.
   // The keeper keeps only the part that is a fact about the character rather than a
   // judgement about the fleet: a pack too heavy to pick up what it kills has stopped
   // earning, and that is true whatever anyone is saving for.
   //
-  // Call it between tasks — after a kill, before setting off, at the top of a town errand.
+  // Call it between tasks -- after a kill, before setting off, at the top of a town errand.
   // It reads state and decides; it walks nobody.
   checkIfShouldSell({ windowOpen = false } = {}) {
     const c = this.s.client;
@@ -9271,12 +9337,12 @@ export class Autopilot {
     const fullness = cap?.known && cap.load
       ? Math.max(frac(cap.load.weight, cap.weight_max), frac(cap.load.bulk, cap.bulk_max)) : 0;
 
-    // An inexact load is a LOWER bound — carryCapacity withholds room_for rather than
+    // An inexact load is a LOWER bound -- carryCapacity withholds room_for rather than
     // guess. "Make room" is the safe reading; "there is room" is how items get deleted.
     if (cap?.known && cap.load?.exact === false)
       return { sell: true, trigger: 'unweighable',
                why: 'the pack holds something not in the weight table, so its load is a ' +
-                    'lower bound — treat that as make room, never as there is room' };
+                    'lower bound -- treat that as make room, never as there is room' };
 
     const at = this.policy.sellAtLoad ?? 0.85;
     if (fullness >= at)
@@ -9299,7 +9365,7 @@ export class Autopilot {
     }
     return { sell: false, trigger: null, fullness,
              why: windowOpen && fullness < at
-               ? `${Math.round(fullness * 100)}% loaded and the window is open — the shift is worth more`
+               ? `${Math.round(fullness * 100)}% loaded and the window is open -- the shift is worth more`
                : `${Math.round(fullness * 100)}% loaded, nothing to do` };
   }
 
@@ -9388,7 +9454,7 @@ export class Autopilot {
   // How many of one kind a courier will carry for one character on one trip. The two named
   // reagents keep their own settings because they are the two the fleet burns continuously;
   // everything else a loadout asks for shares a default. A cap of 0 for a kind is a real
-  // answer — "do not fetch this" — so it is honoured rather than replaced by the default.
+  // answer -- "do not fetch this" -- so it is honoured rather than replaced by the default.
   deliveryCapFor(kind, cfg = this.policy.farmDelivery) {
     const num = (v, fallback) => (v === undefined || v === null || Number.isNaN(Number(v))
       ? fallback : Math.max(0, Math.floor(Number(v))));
@@ -9398,7 +9464,7 @@ export class Autopilot {
   }
 
   // A KIND IS A NORMALISED ITEM NAME, and the two reagents also answer to their `shareKind`
-  // alias — the server says "herbs" where the board says "herb", and a delivery that
+  // alias -- the server says "herbs" where the board says "herb", and a delivery that
   // matched only one of those spellings would carry the right thing and fail to find it.
   matchesKind(name, kind) {
     const n = String(name || '');
@@ -9509,12 +9575,12 @@ export class Autopilot {
 
   // SELL BEFORE YOU BUY, because a full pack refuses the purchase by SPEAKING, not by
   // erroring. Joguer says "I'm unable to give you the elderberry. Perhaps you carry too
-  // much?" — a sentence to the room, which is the same class of silence as the Izzio and
+  // much?" -- a sentence to the room, which is the same class of silence as the Izzio and
   // Skivlat refusals, and the buy call itself reports nothing wrong. Rizzo spent whole
   // reagent trips walking to a counter, being refused item by item, and walking home.
   //
-  // So every buying path asks this first. It is cheap on the common path — a capacity
-  // reading it already has — and does nothing at all when there is room.
+  // So every buying path asks this first. It is cheap on the common path -- a capacity
+  // reading it already has -- and does nothing at all when there is room.
   //
   // Selling comes before dropping deliberately: the pack is full of things worth
   // shillings, and a merchant standing right there converts them. Dropping is the fallback
@@ -9524,7 +9590,7 @@ export class Autopilot {
     const cap = skills.carryCapacity(c);
     const slotsLeft = Math.max(0, (this.policy.maxCarry ?? 50) - (c.inventory?.length ?? 0));
     // room_for is withheld when the pack holds anything unweighed, and that is deliberately
-    // treated as "make room" rather than "there is room" — guessing light is the direction
+    // treated as "make room" rather than "there is room" -- guessing light is the direction
     // that produces exactly the refusal this exists to prevent.
     const tight = slotsLeft < wantSlots ||
       (cap.known && (!cap.room_for || cap.room_for.weight < 200 || cap.room_for.bulk < 200));
@@ -9589,7 +9655,7 @@ export class Autopilot {
     const pick = await this.sellerHere({ want: /elder\s?berry|^herbs?$/i }).catch(() => null);
     if (!pick) { this.coordination.delivery.failed++; return null; }
     // A courier carries a delivery's worth on top of its own pack, so this is the path most
-    // likely to be refused for space — and the refusal is a sentence, not an error.
+    // likely to be refused for space -- and the refusal is a sentence, not an error.
     await this.makeRoomToBuy(pick.seller?.id ?? pick.seller,
       { wantSlots: Math.max(6, Object.values(p.requested).length * 2) }).catch(() => {});
     const before = Object.fromEntries(kinds.map(k => [k, this.countOfKind(k)]));
@@ -9605,8 +9671,8 @@ export class Autopilot {
     let purse = this.purseNow();
     const floor = this.policy.walkingMoney ?? 400;
     // A KIND THIS COUNTER DOES NOT STOCK IS REPORTED, NOT SILENTLY DROPPED. The reagent run
-    // that exposed all of this failed exactly here — one counter had no elderberry, another
-    // no herbs — and the trip still reported itself loaded, so the fleet learned nothing
+    // that exposed all of this failed exactly here -- one counter had no elderberry, another
+    // no herbs -- and the trip still reported itself loaded, so the fleet learned nothing
     // from a walk it had already paid for.
     const unstocked = [];
     for (const kind of kinds) {
@@ -9704,7 +9770,7 @@ export class Autopilot {
     //
     // A DELIVERY IS ADDRESSED TO A PLACE, NOT TO A LIST OF PEOPLE. The recipients polled at
     // pickup decided WHAT to buy; they do not decide who gets it. By the time a courier has
-    // walked to the apothecary and back, minutes have passed and the fleet has moved — and
+    // walked to the apothecary and back, minutes have passed and the fleet has moved -- and
     // the old code, which iterated the frozen list and looked each name up in the room,
     // answered "farmer left the room or is dead" and carried the goods home. The people
     // standing here now want the same things for the same reason.
@@ -9749,7 +9815,7 @@ export class Autopilot {
     // THEN WALK THE NEIGHBOURHOOD WHILE ANYTHING IS LEFT. Trading needs the same room, so
     // "deliver to anyone nearby" is a short circuit, nearest first, and it stops the moment
     // the cargo is gone. Each leg is bounded and a leg that fails is skipped rather than
-    // retried — the goods keep, and a courier stuck bouncing between two rooms is worse for
+    // retried -- the goods keep, and a courier stuck bouncing between two rooms is worse for
     // the fleet than one that goes back to work carrying a little.
     if (left() && p.radius > 0) {
       const within = this.deliveryNeighbourhood(p.room);
@@ -9802,7 +9868,7 @@ export class Autopilot {
     //
     // The trip fired on money alone: carry more than bankAbove and go and deposit it.
     // But the money comes from SELLING, selling happens in town, and the fleet had no
-    // way to get there — twenty-one characters sat between 0 and 491 shillings against
+    // way to get there -- twenty-one characters sat between 0 and 491 shillings against
     // a threshold of 500, hauling 1,864 units of mushroom, gem and tooth they could not
     // convert. Rich enough to bank was the only door, and it was the door on the far
     // side of the thing they needed to do.
@@ -9811,15 +9877,15 @@ export class Autopilot {
     // moment the goods are sold, which is the whole point of going.
     // FULL IS A WEIGHT, NOT A COUNT OF STACKS, AND THE TWO DISAGREE COMPLETELY.
     //
-    // Measured across the fleet in one pass: Kermit held ELEVEN stacks at 99 of 2400 —
-    // four per cent loaded — while Statler held SIX at 2084 of 2400, nearly full. Counting
+    // Measured across the fleet in one pass: Kermit held ELEVEN stacks at 99 of 2400 --
+    // four per cent loaded -- while Statler held SIX at 2084 of 2400, nearly full. Counting
     // stacks sent the empty character to market and left the loaded one in the field, which
     // is exactly backwards, and it is why the fleet was seen queueing at Roq with almost
     // nothing to sell.
     //
     // The server gives the real numbers: `weight_max = 1700 + might * 20` (player.kod:10456)
     // and an exact `load`, both weight and bulk. Either can bind, so the fuller of the two
-    // decides. The stack cap is kept as a ceiling — the pack does hold about fourteen — but
+    // decides. The stack cap is kept as a ceiling -- the pack does hold about fourteen -- but
     // it is now the second test rather than the only one.
     const stacks = (c.inventory || []).length;
     const cap = this.policy.maxCarry ?? 14;
@@ -9827,7 +9893,7 @@ export class Autopilot {
     // when an item is not in the weight table the load it returns is a lower bound and
     // `room_for` comes back null. Reading it as "there is room" is the failure direction,
     // so an inexact load is treated as a reason to go and sell rather than a reason to
-    // carry on — the same rule that file states for making room.
+    // carry on -- the same rule that file states for making room.
     // ONE DEFINITION, ASKED HERE. `checkIfShouldSell` above owns both the thresholds and
     // the override seam; duplicating the arithmetic at the call site is how a quantity in
     // this repository ends up with two answers.
@@ -9845,14 +9911,14 @@ export class Autopilot {
     // THREE of twenty-one keepers had any spending recorded at all, while thirteen of
     // twenty-one carried no food. The buying was never the problem; the arriving was.
     //
-    // Casting is the cheaper route and stays the first one — but it needs 2 elderberry and
+    // Casting is the cheaper route and stays the first one -- but it needs 2 elderberry and
     // 2 herbs in the same pack, and this fleet's reagents segregate by which room each
     // character farms. Five passes running, the almoner has redistributed them and they
     // have re-separated by the next. So the test is "no food AND no way to make any",
     // which is precisely the state a shop fixes and nothing else in the field does.
     //
     // A hunger trip aims at the BREAD SHOP, not a bank. Sending it to a counter that sells
-    // no food is the same mistake as aiming a full pack at a banker — the one this file
+    // no food is the same mistake as aiming a full pack at a banker -- the one this file
     // already records as leaving Camilla and Floyd standing at Jasper with sixteen stacks
     // and nobody who would pay for any of it.
     const reag = this.reagentCount();
@@ -9866,7 +9932,7 @@ export class Autopilot {
     // character holding 108 arrives with a budget of 8, buys nothing, walks back still
     // starving, and sets off again on the very next pass. It is a closed loop with a walk
     // across the world in it, and it ran: FIVE characters logged one town trip per keeper
-    // pass — t13 made 386 trips in 386 passes — until this was capped. The whole fleet's
+    // pass -- t13 made 386 trips in 386 passes -- until this was capped. The whole fleet's
     // time went into it and the board still said "travelling", which is what it always
     // says.
     //
@@ -9882,7 +9948,7 @@ export class Autopilot {
     // Requiring 60 spendable in HAND made the door useless to exactly the characters that
     // needed it: eight of the eleven with no food and no way to cook were carrying 104-115
     // against a 100 float, while holding thousands in the bank. They are not poor, they are
-    // illiquid — and withdrawForFood() is now the thing that fixes that, at a counter.
+    // illiquid -- and withdrawForFood() is now the thing that fixes that, at a counter.
     const balance = s.bankKnown?.()?.balance ?? 0;
     const canFetch = balance >= 200;
     const starving = purchaseEnabled(this.policy, 'food') &&
@@ -9900,13 +9966,13 @@ export class Autopilot {
     // 28 purple, 24 mushroom, 10 sapphire and 3 emerald, unable to buy the 480 leather it
     // needs; Bunsen and Beaker the same. They are not poor, they are holding stock.
     //
-    // The door that fixes the condition required the condition already fixed — the same
+    // The door that fixes the condition required the condition already fixed -- the same
     // trap as "cannot afford food because it never goes to the shop that sells it" and
     // "cannot re-arm because the check cannot see broken gear". Being unable to replace
     // your armour is exactly when selling matters, so that is the trigger.
     //
     // A MARKET, NOT A BANK: Roq buys, a banker takes and gives nothing back. And unlike
-    // the food trip this one cannot spin, because it always achieves something — the goods
+    // the food trip this one cannot spin, because it always achieves something -- the goods
     // become money on arrival and the condition clears itself. The cooldown is here anyway,
     // because a character that reaches Roq and sells nothing (everything protected, or the
     // walk failed) must not turn round and set off again on the next pass.
@@ -9915,8 +9981,8 @@ export class Autopilot {
     // What a replacement piece of armour costs at the dearest counter the router might
     // pick, which is the bill this trip exists to make payable.
     const tooPoorToReplaceGear = carried + balance < 500;
-    // Only worth a walk if there is something aboard to sell. This is a PROXY — stacks
-    // that are not money — and deliberately not a call to skills.sellable, which judges one
+    // Only worth a walk if there is something aboard to sell. This is a PROXY -- stacks
+    // that are not money -- and deliberately not a call to skills.sellable, which judges one
     // item at a time and needs the worn list and the keep regex to answer. Getting that
     // exactly right here would duplicate sellAll's decision in a second place, and a
     // quantity with two homes in this repository has always ended up with two answers.
@@ -9927,7 +9993,7 @@ export class Autopilot {
       .filter(o => !/shilling/i.test(c.rsc.get(o.nameRsc) || '')).length;
     // OFF BY DEFAULT NOW, AND THE POLICY LIVES IN DUM.
     //
-    // `spare >= 4` is four stacks — four kinds of mushroom clears it — and `< 500` catches
+    // `spare >= 4` is four stacks -- four kinds of mushroom clears it -- and `< 500` catches
     // most of the fleet the moment a moot or a hand-out moves money around. Both were true
     // for nearly everyone at once, so twenty characters set off for the same NPC carrying
     // almost nothing. The trip is not wrong in principle; the threshold made it fire when
@@ -9936,13 +10002,13 @@ export class Autopilot {
     //
     // Selling when the pack is genuinely HEAVY is now the default, above. Selling because
     // a character is poor is a judgement about what the fleet is saving for, which is
-    // exactly the kind of decision that belongs in a doctrine rather than in the keeper —
+    // exactly the kind of decision that belongs in a doctrine rather than in the keeper --
     // see `market` in meridian59-dum-bot. `sell_when_broke: true` restores the old
     // behaviour for anyone who wants it.
     const brokeWithGoods = sellCall.trigger === 'broke' && !soldRecently && !starving;
     if (brokeWithGoods && !this.notedBroke) {
       this.notedBroke = true;
-      this.note('out of money with a pack worth selling — going to market', {
+      this.note('out of money with a pack worth selling -- going to market', {
         purse: carried, banked: balance, sellable_stacks: spare, to: MARKETS[0]?.name,
         why: 'a bank trip needs 500 and a pack trip needs a full pack; with neither, a ' +
              'character carrying loot it could sell stands in a field unable to replace ' +
@@ -9951,7 +10017,7 @@ export class Autopilot {
     if (!brokeWithGoods) this.notedBroke = false;
     if (starving && !this.notedStarving) {
       this.notedStarving = true;
-      this.note('out of food and cannot cook — going to town for some', {
+      this.note('out of food and cannot cook -- going to town for some', {
         purse: carried, reagents: reag, to: FOOD_SHOP.name,
         why: 'resting stops at 80 vigor and everything above it has to be eaten; with no ' +
              'food and not both reagents, a shop is the only source in reach' });
@@ -9969,19 +10035,19 @@ export class Autopilot {
     }
 
     // Jasper and Tos share one account, so the only question is which is nearer.
-    // world.route() returns {found, hops:[...]}, NOT an array — taking .length off it
+    // world.route() returns {found, hops:[...]}, NOT an array -- taking .length off it
     // gives undefined, every bank scores Infinity, and the character stands in a field
     // with 5,840 shillings reporting that it cannot reach a bank seven hops away.
     // A FULL PACK GOES TO THE MARKET; MONEY GOES TO THE BANK. Aiming a pack-driven trip
     // at a bank is what left Camilla and Floyd standing at the Jasper counter with
-    // sixteen stacks each and nobody there who would pay for any of it — the banker
+    // sixteen stacks each and nobody there who would pay for any of it -- the banker
     // being the one NPC that takes goods and gives nothing back.
     // A full pack goes to the market, money goes to the bank, and an empty larder goes to
-    // the bread shop — but only when hunger is the ONLY reason. A character that is also
+    // the bread shop -- but only when hunger is the ONLY reason. A character that is also
     // rich or also full has business at the counter that pays, and buyFoodInTown runs at
     // the end of that trip anyway, so it gets both out of one walk.
     // A full pack goes to the market, money goes to the bank, an empty larder to the bread
-    // shop — and a broke character with goods goes to the market too, for the same reason
+    // shop -- and a broke character with goods goes to the market too, for the same reason
     // the full pack does: Roq is the one who pays, and a banker takes and gives nothing.
     const destinations = needsCashFirst ? BANKS
                        : (starving && !packFull && carried <= above ? [FOOD_SHOP]
@@ -10008,7 +10074,7 @@ export class Autopilot {
     });
 
     this.doing = 'travelling';
-    // Stamp the attempt, not the success — the cooldown exists to stop a walk that buys
+    // Stamp the attempt, not the success -- the cooldown exists to stop a walk that buys
     // nothing from repeating, and "bought nothing" is the case that would otherwise never
     // set it.
     if (starving) this.foodTripAt = Date.now();
@@ -10034,7 +10100,7 @@ export class Autopilot {
     }
     // A TOWN TRIP IS THE ONLY TIME SELLING IS FREE, AND IT WAS BEING WASTED.
     //
-    // Selling lived in exactly one place — makeRoom(), reached when
+    // Selling lived in exactly one place -- makeRoom(), reached when
     // `inventory.length >= policy.maxCarry`. maxCarry defaults to 40 and the game's pack
     // holds about fourteen STACKS, so the condition is unreachable and the keeper has
     // never sold anything. Measured across the fleet: 1,864 units of mushroom, gem and
@@ -10062,7 +10128,7 @@ export class Autopilot {
     // restockInTown buys where the trip ENDED, and the two destinations sell nothing
     // edible: Roq deals in everything but stocks nothing, and a bank is a bank. So the
     // sell leg ran, the buy leg did not, and the fleet got rich and hungry at the same
-    // time — 67,669 shillings banked with twenty of twenty-one characters under 100
+    // time -- 67,669 shillings banked with twenty of twenty-one characters under 100
     // vigor, which is the resting cap doing all the work.
     //
     // Roq is in Barloque and so is the bread: 103 The Bhrama & Falcon is a short hop,
@@ -10114,7 +10180,7 @@ export class Autopilot {
   // the keeper is already within four room hops of the mainland vault, which covers the
   // ordinary Barloque food/reagent loop, then stores every protected stack at once.
   // READ THE VAULT BACK BY BUYING FROM IT. A vaultman's "shop" is your own deposit offered
-  // back at a retrieval fee, so a buy request is the only way to see what is in there — and
+  // back at a retrieval fee, so a buy request is the only way to see what is in there -- and
   // the character is already standing at the counter, so it costs one packet rather than a
   // trip across the world. Nobody has to walk to answer "what is in my vault" again.
   //
@@ -10122,7 +10188,7 @@ export class Autopilot {
   // `vault_accumulation` stats were enabled, which made the fleet's only record of its own
   // vaults a side effect of an observability toggle: turn the toggle off and the contents
   // silently stopped being cached while the deposits carried on. The detail EVENT is still
-  // gated — that is a log — but the cache is not.
+  // gated -- that is a log -- but the cache is not.
   async refreshVaultCache(vaultman) {
     const settings = detailSettings(this.policy, 'vault_accumulation');
     const c = this.s.need();
@@ -10144,8 +10210,8 @@ export class Autopilot {
     const who = c.me?.name;
     saveVaultSnapshot(who, snapshot);
     // AND INTO THE ONE STORE THE BOARDS AND TOOLS READ. These were two homes for the same
-    // quantity — the keeper wrote strategy-stats/vault-latest/ and the economy board read
-    // storage/vaults/ — so a fleet whose vaults were being cached every trip rendered a
+    // quantity -- the keeper wrote strategy-stats/vault-latest/ and the economy board read
+    // storage/vaults/ -- so a fleet whose vaults were being cached every trip rendered a
     // page of "never read". Same reading, written once to each, rather than a second
     // measurement that can disagree with the first.
     try { new StorageCache().writeVault(who, snapshot.items, { at: snapshot.at }); }
@@ -10236,7 +10302,7 @@ export class Autopilot {
 
   // THE MONEY ONLY EVER FLOWED ONE WAY, AND THE FLEET STARVED ON TOP OF A FORTUNE.
   //
-  // bankSurplus deposits and there was no counterpart anywhere in this file — every
+  // bankSurplus deposits and there was no counterpart anywhere in this file -- every
   // `withdraw` in it is a combat retreat. So a character's purse could only fall: it banks
   // down to the float, spends on the way, and the float is never topped back up. Measured
   // this pass: 78,508 shillings banked across the fleet, most characters carrying 104-115
@@ -10247,7 +10313,7 @@ export class Autopilot {
   // money in hand, and that is the cheap case. This is the other one: the money is already
   // gone, and the only way to spend it is to ask for it back.
   //
-  // Deliberately AFTER bankSurplus. The two cannot fight — bankSurplus keeps `FLOAT +
+  // Deliberately AFTER bankSurplus. The two cannot fight -- bankSurplus keeps `FLOAT +
   // foodMoney` and returns without depositing when it is under that, so by the time this
   // runs the purse is either already sufficient (and `need` is met, so this does nothing)
   // or genuinely short. Taking the food money out after banking the surplus is one round
@@ -10262,12 +10328,12 @@ export class Autopilot {
                  affordances(o.flags).includes('bank'));
     if (!teller && !/bank/i.test(room.name || '')) return;      // only where a counter is
 
-    // WHAT IT IS SHORT OF IS FOOD, NOT VIGOR — AND THE FIRST VERSION OF THIS ASKED ABOUT
+    // WHAT IT IS SHORT OF IS FOOD, NOT VIGOR -- AND THE FIRST VERSION OF THIS ASKED ABOUT
     // VIGOR AND SO NEVER FIRED ONCE.
     //
     // Measured after shipping it: zero withdrawals, and the fleet's banked total went UP,
     // 78,508 to 79,330. `shortBy` was `fightAboveVigor - vigor - larder`, which is the gap
-    // a character wants to eat RIGHT NOW — and a character at 190 vigor with an empty pack
+    // a character wants to eat RIGHT NOW -- and a character at 190 vigor with an empty pack
     // scores zero and walks away from the counter. That is the same "hungry now" versus
     // "cannot eat" confusion already fixed twice in restockReagents, made a third time.
     //
@@ -10296,11 +10362,11 @@ export class Autopilot {
     if (carried >= want) return;
 
     // NEVER ASK FOR MORE THAN IS THERE. A bank refuses an over-withdrawal outright rather
-    // than paying out the balance — that is what left Zoot walking two counters and coming
+    // than paying out the balance -- that is what left Zoot walking two counters and coming
     // away with nothing while holding 813 (see m59-outfit.mjs). The balance is only known
     // when a banker has said it aloud, so when it is unknown ask for the gap and let the
     // counter refuse; that costs a sentence, not a trip.
-    // The balance lives on the SESSION, not the keeper — bankKnown() reads the bankbook
+    // The balance lives on the SESSION, not the keeper -- bankKnown() reads the bankbook
     // that catches what a banker said aloud, because there is no packet for a balance.
     const known = s.bankKnown?.()?.balance ?? null;
     const ask = known == null ? want - carried : Math.min(want - carried, known);
@@ -10332,7 +10398,7 @@ export class Autopilot {
   // 144 and a loaf of bread at 108. Parrin is first in the room's object list.
   //
   // So every character that walked to the bread shop asked the wrong one, got nothing back,
-  // and filed `the merchant never opened a shop list` — 87 times in one day, against 214
+  // and filed `the merchant never opened a shop list` -- 87 times in one day, against 214
   // purchases of which every single one was a reagent and NOT ONE was food. The fleet went
   // from four characters without food to eighteen and its median vigor from 164 to 81 while
   // standing in a room with bread in it.
@@ -10341,7 +10407,7 @@ export class Autopilot {
   // may try to buy from this", and the only proof is a list with something on it. So this
   // asks each candidate in turn and takes the first that actually answers, which costs one
   // extra call in the room where it matters and none where the first merchant is the right
-  // one. `want` lets a caller insist on a merchant stocking a particular kind — the food
+  // one. `want` lets a caller insist on a merchant stocking a particular kind -- the food
   // leg does not want the reagent counter and vice versa.
   async sellerHere({ want = null, trusted = false } = {}) {
     const c = this.s.need();
@@ -10369,27 +10435,27 @@ export class Autopilot {
     if (!purchaseEnabled(this.policy, 'food')) return;
     const s = this.s, c = s.need();
     const vg = c.vitals?.()?.vigor;
-    // larderOf already carries the food table — nutrition per item, best value first.
+    // larderOf already carries the food table -- nutrition per item, best value first.
     const carried = this.larder(c)
       .reduce((t, f) => t + (f.food?.nutrition ?? 0) * (f.o.amount || 1), 0);
     const want = (this.policy.fightAboveVigor ?? 140) - (vg?.value ?? 0) - carried;
     if (want <= 20) return;                       // enough in hand or already topped up
-    // TRY THE DOOR MORE THAN ONCE — IT IS THE DOOR, NOT THE ROUTE.
+    // TRY THE DOOR MORE THAN ONCE -- IT IS THE DOOR, NOT THE ROUTE.
     //
     // The fleet went from four characters without food to eighteen, and median vigor from
-    // 164 to 81, while buying 214 things — every one of them a reagent and not one of them
+    // 164 to 81, while buying 214 things -- every one of them a reagent and not one of them
     // food. The buying logic was fine. `travel(103)` was simply failing, and this gave up
     // on the first attempt and filed a note nobody reads.
     //
     // The route is not the problem: `map` finds it in two hops and the last one is a `go`
-    // through a door. Walked by hand the same trip succeeds — the character reached North
+    // through a door. Walked by hand the same trip succeeds -- the character reached North
     // Barloque, then stepped into The Bhrama & Falcon on the next call. It is the known
     // Meridian door behaviour: a door needs the EXACT square, the arrival square and the
     // departure square deliberately do not line up, and a single attempt is a coin toss.
     // The earlier 108/110 investigation measured the same thing at 52-69% per attempt.
     //
     // So three attempts, which turns a coin toss into a near-certainty, and the failure
-    // note now says how many were made — a note reading "could not reach" after one try
+    // note now says how many were made -- a note reading "could not reach" after one try
     // and after three are different facts about the world.
     if (s.world?.room?.num !== FOOD_SHOP.room) {
       let got = null;
@@ -10417,7 +10483,7 @@ export class Autopilot {
 
   // SELL WHAT NOBODY IS SHORT OF. `sellable` already consults this character's own
   // loadout, and sellAll already refuses to sell anything a crewmate has declared a want
-  // for — but nothing was passing the loadout in, so a character's own list could not
+  // for -- but nothing was passing the loadout in, so a character's own list could not
   // protect its reagents and the fleet register was doing all the work alone. Both are
   // consulted now: either one saying "keep" is enough, which is what makes it safe to
   // sell everything else.
@@ -10432,7 +10498,7 @@ export class Autopilot {
     // characters carrying 1,864 units of loot between them.
     //
     // So a sale is made only to a merchant on the trusted list. Anyone else is left alone
-    // however generous their flags look — being wrong about a buyer costs the whole pack,
+    // however generous their flags look -- being wrong about a buyer costs the whole pack,
     // and being wrong about a walk costs a walk. See SELL_TO in m59-skills.mjs.
     const buyer = [...c.room.objects.values()]
       .find(o => affordances(o.flags).includes('buy') && skills.trustedBuyer(c.rsc.get(o.nameRsc)));
@@ -10456,11 +10522,11 @@ export class Autopilot {
   // TAX ONLY WHAT THIS TOWN TRIP JUST EARNED. Existing purse, bank balances and the
   // walking reserve are not a guild treasury. Partial payments accumulate in a durable
   // per-character daily book and the next sale trip finishes the day's configured sum.
-  // GUILD WANTS — the fleet's shared demand, answered by whoever is passing.
+  // GUILD WANTS -- the fleet's shared demand, answered by whoever is passing.
   //
   // A CHECK-IN, NOT AN ERRAND, exactly like the rent tithe beside it: it runs on every town
   // trip, and the walk is skipped whenever there is nothing to carry. That is the whole
-  // reason the plan is an END STATE — "chest 2 should hold 300 mushrooms" shrinks as other
+  // reason the plan is an END STATE -- "chest 2 should hold 300 mushrooms" shrinks as other
   // characters contribute, so a met plan silently produces no work instead of sending
   // twenty-one characters to look at a full chest.
   async contributeGuildWants() {
@@ -10473,7 +10539,7 @@ export class Autopilot {
 
     // THE CONTRIBUTOR KEEPS ITS OWN FLOOR. A guild is not entitled to the elderberry a
     // caster eats with, so the loadout's own minimum comes off the top before anything is
-    // offered — the same rule farm delivery follows for the same reason.
+    // offered -- the same rule farm delivery follows for the same reason.
     const l = this.loadout();
     const keepFloor = (item) => {
       const entry = l?.carry?.find(cRow => norm(cRow.item) === item);
@@ -10506,7 +10572,7 @@ export class Autopilot {
 
     // A CHEST IS ADDRESSED BY OBJECT ID, and the cache is what knows which id is which
     // slot. Falling back to the order chests appear in the room would be a guess that
-    // silently files chest 3's contents into chest 1 — so a slot whose id is not in the
+    // silently files chest 3's contents into chest 1 -- so a slot whose id is not in the
     // room is skipped and named rather than substituted.
     const inRoom = new Map([...(c.room?.objects?.values?.() ?? [])]
       .filter(o => /chest/i.test(c.rsc.get(o.nameRsc) || ''))
@@ -10603,9 +10669,9 @@ export class Autopilot {
     const s = this.s, c = s.need();
     // ASK THE ONE THAT ACTUALLY TRADES. This took the first object flagged `buy` and
     // committed to it, which is how the fleet spent a day asking Parrin Aragone for bread
-    // in a room where Meidei was selling it. The same mistake is cheaper here — this runs
+    // in a room where Meidei was selling it. The same mistake is cheaper here -- this runs
     // wherever a town trip happened to end, usually a bank or Roq, and neither stocks a
-    // reagent — but it is still the single largest decline in the ledger: "the merchant
+    // reagent -- but it is still the single largest decline in the ledger: "the merchant
     // never opened a shop list", 269 times in six hours, which reads like a broken shop
     // and is a wrong question.
     const pick = await this.sellerHere().catch(() => null);
@@ -10621,7 +10687,7 @@ export class Autopilot {
   // shillings are inventory. Bank deposits are not. This fleet has already proved the
   // point the expensive way: twenty-three deaths, and an audit afterwards found
   // nineteen of twenty-five characters wearing nothing and most carrying no money at
-  // all — everything they had earned was lying on corpses across the world.
+  // all -- everything they had earned was lying on corpses across the world.
   //
   // With a balance, a death costs a point of maximum health and an errand. Without
   // one it costs everything and the character restarts from nothing, which is the
@@ -10637,7 +10703,7 @@ export class Autopilot {
     const teller = [...c.room.objects.values()]
       .find(o => /bank/i.test(c.rsc.get(o.nameRsc) || '') ||
                  affordances(o.flags).includes('bank'));
-    // Only when we happen to be standing in a bank — a special trip is not worth the
+    // Only when we happen to be standing in a bank -- a special trip is not worth the
     // walk, and the trader/wellfed loops already pass through town.
     if (!teller && !/bank/i.test(room.name || '')) return;
 
@@ -10649,13 +10715,13 @@ export class Autopilot {
     // DO NOT BANK THE MONEY YOU ARE ABOUT TO SPEND ON FOOD.
     //
     // The float is 400 and restockReagents will not spend below a 100 reserve, so a
-    // character walks out of the bank able to spend 300 — and then banks down to the
+    // character walks out of the bank able to spend 300 -- and then banks down to the
     // float again next trip. Meanwhile an apple is 45, a loaf 108 and a cheese 144. The
     // result was a fleet holding 67,669 shillings between them with twenty of twenty-one
     // characters stuck at the resting cap: rich, hungry, and each half of that caused by
     // the other. Statler had 82 in its purse against 852 in its account.
     //
-    // Withdrawing it back would be a second trip. Keeping it is free — this is the one
+    // Withdrawing it back would be a second trip. Keeping it is free -- this is the one
     // moment the money is in hand and the shop is one hop away, so hold back what the
     // food actually costs and bank the rest.
     const vg = c.vitals?.()?.vigor;
@@ -10702,7 +10768,7 @@ export class Autopilot {
   // reconnect, and PFLAG_MOVED_SINCE_ENTRY is what ends it.
   //
   // Crucially, UC_REST goes straight to StartResting (user.kod:1480) WITHOUT calling
-  // NotifyMonstersOfPresence — so resting does not wake anything. Moving, turning,
+  // NotifyMonstersOfPresence -- so resting does not wake anything. Moving, turning,
   // attacking, casting and picking things up all do.
   //
   // The honest limit, because the same flag gates two different things: HealthTimer
@@ -10714,7 +10780,7 @@ export class Autopilot {
   // ALL OF THAT CHANGES IF WE ARE STANDING IN A SAFE SPOT, and it changes for the
   // better, because the reason to stay frozen disappears. Logging back in puts us
   // back exactly where we logged off; the walls have not moved; so the grace period
-  // is no longer the thing keeping us alive — the geometry is. That means we can
+  // is no longer the thing keeping us alive -- the geometry is. That means we can
   // afford to SPEND the grace period rather than hoard it: turn once, which wakes
   // everything and arms HealthTimer, and then rest to full while the things that
   // noticed us stand there unable to do anything about it.
@@ -10727,7 +10793,7 @@ export class Autopilot {
     // A FREEZE THAT CHANGED NOTHING MUST NOT BE REPEATED.
     //
     // Freezing buys safety by not acting, and the same flag that keeps the monsters
-    // off also keeps HealthTimer off — so it recovers vigor and NEVER health. That is
+    // off also keeps HealthTimer off -- so it recovers vigor and NEVER health. That is
     // the right trade exactly once. Do it twice from the same health and it is a
     // livelock: wake, see the same danger, freeze again, for ever, at four health,
     // reporting a sensible-looking journal line every eight seconds.
@@ -10738,7 +10804,7 @@ export class Autopilot {
     if (this.frozeAt != null && nowHp != null && nowHp <= this.frozeAt) {
       this.freezesWithoutGain = (this.freezesWithoutGain || 0) + 1;
       if (this.freezesWithoutGain >= 2) {
-        this.note('refusing to freeze again — it is not helping', {
+        this.note('refusing to freeze again -- it is not helping', {
           health: nowHp, froze_at: this.frozeAt, times: this.freezesWithoutGain,
           why: 'playing dead recovers vigor and never health, so repeating it from the same ' +
                'health cannot ever end. Something that moves has to happen instead.' });
@@ -10747,7 +10813,7 @@ export class Autopilot {
     } else this.freezesWithoutGain = 0;
     this.frozeAt = nowHp;
 
-    // TELL THE PILOT NOW, BEFORE THE RECONNECT — this is the only free moment there is.
+    // TELL THE PILOT NOW, BEFORE THE RECONNECT -- this is the only free moment there is.
     //
     // Speaking is not unconditionally an action. UserSayGroup, the handler behind a tell,
     // opens with:
@@ -10763,7 +10829,7 @@ export class Autopilot {
     // Two lines further down, reconnect() re-enters the world and CLEARS that flag, and
     // from then until the unfreeze every word is a wake-up call to the whole room. So
     // "during the freeze" is precisely the window where a tell would kill the character
-    // it is reporting on — and this, the moment the decision is taken, is both free and
+    // it is reporting on -- and this, the moment the decision is taken, is both free and
     // the earliest the news can possibly travel. The character then sits still for ninety
     // seconds, which is time enough to walk over and watch it.
     this.debug = {
@@ -10781,7 +10847,7 @@ export class Autopilot {
         o.id !== s.client.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER)).length : null,
       detail: { why, freeze_s: Math.round((this.policy.freezeMs ?? 90_000) / 1000),
                 froze_at: this.frozeAt, times: this.freezesWithoutGain ?? 0,
-                note: 'sent BEFORE the logoff — during the freeze a tell would wake the room' },
+                note: 'sent BEFORE the logoff -- during the freeze a tell would wake the room' },
     };
     await this.tellPilot(this.debug).catch(() => {});
     // Keep our own copy: rejoin() renumbers everything, and observe() will not have
@@ -10792,7 +10858,7 @@ export class Autopilot {
       why, health: s.client?.vitals?.()?.health,
       in_safe_spot: inSpot || undefined,
       how: inSpot
-        ? 'disconnect, reconnect, and then deliberately turn — we come back standing in a spot ' +
+        ? 'disconnect, reconnect, and then deliberately turn -- we come back standing in a spot ' +
           'nothing can reach us in, so waking the room costs nothing and buys the health timer'
         : 'disconnect, wait, reconnect, and then do NOTHING that counts as an action' });
     this.tally.logoffs = (this.tally.logoffs || 0) + 1;
@@ -10809,7 +10875,7 @@ export class Autopilot {
       const back = me && me.col === spot.col && me.row === spot.row;
       if (back) {
         // Not frozen: the walls are doing the work, so the grace period is ours to
-        // spend. The ordinary rest branch takes it from here — it turns to arm the
+        // spend. The ordinary rest branch takes it from here -- it turns to arm the
         // timer, rests to full, and observe() keeps checking that nothing lands.
         this.hold = { ...spot, takenAt: Date.now(), quietMs: 0, reclaimed: true };
         this.tally.mulligans = (this.tally.mulligans || 0) + 1;
@@ -10821,7 +10887,7 @@ export class Autopilot {
         return true;
       }
       // We came back somewhere else. Say so rather than carry on believing in a
-      // square we are not standing on — every branch above trusts this flag.
+      // square we are not standing on -- every branch above trusts this flag.
       this.hold = null;
       this.note('did not come back on the safe spot', {
         expected: { col: spot.col, row: spot.row },
@@ -10829,7 +10895,7 @@ export class Autopilot {
         why: 'falling back to staying completely still, which needs no geometry to work' });
     }
 
-    // Frozen. Rest only — no movement, no turning, no looking around, and in
+    // Frozen. Rest only -- no movement, no turning, no looking around, and in
     // particular no room-contents request, because anything that reads as an action
     // hands the grace period back.
     this.frozenUntil = Date.now() + (this.policy.freezeMs ?? 90_000);
@@ -10852,7 +10918,7 @@ export class Autopilot {
     // NOBODY NEEDS RESCUING IN AN INN.
     //
     // Being hurt is not being in danger, and broadcasting as though it were is both
-    // embarrassing and expensive — it costs a share of maximum mana and it spends
+    // embarrassing and expensive -- it costs a share of maximum mana and it spends
     // other players' attention on a character that is in no trouble whatsoever.
     // Isolde did it from the middle of the Limping Toad, where monsters cannot attack
     // at all. The remedy there is entirely in our own hands: move, which is what arms
@@ -10860,7 +10926,7 @@ export class Autopilot {
     // vigor that resting can reach, without anybody being asked for anything.
     //
     // (The pedantic exception is an assassin's game blade, which can strike you in an
-    // inn — but it costs no health, no stats and no inventory, so it is not a reason
+    // inn -- but it costs no health, no stats and no inventory, so it is not a reason
     // to call for help either.)
     //
     // Being unarmed after a death is different and still worth asking about: no
@@ -10869,7 +10935,7 @@ export class Autopilot {
     if (hurtOnly && this.sanctuary()) {
       if (!this.quietedPleaIn || this.quietedPleaIn !== this.s.world?.room?.num) {
         this.quietedPleaIn = this.s.world?.room?.num ?? null;
-        this.note('not asking for help — we are somewhere safe', {
+        this.note('not asking for help -- we are somewhere safe', {
           room: this.s.world?.room?.name, reason,
           why: 'nothing can attack us here, so being hurt is a wait rather than an emergency: ' +
                'moving arms the health timer and resting does the rest' });
@@ -10898,10 +10964,10 @@ export class Autopilot {
     const v = c.vitals()?.health;
     const name = c.me?.name || 'a traveller';
     const plea = hurt
-      ? `${name} here at ${where} — I am down to ${v ? `${v.value} of ${v.max}` : 'almost no'} health ` +
+      ? `${name} here at ${where} -- I am down to ${v ? `${v.value} of ${v.max}` : 'almost no'} health ` +
         `and I have nothing to heal with. Resting brings health back slowly in these lands. ` +
         `If anyone can spare a flask or cast a heal on me I would be in your debt.`
-      : `${name} here — I was killed and lost everything. I am at ${where} with no weapon ` +
+      : `${name} here -- I was killed and lost everything. I am at ${where} with no weapon ` +
         `or armour. If anyone can spare a blade or a few shillings I would be grateful, ` +
         `and I will pay it forward once I am on my feet.`;
     this.lastPleaAt = Date.now();
@@ -10914,8 +10980,8 @@ export class Autopilot {
       try { await s.pacer.submit('say', () => c.say(plea)); this.note('asked for help', { channel: 'say', room: where }); }
       catch { this.note('could not ask for help', { why: e.message }); }
     }
-    this.noProgress(hurt ? 'hurt with no way to heal — waiting on a passer-by'
-                         : 'dead broke and unarmed — waiting on charity');
+    this.noProgress(hurt ? 'hurt with no way to heal -- waiting on a passer-by'
+                         : 'dead broke and unarmed -- waiting on charity');
   }
 
   // BUY THE INGREDIENTS, NOT THE MEAL, and only while we are already at a counter.
@@ -10932,7 +10998,7 @@ export class Autopilot {
     const mayBuyReagents = purchaseEnabled(this.policy, 'reagents');
     if (!mayBuyFood && !mayBuyReagents) return [];
     // Sell first. A merchant refuses a purchase into a full pack by SPEAKING, and the buy
-    // call reports success either way — so without this a character walks to a counter,
+    // call reports success either way -- so without this a character walks to a counter,
     // is talked at, and walks home with nothing.
     await this.makeRoomToBuy(seller?.id ?? seller).catch(() => {});
     // Per kind: the field refills elderberry for nothing and nothing in the world drops a
@@ -10947,7 +11013,7 @@ export class Autopilot {
     // WHAT THIS CHARACTER ASKED FOR, WHICH MAY BE NEITHER OF THOSE TWO.
     //
     // `need` is keyed by shareKind, which knows about elderberry and herbs and nothing
-    // else — the two the whole fleet turns on, and for a long time the only two anything
+    // else -- the two the whole fleet turns on, and for a long time the only two anything
     // could be short of. A caster whose spells eat mushrooms and orc teeth had no way to
     // say so, and the shop filter below would step over them at a counter that stocked
     // them.
@@ -10980,8 +11046,8 @@ export class Autopilot {
 
     // "AT THE REAGENT TARGET" IS NOT A REASON TO WALK PAST THE BREAD.
     //
-    // This returned whenever the two reagents were stocked, and everything below it —
-    // including the entire food-buying half of this function — is downstream of that
+    // This returned whenever the two reagents were stocked, and everything below it --
+    // including the entire food-buying half of this function -- is downstream of that
     // return. So a character with sixty herbs and no dinner declined at the counter
     // selling dinner, and the ledger recorded it as `already at the reagent target`,
     // which is true and is not the question that was being asked.
@@ -10989,7 +11055,7 @@ export class Autopilot {
     // Silent until I made it worse. Raising the herb target to 60 (see
     // REAGENT_TARGET_BY_KIND) is what pushed the fleet over the line: characters now top
     // up herbs at Joguer's, arrive at the bread shop already satisfied, and take this
-    // return. Measured over one day afterwards — 214 purchases, ALL of them reagents (185
+    // return. Measured over one day afterwards -- 214 purchases, ALL of them reagents (185
     // herbs, 32 elderberry) and NOT ONE item of food, while seventeen of twenty-one
     // carried nothing to eat and the fleet's median vigor fell from 164 to 81.
     //
@@ -11008,7 +11074,7 @@ export class Autopilot {
     // THE WALKING FLOAT MUST NOT STARVE THE CHARACTER IT PROTECTS.
     //
     // This refused outright below the float, so a character holding 300 shillings bought
-    // no reagents at all — when sixty of them is three casts of create food, and create
+    // no reagents at all -- when sixty of them is three casts of create food, and create
     // food is the only route to vigor for a character nowhere near a shop. The fleet
     // declined 894 casts in one day for want of reagents, against 58 for want of mana.
     //
@@ -11019,7 +11085,7 @@ export class Autopilot {
     // AN EMPTY PACK COUNTS AS HUNGRY, BECAUSE THE TRIP THAT GOT HERE SAYS SO.
     //
     // bankRun now walks a character to the bread shop for having no food and no way to
-    // cook. Both gates below then asked a different question — is it hungry RIGHT NOW —
+    // cook. Both gates below then asked a different question -- is it hungry RIGHT NOW --
     // and the two disagree exactly where it matters: a character at 200 vigor with an
     // empty pack is not hungry, and is one fight away from being stuck at the resting cap
     // with no way back up. Nine of them walked to The Bhrama & Falcon on the new door and
@@ -11033,7 +11099,7 @@ export class Autopilot {
     const floor = hungryNow ? Math.min(fullFloor, this.policy.hungryFloor ?? 100) : fullFloor;
     if (purse <= floor) {
       this.declinedPurchase('purse is down to the walking float', { purse, float: floor,
-        ...(floor !== fullFloor ? { relaxed_from: fullFloor, why: 'hungry — reagents outrank the float' } : {}),
+        ...(floor !== fullFloor ? { relaxed_from: fullFloor, why: 'hungry -- reagents outrank the float' } : {}),
         need });
       return [];
     }
@@ -11049,13 +11115,13 @@ export class Autopilot {
     // BUY FOOD TOO, NOT JUST REAGENTS.
     //
     // This filtered every shop list through shareKind, which matches elderberry and herbs
-    // and nothing else — so a character could stand at a counter selling bread, with
+    // and nothing else -- so a character could stand at a counter selling bread, with
     // money in hand and vigor pinned at the resting cap, and buy nothing. Ten of
     // twenty-one sat at exactly 80 for an entire session on that.
     //
     // Resting stops awarding vigor at 80 of 200, so everything above it has to be EATEN.
     // Making food needs elderberry and herbs in the eater's own pack, and the fleet's
-    // reagents are hoarded in rooms nobody hungry ever visits — buying is the route that
+    // reagents are hoarded in rooms nobody hungry ever visits -- buying is the route that
     // does not depend on the geography lining up.
     //
     // isFood comes from the Food class tree (m59-items.mjs), not a word list: guessing by
@@ -11068,7 +11134,7 @@ export class Autopilot {
     // viNutrition is vigor one-for-one (player.kod:1277-1278) and spans an order of
     // magnitude: a water skin is 3, a wheel of cheese 30. This took one of everything in
     // whatever order the shop listed it, and checked each price against the purse it
-    // walked in with rather than what was left — so it could both overspend and come away
+    // walked in with rather than what was left -- so it could both overspend and come away
     // with a handful of water skins when a single cheese was the same trip.
     const budget = purse - floor;
     let spend = 0;
@@ -11082,7 +11148,7 @@ export class Autopilot {
 
     // What eating everything already in the pack would be worth, so a character with a
     // cheese in hand does not buy another.
-    // c.inventory is an ARRAY, not a method, and vitals().vigor is {value, scale_max} —
+    // c.inventory is an ARRAY, not a method, and vitals().vigor is {value, scale_max} --
     // both were wrong on the first go, and the vigor one is the dangerous shape: an
     // object in arithmetic is NaN, NaN > 0 is false, and the fleet would have quietly
     // stopped buying food altogether while every reading still said it was shopping.
@@ -11104,7 +11170,7 @@ export class Autopilot {
     // to this character's own fight floor. Anything less and the next trip is immediate.
     //
     // REST_VIGOR_CAP IS A FRACTION (0.4), NOT A VIGOR. Everything else in this block is in
-    // points — vigorNow, carried, nutrition — so it has to be scaled before it can be
+    // points -- vigorNow, carried, nutrition -- so it has to be scaled before it can be
     // subtracted from one. Written raw it reads as 140 - 0.4 and asks for a reserve of 139
     // points, which is most of the bar and would have every character buying out the shelf.
     const restCap = REST_VIGOR_CAP * vigorMax;                     // 0.4 of 200 = 80
@@ -11148,9 +11214,9 @@ export class Autopilot {
       await new Promise(r => setTimeout(r, 700));
       got.push(`${it.name} @${it.cost}`);
       this.recordPurchase(it.name, it.cost, { kind: skills.shareKind(it.name) || (isFood(it.name) ? 'food' : null),
-        // seller may be a bare id — the signature accepts both — so do not assume an object.
+        // seller may be a bare id -- the signature accepts both -- so do not assume an object.
         from: seller?.nameRsc ? (c.rsc.get(seller.nameRsc) ?? null) : null,
-        why: isFood(it.name) ? 'food bought at a counter we were already standing at — the only way past the vigor-80 resting cap' : 'reagent top-up at a counter we were already standing at, to keep create food castable' });
+        why: isFood(it.name) ? 'food bought at a counter we were already standing at -- the only way past the vigor-80 resting cap' : 'reagent top-up at a counter we were already standing at, to keep create food castable' });
     }
     await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
     if (got.length) this.note('restocked reagents', { bought: got, had: have, target: want,
@@ -11165,7 +11231,7 @@ export class Autopilot {
   //
   // Bounded three ways so it cannot become a tax on the pass: it runs at most once every
   // `dropBrokenEverySec`, it inspects only unworn weapons, and it drops at most a few per
-  // sweep — a character with fifteen broken swords clears them over several sweeps rather
+  // sweep -- a character with fifteen broken swords clears them over several sweeps rather
   // than spending a whole pass dropping. `dropJunk: false` turns it off with everything
   // else that discards.
   async sweepBroken() {
@@ -11180,9 +11246,9 @@ export class Autopilot {
       .filter(o => !worn.has(o.id) && skills.weaponScore(c.rsc.get(o.nameRsc) || '') > 0)
       .map(o => o.id);
     // ASKING IS WHAT MAKES IT KNOWN. A spare is never swung, so nothing ever discovers it
-    // is broken unless somebody looks — which is the loop that let those swords accumulate.
+    // is broken unless somebody looks -- which is the loop that let those swords accumulate.
     if (spares.length) await skills.inspectForBroken(s, spares).catch(() => null);
-    // `junkAndBroken` reports WHY, not a flag — there is no `d.broken`, and filtering on
+    // `junkAndBroken` reports WHY, not a flag -- there is no `d.broken`, and filtering on
     // one would have matched nothing and swept nothing, silently, for ever. Junk is left to
     // makeRoom: this sweep is only about gear the server will refuse to wield.
     const dead = skills.junkAndBroken(c).filter(d => /broken/.test(d.why || ''));
@@ -11204,14 +11270,14 @@ export class Autopilot {
     this.doing = 'trading';
     const s = this.s, c = s.need();
     // THE SAME GUARD AS sellInTown, AND IT WAS MISSING HERE. makeRoom is reached far more
-    // often than the town trip — any pass with a full pack standing next to anything that
-    // reports `buy` — so leaving it unguarded meant the fix was decorative. Skivlat takes
+    // often than the town trip -- any pass with a full pack standing next to anything that
+    // reports `buy` -- so leaving it unguarded meant the fix was decorative. Skivlat takes
     // goods and gives nothing; see SELL_TO in m59-skills.mjs.
     const buyer = [...c.room.objects.values()]
       .find(o => affordances(o.flags).includes('buy') && skills.trustedBuyer(c.rsc.get(o.nameRsc)));
     if (buyer) {
       // THE LOADOUT DECIDES WHAT LEAVES THE PACK, WHERE IT HAS AN OPINION. sellAll's own
-      // guards — money, worn gear, anything a crewmate is short of — still apply; this adds
+      // guards -- money, worn gear, anything a crewmate is short of -- still apply; this adds
       // this character's floors and its sell list on top.
       const sold = await skills.sellAll(s, { merchant: buyer.id, loadout: this.loadout(),
                                             protect: this.protectedItemNames(),
@@ -11219,7 +11285,7 @@ export class Autopilot {
                                             weaponPriority: this.weaponPriorityNow() })
                                .catch(e => ({ error: e.message }));
       // WE ARE STANDING AT A SHOP WITH MONEY IN HAND. Restocking reagents here costs
-      // nothing extra — the walk is already paid for — and it is the one time buying
+      // nothing extra -- the walk is already paid for -- and it is the one time buying
       // from a vendor is not simply losing the spread to them.
       const bought = await this.restockReagents(buyer).catch(() => null);
       if (!sold.error && sold.sold?.length) {
@@ -11240,7 +11306,7 @@ export class Autopilot {
     // DEAD WEIGHT FIRST, and it has to be first because the keep list below protects it.
     //
     // `keep` names sword|mace|hammer|axe|bow to stop the pack-clearer stripping the
-    // character's weapon — sound, except that a BROKEN weapon is not renamed
+    // character's weapon -- sound, except that a BROKEN weapon is not renamed
     // (weapon.kod:788 changes only the icon) and the junk item is literally called
     // "broken mace". So the guard that exists to protect equipment was the reason every
     // character hauled its shattered swords around for ever: unsellable, unwieldable,
@@ -11248,14 +11314,14 @@ export class Autopilot {
     // ASK ABOUT THE SPARES BEFORE DECIDING THERE IS NOTHING TO DROP.
     //
     // junkAndBroken can only report weapons brokenSet already knows about, and brokenSet
-    // only ever learned by a failed wield — which happens at most once a pass and only
+    // only ever learned by a failed wield -- which happens at most once a pass and only
     // for the weapon the character was about to use. So a pack full of dead maces
     // reported "nothing to drop" indefinitely: the spares were never the ones being
     // wielded, so they were never tested, so they were never known, so they were never
     // dropped. Floyd had six and Kermit eight on exactly that loop.
     //
     // Looking is the cheap question (see inspectForBroken), and it is asked only about
-    // spares — never the weapon in hand — and only when the pack is worth clearing, so
+    // spares -- never the weapon in hand -- and only when the pack is worth clearing, so
     // it costs nothing on the common path.
     const worn0 = skills.equippedNow(c) ?? new Set();
     const spares = (c.inventory || [])
@@ -11275,11 +11341,11 @@ export class Autopilot {
                detail: { now_carrying: c.inventory.length, dead_weight_left: dead.length - 1 } };
     }
 
-    // The keep list is a VALUE guard — money, gems, the sort of gear worth carrying a
+    // The keep list is a VALUE guard -- money, gems, the sort of gear worth carrying a
     // spare of. It used to double as the equipment guard, and that was only ever an
     // approximation: it protects things whose NAMES look like equipment, so anything
-    // worn that is not named after a weapon or a piece of armour — a ring, a cloak, an
-    // amulet, boots, a lute — was as droppable as a rat pelt while the character was
+    // worn that is not named after a weapon or a piece of armour -- a ring, a cloak, an
+    // amulet, boots, a lute -- was as droppable as a rat pelt while the character was
     // wearing it.
     //
     // The server keeps the real answer in plUsing and sends it on every inventory read,
@@ -11288,7 +11354,7 @@ export class Autopilot {
     const keep = /shilling|coin|diamond|ruby|emerald|sapphire|armor|armour|shield|sword|mace|hammer|axe|bow|helm|gauntlet/i;
     const worn = skills.equippedNow(c) ?? new Set();
     const me = this.s.name;
-    // THE ORDER THINGS GET GIVEN UP IN. Own needs first — reagents we are short of
+    // THE ORDER THINGS GET GIVEN UP IN. Own needs first -- reagents we are short of
     // ourselves are covered by `keep` below via mine(). Then anything a crewmate is
     // short of, which outranks loot we are only carrying in order to sell it: the
     // vendor spread means a herb dropped here and bought back there costs twice, and
@@ -11304,7 +11370,7 @@ export class Autopilot {
     // AND WHAT THIS CHARACTER SAID, WHICH OUTRANKS ALL OF IT IN BOTH DIRECTIONS. `dropRank`
     // returns -1 for something on the sell list (go before anything else, including
     // sell-fodder nobody named), 3 for something the loadout protects (go last, after even
-    // a crewmate's reagents), and NULL for anything it has no opinion about — which is the
+    // a crewmate's reagents), and NULL for anything it has no opinion about -- which is the
     // whole overlay: an unmentioned item keeps the ranking it has always had.
     //
     // It is given the pack, so a floor of twelve elderberry protects twelve and not the
@@ -11322,7 +11388,7 @@ export class Autopilot {
     // THE NAME-BASED VALUE GUARD IS AN APPROXIMATION AND THE LOADOUT IS NOT, so a loadout
     // that puts something on the sell list gets past it. That is the point: `keep` protects
     // "emerald" for everyone, and a character carrying fifty-six sapphires it will never
-    // cast with needs a way to say so — which was previously only possible by editing a
+    // cast with needs a way to say so -- which was previously only possible by editing a
     // regex shared by twenty-one characters.
     const overrideSell = sellTest(this.loadout());
     const junk = (c.inventory || [])
@@ -11336,7 +11402,7 @@ export class Autopilot {
       .sort((a, b) => rank(a) - rank(b) || (b.amount || 1) - (a.amount || 1));
     if (!junk.length) {
       return { ok: false, did: 'nothing safe to drop',
-               detail: { hint: 'raise maxCarry, or go and sell — everything carried looks worth keeping' } };
+               detail: { hint: 'raise maxCarry, or go and sell -- everything carried looks worth keeping' } };
     }
     const drop = junk[0];
     const name = c.rsc.get(drop.nameRsc);
@@ -11369,7 +11435,7 @@ export class Autopilot {
   // that is what makes it portable: prey worth killing is ABOVE your level (the
   // advancement roll needs monster_level > base_max_health), so a flat "nothing
   // above your level" rule would reject every room worth being in. Six over is the
-  // gap between prey that pays and prey that kills — level-30 rats are right for a
+  // gap between prey that pays and prey that kills -- level-30 rats are right for a
   // level-25 character; the level-35 larvae sharing room 567 with them are not.
   preyRooms(room) {
     const want = this.policy.hunt;
@@ -11390,7 +11456,7 @@ export class Autopilot {
       .filter(r => this.noWallRooms?.get(r.room) === undefined ||
                    this.noWallRooms.get(r.room) === false);
     // AN ASSIGNMENT OUTRANKS THE SPAWN TABLE. Every caller takes [0], so putting the
-    // assigned room at the front is the whole of "go back where you were put" — and
+    // assigned room at the front is the whole of "go back where you were put" -- and
     // it stays subject to the same filters above, so an assignment to somewhere that
     // cannot generate the prey, or that we have proven unreachable, is ignored rather
     // than obeyed into a corner.
@@ -11422,11 +11488,11 @@ export class Autopilot {
         this.note('back at the hunting ground', { room: this.homeRoom });
       } else {
         // FORGET IT RATHER THAN RETRY FOREVER. Some rooms cannot be returned to at
-        // all — the newbie zone is behind a one-way portal, and a character that
+        // all -- the newbie zone is behind a one-way portal, and a character that
         // graduated out of it keeps a homeRoom it can never reach again. Retrying
         // that route every eight seconds is exactly the silent stall this whole
         // mechanism was meant to prevent.
-        this.note('cannot get back — forgetting that hunting ground',
+        this.note('cannot get back -- forgetting that hunting ground',
                   { to_room: this.homeRoom, why: back.reason });
         this.homeRoom = null;
         this.noProgress('lost the way back; will look for new hunting from here');
@@ -11441,13 +11507,13 @@ export class Autopilot {
     // names it. So the room to go to is a lookup, and walking the exit graph hoping
     // to stumble across one is searching for something that was never going to move.
     // Left to do that, a character walked out of a rat warren and into the
-    // Princess's castle — a room whose table contains no vermin at all and never
+    // Princess's castle -- a room whose table contains no vermin at all and never
     // will.
     //
     // The threat ceiling is the other half. Two rooms both list giant rats at 60-70%;
     // one of them also rolls a level-35 groundworm larva, and that is the room that
     // kept killing a level-26 character of mine. Filtering on the toughest thing the
-    // TABLE can produce — not on what happens to be standing there now — is what
+    // TABLE can produce -- not on what happens to be standing there now -- is what
     // separates them.
     const known = this.preyRooms(room);
     if (known.length) {
@@ -11467,7 +11533,7 @@ export class Autopilot {
         this.progress('reached a room that generates the prey');
         return;
       }
-      // Unreachable from here — remember not to keep choosing it, and fall through
+      // Unreachable from here -- remember not to keep choosing it, and fall through
       // to the exit walk rather than retrying the same failed route forever.
       this.unreachable.add(target.room);
       this.note('could not reach that spawn room', { to_room: target.room, why: r.reason });
@@ -11494,7 +11560,7 @@ export class Autopilot {
     // The graph already knows. Ask it before stepping through, not after.
     const map = s.world?.map;
     const goals = this.preyRooms(room).map(r => r.room);
-    // CAN I GET BACK? That is the whole test, and it is local — no global notion of
+    // CAN I GET BACK? That is the whole test, and it is local -- no global notion of
     // "sealed" is needed, and none of the ones I tried worked: Marion reaches its own
     // crypt, and the crypt has a spawn table, so every reachability-to-anything test
     // declared the pocket healthy right up until twenty-three characters were in it.
@@ -11511,7 +11577,7 @@ export class Autopilot {
     // AND DO NOT WALK INTO A ROOM THAT WILL KILL YOU.
     //
     // Escapability is only half of it. Room 2602, "Affirmation of the Forsaken",
-    // is one door off a quiet Marion crypt and its generator is thrashers — level
+    // is one door off a quiet Marion crypt and its generator is thrashers -- level
     // 150, cap fifteen, a hundred percent of the table. Eight characters of mine
     // stood in it and lived only because nothing had spawned yet. The room next
     // door rolls level-75 skeletons at 80%.
@@ -11568,13 +11634,13 @@ export class Autopilot {
   // RETREAT TO A WALL, NOT MERELY AWAY.
   //
   // This used to give up the spot it was holding and walk to the furthest reachable
-  // OPEN square — distance was the only thing it ranked. That is the wrong currency,
+  // OPEN square -- distance was the only thing it ranked. That is the wrong currency,
   // and it is how characters died: a plain square six steps away is still a square
   // anything can walk up to and hit, so the retreat bought a few seconds and put the
   // character somewhere it could not recover.
   //
-  // What makes it fatal is what happens next. playDead() — disconnect, reconnect,
-  // turn — is a FULL HEAL in the middle of a monster room, but only from a spot that
+  // What makes it fatal is what happens next. playDead() -- disconnect, reconnect,
+  // turn -- is a FULL HEAL in the middle of a monster room, but only from a spot that
   // holds: the freeze that protects also stops HealthTimer, so out in the open it
   // recovers vigor and never health. Do that twice from the same health and it is a
   // livelock, which is what "refusing to freeze again" is, and after refusing, the
@@ -11582,25 +11648,25 @@ export class Autopilot {
   // state in which the escape hatch does not work.
   //
   // Defensibility beats distance, because in a spot that holds the distance does not
-  // matter — nothing lands at all. So: try for a wall first, preferring one the book
+  // matter -- nothing lands at all. So: try for a wall first, preferring one the book
   // has already proved, and keep the distance-based walk only as the fallback for
   // rooms that genuinely have no corner in them.
   // RUNNING PART OF THE WAY TO SAFETY IS A DEATH SENTENCE.
   //
   // `fight()` has always broken off at the flee threshold, set `disengaged`, and
   // returned a note saying in plain words: "the monster is still there and still
-  // hostile — walk away before resting, or it will keep hitting you."
+  // hostile -- walk away before resting, or it will keep hitting you."
   //
   // NOTHING READ IT. `grep -n "\.disengaged" m59-autopilot.mjs` returned nothing. So
   // the character stopped swinging and stood exactly where it was, at 20% health, next
   // to the six things that had just taken it there. Out in the open that protects you
-  // from nothing — not swinging only helps behind a wall, and the note says so.
+  // from nothing -- not swinging only helps behind a wall, and the note says so.
   //
   // That is the shape of this fleet's deaths. Of 65: 92% were killed by something they
   // were not hunting, 91% had five or more creatures within reach, and the mean at the
   // moment of death was 5.6. Standing still in that is not a retreat.
   //
-  // `withdraw()` is a LOCAL move — to a wall, a few squares. It is the right answer
+  // `withdraw()` is a LOCAL move -- to a wall, a few squares. It is the right answer
   // when a safe spot stopped working and the wrong one here: a few squares away from
   // six centipedes is still inside their vision (4-6 squares) and well inside a chase.
   // So this leaves the room entirely and goes to a refuge. Usually that is an inn, which
@@ -11618,7 +11684,7 @@ export class Autopilot {
 
     // A WORKING SAFE SPOT IS ALREADY SAFETY, AND RUNNING FROM ONE IS THE WORST MOVE
     // AVAILABLE. This guard lived inside withdraw(), and swapping callers over to this
-    // function quietly dropped it — which would have taken characters off proven walls
+    // function quietly dropped it -- which would have taken characters off proven walls
     // and marched them across a monster field at the health that made them flee.
     //
     // The asymmetry is the whole safe-spot thesis. `Player.TargetWithinSightAndRange`
@@ -11635,7 +11701,7 @@ export class Autopilot {
       this.note('staying behind the wall instead of running', {
         spot: { col: this.hold.col, row: this.hold.row }, ...why,
         why: 'this square has held under attack, so nothing here can land a blow unless we ' +
-             'swing — leaving it would trade the only thing keeping us alive for distance ' +
+             'swing -- leaving it would trade the only thing keeping us alive for distance ' +
              'we do not need' });
       return { arrived: true, held_spot: true };
     }
@@ -11657,7 +11723,7 @@ export class Autopilot {
       return { arrived: true, already: true };
     }
     // NEAREST FIRST, AND NOT MANY. Iterating the six in declaration order would send a
-    // character bleeding in the Badlands to whichever inn happened to be listed first —
+    // character bleeding in the Badlands to whichever inn happened to be listed first --
     // possibly across the world, through everything in between, at the health that made
     // it flee. So rank by actual hops and take the closest; anything unroutable sorts
     // last and is skipped.
@@ -11674,7 +11740,7 @@ export class Autopilot {
       ...rankedInns.filter(i => i.inn !== quiet?.room),
     ];
     if (!ranked.length) {
-      this.note('no refuge is routable from here — falling back to a local wall', why);
+      this.note('no refuge is routable from here -- falling back to a local wall', why);
       await this.withdraw(this.inReachOfUs() ?? []).catch(() => {});
       return { arrived: false, fell_back: true, no_route: true };
     }
@@ -11689,7 +11755,7 @@ export class Autopilot {
           ? { pvp_note: 'another player can still attack here; the safety is specifically that no monsters spawn' }
           : {}),
         health: (() => { const h = c?.vitals?.()?.health; return h?.max ? Math.round(100 * h.value / h.max) + '%' : null; })(),
-        why_not_local: 'a few squares from a crowd is still inside its vision and its chase — ' +
+        why_not_local: 'a few squares from a crowd is still inside its vision and its chase -- ' +
                        (dest.preferred
                          ? 'crossing the Castle Victoria door leaves every monster behind'
                          : 'an inn is a sanctuary and ends the fight'),
@@ -11704,7 +11770,7 @@ export class Autopilot {
     }
     // Nothing reachable. A wall here is better than nothing, so fall through to the
     // behaviour that at least gets our back covered.
-    this.note('could not reach any refuge — falling back to a local wall', why);
+    this.note('could not reach any refuge -- falling back to a local wall', why);
     await this.withdraw(this.inReachOfUs() ?? []).catch(() => {});
     return { arrived: false, fell_back: true };
   }
@@ -11716,12 +11782,12 @@ export class Autopilot {
 
     // A WALL WE ALREADY HOLD IS NOT SOMETHING TO RUN FROM. We normally reach here
     // because the spot stopped working, but the rest of the loop can send us here
-    // while a good one is still under us — and abandoning it to stand in the open is
+    // while a good one is still under us -- and abandoning it to stand in the open is
     // strictly worse than staying. Check before paying for the walk.
     if (this.hold && this.holdWorks()) {
       this.note('staying behind the wall instead of withdrawing', {
         spot: { col: this.hold.col, row: this.hold.row }, threats: threats.length,
-        why: 'this square has held under attack, so nothing here can land a blow — walking ' +
+        why: 'this square has held under attack, so nothing here can land a blow -- walking ' +
              'off it to gain distance would trade the one thing keeping us alive for space' });
       return;
     }
@@ -11730,7 +11796,7 @@ export class Autopilot {
     // it picks is one the fight can actually be held at, and so we do not retreat into
     // a corner the threats simply follow us into.
     const spot = await this.takeSafeSpot(
-      'withdrawing from a fight we are losing — to a wall, not into the open',
+      'withdrawing from a fight we are losing -- to a wall, not into the open',
       threats[0] ?? null).catch(() => ({ took: false }));
     if (spot.took) {
       this.tally.withdrawals_to_a_wall = (this.tally.withdrawals_to_a_wall || 0) + 1;
@@ -11742,12 +11808,12 @@ export class Autopilot {
     }
 
     // No corner in this room. Fall back to distance, and say plainly that this is the
-    // weak version — it is the branch that precedes most of the deaths.
+    // weak version -- it is the branch that precedes most of the deaths.
     this.note('no wall to withdraw to', {
       why: spot.why, threats: threats.length,
       consequence: 'falling back to walking away, which buys seconds rather than safety',
       hint: 'this room cannot be fought in safely at this level; somewhere with a corner is' });
-    // Only now is leaving the hold right — we have nowhere better, so the siege has to
+    // Only now is leaving the hold right -- we have nowhere better, so the siege has to
     // be broken before the walk.
     // FORCED: this is the survival case, not a discretionary one. A hurt character is
     // exactly who is withdrawing, so the hurt refusal would block the one departure
@@ -11779,17 +11845,17 @@ export class Autopilot {
 // ONE WALL EACH.
 //
 // The geometry is deterministic, so every keeper in a room ranks the same squares in
-// the same order and they all walk to the identical corner — which is how three
+// the same order and they all walk to the identical corner -- which is how three
 // characters ended up on square (50,21) of the same room, and four stacked on (8,15)
 // of the Limping Toad. Sharing a safe spot buys nothing: the wall covers a square, not
 // a queue, and standing in a heap makes every one of them look to the others like a
 // crowd of attackable things.
 //
-// A player might share a wall deliberately — one tanking while another heals past them
+// A player might share a wall deliberately -- one tanking while another heals past them
 // is a real tactic.
 //
 // SO IT IS A SPREAD, NOT AN EXCLUSION. "One each" was right about the failure it was
-// written for — four characters stacked on (8,15) of the Limping Toad — and wrong about
+// written for -- four characters stacked on (8,15) of the Limping Toad -- and wrong about
 // what to do when there are more keepers than squares. A room with four walls and eight
 // characters gave four of them a wall and sent the other four to the no-wall path, which
 // is the branch that precedes most of the deaths. Two to a wall is worse than one and far
@@ -11805,7 +11871,7 @@ export class Autopilot {
 //
 // A SQUARE HOLDS A SET, NOT A NAME, because partners share one on purpose (see
 // m59-party.mjs). With a single name the second partner to claim simply overwrote the
-// first, and the register then believed the first had gone — so releasing the second
+// first, and the register then believed the first had gone -- so releasing the second
 // freed a square somebody was still standing on. Everyone who is actually there is
 // recorded; who is ALLOWED to join is a separate question, answered below.
 const claimedSpots = new Map();        // "room:col,row" -> Set<agent name>
@@ -11824,13 +11890,13 @@ export function releaseSpot(agent) {
     if (!who.size) claimedSpots.delete(k);
   }
 }
-// WHO IS IN THE WAY — meaning who is standing here that this agent may not join.
+// WHO IS IN THE WAY -- meaning who is standing here that this agent may not join.
 //
 // Partners are not in the way. That is the exception the ONE WALL EACH note above
 // carves out, and it is the only one: every other keeper is still refused, so an
 // uncoordinated fleet cannot pile onto the same corner.
 // How many OTHERS are standing here that this agent is not deliberately sharing with.
-// Partners are not crowding us — that is the exception m59-party.mjs relies on — so they
+// Partners are not crowding us -- that is the exception m59-party.mjs relies on -- so they
 // do not count toward the cap.
 export function spotOccupancy(agent, room, col, row) {
   const held = claimedSpots.get(spotKey(room, col, row));
@@ -11943,7 +12009,7 @@ export const claimedQuarryList = () => {
 // WHICH ROOM EACH KEEPER IS IN, refreshed every pass.
 //
 // Errands name a destination room, and by the time the character has walked there the
-// target may have roamed — the supervisor runs the fleet with roam on, so they move
+// target may have roamed -- the supervisor runs the fleet with roam on, so they move
 // constantly. Without this, a quartermaster that arrives to an empty room can only give
 // up, and the commonest provisioning outcome was "they had moved on". One shared map in
 // the module, the same trick as claimedSpots: every session in a broker is this process.
