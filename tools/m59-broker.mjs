@@ -4468,11 +4468,34 @@ const TOOLS = [
       // takes the key it is stored under. Passing the session here returns null for every
       // character, which would have left this whole hold silently doing nothing — the
       // exact class of no-op this file keeps warning about.
+      // AND IT HAS TO BE RE-ASSERTED, because an inert keeper WAKES ON A DEADLINE.
+      //
+      // First version simply skipped the hold when the keeper was already inert — right,
+      // in that it must not steal or release another errand's hold. But `goInert` carries
+      // `INERT_MAX_MS` so that an errand which crashes cannot silence a keeper for ever,
+      // and that deadline does not know a journey is in progress. Watched live: a stale
+      // supply hold lapsed mid-walk, the keeper woke up, and the character was being driven
+      // by the keeper and by travel at the same time — the exact contention this is for,
+      // reached by the one path the check was supposed to protect.
+      //
+      // So: poll. If the keeper is awake and we are still walking, take the hold; keep a
+      // note of whether the hold is OURS, and only ever revive our own.
       const keeper = autopilotIfAny(s.name);
       const holdKeeper = () => {
-        if (!keeper || keeper.inert) return null;
-        keeper.goInert(`travelling to ${where.name}`);
-        return () => keeper.revive('travel finished');
+        if (!keeper) return null;
+        let ours = false;
+        const assert_ = () => {
+          if (keeper.inert) return;
+          keeper.goInert(`travelling to ${where.name}`);
+          ours = true;
+        };
+        assert_();
+        const timer = setInterval(assert_, 2000);
+        timer.unref?.();
+        return () => {
+          clearInterval(timer);
+          if (ours) keeper.revive('travel finished');
+        };
       };
 
       if (a.background) {
