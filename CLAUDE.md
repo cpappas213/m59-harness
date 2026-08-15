@@ -854,21 +854,36 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   unrecognised kind is reported as itself rather than dropped, which is what stops a new
   operation being invisible to the one thing meant to protect it.
 
-- **A FULL PACK CANNOT RECEIVE, AND IT LOOKS EXACTLY LIKE A BROKEN TRADE PROTOCOL.** The
-  pack holds about **14 stacks**, and a character at that limit can still GIVE, can still
-  fight, and reads as completely healthy on the board — but every attempt to hand it a new
-  distinct item fails, with `supply` reporting only *"the trade did not complete — nothing
-  moved"*. Nothing names the pack.
+- **A CHARACTER CAN BECOME UNABLE TO RECEIVE, AND IT LOOKS EXACTLY LIKE A BROKEN TRADE
+  PROTOCOL.** It can still GIVE, still fight, and reads as completely healthy on the board —
+  but every attempt to hand it a new item fails, with `supply` reporting only *"the trade
+  did not complete — nothing moved"*. Nothing names the pack.
 
   This cost two check-ins on one character. Lew sat at zero kills for five of them, unarmed,
   standing in a room where one fleetmate carried 22 weapons and another 19. Its keeper said
   so plainly — `UNARMED_NO_DONOR`, *"unarmed — 10 mana, needs 15 to make one"*, remedy
   *"hand it a weapon"* — and thirteen donors in the same room all failed identically.
+  **Shedding four heavy stacks fixed it instantly** and it killed something within a minute.
+
+  **CORRECTION, same day: this entry first said the limit was 14 STACKS. That is WRONG.**
+  Written from one character at 14 that could not receive and could at 10, which is a sample
+  of one and a coincidence of counting. Measured across the fleet an hour later: characters
+  routinely carry **26, 28, 30, 34 and 35 stacks**, and one that had just failed to receive
+  at 22 accepted an item at 19 — while another accepted at 28. There is no 14. What the
+  successful fix actually removed was **WEIGHT and BULK**: the four stacks shed from Lew were
+  55 red mushrooms, 59 mushrooms and 34 emeralds, and its pack went from 74% to 35% in one
+  step. `pack.binding` on the fleet row already says which of the two is the live ceiling,
+  and it differs per character (`1700 + might*20`, so 2000–2700 here).
+
+  The honest state of this trap: **a character that cannot receive is nearly always full,
+  the board's `pack.percent` and `pack.binding` are the numbers to read, and shedding the
+  heaviest stacks is the fix.** Do not go looking for a stack count. And note what the wrong
+  version cost — nothing, because the remedy was the same either way, which is exactly why
+  it survived a commit without anybody noticing.
 
   **Every diagnosis that fits the symptom is wrong in a way that wastes a session.** It is
   not the keeper (it fails with the keeper stopped). It is not the room (`supply` checks,
-  and says so when they are apart). It is not weight — the pack was at 74% with 566 to
-  spare, and weight is not what binds. It is not the trade tooling: the CONTROL matters
+  and says so when they are apart). It is not the trade tooling: the CONTROL matters
   here, and it is one call. Ask three questions, not one:
 
   | | Lew | reading |
@@ -877,9 +892,9 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   | can it GIVE? | **yes** | so its session and the protocol are fine |
   | can two OTHER characters trade? | **yes** | so the tooling is fine |
 
-  One-directional failure is the signature, and `carrying` on the fleet row is the number
-  to read. Shedding four junk stacks took it from 14 to 10 and the very next handover
-  succeeded; it killed something within a minute.
+  One-directional failure is the signature. **`pack.percent` and `pack.binding` are the
+  numbers to read — not `carrying`**, which is what the first version of this entry said and
+  is what led it to invent a stack limit that does not exist.
 
   **`trade` lies in BOTH directions and must never be trusted over a re-read.** It returned
   `offered: false` on an offer that had in fact landed with the item on the table — so the
