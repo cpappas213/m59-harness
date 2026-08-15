@@ -2216,6 +2216,24 @@ export class Autopilot {
       !skills.itemIsProtected(item.name, this.protectedItemNames()));
   }
 
+  // THE BIGGEST THING IN THE PACK THAT CANNOT BE EATEN YET, or null. "Cannot be eaten"
+  // means eating it would carry vigor past the 200 cap, which is the one case where
+  // holding more food does not help and waiting cannot clear.
+  //
+  // Returns the largest such item rather than the first: it is the one that most justifies
+  // going to burn vigor, and it is the one the character is saving anyway.
+  uneatableReserve(vigor) {
+    if (vigor == null) return null;
+    let best = null;
+    for (const item of this.larder(this.s.client)) {
+      const n = Number(item.food?.nutrition ?? item.nutrition ?? 0);
+      if (!(n > 0)) continue;
+      if (vigor + n <= 200) return null;      // something fits: eat it instead of fighting
+      if (!best || n > best.nutrition) best = { name: item.name, nutrition: n };
+    }
+    return best;
+  }
+
   // Go and stand somewhere defensible, preferring somewhere we have already proved —
   // and somewhere the fight can actually be brought to.
   // `source` is what will be written into the safe-spot book alongside any verdict this
@@ -8178,7 +8196,33 @@ export class Autopilot {
       // through everything it just walked past.
       const vigorNow = vigorOf(v);
       const vigorFloor = this.fightFloor();
-      if (vigorNow != null && vigorNow < vigorFloor) {
+      // THE INKY RESERVE. A character can be BELOW the floor and unable to do anything
+      // about it, because the food that would fix it is too big to fit.
+      //
+      // `eat` refuses anything that would carry vigor past 200, and an inky cap is fifty
+      // — the most vigor per unit of stomach in the game, which is why a well-supplied
+      // character is usually holding one. So at 177 with an inky and an empty stomach
+      // there is nothing to eat, nothing to rest for (resting stops at 80), and a floor
+      // of 180 it cannot reach. Measured: three characters sat behind proven walls doing
+      // exactly this, fully supplied, at 165, 166 and 177 against a floor of 180 — zero
+      // fighting and zero travel, indefinitely, while reporting themselves healthy.
+      //
+      // Fighting is what breaks the deadlock: it burns about thirty vigor a minute, which
+      // is what makes room for the inky. So when the shortfall is smaller than the food
+      // being carried, go and fight — the reserve is in the pack, not in the bar.
+      //
+      // Bounded deliberately. It only applies while a reserve is actually held and only
+      // down to `inky_reserve_floor`, so it relaxes the wellfed floor rather than removing
+      // the survival one: a character still will not open a fight exhausted.
+      const reserve = this.policy.inkyReserve === true ? this.uneatableReserve(vigorNow) : null;
+      const reserveFloor = Math.max(MIN_FIGHT_VIGOR, this.policy.inkyReserveFloor ?? 120);
+      if (reserve && vigorNow != null && vigorNow >= reserveFloor && vigorNow < vigorFloor) {
+        this.note('below the fighting floor with a reserve in the pack', {
+          vigor: vigorNow, floor: vigorFloor, holding: reserve.name, worth: reserve.nutrition,
+          would_reach: vigorNow + reserve.nutrition, cap: 200,
+          why: 'it cannot be eaten without overshooting the cap, and resting stops at 80 — ' +
+               'fighting is what makes room for it' });
+      } else if (vigorNow != null && vigorNow < vigorFloor) {
         this.vigor.waited++;
         this.doing = 'recovering';
         // A wall first, if one is going and we do not already have it — resting with

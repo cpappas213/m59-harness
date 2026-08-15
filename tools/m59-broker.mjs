@@ -7715,6 +7715,15 @@ const TOOLS = [
           'the rest threshold of 80 out of 200; above that only food will do it, and vigor is what ' +
           'sets the health regeneration rate. An explicit value overrides both the selected ' +
           'strategy floor and its provisioning ceiling' },
+      inky_reserve: { type: 'boolean',
+        description: 'FIGHT BELOW THE VIGOR FLOOR WHILE HOLDING FOOD TOO BIG TO EAT. `eat` refuses ' +
+          'anything that would carry vigor past 200 and an inky cap is fifty, so a character at 177 ' +
+          'with one in the pack can neither eat nor rest (resting stops at 80) and sits under a floor ' +
+          'of 180 for ever. Fighting burns about thirty vigor a minute, which is what makes room for ' +
+          'it. Bounded by inky_reserve_floor and only while a reserve is actually held.' },
+      inky_reserve_floor: { type: 'number',
+        description: 'how far below the fighting floor the reserve exception may go, default 120. ' +
+          'It relaxes the wellfed floor, never the survival one.' },
       use_safe_spots: { type: 'boolean',
         description: 'fight from a wall whenever the kill would pay (default true). Turning this off ' +
           'gives up the largest survival advantage in the game and is almost never right' },
@@ -7978,6 +7987,9 @@ const TOOLS = [
       }
       if (a.fight_above_vigor !== undefined)
         applyFightAboveVigor(p.policy, a.fight_above_vigor);
+      if (a.inky_reserve !== undefined) p.policy.inkyReserve = !!a.inky_reserve;
+      if (a.inky_reserve_floor !== undefined)
+        p.policy.inkyReserveFloor = Math.max(0, Number(a.inky_reserve_floor) || 0);
       if (a.use_safe_spots !== undefined) p.policy.useSafeSpots = !!a.use_safe_spots;
       if (a.hold_resume_above !== undefined) p.policy.holdResumeAbove = Number(a.hold_resume_above);
       // 0 or null means NO LIMIT, not "never pull anything". There is no sensible reading
