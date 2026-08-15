@@ -460,25 +460,64 @@ export class World {
     // square by asking the geometry for the nearest walkable one that satisfies it,
     // because "row > 83 and col > 48" is not something a caller can walk to.
     for (const ce of codeExits(room.num)) {
-      let best = null;
+      const direct = [], staged = [];
       if (geo && me) {
         for (let r = 1; r <= geo.rows; r++) {
           for (let c = 1; c <= geo.cols; c++) {
             if (!inRegion(ce.when, r, c) || !geo.walkable(r, c)) continue;
             const p = this.reach(c, r);
-            if (!p.reachable) continue;
-            if (!best || p.steps < best.steps) best = { col: c, row: r, steps: p.steps };
+            if (p.reachable) {
+              direct.push({ col: c, row: r, steps: p.steps, reachable: true });
+              continue;
+            }
+
+            // A code trigger can sit behind a gap narrower than one square. The .roo
+            // direction grid cannot express that gap, but the server's fine BSP geometry
+            // can. Keep a square beside the trigger that the ordinary walker CAN reach;
+            // leaveVia stages there and asks the server to judge the final fine steps.
+            //
+            // Western Border of the Twisted Wood -> the Icky Cave is the worked example:
+            // every square satisfying row 15..17, col 1..6 is disconnected in the square
+            // graph, while passable half-square wall segments lead into it. Throwing these
+            // candidates away produced a local refusal before one packet reached the server.
+            const approach = this.approachSquare(c, r);
+            if (approach)
+              staged.push({ col: c, row: r, steps: approach.steps + 1, reachable: false,
+                            approach_on: { col: approach.col, row: approach.row } });
           }
         }
       }
+      const ranked = (direct.length ? direct : staged).sort((a, b) => a.steps - b.steps);
+      // Region predicates can cover a large piece of a room. Retain a small spread rather
+      // than returning hundreds of equivalent targets or betting forever on one blocked
+      // point. The nearest is cheapest; separation makes each fallback geometrically new.
+      const targets = [];
+      for (const candidate of ranked) {
+        if (targets.length >= 8) break;
+        if (targets.length && targets.some(other =>
+          Math.max(Math.abs(other.col - candidate.col), Math.abs(other.row - candidate.row)) < 2)) continue;
+        targets.push(candidate);
+      }
+      for (const candidate of ranked) {
+        if (targets.length >= 8) break;
+        if (!targets.includes(candidate)) targets.push(candidate);
+      }
+      const best = targets[0] ?? null;
       out.push({
         kind: 'region',
         to: ce.to,
         to_name: this.map.rooms[ce.to]?.name ?? `room ${ce.to}`,
         stand_on: best ? { col: best.col, row: best.row } : null,
         steps_away: best ? best.steps : null,
-        reachable: best ? true : (geo && me ? false : null),
-        how: best
+        reachable: best ? best.reachable : (geo && me ? false : null),
+        ...(best?.approach_on ? { approach_on: best.approach_on } : {}),
+        ...(targets.length ? { trigger_targets: targets.map(target => ({
+          stand_on: { col: target.col, row: target.row },
+          steps_away: target.steps,
+          reachable: target.reachable,
+          ...(target.approach_on ? { approach_on: target.approach_on } : {}),
+        })) } : {}),
+        how: best?.reachable
           ? `walk_to (${best.col},${best.row}) — the room moves you across as you arrive`
           : ce.how,
         trigger: ce.when.map(x => `${x.axis} ${x.op} ${x.value}`).join(' and '),
@@ -853,4 +892,70 @@ export async function boundedSilentGo({
     })) break;
   }
   return { cancelled: false, entered, messages, attempts };
+}
+
+// Enter a code-defined floor region without trusting the square grid to be the final
+// authority. Each candidate is tried once: ordinary walking first, then a caller-supplied
+// fine movement fallback, and finally `go` only when we actually reached the region but
+// its automatic SomethingMoved hook did not fire. Keeping this orchestration independent
+// of Session makes the no-packet false refusal, late room entry, and retry bound testable.
+export async function boundedRegionEntry({
+  candidates,
+  sequence,
+  eventsSince,
+  walk,
+  fineWalk,
+  waitForEntry,
+  askGo,
+  cancelled = () => false,
+} = {}) {
+  if (![sequence, eventsSince, walk, fineWalk, waitForEntry, askGo, cancelled]
+      .every(fn => typeof fn === 'function'))
+    throw new TypeError('boundedRegionEntry requires sequence, eventsSince, walk, fineWalk, ' +
+                        'waitForEntry, askGo, and cancelled functions');
+
+  const targets = (Array.isArray(candidates) ? candidates : []).filter(candidate =>
+    candidate?.stand_on && Number.isFinite(candidate.stand_on.col) && Number.isFinite(candidate.stand_on.row));
+  const tried = [];
+  const enteredSince = since => eventsSince(since).find(event => event.kind === 'room-entered') ?? null;
+
+  for (const candidate of targets) {
+    if (cancelled()) return { cancelled: true, entered: null, tried };
+    const before = sequence();
+    const coarse = await walk(candidate);
+    let entered = enteredSince(before);
+    if (!entered && (coarse?.arrived || coarse?.left_room)) entered = await waitForEntry(before);
+    if (entered) return { cancelled: false, entered, tried: [...tried, { candidate, coarse }] };
+    if (coarse?.left_room)
+      return { cancelled: false, entered: null, unconfirmed_transition: true,
+               tried: [...tried, { candidate, coarse }] };
+
+    let fine = null;
+    if (!coarse?.arrived) {
+      if (cancelled()) return { cancelled: true, entered: null, tried };
+      fine = await fineWalk(candidate);
+      entered = enteredSince(before);
+      if (!entered && (fine?.arrived || fine?.left_room)) entered = await waitForEntry(before);
+      if (entered)
+        return { cancelled: false, entered, tried: [...tried, { candidate, coarse, fine }] };
+      if (fine?.left_room)
+        return { cancelled: false, entered: null, unconfirmed_transition: true,
+                 tried: [...tried, { candidate, coarse, fine }] };
+    }
+
+    const reached = !!(coarse?.arrived || fine?.arrived);
+    let askedGo = false;
+    if (reached) {
+      if (cancelled()) return { cancelled: true, entered: null, tried };
+      const beforeGo = sequence();
+      await askGo(candidate);
+      askedGo = true;
+      entered = enteredSince(before) ?? await waitForEntry(beforeGo);
+      if (entered)
+        return { cancelled: false, entered,
+                 tried: [...tried, { candidate, coarse, fine, asked_go: true }] };
+    }
+    tried.push({ candidate, coarse, fine, ...(askedGo ? { asked_go: true } : {}) });
+  }
+  return { cancelled: false, entered: null, tried };
 }

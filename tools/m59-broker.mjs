@@ -40,8 +40,8 @@ import { fileURLToPath } from 'node:url';
 import { M59Client, KOD_FINENESS, BPNAME } from './m59-client.mjs';
 import { loadResources } from './m59-rsc.mjs';
 import { describeObject, affordances, OF, prepareActTarget } from './m59-parse.mjs';
-import { World, sharedWorldMap, spreadEdges, boundedSilentGo, doorSettleMs,
-         remainingDoorSettle } from './m59-world.mjs';
+import { World, sharedWorldMap, spreadEdges, boundedSilentGo, boundedRegionEntry,
+         doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
 import { loadMap, resolveRoom, forgetInferredExit, findPath } from './m59-map.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -3139,42 +3139,87 @@ class Session {
     // SomethingMoved fires as we land and moves us across. So walk, then confirm by
     // the room having changed rather than by any reply, because there is not one.
     if (exit.kind === 'region') {
-      if (!exit.stand_on)
-        return { left: false, reason: 'no reachable square inside the trigger region',
-                 note: 'the region is ' + exit.trigger + ' — it may be walled off from here' };
-      const before = c.evSeq;
-      const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
-                                     { maxSteps: budget(exit), movementGeneration, controlToken });
-      const tGo = Date.now();
-      const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 });
-      Pacer.note('go', 'blocked', Date.now() - tGo);
-      const entered = ev.events.find(e => e.kind === 'room-entered');
-      if (entered) return { left: true, arrived_in: entered.roomName, via: 'region trigger' };
+      const candidates = Array.isArray(exit.trigger_targets) && exit.trigger_targets.length
+        ? exit.trigger_targets
+        : exit.stand_on ? [{ stand_on: exit.stand_on, steps_away: exit.steps_away,
+                             reachable: exit.reachable, approach_on: exit.approach_on }] : [];
+      if (!candidates.length)
+        return { left: false, reason: 'no walkable square or reachable approach for the trigger region',
+                 note: 'the region is ' + exit.trigger + ' — it may really be walled off from here' };
 
-      // IF STANDING THERE DID NOT MOVE US, ASK TO GO.
-      //
-      // A region is supposed to fire on arrival, and when it does not there is nothing to
-      // distinguish "walked to the wrong square" from "this is really a door the map has
-      // filed as a region". Sending `go` settles it for the cost of one request: on a
-      // genuine region nothing is listening and nothing happens, and on a mis-filed door
-      // it is exactly the command that was missing.
-      //
-      // Rizzo could not leave Marion for seven straight attempts on a route the planner
-      // said was seven hops — "reached the square but the room did not move us", every
-      // time — while holding the fleet's money and needing a shop. Two other characters
-      // failed the same way against all four food shops in the same run.
-      const beforeGo = c.evSeq;
-      await this.standBeforeGo();
-      await this.pacer.submit('move', () => c.go(), DOOR_SETTLE_MS);
-      const ev2 = await c.waitFor({ since: beforeGo, kinds: ['room-entered'], timeoutMs: 4000 });
-      const entered2 = ev2.events.find(e => e.kind === 'room-entered');
-      if (entered2)
-        return { left: true, arrived_in: entered2.roomName, via: 'region trigger, after asking to go',
-                 note: 'standing in the trigger did nothing; `go` moved us, so this exit behaves ' +
-                       'like a door rather than a region' };
+      const result = await boundedRegionEntry({
+        candidates,
+        sequence: () => c.evSeq,
+        eventsSince: since => c.eventsSince(since),
+        cancelled: () => this.movementWasCancelled(movementGeneration, controlToken),
+        walk: candidate => this.walkTo(candidate.stand_on.col, candidate.stand_on.row,
+          { maxSteps: budget(candidate), movementGeneration, controlToken }),
+        fineWalk: async candidate => {
+          // Get as close as the square graph knows how before bypassing it. Fine movement
+          // is deliberately expensive — every step is confirmed by a room read — and from
+          // across an outdoor map it is both slow and needlessly risky. The staging square
+          // makes this a short server-authoritative crossing of the disputed geometry.
+          const target = candidate.stand_on;
+          const knownApproach = candidate.approach_on;
+          const computedApproach = this.world.approachSquare(target.col, target.row);
+          const approach = knownApproach ?? (computedApproach && {
+            col: computedApproach.col, row: computedApproach.row,
+          });
+          let staged = null;
+          if (approach) {
+            staged = await this.walkTo(approach.col, approach.row,
+              { maxSteps: budget(candidate), movementGeneration, controlToken });
+            if (staged.left_room || (!staged.arrived &&
+                !(c.self && c.self.col === approach.col && c.self.row === approach.row)))
+              return { arrived: false, ...(staged.left_room ? { left_room: true } : {}),
+                       reason: staged.reason ?? 'could not reach the square beside the trigger', staged };
+          }
+          const half = KOD_FINENESS >> 1;
+          const fine = await this.walkFine(target.col * KOD_FINENESS + half,
+                                           target.row * KOD_FINENESS + half,
+                                           { maxSteps: 40, movementGeneration, controlToken })
+                                 .catch(error => ({ arrived: false, reason: error.message }));
+          return { ...fine, ...(staged ? { staged } : {}) };
+        },
+        waitForEntry: async since => {
+          const started = Date.now();
+          const observed = await c.waitFor({ since, kinds: ['room-entered'], timeoutMs: 4000 });
+          Pacer.note('go', 'blocked', Date.now() - started);
+          return observed.events.find(event => event.kind === 'room-entered') ?? null;
+        },
+        // A genuine region fires merely by arriving. Asking to go is retained as one
+        // bounded compatibility probe for map entries that are really doors in disguise.
+        askGo: async () => {
+          await this.standBeforeGo();
+          await this.pacer.submit('move', () => c.go(), DOOR_SETTLE_MS);
+        },
+      });
+      if (result.cancelled) return this.cancelledMovement({ tried: result.tried.length });
+      if (result.unconfirmed_transition)
+        return { left: false, reason: 'left the source room but could not confirm the destination',
+                 tried: result.tried.length,
+                 note: 'movement stopped immediately rather than issuing a blind request in the new room' };
+      if (result.entered) {
+        const successful = result.tried[result.tried.length - 1] ?? {};
+        return { left: true, arrived_in: result.entered.roomName,
+                 via: successful.asked_go ? 'region trigger, after asking to go'
+                      : successful.fine ? 'region trigger via fine movement' : 'region trigger',
+                 trigger_target: successful.candidate?.stand_on ?? null };
+      }
 
-      return { left: false, reason: 'reached the square but the room did not move us, and `go` did not either',
-               walk, note: 'the trigger is ' + exit.trigger + '; the walk may have stopped short' };
+      const tried = result.tried.map(attempt => ({
+        stand_on: attempt.candidate.stand_on,
+        approach_on: attempt.candidate.approach_on ?? null,
+        coarse: attempt.coarse?.reason ?? (attempt.coarse?.arrived ? 'arrived' : null),
+        fine: attempt.fine?.reason ?? (attempt.fine?.arrived ? 'arrived' : null),
+        asked_go: !!attempt.asked_go,
+      }));
+      const reached = result.tried.some(attempt => attempt.coarse?.arrived || attempt.fine?.arrived);
+      return { left: false,
+               reason: reached
+                 ? 'reached the trigger region but neither automatic entry nor `go` changed rooms'
+                 : `could not reach any of ${candidates.length} bounded trigger-region target(s)`,
+               tried, note: 'the trigger is ' + exit.trigger };
     }
 
     if (exit.kind === 'portal') {
