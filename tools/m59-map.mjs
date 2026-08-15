@@ -480,6 +480,41 @@ export function codeExits(roomNum) {
 // avoiding it costs hops rather than reachability.
 export const AVOID_IN_TRANSIT = new Set([534]);
 
+// ROOMS THAT KILL BY A RULE, NOT BY A FIGHT — AND THE BLOCK ON THEM IS NOT NEGOTIABLE.
+//
+// `AVOID_IN_TRANSIT` is a PREFERENCE: findPath tries to route around 534 and, if there is
+// no other way, goes through it anyway. That is right for a room that is merely dangerous
+// — a corridor full of monsters is survivable, and refusing to cross it would strand a
+// character. It is exactly wrong for a room whose hazard is arithmetic.
+//
+// 555, The Forest Shrine, is a gas-field puzzle. `OutdoorsE5.PunishPlayer` (e5.kod:452)
+// charges `GetBaseMaxHealth / 3` as ATCK_SPELL_ACID for every step onto a wrong square,
+// and when that reduction kills you it calls `@killed` outright — "The acid steam melts
+// the flesh from your bones." Three bad steps kill anything in this fleet from full
+// health, and NOTHING ABOUT THE ROOM IS VISIBLE TO A ROUTER: the safe row is chosen at
+// random by `InitPuzzle`, it MOVES as you cross, and the only way to learn it is to ask
+// the NPC (LadyPheonix) for protection and be told, one row at a time. A bot that has not
+// been taught the protocol is not taking a risk in there; it is walking a fixed number of
+// steps to its death. Statler died in it this session, in transit.
+//
+// So these are removed from the graph on EVERY pass, including the permissive fallback
+// that exists so a route is always found. "No route" is the correct answer here — an
+// errand that cannot be done without crossing a death room is an errand that should fail
+// and say so, loudly, rather than succeed at the cost of a character.
+//
+// Two exceptions, both narrow and both necessary:
+//   - THE ORIGIN IS NEVER BLOCKED. A character that is somehow standing in one must be
+//     able to walk out, and that is the one moment routing through it is the whole point.
+//   - THE DESTINATION IS BLOCKED UNLESS SOMEBODY ASKS FOR IT BY NAME, via
+//     `allowHazardDestination`. An operator sending a character there deliberately is a
+//     decision a person can make; a keeper choosing it while roaming is not, and the
+//     keeper never passes the flag. This is the "are you sure?" that defaults to no.
+export const NEVER_ENTER = new Map([
+  [555, 'The Forest Shrine — acid gas puzzle, kills outright (e5.kod:452 PunishPlayer); ' +
+        'the safe row is random and moves, and is only learnable by asking LadyPheonix'],
+]);
+export const hazardReason = (room) => NEVER_ENTER.get(Number(room)) ?? null;
+
 // EVERY ROOM WITHIN `radius` HOPS, the destination itself first. Farm delivery reads this
 // to answer "who is near enough to be worth walking to", which one room number cannot.
 //
@@ -658,13 +693,24 @@ function safestPath(map, fromNum, toNum, avoid, danger, budget) {
 // have returned before. So the worst case is today's behaviour, which is the property
 // worth having in the most load-bearing function in the repository.
 export function findPath(map, fromNum, toNum,
-                         { avoid = AVOID_IN_TRANSIT, danger = true } = {}) {
+                         { avoid = AVOID_IN_TRANSIT, danger = true,
+                           allowHazardDestination = false } = {}) {
   if (fromNum === toNum) return { found: true, hops: [] };
+
+  // THE HARD BLOCK, APPLIED BEFORE ANYTHING ELSE AND NEVER RELAXED. See NEVER_ENTER: the
+  // permissive fallback at the bottom of this function is what makes `avoid` a preference,
+  // and a preference is not what a room that kills by arithmetic needs.
+  if (!allowHazardDestination && hazardReason(toNum))
+    return { found: false, hops: [], hazard: Number(toNum),
+             reason: `refusing to route to ${toNum}: ${hazardReason(toNum)}` };
+  const forbidden = new Set([...NEVER_ENTER.keys()].filter(r => r !== Number(fromNum) &&
+                                                                r !== Number(toNum)));
+
   // Never avoid where we are or where we are going: a character standing IN a hazard has
   // to be able to leave it, and one sent to it has to be able to arrive.
-  const skip = avoid && avoid.size
-    ? new Set([...avoid].filter(r => r !== fromNum && r !== toNum))
-    : null;
+  const soft = avoid && avoid.size
+    ? [...avoid].filter(r => r !== fromNum && r !== toNum) : [];
+  const skip = (soft.length || forbidden.size) ? new Set([...soft, ...forbidden]) : null;
 
   // THE ORDER HERE IS THE SAFETY ARGUMENT, and it is the same one the two-pass version
   // made: every step down this list is strictly more permissive than the one above, and
@@ -695,7 +741,16 @@ export function findPath(map, fromNum, toNum,
     const safer = bfsPath(map, fromNum, toNum, skip);
     if (safer.found) return safer;
   }
-  return bfsPath(map, fromNum, toNum, null);
+  // THE LAST RESORT STILL HONOURS THE HARD BLOCK. This line used to pass `null`, which is
+  // what made every avoid a preference — and it is the line Statler's route came down.
+  // A soft hazard is dropped here; a NEVER_ENTER room is not, so a journey that needs one
+  // comes back `found: false` and names the room rather than walking a character into it.
+  const last = bfsPath(map, fromNum, toNum, forbidden.size ? forbidden : null);
+  if (!last.found && forbidden.size)
+    return { ...last, blocked_by_hazard: [...forbidden],
+             reason: `${last.reason} without crossing ${[...forbidden]
+               .map(r => `${r} (${hazardReason(r)})`).join('; ')}` };
+  return last;
 }
 
 // Name or number in, room number out. Agents think in names.
