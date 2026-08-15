@@ -1625,6 +1625,13 @@ remarks and a value may collect both.
   that an unusable value keeps the committed one instead of unsetting it, that an
   unrecognised key is reported rather than dropped, and that no local file can move a
   mechanic or throw hard enough to stop a supervisor round) and
+  `node tools/m59-travel-test.mjs` (24 — **one call is the whole journey**: that a refused
+  doorway and an off-grid instant are re-settled and retried rather than returned, that a
+  stumble is not a hop so re-settling cannot eat the room budget, that patience is bounded
+  and the reason survives to the caller, that a journey whose last hop is also its last
+  permitted hop reports arrival rather than "gave up", and that a cancelled movement still
+  wins. It lifts the real method out of `m59-broker.mjs` by brace-matching rather than
+  reimplementing it, because that file cannot be imported without taking the fleet lock) and
   `node tools/m59-escape-test.mjs` (70) and
   `node tools/m59-combat-test.mjs` (383) and
   `node tools/m59-playbook-test.mjs` (37 — the three moments, the closed verb set, and

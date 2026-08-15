@@ -3463,8 +3463,31 @@ class Session {
   //
   // It is awaited AFTER the arrival settle, so the room contents have landed and anything
   // deciding where to stand is looking at a room it can actually see.
+  // ONE CALL IS THE WHOLE JOURNEY. `stumbles` is why.
+  //
+  // This used to return `arrived: false` the moment any single hop failed, which made a
+  // cross-world trip a coin flip that the CALLER had to keep flipping — m59-supervise
+  // wrapped it in three tries, and a run that did not (a rent errand, measured here) had
+  // Clifford fail to reach a bank twice and Waldorf twice, from one attempt each, while
+  // the identical call succeeded on the second or third go every time.
+  //
+  // The failures are transient and the route is RESUMABLE: each attempt re-plans from
+  // wherever the character actually got to, so a retry continues the journey rather than
+  // restarting it. "start is outside the room grid" is the classic one — the character
+  // arrives at an edge, its coordinates read as off the grid for an instant, and the next
+  // edge cannot be computed. Nothing is wrong; the position has not settled.
+  //
+  // So the retry belongs HERE, once, rather than in every caller — because a caller that
+  // forgets it does not get a slower journey, it gets a character stranded halfway across
+  // the world with the trip reported as finished.
+  //
+  // A STUMBLE IS NOT A HOP. They are counted separately so `maxHops` still means what it
+  // says: re-settling in the same room must not eat the budget for crossing rooms, or a
+  // long trip through one sticky doorway would run out of journey before it ran out of
+  // patience.
   async travel(toRoomNum, {
     maxHops = 25,
+    maxStumbles = 6,
     movementGeneration = this.movementGeneration,
     controlToken,
     onHop = null,
@@ -3479,16 +3502,47 @@ class Session {
     // "out of the first room" is time in the room exactly like any other.
     const journeyId = `${this.name}-${Date.now().toString(36)}`;
     let enteredAt = Date.now();
-    for (let i = 0; i < maxHops; i++) {
+    let hops = 0, stumbles = 0, totalStumbles = 0;
+
+    // Let the position settle and the room re-publish itself, then try again from
+    // wherever we actually are. Returns false when the patience is spent.
+    //
+    // TWO COUNTERS, because they answer different questions. `stumbles` is CONSECUTIVE and
+    // is the patience budget — it resets on every real hop, so one sticky doorway early on
+    // must not shorten the patience available to a sticky doorway later. `totalStumbles` is
+    // the whole journey's, and is what gets reported: a trip that arrived after eleven
+    // retries arrived, but it is not the same event as one that walked straight there, and
+    // a report that reset to zero on success could not tell them apart.
+    const stumble = async (why) => {
+      totalStumbles++;
+      if (++stumbles > maxStumbles) return false;
+      log.push({ stumble: stumbles, at: this.world.room?.name ?? null, reason: why,
+                 note: 're-reading the room and re-planning from here' });
+      await this.pacer.submit('read', () => this.client.roomContents()).catch(() => null);
+      await this.client.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 }).catch(() => null);
+      return true;
+    };
+
+    while (hops < maxHops) {
       if (this.movementWasCancelled(movementGeneration, controlToken))
         return this.cancelledMovement({ log });
       const here = this.world.room;
-      if (!here) return { arrived: false, log, reason: 'current room is not in the graph' };
+      // NOT A DEAD END — the coordinates have not settled yet. This is the same instant
+      // that produces "start is outside the room grid", and it clears on its own.
+      if (!here) {
+        if (await stumble('current room is not in the graph')) continue;
+        return { arrived: false, log, reason: 'current room is not in the graph', stumbles: totalStumbles };
+      }
       if (here.num === toRoomNum)
-        return { arrived: true, room: { num: here.num, name: here.name }, hops: log.length, log };
+        return { arrived: true, room: { num: here.num, name: here.name }, hops, stumbles: totalStumbles, log };
 
       const route = this.world.route(toRoomNum);
-      if (!route.found) return { arrived: false, log, reason: route.reason || 'no route' };
+      if (!route.found) {
+        // A route failure right after an arrival is the transient one. A route failure
+        // that survives re-reading the room is real, and is reported as it always was.
+        if (await stumble(route.reason || 'no route')) continue;
+        return { arrived: false, log, reason: route.reason || 'no route', stumbles: totalStumbles };
+      }
       const nextHop = route.hops[0];
 
       // A room often publishes SEVERAL squares for the same doorway — the Royal
@@ -3511,7 +3565,13 @@ class Session {
       const candidates = this.world.exits().filter(e => e.to === nextHop.to);
       const exit = orderExits(candidates)[0];
       if (!exit)
-        return { arrived: false, log, reason: 'cannot find the exit to ' + nextHop.to_name + ' from here' };
+      {
+        // The exit list is republished on arrival, so an exit that is missing right now is
+        // usually one we asked about too early.
+        if (await stumble('cannot find the exit to ' + nextHop.to_name + ' from here')) continue;
+        return { arrived: false, log, stumbles: totalStumbles,
+                 reason: 'cannot find the exit to ' + nextHop.to_name + ' from here' };
+      }
 
       // Split so the record can say whether the time went on DECIDING or on DOING. Above
       // this line is routing and exit selection; below it is the walk. If the tail turns
@@ -3546,9 +3606,17 @@ class Session {
         // refused, which is the suspicion this exists to confirm or kill.
         tried: (r.tried?.length ?? 0) + 1,
         reason: r.left ? null : why,
-        journey: journeyId, hop: i, destination: toRoomNum,
+        journey: journeyId, hop: hops, destination: toRoomNum,
       });
-      if (!r.left) return { arrived: false, log, reason: why };
+      // A REFUSED DOORWAY IS THE ORDINARY CASE, NOT THE END OF THE JOURNEY. leaveViaAny has
+      // already tried every square this room publishes for that destination; re-settling and
+      // re-planning is what turns the second attempt into the one that works.
+      if (!r.left) {
+        if (await stumble(why)) continue;
+        return { arrived: false, log, reason: why, stumbles: totalStumbles };
+      }
+      hops++;
+      stumbles = 0;                      // it moved; the patience is for the NEXT sticky room
 
       // Arriving brings a fresh BP_PLAYER, and with it the identity the world model
       // needs; give the room contents a moment to land as well.
@@ -3572,7 +3640,7 @@ class Session {
         try {
           await onHop({
             room: room ? { num: room.num, name: room.name } : null,
-            hop: i, hops_done: log.length, destination: toRoomNum,
+            hop: hops, hops_done: hops, destination: toRoomNum,
             remaining: Math.max(0, (this.world.route(toRoomNum)?.hops?.length ?? 0)),
             journey: journeyId,
           });
@@ -3597,7 +3665,16 @@ class Session {
       // would make every room a character rested in look like the slowest map in the game.
       enteredAt = Date.now();
     }
-    return { arrived: false, log, reason: 'gave up after ' + maxHops + ' hops' };
+    // CHECK ARRIVAL ONE LAST TIME. The destination test lives at the TOP of the loop, so a
+    // journey whose final hop is also its last permitted hop leaves the loop standing in
+    // the right room and reported "gave up" — the one failure mode that is both wrong and
+    // reassuringly plausible, since the hop count really had been spent.
+    const finally_ = this.world.room;
+    if (finally_ && finally_.num === toRoomNum)
+      return { arrived: true, room: { num: finally_.num, name: finally_.name },
+               hops, stumbles: totalStumbles, log };
+    return { arrived: false, log, stumbles: totalStumbles,
+             reason: 'gave up after ' + maxHops + ' hops' };
   }
 }
 
@@ -4361,17 +4438,63 @@ const TOOLS = [
       const dest = resolveRoom(worldMap, a.to);
       if (dest == null) throw new Error(`no room matches "${a.to}"`);
       const where = { num: dest, name: worldMap.rooms[dest].name };
+      // ONLY ONE THING MAY DRIVE A CHARACTER AT A TIME, AND A TRAVEL CALL IS THAT THING.
+      //
+      // A running keeper is also moving the character — taking safe spots, pulling monsters
+      // back to them, breaking off — so travel plans a route to an exact square and then
+      // finds the character somewhere else. Both sides are working correctly and fighting
+      // each other. m59-supervise has stopped the keeper by hand around every deploy for
+      // exactly this reason; doing it here means every caller gets it, including the ones
+      // that would not have thought to.
+      //
+      // `goInert` and not `stop`: the keeper keeps LOOKING. Frames, observations, the
+      // hits stream and the death record all keep running, so a character that dies
+      // mid-journey is still attributable — it just stops moving, swinging and trading.
+      //
+      // It also silences the watchdog, which is the other interrupter and the subtler one:
+      // `startWatchdog` returns early on `this.inert`, so its cancelMovement cannot cut the
+      // journey short. That is the correct trade HERE and it is the documented doctrine —
+      // a planned trip accepts the risk of death at the moment it is planned, and the way
+      // out of an attack during travel is always THROUGH. The watchdog interrupts so that
+      // the ordinary pass can re-decide with fresh numbers; with the keeper inert there is
+      // no pass to do the deciding, so the interrupt would abandon the trip and decide
+      // nothing. Abandoning costs the errand AND leaves the character wherever it stopped,
+      // which is usually worse than the room it was walking to.
+      //
+      // Restored in a `finally`, and only if WE put it there — an errand or a supply hold
+      // that was already holding this keeper keeps its hold, because reviving somebody
+      // else's is how a character gets driven by two things at once again.
+      // BY NAME, not by session: `autopilotFor` takes the session and `autopilotIfAny`
+      // takes the key it is stored under. Passing the session here returns null for every
+      // character, which would have left this whole hold silently doing nothing — the
+      // exact class of no-op this file keeps warning about.
+      const keeper = autopilotIfAny(s.name);
+      const holdKeeper = () => {
+        if (!keeper || keeper.inert) return null;
+        keeper.goInert(`travelling to ${where.name}`);
+        return () => keeper.revive('travel finished');
+      };
+
       if (a.background) {
         s.startJob('travel', `walk to ${where.name}`,
-                   movementGeneration => s.travel(dest, {
-                     maxHops: num(a.max_hops, 25), movementGeneration,
-                     controlToken: a.control_token,
-                   }));
+                   async movementGeneration => {
+                     const release = holdKeeper();
+                     try {
+                       return await s.travel(dest, {
+                         maxHops: num(a.max_hops, 25), movementGeneration,
+                         controlToken: a.control_token,
+                       });
+                     } finally { release?.(); }
+                   });
         const hops = s.world.route(dest)?.length ?? null;
         return { started: true, destination: where, hops,
                  note: 'walking now; poll `fleet` or `status` — do not re-issue while busy' };
       }
-      const r = await s.travel(dest, { maxHops: num(a.max_hops, 25), controlToken: a.control_token });
+      const release = holdKeeper();
+      let r;
+      try {
+        r = await s.travel(dest, { maxHops: num(a.max_hops, 25), controlToken: a.control_token });
+      } finally { release?.(); }
       return { destination: { num: dest, name: worldMap.rooms[dest].name }, ...r, now: arrivalReport(s) };
     },
   },
