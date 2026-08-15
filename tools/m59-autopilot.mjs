@@ -56,6 +56,10 @@ import { CITY_INNS } from './m59-underworld.mjs';
 // existed, and every call below is guarded on the null that says so.
 import { loadoutFor, keepTest, sellTest, dropRank, wantsOf, norm,
          reconcile, equipYield } from './m59-loadout.mjs';
+// Behavior-tree subtree factories and the blackboard helper. Only getArmedTree is
+// wired today, behind a per-character policy.useBT opt-in. The rest (handle_threat,
+// farm, etc.) come later, gated on the m59-combat-test suite per docs/BT-PLAN.md.
+import { getArmedTree, updateBlackboard } from './m59-bt-nodes.mjs';
 import { mkdirSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -6576,6 +6580,50 @@ export class Autopilot {
     const s = this.s;
     if (!s.live) { this.note('not in game'); return; }
     const c = s.client;
+    // ------------------------------------------------------------------
+    // BEHAVIOR-TREE GET-ARMED SUBTREE (opt-in via policy.useBT)
+    //
+    // When policy.useBT is true and the character is NOT yet wielding a weapon at
+    // tick start, hand control to the BT for this one decision: try the pack, try
+    // conjuring, fall through to travelling to a smith and buying. This is a
+    // per-character flag -- the fleet stays on the proven sequential code unless
+    // somebody flipped the lever on a specific character, so the BT path is tested
+    // in isolation before any fleet-wide rollout.
+    //
+    // Out of scope here (per docs/BT-PLAN.md): the threat ladder / handle_threat
+    // subtree, which is gated on the 383 passing m59-combat-test cases and is the
+    // last subtree to land. Event-driven reflexes (watchdog, flee, rest-on-damage,
+    // fight-back, death/Underworld) stay on the client and are NEVER moved into the
+    // BT.
+    //
+    // On any tick the BT can take -- it is async -- returning from pass() skips
+    // the rest of the cycle. Once armed, the existing sequential pass() body below
+    // is the source of truth and runs unchanged.
+    // ------------------------------------------------------------------
+    if (this.policy && this.policy.useBT === true &&
+        c && typeof c.armed === 'function' && !c.armed()) {
+      // Snapshot the live client into a blackboard at tick start. GOAP writes
+      // strategic fields (assignedRoom, hunt, purpose, goals) here between ticks;
+      // the helper preserves them while refreshing the live refs and ensuring
+      // bb._bt exists for the action slot pattern.
+      const bb = updateBlackboard(
+        this._btBlackboard || (this._btBlackboard = {}),
+        { client: c, session: this, policy: this.policy },
+      );
+      // Compose the get_armed selector. Throws if neither keeper nor session.keeper
+      // is supplied -- 'this' is the keeper, so we pass it as session.keeper to
+      // match the factory contract.
+      const tree = getArmedTree({ session: { keeper: this } });
+      // tick is synchronous against the slot pattern (m59-bt-nodes.mjs Action
+      // factories deliberately avoid returning Promises so the slot is honoured).
+      await tree.tick(bb);
+      // If the BT armed us this tick, declare it and bail before the sequential
+      // body runs -- the BT's chosen arm reached SUCCESS. If it did not, fall
+      // through to the proven sequential logic, which knows how to sit down and
+      // wait for mana, walk out to a smith, stop and log, etc., exactly as before.
+      if (c.armed()) { this.progress('armed itself'); return; }
+    }
+
     // APPLY THE LOADOUT POLICY OVERLAY FIRST. Every decision in this pass reads
     // `this.policy`, and the loadout file is the source of truth for per-character
     // settings (karma, buy_reagents, hunt, assigned_room, pulls_before_barren). Without
