@@ -100,7 +100,7 @@ export function listGrants(dir = GRANT_DIR) {
  * deliver it, and if they lose it the answer is a new grant, not a lookup.
  */
 export function mintGrant({
-  to, fleet = null, agents = null, scope = 'orders',
+  to, fleet = null, agents = null, scope = 'orders', restricted = false,
   lifetimeMs = DEFAULT_LIFETIME_MS, note = '', dir = GRANT_DIR, now = Date.now(),
 } = {}) {
   const label = String(to || '').trim();
@@ -128,6 +128,8 @@ export function mintGrant({
     // rather than silently behaving like null — the two readings differ by everything.
     agents: agents === null ? null : [...new Set(agents.map(String))],
     scope,
+    // Full control unless somebody asked for a floor. See RESTRICTED_VERBS.
+    restricted: !!restricted,
     issued_at: now,
     expires_at: now + lifetimeMs,
     revoked_at: null,
@@ -207,14 +209,22 @@ export function verifyGrant(token, { need = 'read', agent = null, fleet = null,
 }
 
 // ---------------------------------------------------------------------------
-// THE VERB BOUNDARY: WHAT NO GRANT MAY EVER DO, HOWEVER BROADLY IT IS SCOPED.
+// AN OPTIONAL VERB BOUNDARY. OFF BY DEFAULT: A GRANT IS FULL CONTROL.
 //
-// `orders` is the right scope for "drive my character" and the wrong one for "you now own
-// my account". Renting a character to a guildmate is the case that makes the difference
-// concrete: they should be able to hunt, walk, buy, sell and talk with it, and they must
-// not be able to do the handful of things that cannot be taken back.
+// The default is deliberate and was the operator's call. A grant hands over the character,
+// including the parts that cannot be taken back — if you lend somebody a character to run
+// as a bot, half-lending it produces a bot that stalls on the verb you withheld, and you
+// find out from a silence rather than an error.
 //
-// Each of these is unrecoverable in a different way:
+// WHAT A GRANT STILL IS NOT, EVEN AT FULL CONTROL, and this is the whole reason it beats
+// handing over the password: it is REVOCABLE in one command, it EXPIRES on its own, it is
+// scoped to named characters rather than the account, every use is ATTRIBUTED, and the
+// holder never learns the credential — so revoking actually ends it, which telling
+// somebody a password never does.
+//
+// `--safe` opts into the list below for the cases where you do want a floor — a stranger
+// rather than a guildmate, or an unattended bot you have not read the code of. Each entry
+// is unrecoverable in a different way:
 //
 //   leave / forget   drops the roster entry, and THE ROSTER IS THE ONLY RECORD OF THE
 //                    ACCOUNT PASSWORD. There is no reset and no email on the account, so a
@@ -230,11 +240,10 @@ export function verifyGrant(token, { need = 'read', agent = null, fleet = null,
 //   describe         puts words in the character's mouth to every player who looks at it,
 //                    on a shared server, under the owner's name.
 //
-// This is a DENY LIST ON TOP OF SCOPE, not a replacement for it. A deny list alone would
-// be a promise that every future tool is safe by default, which is exactly the assumption
-// that ages badly — the scope still has to say `orders`, the agent still has to be in the
-// allowlist, and the grant still has to be live.
-export const NEVER_GRANTED = Object.freeze({
+// When it IS on, it is a deny list ON TOP OF SCOPE, never a replacement: the scope still
+// has to say `orders`, the agent still has to be in the allowlist, and the grant still has
+// to be live.
+export const RESTRICTED_VERBS = Object.freeze({
   leave: null, forget: null, leave_raza: null, reroll: null, pilot: null,
   describe: null,
   guild: ['disband', 'abandon_hall', 'set_password', 'exile', 'abdicate'],
@@ -243,22 +252,23 @@ export const NEVER_GRANTED = Object.freeze({
 /**
  * May this grant call this tool with these arguments?
  *
- * Returns { ok, why }. The action check is per-tool: `guild` is not banned outright,
- * because a renter reading the roster or inviting is harmless — only the verbs that
- * destroy something are.
+ * UNRESTRICTED BY DEFAULT — a grant is full control, so this answers yes unless the grant
+ * was minted `--safe`. The action check is per-tool: `guild` is not banned outright even
+ * then, because reading the roster or inviting destroys nothing.
  */
-export function toolAllowed(tool, args = {}) {
+export function toolAllowed(tool, args = {}, { restricted = false } = {}) {
+  if (!restricted) return { ok: true };
   const name = String(tool || '');
-  if (!Object.prototype.hasOwnProperty.call(NEVER_GRANTED, name)) return { ok: true };
-  const banned = NEVER_GRANTED[name];
+  if (!Object.prototype.hasOwnProperty.call(RESTRICTED_VERBS, name)) return { ok: true };
+  const banned = RESTRICTED_VERBS[name];
   // null means the whole tool is off limits.
-  if (banned === null) return { ok: false, why: `${name} is never available to a grant` };
+  if (banned === null) return { ok: false, why: `${name} is withheld from this grant` };
   const action = String(args?.action ?? '');
   // AN ABSENT ACTION IS REFUSED, not waved through. A tool whose destructive verbs are
   // selected by an argument must not become available by omitting the argument.
-  if (!action) return { ok: false, why: `${name} needs an explicit action under a grant` };
+  if (!action) return { ok: false, why: `${name} needs an explicit action under a restricted grant` };
   return banned.includes(action)
-    ? { ok: false, why: `${name} ${action} is never available to a grant` }
+    ? { ok: false, why: `${name} ${action} is withheld from this grant` }
     : { ok: true };
 }
 
@@ -310,6 +320,7 @@ if (isMain) {
         fleet: arg('--fleet'),
         agents: agentsRaw ? agentsRaw.split(',').map(s => s.trim()).filter(Boolean) : null,
         scope: arg('--scope', 'orders'),
+        restricted: has('--safe'),
         lifetimeMs,
         note: arg('--note', ''),
       });
@@ -317,6 +328,9 @@ if (isMain) {
       console.log(`  scope    ${grant.scope}`);
       console.log(`  fleet    ${grant.fleet ?? '(any)'}`);
       console.log(`  agents   ${grant.agents ? grant.agents.join(',') : '(the whole fleet)'}`);
+      console.log(`  control  ${grant.restricted
+        ? 'restricted — leave/forget/reroll/pilot/describe and the destructive guild verbs withheld'
+        : 'FULL — including what cannot be undone. --safe withholds the irreversible verbs'}`);
       console.log(`  expires  ${when(grant.expires_at)}  (${Math.round(lifetimeMs / 60000)} min)`);
       console.log(`\n  ${token}\n`);
       console.log('That token is shown ONCE and is not stored — only a salted hash of it is.');

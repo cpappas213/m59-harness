@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   mintGrant, verifyGrant, revokeGrant, revokeAll, listGrants, loadGrant,
-  parseToken, parseDuration, grantStatus, SCOPES, MAX_LIFETIME_MS, toolAllowed, NEVER_GRANTED,
+  parseToken, parseDuration, grantStatus, SCOPES, MAX_LIFETIME_MS, toolAllowed, RESTRICTED_VERBS,
 } from './m59-handoff.mjs';
 
 let pass = 0, fail = 0;
@@ -212,45 +212,58 @@ console.log('durations');
 }
 
 // ---------------------------------------------------------------------------
-console.log('the verb boundary: what no grant may ever do');
+console.log('a grant is FULL CONTROL by default; --safe is opt-in');
 {
-  // The renting case. A guildmate driving a character must not be able to do the things
-  // that cannot be undone, however broad their scope.
-  ok('leave is never available', !toolAllowed('leave').ok);
-  ok('forget is never available', !toolAllowed('forget').ok);
-  ok('reroll is never available', !toolAllowed('reroll').ok);
-  ok('pilot is never available', !toolAllowed('pilot').ok);
-  ok('describe is never available', !toolAllowed('describe').ok);
-  ok('and leave says why', /never available/.test(toolAllowed('leave').why));
+  // THE DEFAULT IS THE OPERATOR'S CALL AND THIS PINS IT. Half-lending a character
+  // produces a bot that stalls on the verb you withheld, and you find out from a silence
+  // rather than an error — so an unrestricted grant may do everything, including what
+  // cannot be undone.
+  for (const t of ['leave', 'forget', 'reroll', 'pilot', 'describe'])
+    ok(`${t} is allowed by default`, toolAllowed(t).ok);
+  ok('guild disband is allowed by default', toolAllowed('guild', { action: 'disband' }).ok);
+  ok('a default grant records itself as unrestricted', mint().grant.restricted === false);
 
-  // Ordinary driving is untouched — this is a deny list, not an allowlist.
+  // What a grant is NOT, even at full control, is the reason it beats the password:
+  // it is revocable, it expires, it is scoped, and the holder never learns the credential.
+  const { grant, token } = mint({ agents: ['t1'] });
+  ok('still scoped at full control', !verifyGrant(token, { dir, agent: 't9' }).ok);
+  revokeGrant(grant.id, { dir });
+  ok('still revocable at full control', !verifyGrant(token, { dir }).ok);
+}
+
+console.log('--safe withholds the irreversible verbs');
+{
+  const R = { restricted: true };
+  ok('leave is withheld', !toolAllowed('leave', {}, R).ok);
+  ok('forget is withheld', !toolAllowed('forget', {}, R).ok);
+  ok('reroll is withheld', !toolAllowed('reroll', {}, R).ok);
+  ok('pilot is withheld', !toolAllowed('pilot', {}, R).ok);
+  ok('describe is withheld', !toolAllowed('describe', {}, R).ok);
+  ok('and it says so', /withheld/.test(toolAllowed('leave', {}, R).why));
+
+  // Ordinary driving is untouched — a deny list, not an allowlist.
   for (const t of ['travel', 'fight', 'rest_up', 'shop', 'sell', 'autopilot', 'look',
                    'inventory', 'equip_best', 'bank', 'say', 'supply'])
-    ok(`${t} is allowed`, toolAllowed(t, { action: 'x' }).ok);
+    ok(`${t} still works under --safe`, toolAllowed(t, { action: 'x' }, R).ok);
 
-  // Per-action tools: the destructive verbs only.
-  ok('guild disband is refused', !toolAllowed('guild', { action: 'disband' }).ok);
-  ok('guild abandon_hall is refused', !toolAllowed('guild', { action: 'abandon_hall' }).ok);
-  ok('guild set_password is refused', !toolAllowed('guild', { action: 'set_password' }).ok);
-  ok('guild exile is refused', !toolAllowed('guild', { action: 'exile' }).ok);
-  ok('guild status is allowed', toolAllowed('guild', { action: 'status' }).ok);
-  ok('guild invite is allowed', toolAllowed('guild', { action: 'invite' }).ok);
+  ok('guild disband withheld', !toolAllowed('guild', { action: 'disband' }, R).ok);
+  ok('guild abandon_hall withheld', !toolAllowed('guild', { action: 'abandon_hall' }, R).ok);
+  ok('guild set_password withheld', !toolAllowed('guild', { action: 'set_password' }, R).ok);
+  ok('guild status allowed', toolAllowed('guild', { action: 'status' }, R).ok);
+  ok('guild invite allowed', toolAllowed('guild', { action: 'invite' }, R).ok);
 
-  // THE OMISSION CASE. A tool whose dangerous verbs are chosen by an argument must not
-  // become available by leaving the argument out — that is the shape of every filter
-  // bypass ever written.
-  ok('guild with no action is refused', !toolAllowed('guild', {}).ok);
-  ok('guild with an empty action is refused', !toolAllowed('guild', { action: '' }).ok);
-  ok('guild with a null action is refused', !toolAllowed('guild', { action: null }).ok);
-  ok('guild with no args at all is refused', !toolAllowed('guild').ok);
+  // THE OMISSION CASE — a tool whose dangerous verbs are chosen by an argument must not
+  // become available by leaving the argument out.
+  for (const a of [{}, { action: '' }, { action: null }, undefined])
+    ok(`guild with ${JSON.stringify(a)} is refused`, !toolAllowed('guild', a, R).ok);
 
-  // The boundary is a deny list ON TOP OF scope, never instead of it: a read grant still
-  // cannot order, and an unlisted agent is still refused.
-  const r = mint({ scope: 'read' }).token;
-  ok('the verb boundary does not replace scope',
-     !verifyGrant(r, { dir, need: 'orders' }).ok && toolAllowed('travel').ok);
-  ok('every banned entry is either null or a list of actions',
-     Object.values(NEVER_GRANTED).every(v => v === null || Array.isArray(v)));
+  ok('the grant carries the flag', mint({ restricted: true }).grant.restricted === true);
+  ok('every entry is null or a list',
+     Object.values(RESTRICTED_VERBS).every(v => v === null || Array.isArray(v)));
+
+  // A floor on verbs is not a substitute for scope.
+  const r = mint({ scope: 'read', restricted: true }).token;
+  ok('--safe does not replace scope', !verifyGrant(r, { dir, need: 'orders' }).ok);
 }
 
 rmSync(dir, { recursive: true, force: true });

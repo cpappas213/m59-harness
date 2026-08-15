@@ -1502,6 +1502,59 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   at 0 bytes for ever. This looks exactly like a hook not firing. The container
   turns it on; a native build may not have.
 
+## LENDING CHARACTERS OVER THE INTERNET WITHOUT LENDING THE PASSWORD
+
+The fleet cannot be handed over the way a session is handed over, and the server source
+says why. `SynchedAcceptLogin` (`blakserv/synched.c:321`) is the whole of authentication —
+`a = AccountLoginByName(name)` then `a->password != password` — re-checked on every TCP
+connect. **There is no resume verb in the AP table**, so there is no session to pass. The
+wire carries `MD5(password)` rather than the plaintext (`m59-client.mjs`, `mdpass`), but
+that digest IS the credential: it is compared directly against what is stored, so shipping
+digests instead of passwords moves the same authority under a different name.
+
+Nor can the live connection travel. Every session holds anti-spoof state — `seeds[]`,
+`secure_token`, `sliding_token` — advancing on **every packet** in lockstep with the server
+(`commcli.c:160-177`); one step out of line sets `seeds_hacked` and the server drops you
+silently. And the IP is not the obstacle people expect: it appears only in a ban list and
+in `MaxPerIPAddress` (default `0`, unlimited), never binding a session to an address.
+
+**So what moves is AUTHORITY.** The broker stays here holding the roster and the sockets;
+somebody else drives part of it through a door that can be shut.
+
+```bash
+node tools/m59-handoff.mjs mint --to "a guildmate" --agents t1,t2 --for 4h   # owner
+node tools/m59-lend.mjs --port 8931                                          # owner, behind a tunnel
+node tools/m59-mcp-attach.mjs --host <tunnel> --port 8931 --token m59g_...   # borrower
+```
+
+The borrowed characters then appear in the borrower's own tooling as ordinary MCP tools.
+`node tools/m59-handoff.mjs list` shows every grant and what it has been used for;
+`revoke <id>` ends it on the next request.
+
+- **A grant is FULL CONTROL by default**, including what cannot be undone. That is
+  deliberate: half-lending a character produces a bot that stalls on the verb you withheld,
+  and you find out from a silence rather than an error. `--safe` opts into withholding the
+  irreversible ones (`leave`, `forget`, `reroll`, `pilot`, `describe`, and the destructive
+  guild verbs). **`leave` and `forget` are the worst of them** — they drop the roster entry,
+  and the roster is the only record of the account password.
+- **What a grant still is not, even at full control**, is the reason it beats telling
+  somebody the password: it is revocable in one command, it expires on its own, it is
+  scoped to named characters rather than the account, every use is attributed — and the
+  holder never learns the credential, so revoking actually ends it.
+- **The token is never stored**, only a salted SHA-256, so a leaked grant file names who was
+  trusted and grants nothing.
+- **`fleet` comes back filtered** to the characters the grant covers. A borrower of two
+  characters gets a board of two; otherwise every lend leaks the whole roster's positions,
+  health and money.
+- **`m59-lend.mjs` is a separate process from the broker and must stay one.** The broker's
+  own port has no authentication — its controls render only for loopback and the POST is
+  refused at the socket for anything else — which is right for something holding twenty-one
+  irreplaceable accounts, and exactly what you do not bolt an internet-facing auth layer
+  onto. The lend door owns no sessions, no roster and no lock, and can do nothing a local
+  operator could not.
+- **There is no TLS here.** Put it behind a VPN or an SSH tunnel; never expose either port
+  directly. `substrate/grants/` is gitignored, like the roster.
+
 ## A NUMBER THAT IS THIS CHECKOUT'S OPINION DOES NOT BELONG IN GIT
 
 `fight_above_vigor: 180` was two different claims wearing one coat, and they have
@@ -1625,6 +1678,14 @@ remarks and a value may collect both.
   that an unusable value keeps the committed one instead of unsetting it, that an
   unrecognised key is reported rather than dropped, and that no local file can move a
   mechanic or throw hard enough to stop a supervisor round) and
+  `node tools/m59-handoff-test.mjs` (112 — **the contract test for lending a character
+  without lending the password**: that the token is never on disk so a leaked grant file is
+  an audit record rather than a key, that expiry is decided on USE and revocation on the
+  next request, that `read` cannot order and an agent allowlist actually excludes, that a
+  grant is FULL CONTROL by default and `--safe` is opt-in, and that a restricted tool whose
+  destructive verbs are chosen by an argument is refused when the argument is omitted. It
+  caught a real intermittent auth bug: ids were base64url, whose alphabet contains the
+  token separator) and
   `node tools/m59-travel-test.mjs` (24 — **one call is the whole journey**: that a refused
   doorway and an off-grid instant are re-settled and retried rather than returned, that a
   stumble is not a hop so re-settling cannot eat the room budget, that patience is bounded
