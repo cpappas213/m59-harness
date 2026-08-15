@@ -10303,7 +10303,36 @@ export class Autopilot {
     // The same arithmetic bankSurplus uses to decide what to hold back, so the two agree
     // on what food costs: ~4.5 shillings a vigor point at the Barloque shelf, plus the
     // 100 restockReagents refuses to spend below.
-    const want = Math.min(900, Math.round(shortBy * 4.5) + (this.policy.hungryFloor ?? 100));
+    // WHAT THE TRIP COSTS, NOT WHAT ONE MEAL COSTS. This sized the withdrawal on a vigor
+    // shortfall alone and then capped it at a flat 900, which was right when the errand was
+    // "buy dinner" and is wrong now that the same trip is expected to carry a character for
+    // hours. A full reagent load at the loadout's own ceiling is 8,400sh at counter prices;
+    // against a 900 cap the character walks to the bank, draws pocket money, buys a
+    // fraction, and is on the road again inside the hour — with nothing in the report
+    // saying the cap was what stopped it.
+    //
+    // So: add what the reagents actually cost at this character's own floors, and make the
+    // ceiling a policy value rather than a constant. Measured while the 900 stood: purses
+    // of 5, 7, 8, 13 against bank balances of 10,000 to 36,000, and six characters at 88%
+    // or more travel-and-trade with ZERO fighting.
+    const reagentGap = (() => {
+      const l = this.loadout();
+      if (!l?.carry?.length) return 0;
+      const pack = this.packAsItems();
+      let sh = 0;
+      for (const entry of l.carry) {
+        if (!/elder\s?berry|^herbs?$/i.test(entry.item)) continue;
+        const held = pack.filter(i => norm(i.name) === norm(entry.item))
+                         .reduce((t, i) => t + i.amount, 0);
+        if (held >= entry.min) continue;                 // only when a trip is warranted
+        const target = Number.isFinite(entry.max) && entry.max > entry.min ? entry.max : entry.min;
+        // Counter prices, read off the shelf: elderberry 28, herbs 14.
+        sh += Math.max(0, target - held) * (/elder/i.test(entry.item) ? 28 : 14);
+      }
+      return sh;
+    })();
+    const cap = Math.max(900, Number(this.policy.withdrawMax ?? 10000));
+    const want = Math.min(cap, Math.round(shortBy * 4.5) + reagentGap + (this.policy.hungryFloor ?? 100));
     if (carried >= want) return;
 
     // NEVER ASK FOR MORE THAN IS THERE. A bank refuses an over-withdrawal outright rather
