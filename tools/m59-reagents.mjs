@@ -530,10 +530,26 @@ async function stockUp(row) {
     const castings = Math.floor(Math.min(eb2, hb2) / 2);
     const dry = castings === 0
       ? `  *** STILL CANNOT CAST — ${eb2 ? 'no herbs' : 'no elderberry'} at this counter ***` : '';
+    // SAY WHY NOTHING ARRIVED. `spent 0sh` with money in the purse and space in the pack
+    // is the shape every silent failure here has taken, and the report named none of them:
+    // the counter refusing to hand goods over ("Perhaps you carry too much?") is a sentence
+    // spoken to the room, and the broker's own clamp reports what it cut and why. Both were
+    // being returned and thrown away. A trip that spends nothing must say what it heard.
+    const askedFor = buyIds.length;
+    const gotBack = Array.isArray(bought?.got) ? bought.got.length : null;
+    const quiet = askedFor > 0 && (purse1 - purse2) === 0;
+    const clampNote = bought?.clamped?.length
+      ? `  [clamped: ${[...new Set(bought.clamped.flatMap(c => c.limited_by || []))].join('/')}]` : '';
+    const saidNote = quiet && bought?.messages?.length
+      ? `  [the counter said: ${bought.messages.join('; ').slice(0, 90)}]` : '';
+    const quietNote = quiet && !clampNote && !saidNote
+      ? `  *** ASKED FOR ${askedFor} AND SPENT NOTHING — counter said nothing, ` +
+        `got ${gotBack ?? '?'} ***` : '';
     return `${who}: at ${arrived}, sold ${sellable.length} kind(s) ` +
            `(${purse0} -> ${purse1}sh)${bankNote}, spent ${purse1 - purse2}sh, ` +
            `elderberry ${eb0} -> ${eb2}, herbs now ${hb2}, ${castings} casting(s)` +
-           (bought?.error ? ` [buy said: ${String(bought.error).slice(0, 50)}]` : '') + dry;
+           (bought?.error ? ` [buy said: ${String(bought.error).slice(0, 50)}]` : '') +
+           clampNote + saidNote + quietNote + dry;
   } finally {
     // The same invariant every errand in this repo needed and each learned by finding
     // characters standing in towns with nothing driving them: whoever this stopped is
