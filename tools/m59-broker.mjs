@@ -11438,6 +11438,31 @@ const TOOLS = [
                 .map(e => e.name)[0] ?? null)
             : undefined,
           equipped_count: c.equipment().known ? c.equipment().count : undefined,
+          // A HELD TOKEN LOOKS EXACTLY LIKE A CHARACTER THAT HAS BEEN WALKING A WHILE,
+          // AND IS NOT. `Token.NewUsed` (kod/object/item/passitem/token.kod:227) adds
+          // `viVigorDrop` — 120,000 — of exertion, arms a `TortureHolder` timer that
+          // fires every TOKEN_FATIGUE_TIME (10s) for as long as it is held, and, the part
+          // that actually traps you, SETS THE VIGOR REST THRESHOLD TO 10.
+          //
+          // That last one is the tell and the reason this needs a flag rather than a
+          // reading. Ordinary exhaustion is self-clearing: exertion accrues once a second
+          // while moving (`EXERTION_PER_MOVE`, user.kod:3021) and the character recovers
+          // to the usual 80 the moment it stops. A token holder rests and STILL sits at
+          // ten, indefinitely, with a keeper that will not fight because it is under every
+          // vigor floor there is. On the board the two are the same row — a low number
+          // beside a character that is standing still — and only one of them ever fixes
+          // itself. It cost this session an hour of looking at exactly that.
+          //
+          // Free to detect: the token takes both hand slots (`viUse_type = ITEM_USE_HAND`),
+          // so it is in the use list, which the server PUSHES. No inventory read, no extra
+          // round trip, and it cannot be hidden behind a pack of seventeen long swords —
+          // which is precisely how it was missed when the pack was searched instead.
+          //
+          // `holding_token` is deliberately not folded into `wielding`: that field filters
+          // on `weaponScore > 0` and a token scores nothing, so it would have vanished.
+          holding_token: c.equipment().known
+            ? c.equipment().equipped.some(e => /^token$/i.test(String(e.name || '')))
+            : undefined,
           // WHAT THIS CHARACTER CAN DO FOR THE OTHERS.
           //
           // Both Kraanan level-1 creation spells are services rather than personal
@@ -11700,9 +11725,26 @@ const TOOLS = [
         });
       }
       const stuck = rows.filter(r => r.stalled && r.stalled !== false);
+      // A HELD TOKEN IS A SUMMARY-LEVEL FACT, not a column somebody has to go looking for.
+      // It pins the rest threshold at 10 for as long as it is held, so the character is
+      // under every vigor floor there is and will not fight — while reading, row by row,
+      // exactly like one that has simply been walking. Anything scanning this board for
+      // "why is nobody killing" has to be able to see it without opening an inventory.
+      const tokens = rows.filter(r => r.holding_token === true);
       return {
         agents: rows.length,
         stalled_count: stuck.length,
+        // Named separately from `needs_attention`, because the remedy is different in
+        // kind: a stalled keeper is revived, a token is CARRIED BACK TO A COUNCILOR.
+        // Folding them together would send somebody to `autopilot action=revive`, which
+        // does nothing at all about a token and looks like it should.
+        ...(tokens.length ? {
+          holding_tokens: tokens.map(r => r.agent),
+          token_warning: `${tokens.length} character(s) are holding a Council Token — it ` +
+            `pins the vigor rest threshold at 10 (token.kod:227), so they cannot rest ` +
+            `back to fighting vigor until it is dropped or returned to a councilor. ` +
+            `Reviving the keeper will not help.`,
+        } : {}),
         needs_attention: stuck.map(r => r.agent),
         fleet: rows,
         // WHAT TIME IT IS IN THE WORLD, ON THE FREE CALL.

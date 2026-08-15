@@ -252,6 +252,13 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
     // row's numbers are about someone playing rather than something farming — which is
     // the one case where "stalled" and "no kills" mean nothing is wrong.
     const mine = nowPiloted.has(String(r.character ?? '').toLowerCase());
+    // A HELD TOKEN IS FLAGGED ON THE VIGOR CELL, because that is the cell it lies in.
+    // Token.NewUsed (token.kod:227) pins the vigor rest threshold at 10 for as long as it
+    // is held, so the character sits under every vigor floor there is and will not fight —
+    // while looking, on this row, exactly like one that has simply been walking. The
+    // difference is that walking fixes itself on the next rest and this never does.
+    // Marked on the number rather than in a column of its own so it cannot be scrolled
+    // past: the value and the reason it is wrong belong side by side.
     return `
     <tr${mine ? ' class="piloted"' : ''}>
       <td class="name"><a class="hero" href="/hero/${encodeURIComponent(r.character ?? '')}">${esc(r.character)}</a>${
@@ -272,7 +279,10 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
       })()}</td>
       <td class="vital">${bar(hp.value, hp.max, 'hp')}<span class="vnum">${esc(r.health ?? '—')}</span></td>
       <td class="vital">${bar(mp.value, mp.max, 'mp')}<span class="vnum">${esc(r.mana ?? '—')}</span></td>
-      <td class="vital">${bar(vg.value, vg.max, 'vg')}<span class="vnum">${esc(r.vigor ?? '—')}</span></td>
+      <td class="vital${r.holding_token ? ' token' : ''}"${r.holding_token
+        ? ' title="Holding a Council Token — it pins the vigor rest threshold at 10, so resting will NOT bring this character back to fighting vigor. Drop it or return it to a councilor; reviving the keeper does nothing."'
+        : ''}>${bar(vg.value, vg.max, 'vg')}<span class="vnum">${esc(r.vigor ?? '—')}</span>${
+        r.holding_token ? '<span class="tokenflag">TOKEN</span>' : ''}</td>
       <td class="num">${yesno(r.has_food)}</td>
       <td class="num">${yesno(r.has_weapon)}</td>
       <td>${esc(r.strategy ?? '—')}</td>
@@ -349,6 +359,12 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
   .dim { color:var(--dim); }
   .good { color:var(--good); }
   .bad { color:var(--bad); font-weight:600; }
+  /* A HELD TOKEN. Loud on purpose: it is the one low-vigor cause that does not clear
+     itself, and it is indistinguishable from ordinary travel exhaustion at a glance. */
+  td.vital.token { background:color-mix(in srgb, var(--bad) 18%, transparent);
+                   box-shadow:inset 0 0 0 1px var(--bad); }
+  .tokenflag { margin-left:.45em; padding:.05em .4em; border-radius:3px; font-size:.68em;
+               letter-spacing:.04em; font-weight:700; color:#fff; background:var(--bad); }
   .room { color:var(--dim); max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .room-link { color:var(--dim); text-decoration:none; border-bottom:1px dotted var(--line); }
   .room-link:hover { color:var(--accent); border-bottom-color:var(--accent); }
