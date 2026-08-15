@@ -695,6 +695,15 @@ export const STRATEGIES = {
   },
 };
 
+export function restoredAutopilotPolicy(policy = {}) {
+  const restored = { ...(policy && typeof policy === 'object' ? policy : {}) };
+  // Six was the former hard-coded default and was copied into every roster.
+  // Upgrade that legacy value when a keeper resumes so changing the default
+  // reaches existing characters; preserve any genuinely custom value.
+  if (restored.maxThreatOver === 6) restored.maxThreatOver = 15;
+  return restored;
+}
+
 // AN EXPLICIT BROKER THRESHOLD IS THE FLOOR, AND IT HAS TO OUTRANK THE STRATEGY.
 //
 // `fight_above_vigor` was advertised as the value a keeper eats to before fighting, and
@@ -865,7 +874,9 @@ export class Autopilot {
       roamLimit: 6,
       // How far above the character's own level the toughest thing a room can
       // generate is allowed to be. See preyRooms.
-      maxThreatOver: 6,
+      // Legacy fleet-allocation margin. Engagement decisions use threatCeiling below,
+      // but broker-side assignment still reads this value.
+      maxThreatOver: 15,
       // HOW FAR ABOVE ITS OWN LEVEL A CHARACTER MAY FIGHT, AS A PROPORTION.
       //
       // This replaced `maxThreatOver`, which was a flat number of levels added to max
