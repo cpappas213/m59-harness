@@ -25,6 +25,7 @@
 // `pilot claim` path exactly as it was.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { readdir, readFile } from 'node:fs/promises';
 
 const run = promisify(execFile);
 
@@ -86,9 +87,90 @@ export function soleClientAgent(clients, isKnownAgent) {
 //     spawn; with the default terminal left at "let Windows decide" that hand-off opens
 //     a real Windows Terminal window. Measured from a console-less parent over three
 //     seconds: 13 windows without the flag, 0 with it.
+// ------------------------------------------------------------------- the POSIX scan
+//
+// THE SAME QUESTION, AND ON THIS SIDE IT IS CHEAPER THAN ON WINDOWS. `/proc/<pid>/cmdline`
+// is the command line, NUL-separated, readable without spawning anything — so there is no
+// tasklist, no PowerShell cold start, and none of the window-flashing the Windows branch
+// had to be taught to avoid. The parsing is shared: Proton passes our arguments through
+// unchanged, so `/U:t5` reaches the host process exactly as m59-shortcuts.mjs wrote it.
+//
+// WHY THIS DOES NOT SIMPLY COUNT PROCESSES, which is what the Windows branch can afford
+// to do. A Proton launch is a CHAIN — the Steam wrapper, `proton waitforexitandrun`, the
+// wine preloader and the client itself can all carry the same command line — so counting
+// matches would report four clients where a person started one, and `soleClientAgent`
+// would refuse to claim on the grounds that it cannot tell which character is being
+// played. It can: they all say the same `/U:`. So the identity is the ACCOUNT and the
+// processes are grouped by it, which keeps the real refusal intact — two accounts really
+// are two people's characters — while a single launch answers with one client.
+//
+// Anything without a `/U:` is dropped when something else did name an account, because a
+// wine helper in the same chain is not a second, anonymous client. When NOTHING names an
+// account the unnamed matches are returned as they are, so the caller still says "launched
+// without /U:" rather than "nothing is running". Fails closed exactly as before.
+// AN ARGUMENT, NOT A SUBSTRING. Matching `meridian.exe` anywhere in the command line
+// also matches every process that merely MENTIONS it — a grep, an editor, this repository's
+// own tooling, a shell running `m59-shortcuts.mjs --show`. Those carry other people's
+// flags as text, so a shell whose command string happens to contain `/U:t7` would be read
+// as somebody playing t7 and could claim a character nobody launched. So the test is that
+// some argv element IS the executable: it ends in `meridian.exe`, after a path separator
+// or on its own. `/proc/<pid>/cmdline` is NUL-separated, which is what makes that
+// distinction available here at all — the separators are the whole point, so split on them
+// before doing anything else.
+const CLIENT_ARG_RE = /(^|[\\/])meridian\.exe"?$/i;
+
+// THE CAP COUNTS CLIENTS, NOT PROCESSES, AND ON THIS PLATFORM THOSE DIFFER BY SIX.
+// The Windows cap could be a process count because one client is one process there. Here a
+// single Steam launch is six — reaper, srt-bwrap, pv-adverb, proton, steam.exe, the game —
+// so a cap of 8 raw matches is exceeded by the SECOND person's client, and the truncation
+// lands mid-chain: the accounts that survive are whichever /proc happened to list first.
+// That is the failure this file exists to prevent, silently. So the scan is bounded
+// generously, and the cap is applied to distinct accounts after grouping.
+const MAX_SCAN = 400;
+
+async function posixClients({ max = 32 } = {}) {
+  let entries = [];
+  try { entries = await readdir('/proc'); } catch { return []; }
+  const pids = entries.filter(n => /^\d+$/.test(n)).map(Number);
+  const found = [];
+  for (const pid of pids) {
+    if (found.length >= MAX_SCAN) break;
+    if (pid === process.pid) continue;
+    let raw;
+    // A pid can exit between the listing and the read; that is ordinary, not an error.
+    try { raw = await readFile(`/proc/${pid}/cmdline`, 'utf8'); } catch { continue; }
+    if (!raw) continue;
+    const argv = raw.split('\0').filter(Boolean);
+    if (!argv.some(a => CLIENT_ARG_RE.test(a))) continue;
+    // IS THIS THE CLIENT, OR SOMETHING CARRYING IT? Measured on a real Steam Deck launch,
+    // one client is six processes: reaper, srt-bwrap, pv-adverb, proton (python3),
+    // steam.exe, and the game. The first five name Meridian.exe as an ARGUMENT they are
+    // about to run; only the last one IS it, with the executable at argv[0].
+    found.push({ pid, isClient: CLIENT_ARG_RE.test(argv[0]), ...parseClientCommand(argv.join(' ')) });
+  }
+  const named = found.filter(c => c.account);
+  if (!named.length) return found.slice(0, max);
+  // One entry per distinct account. THE PID IS THE GAME, NOT THE WRAPPER THAT SPAWNED IT:
+  // a claim is bound to a pid and released when it exits, so it has to name the process
+  // whose life IS the person's session. The launch chain's wrappers do exit together with
+  // the game today, which is exactly why picking the wrong one would go unnoticed — until
+  // some future Proton keeps a helper alive and the character stays claimed by nobody.
+  // Lowest pid is the tie-break only among equals, never a substitute for the test.
+  const byAccount = new Map();
+  for (const c of named.sort((a, b) => (b.isClient - a.isClient) || (a.pid - b.pid))) {
+    if (!byAccount.has(c.account)) byAccount.set(c.account, c);
+  }
+  return [...byAccount.values()].slice(0, max).map(({ isClient, ...rest }) => rest);
+}
+
 let scanCache = { at: 0, clients: [] };
 export async function localClients({ ttlMs = 8000 } = {}) {
   if (Date.now() - scanCache.at < ttlMs) return scanCache.clients;
+  if (process.platform !== 'win32') {
+    const clients = await posixClients();
+    scanCache = { at: Date.now(), clients };
+    return clients;
+  }
   let clients = [];
   try {
     const { stdout } = await run('tasklist', ['/FI', 'IMAGENAME eq meridian.exe', '/FO', 'CSV', '/NH'],
@@ -125,6 +207,12 @@ export async function localClients({ ttlMs = 8000 } = {}) {
 // per broker start; more clients than this on one desktop is not a real configuration.
 const MAX_IDENTIFY = 8;
 export async function identifyClients() {
+  // The POSIX scan already reads every command line — there is no cheap-count-then-ask
+  // split to make, because nothing is spawned either way. Grouping by account is right
+  // here too: startup is asking which of OUR characters a login would bump somebody out
+  // of, and one person playing one character is one answer however many wine processes
+  // the launch chain left behind.
+  if (process.platform !== 'win32') return posixClients({ max: MAX_IDENTIFY });
   let pids = [];
   try {
     const { stdout } = await run('tasklist', ['/FI', 'IMAGENAME eq meridian.exe', '/FO', 'CSV', '/NH'],

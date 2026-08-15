@@ -100,7 +100,7 @@ export function findClientExe(dir) {
 
 // A Steam install, as opposed to a copy of the tree someone unzipped. This decides
 // both `/S` and, on Linux, whether Steam can be asked to launch it.
-const isSteamInstall = dir => /steamapps/i.test(dir || '');
+export const isSteamInstall = dir => /steamapps/i.test(dir || '');
 
 // ------------------------------------------------------------------ the roster
 //
@@ -221,7 +221,15 @@ function writeWindowsShortcut(path, e, exe, args, opts) {
 
 // The four values, in the order the client's own parser takes them. /Q is what
 // makes it a shortcut rather than a form to fill in.
-function clientArgs(e, opts, steam) {
+// Exported because m59-tui.mjs's L key starts the same client with the same
+// arguments. Two copies of this list is how /S goes missing from one of them and a
+// Steam build quietly tries to patch itself instead of connecting.
+//
+// Callers that have ALREADY resolved a host and port — the TUI does, because a swarm
+// launch points the client at the proxy rather than the game server — must pass them
+// on the entry, not only in opts, or the roster's own host wins and the override is
+// silently discarded.
+export function clientArgs(e, opts, steam) {
   // EACH CHARACTER'S OWN SERVER. The roster records the host and port every entry was
   // joined against, and one broker can hold characters on more than one — so a single
   // host for the whole run is wrong as soon as that is true, and quietly: the shortcut

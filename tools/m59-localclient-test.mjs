@@ -13,7 +13,11 @@
 // m59-broker.mjs RUNS it. The parsing and the matching are the parts that can be quietly
 // wrong, so they live in m59-localclient.mjs and are pinned here.
 import { parseClientCommand, soleClientAgent, createClientWatch,
-         clientsHoldingRoster } from './m59-localclient.mjs';
+         clientsHoldingRoster, localClients, identifyClients } from './m59-localclient.mjs';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, symlinkSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 let pass = 0, fail = 0;
 const ok = (what, cond, extra = '') => {
@@ -216,6 +220,87 @@ console.log('\ndeciding whether to look for a client at all');
 
   eq('nothing running means nothing held', clientsHoldingRoster([], host).held.length, 0);
   eq('and a missing list is not a crash', clientsHoldingRoster(null, host).held.length, 0);
+}
+
+// ------------------------------------------------------- the POSIX scan, against REAL pids
+//
+// THE ONE PART OF THIS FILE THAT IS NOT PURE, and it has to be: the scan's whole job is to
+// read processes, and the two ways it can be wrong are invisible to a fixture. It can miss
+// a Proton launch — which is a CHAIN of processes all repeating the same arguments, so a
+// naive count reports four clients and `soleClientAgent` refuses to claim anything. Or it
+// can match a process that merely MENTIONS the client, like a grep or a shell running
+// `m59-shortcuts.mjs --show`, and claim off somebody else's flags quoted as text.
+//
+// So it spawns real executables named Meridian.exe carrying real client flags, DIRECTLY
+// rather than through a shell — a shell wrapper's own command string would contain the
+// flags and is precisely the false positive under test.
+if (process.platform !== 'win32') {
+  console.log('\nthe POSIX scan (real processes)');
+  const dir = mkdtempSync(join(tmpdir(), 'm59-localclient-'));
+  // SYMLINKS TO A REAL BINARY, NOT SHEBANG SCRIPTS. A `#!/bin/bash` script runs with
+  // argv[0] = "/bin/bash" and the script's own path at argv[1], which is precisely NOT the
+  // shape under test — Proton puts the executable at argv[0]
+  // ("Z:\...\Meridian.exe -s /H:... /U:t1"). A fixture that got that wrong would have
+  // passed a test of the wrong thing. `-s` makes bash read from stdin, which never
+  // arrives, so each of these simply waits — and `-s` is what the real launch passes too.
+  const exe = join(dir, 'Meridian.exe');
+  const wrapper = join(dir, 'reaper');
+  symlinkSync('/bin/bash', exe);
+  symlinkSync('/bin/bash', wrapper);
+
+  const kids = [];
+  const FLAGS = (acct) => ['-s', '/H:192.168.1.242', '/P:5959', `/U:${acct}`, '/W:secret', '/Q', '/S'];
+  const start = (acct) => kids.push(spawn(exe, FLAGS(acct), { stdio: ['pipe', 'ignore', 'ignore'] }));
+  // A WRAPPER, exactly as Steam's reaper and Proton's python3 appear: it NAMES the client
+  // as an argument it is about to run, and is not the client. Recorded off a real Deck
+  // launch, where one click produced six such processes and only the last was the game.
+  const startWrapper = (acct) => kids.push(spawn(wrapper,
+    ['-s', 'SteamLaunch', 'AppId=893390', '--', exe, ...FLAGS(acct)],
+    { stdio: ['pipe', 'ignore', 'ignore'] }));
+  const stopAll = () => { for (const k of kids) { try { k.kill('SIGKILL'); } catch {} } };
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // THE SCAN READS THE WHOLE MACHINE, SO THE TEST MUST OWN ITS SUBJECTS. A person playing
+  // the fleet while this runs is a real Meridian client on this host, and the scan is
+  // right to find it — so these assertions are scoped to accounts nobody plays, and the
+  // "nothing is running" case asks about THOSE rather than about the machine. Written
+  // after exactly that: a live Kermit failed five assertions by being correctly detected.
+  const A = 'ztest1', B = 'ztest2';
+  const mine = (list) => list.filter(c => c.account === A || c.account === B);
+
+  try {
+    // The real shape: wrappers first, the game last — the order a launch actually
+    // produces, and the order in which "lowest pid" gives the WRONG answer.
+    startWrapper(A); startWrapper(A);
+    start(A);
+    await wait(500);
+    let clients = mine(await localClients({ ttlMs: 0 }));
+    eq('a three-process launch chain is ONE client', clients.length, 1);
+    eq('and it carries the account', clients[0]?.account, A);
+    // THE PID IS THE GAME, NOT THE REAPER THAT NAMED IT.
+    ok('and the pid is the client itself, not a wrapper that names it',
+       clients[0]?.pid === kids[kids.length - 1].pid,
+       `got ${clients[0]?.pid}, want ${kids[kids.length - 1].pid}`);
+    eq('the host is read off the command line', clients[0]?.host, '192.168.1.242');
+    eq('and the port', clients[0]?.port, 5959);
+    eq('so the claim resolves', soleClientAgent(clients, a => a === A).agent, A);
+
+    start(B);
+    await wait(500);
+    clients = mine(await localClients({ ttlMs: 0 }));
+    eq('two ACCOUNTS are still two clients', clients.length, 2);
+    const two = soleClientAgent(clients, a => [A, B].includes(a));
+    ok('and two accounts refuses to guess', two.agent === null && /refusing to guess/.test(two.why));
+    const named = new Set(mine(await identifyClients()).map(c => c.account));
+    ok('identifyClients names both', named.has(A) && named.has(B));
+
+    stopAll();
+    await wait(600);
+    eq('and they are gone once they exit', mine(await localClients({ ttlMs: 0 })).length, 0);
+  } finally {
+    stopAll();
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

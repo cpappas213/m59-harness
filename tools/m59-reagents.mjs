@@ -348,7 +348,23 @@ async function stockUp(row) {
         for (const bank of BANKS) {
           const at = await goTo(row.agent, bank, where);
           if (at !== bank) continue;
-          const want = Math.min(900, balance == null ? 900 : balance);
+          // WITHDRAW WHAT AN OUTFITTING ACTUALLY COSTS, not a flat 900.
+          //
+          // Read off counter 373 directly: elderberry 28sh, herbs 14sh. Shipping out with
+          // 40 of each — what the loadouts ask for — is 1,680sh before a single loaf or
+          // any armour, so a 900 cap could not fund the target and every character needed
+          // at least two round trips to approach it. That churn is the fleet's largest
+          // cost: measured across all twenty-one, only 23% of active time was spent
+          // fighting, with nine of them travelling or at a counter at any moment.
+          //
+          // WHAT THIS BUYS IS PAID FOR IN CARRIED RISK. Everything in the pack drops where
+          // a character dies and a bank balance does not, so a bigger float means more of
+          // the fleet's money riding on one character that can die in the next eight
+          // seconds — the same bet the banking threshold makes, and this is the other half
+          // of it. 4,000 is the operator's number, set to cover one full outfitting
+          // (reagents, prepared food, a piece of armour) in a SINGLE trip.
+          const WITHDRAW_MAX = Number(process.env.M59_WITHDRAW_MAX || 4000);
+          const want = Math.min(WITHDRAW_MAX, balance == null ? WITHDRAW_MAX : balance);
           if (want <= 0) break;
           await call('bank', { agent: row.agent, action: 'withdraw', amount: want }).catch(() => null);
           await sleep(800);
@@ -445,19 +461,49 @@ async function stockUp(row) {
       { what: 'herbs',      have: hb0, offers: wanted.filter(o => /herb/i.test(o.name || '')) },
       { what: 'elderberry', have: eb0, offers: wanted.filter(o => /elder/i.test(o.name || '')) },
     ];
-    const short = perReagent.filter(r => r.have < WANT && r.offers.length);
+    // BUY THE BINDING HALF FIRST. Castings are min(elder, herb)/2, so the scarcer half is
+    // the only one that raises the number — and ordering now decides who gets the money,
+    // because the broker's buy clamps line by line against a purse that runs out.
+    //
+    // The fixed herbs-then-elderberry order above was written when only herbs had to be
+    // bought. With both bought and elderberry at 28sh against herbs at 14sh, herbs took
+    // the purse every trip and elderberry starved: measured across the fleet, herbs ran
+    // 22, 26, 34, 36, 41, 58 and 100 while the same characters held 1 or 2 elderberry and
+    // could not cast at all. The shortage simply moved from one half to the other and the
+    // report still read like a restock, because it named what went up.
+    //
+    // Sorting by what is actually in the pack is self-correcting: whichever half is
+    // scarcer at the counter is the one funded first, whichever direction it has drifted.
+    const short = perReagent.filter(r => r.have < WANT && r.offers.length)
+                            .sort((a, b) => a.have - b.have);
     if (!short.length) {
       const missing = perReagent.filter(r => r.have < WANT).map(r => r.what);
       return missing.length
         ? `${who}: ${arrived} sells no ${missing.join(' or ')} after all — bought nothing, purse still ${purse1}sh`
         : `${who}: already holds ${WANT}+ of both halves — bought nothing, purse still ${purse1}sh`;
     }
+    // SEND THE WHOLE ORDER. The truncation, not the encoding, was the bug.
+    //
+    // `i < 40` capped need at 40 whatever --want said, and `buyIds.slice(0, 60)` then cut
+    // the list mid-order. The two compounded: the list grows as need × offers, so a counter
+    // listing the same herb under two ids produced two entries per unit and the effective
+    // quantity became 60 / offers.length. Measured here — --want 40 with both halves empty
+    // asked for 80 ids, sent 60, and came away with 40 herbs and 20 elderberry, reported as
+    // a success. Topping the fleet to 40/40 therefore needed repeated passes for no reason.
+    //
+    // ONE ID PER UNIT IS THE FORM THAT IS KNOWN TO WORK, and it is kept deliberately.
+    // `shop` also accepts `{id, amount}` and the broker maps it, but a single entry asking
+    // for 40 was tried against counter 373 and bought NOTHING — sold fine, `spent 0sh`,
+    // elderberry 0 -> 0 — while the repeated-id form had bought 12/12 at that same counter
+    // minutes earlier. Whatever the server does with a large amount on one line, it is not
+    // this. The purse is the only witness that separates them, which is why the quantity
+    // form is not adopted here on the strength of the broker accepting the argument.
     const buyIds = [];
     for (const r of short) {
       const need = Math.max(0, WANT - r.have);
-      for (let i = 0; i < need && i < 40; i++) for (const o of r.offers) buyIds.push(o.id);
+      for (let i = 0; i < need; i++) for (const o of r.offers) buyIds.push(o.id);
     }
-    const bought = await call('shop', { agent: row.agent, seller: seller.id, buy_ids: buyIds.slice(0, 60) },
+    const bought = await call('shop', { agent: row.agent, seller: seller.id, buy_ids: buyIds },
                               180_000).catch(e => ({ error: e.message }));
 
     const inv2 = await call('inventory', { agent: row.agent }, 60_000).catch(() => ({ items: [] }));

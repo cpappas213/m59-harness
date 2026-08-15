@@ -1711,7 +1711,19 @@ remarks and a value may collect both.
   `node tools/m59-compendium-test.mjs` (42) and
   `node tools/m59-prey-test.mjs` (56) and
   `node tools/m59-spellaudit-test.mjs` (28) and
-  `node tools/m59-localclient-test.mjs` (55) and
+  `node tools/m59-localclient-test.mjs` (65 — the last ten spawn REAL processes named
+  `Meridian.exe`, because every failure mode of the POSIX scan is invisible to a fixture.
+  **A PROTON LAUNCH IS SIX PROCESSES, NOT ONE** — reaper, srt-bwrap, pv-adverb, proton,
+  steam.exe, the game — all repeating one command line, so a naive count reads six clients
+  and refuses to claim any of them; the identity is the ACCOUNT. Only the last of the six
+  has the executable at `argv[0]`, and that is the one a claim must bind to, because a
+  claim is released when its pid exits. A process that merely mentions the client, like a
+  grep or `m59-shortcuts.mjs --show`, must not be claimed off flags that are only quoted
+  text. And the cap counts CLIENTS, not processes: at eight raw matches the second
+  person's launch truncates mid-chain. The fixture symlinks `/bin/bash`, because a
+  `#!/bin/bash` script runs with `argv[0]` = `/bin/bash` and would have tested the wrong
+  shape. **The scan reads the whole machine**, so the assertions are scoped to accounts
+  nobody plays — a live Kermit failed five of them by being correctly detected) and
   `node tools/m59-bank-test.mjs` (52) and
   `node tools/m59-describe-test.mjs` (52) and
   `node tools/m59-party-test.mjs` (57) and
