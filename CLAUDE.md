@@ -434,6 +434,29 @@ is emptied in the constructor and keepers restart constantly, so that field mean
 the last restart" and cannot answer "is this character earning now". Do not answer this
 question by averaging `fleet` rows.
 
+## Who is not fighting, and what is stopping them
+
+```bash
+node tools/m59-overhead.mjs           # worst first: travel + trade against fighting
+```
+
+Overhead is travel plus trade. A character at 90% overhead and 0% fighting is not idle
+and not stalled — it is busy doing something that is not the job, and the fleet board
+cannot show that because every row looks healthy.
+
+**Read the castings column, never the reagent pair.** Castings are
+`min(elderberry, herbs) / 2`, so 3/94 is ONE casting and reads as well stocked to
+anything that sums or averages. Measured on this fleet: every character at or below 3
+castings ran 76-100% overhead with 0-8% fighting, and every character above 18 castings
+ran under 55% overhead. Characters without reagents spend all their time getting reagents.
+
+**And read the band.** `walking_money` is both the float kept after banking and the floor
+`restockReagents` refuses to spend below, so what a character can actually spend is
+`bank_above - walking_money`. At the shipped 500/400 that band is 100 shillings: purses
+sat at 0-586 against bank balances of 10,000-36,000, restocks arrived 150 shillings at a
+time against a 3,360sh full fill, and trading reached 54% of all active time against 17%
+fighting. Raising `walking_money` makes it worse, not better — it is a floor.
+
 ## Asked to shut down, stop the server, or "we're done for now"?
 
 ```bash
