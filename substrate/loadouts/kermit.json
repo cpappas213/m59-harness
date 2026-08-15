@@ -67,18 +67,18 @@
   {
    "item": "elderberry",
    "min": 6,
-   "max": 150,
+   "max": 200,
    "match": "exact",
-   "why": "create food, 2 per casting; floor 6 triggers the trip, ceiling 150 fills it — 75 castings, about half the pack, hours of farming before the next one",
+   "why": "create food, 2 per casting; floor 6 triggers the trip, ceiling 200 fills it — 100 castings. Peak bulk is at the start when the pack is empty, and it burns down as loot comes in, so the two never compete",
    "weight": 3,
    "kind": "reagent"
   },
   {
    "item": "herb",
    "min": 6,
-   "max": 150,
+   "max": 200,
    "match": "exact",
-   "why": "create food, 2 per casting; herbs are the binding half; floor 6 triggers the trip, ceiling 150 fills it — 75 castings, about half the pack, hours of farming before the next one",
+   "why": "create food, 2 per casting; herbs are the binding half; floor 6 triggers the trip, ceiling 200 fills it — 100 castings. Peak bulk is at the start when the pack is empty, and it burns down as loot comes in, so the two never compete",
    "weight": 2,
    "kind": "reagent"
   },
