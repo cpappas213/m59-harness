@@ -419,7 +419,8 @@ groundworm larva.
 
 The field to read first is **`also_here`**: two rooms can both list giant rats at
 60–70% while only one of them also rolls something that will kill you. Pass
-`max_danger` (your level plus about six) and the dangerous rooms come back under
+`max_danger` (normally current max HP plus 50%, or 1.5 × current max HP) and
+the dangerous rooms come back under
 `rejected` **with the reason**, rather than being silently dropped — otherwise you
 will keep re-picking the obvious room and keep dying in it.
 
