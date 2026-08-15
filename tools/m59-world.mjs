@@ -794,6 +794,18 @@ export function spreadEdges(candidates) {
 // a refusal or a room transition. Retry only that silent case, once by default. A
 // spoken refusal or a room change is authoritative, and the bound prevents a dead exit
 // from becoming a loop.
+export const DEFAULT_DOOR_SETTLE_MS = 500;
+
+export function doorSettleMs(value = undefined) {
+  if (value === undefined || value === null || value === '') return DEFAULT_DOOR_SETTLE_MS;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_DOOR_SETTLE_MS;
+}
+
+export function remainingDoorSettle({ lastMovementAt = 0, now = Date.now(), settleMs = DEFAULT_DOOR_SETTLE_MS } = {}) {
+  return Math.max(0, Number(lastMovementAt) + doorSettleMs(settleMs) - Number(now));
+}
+
 export function retrySilentGo({ attempt = 0, maxAttempts = 2, entered = false, messages = [] } = {}) {
   return entered !== true && (!Array.isArray(messages) || messages.length === 0)
     && attempt < maxAttempts;
