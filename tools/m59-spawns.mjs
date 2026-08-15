@@ -18,6 +18,7 @@
 // the class definitions), because the danger of a room is the level of the WORST
 // thing in it, not of the thing you meant to hunt.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // A CREATURE'S DECLARED LEVEL IS NOT ALWAYS THE LEVEL YOU FIGHT.
 //
@@ -175,14 +176,14 @@ export function rolledTroopStats(base) {
 // sees one class. A case-sensitive walk stops at the first hop — silently, and in the
 // direction that looks like a legitimate "no, it does not descend from that" — which is
 // exactly how m59-merchants.mjs reported a stationary merchant as a wanderer for months.
-function descendsFrom(cls, ancestor, parentOf) {
-  const want = String(ancestor).toLowerCase();
-  let cur = String(cls || '').toLowerCase();
-  // Bounded rather than tracking a visited set: the kod tree is a tree, and a cycle here
-  // would mean the class graph itself is broken. Depth 24 clears the deepest real chain.
-  for (let i = 0; i < 24 && cur; i++) {
-    if (cur === want) return true;
-    cur = String(parentOf.get(cur) || '').toLowerCase();
+export function inheritsClass(parentByClass, child, ancestor) {
+  const wanted = String(ancestor || '').toLowerCase();
+  let current = String(child || '').toLowerCase();
+  const visited = new Set();
+  while (current && !visited.has(current)) {
+    if (current === wanted) return true;
+    visited.add(current);
+    current = String(parentByClass.get(current) || '').toLowerCase();
   }
   return false;
 }
@@ -266,7 +267,8 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
   const parentOf = new Map();
   for (const m of mons) if (m.class) parentOf.set(m.class.toLowerCase(), m.parent || '');
   for (const [cls, meta] of info) {
-    if (!descendsFrom(cls, 'FactionTroop', parentOf)) continue;
+    meta.political_troop = inheritsClass(parentOf, cls, 'FactionTroop');
+    if (!meta.political_troop) continue;
     // A troop that declares neither number has nothing to re-roll FROM. Leaving it null
     // keeps it in the "unrecognised, therefore refused" bucket, which is the safe one.
     if (meta.level == null || meta.difficulty == null) continue;
@@ -308,6 +310,8 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
                                            difficulty: meta.difficulty,
                                            attack_rating: attackRating(meta),
                                            karma: meta.karma, sites,
+                                           ...(meta.political_troop
+                                                 ? { political_troop: true } : {}),
                                            ...(meta.rolled ? { rolled: meta.rolled } : {}),
                                            ...(meta.equipment_drops
                                                  ? { equipment_drops: meta.equipment_drops } : {}),
@@ -338,6 +342,7 @@ export function buildSpawnIndex({ spawnsFile, mapFile, monstersFile, treasureFil
     if (creatures[key]) continue;
     creatures[key] = { name: meta.name, cls: meta.cls, level: meta.level, difficulty: meta.difficulty,
                        attack_rating: attackRating(meta), karma: meta.karma, sites: [],
+                       political_troop: true,
                        rolled: meta.rolled,
                        ...(meta.equipment_drops
                              ? { equipment_drops: meta.equipment_drops } : {}),
@@ -386,11 +391,50 @@ export function loadSpawns(file) {
 // produce something too strong, which is the check that distinguishes room 566 from
 // room 603. Both list giant rats; one of them also rolls a level-35 groundworm larva
 // seven times in ten.
+// ROOMS THAT GENERATE ON PAPER AND PRODUCE NOTHING IN FACT.
+//
+// The spawn index describes what a room's GENERATORS are configured to make. It cannot
+// describe what is standing in the room, and a room can be permanently full of something
+// that never appears in its generator list at all — at which point the shared
+// `piMonster_count_max` is already met and the generators never fire again.
+//
+// 2601, the Resting place of Marion's ancestors, is the case that found this. Looked at
+// on 2026-08-14 it held 26 statues, of which TWENTY-THREE offer only `look` and no
+// `attack`: Monster instances on the server, counted against the cap, and unkillable from
+// the wire. `PlaceStatues` (marcryp2.kod:161) additionally refuses to reset the room while
+// any statue remains, so it never recovers. The index still ranks it the BEST skeleton
+// room in the game — 80% of rolls at a cap of 25 — so every keeper offered it walks back
+// to it, and nine characters held safe walls there for hours killing nothing.
+//
+// This is deliberately a short, cited list and not a heuristic. "The room looks full of
+// things we cannot hit" is a reasonable live observation and belongs in the keeper, where
+// it can be measured; this is for the handful of rooms where the answer is permanent and
+// already known, and where leaving them in the ranking costs a fleet its day.
+export const DEAD_ROOMS = new Map([
+  [2601, 'permanently over its cap: 23 of its 26 statues expose no attack verb, and ' +
+         'PlaceStatues will not reset the room while any statue remains'],
+]);
+
+// Creature orders are identities, not free-text searches.  Substring matching made
+// `ant` match giANT rat, so an ant keeper ranked rat rooms ahead of its assignment and
+// could alternate between them forever.  Normalize punctuation and spacing so a
+// catalogue name ("giant rat") and its class ("GiantRat") remain interchangeable,
+// but require the whole identity to match.  Broader names need an explicit alias at
+// the order boundary rather than silently changing which creature the keeper fights.
+const creatureIdentity = (value) => String(value ?? '').toLowerCase()
+  .replace(/[^a-z0-9]+/g, '');
+
+export function creatureMatchesHunt(creature, want) {
+  const needle = creatureIdentity(want);
+  if (!needle || !creature) return false;
+  return [creature.name, creature.creature, creature.cls]
+    .some(value => creatureIdentity(value) === needle);
+}
+
 export function huntingGrounds(spawns, want, { maxDanger = null, limit = 12 } = {}) {
   if (!spawns) return [];
-  const needle = String(want).toLowerCase();
   const hits = Object.values(spawns.creatures)
-    .filter(c => c.name.toLowerCase().includes(needle) || c.cls.toLowerCase() === needle);
+    .filter(c => creatureMatchesHunt(c, want));
   // Only rooms that GENERATE the creature are hunting grounds. A room that merely
   // had one placed at construction will never make another, so it is a location,
   // not a source.
@@ -399,6 +443,7 @@ export function huntingGrounds(spawns, want, { maxDanger = null, limit = 12 } = 
   const rows = [];
   for (const c of hits) {
     for (const s of c.sites) {
+      if (DEAD_ROOMS.has(s.room)) continue;
       if (s.how && s.how !== 'generator' && !generates(s.room, c.name)) continue;
       const here = spawns.rooms[s.room] || [];
       // THE THREAT CEILING IS ABOUT BYSTANDERS, NOT ABOUT THE PREY.
@@ -1023,7 +1068,7 @@ export function scorePrey(spawns, character, {
 }
 
 if (process.argv[1]?.endsWith('m59-spawns.mjs')) {
-  const root = new URL('../', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  const root = fileURLToPath(new URL('../', import.meta.url));
   const idx = buildSpawnIndex({
     spawnsFile: root + 'compendium/data/spawns.json',
     mapFile: root + 'substrate/m59-map.json',

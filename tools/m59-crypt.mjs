@@ -25,6 +25,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const argv = process.argv.slice(2);
 const arg = (n, d = null) => {
@@ -47,7 +48,7 @@ export const CRYPT_ROOMS = { mummies: 2600, statues: 2601 };
 export const THRASHER_ROOM = 2602;
 
 const ABILITY_DIR = process.env.M59_ABILITY_DIR ||
-  join(new URL('../substrate/abilities', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+  join(fileURLToPath(new URL('../substrate/abilities', import.meta.url)));
 
 export function skillsOf(character, dir = ABILITY_DIR) {
   const f = join(dir, `${character}.json`);
@@ -78,7 +79,7 @@ export function shortfallFor(character, dir = ABILITY_DIR) {
 let mcp = null, nextId = 1, pending = new Map();
 function connect() {
   if (mcp) return mcp;
-  const here = new URL('./m59-mcp-attach.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  const here = fileURLToPath(new URL('./m59-mcp-attach.mjs', import.meta.url));
   const child = spawn(process.execPath, [here, '--port', String(PORT)],
     { stdio: ['pipe', 'pipe', 'ignore'] });
   let buf = '';

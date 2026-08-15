@@ -33,10 +33,10 @@ import { weighPack } from './m59-items.mjs';
 
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const GUILD_PLAN_FILE = process.env.M59_GUILD_PLAN ||
-  resolve(new URL('../substrate/guild-plan.json', import.meta.url).pathname
-    .replace(/^\/([A-Za-z]:)/, '$1'));
+  resolve(fileURLToPath(new URL('../substrate/guild-plan.json', import.meta.url)));
 
 const norm = s => String(s ?? '').trim().toLowerCase();
 

@@ -24,9 +24,12 @@ import {
   brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit, signetRings, returnSignetRings,
   signetPayout, signetOwnerOf, SIGNET_OWNERS,
   parseDeathBroadcast, deathBroadcastFor,
+  landedHitSummary,
 } from './m59-skills.mjs';
 import { Autopilot, bearingIn, DEBUG_STATES, belowRoomRetreatHealth,
-         rankQuarries, claimQuarry, releaseQuarry } from './m59-autopilot.mjs';
+         rankQuarries, claimQuarry, releaseQuarry,
+         shouldWaitForProvision, partialFightMadeProgress,
+         engagementRefusal } from './m59-autopilot.mjs';
 import { isFood } from './m59-items.mjs';
 import { outages, outageAround, recoverCrash, readLedger, ACTIVE_FILE } from './m59-uptime.mjs';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -36,8 +39,8 @@ const recoverCrashAt = (activeFile, ledgerFile) => recoverCrash({ activeFile, le
 const readLedgerAt = (f) => readLedger(f);
 import { RoomGeometry } from './m59-roo.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
-import { roomCap, karmaSafe } from './m59-spawns.mjs';
-import { OF } from './m59-parse.mjs';
+import { inheritsClass, roomCap, karmaSafe } from './m59-spawns.mjs';
+import { OF, prepareActTarget } from './m59-parse.mjs';
 import { nearestSafeSpot, safeSpots, exposureAt, lineOfSight, MAX_ATTACKERS } from './m59-safespots.mjs';
 
 let pass = 0, fail = 0;
@@ -46,6 +49,66 @@ const ok = (what, cond, extra = '') => {
   else { fail++; console.log(`  FAIL ${what}${extra ? ` — ${extra}` : ''}`); }
 };
 
+console.log('\nprovisioning without long post-floor stalls');
+{
+  ok('keeps waiting while still below the configured fighting floor',
+     shouldWaitForProvision({ vigor: 90, floor: 100, wait: 127, hurt: false }));
+  ok('sets out above the floor instead of waiting minutes for the ceiling',
+     !shouldWaitForProvision({ vigor: 131, floor: 100, wait: 127, hurt: false }));
+  ok('waits above the floor when the next top-up is close',
+     shouldWaitForProvision({ vigor: 131, floor: 100, wait: 45, hurt: false }));
+  ok('waits above the floor when digestion time also heals damage',
+     shouldWaitForProvision({ vigor: 131, floor: 100, wait: 127, hurt: true }));
+}
+
+console.log('\nimpossible self-arm recovery');
+{
+  const spells = names => {
+    const resources = new Map(names.map((name, index) => [index + 1, name]));
+    const keeper = Object.create(Autopilot.prototype);
+    keeper.s = {
+      client: {
+        spells: names.map((_, index) => ({ nameRsc: index + 1 })),
+        rsc: { get: id => resources.get(id) },
+      },
+    };
+    return keeper;
+  };
+  ok('a character that knows create weapon can use the mana recovery path',
+     spells(['Blink', 'Create Weapon']).knowsCreateWeapon() === true);
+  ok('other spells do not justify waiting forever for create weapon',
+     spells(['Blink']).knowsCreateWeapon() === false);
+}
+
+console.log('\npartial exchanges and stall progress');
+{
+  const landed = landedHitSummary([
+    'You hit the giant rat for 4 damage.',
+    'The giant rat avoids your blow.',
+    'you hit the giant rat for 3',
+  ]);
+  ok('server-confirmed hits and damage are counted',
+     landed.hits === 2 && landed.damage === 7 && landed.damage_known_hits === 2,
+     JSON.stringify(landed));
+
+  const missed = landedHitSummary([
+    'The giant rat hits you for 2 damage.',
+    'The giant rat avoids your blow.',
+  ]);
+  ok('incoming hits and avoided blows are not our progress',
+     missed.hits === 0 && missed.damage === null, JSON.stringify(missed));
+
+  const unquantified = landedHitSummary(['You hit the mummy.']);
+  ok('an unquantified server-confirmed hit still counts',
+     unquantified.hits === 1 && unquantified.damage === null,
+     JSON.stringify(unquantified));
+  ok('a landed partial exchange resets the idle counter',
+     partialFightMadeProgress({ killed: false, died: false, landed_hits: 1 }));
+  ok('an all-miss break remains no progress',
+     !partialFightMadeProgress({ killed: false, died: false, landed_hits: 0 }));
+  ok('a death never masquerades as partial progress',
+     !partialFightMadeProgress({ died: true, landed_hits: 2 }));
+}
 // A client whose inventory is a list of [id, name], and whose `use` replies the way the
 // server does: either a refusal text from the script, or silence and the id joining the
 // use list.
@@ -1007,6 +1070,45 @@ console.log('\ndropping a stack needs the quantity');
   ok('a missing object does not throw', k.dropSpec(undefined) === undefined);
 }
 
+console.log('\nthe broker act contract validates drop quantities before the wire');
+{
+  const stack = { id: 7, tag: 1, amount: 20 };
+  const whole = prepareActTarget({ verb: 'drop', target: stack });
+  ok('omitting amount drops the whole observed stack',
+     JSON.stringify(whole.wire_target) === '{"id":7,"amount":20}' &&
+     whole.requested_amount === 20, JSON.stringify(whole));
+  const partial = prepareActTarget({ verb: 'drop', target: stack, amount: 5 });
+  ok('a bounded partial stack drop preserves its requested count',
+     JSON.stringify(partial.wire_target) === '{"id":7,"amount":5}' &&
+     partial.requested_amount === 5, JSON.stringify(partial));
+  const ordinary = prepareActTarget({ verb: 'drop', target: { id: 8 } });
+  ok('an ordinary item stays a bare wire id and reports one requested item',
+     ordinary.wire_target === 8 && ordinary.requested_amount === 1, JSON.stringify(ordinary));
+  ok('fractional stack amounts are rejected', (() => {
+    try { prepareActTarget({ verb: 'drop', target: stack, amount: 1.5 }); return false; }
+    catch (error) { return /whole number/.test(error.message); }
+  })());
+  ok('zero stack amounts are rejected', (() => {
+    try { prepareActTarget({ verb: 'drop', target: stack, amount: 0 }); return false; }
+    catch (error) { return /whole number/.test(error.message); }
+  })());
+  ok('more than the observed stack is rejected before the server chat refusal', (() => {
+    try { prepareActTarget({ verb: 'drop', target: stack, amount: 21 }); return false; }
+    catch (error) { return /only 20/.test(error.message); }
+  })());
+  ok('a quantity on a non-stack item is rejected instead of ignored', (() => {
+    try { prepareActTarget({ verb: 'drop', target: { id: 8 }, amount: 1 }); return false; }
+    catch (error) { return /stackable/.test(error.message); }
+  })());
+  ok('amount on another act verb is rejected instead of silently ignored', (() => {
+    try { prepareActTarget({ verb: 'use', target: stack, amount: 1 }); return false; }
+    catch (error) { return /only valid for drop/.test(error.message); }
+  })());
+  const use = prepareActTarget({ verb: 'use', target: stack });
+  ok('ordinary act verbs retain their object id and no requested amount',
+     use.wire_target === 7 && use.requested_amount === null, JSON.stringify(use));
+}
+
 console.log('\nthe room that filled up with what nobody would kill');
 {
   // East Merchant Way as found live: cap 10, and ten monsters in it — eight baby
@@ -1092,6 +1194,19 @@ console.log('\nthe room that filled up with what nobody would kill');
   ok('and says it was the safety band, not karma',
      /safety band/.test(sst.blocked[0].why), sst.blocked[0].why);
 
+  // This was the live disagreement: huntingGrounds() and retaliation allowed the
+  // level-50/difficulty-1 fungus beast by its rating of 210, but capBlockers() then
+  // rejected the same source row by level alone and eventually exhausted every room.
+  const gentle = mk({ 'fungus beast': 10 }, { hunt: 'mummy' }).capBlockers({ num: 554 });
+  ok('a capped room can clear a known gentle overlevel creature',
+     gentle.clearable[0]?.name === 'fungus beast' && gentle.blocked.length === 0,
+     JSON.stringify(gentle));
+  ok('capped-room cleanup and retaliation share one danger decision',
+     engagementRefusal(
+       { name: 'fungus beast', level: 50, attack_rating: 210 },
+       { name: 'fungus beast', ceiling: 31 },
+     ) === null);
+
   // Most numerous first: the point is freeing slots.
   // Ten, because nine would not be full and the whole block would silently test nothing.
   // `rat` is not in the spawn table; `baby spider` is. The ordering test therefore has to
@@ -1125,6 +1240,37 @@ console.log('\nthe room that filled up with what nobody would kill');
   ok('and says it was the missing row, not the safety band',
      /nothing is known about it/.test(ust.blocked.find(x => x.name === 'rat')?.why ?? ''),
      ust.blocked.find(x => x.name === 'rat')?.why);
+
+  // A catalogued faction troop is still conditional political opposition, not
+  // housekeeping prey. Attackability means the server permits an initiated swing;
+  // it does not prove that clearing the actor is safe or appropriate.
+  const rebels = mk({ 'rebel soldier': 8, centipede: 2 }, { characterLevel: 100 });
+  const rst = rebels.capBlockers({ num: 554 });
+  ok('a catalogued political troop is excluded from incidental clearing',
+     rst.clearable.length === 0 && rst.blocked[0]?.name === 'rebel soldier', JSON.stringify(rst));
+  ok('and the reason distinguishes faction behavior from raw combat level',
+     /political faction troop/.test(rst.blocked[0]?.why ?? ''), rst.blocked[0]?.why);
+}
+
+console.log('\nsource-derived political troop classification');
+{
+  const parents = new Map([
+    ['duketroop', 'factiontroop'],
+    ['princesstroop', 'factiontroop'],
+    ['veteranduke', 'duketroop'],
+    ['factiontroop', 'monster'],
+    ['ant', 'monster'],
+    ['cyclea', 'cycleb'],
+    ['cycleb', 'cyclea'],
+  ]);
+  ok('direct faction-troop subclasses are recognized',
+     inheritsClass(parents, 'DukeTroop', 'FactionTroop'));
+  ok('deeper subclasses inherit the classification without another hardcoded name',
+     inheritsClass(parents, 'VeteranDuke', 'FactionTroop'));
+  ok('ordinary monsters are not political troops',
+     !inheritsClass(parents, 'Ant', 'FactionTroop'));
+  ok('a malformed parent cycle terminates and fails closed',
+     !inheritsClass(parents, 'CycleA', 'FactionTroop'));
 }
 
 

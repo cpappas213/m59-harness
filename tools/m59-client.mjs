@@ -224,6 +224,12 @@ export class M59Client {
     this.keepalivePending = 0;       // heartbeat inventory replies still owed to us
 
     this.room = { id: null, objects: new Map() };   // object id -> room object
+    // SEND_ROOM_CONTENTS has no request id on the wire, but replies preserve request
+    // order. Monotonic local ordinals let a correctness-sensitive caller wait for the
+    // reply to *its* request instead of accepting an older asynchronous resync that
+    // happened to arrive first.
+    this.roomContentsRequested = 0;
+    this.roomContentsReceived = 0;
     // Local trigger token for renderer animation state. The server does not send an
     // animation epoch, so two identical BP_CHANGE attack programs are otherwise
     // indistinguishable. Increment only when an appearance record is installed.
@@ -1083,7 +1089,12 @@ export class M59Client {
   requestInventory()    { this.send(BP.REQ_INVENTORY); }
   requestSpells()       { this.send(BP.SEND_SPELLS); }
   requestSkills()       { this.send(BP.SEND_SKILLS); }
-  roomContents()        { this.send(BP.SEND_ROOM_CONTENTS); }
+  roomContents()        {
+    const request = this.roomContentsRequested + 1;
+    this.send(BP.SEND_ROOM_CONTENTS);
+    this.roomContentsRequested = request;
+    return request;
+  }
   players()             { this.send(BP.SEND_PLAYERS); }
   go()                  { this.send(BP.REQ_GO); }
 
@@ -1162,13 +1173,14 @@ export class M59Client {
       case BP.ROOM_CONTENTS: {
         const res = parseRoomContents(body);
         if (!this.check('ROOM_CONTENTS', res)) { this.lastRoomHex = body.toString('hex'); break; }
+        const request = ++this.roomContentsReceived;
         this.room.id = res.roomId;
         this.room.objects = new Map(res.objects.map(o => {
           o.appearanceRevision = ++this.appearanceRevision;
           return [o.id, o];
         }));
         this.log(`room ${res.roomId}: ${res.count} object(s)`);
-        this.emit('room-contents', { room: res.roomId, count: res.count,
+        this.emit('room-contents', { room: res.roomId, count: res.count, request,
                                      objects: res.objects.map(o => describeObject(o, this.lookup)) });
         break;
       }

@@ -39,6 +39,8 @@
 // walk must not be sent on it — and the fleet's own dead are proof of what the walk costs.
 import { readFileSync } from 'node:fs';
 import { isTakeable } from './m59-commitment.mjs';
+import { loadSpawns } from './m59-spawns.mjs';
+import { fileURLToPath } from 'node:url';
 
 const argv = process.argv.slice(2);
 const arg = (n, d = null) => {
@@ -200,8 +202,7 @@ async function reclaim(site, courier) {
 // with 341 of them: an empty result from a field that is not there, which is the exact
 // failure m59-lore was written to refuse. Read the files.
 const { readdirSync } = await import('node:fs');
-const PM_DIR = new URL('../substrate/postmortems/', import.meta.url)
-                 .pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const PM_DIR = fileURLToPath(new URL('../substrate/postmortems/', import.meta.url));
 const deaths = readdirSync(PM_DIR).filter(f => f.endsWith('.json')).map(f => {
   try {
     const j = JSON.parse(readFileSync(PM_DIR + f, 'utf8'));
@@ -242,6 +243,7 @@ const deaths = readdirSync(PM_DIR).filter(f => f.endsWith('.json')).map(f => {
   .sort((a, b) => String(b.at).localeCompare(String(a.at)));      // NEWEST FIRST
 if (!deaths.length) { console.error('no death sites on record'); process.exit(1); }
 
+const spawnTable = loadSpawns();
 const f = await call('fleet', {}, 120_000).catch(() => null);
 const fleet = (f?.fleet || []).filter(r => r.character && r.room_num != null);
 // A COURIER THE FLEET IS ALREADY USING IS NOT A COURIER. This checked nothing at all,
@@ -281,15 +283,44 @@ for (const site of deaths.slice(0, SITES)) {
                 `room ${String(site.room_num).padStart(5)} (${site.at_col},${site.at_row})  ${site.died_in}`);
     continue;
   }
+  // A DEATH SITE IS, BY CONSTRUCTION, A ROOM THAT KILLED SOMEBODY.
+  //
+  // This filtered sites by the VALUE of what was dropped and never by whether the courier
+  // could survive fetching it — so the fleet answered every death by sending another
+  // character to the room that caused it. Measured 2026-08-14: Gonzo died to a narthyl
+  // worm in Ancient Graveyard of Brax at 14:32 and Rizzo died to a narthyl worm in Brax at
+  // 14:34, two minutes later, on the errand to recover Gonzo's drop. Six deaths in one
+  // half hour, every one of them in Ukgoth or Brax, not one at a hunting station.
+  //
+  // The rule is the keeper's own: `refuseEngagement` refuses a creature above
+  // round(max_health * 1.5), and it gates the whole ROOM rather than the quarry. A
+  // courier that would refuse everything in the room has no business walking into it for
+  // a mace. The gear is worth a walk; it is not worth the character.
+  const worstIn = (roomNum) => {
+    const here = (spawnTable?.rooms?.[roomNum] || []).filter(x => x.huntable);
+    return here.reduce((max, x) => Math.max(max, Number(x.level) || 0), 0);
+  };
+  const siteDanger = worstIn(site.room_num);
+
   // Nearest fit courier by route.
   let best = null;
   for (const c of couriers) {
+    // The courier's own ceiling, not a fleet-wide one: a 60-health character may fetch
+    // from somewhere a 36-health one must not.
+    const ceiling = Math.round((Number(c.level) || 0) * 1.5);
+    if (siteDanger > ceiling) continue;
     if (c.room_num === site.room_num) { best = { c, hops: 0 }; break; }
     const m = await call('map', { agent: c.agent, to: site.room_num }, 60_000).catch(() => null);
     if (m?.route?.found && (!best || m.route.hops.length < best.hops))
       best = { c, hops: m.route.hops.length };
   }
-  if (!best) { console.log(`  ${site.character}'s site (room ${site.room_num}): nobody can route there`); continue; }
+  if (!best) {
+    const why = siteDanger && !couriers.some(c => siteDanger <= Math.round((Number(c.level) || 0) * 1.5))
+      ? `nothing in the fleet may fight what lives there (level ${siteDanger})`
+      : 'nobody can route there';
+    console.log(`  ${site.character}'s site (room ${site.room_num}): ${why}`);
+    continue;
+  }
   const r = await reclaim(site, best.c).catch(e => ({ ok: false, why: e.message }));
   if (!r.ok) { console.log(`  ${site.character}'s site: ${r.why}`); continue; }
   if (r.took.length) {

@@ -36,10 +36,11 @@ import { randomBytes } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { M59Client, KOD_FINENESS, BPNAME } from './m59-client.mjs';
 import { loadResources } from './m59-rsc.mjs';
-import { describeObject, affordances, OF, dropSpec } from './m59-parse.mjs';
-import { World, sharedWorldMap, spreadEdges } from './m59-world.mjs';
+import { describeObject, affordances, OF, prepareActTarget } from './m59-parse.mjs';
+import { World, sharedWorldMap, spreadEdges, boundedSilentGo } from './m59-world.mjs';
 import { loadMap, resolveRoom, forgetInferredExit, findPath } from './m59-map.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -67,7 +68,8 @@ import { StorageCache, GUILD_CHEST_SLOTS, chestFullness } from './m59-storage.mj
 import { declareConflict } from './m59-intel.mjs';
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
-         POSTMORTEM_DIR, setPilotLookup } from './m59-autopilot.mjs';
+         POSTMORTEM_DIR, setPilotLookup,
+         applyFightAboveVigor } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
 import { TitheBook, guildRentStatus, payGuildTithe, titheFleet } from './m59-tithe.mjs';
@@ -105,6 +107,7 @@ import { COMMANDER_SCHEMA, COMMERCE_SCHEMA, COMMANDER_FACULTIES,
          commerceItemsEqual, commanderSettings,
          exactRtsRoomBinding, fleetIdentity, leaseTiming, quoteTiming, redactControlArgs,
          resolveCommerceInventoryOrigins, tradeFingerprint } from './m59-rts-command.mjs';
+import { joinSessionOnce, sessionReadiness } from './m59-session-readiness.mjs';
 
 const HOST = process.env.M59_HOST || '127.0.0.1';
 const PORT = Number(process.env.M59_PORT || 5959);
@@ -525,7 +528,7 @@ const sessions = new Map();             // agent name -> Session
 //
 // Rotated by wall clock and capped, so an overnight fleet does not fill a disk.
 const RECORD_DIR = process.env.M59_RECORD_DIR ||
-  new URL('../substrate/recordings/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  fileURLToPath(new URL('../substrate/recordings/', import.meta.url));
 const RECORD_WINDOW_MS = Number(process.env.M59_RECORD_WINDOW_MS || 120_000);   // 2 minutes
 const RECORD_KEEP = Number(process.env.M59_RECORD_KEEP || 15);                  // ~30 minutes
 
@@ -588,7 +591,7 @@ const COMMANDER_FLEET = fleetIdentity(FLEET);
 // running at once, and "a node process with m59-broker in its command line" is
 // not an identity -- treating it as one let a shutdown in one repository log out
 // another repository's whole fleet.
-const BROKER_ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const BROKER_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 // Which rooms generate which creatures. Built by: node tools/m59-spawns.mjs
 // The Grand Museum of Raza. The map labels it "Tutorial Exit Inside"; the portal is
@@ -599,12 +602,12 @@ const MUSEUM_ROOM = Number(process.env.M59_MUSEUM_ROOM || 1018);
 const CURSED_ITEMS = /amulet of shadows|ring of lethargy/i;
 
 const SPAWN_FILE = process.env.M59_SPAWN_FILE ||
-  new URL('../substrate/m59-spawns.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  fileURLToPath(new URL('../substrate/m59-spawns.json', import.meta.url));
 // Which squares have actually held under attack, learned by standing in them. Shared
 // with the keeper, which is what writes it -- one character's experiment is every
 // character's knowledge.
 const SAFESPOT_FILE = process.env.M59_SAFESPOT_FILE ||
-  new URL('../substrate/m59-safespots.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+  fileURLToPath(new URL('../substrate/m59-safespots.json', import.meta.url));
 
 const fleetState = new Map();   // agent -> { credentials, autopilot }
 
@@ -1724,6 +1727,10 @@ class Session {
     this.pacer = new Pacer();
     this.client = null;
     this.world = null;
+    // Fleet resume and an HTTP caller can request the same slot during broker
+    // boot. They must share one login attempt instead of racing two sockets for
+    // the same character.
+    this.joining = null;
     this.cursor = 0;                    // last event seq this agent has been told about
     this.fine = false;                  // fine-movement mode -- see walkFine
     this.recorder = new Recorder(name); // flight recorder; never surfaced in replies
@@ -2060,8 +2067,11 @@ class Session {
     return rtsJobReport(this.job);
   }
 
-  async join({ account, password, character, host = HOST, port = PORT }) {
-    if (this.live) return this.snapshot('already in game');
+  async join(args) {
+    return joinSessionOnce(this, args, value => this.joinOnce(value));
+  }
+
+  async joinOnce({ account, password, character, host = HOST, port = PORT }) {
     // Kept so the session can put itself back together. A `save game` renumbers
     // every object id, which leaves a live session holding a selfId the server has
     // stopped using -- see Autopilot.pass. Logging in again is the only cure, and it
@@ -2472,10 +2482,28 @@ class Session {
   async confirmPosition() {
     const c = this.need();
     this.lastRoomRead = Date.now();
-    await this.pacer.submit('read', () => c.roomContents());
+    // There may already be a fire-and-forget room read in flight. Waiting for merely
+    // "the next room-contents event" can consume that older snapshot and certify the
+    // exact stale position this method was called to correct. The protocol returns
+    // these reads in request order, so wait through any older replies until the local
+    // ordinal for this request has arrived.
+    //
+    // A TIMED-OUT READ ANSWERS null, IT DOES NOT THROW. Callers already treat an
+    // unknown position as a wrong one — goThrough leans into the doorway in fine units
+    // rather than sending a `go` it has no evidence for — and that is the whole design.
+    // Throwing here would turn a transient dropped reply into an exception out of the
+    // middle of a walk, which is a worse answer than "I do not know where I am".
+    const since = c.evSeq;
+    const request = await this.pacer.submit('read', () => c.roomContents());
     const t0 = Date.now();
-    await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2000 });
+    let cursor = since, fresh = true;
+    while ((c.roomContentsReceived ?? request) < request) {
+      const reply = await c.waitFor({ since: cursor, kinds: ['room-contents'], timeoutMs: 2000 });
+      if (reply.timedOut) { fresh = false; break; }
+      cursor = reply.seq;
+    }
     Pacer.note('confirm_position', 'blocked', Date.now() - t0);
+    if (!fresh) return null;
     return c.self ? { col: c.self.col, row: c.self.row } : null;
   }
 
@@ -2999,30 +3027,38 @@ class Session {
                             exit.stand_on.row * KOD_FINENESS + half).catch(() => null);
         leaned = true;
       }
-      const before = c.evSeq;
       await this.standBeforeGo();
-      await this.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
-      // Wait for the ROOM CHANGE specifically. A door announces itself first --
+      // Wait for the ROOM CHANGE specifically. A door announces itself first —
       // "You open the door and walk through." arrives as a message a beat before
       // BP_PLAYER reports the new room -- and waitFor returns on the first match of
       // ANY listed kind. Listening for 'message' too therefore returned the
       // announcement of success and called it a failure, every single time.
-      const tGo = Date.now();
-      const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 });
-      Pacer.note('go', 'blocked', Date.now() - tGo);
-      const entered = ev.events.find(e => e.kind === 'room-entered');
-      const messages = c.eventsSince(before).filter(e => e.text).map(e => e.text);
+      const go = await boundedSilentGo({
+        sequence: () => c.evSeq,
+        eventsSince: since => c.eventsSince(since),
+        cancelled: () => this.movementWasCancelled(movementGeneration, controlToken),
+        send: () => this.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS),
+        waitForEntry: async since => {
+          const started = Date.now();
+          const observed = await c.waitFor({ since, kinds: ['room-entered'], timeoutMs: 4000 });
+          Pacer.note('go', 'blocked', Date.now() - started);
+          return observed.events.find(event => event.kind === 'room-entered') ?? null;
+        },
+      });
+      if (go.cancelled)
+        return this.cancelledMovement({ go_attempts: go.attempts });
+      const entered = go.entered, messages = go.messages, goAttempts = go.attempts;
       return { left: !!entered, arrived_in: entered ? entered.roomName : null,
+               go_attempts: goAttempts,
                ...(leaned && entered
                    ? { note: 'the exit square is not walkable in this room\'s grid, so this ' +
                              'leaned into the doorway from the square beside it' } : {}),
                ...(entered ? {} : {
                  reason: messages.length ? messages.join('; ')
                        : leaned ? `leaned into (${exit.stand_on.col},${exit.stand_on.row}) from beside ` +
-                                  'it and the server did not open a door there'
-                       : 'sent go and the server answered nothing at all -- no room change ' +
-                         'and no refusal, which is not a door problem but a lost packet ' +
-                         'or a reply that did not arrive inside 4s' }),
+                                  `it and the server did not open a door there after ${goAttempts} attempts`
+                       : `sent go ${goAttempts} time${goAttempts === 1 ? '' : 's'} and the server ` +
+                         'answered nothing at all — no room change and no refusal' }),
                messages };
     }
 
@@ -3600,10 +3636,10 @@ const num = (v, d) => (v === undefined || v === null ? d : Number(v));
 // on the next claim, not on the next broker restart, and this runs once per claim.
 function fleetMayYield() {
   try {
-    // Same URL-relative form the recordings directory uses, and the same Windows drive
-    // fix-up: `new URL(...).pathname` yields "/C:/..." which fs will not open.
-    const f = new URL(`../substrate/may-yield-${FLEET ?? 'default'}.json`, import.meta.url)
-                .pathname.replace(/^\/([A-Za-z]:)/, '$1');
+    // Same URL-relative form the recordings directory uses. Convert the URL with Node's
+    // native helper so encoded characters and Windows drive roots remain filesystem paths.
+    const f = fileURLToPath(
+      new URL(`../substrate/may-yield-${FLEET ?? 'default'}.json`, import.meta.url));
     const v = JSON.parse(readFileSync(f, 'utf8'));
     return Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
   } catch { return []; }
@@ -7403,10 +7439,11 @@ const TOOLS = [
           'the ledger records the strategy with every sample, so `history` reports max health gained ' +
           'per hour by strategy rather than anyone having to argue about which ought to work. ' +
           'baseline is the control' },
-      fight_above_vigor: { type: 'number',
+      fight_above_vigor: { type: 'number', minimum: 0, maximum: 200,
         description: 'eat until vigor reaches this before picking a fight. Resting alone tops out at ' +
           'the rest threshold of 80 out of 200; above that only food will do it, and vigor is what ' +
-          'sets the health regeneration rate' },
+          'sets the health regeneration rate. An explicit value overrides both the selected ' +
+          'strategy floor and its provisioning ceiling' },
       use_safe_spots: { type: 'boolean',
         description: 'fight from a wall whenever the kill would pay (default true). Turning this off ' +
           'gives up the largest survival advantage in the game and is almost never right' },
@@ -7416,6 +7453,10 @@ const TOOLS = [
       pull_within: { type: 'number',
         description: 'how many steps it may go to fetch a monster that will not come to the wall, ' +
           'default 8. It hits it once and walks straight back' },
+      barren_spots_before_room_decision: { type: 'number',
+        description: 'how many top-ranked walls may each fail repeated, fully-waited pulls before ' +
+          'the keeper stops searching this room (default 3). This makes a room-scoped choice to ' +
+          'fight open when the safety gates permit it or relocate; it never blocks the goal' },
       break_out_via_logoff: { type: 'boolean',
         description: 'reconnect before stepping off a crowded safe spot, default true. The entry ' +
           'grace period means the swarm has to notice you one at a time instead of all at once' },
@@ -7686,7 +7727,8 @@ const TOOLS = [
         if (a.fight_above_vigor === undefined) p.policy.fightAboveVigor = plan.fightAboveVigor ?? 0;
         if (a.max_carry === undefined && plan.maxCarry) p.policy.maxCarry = plan.maxCarry;
       }
-      if (a.fight_above_vigor !== undefined) p.policy.fightAboveVigor = Number(a.fight_above_vigor);
+      if (a.fight_above_vigor !== undefined)
+        applyFightAboveVigor(p.policy, a.fight_above_vigor);
       if (a.use_safe_spots !== undefined) p.policy.useSafeSpots = !!a.use_safe_spots;
       if (a.hold_resume_above !== undefined) p.policy.holdResumeAbove = Number(a.hold_resume_above);
       // 0 or null means NO LIMIT, not "never pull anything". There is no sensible reading
@@ -7697,6 +7739,9 @@ const TOOLS = [
       if (a.pull_within !== undefined)
         p.policy.pullWithin = (a.pull_within === null || Number(a.pull_within) <= 0)
           ? null : Number(a.pull_within);
+      if (a.barren_spots_before_room_decision !== undefined)
+        p.policy.barrenSpotsBeforeRoomDecision = Math.max(1,
+          Math.floor(Number(a.barren_spots_before_room_decision) || 1));
       if (a.break_out_via_logoff !== undefined) p.policy.breakOutViaLogoff = !!a.break_out_via_logoff;
       if (a.karma !== undefined) {
         const k = a.karma == null ? null : String(a.karma);
@@ -7930,8 +7975,9 @@ const TOOLS = [
       const manaBefore = c.vitals()?.mana?.value ?? null;
       let inventoryBefore = null;
       if (a.observe_created) {
+        const inventorySince = c.evSeq;
         await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
-        await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+        await c.waitFor({ since: inventorySince, kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
         inventoryBefore = (c.inventory || []).map(item => ({
           name: c.rsc.get(item.nameRsc) || 'unknown item', amount: item.amount || 1,
         }));
@@ -7973,8 +8019,9 @@ const TOOLS = [
       const manaAfter = c.vitals()?.mana?.value ?? null;
       let created = undefined;
       if (a.observe_created) {
+        const inventorySince = c.evSeq;
         await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
-        await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
+        await c.waitFor({ since: inventorySince, kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
         const amounts = rows => {
           const out = new Map();
           for (const item of rows) out.set(item.name, (out.get(item.name) || 0) + (item.amount || 1));
@@ -8213,6 +8260,9 @@ const TOOLS = [
     description: 'One-shot object interactions: use (wield/wear), unuse, get (pick up), drop, ' +
       'activate, eat (apply food to yourself), or go (take the exit under your feet -- doors and ' +
       'stairs need this, walking off the edge of an outdoor room does not). ' +
+      'DROP QUANTITIES MATTER. Stackable items require the number-tagged wire form. Pass amount to ' +
+      'drop part of a stack; when amount is omitted, the broker drops the entire currently observed ' +
+      'stack. Non-stack items reject amount rather than guessing. ' +
       'EAT IS NOT USE. Food is APPLIED to the eater (food.kod:56 sends ReqEatSomething to the ' +
       'apply target), so `use` on a loaf silently does nothing at all -- no message, no error, no ' +
       'vigor. That mattered: resting stops awarding vigor at 80 of 200, everything above it has ' +
@@ -8226,12 +8276,16 @@ const TOOLS = [
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       verb: { type: 'string', enum: ['use', 'unuse', 'get', 'drop', 'activate', 'eat', 'go'] },
-      amount: { type: 'number', description: 'drop only: how many out of a stack. Omitted drops ' +
-        'the whole stack. Ignored by every other verb -- nothing else on this wire takes a count.' },
-      target: { type: ['string', 'number'] } }, required: ['agent', 'verb'] },
+      target: { type: ['string', 'number'] },
+      amount: { type: 'integer', minimum: 1,
+                description: 'drop exactly this many from a stack; omit to drop the whole observed stack' },
+    }, required: ['agent', 'verb'] },
     run: async (a) => {
       const s = session(a.agent), c = s.need();
       const before = c.evSeq;
+      let targetId = null, requestedAmount = null;
+      if (a.amount != null && a.verb !== 'drop')
+        throw new Error('amount is only valid for drop');
       if (a.verb === 'go') {
         await s.standBeforeGo();          // PFLAG_NO_MOVE, same as every other `go`
         await s.pacer.submit('move', () => c.go(), MOVE_INTERVAL_MS);
@@ -8242,26 +8296,25 @@ const TOOLS = [
         // nil (numbitem.kod:257) and the character was told "You don't have that amount
         // of herbs to drop." -- while the tool reported the request as sent. dropSpec is
         // the one rule; see m59-parse.mjs for what the server does with each shape.
-        if (a.amount != null) {
-          if (!Number.isInteger(a.amount) || a.amount < 1)
-            throw new Error(`amount must be a whole number of 1 or more, got ${a.amount}`);
-          // Refuse here rather than let Split refuse there. We are holding the stack size
-          // already, and "you don't have that amount" arrives as a chat line the caller
-          // has to notice among the others -- an error it cannot miss is worth more.
-          const have = t.amount ?? 0;
-          if (have >= 1 && a.amount > have)
-            throw new Error(`asked to drop ${a.amount} but only ${have} in the stack`);
-        }
-        const fn = { use: () => c.use(t.id), unuse: () => c.unuse(t.id), get: () => c.get(t.id),
-                     drop: () => c.drop([dropSpec(t, a.amount ?? null)]),
-                     activate: () => c.activate(t.id),
-                     // onto ourselves -- that is what eating IS on the wire
-                     eat: () => c.apply(t.id, c.selfId) }[a.verb];
+        const prepared = prepareActTarget({ verb: a.verb, target: t, amount: a.amount ?? null });
+        targetId = prepared.target;
+        requestedAmount = prepared.requested_amount;
+        const wireTarget = prepared.wire_target;
+        const fn = { use: () => c.use(wireTarget), unuse: () => c.unuse(wireTarget), get: () => c.get(wireTarget),
+                     drop: () => c.drop([wireTarget]),
+                     activate: () => c.activate(wireTarget),
+                     // onto ourselves — that is what eating IS on the wire
+                     eat: () => c.apply(wireTarget, c.selfId) }[a.verb];
         if (!fn) throw new Error(`unknown verb "${a.verb}"`);
         await s.pacer.submit(a.verb, fn);
       }
       const { events } = await c.waitFor({ since: before, timeoutMs: 3000 });
-      return { verb: a.verb, messages: events.filter(e => e.text).map(e => e.text),
+      return { verb: a.verb,
+               ...(a.verb === 'drop' ? {
+                 target: targetId,
+                 requested_amount: requestedAmount,
+               } : {}),
+               messages: events.filter(e => e.text).map(e => e.text),
                events: events.map(e => e.kind) };
     },
   },
@@ -8763,7 +8816,7 @@ const TOOLS = [
           });
           continue;
         }
-        const script = new URL('./m59-outfit.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+        const script = fileURLToPath(new URL('./m59-outfit.mjs', import.meta.url));
         const httpAt = process.argv.indexOf('--http');
         const brokerPort = httpAt >= 0 ? process.argv[httpAt + 1]
           : process.env.M59_BROKER_PORT || '8901';
@@ -11886,13 +11939,14 @@ function brokerGameEndpoints() {
 }
 
 function brokerHealth() {
+  const readiness = sessionReadiness(sessions);
   return {
     ok: true,
     pid: process.pid,
     root: BROKER_ROOT,
     fleet: FLEET || 'default',
     state: STATE_FILE,
-    sessions: [...sessions.keys()],
+    ...readiness,
     tools: TOOLS.length,
     commander: { ...commanderSettings(process.env, COMMANDER_FLEET), broker_pid: process.pid },
     ...brokerGameEndpoints(),
@@ -12372,7 +12426,7 @@ function handleControl(action, res) {
     return reply(200, { ok: true, note: out ? `rejoining ${out} character(s) -- watch the log` : 'everyone is already in game' });
   }
   if (action === 'restart' || action === 'stop') {
-    const svc = new URL('./m59-service.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+    const svc = fileURLToPath(new URL('./m59-service.mjs', import.meta.url));
     const args = [svc, action];
     if (FLEET) args.push('--fleet', FLEET);
     try {

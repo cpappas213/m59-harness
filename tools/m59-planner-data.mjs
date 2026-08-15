@@ -31,6 +31,7 @@
 // silent.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 // The compendium's own readers, imported rather than reimplemented. Class variables
 // INHERIT — `viWeight` is declared on a parent for most of the 324 item classes — and a
 // second implementation of that walk is how the item table ends up disagreeing with the
@@ -49,7 +50,7 @@ const arg = (n, d = null) => {
 };
 const PRINT_ONLY = !!arg('print', false);
 
-const here = (p) => new URL(p, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const KODDB = here('../compendium/data/koddb.json');
 const SPELLS = here('../substrate/m59-spells.json');
 const OUT = here('../compendium/data/planner.json');

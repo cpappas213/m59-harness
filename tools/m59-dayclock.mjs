@@ -25,8 +25,9 @@
 // somebody standing in a spawning graveyard tells it so.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = new URL('../', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const FILE = join(ROOT, 'substrate', 'gy-cycle.json');
 
 // A game day is two real hours and the undead window is 35 real minutes of it — both

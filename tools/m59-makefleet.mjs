@@ -50,13 +50,29 @@ const ADMIN_PORT = Number(process.env.M59_ADMIN_PORT || 9998);
 //
 // Must satisfy the server's name rule (player.kod, mirrored in m59-newchar.mjs):
 // a letter, then 1..15 more of letter, apostrophe, space or hyphen.
-const NAMES = [
-  'Aldric', 'Rowena', 'Torvald', 'Elspeth', 'Bramwell', 'Sable', 'Merida', 'Godfrey',
-  'Cassia', 'Aldwin', 'Kestrel', 'Morwenna', 'Reynard', 'Isolde', 'Alaric', 'Brenna',
-  'Faelan', 'Gwendolyn', 'Hollis', 'Ingrid', 'Jorah', 'Katriona', 'Lorcan', 'Maeve',
-  'Nerys', 'Osric', 'Perrin', 'Quenna', 'Rurik', 'Seren', 'Tamsin', 'Ulric',
-  'Verity', 'Wystan', 'Yrsa', 'Zephyrine', 'Corwin', 'Delwyn', 'Eirian', 'Fenwick',
+// THE NATO PHONETIC ALPHABET, AND IT IS A PRIVACY DECISION RATHER THAN A STYLE ONE.
+//
+// A character called Delta names nobody. The set is fixed, public, and chosen precisely
+// because it carries no information — so a roster built from it can be discussed in a
+// commit message, a test fixture or a bug report without leaking which accounts exist on
+// whose machine. `tools/dum-guard.mjs` exempts exactly this list for that reason.
+//
+// It is unconditional here because this tool can only ever build a fleet on the TEST
+// server: characters are created over the maintenance socket, which is unauthenticated
+// and IP-restricted to loopback, so a remote server's accounts are issued by its operator
+// and never by this. There is no second case to branch on.
+//
+// Past twenty-six, names repeat with a suffix. The server's rule (player.kod, mirrored in
+// m59-newchar.mjs) is a letter then 1..15 more of letter, apostrophe, space or hyphen —
+// so "Bravo Two" is legal at nine characters and the longest here stays inside sixteen.
+const NATO = [
+  'Alfa', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel',
+  'India', 'Juliett', 'Kilo', 'Lima', 'Mike', 'November', 'Oscar', 'Papa',
+  'Quebec', 'Romeo', 'Sierra', 'Tango', 'Uniform', 'Victor', 'Whiskey', 'Xray',
+  'Yankee', 'Zulu',
 ];
+const SUFFIX = ['', ' Two', ' Three', ' Four', ' Five', ' Six'];
+const NAMES = SUFFIX.flatMap(suffix => NATO.map(name => `${name}${suffix}`));
 
 // ------------------------------------------------------------------ mix
 //
