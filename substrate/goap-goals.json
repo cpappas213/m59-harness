@@ -1,15 +1,15 @@
 {
-  "_comment": "Per-character GOAP goals. shape: { kind: 'advance'|'equip', target: creature_or_item_name, priority: positive_int }. The planner reads this; the broker never sees it. Backwards-compatible: legacy { condition, then } entries are tolerated but ignored.",
+  "_comment": "Per-character GOAP goals. shape: { kind: 'advance', target: creature_name, priority: positive_int }. The planner reads this; the broker never sees it.",
   "Gountrug": [
-    { "kind": "advance", "target": "zombie",     "priority": 10 }
+    { "kind": "advance", "target": "slime",      "priority": 10 }
   ],
   "Kage": [
-    { "kind": "advance", "target": "zombie",     "priority": 10 }
+    { "kind": "advance", "target": "giant rat",  "priority": 10 }
   ],
   "JayB": [
-    { "kind": "advance", "target": "giant rat", "priority": 5  }
+    { "kind": "advance", "target": "fungus beast", "priority": 10 }
   ],
   "Lee": [
-    { "kind": "advance", "target": "giant rat", "priority": 5  }
+    { "kind": "advance", "target": "giant rat",  "priority": 10 }
   ]
 }

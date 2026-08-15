@@ -169,6 +169,9 @@ export function deriveWorldState(row, fleetNames = new Set()) {
     learningCooldown: onCooldown('buy_next_skill', row.agent ?? null),
     // True while the send_to_town_for_gear action is cooling down after a trip.
     gearTripCooldown: onCooldown('gear_trip', row.agent ?? null),
+    // Karma filter for this character — 'good', 'evil', 'neutral', or null.
+    // Passed to the prey tool so retarget actions respect the alignment constraint.
+    karma: policy.karma ?? null,
     // Names of all fleet characters — used to distinguish outsiders in the same room.
     fleetNames,
   };
@@ -294,7 +297,9 @@ export function buildActionLibrary() {
       cost:   1,
       // precondition: stalled OR vitals_unknown with wrong room.
       // Restarts the keeper in farm mode after travel so the character is not left inert.
-      pre:    '(stalled && !busy && assignedRoom !== null && room !== assignedRoom) || (health === null && assignedRoom !== null && room !== assignedRoom && inGame)',
+      // !unarmedStall: if the character is unarmed, send_to_town_for_gear takes priority
+      // (travelling to the assigned room while unarmed keeps the character unarmed there).
+      pre:    '!unarmedStall && ((stalled && !busy && assignedRoom !== null && room !== assignedRoom) || (health === null && assignedRoom !== null && room !== assignedRoom && inGame))',
       effect: 'stop_and_travel',
       run:    async (state) => {
         // `autopilot stop` = goInert (soft stop — keeps the loop running but idle).
@@ -364,7 +369,7 @@ export function buildActionLibrary() {
               'health !== null && healthMax !== null && (health / healthMax) >= 0.7',
       effect: 'retarget_on_stall',
       run:    async (state) => {
-        const result = await callTool('prey', { agent: state.agent, goals: [{ kind: 'hp' }] });
+        const result = await callTool('prey', { agent: state.agent, goals: [{ kind: 'hp' }], ...(state.karma ? { karma: state.karma } : {}) });
         const candidates = result?.candidates ?? [];
         // Pick the first candidate that differs from what we are already hunting.
         const next = candidates.find(c => c.creature !== state.hunt);
@@ -398,7 +403,7 @@ export function buildActionLibrary() {
           return null;
         }
         console.log(`[goap] ${state.character} avoid_crowded_room: ${outsiders.length} outsider(s) in room ${state.room}: ${outsiders.map(p => p.name).join(', ')}`);
-        const result = await callTool('prey', { agent: state.agent, goals: [{ kind: 'hp' }] });
+        const result = await callTool('prey', { agent: state.agent, goals: [{ kind: 'hp' }], ...(state.karma ? { karma: state.karma } : {}) });
         const candidates = result?.candidates ?? [];
         // Pick the first candidate in a DIFFERENT room from where we are now.
         const next = candidates.find(c => c.best_room != null && c.best_room !== state.room);
@@ -452,6 +457,9 @@ export function buildActionLibrary() {
           setCooldown('buy_next_skill', state.agent, 5 * 60 * 1000);
           console.log(`[goap] ${state.character} buy_next_skill: queued ${row.ability} for ~${row.price}sh`);
         } else {
+          // Not enough learn points yet — cool down for 5 min to avoid spamming
+          // the log every 60s while waiting for the character to level.
+          setCooldown('buy_next_skill', state.agent, 5 * 60 * 1000);
           console.log(`[goap] ${state.character} buy_next_skill: refused — ${row?.reason ?? 'unknown'}`);
         }
         return { note: `buy_next_skill: ${row?.queued ? `queued ${row.ability}` : row?.reason ?? 'refused'}` };
@@ -484,14 +492,27 @@ export function buildActionLibrary() {
       name:   'leave_capped_room',
       // Room is at spawn cap and all creatures in it are ones the keeper refuses to
       // fight (wrong prey, wrong karma, etc.) — nothing will ever spawn. Clear the
-      // assigned room so the keeper picks a better one on the next pass.
+      // assigned room and immediately pick a new one so the character doesn't stay
+      // here while avoid_crowded_room and retarget_on_stall take turns.
+      // Requires assignedRoom !== null: once cleared, the next-best actions take over.
       cost:   4,
-      pre:    'inGame && keeperRunning && stallRoomCapped && !busy',
+      pre:    'inGame && keeperRunning && stallRoomCapped && !busy && assignedRoom !== null',
       effect: 'leave_capped_room',
       run:    async (state) => {
-        console.log(`[goap] ${state.character} leave_capped_room: room ${state.room} capped — clearing assignment`);
+        console.log(`[goap] ${state.character} leave_capped_room: room ${state.room} capped — picking new room`);
         await callTool('autopilot', { agent: state.agent, action: 'set', assigned_room: null });
-        return { note: `leave_capped_room: cleared assigned_room ${state.room}` };
+        // Immediately retarget so we don't stay in the capped room an extra pass.
+        const result = await callTool('prey', { agent: state.agent, goals: [{ kind: 'hp' }], ...(state.karma ? { karma: state.karma } : {}) });
+        const candidates = result?.candidates ?? [];
+        const next = candidates.find(c => c.best_room != null && c.best_room !== state.room);
+        if (next) {
+          await callTool('autopilot', { agent: state.agent, action: 'set',
+                                        hunt: next.creature, assigned_room: next.best_room });
+          console.log(`[goap] ${state.character} leave_capped_room: reassigned to ${next.creature} room ${next.best_room}`);
+          return { note: `leave_capped_room: capped room ${state.room} → ${next.creature} room ${next.best_room}` };
+        }
+        console.log(`[goap] ${state.character} leave_capped_room: no alternative prey — operator needed`);
+        return { note: `leave_capped_room: cleared assignment, no alternative found` };
       },
     }),
     mk({
@@ -536,7 +557,7 @@ export function buildActionLibrary() {
       effect: 'retarget_unreachable',
       run:    async (state) => {
         console.log(`[goap] ${state.character} retarget_unreachable: ${state.stalledWhy} — picking new prey`);
-        const result = await callTool('prey', { agent: state.agent, goals: [{ kind: 'hp' }] });
+        const result = await callTool('prey', { agent: state.agent, goals: [{ kind: 'hp' }], ...(state.karma ? { karma: state.karma } : {}) });
         const candidates = result?.candidates ?? [];
         const next = candidates.find(c => c.creature !== state.hunt);
         if (!next) {

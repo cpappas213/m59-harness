@@ -1226,9 +1226,26 @@ export class Autopilot {
   applyLoadoutPolicyOverlay() {
     const l = this.loadout();
     if (!l || !l.policy || typeof l.policy !== 'object') return;
+    // Known snake_case → camelCase mappings for loadout policy fields.
+    // The loadout uses snake_case (human-friendly); the keeper policy uses camelCase.
+    const REMAP = {
+      buy_reagents:       'buyReagents',
+      buy_weapons:        'buyWeapons',
+      buy_food:           'buyFood',
+      drop_junk:          'dropJunk',
+      drop_broken_every_sec: 'dropBrokenEverySec',
+      pulls_before_barren:   'pullsBeforeBarren',
+      max_threat_over:    'maxThreatOver',
+      roam_limit:         'roamLimit',
+      use_safe_spots:     'useSafeSpots',
+      // NOTE: assigned_room is NOT in this map intentionally. It is a dynamic field
+      // managed by the keeper and GOAP — re-applying it every pass would fight against
+      // any GOAP decision that moves the character to a different room.
+    };
     for (const [k, v] of Object.entries(l.policy)) {
       if (v === undefined) continue;
-      this.policy[k] = v;
+      const mapped = REMAP[k] ?? k;
+      this.policy[mapped] = v;
     }
   }
 

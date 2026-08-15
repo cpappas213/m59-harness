@@ -3,7 +3,7 @@
  "character": "Kage",
  "agent": "t2",
  "updated": "2026-08-14T22:00:00.000Z",
- "note": "Shalille caster build -- working toward Shalille 6. karma=evil: only fights negative-karma creatures. Currently on giant rat (karma -20, bludgeon-weak). Switch to long sword when targeting neutral prey.",
+ "note": "Shalille caster build -- working toward Shalille 6. karma=good: only fights negative-karma creatures (giant rat karma=-20). Assigned to room 586 Main gate to Tos.",
  "plan": {
   "schools": { "shal'ille": 6 },
   "weapon_level": null,
@@ -44,6 +44,7 @@
   "bank_above": null
  },
  "policy": {
-  "karma": "good"
+  "karma": "good",
+  "hunt": "giant rat"
  }
 }

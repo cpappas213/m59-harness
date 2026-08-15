@@ -28,6 +28,7 @@
  "policy": {
   "karma": "evil",
   "hunt": "fungus beast",
-  "assigned_room": 544
+  "max_threat_over": 20,
+  "roam": true
  }
 }

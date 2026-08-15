@@ -29,6 +29,7 @@
   "bank_above": null
  },
  "policy": {
-  "buy_reagents": false
+  "buy_reagents": false,
+  "hunt": "giant rat"
  }
 }
