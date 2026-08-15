@@ -416,6 +416,24 @@ Five things these tools do that are not obvious:
   which it used to: asked to challenge, Alpha replied "Alpha: not hunting anything, 88/50
   health."
 
+## Asked for a "minimal summary"?
+
+```bash
+node tools/m59-minimal.mjs            # min/max/avg max health and kills per minute
+node tools/m59-minimal.mjs --minutes 60
+node tools/m59-minimal.mjs --json
+```
+
+Six numbers and nothing else, so the same request gives the same shape every time and
+two readings can be compared. Max health because it IS the level here; kills per minute
+because it is the rate that vigor, supply, safe spots and room choice all exist to
+protect.
+
+**Kills come from the ledger, never from a keeper's own tally.** `Autopilot.tally.kills`
+is emptied in the constructor and keepers restart constantly, so that field means "since
+the last restart" and cannot answer "is this character earning now". Do not answer this
+question by averaging `fleet` rows.
+
 ## Asked to shut down, stop the server, or "we're done for now"?
 
 ```bash
