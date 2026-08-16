@@ -337,7 +337,52 @@ async function stockUp(row) {
     // of an account holding 813 is refused outright and reads exactly like an empty
     // account. That cost `m59-outfit.mjs` two walked banks and a bare character.
     const BANKS = [54, 376];
-    const needMoney = 260;   // ~16 of each half at the Barloque shelf, with room to spare
+    // PRICE THE TRIP, THEN DECIDE WHETHER TO VISIT THE BANK. This was a flat 260 — "~16 of
+    // each half at the Barloque shelf" — and it stopped being the right question the day
+    // the target moved. The withdrawal AMOUNT was raised 900 -> 4,000 -> 10,000 as the
+    // loadouts deepened; the TRIGGER stayed at 260, so the two now describe different
+    // errands. A character with 400sh skips the bank as "well funded" and then cannot
+    // afford what it came for.
+    //
+    // Measured on one run of this tool, and the split is exactly on this line: everybody
+    // who withdrew came home full — Robin 4 -> 40 and Animal 4 -> 40, twenty castings each.
+    // Everybody who skipped the bank came home short or empty — Camilla 9 castings
+    // [clamped: purse], Sweetums 2 with its whole 400sh spent, and Kermit ASKED FOR 46 AND
+    // SPENT NOTHING with 1,249sh in hand. None of those is a failure the trip reports as
+    // one; "spent 0sh" is not an error, which is the failure mode this whole file exists
+    // to catch.
+    //
+    // So the floor is what the shortfall actually costs. Prices read directly off counter
+    // 373 — elderberry 28sh, herbs 14sh — which is the same pair the withdrawal comment
+    // below does its 1,680sh arithmetic with; having one number for the cost and a
+    // different one for the trigger is what produced this. Estimated rather than quoted
+    // because the shop list is only readable on arrival and this decision happens before
+    // the walk, so it carries a margin and errs toward visiting the bank: a needless bank
+    // leg costs a walk, and skipping a needed one costs the entire trip.
+    const UNIT = { elderberry: 28, herbs: 14 };
+    const held = row.reagents ?? {};
+    const gap = (kind) => Math.max(0, WANT - Number(held[kind] ?? 0));
+    const tripCost = gap('elderberry') * UNIT.elderberry + gap('herbs') * UNIT.herbs;
+    // THE MARGIN IS DOUBLE, AND THAT IS NOT TIMIDITY — IT IS THE MEASURED ERROR.
+    //
+    // 28 and 14 are one counter's prices and every merchant applies its own markup, so the
+    // estimate is a floor on the true cost rather than a prediction of it. Camilla proves
+    // the gap: it set out with 1,217sh against an estimated 952sh trip — comfortably
+    // funded by this arithmetic — spent 1,200 of it, and still came home at 9 castings,
+    // `[clamped: purse]`. Kermit did the same with 1,249sh against ~770sh and bought
+    // nothing at all. An estimate that says "affordable" for both of those is too tight to
+    // decide on.
+    //
+    // The two errors are not symmetric and that settles the direction. A needless bank leg
+    // costs one walk between two counters that are deliberately next door to each other
+    // (54 beside the Tos apothecary, 376 beside the Jasper merchant). A skipped one costs
+    // the entire trip — the walk out, the walk back, and a character that farms at two
+    // castings until the next pass notices. Bank balances on this fleet run 10,000 to
+    // 36,000 and the withdrawal is capped at 10,000, so the money is there to be wrong with.
+    // Nothing to buy, nothing to fund: a character whose shortfall priced out at zero needs
+    // no money and must not be walked to a counter to prove it. The 260 floor is for
+    // "there IS something to buy and the purse is pocket change", not for an empty errand.
+    const needMoney = tripCost > 0 ? Math.max(260, tripCost * 2) : 0;
     if (purse1 < needMoney) {
       const balance = row.banked?.balance ?? null;
       if (balance === 0) {
