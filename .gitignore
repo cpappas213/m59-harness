@@ -211,3 +211,5 @@ start-broker.sh
 # Swarm agent working artifacts — not part of the project.
 PROJECT_CLOSURE.md
 .claude/worktrees/
+goap-cooldowns.json
+goap-gear-dispatch.json

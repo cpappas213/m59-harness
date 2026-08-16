@@ -43,9 +43,33 @@ const INTERVAL_MS = 60_000;
 // Per-agent cooldowns (action name -> Map<agent, cooldown_until_ms>). Prevents
 // re-firing an action while a spawned subprocess errand is still in-flight.
 const _cooldowns = new Map();
+const COOLDOWN_FILE = new URL('../substrate/goap-cooldowns.json', import.meta.url).pathname;
+function _persistCooldowns() {
+  const flat = {};
+  for (const [action, map] of _cooldowns) {
+    for (const [agent, until] of map) {
+      if (Date.now() < until) flat[`${action}:${agent}`] = until;
+    }
+  }
+  try { writeFileSync(COOLDOWN_FILE, JSON.stringify(flat, null, 2)); } catch { /* best effort */ }
+}
+function _loadCooldowns() {
+  try {
+    const flat = JSON.parse(readFileSync(COOLDOWN_FILE, 'utf8'));
+    for (const [key, until] of Object.entries(flat)) {
+      const [action, agent] = key.split(':');
+      if (Date.now() < until) {
+        if (!_cooldowns.has(action)) _cooldowns.set(action, new Map());
+        _cooldowns.get(action).set(agent, until);
+      }
+    }
+  } catch { /* first run */ }
+}
+_loadCooldowns();
 function setCooldown(action, agent, durationMs) {
   if (!_cooldowns.has(action)) _cooldowns.set(action, new Map());
   _cooldowns.get(action).set(agent, Date.now() + durationMs);
+  _persistCooldowns();
 }
 function onCooldown(action, agent) {
   const until = _cooldowns.get(action)?.get(agent) ?? 0;
