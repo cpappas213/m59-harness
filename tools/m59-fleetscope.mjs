@@ -69,13 +69,31 @@ function fetchJson(url, timeoutMs = 1200) {
   });
 }
 
-// Where a broker might be. The default port, anything named explicitly, and every port a
-// service pid file mentions — a hint, not a promise: a broker started by hand writes no
-// pid file and a stale one outlives its process, so each candidate is asked rather than
-// believed.
+// Where a broker might be. The default port and every port a service pid file mentions —
+// a hint, not a promise: a broker started by hand writes no pid file and a stale one
+// outlives its process, so each candidate is asked rather than believed.
+//
+// AN EXPLICIT PORT IS THE WHOLE LIST, AND THAT IS THE FIX FOR A REAL BUG.
+//
+// It used to be merely the FIRST candidate, with the default and the pid-file ports
+// appended after it — so naming a port that had no broker on it did not mean "no broker",
+// it meant "start looking here and then look everywhere else". `fleetScope` then fell
+// through to its match-by-roster-path branch, found whatever was actually running on
+// 8901, and returned a LIVE READING for a port the caller had just said to use.
+//
+// The comment below in fleetScope always claimed "an explicit --port wins". It won only
+// when it succeeded, which is the half that never needed saying. Naming a port has to win
+// in both directions or it is not an override at all — and the direction it was getting
+// wrong is the dangerous one, because the answer it invents is a plausible fleet rather
+// than an error.
+//
+// It also made the offline test suite unrunnable while the fleet was up: three assertions
+// in m59-fleetscope-test.mjs pass `port: 1` to mean "nothing there", and they failed on
+// any machine with a live broker. A test that only passes when the fleet is down is a test
+// that gets read as flaky and then ignored.
 export function candidateBrokerPorts({ port = null, extra = [] } = {}) {
+  if (portOk(Number(port))) return [Number(port)];
   const ports = [];
-  if (portOk(Number(port))) ports.push(Number(port));
   if (portOk(DEFAULT_BROKER_PORT)) ports.push(DEFAULT_BROKER_PORT);
   for (const p of extra) if (portOk(Number(p))) ports.push(Number(p));
   if (existsSync(SUBSTRATE)) {
@@ -130,10 +148,14 @@ export async function fleetScope({ argv = process.argv.slice(2), env = process.e
     return { characters: null, from: 'every fleet on this machine (--all-fleets)',
              fleet: null, roster: null, broker: null, filtered: false };
 
+  // With an explicit port this list is that port and nothing else — see
+  // candidateBrokerPorts. So "named a port, found nothing" arrives here as an EMPTY list
+  // and falls through to the roster on disk, rather than quietly resolving to whichever
+  // broker happened to be running somewhere else.
   const brokers = await probeBrokers({ port });
-  // Which broker? An explicit --port wins. Otherwise, the one holding the roster the
-  // fleet name resolves to — matched on the PATH it reports, not on the label, because
-  // two checkouts can both call a fleet `prod`.
+  // Which broker? An explicit --port wins, in both directions. Otherwise, the one holding
+  // the roster the fleet name resolves to — matched on the PATH it reports, not on the
+  // label, because two checkouts can both call a fleet `prod`.
   const wantState = resolve(stateFileFor(resolved.fleet, env));
   let picked = null;
   if (portOk(Number(port))) picked = brokers.find(b => b.http === Number(port)) ?? null;

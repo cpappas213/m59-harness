@@ -96,6 +96,29 @@ console.log('\nsaying which population the numbers describe');
      /every character/.test(S.scopeLine({ characters: null, filtered: false, from: 'no roster' })));
 }
 
+console.log('\nwhere it is willing to look');
+{
+  // AN EXPLICIT PORT IS THE WHOLE LIST, asserted here directly rather than only through
+  // its consequences, because the consequence is what was broken and the cause is what
+  // has to stay fixed.
+  //
+  // It used to APPEND the default and the pid-file ports after the one you named, so
+  // naming a dead port meant "look here first, then look everywhere" — and fleetScope
+  // duly found the live broker on 8901 and returned it. Three assertions below depend on
+  // `port: 1` genuinely meaning nothing-is-there, and they failed on any machine with a
+  // fleet up, which is every machine anyone would run this on.
+  const named = S.candidateBrokerPorts({ port: 1 });
+  ok('naming a port asks that port and no other', named.length === 1 && named[0] === 1);
+  ok('and it does not quietly add the default alongside it', !named.includes(8901));
+  const discovered = S.candidateBrokerPorts();
+  ok('naming none still discovers the default', discovered.includes(8901));
+  ok('a nonsense port is ignored rather than probed',
+     !S.candidateBrokerPorts({ port: 0 }).includes(0) &&
+     !S.candidateBrokerPorts({ port: 99999 }).includes(99999));
+  ok('and falls back to discovery, rather than to an empty list nothing can answer',
+     S.candidateBrokerPorts({ port: 0 }).includes(8901));
+}
+
 console.log('\nchoosing a broker');
 {
   // A fixture broker that answers /health exactly as the real one does, naming the roster
