@@ -10511,6 +10511,15 @@ export class Autopilot {
       return false;
     }
 
+    // A BANK-DRIVEN TRIP (not food, not sell) needs a cooldown, or a character standing
+    // in a market with an unweighable pack fires a 0-hop trip every pass. The food and
+    // sell trips already have their own cooldowns above; this one covers the rest.
+    const BANK_TRIP_COOLDOWN_MS = 300_000;
+    if (!starving && !brokeWithGoods && this.bankTripAt &&
+        Date.now() - this.bankTripAt < BANK_TRIP_COOLDOWN_MS) {
+      return false;
+    }
+
     // Jasper and Tos share one account, so the only question is which is nearer.
     // world.route() returns {found, hops:[...]}, NOT an array -- taking .length off it
     // gives undefined, every bank scores Infinity, and the character stands in a field
@@ -10556,14 +10565,26 @@ export class Autopilot {
     // set it.
     if (starving) this.foodTripAt = Date.now();
     if (brokeWithGoods) this.sellTripAt = Date.now();
+    // A BANK TRIP HAS NO COOLDOWN, and a 0-hop bank trip (character already at the bank)
+    // completes in the same pass it fires. Without a cooldown the next pass fires it
+    // again: the character stands in a market with an unweighable pack, "travels" 0
+    // hops, sells/banks what it can, and the next pass does the same. The trip must
+    // set a cooldown so a no-op round doesn't repeat every eight seconds.
+    if (!starving && !brokeWithGoods) this.bankTripAt = Date.now();
     this.note(starving && !packFull && carried <= above ? 'going to town for food' : 'going to the bank', {
       carrying: carried, to: target.name, hops: target.hops, keeping: this.policy.walkingMoney ?? 400,
       why: starving && !packFull && carried <= above
         ? 'no food and not both reagents, so the only vigor above the resting cap is bought'
         : 'everything carried is dropped on death and usually unrecoverable; a balance is not' });
     if ((await this.leaveHold('walking to the bank')).refused) return true;
-    const r = await this.travel(target.room, { maxHops: Math.max(12, target.hops + 4) })
-                    .catch(e => ({ arrived: false, reason: e.message }));
+    // ALREADY AT THE DESTINATION: 0 hops means the character is standing where it needs
+    // to be. Travel is a no-op and the trip should just do the selling/banking in place.
+    // Without this, a character standing in a market with an unweighable pack fires a
+    // sell trip to the same room every pass -- "travel" 0 hops, arrive, next pass, repeat.
+    const r = target.hops === 0
+      ? { arrived: true, room: room.num, position: { col: c.me?.col, row: c.me?.row } }
+      : await this.travel(target.room, { maxHops: Math.max(12, target.hops + 4) })
+          .catch(e => ({ arrived: false, reason: e.message }));
     this.money.trips++;
     if (!r.arrived) {
       if (this.pendingFarmDelivery?.room === room.num) {
