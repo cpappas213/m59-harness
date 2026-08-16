@@ -410,8 +410,10 @@ export function buildActionLibrary() {
         let result = await runAtomic('pick_prey', _ctx, {
           agent: state.agent, goals: [{ kind: 'hp' }], karma: state.karma });
         let candidates = result?.candidates ?? [];
-        // If nothing is reachable in the strict band, the character has outgrown what it
-        // can safely kill -- widen the band rather than give up, so it advances by level.
+        // If nothing is reachable in the strict band, widen to the full band (over=6)
+        // rather than give up. The character has outgrown what it can safely kill in the
+        // current zone; a wider band is the only way to find a teaching target. The floor
+        // still applies -- prey above maxHealth + over is still rejected as a death trap.
         if (!candidates.length) {
           result = await runAtomic('pick_prey', _ctx, {
             agent: state.agent, goals: [{ kind: 'hp' }], karma: state.karma, under: 6 });

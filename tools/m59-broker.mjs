@@ -11211,7 +11211,7 @@ const TOOLS = [
                    description: 'restrict to these. An alternative to `item` for purpose:"items"' },
       karma: { type: 'string', enum: ['evil', 'good', 'neutral'] },
       over: { type: 'number', description: 'how far above your level to accept. Default 6' },
-      under: { type: 'number', description: 'how far ABOVE your level to reject as a death trap. Default 1 -- prey more than this above your level will kill you before you kill it' },
+      under: { type: 'number', description: 'how far ABOVE your level to reject as a death trap. Default 3 -- prey more than this above your level will kill you before you kill it. Advancement needs monster_level > max_health, so the minimum teaching level is max_health + 1' },
       limit: { type: 'number' },
     } },
     run: async (a) => {
@@ -11236,7 +11236,7 @@ const TOOLS = [
       const out = scorePrey(spawns, { maxHealth, stamina: stamina ?? 0 }, {
         purpose, goals, want: a.karma || null,
         over: a.over != null ? Number(a.over) : 6,
-        under: a.under != null ? Number(a.under) : 1,
+        under: a.under != null ? Number(a.under) : 3,
         limit: num(a.limit, 8),
         creatures: Array.isArray(a.creatures) ? a.creatures : null,
         item: a.item || null,

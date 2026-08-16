@@ -943,7 +943,7 @@ function combine(yields) {
 // `character`: { maxHealth, stamina }.  `goals`: [{kind:'hp'} | {kind:'skill',name,ability}
 // | {kind:'spell',name,ability,requisite}].  `want`: karma school, as preyFor.
 export function scorePrey(spawns, character, {
-  purpose = 'advance', goals = [], over = 6, under = 1, limit = 8, want = null, creatures = null,
+  purpose = 'advance', goals = [], over = 6, under = 3, limit = 8, want = null, creatures = null,
   item = null,
 } = {}) {
   if (!spawns) return { purpose, candidates: [], note: 'no spawn index loaded' };
@@ -996,13 +996,13 @@ export function scorePrey(spawns, character, {
                        : want === 'neutral' ? k === 0 : true;
 
   const ceiling = maxHealth + over;
-  // THE FLOOR THE BAND WAS MISSING. `over` caps how far ABOVE you prey may be -- but a
-  // level-20 character whose only HP target is a level-25 mummy in a zone it cannot reach
-  // still gets told "mummy" is the right thing to hunt, because the rule has no notion that
-  // a 5-level gap is a character that dies and respawns for ever. `under` (default 1) says:
-  // prey more than this far above your level is a death trap, not a farming target. A
-  // character that has outgrown the world's weakest monsters reports `limited_by: safety
-  // floor` instead of being pointed at a mummy it cannot win.
+  // THE FLOOR THE BAND WAS MISSING. `over` caps how far ABOVE you prey may be, and
+  // `under` (default 3) sets how far above is a survivable challenge. Advancement needs
+  // monster_level > base_max_health, so the minimum teaching level is maxHealth + 1.
+  // A L20 character hunting a L21-L23 creature is a real fight it can win; hunting a L25
+  // is a death trap. `under: 3` allows up to 3 levels above -- enough to level, not
+  // enough to die. A character that has outgrown the world's weakest monsters reports
+  // `limited_by: safety floor` instead of being pointed at a mummy it cannot win.
   const floor = maxHealth + under;
   const rows = [];
   for (const c of pool) {
