@@ -254,3 +254,8 @@ __pycache__/
 # goap-goals.example.json is the shape, with characters that belong to nobody; the live
 # one is whichever fleet the operator actually runs.
 /substrate/goap-goals.json
+
+# WHERE THE COLLISION MODEL AND THE WORLD DISAGREE, per room and direction. Live
+# observation of one server, written by a running fleet — the same reasoning as banks/
+# and storage/ above. Useful to review, not reference data.
+/substrate/exit-gaps.json
