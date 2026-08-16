@@ -6270,6 +6270,23 @@ export class Autopilot {
     this.note('stopped');
   }
 
+  // Apply per-character policy overrides from the loadout file on every pass so that
+  // loadout-driven fields (hunt, assigned_room, karma, buy_reagents, pulls_before_barren,
+  // useBT) are live after a broker restart without re-applying them manually. A missing
+  // or empty loadout is a no-op — silence means "carry on as before".
+  applyLoadoutPolicyOverlay() {
+    const l = this.loadout();
+    if (!l?.policy) return;
+    const p = l.policy;
+    // Only overlay fields the loadout explicitly sets; null/undefined means "keep current".
+    if (p.hunt != null) this.policy.hunt = p.hunt;
+    if (p.assigned_room != null) this.policy.assignedRoom = p.assigned_room;
+    if (p.karma != null) this.policy.karma = p.karma;
+    if (p.buy_reagents != null) this.policy.buyReagents = p.buy_reagents;
+    if (p.pulls_before_barren != null) this.policy.pullsBeforeBarren = p.pulls_before_barren;
+    if (p.useBT != null) this.policy.useBT = p.useBT;
+  }
+
   // One decision cycle. Ordered by urgency: being dead, then being in danger, then
   // being hurt, then whatever the mode is for.
   async pass() {
@@ -7078,6 +7095,14 @@ export class Autopilot {
 
     return false;
   }
+
+  // Stub: engage an auto-attack intel target in the room. Returns true when it
+  // handles the pass. Not yet implemented — falls through to normal farming.
+  async engagePlayerTarget() { return false; }
+
+  // Stub: respond to another fleet member's declared conflict with a target player.
+  // Returns true when it handles the pass. Not yet implemented — falls through.
+  async respondToConflict() { return false; }
 
   // ── passPlaybook: extracted from pass() ────────────────────────────────
   async passPlaybook() {
@@ -8066,7 +8091,7 @@ export class Autopilot {
       // every pack size, so this runs on its own clock. `inspectForBroken` is the cheap
       // half and is asked only about SPARES, never the weapon in hand.
       await this.sweepBroken().catch(() => {});
-      await this.sweepGearCondition().catch(() => {});
+      this.sweepGearCondition().catch(() => {});
 
       if (c.inventory.length >= this.policy.maxCarry) {
         const freed = await this.makeRoom();
@@ -11496,8 +11521,9 @@ export class Autopilot {
     for (const slot of ['weapon', 'armor']) {
       const item = result[slot];
       if (!item) continue;
+      const since = c.evSeq;
       await s.pacer.submit('look', () => c.look(item.id)).catch(() => {});
-      const { events } = await c.waitFor({ kinds: ['look'], timeoutMs: 3000 }).catch(() => ({ events: [] }));
+      const { events } = await c.waitFor({ since, kinds: ['look'], timeoutMs: 3000 }).catch(() => ({ events: [] }));
       const desc = events.find(e => e.id === item.id)?.description ?? null;
       item.level = skills.parseConditionLevel(desc);
     }
