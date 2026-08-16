@@ -1533,6 +1533,110 @@ function startReconciling() {
   console.error(`[rejoin] watching every ${Math.round(RECONCILE_MS / 1000)}s`);
 }
 
+// ------------------------------------------------------------ arming the unarmed
+//
+// A KEEPER THAT CANNOT ARM ITSELF ASKS; THIS IS WHAT ANSWERS.
+//
+// The character has no weapon in its pack and cannot conjure one, so the fix is a
+// shopping trip — which is minutes of walking, spends money, and has to happen with the
+// keeper out of the way. The keeper sets `wantsWeapon` and does nothing else; everything
+// below happens out here, for the reasons in `requestWeaponPurchase`.
+//
+// It is the same shape as buying an ability (see the `outfit` tool further down): a
+// DETACHED `m59-outfit.mjs`, tracked by pid, never awaited. The differences are the two
+// declarations around it, and they are the whole point of moving it:
+//
+//   * A CLAIM, so that `busy` has an owner and a lease to ride on — `declareBusy` refuses
+//     without one, and refuses correctly: an operation nobody owns is one nothing can
+//     take back when the process holding it dies.
+//   * A BUSY WINDOW, so every stall detector in the fleet steps over the character while
+//     it walks. Without it `ms_since_moved` — which measures the KEEPER, inert by design
+//     during an errand — climbs for the whole trip, and `m59-supervise.mjs`'s unstick
+//     round restarts the keeper out from under it.
+//
+// Both are leased, so a crash here leaves nothing owned and nothing marked busy.
+const WEAPON_ERRAND_BY   = 'harness:outfit';
+const WEAPON_ERRAND_MS   = 10 * 60_000;   // a smith trip, padded — see BUSY_MAX_MS
+const WEAPON_ERRAND_POLL = 20_000;
+const weaponErrands = new Map();          // agent -> { pid, at }
+
+function serviceWeaponRequests() {
+  for (const [agent, s] of sessions) {
+    // `autopilotIfAny`, never `autopilotFor` — this is a sweep, and a sweep that CREATES
+    // a keeper in order to ask it a question has started one on every character in the
+    // roster as a side effect of looking.
+    const ap = autopilotIfAny(agent);
+    if (!ap?.wantsWeapon) continue;
+    if (weaponErrands.has(agent)) continue;      // one trip at a time, per character
+    if (!s.live) continue;
+
+    const want = ap.wantsWeapon;
+    // DO NOT WALK IN ON SOMEBODY ELSE'S OPERATION. A character a bot is mid-errand with
+    // is exactly the character this must not send shopping — and `isTakeable` is the
+    // question to ask, not `!committed`: a bot may OWN a character and still leave it
+    // takeable, which is the ordinary case.
+    const commitment = ap.commitment?.();
+    if (commitment && commitment.takeable === false) continue;
+
+    const claimed = ap.claimFaculties({
+      faculties: ['work', 'movement'], by: WEAPON_ERRAND_BY,
+      leaseMs: WEAPON_ERRAND_MS, why: want.why, mayYield: fleetMayYield(),
+    });
+    if (!claimed?.held?.length) {
+      // Somebody else holds it. Leave the request standing — the character is being
+      // driven by something that may well arm it, and taking it back would be the
+      // override, which is a person's decision and not a sweep's.
+      continue;
+    }
+    ap.declareBusy({ by: WEAPON_ERRAND_BY, kind: 'outfit',
+                     label: 'buying a weapon at the nearest smith',
+                     detail: want.why, leaseMs: WEAPON_ERRAND_MS });
+
+    const script = fileURLToPath(new URL('./m59-outfit.mjs', import.meta.url));
+    const httpAt = process.argv.indexOf('--http');
+    const brokerPort = httpAt >= 0 ? process.argv[httpAt + 1]
+      : process.env.M59_BROKER_PORT || '8901';
+
+    let child;
+    try {
+      child = spawn(process.execPath, [
+        script, '--port', String(brokerPort), '--agents', agent,
+      ], { detached: true, stdio: 'ignore', cwd: BROKER_ROOT, windowsHide: true });
+      child.unref();
+    } catch (e) {
+      ap.freeBusy({ by: WEAPON_ERRAND_BY });
+      ap.releaseFaculties({ faculties: null, by: WEAPON_ERRAND_BY });
+      ap.note('could not start the weapon errand', { why: e.message });
+      continue;
+    }
+
+    weaponErrands.set(agent, { pid: child.pid, at: Date.now() });
+    console.error(`[outfit] ${agent}: buying a weapon (pid ${child.pid}) — ${want.why}`);
+
+    child.on('exit', (code) => {
+      weaponErrands.delete(agent);
+      ap.freeBusy({ by: WEAPON_ERRAND_BY });
+      ap.releaseFaculties({ faculties: null, by: WEAPON_ERRAND_BY });
+      // THE REQUEST IS CLEARED WHETHER OR NOT IT WORKED. A standing request would have
+      // this sweep start another trip the moment the lease frees, for ever, on a
+      // character whose problem is that it has no money. The keeper re-asks on its own
+      // five-minute cooldown, which is the rate limit, and stops itself when that runs
+      // out — so a genuine dead end reaches the board rather than looping.
+      ap.wantsWeapon = null;
+      ap.note('weapon errand finished', {
+        exit_code: code, armed: ap.armed?.() ?? null,
+        why: 'the keeper re-asks on its own cooldown if this did not work',
+      });
+    });
+  }
+}
+
+function startWeaponErrands() {
+  const t = setInterval(() => { try { serviceWeaponRequests(); } catch { /* never a fatal */ } },
+                        WEAPON_ERRAND_POLL);
+  t.unref?.();
+}
+
 // ONE ABILITY READ, and then write down what it found.
 //
 // Four requests: the spell and skill LISTS have to be re-read before the ability
@@ -7679,6 +7783,15 @@ const TOOLS = [
       fight_rounds: { type: 'number',
         description: 'how many rounds to fight a target before breaking off. Default 30. ' +
           'Increase for characters without weapon skills who deal low damage per swing.' },
+      use_bt: { type: 'boolean',
+        description: 'hand the get-armed decision to the behaviour tree (m59-bt-nodes.mjs) ' +
+          'instead of the sequential path, for this character only. Off by default: the ' +
+          'fleet stays on the proven code unless somebody flips this on one character.' },
+      conflict_response_hops: { type: 'number',
+        description: 'how far a character will travel to help a fleetmate who is fighting a ' +
+          'flagged player. Default 5 — the next few rooms. This is a ceiling on how far ' +
+          'the fleet will converge, so raising it is a decision about how the fleet looks ' +
+          'to the other people on the server, not a tuning knob.' },
       bank_above: { type: ['number', 'null'],
         description: 'carry more than this many shillings and the character stops what it is doing ' +
           'and walks to Jasper or Tos, whichever is nearer, to deposit down to walking money. ' +
@@ -7998,6 +8111,15 @@ const TOOLS = [
           ? null : Math.max(1, Math.floor(Number(a.max_bots_per_safe_spot) || 1));
       if (a.fight_rounds !== undefined)
         p.policy.fightRounds = Math.max(1, Math.floor(Number(a.fight_rounds) || 30));
+      // BOTH OF THESE WERE REACHABLE ONLY FROM A FILE THAT COULD NOT SET THEM. `useBT`
+      // gated a whole behaviour-tree path and had no setter anywhere — not here, and not
+      // in the loadout, whose normalise() dropped the block it was supposed to live in.
+      // A flag with no way to raise it is a feature nobody can turn on, which is the
+      // same failure as `purpose` sitting outside this schema for a year.
+      if (a.use_bt !== undefined) p.policy.useBT = !!a.use_bt;
+      if (a.conflict_response_hops !== undefined)
+        p.policy.conflict_response_hops =
+          Math.max(1, Math.floor(Number(a.conflict_response_hops) || 5));
       if (a.bank_above !== undefined)
         p.policy.bankAbove = a.bank_above == null ? null : Number(a.bank_above);
       if (a.walking_money !== undefined)
@@ -13001,7 +13123,23 @@ function serveDashboard(port) {
         });
       return;
     }
+    // THE ONE BOARD THAT IS ABOUT OTHER PEOPLE, SO IT IS THE ONE BOARD THAT DOES NOT
+    // LEAVE THIS MACHINE.
+    //
+    // Every other page here describes our own fleet, which is why the dashboard binds to
+    // every interface — it is meant to be readable from a phone. This one is a dossier on
+    // named strangers: where a real player has been seen, when, how often, and whether
+    // somebody has marked them to be fought. That is exactly the file .gitignore refuses
+    // to commit, and serving it to the LAN would publish it just as effectively.
+    //
+    // Refused at the socket rather than merely unlinked from the nav, for the same reason
+    // the fleet page's Rejoin/Restart/Stop buttons are: a hidden control is not a
+    // permission check.
     if (url.pathname === '/players') {
+      if (!isLocal(req)) {
+        res.writeHead(403, { 'content-type': 'text/plain' });
+        return res.end('/players names real people and is served on loopback only');
+      }
       try {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
         return res.end(renderPlayers());
@@ -13127,6 +13265,7 @@ if (argv.includes('--selftest')) {
   startReconciling();
   startPilotWatch();
   startAbilitySweep();
+  startWeaponErrands();
   if (dashboardPort != null) serveDashboard(dashboardPort);
 } else {
   serveStdio();
@@ -13135,6 +13274,7 @@ if (argv.includes('--selftest')) {
   startReconciling();
   startPilotWatch();
   startAbilitySweep();
+  startWeaponErrands();
 }
 
 

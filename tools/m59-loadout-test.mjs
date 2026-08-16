@@ -821,6 +821,83 @@ console.log('\none inventory plan, given to several characters');
   }
 }
 
+// ------------------------------------------------------------------ the policy block
+//
+// WHAT A LOADOUT MAY SET ABOUT THE KEEPER, AND WHEN IT WINS.
+//
+// The overlay exists because a broker restart builds every keeper from defaults, so a
+// character somebody had aimed at a room comes back hunting whatever its level implies.
+// The trap is the obvious fix: re-applying the file on every pass silently reverts
+// `m59-supervise.mjs` and the `autopilot` tool within a second, and the operator watches
+// their own setting vanish with nothing saying why. So the file wins when the FILE
+// CHANGES, and a runtime set stands in between.
+
+console.log('\nthe policy block a loadout may carry');
+{
+  const { loadout, problems } = L.normalise({
+    character: 'Kermit',
+    policy: { hunt: 'skeleton', assigned_room: 70, use_bt: true, karma: -5 },
+  });
+  ok('a policy block survives normalise', loadout.policy.hunt === 'skeleton' &&
+     loadout.policy.assigned_room === 70 && loadout.policy.use_bt === true);
+  ok('and it is clean', problems.length === 0, JSON.stringify(problems));
+}
+{
+  // A CLOSED SET, like the playbook's verbs. A key nobody implements must be REPORTED,
+  // never carried through: a setting that silently does nothing is how `purpose` sat
+  // outside the autopilot schema for a year with every keeper's audit switched off.
+  const { loadout, problems } = L.normalise({
+    character: 'Kermit', policy: { flee_below: 0.9, hnut: 'skeleton' },
+  });
+  ok('an unrecognised policy key is dropped', loadout.policy.flee_below === undefined &&
+     loadout.policy.hnut === undefined);
+  ok('and named, both of them', problems.filter(p => /policy\./.test(p)).length === 2,
+     JSON.stringify(problems));
+  ok('a survival threshold is specifically not settable here',
+     /flee_below/.test(problems.join(' ')));
+}
+{
+  // AN UNUSABLE VALUE IS DROPPED RATHER THAN COERCED. `karma: "no"` becoming 0 is a
+  // policy nobody wrote, and 0 is a real karma setting.
+  const { loadout, problems } = L.normalise({
+    character: 'Kermit', policy: { karma: 'no', use_bt: 'yes', hunt: '' },
+  });
+  ok('a non-number is not coerced to zero', loadout.policy.karma === undefined);
+  ok('a non-boolean is not coerced to true', loadout.policy.use_bt === undefined);
+  ok('an empty string is silence, not a setting', loadout.policy.hunt === undefined);
+  ok('and the two bad values are reported by name',
+     problems.some(p => /policy\.karma/.test(p)) && problems.some(p => /policy\.use_bt/.test(p)),
+     JSON.stringify(problems));
+}
+{
+  // SILENCE MEANS CARRY ON AS BEFORE — the rule the whole overlay rests on.
+  const { loadout } = L.normalise({ character: 'Kermit' });
+  ok('no policy block at all normalises to an empty one, never to defaults',
+     loadout.policy && Object.keys(loadout.policy).length === 0);
+}
+
+console.log('\nthe file wins when the file changes');
+{
+  mkdirSync(process.env.M59_LOADOUT_DIR, { recursive: true });
+  const path = join(process.env.M59_LOADOUT_DIR, 'gonzo.json');
+  writeFileSync(path, JSON.stringify({ character: 'Gonzo', policy: { hunt: 'spider' } }));
+  L.forgetLoadouts();
+
+  const before = L.loadoutMtime('Gonzo');
+  ok('a written loadout has an mtime', before > 0);
+  ok('and a character with no file has none', L.loadoutMtime('Nobody') === 0);
+
+  // The overlay is a method on the keeper, so what is pinned here is the rule it turns
+  // on: that the mtime moves when somebody saves, and only then.
+  utimesSync(path, new Date(), new Date(before + 5000));
+  L.forgetLoadouts();
+  ok('saving the file moves the mtime, which is what re-imposes the plan',
+     L.loadoutMtime('Gonzo') !== before);
+  ok('and the policy is what the file says', L.loadoutFor('Gonzo').policy.hunt === 'spider');
+  rmSync(path, { force: true });
+  L.forgetLoadouts();
+}
+
 rmSync(root, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

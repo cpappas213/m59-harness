@@ -1,11 +1,35 @@
 #!/usr/bin/env node
 // m59-goap.mjs — GOAP supervisor for the Meridian 59 fleet
 // Evaluates per-character goals against live world state and applies actions.
+//
+// NOTHING IN THIS REPOSITORY IMPORTS THIS, AND THAT IS ON PURPOSE RATHER THAN AN OVERSIGHT.
+//
+// It is the goal interface for the two bot repositories — `meridian59-dum-bot` and
+// `meridian59-llm-bot` — which is to say it belongs to the WORK/MOVEMENT/ECONOMY/SOCIAL
+// row of the split in CLAUDE.md: things with no single right answer that can be re-decided
+// in five minutes. It drives the fleet the way any other bot does, over the broker's MCP
+// surface, from outside. That is why it is a standalone script with a `--dry-run` habit
+// and not a module the keeper calls: a goal evaluated inside the keeper would be a
+// directional decision taken on the keeper's one-second clock, which is the boundary the
+// whole repository is arranged around.
+//
+// Being unreferenced is therefore the expected state, not a sign it was forgotten. If you
+// are removing dead code, this is not it.
+//
+// WHAT IT READS IS THIS MACHINE'S OPINION, NOT THIS REPOSITORY'S. `substrate/goap-goals.json`
+// names actual characters on an actual roster, so it is gitignored for the same reason
+// `substrate/policy.local.json` is: committed, it would ship one operator's fleet plan to
+// everybody who clones this. `substrate/goap-goals.example.json` is the shape, with names
+// that belong to nobody.
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { intelStateFor } from './m59-intel.mjs';
 
-const GOALS_PATH = new URL('../substrate/goap-goals.json', import.meta.url);
+// The operator's file if there is one, and the committed example if there is not — so a
+// fresh clone runs against names that belong to nobody rather than failing to start.
+const GOALS_LOCAL   = new URL('../substrate/goap-goals.json', import.meta.url);
+const GOALS_EXAMPLE = new URL('../substrate/goap-goals.example.json', import.meta.url);
+const GOALS_PATH = existsSync(GOALS_LOCAL) ? GOALS_LOCAL : GOALS_EXAMPLE;
 const BROKER_URL = 'http://127.0.0.1:8901/';
 const INTERVAL_MS = 60_000;
 const RESUPPLY_COOLDOWN_MS = 10 * 60_000;  // don't redistribute more than once per 10 min

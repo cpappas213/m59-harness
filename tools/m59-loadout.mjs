@@ -113,8 +113,34 @@ export function blank(character, agent = null) {
     sell: [],
     keep: [],
     purse: { float: null, bank_above: null },
+    // WHAT THIS CHARACTER'S KEEPER SHOULD BE SET TO, so that it survives a broker restart.
+    // Empty by default and empty means "whatever the keeper already had" — see
+    // POLICY_KEYS and applyLoadoutPolicyOverlay for why an absent block must never read
+    // as a block full of defaults.
+    policy: {},
   };
 }
+
+// THE ONLY POLICY FIELDS A LOADOUT MAY SET, and their types.
+//
+// A closed set, for the same reason the playbook's verbs are: a typo in a hand-edited file
+// must disable its own line rather than becoming a setting nobody can find. Everything
+// here is a STANDING preference about one character — what it hunts, where it stands, what
+// it is allowed to spend — and deliberately not a survival threshold. `flee_below`,
+// `rest_below` and the threat ceiling stay out: they are the protected faculties, they are
+// argued about in policy.local.json where they can be reviewed as a block, and a per-
+// character file that could quietly raise one is exactly the file nobody would think to
+// check after a death.
+export const POLICY_KEYS = {
+  hunt:                    { type: 'string',  as: 'hunt' },
+  assigned_room:           { type: 'number',  as: 'assignedRoom' },
+  karma:                   { type: 'number',  as: 'karma' },
+  buy_reagents:            { type: 'boolean', as: 'buyReagents' },
+  pulls_before_barren:     { type: 'number',  as: 'pullsBeforeBarren' },
+  fight_rounds:            { type: 'number',  as: 'fightRounds' },
+  use_bt:                  { type: 'boolean', as: 'useBT' },
+  conflict_response_hops:  { type: 'number',  as: 'conflict_response_hops' },
+};
 
 // Turn both halves of the planner into the ORDERED STAGES a learning errand can buy.
 // A queue row names either one ability or one exact level of a track. Exact levels are
@@ -323,6 +349,41 @@ export function normalise(raw, { character = null } = {}) {
 
   out.purse.float = numOr(src.purse?.float, null);
   out.purse.bank_above = numOr(src.purse?.bank_above, null);
+
+  // ---- the policy half: what this character's keeper should be set to after a restart.
+  //
+  // AN UNRECOGNISED KEY IS REPORTED AND DROPPED, NEVER CARRIED THROUGH. Carrying it would
+  // put a setting on disk that reads as configuration and does nothing — which is exactly
+  // how `purpose` sat outside the autopilot schema for a year while every keeper in the
+  // fleet ran with an audit switched off that everybody believed was on.
+  //
+  // AN UNUSABLE VALUE IS REPORTED AND DROPPED TOO, rather than being coerced. `karma: "no"`
+  // becoming 0 is a policy nobody wrote.
+  const rawPolicy = (src.policy && typeof src.policy === 'object' && !Array.isArray(src.policy))
+    ? src.policy : {};
+  if (src.policy && typeof src.policy !== 'object')
+    problems.push('policy is not an object — ignored');
+  for (const [k, v] of Object.entries(rawPolicy)) {
+    const spec = POLICY_KEYS[k];
+    if (!spec) {
+      problems.push(`policy."${k}" is not a setting a loadout may make ` +
+                    `(${Object.keys(POLICY_KEYS).join(', ')}) — dropped`);
+      continue;
+    }
+    if (v === null || v === undefined || v === '') continue;   // silence means "leave it"
+    if (spec.type === 'number') {
+      const n = numOr(v, null);
+      if (n === null) { problems.push(`policy.${k}: ${JSON.stringify(v)} is not a number — dropped`); continue; }
+      out.policy[k] = n;
+    } else if (spec.type === 'boolean') {
+      if (typeof v !== 'boolean') { problems.push(`policy.${k}: ${JSON.stringify(v)} is not true or false — dropped`); continue; }
+      out.policy[k] = v;
+    } else {
+      const str = String(v).trim();
+      if (!str) { problems.push(`policy.${k} is empty — dropped`); continue; }
+      out.policy[k] = str.slice(0, 120);
+    }
+  }
 
   return { loadout: out, problems };
 }
@@ -655,6 +716,20 @@ export function loadoutFor(character) {
   }
 }
 export const forgetLoadouts = () => CACHE.clear();
+
+// WHEN THIS CHARACTER'S LOADOUT WAS LAST WRITTEN, or 0 if there is not one.
+//
+// The policy overlay needs this rather than the loadout's contents: it re-applies when
+// somebody EDITS the file, and leaves a runtime setting alone in between. Reading the
+// mtime directly rather than diffing the parsed policy is deliberate — a file saved with
+// no change to the policy block is still somebody opening the planner and pressing save,
+// which is as clear a statement of "make it say this" as an edit to the block itself.
+export function loadoutMtime(character) {
+  const slug = slugOf(character);
+  if (!slug) return 0;
+  try { return fs.statSync(path.join(LOADOUT_DIR, slug + '.json')).mtimeMs; }
+  catch { return 0; }
+}
 
 // ------------------------------------------------------------------ matching
 
