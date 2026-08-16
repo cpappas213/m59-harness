@@ -10332,7 +10332,11 @@ export class Autopilot {
     if (!above) return false;                       // 0 or null turns the trips off
     const s = this.s, c = s.need();
     const room = s.world?.room;
-    if (!room || BANKS.some(b => b.room === room.num)) return false;   // already there
+    // Already at a bank: the trip is a no-op. (A character at a market is NOT
+    // short-circuited here -- it still needs to sell, bank, and restock. The 0-hop
+    // travel skip below handles that: it arrives in place and does the sell/bank.
+    // Roq (room 110) is a market, not a bank, so checking only BANKS is correct.)
+    if (!room || BANKS.some(b => b.room === room.num)) return false;   // already at a bank
     // Wait for the reply, not just the request. Reading c.inventory straight after
     // submitting reads the PREVIOUS snapshot, which is the whole family of bugs this
     // file keeps re-learning.
