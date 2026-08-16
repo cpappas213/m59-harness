@@ -8235,8 +8235,84 @@ export class Autopilot {
     return false;
   }
 
+  // ── BT farm helpers ────────────────────────────────────────────────
+  // These are the seam between the BT nodes (m59-bt-farm.mjs) and the keeper's
+  // internal state. Each one is a thin adapter that the nodes call instead of
+  // reaching into the keeper's fields directly. This keeps the nodes testable
+  // with a mock keeper and keeps the keeper's internals private.
+
+  _btFarmStrategy() {
+    const { STRATEGIES } = require_cache ?? {};  // not used, just a placeholder
+    const STRATS = this.constructor.STRATEGIES;
+    return STRATS?.[this.policy.strategy] || STRATS?.baseline || {};
+  }
+
+  _btFarmSpawnFile() {
+    return this.constructor.SPAWN_FILE || 'substrate/spawns.json';
+  }
+
+  _btFarmDeniedRooms() {
+    const farmRoomDenials = this.constructor.farmRoomDenials;
+    return farmRoomDenials ? farmRoomDenials(this.noWallRooms, this.cappedRooms) : new Map();
+  }
+
+  _btFarmShouldRelocate(room, denied) {
+    const shouldRelocate = this.constructor.shouldRelocateToAssignedRoom;
+    return shouldRelocate ? shouldRelocate(this.policy, room, denied) : false;
+  }
+
+  _btFarmFindCreature(name) {
+    const { findCreature } = this.constructor._combatSkills;
+    return findCreature ? findCreature(this.s, name) : [];
+  }
+
+  _btFarmFoundTargets() {
+    const { findCreature } = this.constructor._combatSkills;
+    if (!findCreature || !this.policy.hunt) return [];
+    return findCreature(this.s, this.policy.hunt);
+  }
+
+  _btFarmFight(engageName, found, room, safe) {
+    const { fight } = this.constructor._combatSkills;
+    const holding = !!this.hold;
+    const REACH = 3;
+    const f = fight(this.s, {
+      target: engageName,
+      preferId: this.foeId,
+      rounds: this.policy.fightRounds ?? 30,
+      disengageAt: safe.fleeAt, loot: true,
+      holdPosition: holding, reach: REACH,
+      weaponPriority: this.weaponPriorityNow(),
+    });
+    return f;
+  }
+
   // ── passFarm: extracted from pass() ────────────────────────────────
   async passFarm(s, c, room, v, hp) {
+    // ------------------------------------------------------------------
+    // BEHAVIOR-TREE FARM (opt-in via policy.useBTFarm)
+    //
+    // When policy.useBTFarm is true, hand the farm pass to the BT. The tree
+    // ticks in priority order: provision, auto-retarget, room validity,
+    // bags full, cap blocked, no target, unarmed, too hurt, too tired,
+    // fight. The first node that returns SUCCESS ends the pass.
+    //
+    // The sequential code below is the fallback: if the BT is not enabled,
+    // or if it returns FAILURE (no node handled the pass), the old code runs.
+    // ------------------------------------------------------------------
+    if (this.policy?.useBTFarm === true) {
+      const { getFarmTree, updateBlackboard: ubb } = await import('./m59-bt-farm.mjs');
+      const bb = ubb(
+        this._btFarmBlackboard || (this._btFarmBlackboard = {}),
+        { client: c, session: this, policy: this.policy, room },
+      );
+      bb.room = room;
+      const tree = getFarmTree({ session: { keeper: this } });
+      const result = await tree.tickAsync(bb);
+      if (result === 'SUCCESS' || result === 'RUNNING') return;
+      // FAILURE: no node handled the pass, fall through to the sequential code.
+    }
+
     // 4. Work. Only in farm mode, and only on what we were told to hunt.
     //
     // AND ONLY IF NOBODY ELSE OWNS IT. This is the seam the carve-out is cut along: every
