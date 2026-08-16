@@ -4218,6 +4218,7 @@ export class Autopilot {
   }
 
   async travel(room, opts) {
+    const { holdBetweenRooms = true, onHop, ...sessionOpts } = opts ?? {};
     // The same primitive crosses a nearby room boundary and undertakes a journey. Those
     // are different activities: upstairs-to-downstairs patrol movement is zoning, while
     // a route with intermediate rooms is travel. Decide from the route before the await
@@ -4273,11 +4274,12 @@ export class Autopilot {
       // Zoning is not part of the travel-safety experiment. There is no intermediate
       // room in which its treatment can fire, and including it only inflates the
       // denominator with crossings that can never receive a hold.
-      this.travelArm = travelKind === 'travel'
+      const participatesInTravelHold = travelKind === 'travel' && holdBetweenRooms;
+      this.travelArm = participatesInTravelHold
         ? { arm, since: Date.now(), to: room, planned_legs: plannedLegs }
         : null;
       outcome = await this.s.travel(room, {
-        ...opts,
+        ...sessionOpts,
         onHop: async (at) => {
           legs++;
           if (detailed) {
@@ -4287,8 +4289,9 @@ export class Autopilot {
               started_at: Date.now(), damage_at_start: this.hitDamageTotal(), health_start: hp };
           }
           this.recordFrame(`travelling — ${at.hops_done + 1} room(s) in, ${at.remaining} to go`);
-          await this.travelHold(at, arm).catch(e => this.note('travel hold failed', { why: e.message }));
-          if (opts?.onHop) await opts.onHop(at);
+          if (holdBetweenRooms)
+            await this.travelHold(at, arm).catch(e => this.note('travel hold failed', { why: e.message }));
+          if (onHop) await onHop(at);
         },
       });
       return outcome;
@@ -4305,7 +4308,8 @@ export class Autopilot {
       // exactly the intervention worth having. It is here as a mechanism check: if the
       // treatment arm is not taking more damage, the holds are not doing anything.
       this.ledgerEvent(travelKind === 'travel' ? 'travel_journey' : 'zone_change', {
-        ...(travelKind === 'travel' ? { arm } : {}), to: room, legs, planned_legs: plannedLegs,
+        ...(travelKind === 'travel' && holdBetweenRooms ? { arm } : {}),
+        to: room, legs, planned_legs: plannedLegs,
         ms: Date.now() - startedAt,
         held_ms: this.travelHeldMs ?? 0,
         hp_start: hpStart, hp_end: v1?.value ?? null, hp_max: hpMax ?? v1?.max ?? null,
@@ -12808,7 +12812,12 @@ export class Autopilot {
       try { s.cancelMovement?.(); } catch { /* the failed result below is enough */ }
     }, guardMs);
     try {
-      const result = await this.travel(room, { reason: 'retreat' });
+      // An emergency retreat must keep moving toward the sanctuary. Ordinary journeys
+      // may deliberately hold an intermediate wall for up to 90 seconds, but the retreat
+      // guard would correctly see that as no route progress and cancel it. Keep those
+      // experimental holds out of this last-resort path rather than teaching the guard
+      // to ignore a long period in which a genuinely blocked exit could kill us.
+      const result = await this.travel(room, { reason: 'retreat', holdBetweenRooms: false });
       return { ...(result ?? {}), retreat_guard: guard };
     } finally {
       clearInterval(timer);

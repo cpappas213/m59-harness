@@ -1701,6 +1701,30 @@ console.log('\nCastle Victoria recovery retreat');
   ok('a proven nearby wall still outranks the room retreat',
      stayed?.held_spot === true && leftWall === false);
 
+  const urgent = keeperAt(38, 1);
+  urgent.s.name = 'urgent-retreat';
+  urgent.s.client.self = { col: 41, row: 68 };
+  urgent.s.client.vitals = () => ({ health: { value: 10, max: 50 } });
+  urgent.s.world.route = () => ({ found: true, hops: [{}] });
+  urgent.policy = {};
+  urgent.passes = 1;
+  urgent.recordFrame = () => {};
+  urgent.travelArmFor = () => 'hold';
+  urgent.hitDamageTotal = () => 0;
+  urgent.ledgerEvent = () => {};
+  urgent.detailEvent = () => {};
+  urgent.note = () => {};
+  let travelHolds = 0;
+  urgent.travelHold = async () => { travelHolds++; };
+  urgent.s.travel = async (_room, { onHop }) => {
+    urgent.s.world.room = { num: 39, name: 'Castle Victoria' };
+    await onHop({ room: urgent.s.world.room, hops_done: 1, remaining: 1, journey: 'retreat-test' });
+    return { arrived: true };
+  };
+  const urgentTrip = await urgent.guardedRetreatTravel(2);
+  ok('an emergency retreat does not pause for the ordinary between-room travel experiment',
+     urgentTrip?.arrived === true && travelHolds === 0);
+
   const trapped = keeperAt(38, 1);
   trapped.s.client.self = { col: 41, row: 68 };
   trapped.retreatNoProgressMs = 20;
