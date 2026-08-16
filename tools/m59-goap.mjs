@@ -407,20 +407,12 @@ export function buildActionLibrary() {
       effect: 'retarget_on_stall',
       run:    async (state) => {
         // First pass: the strict safety band (prey within 1 level of the character).
-        let result = await runAtomic('pick_prey', _ctx, {
+        const result = await runAtomic('pick_prey', _ctx, {
           agent: state.agent, goals: [{ kind: 'hp' }], karma: state.karma });
-        let candidates = result?.candidates ?? [];
-        // If nothing is reachable in the strict band, widen to the full band (over=6)
-        // rather than give up. The character has outgrown what it can safely kill in the
-        // current zone; a wider band is the only way to find a teaching target. The floor
-        // still applies -- prey above maxHealth + over is still rejected as a death trap.
-        if (!candidates.length) {
-          result = await runAtomic('pick_prey', _ctx, {
-            agent: state.agent, goals: [{ kind: 'hp' }], karma: state.karma, under: 6 });
-          candidates = result?.candidates ?? [];
-          if (candidates.length)
-            console.log(`[goap] ${state.character} retarget_on_stall: widened the band to advance by level`);
-        }
+        const candidates = result?.candidates ?? [];
+        // scorePrey already handles the creature-level-band gap internally: if the
+        // strict band (under=3) yields nothing, it falls back to the full band (over=6).
+        // No second call needed.
         // Pick the first candidate that differs from what we are already hunting.
         const next = candidates.find(c => c.creature !== state.hunt);
         if (!next) {
