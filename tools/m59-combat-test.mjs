@@ -1689,6 +1689,33 @@ console.log('\nCastle Victoria recovery retreat');
   const stayed = await walled.retreatToSafety({ because: 'test' });
   ok('a proven nearby wall still outranks the room retreat',
      stayed?.held_spot === true && leftWall === false);
+
+  const trapped = keeperAt(38, 1);
+  trapped.s.client.self = { col: 41, row: 68 };
+  trapped.retreatNoProgressMs = 20;
+  trapped.retreatGuardMs = 5;
+  const trappedNotes = [];
+  let finishTravel = null, cancellations = 0, withdrew = false, attempts = 0;
+  trapped.note = (what, detail) => trappedNotes.push({ what, detail });
+  trapped.progress = () => {};
+  trapped.inReachOfUs = () => [];
+  trapped.withdraw = async () => { withdrew = true; };
+  trapped.travel = async () => {
+    attempts++;
+    return new Promise(resolve => { finishTravel = resolve; });
+  };
+  trapped.s.cancelMovement = () => {
+    cancellations++;
+    finishTravel?.({ arrived: false, cancelled: true });
+    return { interrupted: true };
+  };
+  const escapedTrap = await trapped.retreatToSafety({ because: 'test stalled exit' });
+  ok('a retreat route with no room or square progress is cancelled promptly',
+     cancellations === 1 && escapedTrap?.fell_back === true);
+  ok('a stalled exit is not retried through a second sanctuary route', attempts === 1);
+  ok('the stalled route falls back to local survival and records why',
+     withdrew && trappedNotes.some(n => /aborted a retreat route/.test(n.what) &&
+                                        /no room or square progress/.test(n.detail?.why)));
 }
 
 

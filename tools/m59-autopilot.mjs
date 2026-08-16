@@ -5870,8 +5870,26 @@ export class Autopilot {
     }
     if (this.running && this.stopping) {
       this.stopping = false;
+      // hard stop turns both of these off immediately, before the current pass
+      // has actually yielded. Cancelling that stop must restore the independent
+      // eye and close the uptime outage as well as clearing the boolean; otherwise
+      // the loop keeps acting while post-mortems call it unattended and no watchdog
+      // can interrupt the pass that is still winding down.
+      this.startWatchdog();
+      // hard stop also erased the timestamp the watchdog uses to decide that
+      // the current await is blind. The pass did not actually end, so start a
+      // fresh bounded observation window instead of leaving the revived eye
+      // unable to pull the handbrake until some later pass.
+      this.passStartedAt = Date.now();
+      uptime.record(this.s.name, 'start', {
+        mode: this.mode, hunt: this.policy?.hunt ?? null,
+        resumed_pending_stop: true,
+      });
       this.note('start cancelled a stop that had not taken effect yet', {
-        why: 'the previous loop was still finishing a pass; it now carries on with the new orders' });
+        why: 'the previous loop was still finishing a pass; it now carries on with the new orders',
+        watchdog_restarted: true,
+        uptime_resumed: true,
+        pass_watch_restored: true });
       return this.status();
     }
     if (this.running) return this.status();
@@ -11487,6 +11505,57 @@ export class Autopilot {
   // A configured quiet retreat wins for its own rooms, then the nearest CITY_INNS entry
   // the router will accept. If travel cannot get us there we fall back to the local
   // withdraw, because a wall we can reach beats a refuge we cannot.
+  async guardedRetreatTravel(room) {
+    // A route that has stopped changing room or square is not an escape. The ordinary
+    // pass watchdog cannot safely solve this by firing repeatedly: the first interrupt
+    // is what gets us INTO the retreat branch, and cancelling every walk merely because
+    // health is already below fleeAt would also cancel a healthy escape. Guard this
+    // specific journey on actual movement progress instead.
+    const s = this.s;
+    const noProgressMs = this.retreatNoProgressMs ?? 3_000;
+    const guardMs = this.retreatGuardMs ?? 250;
+    const position = () => {
+      const me = s.client?.self;
+      return `${s.world?.room?.num ?? '?'}:${me?.col ?? '?'}:${me?.row ?? '?'}`;
+    };
+    let lastPosition = position();
+    let lastProgressAt = Date.now();
+    let guard = null;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const currentPosition = position();
+      if (currentPosition !== lastPosition) {
+        lastPosition = currentPosition;
+        lastProgressAt = now;
+        return;
+      }
+      if (now - lastProgressAt < noProgressMs || guard) return;
+      const hp = s.client?.vitals?.()?.health;
+      // This guard is itself the last-resort escape path, so diagnostic
+      // enrichment must never prevent it from cancelling a stuck route.
+      let maxHit = null;
+      try { maxHit = this.safety()?.maxHit ?? null; } catch { /* optional telemetry */ }
+      guard = {
+        why: 'retreat route made no room or square progress',
+        stalled_ms: now - lastProgressAt,
+        room: s.world?.room?.num ?? null,
+        col: s.client?.self?.col ?? null,
+        row: s.client?.self?.row ?? null,
+        health: hp?.value ?? null,
+        max_health: hp?.max ?? null,
+        one_hit_reserve: maxHit != null && hp?.value != null
+          ? hp.value <= maxHit : null,
+      };
+      try { s.cancelMovement?.(); } catch { /* the failed result below is enough */ }
+    }, guardMs);
+    try {
+      const result = await this.travel(room, { reason: 'retreat' });
+      return { ...(result ?? {}), retreat_guard: guard };
+    } finally {
+      clearInterval(timer);
+    }
+  }
+
   async retreatToSafety(why = {}) {
     const s = this.s, c = s.client;
     const here = s.world?.room?.num ?? null;
@@ -11570,12 +11639,21 @@ export class Autopilot {
                          ? 'crossing the Castle Victoria door leaves every monster behind'
                          : 'an inn is a sanctuary and ends the fight'),
       });
-      const r = await this.travel(dest.inn, { reason: 'retreat' }).catch(e => ({ arrived: false, error: String(e) }));
+      const r = await this.guardedRetreatTravel(dest.inn)
+        .catch(e => ({ arrived: false, error: String(e) }));
       if (r?.arrived) {
         this.progress(`reached ${dest.preferred ? 'monster-free retreat' : 'safety'} at ${dest.innName}`);
         this.fledInARow = 0;
         return { arrived: true, at: dest.innName, room: dest.inn, hops: dest.hops,
                  preferred: dest.preferred, player_safe: dest.playerSafe };
+      }
+      if (r?.retreat_guard) {
+        this.note('aborted a retreat route that was not moving', {
+          to: dest.innName,
+          ...r.retreat_guard,
+          consequence: 'do not spend the remaining health retrying another route through the same blocked exit',
+        });
+        break;
       }
     }
     // Nothing reachable. A wall here is better than nothing, so fall through to the
