@@ -47,6 +47,7 @@ export const TABS = [
   { key: 'economy', href: '/economy', label: 'Economy' },
   { key: 'skills', href: '/skills', label: 'Skills' },
   { key: 'stats', href: '/stats', label: 'Stats' },
+  { key: 'players', href: '/players', label: 'Players' },
 ];
 
 export const NAV = (here) => `

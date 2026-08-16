@@ -89,6 +89,7 @@ import { renderDashboard } from './m59-dashboard.mjs';
 import { renderDeaths, renderTougher, deathReportJSON } from './m59-deaths-page.mjs';
 import { renderEconomy } from './m59-economy-page.mjs';
 import { renderSkills } from './m59-skills-page.mjs';
+import { renderPlayers } from './m59-players-page.mjs';
 import { renderStatsBoard } from './m59-stats-page.mjs';
 import { renderDumBoard, renderHarnessBoard } from './m59-observability-page.mjs';
 import { strategyStatsReport } from './m59-strategy-stats.mjs';
@@ -1530,6 +1531,110 @@ function startReconciling() {
   const t = setInterval(() => { reconcileFleet().catch(() => {}); }, RECONCILE_MS);
   t.unref?.();
   console.error(`[rejoin] watching every ${Math.round(RECONCILE_MS / 1000)}s`);
+}
+
+// ------------------------------------------------------------ arming the unarmed
+//
+// A KEEPER THAT CANNOT ARM ITSELF ASKS; THIS IS WHAT ANSWERS.
+//
+// The character has no weapon in its pack and cannot conjure one, so the fix is a
+// shopping trip — which is minutes of walking, spends money, and has to happen with the
+// keeper out of the way. The keeper sets `wantsWeapon` and does nothing else; everything
+// below happens out here, for the reasons in `requestWeaponPurchase`.
+//
+// It is the same shape as buying an ability (see the `outfit` tool further down): a
+// DETACHED `m59-outfit.mjs`, tracked by pid, never awaited. The differences are the two
+// declarations around it, and they are the whole point of moving it:
+//
+//   * A CLAIM, so that `busy` has an owner and a lease to ride on — `declareBusy` refuses
+//     without one, and refuses correctly: an operation nobody owns is one nothing can
+//     take back when the process holding it dies.
+//   * A BUSY WINDOW, so every stall detector in the fleet steps over the character while
+//     it walks. Without it `ms_since_moved` — which measures the KEEPER, inert by design
+//     during an errand — climbs for the whole trip, and `m59-supervise.mjs`'s unstick
+//     round restarts the keeper out from under it.
+//
+// Both are leased, so a crash here leaves nothing owned and nothing marked busy.
+const WEAPON_ERRAND_BY   = 'harness:outfit';
+const WEAPON_ERRAND_MS   = 10 * 60_000;   // a smith trip, padded — see BUSY_MAX_MS
+const WEAPON_ERRAND_POLL = 20_000;
+const weaponErrands = new Map();          // agent -> { pid, at }
+
+function serviceWeaponRequests() {
+  for (const [agent, s] of sessions) {
+    // `autopilotIfAny`, never `autopilotFor` — this is a sweep, and a sweep that CREATES
+    // a keeper in order to ask it a question has started one on every character in the
+    // roster as a side effect of looking.
+    const ap = autopilotIfAny(agent);
+    if (!ap?.wantsWeapon) continue;
+    if (weaponErrands.has(agent)) continue;      // one trip at a time, per character
+    if (!s.live) continue;
+
+    const want = ap.wantsWeapon;
+    // DO NOT WALK IN ON SOMEBODY ELSE'S OPERATION. A character a bot is mid-errand with
+    // is exactly the character this must not send shopping — and `isTakeable` is the
+    // question to ask, not `!committed`: a bot may OWN a character and still leave it
+    // takeable, which is the ordinary case.
+    const commitment = ap.commitment?.();
+    if (commitment && commitment.takeable === false) continue;
+
+    const claimed = ap.claimFaculties({
+      faculties: ['work', 'movement'], by: WEAPON_ERRAND_BY,
+      leaseMs: WEAPON_ERRAND_MS, why: want.why, mayYield: fleetMayYield(),
+    });
+    if (!claimed?.held?.length) {
+      // Somebody else holds it. Leave the request standing — the character is being
+      // driven by something that may well arm it, and taking it back would be the
+      // override, which is a person's decision and not a sweep's.
+      continue;
+    }
+    ap.declareBusy({ by: WEAPON_ERRAND_BY, kind: 'outfit',
+                     label: 'buying a weapon at the nearest smith',
+                     detail: want.why, leaseMs: WEAPON_ERRAND_MS });
+
+    const script = fileURLToPath(new URL('./m59-outfit.mjs', import.meta.url));
+    const httpAt = process.argv.indexOf('--http');
+    const brokerPort = httpAt >= 0 ? process.argv[httpAt + 1]
+      : process.env.M59_BROKER_PORT || '8901';
+
+    let child;
+    try {
+      child = spawn(process.execPath, [
+        script, '--port', String(brokerPort), '--agents', agent,
+      ], { detached: true, stdio: 'ignore', cwd: BROKER_ROOT, windowsHide: true });
+      child.unref();
+    } catch (e) {
+      ap.freeBusy({ by: WEAPON_ERRAND_BY });
+      ap.releaseFaculties({ faculties: null, by: WEAPON_ERRAND_BY });
+      ap.note('could not start the weapon errand', { why: e.message });
+      continue;
+    }
+
+    weaponErrands.set(agent, { pid: child.pid, at: Date.now() });
+    console.error(`[outfit] ${agent}: buying a weapon (pid ${child.pid}) — ${want.why}`);
+
+    child.on('exit', (code) => {
+      weaponErrands.delete(agent);
+      ap.freeBusy({ by: WEAPON_ERRAND_BY });
+      ap.releaseFaculties({ faculties: null, by: WEAPON_ERRAND_BY });
+      // THE REQUEST IS CLEARED WHETHER OR NOT IT WORKED. A standing request would have
+      // this sweep start another trip the moment the lease frees, for ever, on a
+      // character whose problem is that it has no money. The keeper re-asks on its own
+      // five-minute cooldown, which is the rate limit, and stops itself when that runs
+      // out — so a genuine dead end reaches the board rather than looping.
+      ap.wantsWeapon = null;
+      ap.note('weapon errand finished', {
+        exit_code: code, armed: ap.armed?.() ?? null,
+        why: 'the keeper re-asks on its own cooldown if this did not work',
+      });
+    });
+  }
+}
+
+function startWeaponErrands() {
+  const t = setInterval(() => { try { serviceWeaponRequests(); } catch { /* never a fatal */ } },
+                        WEAPON_ERRAND_POLL);
+  t.unref?.();
 }
 
 // ONE ABILITY READ, and then write down what it found.
@@ -7675,6 +7780,18 @@ const TOOLS = [
         description: 'drop junk and weapons the server has refused as broken, default true. A ' +
                      'broken weapon is NOT renamed, so it otherwise outranks the working one for ever' },
       roam: { type: 'boolean', description: 'when the room is cleared, move to a neighbouring one instead of waiting for respawns. Off by default because it changes where the character is.' },
+      fight_rounds: { type: 'number',
+        description: 'how many rounds to fight a target before breaking off. Default 30. ' +
+          'Increase for characters without weapon skills who deal low damage per swing.' },
+      use_bt: { type: 'boolean',
+        description: 'hand the get-armed decision to the behaviour tree (m59-bt-nodes.mjs) ' +
+          'instead of the sequential path, for this character only. Off by default: the ' +
+          'fleet stays on the proven code unless somebody flips this on one character.' },
+      conflict_response_hops: { type: 'number',
+        description: 'how far a character will travel to help a fleetmate who is fighting a ' +
+          'flagged player. Default 5 — the next few rooms. This is a ceiling on how far ' +
+          'the fleet will converge, so raising it is a decision about how the fleet looks ' +
+          'to the other people on the server, not a tuning knob.' },
       bank_above: { type: ['number', 'null'],
         description: 'carry more than this many shillings and the character stops what it is doing ' +
           'and walks to Jasper or Tos, whichever is nearer, to deposit down to walking money. ' +
@@ -7992,6 +8109,17 @@ const TOOLS = [
       if (a.max_bots_per_safe_spot !== undefined)
         p.policy.maxBotsPerSafeSpot = a.max_bots_per_safe_spot == null
           ? null : Math.max(1, Math.floor(Number(a.max_bots_per_safe_spot) || 1));
+      if (a.fight_rounds !== undefined)
+        p.policy.fightRounds = Math.max(1, Math.floor(Number(a.fight_rounds) || 30));
+      // BOTH OF THESE WERE REACHABLE ONLY FROM A FILE THAT COULD NOT SET THEM. `useBT`
+      // gated a whole behaviour-tree path and had no setter anywhere — not here, and not
+      // in the loadout, whose normalise() dropped the block it was supposed to live in.
+      // A flag with no way to raise it is a feature nobody can turn on, which is the
+      // same failure as `purpose` sitting outside this schema for a year.
+      if (a.use_bt !== undefined) p.policy.useBT = !!a.use_bt;
+      if (a.conflict_response_hops !== undefined)
+        p.policy.conflict_response_hops =
+          Math.max(1, Math.floor(Number(a.conflict_response_hops) || 5));
       if (a.bank_above !== undefined)
         p.policy.bankAbove = a.bank_above == null ? null : Number(a.bank_above);
       if (a.walking_money !== undefined)
@@ -10421,7 +10549,8 @@ const TOOLS = [
       action: { type: 'string', enum: ['plan', 'verify', 'reroll'] },
       agent: { type: 'string', description: 'the session to re-roll, or the spare to verify on' },
       name: { type: 'string', description: 'name for the new character' },
-      stats: { type: 'string', description: 'preset: melee, caster, archer, balanced. Default melee.' },
+      stats: { description: 'preset name (melee, caster, archer, balanced) OR a custom object with keys might/intellect/stamina/agility/mysticism/aim, each 1..50, summing to at most 200. Default melee.' },
+      skills: { type: 'array', items: { type: 'string' }, description: 'skills to start with, e.g. ["dodge","slash","punch"]. Each costs 10 points from the 45-point ability budget.' },
       loadout: { type: 'string', description: 'spells: selfSufficient, healer, none. Default selfSufficient — ' +
         'create weapon needs no reagents so the character can never be unarmed, and create food needs ' +
         'elderberries and herbs, which is what it will be picking up anyway' },
@@ -10430,14 +10559,32 @@ const TOOLS = [
         'first-time character in the login list, which is what you want; override only to test the wire ' +
         'format. Sending 0 gets CHARINFO_OK with id 0 — an acknowledgement that creates nothing' },
       confirm: { type: 'boolean', description: 'required for action=reroll. There is no undo.' },
+      account: { type: 'string', description: 'account name — set credentials without joining first. ' +
+        'Use when the character was made first-time via the admin socket rather than via suicide.' },
+      password: { type: 'string', description: 'account password (with account param)' },
+      host: { type: 'string', description: 'game server host (default: broker default)' },
+      port: { type: 'number', description: 'game server port (default: broker default)' },
     }, required: ['action'] },
     run: async (a) => {
       const plan = planCharacter({
-        name: a.name, stats: a.stats || 'melee', loadout: a.loadout || 'selfSufficient' });
+        name: a.name, stats: a.stats || 'melee', loadout: a.loadout || 'selfSufficient',
+        skills: a.skills || [] });
       if (a.action === 'plan') return plan;
       if (!plan.ok) return { done: false, plan, note: 'the plan is invalid; nothing was sent' };
 
       const s = session(a.agent);
+
+      // CREDENTIALS-FIRST PATH: caller already arranged first-time state via the
+      // admin socket (zeroing piLastLoginTime and piLast_Restart_time). Set credentials
+      // so joinAsNewCharacter can connect, without going through a join+suicide cycle
+      // that would re-set those fields.
+      if (a.account && a.password && !s.credentials) {
+        s.credentials = {
+          account: a.account, password: a.password,
+          host: a.host || HOST, port: a.port || PORT,
+        };
+      }
+
       const before = (() => {
         const c = s.client; if (!c) return null;
         const st = {};
@@ -11655,6 +11802,10 @@ const TOOLS = [
           holding_token: c.equipment().known
             ? c.equipment().equipped.some(e => /^token$/i.test(String(e.name || '')))
             : undefined,
+          // CONDITION OF WORN WEAPON AND ARMOUR — 0 (broken) to 4 (flawless), null = unknown.
+          // Populated by sweepGearCondition() which does look_at on equipped items every 90s.
+          // Not pushed by the server; never looked up = null (renders as dash, not 0).
+          gear_condition: ap ? ap.gearConditionStatus() : null,
           // WHAT THIS CHARACTER CAN DO FOR THE OTHERS.
           //
           // Both Kraanan level-1 creation spells are services rather than personal
@@ -12972,6 +13123,31 @@ function serveDashboard(port) {
         });
       return;
     }
+    // THE ONE BOARD THAT IS ABOUT OTHER PEOPLE, SO IT IS THE ONE BOARD THAT DOES NOT
+    // LEAVE THIS MACHINE.
+    //
+    // Every other page here describes our own fleet, which is why the dashboard binds to
+    // every interface — it is meant to be readable from a phone. This one is a dossier on
+    // named strangers: where a real player has been seen, when, how often, and whether
+    // somebody has marked them to be fought. That is exactly the file .gitignore refuses
+    // to commit, and serving it to the LAN would publish it just as effectively.
+    //
+    // Refused at the socket rather than merely unlinked from the nav, for the same reason
+    // the fleet page's Rejoin/Restart/Stop buttons are: a hidden control is not a
+    // permission check.
+    if (url.pathname === '/players') {
+      if (!isLocal(req)) {
+        res.writeHead(403, { 'content-type': 'text/plain' });
+        return res.end('/players names real people and is served on loopback only');
+      }
+      try {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        return res.end(renderPlayers());
+      } catch (e) {
+        res.writeHead(500, { 'content-type': 'text/plain' });
+        return res.end('/players failed: ' + e.message);
+      }
+    }
     if (url.pathname !== '/' && !url.pathname.startsWith('/fleet')) {
       res.writeHead(404); return res.end('not found');
     }
@@ -13089,6 +13265,7 @@ if (argv.includes('--selftest')) {
   startReconciling();
   startPilotWatch();
   startAbilitySweep();
+  startWeaponErrands();
   if (dashboardPort != null) serveDashboard(dashboardPort);
 } else {
   serveStdio();
@@ -13097,6 +13274,7 @@ if (argv.includes('--selftest')) {
   startReconciling();
   startPilotWatch();
   startAbilitySweep();
+  startWeaponErrands();
 }
 
 

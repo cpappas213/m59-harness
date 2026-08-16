@@ -198,6 +198,27 @@ __pycache__/
 # losing, which is the second thing somebody who wanted to grief this fleet would read.
 /substrate/grudges.json
 
+# AND THE SIGHTING BOOK NAMES THEM TOO — MORE OF THEM, AND WHEN THEY WERE NOT DOING
+# ANYTHING TO US.
+#
+# The grudge book above records people who attacked this fleet. These four record everyone
+# the fleet has ever stood next to: substrate/players-seen.json is one row per stranger
+# with a last-seen room, substrate/player-history/<name>.jsonl is that person's movement
+# trail over time, substrate/targets.json is an operator's list of who to fight, and
+# substrate/active-conflicts.json says which of our characters is fighting whom right now.
+#
+# Committed, the first two publish a surveillance record of named strangers who have done
+# nothing — a heatmap of where a real person plays and at what hour — and the third
+# publishes a list of people we intend to attack. All of it is written by us, about people
+# who cannot see or contest it, and a name is the only key (see m59-grudge.mjs).
+#
+# The fourth is also live operational state, and shares the grudges.json problem of saying
+# exactly where our characters are while they are in a fight.
+/substrate/players-seen.json
+/substrate/player-history/
+/substrate/targets.json
+/substrate/active-conflicts.json
+
 # Verified daily guild payments are live per-character operational state. They name the
 # local fleet and characters and exist only to prevent a restart from charging twice.
 /substrate/guild-tithes/
@@ -224,3 +245,9 @@ __pycache__/
 # same reason the roster is: it is this machine's authority, not the repository's.
 # See tools/m59-handoff.mjs.
 /substrate/grants/
+
+# A GOAP GOAL FILE NAMES A REAL ROSTER, so it is this machine's plan rather than this
+# repository's — the same split as substrate/policy.local.json. The committed
+# goap-goals.example.json is the shape, with characters that belong to nobody; the live
+# one is whichever fleet the operator actually runs.
+/substrate/goap-goals.json
