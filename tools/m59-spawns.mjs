@@ -943,7 +943,7 @@ function combine(yields) {
 // `character`: { maxHealth, stamina }.  `goals`: [{kind:'hp'} | {kind:'skill',name,ability}
 // | {kind:'spell',name,ability,requisite}].  `want`: karma school, as preyFor.
 export function scorePrey(spawns, character, {
-  purpose = 'advance', goals = [], over = 6, limit = 8, want = null, creatures = null,
+  purpose = 'advance', goals = [], over = 6, under = 1, limit = 8, want = null, creatures = null,
   item = null,
 } = {}) {
   if (!spawns) return { purpose, candidates: [], note: 'no spawn index loaded' };
@@ -996,12 +996,21 @@ export function scorePrey(spawns, character, {
                        : want === 'neutral' ? k === 0 : true;
 
   const ceiling = maxHealth + over;
+  // THE FLOOR THE BAND WAS MISSING. `over` caps how far ABOVE you prey may be -- but a
+  // level-20 character whose only HP target is a level-25 mummy in a zone it cannot reach
+  // still gets told "mummy" is the right thing to hunt, because the rule has no notion that
+  // a 5-level gap is a character that dies and respawns for ever. `under` (default 1) says:
+  // prey more than this far above your level is a death trap, not a farming target. A
+  // character that has outgrown the world's weakest monsters reports `limited_by: safety
+  // floor` instead of being pointed at a mummy it cannot win.
+  const floor = maxHealth + under;
   const rows = [];
   for (const c of pool) {
     if (c.level == null || !karmaOk(c.karma)) continue;
     // The safety band is the one rule every purpose obeys. It is about the room's whole
     // table, not the quarry — huntingGrounds rejects on the worst OTHER thing present.
     if (c.level > ceiling) continue;
+    if (c.level > floor) continue;
 
     const yields = goals.map(g => goalYield(g, c, { maxHealth, stamina }));
     const { score, satisfied } = combine(yields);
@@ -1048,7 +1057,8 @@ export function scorePrey(spawns, character, {
                    || b.score - a.score
                    || (b.share_of_room ?? 0) - (a.share_of_room ?? 0));
 
-  const out = { purpose, band: { max_level: ceiling, why: `max health ${maxHealth} + over ${over}` },
+  const out = { purpose, band: { min_level: maxHealth, max_level: floor,
+                why: `max health ${maxHealth}, up to ${under} above` },
                 candidates: rows.slice(0, limit) };
   if (item) out.item = item;
   if (finished.length) out.finished = finished;
@@ -1064,6 +1074,13 @@ export function scorePrey(spawns, character, {
     out.limited_by = `the safety band (${ceiling}), not the rule — a skill improves fastest ` +
                      `against level-45 prey, which is ${45 - ceiling} above what this ` +
                      `character can safely fight.`;
+  // And the mirror: when the FLOOR is what emptied the list. A character whose only HP
+  // targets sit above `floor` has outgrown what it can safely kill -- say that out loud
+  // instead of pointing it at a mummy it will die on.
+  if (rows.length === 0 && purpose === 'advance' && goals.some(g => g.kind === 'hp'))
+    out.limited_by = `the safety floor — nothing in the spawn table is within ${under} ` +
+                     `level(s) of this character (max health ${maxHealth}). It has outgrown ` +
+                     `its reachable prey; either let it level or widen the band.`;
   return out;
 }
 

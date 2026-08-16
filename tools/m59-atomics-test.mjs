@@ -19,7 +19,7 @@
 // Run with:   node tools/m59-atomics-test.mjs
 
 import {
-  brokerDriver, keeperDriver, runAtomic, relocateThenRevive, innDest,
+  brokerDriver, keeperDriver, runAtomic, relocateThenRevive, innDest, armOwnership,
   ATOMIC_NAMES,
 } from './m59-atomics.mjs';
 import { RUNNING, SUCCESS, FAILURE } from './m59-bt.mjs';
@@ -283,6 +283,81 @@ test('buy_item_times_out_without_hanging_the_errand', async () => {
   const ms = Date.now() - t0;
   assertEq(res.bought, false, 'a hang reads as a miss, not a hang');
   assert(ms < 21000, `returned at the 20s bound (took ${ms}ms), not hung forever`);
+});
+
+test('armOwnership_claims_declares_busy_runs_releases', async () => {
+  const b = makeBroker();
+  // Make the mock record every autopilot action in order.
+  const actions = [];
+  const callTool = async (name, args) => {
+    b.calls.push({ name, args });
+    if (name === 'autopilot') actions.push(args.action);
+    if (name === 'autopilot' && args.action === 'claim') return { ok: true };
+    return {};
+  };
+  const ctx = brokerDriver('http://x', callTool);
+  let ran = false;
+  const res = await armOwnership(ctx, { agent: 't1', by: 'arm/x', kind: 'arm',
+    heartbeatMs: 999999, run: async () => { ran = true; return { armed: true }; } });
+  assertEq(res.ran, true, 'the errand ran');
+  assertEq(ran, true, 'run() was called');
+  assertEq(actions[0], 'claim', 'claimed first');
+  assertEq(actions[1], 'busy', 'declared busy second');
+  assert(actions.includes('free'), 'released busy');
+  assert(actions.includes('yield'), 'yielded faculties back to the keeper');
+  // The claim carried movement+work so the keeper keeps the survival floor.
+  const claim = b.calls.find(c => c.name === 'autopilot' && c.args.action === 'claim');
+  assert(claim.args.faculties.includes('movement') && claim.args.faculties.includes('work'), 'movement+work claimed');
+});
+
+test('armOwnership_second_claim_is_refused_and_never_runs', async () => {
+  // The guard, in code: two concurrent errands, different `by`. The first holds the
+  // lease; the second claim is refused and its run() must never execute. This is
+  // exactly what stopped the keeper + GOAP + BT from walking one character to two shops.
+  const b = makeBroker();
+  let t1Claimed = false;
+  const callTool = async (name, args) => {
+    b.calls.push({ name, args });
+    if (name === 'autopilot' && args.action === 'claim') {
+      if (args.by === 'arm/a') { t1Claimed = true; return { ok: true }; }
+      if (t1Claimed) return { error: 'movement+work held by arm/a' };
+      return { ok: true };
+    }
+    if (name === 'autopilot') return { ok: true };
+    return {};
+  };
+  const ctx = brokerDriver('http://x', callTool);
+  // First owner claims and holds.
+  const first = armOwnership(ctx, { agent: 't1', by: 'arm/a', heartbeatMs: 999999,
+    run: () => new Promise(() => {}) });       // holds forever (within the test)
+  await new Promise(r => setTimeout(r, 20));    // let the first claim land
+  // Second owner tries to claim the same character.
+  let secondRan = false;
+  const second = await armOwnership(ctx, { agent: 't1', by: 'arm/b', heartbeatMs: 999999,
+    run: () => { secondRan = true; return {}; } });
+  assertEq(second.ran, false, 'the second errand did not run');
+  assertEq(secondRan, false, 'run() was never called for the refused owner');
+  assert(second.refused, 'the refusal reason is reported');
+  // Clean up the first (it holds forever).
+  first.catch(() => {});
+});
+
+test('armOwnership_releases_even_when_the_errand_throws', async () => {
+  const b = makeBroker();
+  const actions = [];
+  const callTool = async (name, args) => {
+    if (name === 'autopilot') actions.push(args.action);
+    return { ok: true };
+  };
+  const ctx = brokerDriver('http://x', callTool);
+  let threw = false;
+  try {
+    await armOwnership(ctx, { agent: 't1', by: 'arm/x', heartbeatMs: 999999,
+      run: async () => { throw new Error('shop exploded'); } });
+  } catch (e) { threw = /shop exploded/.test(e.message); }
+  assert(threw, 'the errand error propagates');
+  assert(actions.includes('free'), 'busy was released despite the throw');
+  assert(actions.includes('yield'), 'faculties were yielded back despite the throw');
 });
 
 test('atomic_names_include_the_arm_errand_atoms', () => {

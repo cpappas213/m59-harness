@@ -42,7 +42,7 @@ export function brokerDriver(baseURL, callTool) {
     // travel: returns { arrived }
     travel:    (agent, to)         => tool('travel',    { agent, to }),
     // read-only queries
-    pickPrey:  (agent, { goals, karma } = {}) => tool('prey', { agent, goals, ...(karma ? { karma } : {}) }),
+    pickPrey:  (agent, { goals, karma, under } = {}) => tool('prey', { agent, goals, ...(karma ? { karma } : {}), ...(under != null ? { under } : {}) }),
     who:       (agent)             => tool('who',      { agent }),
     // inn claim / release
     claimInn:  (agent, character)  => tool('inn', { agent, action: 'claim', character }),
@@ -56,6 +56,13 @@ export function brokerDriver(baseURL, callTool) {
     bank:   (agent, action, amount)=> tool('bank', { agent, action, ...(amount != null ? { amount } : {}) }),
     sellAll:(agent, merchant, keep)=> tool('sell_all', { agent, merchant, ...(keep ? { keep } : {}) }),
     shop:   (agent, seller, buyIds)=> tool('shop', { agent, seller, ...(buyIds ? { buy_ids: buyIds } : {}) }),
+    // Ownership protocol: claim a faculty lease, declare an in-flight op, release.
+    // These are what make "one owner at a time" real -- see armOwnership below.
+    claim:   (agent, faculties, by, leaseMs) => tool('autopilot', { agent, action: 'claim', faculties, by, lease_ms: leaseMs }),
+    heartbeat: (agent, by, leaseMs)          => tool('autopilot', { agent, action: 'heartbeat', by, lease_ms: leaseMs }),
+    setBusy:   (agent, by, kind, label, leaseMs) => tool('autopilot', { agent, action: 'busy', by, kind, label, lease_ms: leaseMs }),
+    freeBusy:  (agent, by)                     => tool('autopilot', { agent, action: 'free', by }),
+    yield:     (agent, by)                     => tool('autopilot', { agent, action: 'yield', by }),
   };
 }
 
@@ -101,6 +108,14 @@ export function keeperDriver(keeper) {
       ? k.sellAll(merchant, keep) : Promise.resolve(null),
     shop:    (_agent, seller, buyIds) => typeof k.shop === 'function'
       ? k.shop(seller, buyIds) : Promise.resolve(null),
+    // In-process: the keeper owns its own character, so claiming is a no-op that still
+    // lets a test observe the full protocol. Real leasing happens over the broker
+    // driver, where an external process drives somebody else's character.
+    claim:     () => Promise.resolve({ ok: true }),
+    heartbeat: () => Promise.resolve({ ok: true }),
+    setBusy:   (_agent, by, kind, label) => Promise.resolve({ busy: { by, kind, label } }),
+    freeBusy:  () => Promise.resolve({ ok: true }),
+    yield:     () => Promise.resolve({ ok: true }),
   };
 }
 
@@ -156,6 +171,53 @@ export async function relocateThenRevive(ctx, { agent, to, stopWhy, reviveWhy })
 }
 
 // ---------------------------------------------------------------------------
+// armOwnership -- ONE OWNER AT A TIME.
+//
+// This is the missing piece that let the keeper, GOAP and the BT each spawn an
+// outfit errand for the same character and walk it to two shops at once. The
+// broker already has the lease machinery (claim / heartbeat / busy / free), and
+// GOAP already refuses to drive a character whose `busyErrand` is set -- but the
+// arm errand never declared itself busy, so the guard had nothing to see.
+//
+// armOwnership wraps the errand in the protocol that makes the guard work:
+//   claim  movement+work from the keeper (lease fails BACK to the keeper, so a
+//          driver that dies returns the character to the thing that keeps it alive)
+//   busy   declare the op in-flight, which is what GOAP's `busyErrand` reads
+//   ...run the errand, heartbeating to keep the lease alive...
+//   free   release the busy flag
+//   yield  give the faculties back to the keeper
+//
+// The `by` id is the owner. Two concurrent errands use different `by` ids; the
+// second claim is refused (the first lease is still held) and run() is never
+// called -- so only one ever drives the character. That is the guard, in code.
+export async function armOwnership(ctx, { agent, by, kind = 'arm', label = 'arming',
+                                           leaseMs = 120_000, heartbeatMs = 60_000, run }) {
+  const claim = await _bounded(() => ctx.claim(agent, ['movement', 'work'], by, leaseMs));
+  if (claim?.__error || claim?.error || (claim && claim.ok === false)) {
+    // Somebody else holds this character. Not our fight -- GOAP or the other
+    // errand is already doing it. Report, do not drive.
+    return { ran: false, refused: (claim && (claim.error || claim.reason)) || 'claimed by another' };
+  }
+  await _bounded(() => ctx.setBusy(agent, by, kind, label, leaseMs));
+
+  // Keep the lease alive for as long as the errand runs. If the process dies, the
+  // lease lapses and the keeper takes the character back -- no permanent hold.
+  const beat = setInterval(() => {
+    ctx.heartbeat?.(agent, by, leaseMs).catch(() => {});
+  }, heartbeatMs);
+  if (beat.unref) beat.unref();
+
+  try {
+    const result = await run();
+    return { ran: true, result };
+  } finally {
+    clearInterval(beat);
+    await _bounded(() => ctx.freeBusy(agent, by)).catch(() => {});
+    await _bounded(() => ctx.yield(agent, by)).catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The atomic registry
 // ---------------------------------------------------------------------------
 //
@@ -188,7 +250,7 @@ const ATOMICS = {
   // pick_prey: read prey candidates (respecting karma). effect: none (query).
   pick_prey: {
     effect: 'none (query)',
-    run: (ctx, { agent, goals, karma }) => ctx.pickPrey(agent, { goals, karma }),
+    run: (ctx, { agent, goals, karma, under }) => ctx.pickPrey(agent, { goals, karma, under }),
   },
   // claim_inn: park at an inn to rest. effect: parked_at_inn=true.
   claim_inn: {

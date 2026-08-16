@@ -406,13 +406,23 @@ export function buildActionLibrary() {
               'health !== null && healthMax !== null && (health / healthMax) >= 0.7',
       effect: 'retarget_on_stall',
       run:    async (state) => {
-        const result = await runAtomic('pick_prey', _ctx, {
+        // First pass: the strict safety band (prey within 1 level of the character).
+        let result = await runAtomic('pick_prey', _ctx, {
           agent: state.agent, goals: [{ kind: 'hp' }], karma: state.karma });
-        const candidates = result?.candidates ?? [];
+        let candidates = result?.candidates ?? [];
+        // If nothing is reachable in the strict band, the character has outgrown what it
+        // can safely kill -- widen the band rather than give up, so it advances by level.
+        if (!candidates.length) {
+          result = await runAtomic('pick_prey', _ctx, {
+            agent: state.agent, goals: [{ kind: 'hp' }], karma: state.karma, under: 6 });
+          candidates = result?.candidates ?? [];
+          if (candidates.length)
+            console.log(`[goap] ${state.character} retarget_on_stall: widened the band to advance by level`);
+        }
         // Pick the first candidate that differs from what we are already hunting.
         const next = candidates.find(c => c.creature !== state.hunt);
         if (!next) {
-          console.log(`[goap] ${state.character} retarget_on_stall: no alternative prey found`);
+          console.log(`[goap] ${state.character} retarget_on_stall: no alternative prey found (even widened)`);
           return null;
         }
         await runAtomic('set_policy', _ctx, { agent: state.agent,

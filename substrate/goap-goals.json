@@ -13,6 +13,6 @@
     { "kind": "advance", "target": "giant rat", "priority": 10 }
   ],
   "Sasquatch": [
-    { "kind": "advance", "target": "mummy", "priority": 10 }
+    { "kind": "advance", "target": "giant rat", "priority": 10 }
   ]
 }
