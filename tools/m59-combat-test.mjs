@@ -20,7 +20,8 @@
 
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import {
-  isJunk, JUNK_NAMES, proficiencyFor, weaponRanking, equipBest, junkAndBroken,
+  isJunk, JUNK_NAMES, isCursed, proficiencyFor, weaponRanking, equipBest, junkAndBroken,
+  weaponScore,
   brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit, signetRings, returnSignetRings,
   signetPayout, signetOwnerOf, SIGNET_OWNERS,
   parseDeathBroadcast, deathBroadcastFor,
@@ -2122,6 +2123,42 @@ console.log('\nan unreachable vigor floor stops applying');
   const noGoals = mk({ purpose: 'advance', goals: [] }).yieldCheck();
   ok('advance with no goals still reports itself uncheckable',
      noGoals?.paying === false && /no goals are set/.test(noGoals?.why ?? ''), noGoals?.why);
+}
+
+// --- A CURSED WEAPON MUST NEVER BE WIELDED -----------------------------------------
+//
+// The only irreversible mistake available to this code. `WeapAttCursed.ItemReqUnuse`
+// (wacursed.kod:97) returns FALSE unconditionally — "seems to cling to your hand!" — and
+// ItemReqLeaveOwner refuses the drop while it is in the use list. So wielding one is
+// permanent: no swap, no sale, no handover, for the life of the character. And it is a
+// downgrade, not a trade-off: ModifyDamage and ModifyHitRoll both return `x - 2*power`.
+//
+// It is 10% of the item-attribute treasure table and this fleet loots weapons from every
+// kill, so this is a live hazard rather than a curiosity.
+{
+  ok('a cursed weapon is recognised by name', isCursed('cursed long sword'));
+  ok('an ordinary one is not', !isCursed('long sword'));
+  ok('"cursed" as a substring of nothing else', !isCursed('mace'));
+
+  // IT STILL SCORES AS A WEAPON, and that is deliberate rather than an oversight: scoring
+  // it zero would tell `sellable` and the equipment plan it is not a weapon at all, and
+  // SELLING it is exactly what should happen to it. Unwieldable, not invisible.
+  ok('still scores as a weapon so the sell rules can shed it',
+     weaponScore('cursed long sword') > 0);
+
+  const rsc = { 1: 'cursed long sword', 2: 'mace' };
+  const c = { inventory: [{ id: 1, nameRsc: 1 }, { id: 2, nameRsc: 2 }],
+              rsc: { get: (k) => rsc[k] }, statsById: new Map(), abilityOf: () => null };
+  const ranked = weaponRanking(c, { priority: ['mace'] }).map(x => x.name);
+  ok('it is not offered as something to wield', !ranked.includes('cursed long sword'));
+  ok('and the clean weapon still is', ranked.includes('mace'));
+
+  // The dangerous direction: a pack holding ONLY a cursed weapon must come back empty
+  // rather than falling back to it. Fighting bare-handed is recoverable; this is not.
+  const only = { inventory: [{ id: 1, nameRsc: 1 }], rsc: { get: (k) => rsc[k] },
+                 statsById: new Map(), abilityOf: () => null };
+  ok('a pack of nothing but cursed weapons ranks nothing at all',
+     weaponRanking(only, {}).length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

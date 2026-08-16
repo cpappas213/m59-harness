@@ -102,6 +102,31 @@ const WEAPON_WORDS = [
   [/short ?sword|falchion/i, 4], [/sword/i, 4], [/dagger|knife/i, 2],
   [/staff|club|cudgel/i, 2], [/bow|crossbow|sling/i, 3],
 ];
+// A CURSED WEAPON CANNOT BE PUT DOWN, AND WIELDING ONE IS THE ONLY IRREVERSIBLE MISTAKE
+// IN THIS FILE.
+//
+// `WeapAttCursed.ItemReqUnuse` (wacursed.kod:97) does not test anything — it returns FALSE
+// unconditionally and says "%s%s seems to cling to your hand!". `ItemReqLeaveOwner` refuses
+// the drop as well, for as long as the thing is in `getplayerusing`. So the moment a
+// character wields one it is stuck with it: it cannot swap to a mace, cannot sell it,
+// cannot hand it to a fleetmate, and cannot drop it. For the life of the character.
+//
+// AND IT IS A PENALTY WEAPON, NOT A PRIZE. Both `ModifyDamage` and `ModifyHitRoll` return
+// `x - 2*power` — it is strictly worse than the bare hand it replaced, at hitting AND at
+// hurting. A character that picks one up does not get a trade-off; it gets a downgrade it
+// can never undo.
+//
+// This is not hypothetical. `AddToItemAttTreasureTable(#percent=10)` puts it at a tenth of
+// the item-attribute treasure table, and this fleet loots weapons from every kill — Floyd
+// was carrying fifteen swords it had picked up. Nothing else in the harness knows the
+// attribute exists: the name is "cursed %s", so a cursed long sword matches /long ?sword/
+// and scored SEVEN here, ahead of every mace in the pack.
+//
+// The guard is on WIELDING only, deliberately. One that is merely carried is harmless and
+// still sellable — `ItemReqLeaveOwner` refuses only while it is in the use list — so this
+// keeps it out of the candidate list and lets the ordinary sell rules shed it.
+export const isCursed = (name) => /\bcursed\b/i.test(String(name || ''));
+
 export const weaponScore = name => {
   if (isJunk(name)) return 0;
   for (const [re, n] of WEAPON_WORDS) if (re.test(name)) return n;
@@ -276,7 +301,11 @@ export function weaponRanking(c, { priority = null } = {}) {
   const broken = brokenSet(c);
   const rows = (c.inventory || [])
     .map(o => ({ o, name: c.rsc.get(o.nameRsc) || '' }))
-    .filter(x => !isJunk(x.name) && weaponScore(x.name) > 0 && !broken.has(x.o.id))
+    // isCursed is checked here rather than in weaponScore, because scoring it zero would
+    // also tell `sellable` and the equipment plan it is not a weapon — and selling it is
+    // exactly what we want to happen to it. It must be unwieldable, not invisible.
+    .filter(x => !isJunk(x.name) && !isCursed(x.name) &&
+                 weaponScore(x.name) > 0 && !broken.has(x.o.id))
     .map(x => {
       const skill = proficiencyFor(x.name);
       return { ...x, skill, ability: abilityOf(c, skill), base: weaponScore(x.name) };
