@@ -186,6 +186,18 @@ __pycache__/
 # characters by role.
 /substrate/playbooks/
 
+# THE GRUDGE BOOK NAMES REAL PEOPLE, AND THAT IS THE WHOLE REASON IT IS NOT COMMITTED.
+#
+# substrate/grudges.json is who has attacked this fleet in the last hour. Every row is a
+# real player on a shared server, recorded by us, with a timestamp and a list of who they
+# hit. Committing it would publish an accusation against a named stranger — permanently,
+# in a public repository, from a record they cannot see or contest, and which can be wrong
+# (the key is a NAME, deliberately; see the note at the top of m59-grudge.mjs).
+#
+# It is also operational: it says exactly which characters were where and when they were
+# losing, which is the second thing somebody who wanted to grief this fleet would read.
+/substrate/grudges.json
+
 # Verified daily guild payments are live per-character operational state. They name the
 # local fleet and characters and exist only to prevent a restart from charging twice.
 /substrate/guild-tithes/

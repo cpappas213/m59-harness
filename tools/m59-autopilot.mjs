@@ -21,7 +21,9 @@
 //     find itself somewhere else can find out why.
 
 import * as skills from './m59-skills.mjs';
-import { OF, affordances, dropSpec as dropSpecFor } from './m59-parse.mjs';
+import { OF, affordances, dropSpec as dropSpecFor,
+         playerClassName, flaggedAggressor } from './m59-parse.mjs';
+import * as grudge from './m59-grudge.mjs';
 import { isFood, foodValue } from './m59-items.mjs';
 import { loadSpawns, huntingGrounds, huntMatcher, huntedCreatures,
          roomThreats, goalYield, roomCap, karmaSafe,
@@ -980,6 +982,11 @@ export class Autopilot {
       // while the other keeps the fight going. Higher than fleeBelow on purpose: the
       // point is to leave the fight early and cheaply, not to survive leaving it late.
       partyHealBelow: 0.5,
+      // SWING BACK AT A FLAGGED PLAYER WHO HAS ATTACKED THIS FLEET. Unset, so a fresh
+      // clone behaves exactly as before: whether a fleet should fight a person at all is
+      // a decision about the server it is on and the people on it, not a mechanic, and
+      // it belongs in a local policy. See defendAgainstPlayers() for the interlocks.
+      defendAgainstPlayers: false,
       // Reconnect before stepping off a spot that has a crowd on it. See breakOut().
       breakOutViaLogoff: true,
       // How many monsters camped on us make leaving worth a reconnect.
@@ -4307,11 +4314,31 @@ export class Autopilot {
       !party.isFleetmate(c.rsc.get(o.nameRsc)));
     if (!strangers.length) return null;
 
+    // WRITE IT DOWN FOR THE WHOLE FLEET, BEFORE DECIDING ANYTHING.
+    //
+    // One character being hit is everybody's information. The record is what lets the
+    // eight fleetmates standing in the same room defend the one that got hit, and what
+    // lets any of them recognise the same person an hour later in a different town —
+    // which is the entire difference between a player and a monster.
+    //
+    // Recorded whatever the attacker's flags say. An unflagged attacker produces a grudge
+    // that can never be acted on, because `mayReturnFire` re-reads the live flag and
+    // refuses without it — so this is evidence, and only evidence, until the server
+    // agrees the person is a murderer or an outlaw.
+    for (const s of strangers) {
+      const sName = c.rsc.get(s.nameRsc);
+      if (sName) grudge.recordAttack(sName, { who: this.who(), room: this.s.world?.room?.num ?? null,
+                                              playerClass: playerClassName(s.flags) });
+    }
+
     const pb = playbook.playbookFor(this.who());
     const facts = {
       who: c.rsc.get(strangers[0].nameRsc) ?? null,
       health_pct: pct(hp), room: this.s.world?.room?.num ?? null,
       attackers: strangers.length,
+      // What the server thinks of the one hitting us, so a playbook can tell a flagged
+      // murderer from somebody who has just this second become an outlaw by hitting us.
+      attacker_class: playerClassName(strangers[0].flags),
       // `this.hold` is the square we have claimed; `proven` is whether it has been stood
       // in and held. A playbook that wants the difference asks holdWorks() — this is the
       // weaker "we are on a wall at all", which is the one that matters against a player,
@@ -4395,6 +4422,47 @@ export class Autopilot {
           return done(`said it`, { to: action.args.to ?? 'the room' });
         }
 
+        case 'yell':
+        case 'tell_guild': {
+          const text = String(action.args.message ?? '');
+          if (!text) return done('nothing — no message was written');
+          const c = this.s.client;
+          if (action.verb === 'yell') await this.s.pacer.submit('say', () => c.yell(text));
+          else await this.s.pacer.submit('say', () => c.sayGuild(text));
+          // A GUILD TELL FROM A GUILDLESS CHARACTER IS REFUSED WITH A SENTENCE
+          // (`user_no_say_guild`, user.kod:4117) and nothing on the wire, so this reports
+          // what it sent rather than claiming it arrived — the same standard as every
+          // other spoken thing here.
+          return done(action.verb === 'yell' ? 'shouted it to the room and the ones next door'
+                                             : 'sent it to the guild (unverified — a guildless ' +
+                                               'character is refused with prose)');
+        }
+
+        case 'call_for_help': {
+          // THE ORDER IS THE POINT, AND IT IS WHY THIS IS ONE VERB. Shout, tell the guild,
+          // then go. Logging off first would mean nobody ever learns where it happened;
+          // this trigger fires one rule per pass and there is no guarantee of a second.
+          const c = this.s.client;
+          const shout = String(action.args.message ?? '');
+          const toGuild = String(action.args.guild_message ?? '');
+          const said = [];
+          if (shout) {
+            await this.s.pacer.submit('say', () => c.yell(shout)).catch(() => {});
+            said.push('yelled');
+          }
+          if (toGuild) {
+            await this.s.pacer.submit('say', () => c.sayGuild(toGuild)).catch(() => {});
+            said.push('told the guild');
+          }
+          const s = Number(action.args.stay_off_s) || 0;
+          this.stayOffUntil = Date.now() + s * 1000;
+          this.goInert(`playbook: ${trigger} — staying off for ${s}s`, { maxMs: (s + 60) * 1000 });
+          const out = await this.breakOut(`playbook: ${trigger}`).catch(e => ({ did: false, why: e.message }));
+          return done(`${said.join(', ') || 'said nothing'}, then ` +
+                      (out?.did ? `logged off for ${s}s` : `could NOT log off (${out?.why ?? 'refused'})`),
+                      { stay_off_s: s, until: this.stayOffUntil, shouted: !!shout, guild: !!toGuild });
+        }
+
         case 'stand_down':
           this.goInert(`playbook: ${trigger}`);
           return done('stood down and waited to be told');
@@ -4466,6 +4534,90 @@ export class Autopilot {
         'and the wait it asked for has elapsed' });
     }
     await this.checkAttackedByPlayer();
+    // AFTER the detection, so a blow landing this pass is already in the grudge book and
+    // the answer to it is this pass rather than the next one.
+    await this.defendAgainstPlayers().catch(error =>
+      this.note('could not return fire', { why: error.message }));
+  }
+
+  /**
+   * SWING BACK AT SOMEBODY WHO HAS ATTACKED THIS FLEET — the one place in this
+   * repository that can make a character hit a real person, and the reason every
+   * condition in it is checked rather than assumed.
+   *
+   * THE SERVER IS THE SAFETY, AND WE DO NOT TURN IT OFF. `PFLAG_SAFETY` stays on. Its
+   * whole behaviour is in the docstring of `Player.CheckStatusAndSafety`
+   * (player.kod:3767): *"PFLAG_SAFETY prevents accidental attacks. You can always
+   * successfully hit a murderer or outlaw, though."* So with safety ON the server:
+   *
+   *   - REFUSES any attack on a player who is neither murderer nor outlaw, and says so
+   *     ("Hey! You almost hit %s%s! Good thing your safety was on!", player.kod:177);
+   *   - ALLOWS an attack on one who is, with no outlaw penalty — the branch that makes
+   *     an aggressor an outlaw is skipped entirely for such a victim (player.kod:3816);
+   *   - and if the fight is won, counts it as `piJustified_kill_count` rather than
+   *     making US a murderer (player.kod:4841, 4856). No faction loss either.
+   *
+   * That is a stronger interlock than anything written here could be, because it is
+   * enforced on the other side of the wire. Everything below is about not RELYING on it:
+   * a fleet whose only protection against hitting an innocent is a remote server's
+   * refusal is one server-flag change away from being a griefer.
+   *
+   * OFF UNLESS ASKED FOR. `defendAgainstPlayers` is unset by default, so a fresh clone
+   * behaves exactly as before — silence means the behaviour that was already there. This
+   * is a bet about a particular fleet on a particular shared server, not a mechanic, so
+   * it belongs in a local policy rather than in a committed default.
+   */
+  async defendAgainstPlayers() {
+    if (this.policy.defendAgainstPlayers !== true) return null;
+    const c = this.s?.client, me = c?.self;
+    if (!me || !c?.room) return null;
+
+    // Everything in reach that the grudge book and the live flags both agree on.
+    const candidates = [...c.room.objects.values()]
+      .filter(o => o.id !== c.selfId &&
+                   Math.hypot(o.col - me.col, o.row - me.row) <= REACH)
+      .map(o => {
+        const name = c.rsc.get(o.nameRsc) || null;
+        return { o, name, verdict: grudge.mayReturnFire({ name, flags: o.flags },
+                                     { fleetmate: party.isFleetmate(name) }) };
+      })
+      .filter(row => row.verdict.engage);
+    if (!candidates.length) return null;
+
+    // THE ONE THAT HAS HIT US MOST RECENTLY. Not the nearest and not the weakest: a fight
+    // with a person is about making one of them stop, and spreading damage over two
+    // attackers finishes neither.
+    candidates.sort((a, b) => (b.verdict.grudge?.at ?? 0) - (a.verdict.grudge?.at ?? 0));
+    const pick = candidates[0];
+
+    // NO THREAT CEILING HERE, AND THAT IS DELIBERATE. `refuseEngagement` exists to stop a
+    // character picking a fight with a monster it cannot beat — a choice it did not have
+    // to make. This is not that choice: somebody is already hitting us, and declining to
+    // swing back does not end the fight, it just means losing it without trying. The
+    // survival floor still applies exactly as before, which is what bounds this: the
+    // ordinary ladder disengages and runs at `fleeBelow` whether or not we are swinging.
+    if (this.foeId !== pick.o.id) {
+      this.note('returning fire on a flagged attacker', {
+        who: pick.name, room: this.s.world?.room?.num ?? null,
+        their_class: playerClassName(pick.o.flags),
+        grudge_age_m: Math.round((pick.verdict.grudge?.age_ms ?? 0) / 60000),
+        they_have_hit: pick.verdict.grudge?.victims ?? [],
+        why: pick.verdict.why,
+        safety: 'our own PFLAG_SAFETY is left ON — the server refuses this attack ' +
+                'outright if they are not actually flagged, which is the interlock',
+      });
+      recordEvent(this.who(), 'returned_fire', {
+        target: pick.name, target_class: playerClassName(pick.o.flags),
+        room: this.s.world?.room?.num ?? null,
+        hits_on_us: pick.verdict.grudge?.hits ?? null,
+      });
+    }
+    this.doing = 'fighting';
+    await this.s.faceToward(pick.o).catch(() => {});
+    await this.s.pacer.submit('attack', () => c.attack(pick.o.id), 1050).catch(() => {});
+    this.swungAt = Date.now();
+    this.foeId = pick.o.id;
+    return { engaged: pick.name, why: pick.verdict.why };
   }
 
   /** An object in this room whose name matches, for `tell`. */

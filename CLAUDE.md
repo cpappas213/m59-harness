@@ -1524,6 +1524,60 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   against server-built fixtures, the title ordering, the rent sign and its overlapping
   sentences, the Bookmaker's override, and the pooling arithmetic.
 
+- **THE RED NAME IS ALREADY ON THE WIRE, AND `PF_*` IS AN ENUM RATHER THAN A BITMASK — SO
+  THE OBVIOUS TEST OPENS FIRE ON EVERY DUNGEON MASTER.** The client colours a player's
+  name from nothing but its object flags (`GetPlayerNameColor`, `clientd3d/color.c:619`):
+  red for a killer, orange for an outlaw. Every room description we already receive
+  carries it; this repository simply never read it.
+
+  The bits live in `OF.PLAYER_MASK` (0x1C000) as an **enumerated field**, and
+  **`PF.DM` is 0xC000, which is exactly `PF.KILLER | PF.OUTLAW`**. So `flags & PF.KILLER`
+  is true for every DM on the server. The game's own client `switch`es on the masked
+  value; `playerClass()` in `m59-parse.mjs` does the same, and `flaggedAggressor()` is the
+  only predicate anything defensive should ask.
+
+- **THE SERVER IS THE SAFETY, AND THE RIGHT MOVE IS TO LEAVE IT ON.** `PFLAG_SAFETY` is a
+  real server-side flag, not a client courtesy, and `Player.CheckStatusAndSafety`
+  (`player.kod:3767`) says what it does in its own docstring: *"PFLAG_SAFETY prevents
+  accidental attacks. **You can always successfully hit a murderer or outlaw, though.**"*
+
+  So with safety ON the server does exactly the discrimination a defensive fleet wants:
+
+  | | with our safety ON |
+  |---|---|
+  | attack an ordinary player | **refused** — *"Hey! You almost hit %s%s! Good thing your safety was on!"* (`player.kod:177`) |
+  | attack a murderer or outlaw | allowed, and the outlaw-granting branch is skipped entirely (`player.kod:3816`) |
+  | **kill** a murderer or outlaw | `piJustified_kill_count`, **no** murderer flag, **no** outlaw flag, no faction loss (`player.kod:4841`, `:4856`) |
+
+  Turning safety off to fight back would be strictly worse: it buys nothing we need and
+  removes the interlock. `defend_against_players` therefore never touches it.
+
+- **A MONSTER DOES NOT COME BACK TOMORROW, SO SELF-DEFENCE NEEDS A MEMORY AND THE MEMORY
+  IS THE FLEET'S.** `m59-grudge.mjs` records who attacked us, fleet-wide, for an hour. One
+  character being hit is everybody's information — that is what lets eight fleetmates in
+  the room defend the one that got hit, and what lets any of them recognise the same
+  person later in another town.
+
+  **Three things must all hold before a swing**, and only the first is ours to get wrong:
+
+  1. the **grudge** — this name attacked one of ours inside the hour;
+  2. the **live flag** — the object in front of us is carrying `PF_KILLER` or `PF_OUTLAW`
+     *right now*, re-read every time and never taken from the record;
+  3. the **server's own safety**, above.
+
+  **It is keyed on the NAME, which is the weaker key, and deliberately.** Everything else
+  here insists on the object id — but that rule exists because a live session gives the
+  server's own answer, and **a stranger gives us no session**, while object ids are
+  renumbered on every save. An hour-long grudge keyed on an id would outlive the id. The
+  cost is bounded by rule 2: to be hit under a coincidental name you must *also* be
+  currently flagged, which the server permits and penalises nobody for.
+
+  `node tools/m59-grudge.mjs` reads the book; `--forgive <name>` and `--clear` empty it.
+  It is **gitignored**, because every row is an accusation against a named real person.
+
+  `node tools/m59-grudge-test.mjs` (48) is the contract test, and the DM assertion in it
+  should never be deleted.
+
 - **A TRIP THAT CANNOT FIX THE THING THAT OPENED IT WILL RUN FOR EVER, AND EVERY LAP OF IT
   REPORTS SUCCESS.** `bankRun` has five doors and they have different remedies: a full pack
   is fixed by SELLING, a reagent shortfall only by BUYING, and buying needs money. The
@@ -1903,6 +1957,11 @@ remarks and a value may collect both.
   enough to be handed it, and how far a courier walks: that a loadout shortfall of any kind
   reaches the board with its quantity, that the neighbourhood is polled nearest-first, and
   that a stale declaration and a zero shortfall are both refused as delivery orders) and
+  `node tools/m59-grudge-test.mjs` (48 — **the contract test for the only code here that
+  can make a character hit a real person**: that `PF_*` is read as an enum so a Dungeon
+  Master is never mistaken for a murderer, that a grudge and a live flag are BOTH required
+  and neither alone is enough, that the hour is measured from the last blow, and that a
+  fleetmate is refused before anything else is asked) and
   `node tools/m59-townrun-test.mjs` (15 — **which counter a town trip is aimed at, and what
   the errand costs**: that a reagent shortfall goes to the apothecary and never to a market
   that cannot sell it anything, that an empty purse sends it to a bank FIRST, that a full

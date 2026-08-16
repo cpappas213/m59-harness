@@ -7769,6 +7769,14 @@ const TOOLS = [
         description: 'how many top-ranked walls may each fail repeated, fully-waited pulls before ' +
           'the keeper stops searching this room (default 3). This makes a room-scoped choice to ' +
           'fight open when the safety gates permit it or relocate; it never blocks the goal' },
+      defend_against_players: { type: 'boolean',
+        description: 'swing back at a PLAYER who has attacked this fleet, default false. Three ' +
+          'things must all hold: the name is in the fleet-wide grudge book from the last hour, the ' +
+          'object in front of us is carrying PF_KILLER or PF_OUTLAW right now, and our own ' +
+          'PFLAG_SAFETY — which stays ON — means the server refuses the attack outright if it is ' +
+          'not. Killing a flagged attacker is a justified kill and carries no murderer, outlaw or ' +
+          'faction penalty (player.kod:3816, 4856). The survival floor is unchanged: the ordinary ' +
+          'ladder still disengages and runs at flee_below.' },
       break_out_via_logoff: { type: 'boolean',
         description: 'reconnect before stepping off a crowded safe spot, default true. The entry ' +
           'grace period means the swarm has to notice you one at a time instead of all at once' },
@@ -8035,6 +8043,8 @@ const TOOLS = [
       if (a.barren_spots_before_room_decision !== undefined)
         p.policy.barrenSpotsBeforeRoomDecision = Math.max(1,
           Math.floor(Number(a.barren_spots_before_room_decision) || 1));
+      if (a.defend_against_players !== undefined)
+        p.policy.defendAgainstPlayers = !!a.defend_against_players;
       if (a.break_out_via_logoff !== undefined) p.policy.breakOutViaLogoff = !!a.break_out_via_logoff;
       if (p.mode === 'farm' && !p.policy.hunt)
         return { started: false, reason: 'farm mode needs something to hunt — pass hunt with a creature name' };
