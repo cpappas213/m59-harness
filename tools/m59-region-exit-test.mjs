@@ -16,7 +16,7 @@ const ok = (name, cond, extra = '') => {
 // The real regression fixture. The server's OutdoorsH7.SomethingMoved sends rows
 // 15..17, cols 1..6 to the Icky Cave. The square graph cannot enter that pocket from
 // the outdoor floor, but it can reach squares immediately beside it. Those staging
-// squares are enough for a short server-authoritative fine move.
+// squares are enough for a short locally BSP-validated fine move.
 {
   const map = JSON.parse(readFileSync(new URL('../substrate/m59-map.json', import.meta.url), 'utf8'));
   const room = map.rooms['587'];

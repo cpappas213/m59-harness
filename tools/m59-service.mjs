@@ -35,6 +35,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fleetName } from './m59-fleetpath.mjs';
 import * as uptime from './m59-uptime.mjs';
+import { movementMapFile } from './m59-map-path.mjs';
+import { loadMap, movementMapReadiness } from './m59-map.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -163,6 +165,16 @@ async function cmdStart() {
                      `${found.health.sessions?.length ?? 0} session(s)`));
     return 0;
   }
+  const mapFile = movementMapFile();
+  let mapStatus = null;
+  try { mapStatus = movementMapReadiness(loadMap(mapFile)); } catch { /* reported below */ }
+  if (!mapStatus?.ok) {
+    console.error(c.bad('broker not started: its collision map is missing, corrupt, or obsolete'));
+    if (mapStatus) console.error(`  ${mapStatus.ready}/${mapStatus.total} rooms ready; ` +
+      `manifest ${mapStatus.manifest_matches ? 'matches' : 'does not match'}`);
+    console.error('  run node tools/setup.mjs server, or set M59_MAP to a validated server-matched map');
+    return 1;
+  }
   mkdirSync(SUB, { recursive: true });
   // Append, never truncate: the log is the only account of what the last run did, and
   // a restart is exactly when you want to read it.
@@ -170,7 +182,9 @@ async function cmdStart() {
   const args = [join(HERE, 'm59-broker.mjs'), '--http', String(HTTP_PORT),
                 '--dashboard', String(DASH_PORT)];
   if (FLEET) args.push('--fleet', FLEET);
-  const env = { ...process.env };
+  // Setup's server-matched local map remains authoritative across ordinary service
+  // restarts. An explicit M59_MAP still wins; otherwise selection is local-then-reference.
+  const env = { ...process.env, M59_MAP: mapFile };
   const child = spawn(process.execPath, args,
     // detached + unref is what makes this outlive the shell that ran it. stdio goes to
     // the log rather than 'ignore', which is how the previous arrangement lost every

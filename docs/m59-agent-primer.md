@@ -143,19 +143,22 @@ as `col`/`row` squares; distances are in squares.
 position and never consults room geometry. The geometry check
 (`ReqSomethingMoved`, `room.kod:2042`) exists but is only ever called for monsters
 and dropped items — its own comment says user moves "have already been checked by
-client (HAHA!)". So:
+client (HAHA!)". The protocol therefore lets an unchecked custom client walk
+through walls. The broker must never use that as permission: ordinary movement
+follows the room grid, and fine movement locally applies the official client's BSP
+wall, radius, elevation, slope, and headroom rules before sending a coordinate.
+At the protocol level:
 
-- you can walk to any square inside the grid, through what a human would see as a
-  wall
+- an unchecked client can write any in-room coordinate, including one through a wall
 - but a squared distance of 200 or more in under three seconds is logged as
   possible cheat-teleporting (`user.kod:3071`), so **walk, do not jump**
 - moving drains vigor in proportion to speed squared (`EXERTION_PER_MOVE = 2`)
 - speed above `USER_WALKING_SPEED = 18` is running, and running with vigor below
   10 snaps you back to where you were
 
-Use `walk_to` and `approach`. They step one square per second and re-read position
-each step, which is both the legal cadence and the only way to notice you are
-stuck. If a step changes nothing, they stop and tell you `blocked_at`.
+Use `walk_to` and `approach`. Ordinary square walking locally validates each emitted
+segment, predicts accepted positions between periodic/hop-boundary room reads, and
+stops with a concrete collision/state reason when it cannot make progress.
 
 ### Leaving a room
 
@@ -219,10 +222,10 @@ completely, so a router that trusts the geometry leaves the character stuck in t
 bank permanently.
 
 You do not have to stand on it. Movement is in **fine units — 64 to the square** —
-and a `REQ_MOVE` the walls forbid is not discarded, it is *clamped* to the nearest
-legal fine position. Requesting the exit square from the square next door slides
-you hard against the doorway, close enough for `REQ_GO` to find the door, while
-your reported square never changes. `leaveVia` does this automatically now, and
+and the broker locally clips the requested point to the closest legal fine position.
+Requesting the exit square from the square next door can therefore slide you hard
+against the doorway, close enough for `REQ_GO` to find the door, without sending a
+coordinate through the wall. `leaveVia` does this automatically now, and
 `travel`/`go_through` try **every** square a doorway publishes, in reachability
 order — the bank lists two and one of them has a brazier standing on it.
 
@@ -237,8 +240,8 @@ reliably catches the announcement of success and reports it as failure.
 The movement grid is **one byte per square** — eight direction bits, 64 fine units
 to the square. A walkable strip *narrower than one square* has nowhere to live in
 that structure. The square reads solid, and `walk_to` refuses before sending a
-packet. The server does not use that grid: it validates against the fine BSP
-geometry, where the ledge is perfectly real.
+packet. The fine BSP geometry still describes the ledge, but that geometry is
+client-side: the broker must validate it locally because the server does not.
 
 The cliff path in Kardde's Canyon is the sharp case — it is the **only** way into
 The Badlands, and the grid marks rows 22–24 of column 20 as having no floor at
@@ -246,29 +249,34 @@ all. Verified live: `walk_to` says "no route through the geometry", and the same
 walk with `fine:true` completes in fifteen steps without once needing to slide.
 
 So: **if you can see a way and the pathfinder says there is no route, suspect the
-resolution of the map before you conclude the way is shut.** Turn on
-`movement_mode` (or pass `fine:true`) and let the server judge each step. Route
+resolution of the square grid before you conclude the way is shut.** Turn on
+`movement_mode` (or pass `fine:true`) to use locally validated BSP movement. Route
 normally up to the hard yard and switch to fine only for that stretch — fine mode
-has no route planning, so it will happily walk into a dead end a map would have
-avoided, and on a cliff the only thing between you and the drop is a refused step.
+has no global route planning, so it can still walk into a dead end a map would have
+avoided, but it will not submit an endpoint through a wall or up a cliff.
 
-Two rules make fine movement work, and both are easy to get wrong:
+Three rules make fine movement work, and each is easy to get wrong:
 
-- **Confirm every step by re-reading.** The server does not echo your own accepted
-  move, so cached position goes stale and *an accepted move is indistinguishable
-  from a refused one*. This is not drift — it inverts the result. A hand-rolled
-  probe that skipped the re-read "proved" the Kardde's ledge impassable, agreeing
-  with the wrong map and making two errors look like confirmation.
-- **When blocked, slide.** A refused step usually means the straight line clipped
-  rock, not that the way is shut. Fanning the heading to either side is what
+- **Validate before sending.** Split a request into local microsteps, keep the
+  player's radius off solid wall bodies and corners, enforce the 24-kod climb limit
+  and player-height headroom using the stock client's source-facing sidedef and
+  cached endpoint-0 wall heights, and slide along a blocking wall. The server accepts
+  player coordinates and is not a collision oracle.
+
+- **Confirm where precision requires it.** Fine/slide movement re-reads after each
+  packet because the exact clipped endpoint becomes the next collision start.
+  Ordinary grid walking predicts locally validated endpoints for speed, re-reading
+  periodically and at room/door boundaries. The server does not echo accepted moves,
+  so neither mode treats silence as collision evidence.
+- **When locally blocked, slide.** A clipped heading usually means the straight line
+  touched rock, not that the way is shut. Fanning the heading to either side is what
   "hugging the wall" is.
 
-**Elevation is invisible.** The `.roo` parser reads wall sector *indices* but not
-the sector records holding floor heights, so nothing here knows about height at
-all. A cliff top and the canyon floor below it sit on the same col/row and look
-adjacent on the minimap — which is why walking off a ledge reads as an ordinary
-step, and why the canyon floor is a one-way pocket you can leave but never
-re-enter. Falls are not modelled; they just happen.
+**Elevation is part of fine collision.** The baked `.roo` payload includes sector
+floor/ceiling planes, water depth, BSP leaf polygons, and directional sidedefs. A
+passable flag alone is insufficient: a passable wall still blocks when the upward
+step exceeds 24 kod or there is less than one player-height of headroom. Downward
+movement remains directional, so a ledge can still be a one-way drop.
 
 ### You can see the room, not just its contents
 

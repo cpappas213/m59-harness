@@ -6,3 +6,4 @@
 *.bgf binary
 *.roo binary
 *.tsv text eol=lf
+substrate/m59-map.json linguist-generated=true

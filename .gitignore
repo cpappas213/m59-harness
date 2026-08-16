@@ -64,6 +64,9 @@ node_modules/
 /substrate/strategy-stats/
 /substrate/*.log
 /substrate/*.err
+# Collision geometry baked from the exact local server/client room resources.
+# The committed map is a portable reference; setup generates this server-bound copy.
+/substrate/m59-map.local.json
 # Which process m59-service.mjs last started, per fleet. Runtime state, and wrong the
 # moment it is read on any other machine.
 /substrate/*.pid

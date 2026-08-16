@@ -4,8 +4,8 @@ Play [Meridian 59](https://github.com/Meridian59/Meridian59) as a real player
 character, from an agent.
 
 Characters log in over the same port humans use. They see the room *and its
-geometry*, walk routes through walls the server never enforces but the room
-really has, travel across the world, fight, shop, talk, rest, hand each other
+geometry*, enforce the same walls, cliffs, headroom, and player radius as the
+normal client even though the server does not, travel across the world, fight, shop, talk, rest, hand each other
 items and money, and hear each other. `who` lists them beside the humans. Any
 MCP client — Claude Code, Codex, a local model with a `curl` loop — can drive
 one.
@@ -26,7 +26,8 @@ node tools/setup.mjs all 10
 ```
 
 That clones the [Meridian 59](https://github.com/Meridian59/Meridian59) source,
-builds the server in a container, starts it, starts the broker, and creates ten
+builds the server in a container, bakes a local collision map from that exact
+server's room resources, starts the broker, and creates ten
 characters. Ten to fifteen minutes, mostly compiling. `node tools/setup.mjs
 doctor` reports what is present and what is missing without changing anything.
 
@@ -63,8 +64,14 @@ One dependency exists, for the chat responder only: `npm install`.
 ## Start here
 
 ```bash
-node tools/m59-broker.mjs --http 8901 --dashboard 8902
+node tools/m59-service.mjs start
 ```
+
+This starts one supervised broker with a durable log. For foreground diagnostics,
+`node tools/m59-broker.mjs --http 8901 --dashboard 8902` runs the same broker directly.
+Both select maps in the same order: explicit `M59_MAP`, then
+`substrate/m59-map.local.json` when setup generated one, then the checked reference.
+The selected map is fully decoded and validated before the broker reports healthy.
 
 One process, N characters, 47 MCP tools. Point a client at it:
 
@@ -108,7 +115,7 @@ tools/m59-broker.mjs        the MCP server — 47 tools, N characters, one proce
 tools/m59-client.mjs        a protocol client that logs in as a real player
 tools/m59-parse.mjs         the server→client parsers: perception and trading
 tools/m59-world.mjs         the joined world model: perception + graph + geometry
-tools/m59-map.mjs           the room graph — 264 rooms, 1,343 exits, both mechanisms
+tools/m59-map.mjs           the room graph — 264 rooms, 980 exits, both mechanisms
 tools/m59-roo.mjs           .roo geometry: walkability, walls, A*, the minimap
 tools/m59-skills.mjs        composite behaviours: fight, rest, escape, sell everything
 tools/m59-autopilot.mjs     the keeper — a background loop that holds baseline state
@@ -128,14 +135,21 @@ tools/m59-economy.mjs       purses, bank balances and reagents — /economy
 tools/m59-abilities.mjs     every skill and spell number the fleet holds — /skills
 tools/m59-stats-page.mjs    /stats: the builds the fleet is made of, grouped by the roll
 
-substrate/m59-map.json        264 rooms with their .roo geometry, built once over the admin socket
+substrate/m59-map.json        264-room graph plus generated reference collision geometry
 substrate/m59-merchants.json  70 merchants: who buys, sells and teaches what
 substrate/m59-spells.json     175 spells: mana, reagents, level, karma requirement
 substrate/m59-spawns.json     120 creatures across 183 rooms, with danger ratings
 substrate/m59-safespots.json  11 rooms of proven standing squares
 ```
 
-`substrate/` here is reference data compiled once, not a running fleet's state.
+`substrate/` here is reference data, not a running fleet's state.
+A setup also writes gitignored `substrate/m59-map.local.json` from the exact `.roo`
+files used by its server. Ordinary restarts keep selecting that local artifact. If it
+does not exist, the portable checked reference is used; movement still stops closed if
+the live room security differs. Every map carries a semantic manifest over all room
+security values and collision payloads. Corrupt or incomplete maps fail broker startup;
+valid but server-mismatched/obsolete geometry fails movement closed on the live room's
+security value.
 A live broker writes `fleet-state.json`, `history/` and `recordings/` beside it;
 all three are gitignored, because a roster carries account passwords in plain
 text and recordings are one server's history rather than anything reusable.
@@ -149,6 +163,7 @@ node tools/m59-safespot-test.mjs      # 91 tests — safe squares, errand pairin
 node tools/m59-autopilot-policy-test.mjs # explicit keeper policy overrides, offline
 node tools/m59-chat-test.mjs          # 102 tests — sanitiser and leak detection
 node tools/m59-escape-test.mjs        # 29 tests — leaving and fighting from a sitting start
+node tools/m59-collision-test.mjs     # fine BSP collision, cliffs, walls, slopes, exits
 node tools/m59-fleets-test.mjs        # the roster inventory, against a fixture broker
 node tools/m59-loadout-test.mjs       # 109 tests — loadouts, and what reaches the counter
 node tools/m59-stats-test.mjs         # 60 tests — the builds board, and the pane it shares

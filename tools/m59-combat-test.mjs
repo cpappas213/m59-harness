@@ -62,6 +62,26 @@ console.log('\nprovisioning without long post-floor stalls');
      shouldWaitForProvision({ vigor: 131, floor: 100, wait: 127, hurt: true }));
 }
 
+console.log('\nterminal local-collision state is not ordinary keeper retry work');
+{
+  const keeper = Object.assign(Object.create(Autopilot.prototype), {
+    stalledSince: null, stalledWhy: null, journal: [], passes: 7,
+  });
+  const ordinary = keeper.terminalMovement({ reason: 'geometry_blocked' }, 'test movement');
+  const terminal = keeper.terminalMovement({
+    reason: 'collision_geometry_changed', note: 'a live wall changed',
+  }, 'test movement', { room: 'fixture' });
+  ok('keeper leaves ordinary geometry blocks to route tactics',
+     ordinary === null && keeper.journal.length === 1);
+  ok('keeper surfaces terminal collision state without consuming route retries',
+     terminal?.terminal === true && terminal.reason === 'collision_geometry_changed' &&
+     keeper.stalledSince != null && keeper.stalledWhy ===
+       'test movement stopped: collision_geometry_changed' &&
+     keeper.journal[0]?.reason === 'collision_geometry_changed' &&
+     keeper.journal[0]?.room === 'fixture',
+     JSON.stringify({ terminal, stalledWhy: keeper.stalledWhy, journal: keeper.journal }));
+}
+
 console.log('\nimpossible self-arm recovery');
 {
   const spells = names => {

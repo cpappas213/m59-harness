@@ -258,6 +258,8 @@ node tools/setup.mjs fleet 10
 or directly:
 
 ```bash
+node tools/m59-service.mjs start
+# foreground diagnostics only:
 node tools/m59-broker.mjs --http 8901 --dashboard 8902
 node tools/m59-makefleet.mjs --count 10
 node tools/m59-makefleet.mjs --count 10 --dry-run    # plan only
@@ -295,6 +297,12 @@ rooms, setting up test scenarios), pass `M59_ADMIN_PORT=9998`:
 ```bash
 M59_ADMIN_PORT=9998 node tools/m59-dm.mjs relocate "Alfa,Bravo" 60 --verify
 ```
+
+Every launch uses explicit `M59_MAP` first, then the gitignored server-matched
+`substrate/m59-map.local.json`, then the checked reference map. Setup regenerates the
+local map from the exact server room resources and service restarts preserve that choice.
+The broker refuses startup if the selected map's collision payloads or manifest do not
+validate; it never substitutes unchecked movement.
 
 ### What making a character actually involves
 

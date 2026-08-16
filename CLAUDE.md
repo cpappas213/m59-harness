@@ -2000,7 +2000,13 @@ remarks and a value may collect both.
   symmetric — a wasted offer costs a round trip, a wrongly withheld item costs the sale and
   is invisible) and
   `node tools/m59-merchants-test.mjs` (77, dropping to 43 without `M59_ROOT`) and
-  `node tools/m59-roo-test.mjs` (57, of which 9 skip without a copy of the game's
+  `node tools/m59-collision-test.mjs` (148 — **the fail-closed contract for all
+  movement**: compact collision metadata survives a bake, legacy maps cannot authorize
+  a coordinate packet, the player cylinder catches wall bodies and corners, long strides
+  cannot tunnel, stock endpoint-0 slope and water-depth rules are preserved, every
+  emitted packet is revalidated, and the documented Brownestone, Limping Toad, Icky,
+  Farol, Ukgoth, Cor Noth, Temple, and Fey precision cases remain usable) and
+  `node tools/m59-roo-test.mjs` (74, with raw-room checks skipping without a copy of the game's
   `resource/rooms`). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on
   8899 and fail with `ECONNREFUSED` without one, which is not a regression.

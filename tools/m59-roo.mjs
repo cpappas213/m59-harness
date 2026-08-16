@@ -49,7 +49,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { movementMapFile } from './m59-map-path.mjs';
 
 const ROO_MAGIC = Buffer.from([0x52, 0x4f, 0x4f, 0xb1]);
 const ROO_MIN_VERSION = 4;
@@ -122,6 +124,324 @@ export const SF = {
 export const PLAYER_WIDTH = 31 * KOD_FINENESS / 4;   // 496 client units
 export const PLAYER_RADIUS = PLAYER_WIDTH / 2;       // 248 — move.c:122
 export const PLAYER_HEIGHT = 3 * CLIENT_FINENESS / 4; // 768 — game.c:262
+export const MIN_NOMOVEON = CLIENT_FINENESS / 4;     // 256 — move.c:62
+export const MIN_SIDE_MOVE = CLIENT_FINENESS / 16;   // 64 — MOVEUNITS / 4
+
+// Versioned because old baked maps contain only the five minimap fields of each
+// wall. Treating those as collision data would silently bring the original bug
+// back: a drawable/passable bit alone cannot distinguish a low step from a cliff.
+export const COLLISION_VERSION = 2;
+const SIDE_EXISTS = 0x01;
+const SIDE_PASSABLE = 0x02;
+const SIDE_ABOVE = 0x04;
+const SIDE_BELOW = 0x08;
+const CLIENT_PER_KOD = CLIENT_FINENESS / KOD_FINENESS;
+const GEOMETRY_EPSILON = 1e-6;
+const f32 = Math.fround;
+export const protocolToClient = value => (value - KOD_FINENESS) * CLIENT_PER_KOD;
+export const clientToProtocol = value => value / CLIENT_PER_KOD + KOD_FINENESS;
+
+// Separators are floats in the stock client. Keep every multiply/add in float32;
+// JS's default double arithmetic changes a handful of exact boundary decisions.
+function separatorValue(separator, x, y) {
+  return f32(f32(f32(separator.a * f32(x)) + f32(separator.b * f32(y)))
+    + separator.c);
+}
+
+function collisionDigest({ file, security, version, rows, cols, grid, flags, monsterGrid,
+                           walls, edgeOpenings, edgeApproaches, collision }) {
+  const hash = crypto.createHash('sha256');
+  hash.update(JSON.stringify({ file, security, version, rows, cols, grid, flags, monsterGrid,
+                               walls, edgeOpenings, edgeApproaches }));
+  for (const key of ['wallSides', 'sectors', 'leaves', 'nodes']) {
+    hash.update('\0' + key + '\0');
+    hash.update(Buffer.from(collision[key], 'base64'));
+  }
+  return hash.digest('hex');
+}
+
+const sideBits = sd => !sd ? 0
+  : SIDE_EXISTS
+    | ((sd.flags & WF.PASSABLE) ? SIDE_PASSABLE : 0)
+    | (sd.aboveType ? SIDE_ABOVE : 0)
+    | (sd.belowType ? SIDE_BELOW : 0);
+
+const sideFromBits = bits => !(bits & SIDE_EXISTS) ? null : ({
+  flags: (bits & SIDE_PASSABLE) ? WF.PASSABLE : 0,
+  aboveType: (bits & SIDE_ABOVE) ? 1 : 0,
+  belowType: (bits & SIDE_BELOW) ? 1 : 0,
+});
+
+function pointOnSegment(x, y, x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const cross = (x - x0) * dy - (y - y0) * dx;
+  if (Math.abs(cross) > GEOMETRY_EPSILON * Math.max(1, Math.abs(dx), Math.abs(dy))) return false;
+  return x >= Math.min(x0, x1) - GEOMETRY_EPSILON && x <= Math.max(x0, x1) + GEOMETRY_EPSILON
+      && y >= Math.min(y0, y1) - GEOMETRY_EPSILON && y <= Math.max(y0, y1) + GEOMETRY_EPSILON;
+}
+
+// BSP leaves are convex in the game, but a generic even/odd test costs essentially
+// the same and remains correct for hand-built regression fixtures. Boundary points
+// count as inside; `preferSectorNum` below resolves a shared edge deterministically.
+function pointInPolygon(x, y, polygon) {
+  if (!Array.isArray(polygon) || polygon.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i], [xj, yj] = polygon[j];
+    if (pointOnSegment(x, y, xi, yi, xj, yj)) return true;
+    if ((yi > y) !== (yj > y)) {
+      const atX = (xj - xi) * (y - yi) / (yj - yi) + xi;
+      if (x < atX) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// Collision surfaces are baked as compact binary payloads. The public surface
+// objects used by the RTS renderer are much richer; repeating 88,000 leaf objects
+// in pretty-printed map JSON turns a 12 MB map into a 53 MB one. Movement needs only
+// heights/slopes, leaf polygons, and six directional bytes per displayed wall.
+const COLLISION_SECTOR_BYTES = 76;
+
+function encodeCollisionSectors(sectors) {
+  const buf = Buffer.allocUnsafe(4 + sectors.length * COLLISION_SECTOR_BYTES);
+  buf.writeUInt32LE(sectors.length, 0);
+  let p = 4;
+  for (const sector of sectors) {
+    buf.writeInt32LE(Math.round(sector.floorHeight), p);
+    buf.writeInt32LE(Math.round(sector.ceilingHeight), p + 4);
+    buf.writeUInt16LE(sector.depth ?? 0, p + 8);
+    buf.writeUInt8((sector.slopedFloor ? 1 : 0) | (sector.slopedCeiling ? 2 : 0), p + 10);
+    buf.writeUInt8(0, p + 11);
+    for (const [offset, slope] of [[12, sector.slopedFloor], [44, sector.slopedCeiling]]) {
+      for (const [n, key] of ['a', 'b', 'c', 'd'].entries())
+        buf.writeDoubleLE(slope ? slope[key] : 0, p + offset + n * 8);
+    }
+    p += COLLISION_SECTOR_BYTES;
+  }
+  return buf.toString('base64');
+}
+
+function decodeCollisionSectors(encoded) {
+  const buf = Buffer.from(encoded, 'base64');
+  if (buf.length < 4) throw new Error('truncated collision sector header');
+  const count = buf.readUInt32LE(0);
+  if (buf.length !== 4 + count * COLLISION_SECTOR_BYTES)
+    throw new Error('collision sector payload length mismatch');
+  const sectors = [];
+  let p = 4;
+  for (let i = 0; i < count; i++, p += COLLISION_SECTOR_BYTES) {
+    const mask = buf.readUInt8(p + 10);
+    const depth = buf.readUInt16LE(p + 8);
+    if (mask & ~0x03) throw new Error('invalid collision sector slope mask');
+    if (buf.readUInt8(p + 11) !== 0) throw new Error('invalid collision sector reserved byte');
+    if (!SECTOR_DEPTHS.includes(depth)) throw new Error('invalid collision sector depth');
+    const slope = offset => {
+      const out = {};
+      for (const [n, key] of ['a', 'b', 'c', 'd'].entries()) {
+        out[key] = buf.readDoubleLE(p + offset + n * 8);
+        if (!Number.isFinite(out[key])) throw new Error('non-finite collision slope');
+      }
+      if (out.c === 0) throw new Error('invalid collision slope plane');
+      return out;
+    };
+    const floorHeight = buf.readInt32LE(p);
+    const ceilingHeight = buf.readInt32LE(p + 4);
+    if (!Number.isFinite(floorHeight) || !Number.isFinite(ceilingHeight))
+      throw new Error('non-finite collision sector height');
+    sectors.push({
+      id: i + 1,
+      floorHeight,
+      ceilingHeight,
+      depth,
+      slopedFloor: (mask & 1) ? slope(12) : null,
+      slopedCeiling: (mask & 2) ? slope(44) : null,
+    });
+  }
+  return sectors;
+}
+
+function encodeCollisionLeaves(leaves) {
+  const bytes = 4 + leaves.reduce((n, leaf) => n + 6 + leaf.polygon.length * 8, 0);
+  const buf = Buffer.allocUnsafe(bytes);
+  buf.writeUInt32LE(leaves.length, 0);
+  let p = 4;
+  for (const leaf of leaves) {
+    buf.writeUInt16LE(leaf.node, p);
+    buf.writeUInt16LE(leaf.sectorNum, p + 2);
+    buf.writeUInt8(leaf.polygon.length, p + 4);
+    buf.writeUInt8(0, p + 5);
+    p += 6;
+    for (const [x, y] of leaf.polygon) {
+      buf.writeFloatLE(x, p); buf.writeFloatLE(y, p + 4); p += 8;
+    }
+  }
+  return buf.toString('base64');
+}
+
+function decodeCollisionLeaves(encoded, sectors) {
+  const buf = Buffer.from(encoded, 'base64');
+  if (buf.length < 4) throw new Error('truncated collision leaf header');
+  const count = buf.readUInt32LE(0);
+  const leaves = [];
+  let p = 4;
+  for (let i = 0; i < count; i++) {
+    if (p + 6 > buf.length) throw new Error('truncated collision leaf');
+    const node = buf.readUInt16LE(p), sectorNum = buf.readUInt16LE(p + 2);
+    const pointCount = buf.readUInt8(p + 4); p += 6;
+    if (!node) throw new Error('invalid collision leaf node');
+    if (!sectorNum || sectorNum > sectors.length) throw new Error('invalid collision leaf sector');
+    if (pointCount < 3 || pointCount > MAX_BSP_POINTS || p + pointCount * 8 > buf.length)
+      throw new Error('invalid collision leaf polygon');
+    const polygon = [];
+    for (let n = 0; n < pointCount; n++) {
+      const x = buf.readFloatLE(p), y = buf.readFloatLE(p + 4); p += 8;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('non-finite collision leaf point');
+      polygon.push([x, y]);
+    }
+    const xs = polygon.map(point => point[0]), ys = polygon.map(point => point[1]);
+    leaves.push({ type: 'leaf', node, sectorNum, sector: sectors[sectorNum - 1],
+                  bbox: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)],
+                  polygon });
+  }
+  if (p !== buf.length) throw new Error('collision leaf payload has trailing bytes');
+  return leaves;
+}
+
+const COLLISION_NODE_BYTES = 48;
+
+function encodeCollisionNodes(nodes, root = 1, firstWalls = new Map()) {
+  if (!Array.isArray(nodes) || nodes.length > 0xffff || root < 1 || root > nodes.length)
+    throw new Error('invalid BSP tree for collision bake');
+  const internals = nodes.filter(node => node.type === 'internal');
+  const buf = Buffer.allocUnsafe(6 + internals.length * COLLISION_NODE_BYTES);
+  buf.writeUInt16LE(root, 0);
+  buf.writeUInt16LE(nodes.length, 2);
+  buf.writeUInt16LE(internals.length, 4);
+  let p = 6;
+  for (const node of internals) {
+    buf.writeUInt16LE(node.node, p);
+    buf.writeUInt16LE(node.positive, p + 2);
+    buf.writeUInt16LE(node.negative, p + 4);
+    buf.writeDoubleLE(node.separator.a, p + 6);
+    buf.writeDoubleLE(node.separator.b, p + 14);
+    buf.writeDoubleLE(node.separator.c, p + 22);
+    buf.writeUInt16LE(firstWalls.get(node.node) ?? 0, p + 30);
+    if (!Array.isArray(node.bbox) || node.bbox.length !== 4
+        || !node.bbox.every(Number.isFinite)) throw new Error('invalid collision BSP bounds');
+    for (let i = 0; i < 4; i++) buf.writeFloatLE(node.bbox[i], p + 32 + i * 4);
+    p += COLLISION_NODE_BYTES;
+  }
+  return buf.toString('base64');
+}
+
+function decodeCollisionNodes(encoded, leaves) {
+  const buf = Buffer.from(encoded, 'base64');
+  if (buf.length < 6) throw new Error('truncated collision node header');
+  const root = buf.readUInt16LE(0), total = buf.readUInt16LE(2), count = buf.readUInt16LE(4);
+  if (!root || root > total || buf.length !== 6 + count * COLLISION_NODE_BYTES)
+    throw new Error('collision node payload length mismatch');
+  const nodes = Array(total).fill(null);
+  for (const leaf of leaves) {
+    if (leaf.node > total || nodes[leaf.node - 1]) throw new Error('duplicate collision BSP node');
+    nodes[leaf.node - 1] = leaf;
+  }
+  let p = 6;
+  for (let i = 0; i < count; i++, p += COLLISION_NODE_BYTES) {
+    const node = buf.readUInt16LE(p), positive = buf.readUInt16LE(p + 2);
+    const negative = buf.readUInt16LE(p + 4);
+    const separator = { a: buf.readDoubleLE(p + 6), b: buf.readDoubleLE(p + 14),
+                        c: buf.readDoubleLE(p + 22) };
+    const firstCollisionWall = buf.readUInt16LE(p + 30);
+    const bbox = [0, 1, 2, 3].map(n => buf.readFloatLE(p + 32 + n * 4));
+    const normalLength = Math.hypot(separator.a, separator.b);
+    if (!node || node > total || nodes[node - 1] || positive > total || negative > total
+        || !Object.values(separator).every(Number.isFinite) || !bbox.every(Number.isFinite)
+        || Math.abs(normalLength - CLIENT_FINENESS) > 0.01)
+      throw new Error('invalid collision BSP node');
+    nodes[node - 1] = { type: 'internal', node, positive, negative, separator,
+                        firstCollisionWall, bbox };
+  }
+  if (nodes.some(node => !node)) throw new Error('incomplete collision BSP tree');
+  const visiting = new Uint8Array(total);
+  const stack = [[root, false]];
+  while (stack.length) {
+    const [id, leaving] = stack.pop();
+    if (leaving) { visiting[id - 1] = 2; continue; }
+    if (visiting[id - 1] === 1) throw new Error('cycle in collision BSP tree');
+    if (visiting[id - 1] === 2) continue;
+    visiting[id - 1] = 1;
+    stack.push([id, true]);
+    const node = nodes[id - 1];
+    if (node.type === 'internal') for (const child of [node.negative, node.positive]) {
+      if (child) stack.push([child, false]);
+    }
+  }
+  if (visiting.some(state => state !== 2)) throw new Error('unreachable collision BSP node');
+  return { root, nodes };
+}
+
+const COLLISION_WALL_BYTES = 10;
+
+function encodeCollisionWallSides(walls, nextWalls = []) {
+  if (walls.some(wall => !wall.collisionMetadata || !wall.collisionNode))
+    throw new Error('wall lacks collision metadata');
+  const buf = Buffer.allocUnsafe(4 + walls.length * COLLISION_WALL_BYTES);
+  buf.writeUInt32LE(walls.length, 0);
+  let p = 4;
+  for (const [i, wall] of walls.entries()) {
+    buf.writeUInt16LE(wall.posSector ?? 0, p);
+    buf.writeUInt16LE(wall.negSector ?? 0, p + 2);
+    buf.writeUInt8(sideBits(wall.posSidedefRec), p + 4);
+    buf.writeUInt8(sideBits(wall.negSidedefRec), p + 5);
+    buf.writeUInt16LE(wall.collisionNode, p + 6);
+    buf.writeUInt16LE(nextWalls[i] ?? 0, p + 8);
+    p += COLLISION_WALL_BYTES;
+  }
+  return buf.toString('base64');
+}
+
+function decodeCollisionWallSides(encoded, count, sectors, nodes) {
+  const buf = Buffer.from(encoded, 'base64');
+  if (buf.length < 4 || buf.readUInt32LE(0) !== count
+      || buf.length !== 4 + count * COLLISION_WALL_BYTES)
+    throw new Error('collision wall payload length mismatch');
+  const out = [];
+  for (let i = 0, p = 4; i < count; i++, p += COLLISION_WALL_BYTES) {
+    const posSector = buf.readUInt16LE(p), negSector = buf.readUInt16LE(p + 2);
+    const posBits = buf.readUInt8(p + 4), negBits = buf.readUInt8(p + 5);
+    if ((posBits & ~0x0f) || (negBits & ~0x0f)
+        || (!(posBits & SIDE_EXISTS) && posBits) || (!(negBits & SIDE_EXISTS) && negBits))
+      throw new Error('invalid collision sidedef bits');
+    const posSidedefRec = sideFromBits(posBits);
+    const negSidedefRec = sideFromBits(negBits);
+    const collisionNode = buf.readUInt16LE(p + 6);
+    const nextCollisionWall = buf.readUInt16LE(p + 8);
+    const owner = nodes[collisionNode - 1];
+    if (posSector < 0 || negSector < 0 || posSector > sectors.length || negSector > sectors.length
+        || (!posSector && !negSector) || (!posSidedefRec && !negSidedefRec)
+        || owner?.type !== 'internal' || nextCollisionWall > count)
+      throw new Error('invalid collision wall metadata');
+    out.push({ posSector, negSector, posSidedefRec, negSidedefRec, collisionNode,
+               nextCollisionWall });
+  }
+  for (const node of nodes) if (node?.type === 'internal' && node.firstCollisionWall > count)
+    throw new Error('invalid collision BSP wall-chain root');
+  const owned = new Uint8Array(count);
+  for (const node of nodes) {
+    if (node?.type !== 'internal') continue;
+    let wallNumber = node.firstCollisionWall, guard = 0;
+    while (wallNumber) {
+      if (wallNumber > count || guard++ >= count || owned[wallNumber - 1]
+          || out[wallNumber - 1].collisionNode !== node.node)
+        throw new Error('invalid collision BSP wall chain');
+      owned[wallNumber - 1] = 1;
+      wallNumber = out[wallNumber - 1].nextCollisionWall;
+    }
+  }
+  if (owned.some(value => value !== 1)) throw new Error('unreachable collision wall');
+  return out;
+}
 
 // blakserv/roomdata.c:31. Row grows SOUTH, col grows EAST — the same convention
 // Room.SomethingMoved uses when it decides which edge you crossed.
@@ -141,15 +461,24 @@ const DIRS = Object.values(DIR);
 // and can differ (a mismatch black-screens the real client in that room), so prefer
 // the server's, which is the one the geometry checks actually run against.
 export const DEFAULT_ROO_DIRS = [
+  process.env.M59_ROO_DIR,
+  process.env.M59_ROOT && path.join(process.env.M59_ROOT, 'resource', 'rooms'),
+  process.env.M59_ROOT && path.join(process.env.M59_ROOT, 'resource'),
+  process.env.M59_ROOT && path.join(process.env.M59_ROOT, 'run', 'localclient', 'resource'),
   'C:/code/meridian59/resource/rooms',
   'C:/code/meridian59/run/localclient/resource',
-];
+  'C:/Program Files (x86)/Steam/steamapps/common/Meridian 59/resource',
+].filter(Boolean);
 
 export class RoomGeometry {
-  constructor({ file, version, rows, cols, grid, flags, monsterGrid, walls, sidedefs,
-                sectors, nodes, leaves, clientSize }) {
-    Object.assign(this, { file, version, rows, cols, grid, flags, monsterGrid, walls,
-                          sidedefs, sectors, nodes, leaves, clientSize });
+  constructor({ file, version, security, rows, cols, grid, flags, monsterGrid, walls, sidedefs,
+                sectors, nodes, leaves, bspRoot = 0, clientSize, collisionVersion = null,
+                edgeOpenings = null, edgeApproaches = null }) {
+    Object.assign(this, { file, version, security, rows, cols, grid, flags, monsterGrid, walls,
+                          sidedefs, sectors, nodes, leaves, bspRoot, clientSize, collisionVersion,
+                          edgeOpenings, edgeApproaches });
+    this._edgeOpeningCache = new Map();
+    this._edgeApproachCache = new Map();
   }
 
   // The relief as a quick spread. Precise surfaces now live in `leaves`: each convex
@@ -213,6 +542,591 @@ export class RoomGeometry {
   }
 
   inBounds(row, col) { return row >= 1 && row <= this.rows && col >= 1 && col <= this.cols; }
+
+  // Fine movement is allowed only with the complete, versioned collision payload.
+  // Five-field legacy wall tuples can still draw a minimap, but cannot distinguish
+  // directional sidedefs, low steps, low ceilings, or cliffs.
+  get collisionReady() {
+    return this.collisionVersion === COLLISION_VERSION
+      && Number.isInteger(this.security)
+      && Array.isArray(this.walls) && Array.isArray(this.sectors) && this.sectors.length > 0
+      && Array.isArray(this.leaves) && this.leaves.length > 0
+      && Number.isInteger(this.bspRoot) && this.bspRoot > 0
+      && Array.isArray(this.nodes) && this.nodes.length > 0
+      && this.leaves.every(leaf => !!leaf.sector)
+      && this.walls.every(wall => !wall.drawable || (wall.collisionMetadata === true
+        && this.nodes[wall.collisionNode - 1]?.type === 'internal'));
+  }
+
+  leafAtClient(x, y, { preferSectorNum = null } = {}) {
+    // BSPFindLeafByPoint (drawbsp.c) deliberately chooses the positive child on a
+    // separator tie. Polygon containment cannot reproduce that rule on shared edges,
+    // so collision-ready geometry always traverses the baked tree first.
+    if (this.bspRoot && Array.isArray(this.nodes)) {
+      let id = this.bspRoot;
+      for (let depth = 0; id && depth <= this.nodes.length; depth++) {
+        const node = this.nodes[id - 1];
+        if (!node) return null;
+        if (node.type === 'leaf') return node;
+        // BSPFindLeafByPoint assigns its float expression to a C `long` before
+        // branching. Values in (-1,1) therefore take the zero/positive-child path.
+        const side = Math.trunc(separatorValue(node.separator, x, y));
+        id = side === 0 ? (node.positive || node.negative)
+          : side > 0 ? node.positive : node.negative;
+      }
+      return null;
+    }
+    if (!Array.isArray(this.leaves)) return null;
+    const hits = [];
+    for (const leaf of this.leaves) {
+      if (Array.isArray(leaf.bbox) && leaf.bbox.length === 4) {
+        const minX = Math.min(leaf.bbox[0], leaf.bbox[2]);
+        const maxX = Math.max(leaf.bbox[0], leaf.bbox[2]);
+        const minY = Math.min(leaf.bbox[1], leaf.bbox[3]);
+        const maxY = Math.max(leaf.bbox[1], leaf.bbox[3]);
+        if (x < minX - GEOMETRY_EPSILON || x > maxX + GEOMETRY_EPSILON
+            || y < minY - GEOMETRY_EPSILON || y > maxY + GEOMETRY_EPSILON) continue;
+      }
+      if (pointInPolygon(x, y, leaf.polygon)) hits.push(leaf);
+    }
+    if (!hits.length) return null;
+    return hits.find(leaf => leaf.sectorNum === preferSectorNum)
+      ?? hits.sort((a, b) => (a.node ?? 0) - (b.node ?? 0))[0];
+  }
+
+  floorBaseAtClient(x, y, leaf = null, { roomFlags = 0, overrideDepths = null } = {}) {
+    leaf = leaf ?? this.leafAtClient(x, y);
+    if (!leaf?.sector) return null;
+    const depth = leaf.sector.depth ?? 0;
+    const depthIndex = Number.isInteger(leaf.sector.flags)
+      ? sectorDepth(leaf.sector.flags) : SECTOR_DEPTHS.indexOf(depth);
+    const overrideBit = depthIndex > 0 ? 1 << (depthIndex - 1) : 0;
+    if (overrideBit && (roomFlags & overrideBit)
+        && Number.isFinite(overrideDepths?.[depthIndex])) return overrideDepths[depthIndex];
+    return floorHeightAt(x, y, leaf.sector) - depth;
+  }
+
+  _blockingWall(from, to, leaf, {
+    playerRadius, playerHeight, roomFlags, overrideDepths, motionZ,
+  }) {
+    const floor = this.floorBaseAtClient(from.x, from.y, leaf, { roomFlags, overrideDepths });
+    if (floor == null) return { reason: 'start_has_no_floor' };
+    // UserMovePlayer keeps the body's physical z for the whole command and tests
+    // each substep at max(physical z, the floor under the previous point). In
+    // particular, walking downhill does not make the body fall instantaneously and
+    // thereby fit under an arch later in the same coordinate packet.
+    const suppliedMin = Number.isFinite(motionZ?.min) ? motionZ.min
+      : Number.isFinite(motionZ) ? motionZ : floor;
+    const suppliedMax = Number.isFinite(motionZ?.max) ? motionZ.max
+      : Number.isFinite(motionZ) ? motionZ : floor;
+    const zMin = Math.max(Math.min(suppliedMin, suppliedMax), floor);
+    const zMax = Math.max(Math.max(suppliedMin, suppliedMax), floor);
+    const squareDistance = (x0, y0, x1, y1) => {
+      const dx = f32(f32(x0) - f32(x1));
+      const dy = f32(f32(y0) - f32(y1));
+      return f32(f32(dx * dx) + f32(dy * dy));
+    };
+    const intersectNode = node => {
+      if (Array.isArray(node.bbox) && node.bbox.length === 4) {
+        if (f32(f32(node.bbox[0]) - f32(to.x)) > playerRadius
+            || f32(f32(to.x) - f32(node.bbox[2])) > playerRadius
+            || f32(f32(node.bbox[1]) - f32(to.y)) > playerRadius
+            || f32(f32(to.y) - f32(node.bbox[3])) > playerRadius) return null;
+      }
+      const planeDistance = separatorValue(node.separator, to.x, to.y);
+      const oldDistance = separatorValue(node.separator, from.x, from.y);
+      const newDistance = f32(Math.abs(planeDistance) / CLIENT_FINENESS);
+      if (newDistance > playerRadius || Math.abs(planeDistance) > Math.abs(oldDistance)) return null;
+      let wallNumber = node.firstCollisionWall, guard = 0;
+      while (wallNumber) {
+        if (wallNumber > this.walls.length || guard++ >= this.walls.length)
+          return { reason: 'collision_geometry_unavailable' };
+        const wall = this.walls[wallNumber - 1];
+        if (wall.collisionNode !== node.node) return { reason: 'collision_geometry_unavailable' };
+        const minX = f32(Math.min(wall.x0, wall.x1) - playerRadius);
+        const maxX = f32(Math.max(wall.x0, wall.x1) + playerRadius);
+        const minY = f32(Math.min(wall.y0, wall.y1) - playerRadius);
+        const maxY = f32(Math.max(wall.y0, wall.y1) + playerRadius);
+        if (to.x >= minX && to.x <= maxX && to.y >= minY && to.y <= maxY) {
+          const side = oldDistance > 0.001 ? 'pos' : 'neg';
+          const crossable = canCrossWallAt(wall, to.x, to.y, zMin, side, { playerHeight })
+            && canCrossWallAt(wall, to.x, to.y, zMax, side, { playerHeight });
+          if (!crossable) {
+            const d0 = squareDistance(to.x, to.y, wall.x0, wall.y0);
+            const d1 = squareDistance(to.x, to.y, wall.x1, wall.y1);
+            const wallLength2 = squareDistance(wall.x0, wall.y0, wall.x1, wall.y1);
+            const radius2 = f32(playerRadius * playerRadius);
+            let blocked = false;
+            if (d0 > wallLength2) {
+              const oldEnd = squareDistance(from.x, from.y, wall.x1, wall.y1);
+              blocked = d1 < radius2 && d1 <= oldEnd;
+            } else if (d1 > wallLength2) {
+              const oldEnd = squareDistance(from.x, from.y, wall.x0, wall.y0);
+              blocked = d0 < radius2 && d0 <= oldEnd;
+            } else blocked = true;
+            if (blocked) return { wall, index: wallNumber - 1, reason: 'geometry_blocked' };
+          }
+        }
+        wallNumber = wall.nextCollisionWall;
+      }
+      return null;
+    };
+
+    // FindIntersection is pre-order DFS: current splitter, then positive subtree,
+    // then negative subtree. The first blocking wall determines the stock slide.
+    const stack = [this.bspRoot];
+    while (stack.length) {
+      const node = this.nodes?.[stack.pop() - 1];
+      if (!node || node.type === 'leaf') continue;
+      const hit = intersectNode(node);
+      if (hit) return hit;
+      if (node.negative) stack.push(node.negative);
+      if (node.positive) stack.push(node.positive);
+    }
+    return null;
+  }
+
+  _resolveClientMicrostep(from, to, {
+    slide, playerRadius, playerHeight, roomFlags, overrideDepths, motionZ,
+  }) {
+    const fromLeaf = this.leafAtClient(from.x, from.y, { preferSectorNum: from.sectorNum });
+    if (!fromLeaf) return { ...from, moved: false, blocked: true, reason: 'start_has_no_floor' };
+    const toLeaf = this.leafAtClient(to.x, to.y, { preferSectorNum: fromLeaf.sectorNum });
+    if (!toLeaf) return { ...from, moved: false, blocked: true, reason: 'destination_has_no_floor' };
+
+    const hit = this._blockingWall(from, to, fromLeaf,
+      { playerRadius, playerHeight, roomFlags, overrideDepths, motionZ });
+    if (!hit) return { x: to.x, y: to.y, sectorNum: toLeaf.sectorNum,
+                       moved: Math.hypot(to.x - from.x, to.y - from.y) > GEOMETRY_EPSILON,
+                       blocked: false };
+    if (!hit.wall || !slide)
+      return { ...from, moved: false, blocked: true, reason: hit.reason,
+               wallIndex: hit.index };
+
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const collisionOptions = {
+      playerRadius, playerHeight, roomFlags, overrideDepths, motionZ,
+    };
+    const inspect = candidate => {
+      const leaf = this.leafAtClient(candidate.x, candidate.y,
+        { preferSectorNum: fromLeaf.sectorNum });
+      if (!leaf) return { candidate, leaf: null, hit: { reason: 'destination_has_no_floor' } };
+      return { candidate, leaf,
+        hit: this._blockingWall(from, candidate, fromLeaf, collisionOptions) };
+    };
+    const project = (candidate, wall) => {
+      const wallDx = wall.x1 - wall.x0, wallDy = wall.y1 - wall.y0;
+      const denom = wallDx * wallDx + wallDy * wallDy;
+      if (denom <= GEOMETRY_EPSILON) return { x: from.x, y: from.y };
+      const moveDx = candidate.x - from.x, moveDy = candidate.y - from.y;
+      const scale = (moveDx * wallDx + moveDy * wallDy) / denom;
+      // SlideAlongWall assigns a C `(int)` projection: truncate toward zero.
+      return { x: from.x + Math.trunc(wallDx * scale),
+               y: from.y + Math.trunc(wallDy * scale) };
+    };
+
+    // Match UserMovePlayer's retry ladder. Project the entire requested substep
+    // along the first blocking wall, retry against a second wall, then try one
+    // small perpendicular move on either side before giving up. Higher-level FAN
+    // headings are useful route exploration, but are not a replacement for these
+    // within-command corner retries.
+    let attempt = inspect(project(to, hit.wall));
+    if (attempt.hit?.reason === 'collision_geometry_unavailable')
+      return { ...from, moved: false, blocked: true, reason: attempt.hit.reason };
+    if (attempt.hit?.wall) {
+      attempt = inspect(project(attempt.candidate, attempt.hit.wall));
+      if (attempt.hit?.reason === 'collision_geometry_unavailable')
+        return { ...from, moved: false, blocked: true, reason: attempt.hit.reason };
+    }
+
+    if (attempt.hit) {
+      const length = Math.hypot(dx, dy);
+      if (length > GEOMETRY_EPSILON) {
+        const sideX = -dy / length * MIN_SIDE_MOVE;
+        const sideY = dx / length * MIN_SIDE_MOVE;
+        const left = inspect({ x: from.x + Math.trunc(sideX),
+                               y: from.y + Math.trunc(sideY) });
+        if (left.hit?.reason === 'collision_geometry_unavailable')
+          return { ...from, moved: false, blocked: true, reason: left.hit.reason };
+        if (!left.hit) attempt = left;
+        else {
+          const right = inspect({ x: from.x - Math.trunc(sideX),
+                                  y: from.y - Math.trunc(sideY) });
+          if (right.hit?.reason === 'collision_geometry_unavailable')
+            return { ...from, moved: false, blocked: true, reason: right.hit.reason };
+          if (!right.hit) attempt = right;
+        }
+      }
+    }
+
+    if (attempt.hit) return { ...from, moved: false, blocked: true,
+      reason: hit.reason, wallIndex: hit.index };
+    const moved = Math.hypot(attempt.candidate.x - from.x,
+      attempt.candidate.y - from.y) > GEOMETRY_EPSILON;
+    return { x: attempt.candidate.x, y: attempt.candidate.y,
+             sectorNum: attempt.leaf.sectorNum, moved,
+             blocked: true, slid: moved, reason: hit.reason, wallIndex: hit.index };
+  }
+
+  _resolveObjectMicrostep(from, to, obstacles, {
+    playerRadius, playerHeight, roomFlags, overrideDepths, motionZ,
+  }) {
+    for (const obstacle of obstacles) {
+      if (!Number.isFinite(obstacle?.x) || !Number.isFinite(obstacle?.y)) continue;
+      let dx = Math.abs(obstacle.x - to.x), dy = Math.abs(obstacle.y - to.y);
+      const newDistance = dx * dx + dy * dy;
+      const radius = obstacle.radius ?? MIN_NOMOVEON;
+      if (dx > radius || dy > radius || newDistance > radius * radius) continue;
+      const oldDx = Math.abs(obstacle.x - from.x), oldDy = Math.abs(obstacle.y - from.y);
+      const oldDistance = oldDx * oldDx + oldDy * oldDy;
+      if (newDistance > oldDistance) continue;
+
+      // MoveObjectAllowed represents an OF_MOVEON_NO object as a square, pushes one
+      // coordinate to its edge, then accepts the modified point only if walls allow it.
+      const candidate = { x: to.x, y: to.y };
+      if (dx < radius) candidate.x = obstacle.x > to.x ? obstacle.x - radius : obstacle.x + radius;
+      else if (dy < radius) candidate.y = obstacle.y > to.y ? obstacle.y - radius : obstacle.y + radius;
+      const staticResult = this._resolveClientMicrostep(from, candidate,
+        { slide: false, playerRadius, playerHeight, roomFlags, overrideDepths, motionZ });
+      const clearOfObjects = staticResult.moved && !staticResult.blocked && obstacles.every(other => {
+        if (!Number.isFinite(other?.x) || !Number.isFinite(other?.y)) return true;
+        const r = other.radius ?? MIN_NOMOVEON;
+        const ox = staticResult.x - other.x, oy = staticResult.y - other.y;
+        return ox * ox + oy * oy >= r * r - GEOMETRY_EPSILON;
+      });
+      if (clearOfObjects) return { ...staticResult, blocked: true, slid: true,
+                                   stop: true, reason: 'object_blocked', objectId: obstacle.id };
+      return { ...from, moved: false, blocked: true, stop: true,
+               reason: 'object_blocked', objectId: obstacle.id };
+    }
+    return to;
+  }
+
+  // Simulate the real client's local collision pass for one fine-coordinate move.
+  // Input and output are CLIENT units (1024/square). The broker converts its KOD
+  // units (64/square) at the boundary and emits only the returned legal endpoint.
+  traceFineMoveClient(x0, y0, x1, y1, {
+    slide = true,
+    playerRadius = PLAYER_RADIUS,
+    playerHeight = PLAYER_HEIGHT,
+    maxMicrostep = PLAYER_RADIUS / 2,
+    obstacles = [],
+    roomFlags = 0,
+    overrideDepths = null,
+    motionZ = null,
+  } = {}) {
+    if (!this.collisionReady) return {
+      available: false, moved: false, blocked: true, x: x0, y: y0,
+      reason: 'collision_geometry_unavailable',
+      note: 'this map predates collision metadata; rebuild or refresh its baked .roo geometry',
+    };
+    const startLeaf = this.leafAtClient(x0, y0);
+    const startFloor = this.floorBaseAtClient(x0, y0, startLeaf,
+      { roomFlags, overrideDepths });
+    if (startFloor == null) return {
+      available: true, moved: false, blocked: true, x: x0, y: y0,
+      reason: 'start_has_no_floor',
+    };
+    // This is the player's physical height (or conservative vertical-motion range)
+    // for one command. The floor under each previous microstep may raise collision
+    // z, but a descent cannot lower it instantaneously inside the packet.
+    const commandMotionZ = Number.isFinite(motionZ?.min) && Number.isFinite(motionZ?.max)
+      ? { min: Math.min(motionZ.min, motionZ.max), max: Math.max(motionZ.min, motionZ.max) }
+      : Number.isFinite(motionZ) ? motionZ : startFloor;
+    let carriedMotionZ = Number.isFinite(commandMotionZ?.min)
+      ? { min: Math.min(commandMotionZ.min, startFloor),
+          max: Math.max(commandMotionZ.max, startFloor) }
+      : { min: Math.min(commandMotionZ, startFloor), max: Math.max(commandMotionZ, startFloor) };
+    const distance = Math.hypot(x1 - x0, y1 - y0);
+    if (distance <= GEOMETRY_EPSILON)
+      return { available: true, moved: false, blocked: false, arrived: true,
+               x: x0, y: y0, motionZ: carriedMotionZ, destinationFloor: startFloor };
+    const count = Math.max(1, Math.ceil(distance / Math.max(1, maxMicrostep)));
+    const dx = (x1 - x0) / count, dy = (y1 - y0) / count;
+    let at = { x: x0, y: y0, sectorNum: this.leafAtClient(x0, y0)?.sectorNum };
+    let blocked = false, slid = false, reason = null, wallIndex = null;
+    for (let i = 0; i < count; i++) {
+      const next = this._resolveClientMicrostep(at, { x: at.x + dx, y: at.y + dy },
+        { slide, playerRadius, playerHeight, roomFlags, overrideDepths,
+          motionZ: carriedMotionZ });
+      const resolved = next.moved
+        ? this._resolveObjectMicrostep(at, next, obstacles,
+          { playerRadius, playerHeight, roomFlags, overrideDepths,
+            motionZ: carriedMotionZ })
+        : next;
+      blocked ||= !!resolved.blocked;
+      slid ||= !!resolved.slid;
+      reason = resolved.reason ?? reason;
+      wallIndex = resolved.wallIndex ?? wallIndex;
+      if (!resolved.moved) break;
+      at = { x: resolved.x, y: resolved.y, sectorNum: resolved.sectorNum };
+      const leaf = this.leafAtClient(at.x, at.y, { preferSectorNum: at.sectorNum });
+      const floor = this.floorBaseAtClient(at.x, at.y, leaf, { roomFlags, overrideDepths });
+      if (Number.isFinite(floor)) carriedMotionZ = {
+        min: Math.min(carriedMotionZ.min, floor),
+        max: Math.max(carriedMotionZ.max, floor),
+      };
+      if (resolved.stop) break;
+    }
+    const moved = Math.hypot(at.x - x0, at.y - y0) > GEOMETRY_EPSILON;
+    const arrived = Math.hypot(at.x - x1, at.y - y1) <= GEOMETRY_EPSILON;
+    const destinationLeaf = this.leafAtClient(at.x, at.y, { preferSectorNum: at.sectorNum });
+    const destinationFloor = this.floorBaseAtClient(at.x, at.y, destinationLeaf,
+      { roomFlags, overrideDepths });
+    return { available: true, x: at.x, y: at.y, moved, arrived,
+             motionZ: carriedMotionZ, destinationFloor,
+             blocked: blocked || !arrived, slid, reason: arrived ? null : (reason ?? 'geometry_blocked'),
+             ...(wallIndex == null ? {} : { wallIndex }) };
+  }
+
+  // Fine BSP openings across each server room bound. StandardLeaveDir fires at the
+  // first out-of-bounds KOD coordinate, so scan exactly to wire 63 on north/west and
+  // `(size + 1) * 64` on south/east. An old square-centre target overshot this by
+  // another 32 KOD units and turned legal edge exits into apparent wall collisions.
+  edgeCrossingRanges(direction) {
+    const name = String(direction ?? '').toLowerCase();
+    if (!['north', 'south', 'west', 'east'].includes(name) || !this.collisionReady) return [];
+    if (this._edgeOpeningCache.has(name)) return this._edgeOpeningCache.get(name);
+    const baked = this.edgeOpenings?.[name];
+    if (Array.isArray(baked)) {
+      this._edgeOpeningCache.set(name, baked);
+      return baked;
+    }
+    const horizontal = name === 'north' || name === 'south';
+    const alongSquares = horizontal ? this.cols : this.rows;
+    const insideFixed = name === 'north' || name === 'west'
+      ? KOD_FINENESS + (KOD_FINENESS >> 1)
+      : ((horizontal ? this.rows : this.cols) * KOD_FINENESS) + (KOD_FINENESS >> 1);
+    const outsideFixed = name === 'north' || name === 'west'
+      ? KOD_FINENESS - 1
+      : ((horizontal ? this.rows : this.cols) + 1) * KOD_FINENESS;
+    const ranges = [];
+    let start = null, prior = null;
+    for (let along = KOD_FINENESS; along < (alongSquares + 1) * KOD_FINENESS; along++) {
+      const inside = horizontal ? { x: along, y: insideFixed } : { x: insideFixed, y: along };
+      const outside = horizontal ? { x: along, y: outsideFixed } : { x: outsideFixed, y: along };
+      const trace = this.traceFineMoveClient(
+        protocolToClient(inside.x), protocolToClient(inside.y),
+        protocolToClient(outside.x), protocolToClient(outside.y), { slide: false });
+      const valid = trace.available && trace.arrived;
+      if (valid && start == null) start = along;
+      if (!valid && start != null) { ranges.push([start, prior]); start = null; }
+      prior = along;
+    }
+    if (start != null) ranges.push([start, prior]);
+    const frozen = ranges.map(range => Object.freeze(range));
+    this._edgeOpeningCache.set(name, frozen);
+    return frozen;
+  }
+
+  edgeCrossingCandidates(direction) {
+    const name = String(direction ?? '').toLowerCase();
+    const horizontal = name === 'north' || name === 'south';
+    if (!['north', 'south', 'west', 'east'].includes(name)) return [];
+    const fixedInside = name === 'north' || name === 'west'
+      ? KOD_FINENESS + (KOD_FINENESS >> 1)
+      : ((horizontal ? this.rows : this.cols) * KOD_FINENESS) + (KOD_FINENESS >> 1);
+    const fixedOutside = name === 'north' || name === 'west'
+      ? KOD_FINENESS - 1
+      : ((horizontal ? this.rows : this.cols) + 1) * KOD_FINENESS;
+    const alongValues = new Set();
+    for (const [start, end] of this.edgeCrossingRanges(name)) {
+      // Square centres preserve ordinary grid paths where they really cross. The
+      // midpoint and ends retain sub-square openings such as Cor Noth/Farol.
+      for (let square = Math.floor(start / KOD_FINENESS);
+           square <= Math.floor(end / KOD_FINENESS); square++) {
+        const centre = square * KOD_FINENESS + (KOD_FINENESS >> 1);
+        if (centre >= start && centre <= end) alongValues.add(centre);
+      }
+      alongValues.add(Math.round((start + end) / 2));
+      alongValues.add(start);
+      alongValues.add(end);
+    }
+    return [...alongValues].sort((a, b) => a - b).map(along => {
+      const fineStand = horizontal ? { x: along, y: fixedInside } : { x: fixedInside, y: along };
+      const edgeTarget = horizontal ? { x: along, y: fixedOutside } : { x: fixedOutside, y: along };
+      return {
+        fine_stand_on: fineStand,
+        edge_target: edgeTarget,
+        col: Math.floor(fineStand.x / KOD_FINENESS),
+        row: Math.floor(fineStand.y / KOD_FINENESS),
+      };
+    });
+  }
+
+  // A boundary opening is useful only when the character can approach it from a
+  // square that the ordinary room router can reach. A perpendicular inside/outside
+  // trace alone over-advertises decorative slits on the outside of a wall (Cor Noth
+  // is the concrete counterexample). Resolve that question while baking and keep
+  // the live exits() hot path to one coarse flood fill.
+  edgeApproachCandidates(direction) {
+    const name = String(direction ?? '').toLowerCase();
+    if (!['north', 'south', 'west', 'east'].includes(name) || !this.collisionReady) return [];
+    if (this._edgeApproachCache.has(name)) return this._edgeApproachCache.get(name);
+
+    const baked = this.edgeApproaches?.[name];
+    if (Array.isArray(baked)) {
+      const restored = baked.map(entry => Object.freeze({
+        fine_stand_on: Object.freeze({ x: entry[0], y: entry[1] }),
+        edge_target: Object.freeze({ x: entry[2], y: entry[3] }),
+        col: Math.floor(entry[0] / KOD_FINENESS),
+        row: Math.floor(entry[1] / KOD_FINENESS),
+        stages: Object.freeze(entry[4].map(([col, row]) => Object.freeze({ col, row }))),
+        graph_routable: entry[5] !== 0,
+      }));
+      this._edgeApproachCache.set(name, Object.freeze(restored));
+      return restored;
+    }
+
+    const approaches = [];
+    const MAX_STAGE_RADIUS = 4;
+    for (const crossing of this.edgeCrossingCandidates(name)) {
+      const stages = [];
+      const seen = new Set();
+      let firstStageRadius = null;
+      for (let radius = 0; radius <= MAX_STAGE_RADIUS; radius++) {
+        for (let row = crossing.row - radius; row <= crossing.row + radius; row++) {
+          for (let col = crossing.col - radius; col <= crossing.col + radius; col++) {
+            if (Math.max(Math.abs(row - crossing.row), Math.abs(col - crossing.col)) !== radius)
+              continue;
+            const key = `${col},${row}`;
+            if (seen.has(key) || !this.inBounds(row, col) || !this.walkable(row, col)) continue;
+            seen.add(key);
+            const centreX = col * KOD_FINENESS + (KOD_FINENESS >> 1);
+            const centreY = row * KOD_FINENESS + (KOD_FINENESS >> 1);
+            const trace = this.traceFineMoveClient(
+              protocolToClient(centreX), protocolToClient(centreY),
+              protocolToClient(crossing.fine_stand_on.x),
+              protocolToClient(crossing.fine_stand_on.y), { slide: false });
+            if (trace.available && trace.arrived) stages.push({ col, row });
+          }
+        }
+        if (stages.length && firstStageRadius == null) firstStageRadius = radius;
+        // Nearby stages that reach the same fine point cover ordinary component
+        // variation. Scanning all 81 squares for every simple square-centre edge made
+        // a full setup bake take minutes without improving any executable route.
+        if (firstStageRadius != null && radius >= Math.min(MAX_STAGE_RADIUS, firstStageRadius + 1))
+          break;
+      }
+      if (stages.length) approaches.push(Object.freeze({
+        ...crossing,
+        fine_stand_on: Object.freeze({ ...crossing.fine_stand_on }),
+        edge_target: Object.freeze({ ...crossing.edge_target }),
+        stages: Object.freeze(stages.map(stage => Object.freeze(stage))),
+        graph_routable: true,
+      }));
+    }
+    const frozen = Object.freeze(approaches);
+    this._edgeApproachCache.set(name, frozen);
+    return frozen;
+  }
+
+  // A bounded local A* for sub-square approaches that need to round a corner. This
+  // is deliberately not the room router: the coarse grid gets us near the exit,
+  // then this resolves only the final BSP-scale gap with locally validated segments.
+  finePathProtocol(fromX, fromY, toX, toY, {
+    step = 8,
+    margin = 12 * KOD_FINENESS,
+    maxNodes = 20000,
+  } = {}) {
+    if (!this.collisionReady || ![fromX, fromY, toX, toY].every(Number.isFinite))
+      return { found: false, reason: 'collision_geometry_unavailable', waypoints: [] };
+    const clear = (ax, ay, bx, by) => this.traceFineMoveClient(
+      protocolToClient(ax), protocolToClient(ay), protocolToClient(bx), protocolToClient(by),
+      { slide: false }).arrived;
+    if (clear(fromX, fromY, toX, toY))
+      return { found: true, waypoints: [{ x: toX, y: toY }], expanded: 0 };
+
+    const minX = Math.max(KOD_FINENESS, Math.floor(Math.min(fromX, toX) - margin));
+    const minY = Math.max(KOD_FINENESS, Math.floor(Math.min(fromY, toY) - margin));
+    const maxX = Math.min((this.cols + 1) * KOD_FINENESS - 1,
+      Math.ceil(Math.max(fromX, toX) + margin));
+    const maxY = Math.min((this.rows + 1) * KOD_FINENESS - 1,
+      Math.ceil(Math.max(fromY, toY) + margin));
+    const key = (x, y) => `${x},${y}`;
+    const heuristic = (x, y) => Math.hypot(toX - x, toY - y);
+    const open = [{ x: Math.round(fromX), y: Math.round(fromY), g: 0,
+                    f: heuristic(fromX, fromY) }];
+    const best = new Map([[key(open[0].x, open[0].y), 0]]);
+    const came = new Map();
+    const closed = new Set();
+    const push = node => {
+      open.push(node);
+      let i = open.length - 1;
+      while (i > 0) {
+        const parent = (i - 1) >> 1;
+        if (open[parent].f <= node.f) break;
+        open[i] = open[parent]; i = parent;
+      }
+      open[i] = node;
+    };
+    const pop = () => {
+      const root = open[0], tail = open.pop();
+      if (open.length && tail) {
+        let i = 0;
+        while (true) {
+          let child = i * 2 + 1;
+          if (child >= open.length) break;
+          if (child + 1 < open.length && open[child + 1].f < open[child].f) child++;
+          if (open[child].f >= tail.f) break;
+          open[i] = open[child]; i = child;
+        }
+        open[i] = tail;
+      }
+      return root;
+    };
+    const moves = [-1, 0, 1].flatMap(dy => [-1, 0, 1]
+      .filter(dx => dx || dy).map(dx => ({ dx: dx * step, dy: dy * step,
+                                          cost: (dx && dy) ? step * Math.SQRT2 : step })));
+    let goalKey = null, expanded = 0;
+    while (open.length && expanded < maxNodes) {
+      const cur = pop(), ck = key(cur.x, cur.y);
+      if (closed.has(ck)) continue;
+      closed.add(ck); expanded++;
+      if (heuristic(cur.x, cur.y) <= step * Math.SQRT2
+          && clear(cur.x, cur.y, toX, toY)) {
+        goalKey = key(toX, toY);
+        came.set(goalKey, { key: ck, point: { x: cur.x, y: cur.y } });
+        break;
+      }
+      for (const move of moves) {
+        const x = cur.x + move.dx, y = cur.y + move.dy;
+        if (x < minX || x > maxX || y < minY || y > maxY) continue;
+        const nk = key(x, y);
+        if (closed.has(nk) || !clear(cur.x, cur.y, x, y)) continue;
+        const g = cur.g + move.cost;
+        if (g >= (best.get(nk) ?? Infinity)) continue;
+        best.set(nk, g);
+        came.set(nk, { key: ck, point: { x: cur.x, y: cur.y } });
+        push({ x, y, g, f: g + heuristic(x, y) });
+      }
+    }
+    if (!goalKey) return { found: false,
+      reason: expanded >= maxNodes ? 'fine path search budget exhausted' : 'no fine path',
+      waypoints: [], expanded };
+    const raw = [{ x: toX, y: toY }];
+    let at = goalKey;
+    while (came.has(at)) {
+      const prior = came.get(at);
+      raw.push(prior.point); at = prior.key;
+    }
+    raw.reverse();
+    if (raw.length && raw[0].x === Math.round(fromX) && raw[0].y === Math.round(fromY)) raw.shift();
+
+    // Collapse the 8-KOD search lattice into the longest legal straight segments so
+    // execution spends packets at turns, not at every search node.
+    const waypoints = [];
+    let ax = fromX, ay = fromY, index = 0;
+    while (index < raw.length) {
+      let chosen = index;
+      for (let j = Math.min(raw.length - 1, index + 96); j >= index; j--) {
+        if (clear(ax, ay, raw[j].x, raw[j].y)) { chosen = j; break; }
+      }
+      const point = raw[chosen];
+      waypoints.push(point); ax = point.x; ay = point.y; index = chosen + 1;
+    }
+    return { found: true, waypoints, expanded };
+  }
 
   // Is there floor on this square? kod-style 1-based.
   walkable(row, col) {
@@ -365,7 +1279,7 @@ export class RoomGeometry {
     // crossing, and it is emitted by us, about us, on no evidence.
     //
     // So: start from the nearest square the grid does believe in and prepend the step
-    // to it. Fine movement covers that first hop — the server judges it, not the grid.
+    // to it. Fine movement covers that first hop with local BSP collision, not the grid.
     let start = { row: fromRow, col: fromCol }, lead = null;
     if (!this.walkable(fromRow, fromCol)) {
       const near = this.nearestWalkable(fromRow, fromCol);
@@ -580,26 +1494,96 @@ export class RoomGeometry {
     };
   }
 
-  // Compact enough to bake into JSON: three base64 byte planes plus the renderable
-  // BSP leaves. Internal BSP nodes are deliberately not baked: the renderer needs
-  // each convex subsector and its sector, not the traversal tree used by the old
-  // software renderer. Vertex order and coordinates remain exactly as the .roo
-  // stored them; winding is render-significant and must not be "cleaned up" here.
-  toJSON({ includeWalls = true, includeSurfaces = true } = {}) {
+  // Compact enough to bake into JSON: three base64 byte planes plus optional public
+  // render surfaces. Collision has its own compact payload, including the internal
+  // BSP splitters needed to choose a directional sidedef exactly like move.c.
+  toJSON({ includeWalls = true, includeSurfaces = true, includeCollision = true,
+           graphEntrySquares = null, edgeDirections = null } = {}) {
     const out = {
-      file: path.basename(this.file || ''),
+      file: path.basename(this.file || ''), security: this.security,
       version: this.version, rows: this.rows, cols: this.cols,
       grid: Buffer.from(this.grid).toString('base64'),
       flags: Buffer.from(this.flags).toString('base64'),
       monsterGrid: this.monsterGrid ? Buffer.from(this.monsterGrid).toString('base64') : null,
     };
+    const drawableWalls = includeWalls && this.walls ? this.walls.filter(w => w.drawable) : null;
+    const drawableNumber = new Map(drawableWalls?.map((wall, index) => [wall, index + 1]) ?? []);
+    const firstCollisionWalls = new Map();
+    const nextCollisionWalls = [];
+    if (drawableWalls && this.nodes) {
+      const nextDrawable = rawNumber => {
+        let number = rawNumber, guard = 0;
+        while (number && guard++ <= this.walls.length) {
+          const wall = this.walls[number - 1];
+          if (!wall) return 0;
+          const encoded = drawableNumber.get(wall);
+          if (encoded) return encoded;
+          number = wall.nextWall ?? wall.nextCollisionWall;
+        }
+        return 0;
+      };
+      for (const node of this.nodes) if (node.type === 'internal')
+        firstCollisionWalls.set(node.node, nextDrawable(node.firstWall ?? node.firstCollisionWall));
+      for (const wall of drawableWalls)
+        nextCollisionWalls.push(nextDrawable(wall.nextWall ?? wall.nextCollisionWall));
+    }
     if (includeWalls && this.walls) {
-      // Only what the minimap needs: the segment and the three flags that decide how
-      // it is drawn. Texture ids and offsets are for rendering a 3D view, which no
-      // agent is doing, and they would triple the size of the file.
-      out.walls = this.walls.filter(w => w.drawable).map(w =>
-        [Math.round(w.x0), Math.round(w.y0), Math.round(w.x1), Math.round(w.y1),
+      // Keep the established five-field minimap tuples. Collision metadata is a
+      // compact aligned payload below so this generated file remains reviewable.
+      out.walls = drawableWalls.map(w =>
+        [w.x0, w.y0, w.x1, w.y1,
          (w.passable ? 1 : 0) | (w.mapNever ? 2 : 0) | (w.mapAlways ? 4 : 0)]);
+    }
+    if (includeCollision && drawableWalls && this.sectors?.length && this.leaves?.length
+        && this.nodes?.length && this.bspRoot
+        && drawableWalls.every(wall => wall.collisionMetadata && wall.collisionNode)) {
+      out.collisionVersion = COLLISION_VERSION;
+      const bakedDirections = edgeDirections == null
+        ? new Set(['north', 'south', 'west', 'east'])
+        : new Set([...edgeDirections].map(direction => String(direction).toLowerCase()));
+      out.edgeOpenings = Object.fromEntries(['north', 'south', 'west', 'east']
+        .map(direction => [direction, bakedDirections.has(direction)
+          ? this.edgeCrossingRanges(direction).map(range => [...range]) : []]));
+      // Compact tuple: inside x/y, minimum out-of-bounds x/y, then the coarse
+      // staging squares with a direct stock-collision-safe approach to the opening.
+      let graphReachable = null;
+      if (Array.isArray(graphEntrySquares) && graphEntrySquares.length) {
+        graphReachable = new Set();
+        const queue = [];
+        for (const entry of graphEntrySquares) {
+          const start = this.walkable(entry.row, entry.col)
+            ? { row: entry.row, col: entry.col }
+            : this.nearestWalkable(entry.row, entry.col);
+          if (!start) continue;
+          const key = `${start.col},${start.row}`;
+          if (!graphReachable.has(key)) { graphReachable.add(key); queue.push(start); }
+        }
+        for (let index = 0; index < queue.length; index++) {
+          for (const next of this.neighbors(queue[index].row, queue[index].col)) {
+            const key = `${next.col},${next.row}`;
+            if (graphReachable.has(key)) continue;
+            graphReachable.add(key);
+            queue.push(next);
+          }
+        }
+      }
+      out.edgeApproaches = Object.fromEntries(['north', 'south', 'west', 'east']
+        .map(direction => [direction, !bakedDirections.has(direction) ? []
+          : this.edgeApproachCandidates(direction).map(candidate => [
+          candidate.fine_stand_on.x, candidate.fine_stand_on.y,
+          candidate.edge_target.x, candidate.edge_target.y,
+          candidate.stages.map(stage => [stage.col, stage.row]),
+          (graphReachable == null ? candidate.graph_routable !== false
+            : candidate.stages.some(stage =>
+              graphReachable.has(`${stage.col},${stage.row}`))) ? 1 : 0,
+        ])]));
+      out.collision = {
+        wallSides: encodeCollisionWallSides(drawableWalls, nextCollisionWalls),
+        sectors: encodeCollisionSectors(this.sectors),
+        leaves: encodeCollisionLeaves(this.leaves),
+        nodes: encodeCollisionNodes(this.nodes, this.bspRoot, firstCollisionWalls),
+      };
+      out.collision.digest = collisionDigest({ ...out, collision: out.collision });
     }
     if (includeSurfaces && this.sectors && this.leaves) {
       out.sectors = this.sectors.map((s, i) => ({
@@ -628,30 +1612,179 @@ export class RoomGeometry {
   }
 
   static fromJSON(j) {
-    const sectors = Array.isArray(j.sectors) ? j.sectors.map((s, i) => ({
+    let collisionSectors = null, collisionLeaves = null, collisionNodes = null;
+    let collisionRoot = 0, collisionSides = null;
+    let collisionValid = false;
+    if (j.collisionVersion === COLLISION_VERSION && j.collision && Array.isArray(j.walls)) {
+      try {
+        const edgeOpenings = j.edgeOpenings;
+        if (!edgeOpenings || !['north', 'south', 'west', 'east'].every(direction => {
+          const max = ((direction === 'north' || direction === 'south') ? j.cols : j.rows) + 1;
+          return Array.isArray(edgeOpenings[direction]) && edgeOpenings[direction].every(range =>
+            Array.isArray(range) && range.length === 2 && range.every(Number.isInteger)
+            && range[0] >= KOD_FINENESS && range[0] <= range[1]
+            && range[1] < max * KOD_FINENESS);
+        })) throw new Error('invalid collision edge openings');
+        const edgeApproaches = j.edgeApproaches;
+        const approachMatchesDirection = (direction, entry) => {
+          const horizontal = direction === 'north' || direction === 'south';
+          const low = direction === 'north' || direction === 'west';
+          const fixedInside = low
+            ? KOD_FINENESS + (KOD_FINENESS >> 1)
+            : ((horizontal ? j.rows : j.cols) * KOD_FINENESS) + (KOD_FINENESS >> 1);
+          const fixedOutside = low
+            ? KOD_FINENESS - 1
+            : ((horizontal ? j.rows : j.cols) + 1) * KOD_FINENESS;
+          const along = horizontal ? entry[0] : entry[1];
+          return (horizontal
+            ? entry[1] === fixedInside && entry[3] === fixedOutside && entry[2] === along
+            : entry[0] === fixedInside && entry[2] === fixedOutside && entry[3] === along)
+            && edgeOpenings[direction].some(([start, end]) => along >= start && along <= end);
+        };
+        if (!edgeApproaches || !['north', 'south', 'west', 'east'].every(direction =>
+          Array.isArray(edgeApproaches[direction]) && edgeApproaches[direction].every(entry =>
+            Array.isArray(entry) && entry.length === 6
+            && entry.slice(0, 4).every(value => Number.isInteger(value) && value >= 0
+              && value <= 0xffff)
+            && Array.isArray(entry[4]) && entry[4].length > 0
+            && entry[4].every(stage => Array.isArray(stage) && stage.length === 2
+              && Number.isInteger(stage[0]) && stage[0] >= 1 && stage[0] <= j.cols
+              && Number.isInteger(stage[1]) && stage[1] >= 1 && stage[1] <= j.rows)
+            && (entry[5] === 0 || entry[5] === 1)
+            && approachMatchesDirection(direction, entry))))
+          throw new Error('invalid collision edge approaches');
+        if (!j.walls.every(tuple => Array.isArray(tuple) && tuple.length === 5
+            && tuple.slice(0, 4).every(Number.isFinite)
+            && Number.isInteger(tuple[4]) && (tuple[4] & ~0x07) === 0))
+          throw new Error('invalid collision wall tuple');
+        if (typeof j.collision.digest !== 'string'
+            || j.collision.digest !== collisionDigest({ ...j, collision: j.collision }))
+          throw new Error('collision payload digest mismatch');
+        collisionSectors = decodeCollisionSectors(j.collision.sectors);
+        collisionLeaves = decodeCollisionLeaves(j.collision.leaves, collisionSectors);
+        const decodedTree = decodeCollisionNodes(j.collision.nodes, collisionLeaves);
+        collisionNodes = decodedTree.nodes;
+        collisionRoot = decodedTree.root;
+        collisionSides = decodeCollisionWallSides(j.collision.wallSides, j.walls.length,
+          collisionSectors, collisionNodes);
+        collisionValid = true;
+      } catch {
+        // A malformed or truncated generated payload is not permission to move.
+        // Keep the minimap usable and make fine movement fail closed.
+      }
+    }
+    const sectors = collisionValid ? collisionSectors : Array.isArray(j.sectors) ? j.sectors.map((s, i) => ({
       ...s,
       id: i + 1,
       slopedFloor: s.slopedFloor ? { ...s.slopedFloor } : null,
       slopedCeiling: s.slopedCeiling ? { ...s.slopedCeiling } : null,
-    })) : null;
-    const leaves = Array.isArray(j.leaves) ? j.leaves.map(leaf => ({
+    })) : collisionSectors;
+    const leaves = collisionValid ? collisionLeaves : Array.isArray(j.leaves) ? j.leaves.map(leaf => ({
       type: 'leaf', node: leaf.node, sectorNum: leaf.sector,
       sector: sectors?.[leaf.sector - 1] ?? null,
       bbox: Array.isArray(leaf.bbox) ? [...leaf.bbox] : [],
       polygon: Array.isArray(leaf.polygon) ? leaf.polygon.map(p => [...p]) : [],
-    })) : null;
-    return new RoomGeometry({
-      file: j.file, version: j.version, rows: j.rows, cols: j.cols,
+    })) : collisionLeaves;
+    const walls = j.walls ? j.walls.map((tuple, index) => {
+      const [x0, y0, x1, y1, f] = tuple;
+      // Nine-field tuples were emitted briefly during development; accepting them
+      // costs nothing and makes the decoder tolerant of that intermediate format.
+      const inline = tuple.length >= 9 ? {
+        posSector: tuple[5], negSector: tuple[6],
+        posSidedefRec: sideFromBits(tuple[7]), negSidedefRec: sideFromBits(tuple[8]),
+      } : null;
+      // A versioned collision payload is the sole collision authority. Historical
+      // inline metadata may still render an intermediate development map, but must
+      // never override the separately decoded and validated payload.
+      const metadata = collisionValid ? collisionSides?.[index] : inline;
+      return {
+        x0, y0, x1, y1, drawable: true,
+        passable: !!(f & 1), mapNever: !!(f & 2), mapAlways: !!(f & 4),
+        posSector: metadata?.posSector ?? 0,
+        negSector: metadata?.negSector ?? 0,
+        posSidedefRec: metadata?.posSidedefRec ?? null,
+        negSidedefRec: metadata?.negSidedefRec ?? null,
+        collisionNode: metadata?.collisionNode ?? 0,
+        nextCollisionWall: metadata?.nextCollisionWall ?? 0,
+        collisionMetadata: !!metadata,
+      };
+    }) : null;
+    if (walls && sectors) for (const wall of walls) setWallHeights(wall, sectors);
+    if (collisionValid) {
+      // A wall's owner is security-critical: it selects the source-facing sidedef.
+      // Bind every decoded wall to the exact normalized splitter it claims, so a
+      // damaged owner byte cannot silently turn a one-way wall around.
+      for (const wall of walls) {
+        if (![wall.x0, wall.y0, wall.x1, wall.y1, wall.z0, wall.z1, wall.z2, wall.z3,
+              wall.zz0, wall.zz1, wall.zz2, wall.zz3].every(Number.isFinite)) {
+          collisionValid = false;
+          break;
+        }
+        const separator = collisionNodes[wall.collisionNode - 1]?.separator;
+        if (!separator) { collisionValid = false; break; }
+        const distance = (x, y) => Math.abs(separator.a * x + separator.b * y + separator.c)
+          / Math.max(1, Math.hypot(separator.a, separator.b));
+        if (distance(wall.x0, wall.y0) > 0.05 || distance(wall.x1, wall.y1) > 0.05) {
+          collisionValid = false;
+          break;
+        }
+      }
+    }
+    const geometry = new RoomGeometry({
+      file: j.file, version: j.version, security: j.security,
+      rows: j.rows, cols: j.cols,
       grid: Buffer.from(j.grid, 'base64'),
       flags: Buffer.from(j.flags, 'base64'),
       monsterGrid: j.monsterGrid ? Buffer.from(j.monsterGrid, 'base64') : null,
-      walls: j.walls ? j.walls.map(([x0, y0, x1, y1, f]) => ({
-        x0, y0, x1, y1, drawable: true,
-        passable: !!(f & 1), mapNever: !!(f & 2), mapAlways: !!(f & 4),
-      })) : null,
-      sectors, nodes: null, leaves,
+      walls,
+      sectors, nodes: collisionValid ? collisionNodes : null, leaves,
+      bspRoot: collisionValid ? collisionRoot : 0,
+      collisionVersion: collisionValid ? COLLISION_VERSION : null,
+      edgeOpenings: collisionValid ? j.edgeOpenings : null,
+      edgeApproaches: collisionValid ? j.edgeApproaches : null,
     });
+    if (collisionValid) {
+      // The digest protects bytes; these checks protect their meaning. A corrupted
+      // or incorrectly generated approach must not make a sealed graph edge routable.
+      for (const direction of ['north', 'south', 'west', 'east']) {
+        for (const candidate of geometry.edgeApproachCandidates(direction)) {
+          const outward = geometry.traceFineMoveClient(
+            protocolToClient(candidate.fine_stand_on.x),
+            protocolToClient(candidate.fine_stand_on.y),
+            protocolToClient(candidate.edge_target.x),
+            protocolToClient(candidate.edge_target.y), { slide: false });
+          if (!outward.arrived || !candidate.stages.every(stage => {
+            if (!geometry.walkable(stage.row, stage.col)) return false;
+            const x = stage.col * KOD_FINENESS + (KOD_FINENESS >> 1);
+            const y = stage.row * KOD_FINENESS + (KOD_FINENESS >> 1);
+            return geometry.traceFineMoveClient(protocolToClient(x), protocolToClient(y),
+              protocolToClient(candidate.fine_stand_on.x),
+              protocolToClient(candidate.fine_stand_on.y), { slide: false }).arrived;
+          })) {
+            geometry.collisionVersion = null;
+            geometry.edgeOpenings = null;
+            geometry.edgeApproaches = null;
+            geometry._edgeOpeningCache.clear();
+            geometry._edgeApproachCache.clear();
+            return geometry;
+          }
+        }
+      }
+    }
+    return geometry;
   }
+}
+
+// The map object is shared across sessions, and decoded collision geometry is
+// immutable (live flags/objects are supplied to each trace). Decode each room once
+// per loaded map rather than once per character; a fleet otherwise duplicates tens
+// of megabytes of BSP trees for every session.
+const SHARED_ROOM_GEOMETRY = new WeakMap();
+export function sharedRoomGeometry(roomOrRoo) {
+  const roo = roomOrRoo?.roo ?? roomOrRoo;
+  if (!roo || typeof roo !== 'object') return null;
+  if (!SHARED_ROOM_GEOMETRY.has(roo)) SHARED_ROOM_GEOMETRY.set(roo, RoomGeometry.fromJSON(roo));
+  return SHARED_ROOM_GEOMETRY.get(roo);
 }
 
 // The wall list — the minimap, properly. clientd3d/map.c:294 draws exactly this:
@@ -800,10 +1933,9 @@ export function parseRooNodes(buf, version, nodeOff, sectors = null, wallCount =
 //   floor_height(2) ceiling_height(2) light(1) flags(4) [speed(1) if v>=10]
 //   [slope(46) if SF_SLOPED_FLOOR] [slope(46) if SF_SLOPED_CEILING]
 //
-// The heights are read into a `WORD` by the client and then shifted left 4. They are
-// genuinely SIGNED — floors below the nominal zero are ordinary — and C's implicit
-// conversion of a WORD into the `int` parameter of HeightKodToClient is what makes
-// that work there. readInt16LE is the same thing said deliberately.
+// Heights are read into a `WORD` by the stock client and then shifted left 4.
+// Preserve that unsigned interpretation; sign-extending 0xffff would turn the
+// client's very high 1,048,560-unit surface into -16 and could fail collision open.
 const SLOPE_BYTES = 4 * 4 + 4 + 4 + 4 + 3 * 6;   // plane a,b,c,d | p0.x p0.y | angle | junk
 
 function readSlope(buf, p, version) {
@@ -828,7 +1960,7 @@ export function parseRooSectors(buf, version, sectorOff) {
   const n = buf.readUInt16LE(q); q += 2;
   const fixed = 19 + (version >= 10 ? 1 : 0);
   for (let i = 0; i < n; i++) {
-    if (q + fixed > buf.length) break;
+    if (q + fixed > buf.length) throw new Error(`truncated sector ${i + 1}`);
     const flags = buf.readInt32LE(q + 15);
     const s = {
       // These five are WORDs in bsp.h/LoadSectors. Resource ids routinely cross
@@ -838,8 +1970,8 @@ export function parseRooSectors(buf, version, sectorOff) {
       ceilingType: buf.readUInt16LE(q + 4),
       tx: buf.readUInt16LE(q + 6), ty: buf.readUInt16LE(q + 8),
       // Kept in CLIENT units, because that is the space every comparison happens in.
-      floorHeight: heightKodToClient(buf.readInt16LE(q + 10)),
-      ceilingHeight: heightKodToClient(buf.readInt16LE(q + 12)),
+      floorHeight: heightKodToClient(buf.readUInt16LE(q + 10)),
+      ceilingHeight: heightKodToClient(buf.readUInt16LE(q + 12)),
       light: buf.readUInt8(q + 14),
       flags,
       speed: version >= 10 ? buf.readUInt8(q + 19) : 0,
@@ -848,11 +1980,11 @@ export function parseRooSectors(buf, version, sectorOff) {
     };
     q += fixed;
     if (flags & SF.SLOPED_FLOOR) {
-      if (q + SLOPE_BYTES > buf.length) break;
+      if (q + SLOPE_BYTES > buf.length) throw new Error(`truncated floor slope in sector ${i + 1}`);
       s.slopedFloor = readSlope(buf, q, version); q += SLOPE_BYTES;
     }
     if (flags & SF.SLOPED_CEILING) {
-      if (q + SLOPE_BYTES > buf.length) break;
+      if (q + SLOPE_BYTES > buf.length) throw new Error(`truncated ceiling slope in sector ${i + 1}`);
       s.slopedCeiling = readSlope(buf, q, version); q += SLOPE_BYTES;
     }
     sectors.push(s);
@@ -866,23 +1998,33 @@ export function floorHeightAt(x, y, sector) {
   if (!sector) return 0;
   const s = sector.slopedFloor;
   if (!s) return sector.floorHeight;
-  return Math.round((-s.a * x - s.b * y - s.d) / s.c);
+  return slopeHeightAt(x, y, s);
 }
 export function ceilingHeightAt(x, y, sector) {
   if (!sector) return CLIENT_FINENESS;
   const s = sector.slopedCeiling;
   if (!s) return sector.ceilingHeight;
-  return Math.round((-s.a * x - s.b * y - s.d) / s.c);
+  return slopeHeightAt(x, y, s);
+}
+
+// The stock helpers operate on C floats and use roundf (half away from zero).
+// Keeping the intermediate operations at float32 avoids one-unit differences at
+// the exact 24-unit step and 768-unit headroom thresholds.
+function slopeHeightAt(x, y, slope) {
+  const ax = f32(f32(slope.a) * f32(x));
+  const by = f32(f32(slope.b) * f32(y));
+  const numerator = f32(f32(f32(-ax) - by) - f32(slope.d));
+  const value = f32(numerator / f32(slope.c));
+  return value < 0 ? Math.ceil(value - 0.5) : Math.floor(value + 0.5);
 }
 
 // bspload.c SetWallHeights (line 1324), the non-bowtie path. z0/z1 are the bottom and
 // top of the LOWER wall at endpoint 0 — the step — and z2/z3 the normal/upper split,
 // which is the headroom. zz* are the same four at endpoint 1.
 //
-// Bowties (a wall where which sector is higher SWAPS between its two endpoints) get
-// the same z1/z0 assignment as the normal case in the non-D3D branch, so for a
-// movement check — which only ever asks "how high is the step here" — treating them
-// as normal is faithful. The D3D branch differs only in what it draws.
+// Bowties follow the modern client's gD3DEnabled branch. IntersectNode still reads
+// endpoint-0 z1/z2 for movement, so these apparently rendering-only assignments are
+// observable collision rules (notably on passable walls in Marion).
 export function setWallHeights(wall, sectors) {
   const S1 = wall.posSector > 0 ? sectors[wall.posSector - 1] : null;
   const S2 = wall.negSector > 0 ? sectors[wall.negSector - 1] : null;
@@ -902,22 +2044,53 @@ export function setWallHeights(wall, sectors) {
     return wall;
   }
 
-  const f1a = floorHeightAt(wall.x0, wall.y0, S1), f2a = floorHeightAt(wall.x0, wall.y0, S2);
-  const f1b = floorHeightAt(wall.x1, wall.y1, S1), f2b = floorHeightAt(wall.x1, wall.y1, S2);
+  // WALL_HEIGHT_CHECK clamps the two-sector samples before any assignment.
+  const checked = value => Math.min(value, 65535);
+  const f1a = checked(floorHeightAt(wall.x0, wall.y0, S1));
+  const f2a = checked(floorHeightAt(wall.x0, wall.y0, S2));
+  const f1b = checked(floorHeightAt(wall.x1, wall.y1, S1));
+  const f2b = checked(floorHeightAt(wall.x1, wall.y1, S2));
   if (f1a > f2a) {
-    wall.z1 = f1a; wall.zz1 = (f1b >= f2b) ? f1b : f2b;
-    wall.z0 = f2a; wall.zz0 = (f1b >= f2b) ? f2b : f1b;
-    wall.bowtie = !(f1b >= f2b);
+    if (f1b >= f2b) {
+      wall.z1 = f1a; wall.zz1 = f1b;
+      wall.z0 = f2a; wall.zz0 = f2b;
+      wall.bowtie = false;
+    } else {
+      wall.z1 = f1a; wall.zz1 = f1b;
+      wall.z0 = f2a; wall.zz0 = f1b;
+      wall.bowtie = true;
+    }
   } else {
-    wall.z1 = f2a; wall.zz1 = (f2b >= f1b) ? f2b : f1b;
-    wall.z0 = f1a; wall.zz0 = (f2b >= f1b) ? f1b : f2b;
-    wall.bowtie = !(f2b >= f1b);
+    if (f2b >= f1b) {
+      wall.z1 = f2a; wall.zz1 = f2b;
+      wall.z0 = f1a; wall.zz0 = f1b;
+      wall.bowtie = false;
+    } else {
+      wall.z1 = f1a; wall.zz1 = f1b;
+      wall.z0 = f1a; wall.zz0 = f2b;
+      wall.bowtie = true;
+    }
   }
 
-  const c1a = ceilingHeightAt(wall.x0, wall.y0, S1), c2a = ceilingHeightAt(wall.x0, wall.y0, S2);
-  const c1b = ceilingHeightAt(wall.x1, wall.y1, S1), c2b = ceilingHeightAt(wall.x1, wall.y1, S2);
-  if (c1a < c2a) { wall.z3 = c2a; wall.zz3 = c2b; wall.z2 = c1a; wall.zz2 = c1b; }
-  else           { wall.z3 = c1a; wall.zz3 = c1b; wall.z2 = c2a; wall.zz2 = c2b; }
+  const c1a = checked(ceilingHeightAt(wall.x0, wall.y0, S1));
+  const c2a = checked(ceilingHeightAt(wall.x0, wall.y0, S2));
+  const c1b = checked(ceilingHeightAt(wall.x1, wall.y1, S1));
+  const c2b = checked(ceilingHeightAt(wall.x1, wall.y1, S2));
+  if (c1a > c2a) {
+    if (c1b >= c2b) {
+      wall.z3 = c1a; wall.zz3 = c1b;
+      wall.z2 = c2a; wall.zz2 = c2b;
+    } else {
+      wall.z3 = c1a; wall.zz3 = c2b;
+      wall.z2 = c2a; wall.zz2 = c1b;
+    }
+  } else if (c2b >= c1b) {
+    wall.z3 = c2a; wall.zz3 = c2b;
+    wall.z2 = c1a; wall.zz2 = c1b;
+  } else {
+    wall.z3 = c2a; wall.zz3 = c1b;
+    wall.z2 = c1a; wall.zz2 = c2b;
+  }
   return wall;
 }
 
@@ -939,6 +2112,14 @@ export function setWallHeights(wall, sectors) {
 // sector BEHIND the wall, because the wading depth that matters is the one we are
 // stepping INTO.
 export function canCrossWall(wall, z = 0, side = 'pos', { playerHeight = PLAYER_HEIGHT } = {}) {
+  return canCrossWallAt(wall, wall.x0, wall.y0, z, side, { playerHeight });
+}
+
+// IntersectNode uses the wall's endpoint-0 z1/z2 values even for slopes and bowties.
+// Preserve that quirk for exact client compatibility; sampling a nicer contact-point
+// height can authorize a climb the stock client refuses.
+export function canCrossWallAt(wall, _x, _y, z = 0, side = 'pos',
+                               { playerHeight = PLAYER_HEIGHT } = {}) {
   const sd = side === 'pos' ? wall.posSidedefRec : wall.negSidedefRec;
   const other = side === 'pos' ? wall.sector2 : wall.sector1;
   if (!sd) return true;                       // move.c `continue`s on a null sidedef
@@ -966,7 +2147,8 @@ export function parseRooWalls(buf, version) {
   if (sidedefOff > 0 && sidedefOff + 2 <= buf.length) {
     let q = sidedefOff;
     const n = buf.readUInt16LE(q); q += 2;
-    for (let i = 0; i < n && q + 13 <= buf.length; i++) {
+    for (let i = 0; i < n; i++) {
+      if (q + 13 > buf.length) throw new Error(`truncated sidedef ${i + 1}`);
       sidedefs.push({
         // WORDs in bsp.h, exactly like the sector fields, and the same trap:
         // resource ids run to 60003, so a signed read turns every wall texture
@@ -993,9 +2175,12 @@ export function parseRooWalls(buf, version) {
     const n = buf.readUInt16LE(q); q += 2;
     const lenBytes = version >= 13 ? 4 : 2;
     const recBytes = 2 + 2 + 2 + 16 + lenBytes + 8 + 4;
-    for (let i = 0; i < n && q + recBytes <= buf.length; i++) {
+    for (let i = 0; i < n; i++) {
+      if (q + recBytes > buf.length) throw new Error(`truncated wall ${i + 1}`);
       const posNum = buf.readUInt16LE(q + 2);
       const negNum = buf.readUInt16LE(q + 4);
+      if (posNum > sidedefs.length || negNum > sidedefs.length)
+        throw new Error(`wall ${i + 1} references missing sidedef`);
       const x0 = readCoord(buf, q + 6, version);
       const y0 = readCoord(buf, q + 10, version);
       const x1 = readCoord(buf, q + 14, version);
@@ -1007,6 +2192,7 @@ export function parseRooWalls(buf, version) {
       const sd = pos || neg;
       walls.push({
         x0, y0, x1, y1,
+        nextWall: buf.readUInt16LE(q),
         posSidedef: posNum, negSidedef: negNum,
         // Both sidedefs kept, not just the drawing one: a crossing test asks about the
         // side it is approaching from, and `sd` above is whichever the MAP prefers.
@@ -1016,8 +2202,9 @@ export function parseRooWalls(buf, version) {
         passable: !!(sd && (sd.flags & WF.PASSABLE)),
         mapNever: !!(sd && (sd.flags & WF.MAP_NEVER)),
         mapAlways: !!(sd && (sd.flags & WF.MAP_ALWAYS)),
-        posSector: buf.readInt16LE(q + recBytes - 4),
-        negSector: buf.readInt16LE(q + recBytes - 2),
+        posSector: buf.readUInt16LE(q + recBytes - 4),
+        negSector: buf.readUInt16LE(q + recBytes - 2),
+        collisionMetadata: false,
       });
       q += recBytes;
     }
@@ -1027,10 +2214,84 @@ export function parseRooWalls(buf, version) {
   // relief map — and then straight back onto the walls, which is where every
   // movement check reads them from.
   const sectors = parseRooSectors(buf, version, sectorOff);
-  for (const w of walls) setWallHeights(w, sectors);
+  for (const [index, wall] of walls.entries()) {
+    if (wall.nextWall < 0 || wall.nextWall > walls.length
+        || wall.posSector < 0 || wall.negSector < 0
+        || wall.posSector > sectors.length || wall.negSector > sectors.length)
+      throw new Error(`wall ${index + 1} has an invalid collision reference`);
+    setWallHeights(wall, sectors);
+  }
   // A BSP leaf is the renderable subsector. Parsing it after sectors lets us
   // resolve each mandatory 1-based reference to the exact sector object now.
   const bsp = parseRooNodes(buf, version, nodeOff, sectors, walls.length, wallOff);
+
+  // RoomSwizzle normalizes every separator and recalculates c from the first wall
+  // in its plane before either BSP traversal or IntersectNode uses it. The raw .roo
+  // coefficients are close but not identical; preserving them changes tie-breaking
+  // and can select the wrong directional sidedef.
+  for (const node of bsp.nodes) {
+    if (node.type !== 'internal') continue;
+    if (!node.firstWall || node.firstWall > walls.length)
+      throw new Error(`internal BSP node ${node.node} has no valid splitter wall`);
+    const wall = walls[node.firstWall - 1];
+    // RoomSwizzle performs this in float32, including its overflow-avoidance
+    // branch. Preserve the exact evaluation order: later leaf selection truncates
+    // a float separator result to long, so a few ulps can choose another child.
+    const overflowAmount = 0x7fffffff >> (LOG_CLIENT_FINENESS * 2);
+    const raw = node.separator;
+    let a = f32(raw.a), b = f32(raw.b);
+    const a2 = f32(a * a), b2 = f32(b * b);
+    let norm;
+    if (a2 > overflowAmount || b2 > overflowAmount || f32(a2 + b2) > overflowAmount) {
+      a = f32(raw.a); b = f32(raw.b);
+      norm = f32(Math.sqrt(f32(a2 + b2)));
+      if (a2 < 0 || b2 < 0 || norm <= 0) norm = 1;
+    } else {
+      a = f32(a * CLIENT_FINENESS); b = f32(b * CLIENT_FINENESS);
+      norm = f32(Math.sqrt(f32(f32(a * a) + f32(b * b))));
+    }
+    if (!(norm > 0) || !Number.isFinite(norm))
+      throw new Error(`internal BSP node ${node.node} has an invalid separator`);
+    a = f32(f32(a * CLIENT_FINENESS) / norm);
+    b = f32(f32(b * CLIENT_FINENESS) / norm);
+    const p1 = f32(f32(a * f32(wall.x1)) + f32(b * f32(wall.y1)));
+    const p0 = f32(f32(a * f32(wall.x0)) + f32(b * f32(wall.y0)));
+    node.separator = { a, b, c: f32(-f32(p1 + p0) / 2) };
+  }
+
+  // Each wall chain belongs to one internal BSP splitter. IntersectNode chooses the
+  // positive or negative sidedef from that splitter's old-point sign; sector ids
+  // cannot substitute because many legitimate walls use one sector on both sides.
+  const owners = new Uint16Array(walls.length);
+  for (const node of bsp.nodes) {
+    if (node.type !== 'internal') continue;
+    node.firstCollisionWall = node.firstWall;
+    let wallNum = node.firstWall, guard = 0;
+    while (wallNum) {
+      if (wallNum > walls.length || guard++ >= walls.length)
+        throw new Error(`invalid BSP wall chain at node ${node.node}`);
+      if (owners[wallNum - 1] && owners[wallNum - 1] !== node.node)
+        throw new Error(`wall ${wallNum} belongs to multiple BSP nodes`);
+      owners[wallNum - 1] = node.node;
+      wallNum = walls[wallNum - 1].nextWall;
+    }
+  }
+  for (let i = 0; i < walls.length; i++) {
+    const wall = walls[i];
+    wall.collisionNode = owners[i] || 0;
+    wall.nextCollisionWall = wall.nextWall;
+    wall.collisionMetadata = !wall.drawable || !!wall.collisionNode;
+    if (wall.drawable && (!wall.collisionNode || (!wall.posSector && !wall.negSector)))
+      throw new Error(`drawable wall ${i + 1} lacks collision ownership`);
+    if (wall.drawable) {
+      const separator = bsp.nodes[wall.collisionNode - 1].separator;
+      const divisor = Math.max(1, Math.hypot(separator.a, separator.b));
+      const d0 = Math.abs(separator.a * wall.x0 + separator.b * wall.y0 + separator.c) / divisor;
+      const d1 = Math.abs(separator.a * wall.x1 + separator.b * wall.y1 + separator.c) / divisor;
+      if (d0 > 0.05 || d1 > 0.05)
+        throw new Error(`wall ${i + 1} does not lie on BSP node ${wall.collisionNode}`);
+    }
+  }
 
   return {
     width, height,
@@ -1041,12 +2302,90 @@ export function parseRooWalls(buf, version) {
   };
 }
 
+// Reproduce BSPRooFileLoad's 32-bit checksum before trusting any collision field.
+// The header is not itself proof: a damaged file can retain its old header while a
+// passability bit or height changes. The stock client sums selected raw WORD/INT bit
+// patterns while loading, wraps as a 32-bit int, then XORs this constant.
+export function computeRooSecurity(buf, version = buf.readInt32LE(4)) {
+  const mainOff = buf.readInt32LE(12);
+  const need = (at, bytes, what) => {
+    if (at < 0 || at + bytes > buf.length)
+      throw new Error(`truncated ${what} while computing room security`);
+  };
+  need(mainOff, 32, 'client header');
+  const nodeOff = buf.readInt32LE(mainOff + 8);
+  const wallOff = buf.readInt32LE(mainOff + 12);
+  const sidedefOff = buf.readInt32LE(mainOff + 20);
+  const sectorOff = buf.readInt32LE(mainOff + 24);
+  let security = version >>> 0;
+  const add = value => { security = (security + (value >>> 0)) >>> 0; };
+
+  need(nodeOff, 2, 'BSP node count');
+  let q = nodeOff, count = buf.readUInt16LE(q); q += 2;
+  for (let i = 0; i < count; i++) {
+    need(q, 17, `BSP node ${i + 1}`);
+    const type = buf.readUInt8(q); q += 17; // type plus bbox
+    if (type === 1) {
+      need(q, 18, `BSP internal node ${i + 1}`);
+      add(buf.readInt32LE(q)); add(buf.readInt32LE(q + 4)); add(buf.readInt32LE(q + 8));
+      add(buf.readUInt16LE(q + 16));
+      q += 18;
+    } else if (type === 2) {
+      need(q, 4, `BSP leaf ${i + 1}`);
+      const points = buf.readUInt16LE(q + 2); q += 4;
+      if (points > MAX_BSP_POINTS) throw new Error(`invalid BSP leaf point count ${points}`);
+      need(q, points * 8, `BSP leaf ${i + 1} points`);
+      for (let p = 0; p < points; p++, q += 8) {
+        add(buf.readInt32LE(q)); add(buf.readInt32LE(q + 4));
+      }
+    } else throw new Error(`unknown BSP node type ${type}`);
+  }
+
+  need(wallOff, 2, 'wall count');
+  q = wallOff; count = buf.readUInt16LE(q); q += 2;
+  const wallBytes = 2 + 2 + 2 + 16 + (version >= 13 ? 4 : 2) + 8 + 4;
+  for (let i = 0; i < count; i++, q += wallBytes) {
+    need(q, wallBytes, `wall ${i + 1}`);
+    add(buf.readUInt16LE(q + 2)); add(buf.readUInt16LE(q + 4));
+    for (const offset of [6, 10, 14, 18]) add(buf.readInt32LE(q + offset));
+    add(buf.readUInt16LE(q + wallBytes - 4)); add(buf.readUInt16LE(q + wallBytes - 2));
+  }
+
+  need(sidedefOff, 2, 'sidedef count');
+  q = sidedefOff; count = buf.readUInt16LE(q); q += 2;
+  for (let i = 0; i < count; i++, q += 13) {
+    need(q, 13, `sidedef ${i + 1}`);
+    add(buf.readUInt16LE(q));
+    add(buf.readUInt16LE(q + 2)); add(buf.readUInt16LE(q + 4)); add(buf.readUInt16LE(q + 6));
+    add(buf.readInt32LE(q + 8));
+  }
+
+  need(sectorOff, 2, 'sector count');
+  q = sectorOff; count = buf.readUInt16LE(q); q += 2;
+  const fixed = 19 + (version >= 10 ? 1 : 0);
+  for (let i = 0; i < count; i++) {
+    need(q, fixed, `sector ${i + 1}`);
+    const flags = buf.readInt32LE(q + 15);
+    add(buf.readUInt16LE(q));
+    add(buf.readUInt16LE(q + 2)); add(buf.readUInt16LE(q + 4));
+    add(buf.readUInt16LE(q + 10)); add(buf.readUInt16LE(q + 12));
+    add(buf.readUInt8(q + 14)); add(flags);
+    q += fixed;
+    if (flags & SF.SLOPED_FLOOR) { need(q, SLOPE_BYTES, 'floor slope'); q += SLOPE_BYTES; }
+    if (flags & SF.SLOPED_CEILING) { need(q, SLOPE_BYTES, 'ceiling slope'); q += SLOPE_BYTES; }
+  }
+  return (security ^ 0x89ab786c) >>> 0;
+}
+
 export function parseRoo(buf, file = '') {
   if (buf.length < 20 || !buf.subarray(0, 4).equals(ROO_MAGIC))
     throw new Error('not a .roo file (bad magic)');
   const version = buf.readInt32LE(4);
   if (version < ROO_MIN_VERSION) throw new Error(`.roo version ${version} below minimum ${ROO_MIN_VERSION}`);
-  // security(8..12) is not needed here; the server uses it to verify the client's copy.
+  const security = buf.readUInt32LE(8);
+  const computedSecurity = computeRooSecurity(buf, version);
+  if (computedSecurity !== security)
+    throw new Error(`room security checksum mismatch: header ${security}, computed ${computedSecurity}`);
   const serverOff = buf.readInt32LE(16);
   if (serverOff <= 0 || serverOff >= buf.length)
     throw new Error(`server section offset ${serverOff} outside a ${buf.length}-byte file`);
@@ -1079,12 +2418,14 @@ export function parseRoo(buf, file = '') {
   let client = null;
   try { client = parseRooWalls(buf, version); } catch { client = null; }
 
-  return new RoomGeometry({ file, version, rows, cols, grid, flags, monsterGrid,
+  return new RoomGeometry({ file, version, security, rows, cols, grid, flags, monsterGrid,
                             walls: client ? client.walls : null,
                             sidedefs: client ? client.sidedefs : null,
                             sectors: client ? client.sectors : null,
                             nodes: client ? client.nodes : null,
                             leaves: client ? client.leaves : null,
+                            bspRoot: client ? client.root : 0,
+                            collisionVersion: client ? COLLISION_VERSION : null,
                             clientSize: client ? { width: client.width, height: client.height,
                                                    rows: client.rows, cols: client.cols } : null });
 }
@@ -1093,8 +2434,8 @@ export function parseRoo(buf, file = '') {
 
 const cache = new Map();
 
-export function loadRoo(nameOrPath, dirs = DEFAULT_ROO_DIRS) {
-  if (cache.has(nameOrPath)) return cache.get(nameOrPath);
+export function loadRoo(nameOrPath, dirs = DEFAULT_ROO_DIRS, { strict = false } = {}) {
+  if (!strict && cache.has(nameOrPath)) return cache.get(nameOrPath);
   const candidates = [];
   if (path.isAbsolute(nameOrPath) || nameOrPath.includes('/') || nameOrPath.includes('\\'))
     candidates.push(nameOrPath);
@@ -1110,10 +2451,13 @@ export function loadRoo(nameOrPath, dirs = DEFAULT_ROO_DIRS) {
   for (const c of candidates) {
     try {
       const g = parseRoo(fs.readFileSync(c), c);
-      cache.set(nameOrPath, g);
+      if (strict && !g.collisionReady)
+        throw new Error('client BSP collision section did not parse completely');
+      if (!strict) cache.set(nameOrPath, g);
       return g;
     } catch (e) {
-      if (e.code !== 'ENOENT') { /* a real parse failure is worth surfacing */ }
+      if (e.code !== 'ENOENT' && strict)
+        throw new Error(`failed to parse ${c}: ${e.message}`, { cause: e });
     }
   }
   return null;
@@ -1129,8 +2473,7 @@ if (import.meta.filename === process.argv[1]) {
   // Resolve a room by number or name through the room graph. The map JSON is read
   // directly rather than imported: m59-map.mjs imports THIS file to bake geometry
   // in, so importing it back would deadlock on the circular top-level await.
-  const mapPath = process.env.M59_MAP ||
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'substrate', 'm59-map.json');
+  const mapPath = movementMapFile();
   const viaMap = needle => {
     let map;
     try { map = JSON.parse(fs.readFileSync(mapPath, 'utf8')); }
