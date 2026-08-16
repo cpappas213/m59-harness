@@ -526,6 +526,14 @@ export function buildActionLibrary() {
       effect: 'send_to_town_for_gear',
       run:    async (state) => {
         setCooldown('gear_trip', state.agent, 10 * 60 * 1000);
+        // Record that GOAP is on this character so the keeper's passArm stands down for
+        // the same 10-minute window. Without this, the keeper's 5-minute outfit cooldown
+        // and GOAP's 10-minute trip cooldown interleave and double-drive the character.
+        const gearFile = new URL('../substrate/goap-gear-dispatch.json', import.meta.url).pathname;
+        let gearMap = {};
+        try { gearMap = JSON.parse(readFileSync(gearFile, 'utf8')); } catch { /* first write */ }
+        gearMap[state.agent] = new Date().toISOString();
+        writeFileSync(gearFile, JSON.stringify(gearMap, null, 2));
         // Pick the nearest town inn as destination.
         const dest = innDest(state.room ?? 0);
         console.log(`[goap] ${state.character} send_to_town_for_gear: unarmed stall — travelling to inn ${dest}`);

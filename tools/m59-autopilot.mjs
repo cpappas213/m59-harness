@@ -537,6 +537,16 @@ const ITEM_VALUE = (() => {
   } catch { return {}; }
 })();
 
+// WHO IS ALREADY SENDING A CHARACTER TO TOWN FOR GEAR. GOAP's send_to_town_for_gear and
+// the keeper's buyWeaponsAtNearestSmith both arm unarmed characters, and their cooldowns
+// interleave, so without a shared record they double-drive the same character. This file
+// is written by GOAP when it dispatches a character to town, and read by the keeper
+// before it spawns its own outfit. A character is "in GOAP's hands" for 10 minutes
+// after dispatch -- the same window GOAP's own cooldown uses, so the two drivers agree
+// on how long the other is responsible.
+const GOAP_GEAR_FILE = fileURLToPath(new URL('../substrate/goap-gear-dispatch.json', import.meta.url));
+const GOAP_GEAR_WINDOW_MS = 10 * 60_000;  // match GOAP's gear_trip cooldown
+
 // What `create food` costs to cast -- viMana on the Kraanan spell, the same number the
 // broker's `spells` tool reports out of the kod source. Reagents alone never made a cast
 // affordable, and treating them as the only precondition is what put the fleet in the
@@ -7216,6 +7226,20 @@ export class Autopilot {
   }
 
   // ── passArm: extracted from pass() ────────────────────────────────
+  // Returns the ISO timestamp if GOAP dispatched this agent to town for gear within the
+  // last 10 minutes, or null. Read before spawning an outfit so the keeper does not
+  // double-drive a character GOAP is already sending to town.
+  _goapGearDispatch() {
+    try {
+      const data = JSON.parse(readFileSync(GOAP_GEAR_FILE, 'utf8'));
+      const ts = data[this.s.name];
+      if (!ts) return null;
+      const age = Date.now() - new Date(ts).getTime();
+      return age < GOAP_GEAR_WINDOW_MS ? ts : null;
+    } catch { return null; }
+  }
+
+  // ── passArm: extracted from pass() ────────────────────────────────
   async passArm(s, c) {
     // NO WEAPON: FIX IT BEFORE ANYTHING ELSE, and never walk out to hunt without one.
     //
@@ -7240,6 +7264,20 @@ export class Autopilot {
       if (!this.knowsCreateWeapon() && this.sanctuary()) {
         const now = Date.now();
         const cooldown = 5 * 60_000;  // don't hammer the smith every pass
+        // THE KEEPER AND GOAP BOTH ARM UNARMED CHARACTERS, and their cooldowns (5 min
+        // here, 10 min in send_to_town_for_gear) interleave, so one drives the character
+        // to the smith while the other walks it to the inn -- the double-drive that left
+        // three bots flapping unarmed for hours. The shared substrate file is the one
+        // place both can see "who is already handling this character" without either
+        // having to ask the other. If GOAP dispatched this character to town for gear
+        // within the last 10 minutes, the keeper stands down: GOAP is on it.
+        const goapArming = this._goapGearDispatch();
+        if (goapArming) {
+          this.note('goap already sent this character to town for gear, standing down', {
+            dispatched_at: new Date(goapArming).toISOString(),
+          });
+          return true;
+        }
         if (!this._lastOutfitAt || now - this._lastOutfitAt >= cooldown) {
           const why = 'unarmed and does not know create weapon — going to buy one';
           this.noProgress(why);
