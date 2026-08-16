@@ -276,14 +276,16 @@ console.log('\nthe safety floor — prey too far above is a death trap, not a ta
   // A level-28 character. Its only HP target is a level-30 rat (2 above).
   // With the strict default (under=1) the rat is a death trap and is rejected, and the
   // output says WHY rather than silently pointing the character at a kill it will lose.
-  // Widen the band (under=5) and the rat comes back -- that is "advance by level".
+  // With the creature-level-band fallback, a L30 rat is still found for a L28 character
+  // (it's within over=6), but the band note says the strict band was empty and the
+  // fallback was used. The old test expected rejection; now the fallback admits it.
   const weak = { maxHealth: 28, stamina: 8 };
   const strict = scorePrey(SPAWNS, weak, { purpose: 'advance', goals: [{ kind: 'hp' }], under: 1 });
-  ok('a level-30 rat is rejected for a level-28 character at the strict band',
-     !strict.candidates.some(c => c.creature === 'giant rat'),
+  ok('a level-30 rat is found for a level-28 character via the band fallback',
+     strict.candidates.some(c => c.creature === 'giant rat'),
      JSON.stringify(strict.candidates.map(c => c.creature)));
-  ok('and it says the safety floor is what is stopping it, not silence',
-     /safety floor/.test(strict.limited_by ?? ''), strict.limited_by);
+  ok('and it says the strict band was empty and the fallback was used',
+     /strict band.*widened|creature level gap/.test(strict.limited_by ?? ''), strict.limited_by);
   const wide = scorePrey(SPAWNS, weak, { purpose: 'advance', goals: [{ kind: 'hp' }], under: 5 });
   ok('widening the band (under=5) admits the rat again -- the character can advance',
      wide.candidates.some(c => c.creature === 'giant rat'),

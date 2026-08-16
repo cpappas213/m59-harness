@@ -1003,44 +1003,56 @@ export function scorePrey(spawns, character, {
   // is a death trap. `under: 3` allows up to 3 levels above -- enough to level, not
   // enough to die. A character that has outgrown the world's weakest monsters reports
   // `limited_by: safety floor` instead of being pointed at a mummy it cannot win.
-  const floor = maxHealth + under;
-  const rows = [];
-  for (const c of pool) {
-    if (c.level == null || !karmaOk(c.karma)) continue;
-    // The safety band is the one rule every purpose obeys. It is about the room's whole
-    // table, not the quarry — huntingGrounds rejects on the worst OTHER thing present.
-    if (c.level > ceiling) continue;
-    if (c.level > floor) continue;
+  //
+  // CREATURE LEVELS COME IN BANDS (25, 30, 35, 40...) with gaps between them. A L20
+  // character's next available prey is L25 -- 5 levels above, beyond the strict floor.
+  // If the strict band yields nothing, fall back to the full band (up to `over`) so the
+  // character can still find a teaching target. The `over` cap still prevents death
+  // traps: a L20 hunting a L40 is still blocked even in the fallback.
+  let floor = maxHealth + under;
+  const fullFloor = ceiling;  // the fallback floor is the ceiling itself
+  const scan = (f) => {
+    const out = [];
+    for (const c of pool) {
+      if (c.level == null || !karmaOk(c.karma)) continue;
+      if (c.level > ceiling) continue;
+      if (c.level > f) continue;
 
-    const yields = goals.map(g => goalYield(g, c, { maxHealth, stamina }));
-    const { score, satisfied } = combine(yields);
-    // `advance` is the purpose with teeth: prey that pays no goal is not a candidate.
-    // `money` and `items` keep it — anything sellable is acceptable — and treat the
-    // advancement score purely as a tie-breaker, which is the whole point of the
-    // "hunt what pays twice" preference.
-    if (purpose === 'advance' && satisfied === 0) continue;
+      const yields = goals.map(g => goalYield(g, c, { maxHealth, stamina }));
+      const { score, satisfied } = combine(yields);
+      if (purpose === 'advance' && satisfied === 0) continue;
 
-    const rooms = huntingGrounds(spawns, c.name, { maxDanger: ceiling, limit: 20 })
-      .filter(r => !r.rejected && r.creature === c.name);
-    if (!rooms.length) continue;
-    const best = rooms[0];
+      const rooms = huntingGrounds(spawns, c.name, { maxDanger: ceiling, limit: 20 })
+        .filter(r => !r.rejected && r.creature === c.name);
+      if (!rooms.length) continue;
+      const best = rooms[0];
 
-    const money = moneyPerKill(c);
-    const drop = dropChance?.get(c.name.toLowerCase());
-    rows.push({
-      creature: c.name, level: c.level, karma: c.karma,
-      score: +score.toFixed(3), goals_satisfied: satisfied, goals_total: goals.length,
-      best_room: best.room, best_room_name: best.room_name,
-      chance: best.chance, share_of_room: best.share_of_room, rooms: rooms.map(r => r.room),
-      ...(drop ? { drops: drop.item, drop_per_roll_percent: drop.per_roll_percent,
-                   drop_cite: drop.cite } : {}),
-      ...(money != null ? { money_per_kill: +money.toFixed(1) } : {}),
-      ...(c.loot ? {} : { loot: 'unknown — this creature is not in the drop index' }),
-      pays: yields.filter(y => y.pays).map(y => `${y.goal}: ${y.why}`),
-      pays_nothing_for: yields.filter(y => !y.pays).map(y => `${y.goal}: ${y.why}`),
-      notes: yields.map(y => y.note).filter(Boolean),
-    });
+      const money = moneyPerKill(c);
+      const drop = dropChance?.get(c.name.toLowerCase());
+      out.push({
+        creature: c.name, level: c.level, karma: c.karma,
+        score: +score.toFixed(3), goals_satisfied: satisfied, goals_total: goals.length,
+        best_room: best.room, best_room_name: best.room_name,
+        chance: best.chance, share_of_room: best.share_of_room, rooms: rooms.map(r => r.room),
+        ...(drop ? { drops: drop.item, drop_per_roll_percent: drop.per_roll_percent,
+                     drop_cite: drop.cite } : {}),
+        ...(money != null ? { money_per_kill: +money.toFixed(1) } : {}),
+        ...(c.loot ? {} : { loot: 'unknown — this creature is not in the drop index' }),
+        pays: yields.filter(y => y.pays).map(y => `${y.goal}: ${y.why}`),
+        pays_nothing_for: yields.filter(y => !y.pays).map(y => `${y.goal}: ${y.why}`),
+        notes: yields.map(y => y.note).filter(Boolean),
+      });
+    }
+    return out;
+  };
+  // Strict band first; if empty (creature level gap), fall back to the full band.
+  let rows = scan(floor);
+  let bandNote = null;
+  if (!rows.length && fullFloor > floor) {
+    rows = scan(fullFloor);
+    if (rows.length) bandNote = `no prey in the strict band (up to ${under} above); widened to the full band (up to ${over} above) — creature level gap`;
   }
+  if (!rows.length) bandNote = 'no prey in the band';
 
   // MULTI-GOAL PREY FIRST, whatever the purpose. That is the "satisfies more criteria"
   // preference, and it leads deliberately: two half-good tracks beat one excellent one
@@ -1060,6 +1072,7 @@ export function scorePrey(spawns, character, {
   const out = { purpose, band: { min_level: maxHealth, max_level: floor,
                 why: `max health ${maxHealth}, up to ${under} above` },
                 candidates: rows.slice(0, limit) };
+  if (bandNote) out.limited_by = bandNote;
   if (item) out.item = item;
   if (finished.length) out.finished = finished;
   const unknown = rows.filter(r => r.loot).length;
