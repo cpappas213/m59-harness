@@ -117,13 +117,19 @@ const section = (start, end) => {
 const step = section('async step(col, row,', '\n  // ------------------------------------------------------- fine movement');
 assert.match(step, /pacer[.]submit[(]'turn'.*beforeMutation[(]'turn'.*c[.]face/s,
   'RTS movement can guard the turn packet inside its pacer callback');
-assert.match(step, /pacer[.]submit[(]'move'.*beforeMutation[(]'move'.*c[.]moveToSquare/s,
-  'RTS movement can guard the move packet inside its pacer callback');
+assert.match(step, /queueValidatedMove.*beforeMutation:.*beforeMutation[(]'move'/s,
+  'RTS square movement threads its final-packet hook into validated movement');
+
+const queuedMove = section('async queueValidatedMove(x, y,', '\n  // ONE SQUARE');
+assert.match(queuedMove, /pacer[.]submit[(]'move'.*beforeMutation[(]'move'.*c[.]moveTo/s,
+  'queueValidatedMove guards the exact locally-clipped move packet inside its pacer callback');
+assert.match(queuedMove, /validateFineTarget.*beforeMutation.*c[.]moveTo/s,
+  'authority is checked only after the final live collision revalidation and before send');
 
 const walk = section('async walkTo(col, row,', '\n  // Leave the room');
 assert.match(walk, /beforeMutation = null/);
-assert.ok((walk.match(/this[.]step[(][\s\S]*?beforeMutation/g) || []).length >= 3,
-  'every walkTo step path threads the final-packet mutation hook');
+assert.match(walk, /this[.]step[(]next[.]col, next[.]row, \{ beforeMutation \}/,
+  'walkTo threads its final-packet mutation hook through the shared validated step');
 
 const loot = section('async lootFloor({', '\n  // Offer one item to a merchant');
 assert.match(loot, /this[.]walkTo[\s\S]*beforeMutation:/,

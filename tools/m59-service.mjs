@@ -36,6 +36,8 @@ import { fileURLToPath } from 'node:url';
 import { fleetName } from './m59-fleetpath.mjs';
 import * as uptime from './m59-uptime.mjs';
 import * as webui from './m59-webui.mjs';
+import { movementMapFile } from './m59-map-path.mjs';
+import { loadMap, movementMapReadiness } from './m59-map.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -171,6 +173,54 @@ async function cmdStart() {
     }
     return 0;
   }
+  // THE COLLISION MAP IS CHECKED HERE, AND A STALE ONE IS A WARNING RATHER THAN A REFUSAL.
+  //
+  // This gate used to `return 1` — no broker at all — and that is the wrong trade for a
+  // reason worth writing down, because the instinct behind it is a good one.
+  //
+  // THE PER-MOVE VALIDATOR ALREADY FAILS CLOSED, PER ROOM. `m59-broker.mjs` refuses any
+  // move whose room has no baked geometry, whose geometry changed live, or whose security
+  // value does not match what the server announced — `collision_geometry_unavailable`,
+  // `room_geometry_mismatch` and friends are terminal and never retried. So the safety
+  // property this gate was protecting is enforced one room at a time, at the moment it
+  // matters, against the server's own answer.
+  //
+  // What refusing to start adds is not safety, it is BLAST RADIUS. A map that has drifted
+  // in four rooms costs four rooms; refusing to start costs twenty-one characters, every
+  // room, and everything that is not movement — fighting, resting, banking, being visible
+  // on the board at all.
+  //
+  // AND PROD IS SOMEBODY ELSE'S SERVER. It can be patched on a Tuesday without telling us,
+  // which is precisely when the baked map goes stale — so a gate like this converts
+  // somebody else's routine update into our total outage, at the exact moment we would
+  // most want the fleet up to find out what changed. The map is baked from a local source
+  // tree; it is evidence about the server, never authority over it.
+  //
+  // `--require-map` (or M59_REQUIRE_MAP=1) restores the refusal for anyone who wants a
+  // machine that will not run a fleet it cannot fully validate. Opt in, because the
+  // failure it prevents is smaller than the one it causes.
+  const mapFile = movementMapFile();
+  let mapStatus = null;
+  try { mapStatus = movementMapReadiness(loadMap(mapFile)); } catch { /* reported below */ }
+  const strictMap = has('--require-map') || process.env.M59_REQUIRE_MAP === '1';
+  if (!mapStatus?.ok) {
+    const line = mapStatus
+      ? `${mapStatus.ready}/${mapStatus.total} rooms ready; ` +
+        `manifest ${mapStatus.manifest_matches ? 'matches' : 'does not match'}`
+      : 'the map could not be read at all';
+    if (strictMap) {
+      console.error(c.bad('broker not started: its collision map is missing, corrupt, or obsolete'));
+      console.error(`  ${line}`);
+      console.error('  run node tools/setup.mjs server, or set M59_MAP to a validated server-matched map');
+      console.error('  (this refusal is --require-map; without it the broker starts and movement');
+      console.error('   fails closed only in the rooms that actually mismatch)');
+      return 1;
+    }
+    console.log(c.bad('COLLISION MAP IS NOT FULLY VALID') + c.dim(` — ${line}`));
+    console.log(c.dim('  starting anyway: movement fails closed per room, so this costs the rooms'));
+    console.log(c.dim('  that drifted and not the fleet. Refresh with node tools/setup.mjs server,'));
+    console.log(c.dim('  or pass --require-map to make this a refusal.'));
+  }
   mkdirSync(SUB, { recursive: true });
   // Append, never truncate: the log is the only account of what the last run did, and
   // a restart is exactly when you want to read it.
@@ -178,7 +228,9 @@ async function cmdStart() {
   const args = [join(HERE, 'm59-broker.mjs'), '--http', String(HTTP_PORT),
                 '--dashboard', String(DASH_PORT)];
   if (FLEET) args.push('--fleet', FLEET);
-  const env = { ...process.env };
+  // Setup's server-matched local map remains authoritative across ordinary service
+  // restarts. An explicit M59_MAP still wins; otherwise selection is local-then-reference.
+  const env = { ...process.env, M59_MAP: mapFile };
   const child = spawn(process.execPath, args,
     // detached + unref is what makes this outlive the shell that ran it. stdio goes to
     // the log rather than 'ignore', which is how the previous arrangement lost every
@@ -368,6 +420,17 @@ async function cmdStatus() {
   console.log(`  roster     ${h.state}`);
   console.log(`  characters ${inGame == null ? agents + ' registered' : `${inGame}/${agents} in game`}`);
   console.log(`  log        ${existsSync(LOG_FILE) ? LOG_FILE : '(none yet)'}`);
+  // HAS PROD MOVED UNDER US? The baked collision map is evidence about somebody else's
+  // server, and that server can be patched without telling us. Every room where the live
+  // security value disagreed with the bake is listed here, so "they changed a room" is a
+  // named condition on the status line rather than a character that mysteriously will not
+  // walk. Silence means no room has disagreed — which is the ordinary answer.
+  const drift = Array.isArray(h.geometry_drift) ? h.geometry_drift : [];
+  if (drift.length)
+    console.log(c.bad(`  geometry  ${drift.length} room(s) DRIFTED from the baked map`) +
+                c.dim(` — ${drift.slice(0, 6).map(d => d.room).join(', ')}` +
+                      `${drift.length > 6 ? ' …' : ''}; movement fails closed in those rooms.`) +
+                c.dim(' Refresh: node tools/setup.mjs server'));
   const ui = await webui.status();
   console.log(`  field cmd  ${ui.absent ? c.dim('absent — maps/m59-strategy-game is not beside this checkout')
     : ui.running ? (ui.ours ? `http://127.0.0.1:${ui.port}  pid ${ui.pid}`

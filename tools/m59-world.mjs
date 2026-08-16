@@ -18,10 +18,11 @@
 // picture the human client draws in its corner and the densest single artifact either
 // a person or an agent can look at.
 
-import { RoomGeometry } from './m59-roo.mjs';
-import { exitsOf, findPath, inferredExits, codeExits, edgeExitsOf, LEAVE } from './m59-map.mjs';
+import { sharedRoomGeometry } from './m59-roo.mjs';
+import { exitsOf, findPath, inferredExits, codeExits, edgeExitsOf, edgeCandidatesOf, LEAVE } from './m59-map.mjs';
 import { inRegion } from './m59-codeexits.mjs';
 import { affordances, OF, isTeleporter, KOD_FINENESS } from './m59-parse.mjs';
+import { isTerminalMovementReason } from './m59-movement.mjs';
 
 // Marks used on the minimap. Chosen so the picture stays readable in a terminal and
 // so the important things are the ones that stand out: you, then players, then
@@ -183,7 +184,7 @@ export function sameRoomIslandBridgePlan(map, roomNum, geo, from, target) {
 
   // Door squares can themselves be absent from the one-byte grid. In that case being
   // able to reach a neighbouring square is enough: leaveVia performs the final fine
-  // movement/door lean and asks the server to judge the exact square.
+  // movement/door lean and locally clips the exact point against the fine BSP.
   const routeToDoor = (origin, door) => {
     const candidates = [{ row: door.row, col: door.col }];
     for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
@@ -241,7 +242,6 @@ export class World {
   constructor(client, map) {
     this.c = client;
     this.map = map;
-    this.geoCache = new Map();
   }
 
   // Which room are we in, as a room NUMBER? The protocol never says. BP_PLAYER
@@ -271,8 +271,7 @@ export class World {
   get geometry() {
     const room = this.room;
     if (!room?.roo) return null;
-    if (!this.geoCache.has(room.num)) this.geoCache.set(room.num, RoomGeometry.fromJSON(room.roo));
-    return this.geoCache.get(room.num);
+    return sharedRoomGeometry(room);
   }
 
   get self() { return this.c.self; }
@@ -365,24 +364,54 @@ export class World {
       // triggers StandardLeaveDir, so the target is one step outside the grid, and
       // the square to stand on first is the last one inside it.
       let approach = null, alternates = [], viableCount = 0;
-      if (geo && me) {
-        const cands = [];
-        if (e.leave === LEAVE.NORTH) for (let c = 1; c <= geo.cols; c++) cands.push([1, c]);
-        if (e.leave === LEAVE.SOUTH) for (let c = 1; c <= geo.cols; c++) cands.push([geo.rows, c]);
-        if (e.leave === LEAVE.WEST)  for (let r = 1; r <= geo.rows; r++) cands.push([r, 1]);
-        if (e.leave === LEAVE.EAST)  for (let r = 1; r <= geo.rows; r++) cands.push([r, geo.cols]);
-        // A conditional exit only leads here from part of the boundary, and the
-        // condition is checked against the position you are standing on when you
-        // cross (StandardLeaveDir reads GetRow/GetCol, not the destination).
-        const ok = ([r, c]) => {
-          if (!e.condition) return true;
-          const { type, threshold } = e.condition;
-          if (type === 1) return r > threshold;
-          if (type === 2) return r < threshold;
-          if (type === 3) return c > threshold;
-          if (type === 4) return c < threshold;
-          return true;                       // NO_OTHER_CONDITIONS is the fallback
-        };
+      const precise = [];
+      if (geo && me && origin) {
+        // One flood fill prices every coarse staging square. Running a fresh A* for
+        // every sub-square opening made a single exits() call take tens of seconds.
+        const reachable = [{ row: origin.row, col: origin.col, steps: 0 }];
+        const seen = new Set([`${origin.row},${origin.col}`]);
+        for (let index = 0; index < reachable.length; index++) {
+          const at = reachable[index];
+          for (const next of geo.neighbors(at.row, at.col)) {
+            const key = `${next.row},${next.col}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            reachable.push({ row: next.row, col: next.col, steps: at.steps + 1 });
+          }
+        }
+        const reachableBySquare = new Map(reachable.map(stage => [`${stage.col},${stage.row}`, stage]));
+        for (const crossing of edgeCandidatesOf(room, e, null, { live: true })) {
+          const bestStage = crossing.stages
+            .map(stage => reachableBySquare.get(`${stage.col},${stage.row}`))
+            .filter(Boolean)
+            .sort((a, b) => a.steps - b.steps)[0] ?? null;
+          if (!bestStage) continue;
+          const fineSteps = Math.ceil(Math.hypot(
+            crossing.fine_stand_on.x - (bestStage.col * KOD_FINENESS + (KOD_FINENESS >> 1)),
+            crossing.fine_stand_on.y - (bestStage.row * KOD_FINENESS + (KOD_FINENESS >> 1))) / 48);
+          precise.push({ col: bestStage.col, row: bestStage.row,
+            fine_stand_on: crossing.fine_stand_on, edge_target: crossing.edge_target,
+            fine_path: [crossing.fine_stand_on], steps: bestStage.steps + fineSteps });
+        }
+      }
+      if (!precise.length) continue;
+      precise.sort((a, b) => a.steps - b.steps);
+      approach = precise[0];
+      const MIN_FINE_APART = 4 * KOD_FINENESS, MAX_FINE_CANDIDATES = 8;
+      const fineAlong = candidate => (e.leave === LEAVE.NORTH || e.leave === LEAVE.SOUTH)
+        ? candidate.fine_stand_on.x : candidate.fine_stand_on.y;
+      const precisePicked = [approach];
+      for (const candidate of precise) {
+        if (precisePicked.length >= MAX_FINE_CANDIDATES) break;
+        if (precisePicked.some(other => Math.abs(fineAlong(other) - fineAlong(candidate)) < MIN_FINE_APART)) continue;
+        precisePicked.push(candidate);
+      }
+      for (const candidate of precise) {
+        if (precisePicked.length >= MAX_FINE_CANDIDATES) break;
+        if (!precisePicked.includes(candidate)) precisePicked.push(candidate);
+      }
+      alternates = precisePicked.slice(1);
+      viableCount = precise.length;
         // KEEP THE WHOLE BOUNDARY, NOT JUST THE NEAREST SQUARE.
         //
         // This found every viable square along the edge and then threw all but one
@@ -398,42 +427,21 @@ export class World {
         // the far side of that column — so the alternates are SPREAD along the boundary
         // rather than taken in distance order. Trying (1,5) then (1,6) then (1,7) mostly
         // re-asks the same question; sampling across the width asks a different one.
-        const viable = [];
-        for (const [r, c] of cands) {
-          if (!ok([r, c]) || !geo.walkable(r, c)) continue;
-          const p = (origin.row === r && origin.col === c) ? { found: true, steps: [] } : geo.path(origin.row, origin.col, r, c);
-          if (!p.found) continue;
-          viable.push({ col: c, row: r, steps: p.steps.length });
-        }
-        viable.sort((a, b) => a.steps - b.steps);
-        approach = viable[0] ?? null;
         // Nearest first — it is still the cheapest thing to try — then a spread of the
         // rest, each at least MIN_APART from everything already chosen so the tries are
         // genuinely different parts of the wall. Capped because each attempt is a walk.
-        const MIN_APART = 4, MAX_ALTS = 7;
-        const along = s => (e.leave === LEAVE.NORTH || e.leave === LEAVE.SOUTH) ? s.col : s.row;
-        const picked = approach ? [approach] : [];
-        for (const s of viable) {
-          if (picked.length > MAX_ALTS) break;
-          if (picked.some(p => Math.abs(along(p) - along(s)) < MIN_APART)) continue;
-          picked.push(s);
-        }
         // Anything left over is still better than giving up, so keep them as a tail in
         // distance order for the case where the spread found nothing.
-        for (const s of viable) {
-          if (picked.length > MAX_ALTS) break;
-          if (!picked.includes(s)) picked.push(s);
-        }
-        alternates = picked.slice(1).map(s => ({ col: s.col, row: s.row, steps: s.steps }));
-        viableCount = viable.length;
-      }
       out.push({
         kind: 'edge',
         direction: e.leaveName,
         to: e.to,
         to_name: this.map.rooms[e.to]?.name ?? `room ${e.to}`,
-        stand_on: approach ? { col: approach.col, row: approach.row } : null,
-        steps_away: approach ? approach.steps : null,
+        stand_on: { col: approach.col, row: approach.row },
+        fine_stand_on: approach.fine_stand_on,
+        edge_target: approach.edge_target,
+        fine_path: approach.fine_path,
+        steps_away: approach.steps,
         // OTHER WAYS THROUGH THE SAME WALL. Not second-best routes — the boundary is
         // one exit and any square on it crosses. leaveViaAny works through these when
         // the nearest is blocked, which is what makes a wide edge reliable instead of a
@@ -441,11 +449,12 @@ export class World {
         ...(alternates.length ? { alternates } : {}),
         ...(viableCount ? { standable_on_this_boundary: viableCount } : {}),
         how: approach
-          ? `walk_to (${approach.col},${approach.row}) then one more step ${e.leaveName}` +
+          ? `walk_to (${approach.col},${approach.row}), fine-position at ` +
+            `(${approach.fine_stand_on.x},${approach.fine_stand_on.y}), then cross ${e.leaveName}` +
             (alternates.length ? ` — ${alternates.length} other square(s) on that boundary also cross` : '')
           : `walk ${e.leaveName} past the room edge`,
         condition: e.condition ? `${e.condition.name}${e.condition.threshold}` : null,
-        reachable: approach ? true : (geo && me ? false : null),
+        reachable: true,
         // Flagged so leaveVia can tell a declared boundary from a guessed one, and
         // retire the guess when the server refuses it.
         ...(e.inferred ? { inferred: true } : {}),
@@ -472,9 +481,9 @@ export class World {
             }
 
             // A code trigger can sit behind a gap narrower than one square. The .roo
-            // direction grid cannot express that gap, but the server's fine BSP geometry
-            // can. Keep a square beside the trigger that the ordinary walker CAN reach;
-            // leaveVia stages there and asks the server to judge the final fine steps.
+            // direction grid cannot express that gap, but the fine BSP geometry can.
+            // Keep a square beside the trigger that the ordinary walker CAN reach;
+            // leaveVia stages there and locally validates the final fine steps.
             //
             // Western Border of the Twisted Wood -> the Icky Cave is the worked example:
             // every square satisfying row 15..17, col 1..6 is disconnected in the square
@@ -824,6 +833,9 @@ export function spreadEdges(candidates) {
     out.push(e);
     for (const alt of e.alternates || [])
       out.push({ ...e, stand_on: { col: alt.col, row: alt.row }, steps_away: alt.steps,
+                 fine_stand_on: alt.fine_stand_on ?? e.fine_stand_on,
+                 edge_target: alt.edge_target ?? e.edge_target,
+                 fine_path: alt.fine_path ?? e.fine_path,
                  alternates: undefined, from_alternate: true });
   }
   return out;
@@ -929,6 +941,9 @@ export async function boundedRegionEntry({
     if (coarse?.left_room)
       return { cancelled: false, entered: null, unconfirmed_transition: true,
                tried: [...tried, { candidate, coarse }] };
+    if (isTerminalMovementReason(coarse?.reason))
+      return { cancelled: false, entered: null, terminal: coarse,
+               tried: [...tried, { candidate, coarse }] };
 
     let fine = null;
     if (!coarse?.arrived) {
@@ -940,6 +955,9 @@ export async function boundedRegionEntry({
         return { cancelled: false, entered, tried: [...tried, { candidate, coarse, fine }] };
       if (fine?.left_room)
         return { cancelled: false, entered: null, unconfirmed_transition: true,
+                 tried: [...tried, { candidate, coarse, fine }] };
+      if (isTerminalMovementReason(fine?.reason))
+        return { cancelled: false, entered: null, terminal: fine,
                  tried: [...tried, { candidate, coarse, fine }] };
     }
 

@@ -349,6 +349,52 @@ well as on `end`. The first version capped the body with `req.destroy()`, which 
 only symptom was Node's "Detected unsettled top-level await" on the one code path where it
 happened to be the last thing running.
 
+## The collision map is EVIDENCE ABOUT A SERVER, NEVER AUTHORITY OVER ONE
+
+`substrate/m59-map.json` carries baked BSP, sidedefs, sector heights and wall chains, and
+the broker validates every in-room move against them with the same rules the stock client
+uses — because the server accepts whatever coordinates you send and expects the CLIENT to
+enforce collision. Using the server as a collision oracle is how bots walked through walls.
+
+**A move that cannot be validated is refused, not retried.** `TERMINAL_MOVEMENT_REASONS`
+in `m59-movement.mjs` is the closed list of failures that no other heading can fix —
+`collision_geometry_unavailable`, `room_geometry_mismatch`, `room_security_unknown` and the
+rest. They propagate instead of looping, which is what stops a bad route being learned.
+
+**THE BAKE IS LOCAL AND THE SERVER IS NOT.** The map is generated from a source tree here;
+`prod` is somebody else's machine and can be patched on a Tuesday without telling us. Two
+consequences the design turns on:
+
+- **A stale map is a WARNING at startup, not a refusal.** It used to `return 1` — no
+  broker at all. But the per-move validator already fails closed one room at a time,
+  against the server's own announced security value, so refusing to start adds no safety
+  and enormous blast radius: a map that drifted in four rooms would cost twenty-one
+  characters, every room, and everything that is not movement. `--require-map` (or
+  `M59_REQUIRE_MAP=1`) restores the refusal for a machine that should not run a fleet it
+  cannot fully validate. It is opt-in because the failure it prevents is smaller than the
+  one it causes.
+- **Drift is recorded and reported, not merely refused.** Every room whose live security
+  disagrees with the bake is written down and surfaced on `/health` as `geometry_drift`
+  and on `m59-service.mjs status`. A refusal says a character did not walk; the record is
+  what says the WORLD changed, which is the half anyone can act on. Refresh with
+  `node tools/setup.mjs server`.
+
+Two things to know before editing that path:
+
+- **`validateFineTarget` and `queueValidatedMove` are LIFTED OUT OF `m59-broker.mjs` BY
+  TEXT and evaluated** by `m59-collision-test.mjs`, because the broker cannot be imported
+  without taking the fleet lock. So **any module-scope symbol either of them calls must be
+  declared in that test's `dependencies` map** — a free identifier that is fine at runtime
+  is a `ReferenceError` in the test, which is how this was caught. `validateFineTarget`
+  stays PURE and returns its evidence; the caller writes it down.
+- **The map costs real memory.** Measured on this machine: 26.8 MB on disk, **5.6 s and
+  ~399 MB RSS** to load and validate 264/264 rooms at broker start. The PR that introduced
+  it measured 3.2 s and 303 MB elsewhere, so budget for the machine rather than the number.
+
+`node tools/m59-collision-test.mjs` (150) pins it, and **10 of those skip without the raw
+`.roo` files** — set `M59_ROO_DIR` (or `M59_ROOT`) to a tree containing `resource/rooms`
+or the suite quietly reports 137 and calls it a pass.
+
 ## Backing the fleet up, and putting it back
 
 ```bash
@@ -2050,7 +2096,13 @@ remarks and a value may collect both.
   symmetric — a wasted offer costs a round trip, a wrongly withheld item costs the sale and
   is invisible) and
   `node tools/m59-merchants-test.mjs` (77, dropping to 43 without `M59_ROOT`) and
-  `node tools/m59-roo-test.mjs` (57, of which 9 skip without a copy of the game's
+  `node tools/m59-collision-test.mjs` (148 — **the fail-closed contract for all
+  movement**: compact collision metadata survives a bake, legacy maps cannot authorize
+  a coordinate packet, the player cylinder catches wall bodies and corners, long strides
+  cannot tunnel, stock endpoint-0 slope and water-depth rules are preserved, every
+  emitted packet is revalidated, and the documented Brownestone, Limping Toad, Icky,
+  Farol, Ukgoth, Cor Noth, Temple, and Fey precision cases remain usable) and
+  `node tools/m59-roo-test.mjs` (74, with raw-room checks skipping without a copy of the game's
   `resource/rooms`). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on
   8899 and fail with `ECONNREFUSED` without one, which is not a regression.

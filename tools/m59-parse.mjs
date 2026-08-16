@@ -433,7 +433,8 @@ export function parseChangeResource(body) {
 
 // BP_PLAYER (130) — HandlePlayer. Our own object, and the room we are in.
 // From kod's ToCliPlayer (user.kod:2466): self, icon, name, room, room resource,
-// room name, security, then light bytes and background.
+// room name, security, then light/background and the runtime room-geometry controls
+// consumed by HandlePlayer. Depth overrides are KOD heights on the wire.
 export function parsePlayer(body) {
   const r = new Reader(body);
   const id = objId(r.u32());
@@ -446,9 +447,12 @@ export function parsePlayer(body) {
   const roomLight = r.left ? r.u8() : 0;
   const playerLight = r.left ? r.u8() : 0;
   const backgroundRsc = r.left >= 4 ? r.u32() : 0;
-  // The rest is @SendExtraRoomInfo, which is room geometry detail we do not need.
+  const wadingSoundRsc = r.u32();
+  const roomFlags = r.u32();
+  const overrideDepths = [0, r.i32() << 4, r.i32() << 4, r.i32() << 4];
   return { id, iconRsc, nameRsc, roomId, roomRsc, roomNameRsc, security,
-           roomLight, playerLight, backgroundRsc, leftover: r.left, exact: true };
+           roomLight, playerLight, backgroundRsc, wadingSoundRsc, roomFlags,
+           overrideDepths, leftover: r.left, exact: r.left === 0 };
 }
 
 // BP_BUY_LIST (216) — HandleBuyList, server.c:770. A seller, then a

@@ -32,7 +32,8 @@ function underworld({ resting = false, deaf = false, portals = [], unwalkable = 
   portals.forEach((p, i) => {
     const id = i + 1;
     names.set(id, p.name);
-    objects.set(id, { id, flags: MOVEON.TELEPORTER, col: p.col, row: p.row, nameRsc: id });
+    objects.set(id, { id, flags: MOVEON.TELEPORTER, col: p.col, row: p.row,
+      x: p.x ?? p.col * 64 + 32, y: p.y ?? p.row * 64 + 32, nameRsc: id });
   });
   // Each portal may carry its own sign and its own destination, which is what makes the
   // five fixed ones tellable apart at all. The defaults keep the older cases below
@@ -94,6 +95,17 @@ function underworld({ resting = false, deaf = false, portals = [], unwalkable = 
       if (c.room.id !== wasIn) return { arrived: false, left_room: true, note: 'a step crossed the room edge' };
       if (c.self.col === col && c.self.row === row) return { arrived: true, position: { col, row } };
       return { arrived: false, reason: 'blocked — every heading refused, at every reach tried' };
+    },
+    async step(col, row) {
+      const wasIn = c.room.id, before = c.self && { col: c.self.col, row: c.self.row };
+      step(col, row);
+      const moved = c.room.id !== wasIn || !!(c.self && before &&
+        (c.self.col !== before.col || c.self.row !== before.row));
+      return { moved, left_room: c.room.id !== wasIn,
+               position: c.self && { col: c.self.col, row: c.self.row } };
+    },
+    async stepFine(x, y) {
+      return this.step(Math.floor(x / 64), Math.floor(y / 64));
     },
   };
   return { s, log };

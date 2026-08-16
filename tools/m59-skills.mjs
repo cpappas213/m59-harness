@@ -28,6 +28,7 @@ import { weighPack, isWeaponName, itemNameKey } from './m59-items.mjs';
 import { keepTest as keepTestFor, sellTest as sellTestFor } from './m59-loadout.mjs';
 import * as buyers from './m59-buyers.mjs';
 import { readFileSync } from 'node:fs';
+import { isTerminalMovementReason } from './m59-movement.mjs';
 
 // The merchant index resolves a live object id to the class whose buying rule applies.
 // Read once and kept: it is a built artefact that changes when somebody rebuilds it, and
@@ -1393,7 +1394,10 @@ export async function nudge(s) {
   const c = s.need();
   const me = c.self;
   if (!me) return { moved: false, why: 'position unknown' };
+  const before = { col: me.col, row: me.row };
   const geo = s.world?.geometry;
+  if (!geo?.collisionReady) return { moved: false, reason: 'collision_geometry_unavailable',
+                                      why: 'collision_geometry_unavailable' };
   const deltas = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
   // TRY THE EMPTY SIDES FIRST. In a crowded inn the neighbouring squares are other
   // characters, and a step into one is refused — so a nudge that walks the ring in a
@@ -1403,16 +1407,18 @@ export async function nudge(s) {
   const c2 = c.room?.objects;
   const taken = new Set(c2 ? [...c2.values()].filter(o => o.id !== c.selfId)
                               .map(o => `${o.col},${o.row}`) : []);
-  deltas.sort((a, b) => (taken.has(`${me.col + a[0]},${me.row + a[1]}`) ? 1 : 0) -
-                        (taken.has(`${me.col + b[0]},${me.row + b[1]}`) ? 1 : 0));
+  deltas.sort((a, b) => (taken.has(`${before.col + a[0]},${before.row + a[1]}`) ? 1 : 0) -
+                        (taken.has(`${before.col + b[0]},${before.row + b[1]}`) ? 1 : 0));
   for (const [dc, dr] of deltas) {
-    const col = me.col + dc, row = me.row + dr;
-    if (geo && !geo.walkable(row, col)) continue;
-    await s.pacer.submit('move', () => c.moveToSquare(col, row), 1050);
-    await sleep(250);
+    const col = before.col + dc, row = before.row + dr;
+    if (!geo.walkable(row, col) || !geo.canMove(before.row, before.col, row, col)) continue;
+    const step = await s.step(col, row, { confirm: true });
+    if (isTerminalMovementReason(step.reason))
+      return { moved: false, reason: step.reason, why: step.note ?? step.reason, note: step.note };
     const now = c.self;
-    if (now && (now.col !== me.col || now.row !== me.row))
-      return { moved: true, from: { col: me.col, row: me.row }, to: { col: now.col, row: now.row },
+    if (step.moved || (now && (now.col !== before.col || now.row !== before.row)))
+      return { moved: true, from: before,
+               to: now ? { col: now.col, row: now.row } : { col, row },
                why: 'health regeneration is gated on having moved since entering the room' };
   }
   return { moved: false, why: 'every neighbouring square refused' };
@@ -2046,6 +2052,9 @@ async function stepOnto(s, o) {
   const now = { id: c.room.id, name: c.roomNameRsc ? c.rsc.get(c.roomNameRsc) : null };
   if (entered || now.id !== wasIn)
     return { left: true, arrived_in: entered?.roomName ?? now.name, room: now.id };
+  if (isTerminalMovementReason(walk.reason))
+    return { left: false, terminal: true, reason: walk.reason, note: walk.note,
+             why: walk.note ?? walk.reason };
   return { left: false, walked: walk.arrived,
            why: walk.arrived
              ? 'stood on it and nothing happened — it is unlit; one or two of the five ' +
@@ -2102,6 +2111,8 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
                  via: `the fixed ${wanted} portal`,
                  ...(near ? { died_in_room: nearestTo, hops_from_death: near.hops } : {}),
                  note: 'a fixed portal, so this is repeatable — no waiting and no luck involved' };
+      if (step.terminal)
+        return { left: false, stood_up: true, reason: step.reason, note: step.note };
       cityAttempts.push({ portal: `fixed ${wanted}`, why: step.why });
     } else {
       cityAttempts.push({
@@ -2125,6 +2136,8 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
     const spot = s.world.approachSquare(rip.col, rip.row);
     if (spot && spot.steps > 0) {
       const walk = await s.walkTo(spot.col, spot.row, { maxSteps: Math.max(30, spot.steps + 10) });
+      if (isTerminalMovementReason(walk.reason))
+        return { left: false, stood_up: true, reason: walk.reason, note: walk.note };
       if (!walk.arrived)
         return { left: false, stood_up: true, reason: 'could not get next to the shifting portal', walk,
                  note: 'we stood up first, so this is not resting — something is in the way' };
@@ -2141,7 +2154,9 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
       if (dest && dest.toLowerCase().includes(String(wanted).toLowerCase())) {
         const before = c.evSeq;
         const wasIn = c.room.id;
-        await s.pacer.submit('move', () => c.moveToSquare(rip.col, rip.row), 1050);
+        const move = await s.stepFine(rip.x, rip.y);
+        if (isTerminalMovementReason(move.reason))
+          return { left: false, stood_up: true, reason: move.reason, note: move.note };
         const arr = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 5000 });
         const entered = arr.events.find(e => e.kind === 'room-entered');
         const now = whereAmI();
@@ -2202,6 +2217,8 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
                  } : {}),
                } : {}) };
     }
+    if (isTerminalMovementReason(walk.reason))
+      return { left: false, stood_up: true, reason: walk.reason, note: walk.note, tried };
     // Only blame the brazier if we actually got onto the square. Not arriving is a
     // different fault with a different fix, and reporting it as an unlit portal sends
     // the caller hunting for something to activate that was never the problem.

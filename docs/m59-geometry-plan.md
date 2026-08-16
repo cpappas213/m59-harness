@@ -151,7 +151,24 @@ it is a fine-coordinate problem and the raycast is what recovers those squares. 
 heights are still worth having on their own merits — this room has a raised area with 10
 genuinely climbable steps and 27 genuine cliffs — but they were never this bug.
 
-### 1. Raycast — and the acceptance test is the Brownestone Inn, not the Toad
+### 1. Local collision trace — SHIPPED 2026-08-16
+
+`RoomGeometry.traceFineMoveClient` now performs this primitive before the broker
+emits a fine-coordinate position. It works in client units, divides a request into
+microsteps no longer than half the player radius, finds the BSP leaf/floor at each
+candidate, applies the stock client's directional sidedef, cached endpoint-0 wall
+heights, 24-kod step, player-height headroom, water-depth, wall-body, and wall-corner
+tests, and slides
+along a blocking wall. A legacy map without the versioned collision payload fails
+closed instead of reverting to unchecked coordinates.
+
+The baked map carries a compact collision payload for all 264 rooms. Regression
+coverage includes Brownestone's legal 256-unit step, the solid/open halves of the
+Limping Toad boundary, the staged Icky Cave entrance, slopes, asymmetric sidedefs,
+water, headroom, player-radius corner collisions, and long requests that would
+otherwise tunnel through an intermediate wall.
+
+#### The acceptance test is the Brownestone Inn, not the Toad
 
 Found 2026-08-06 while clearing the `cant_go` failures, and it is a much better test than
 the Limping Toad because a character is **actually stuck in it right now**.
@@ -183,7 +200,7 @@ difference between the fix being legitimate and being cheating.
 The test for task 1: Camilla leaves the Brownestone Inn. The existing `stepFine` is
 probably most of the machinery; what it lacked was any way to know the step was climbable.
 
-### 1a. Raycast: "move as far along this heading as I can"
+#### 1a. Trace contract: "move as far along this heading as I can"
 Against the wall segments, in fine coordinates (`KOD_FINENESS` = 64/square; the client's own
 is `CLIENT_FINENESS` = 1024 — mind the conversion). Clip at the first intersection, respect
 the Z step limit. Returns a point, not a square. This is the primitive everything else sits

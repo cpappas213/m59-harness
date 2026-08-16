@@ -5,7 +5,7 @@
 //
 // Foundation for letting arbitrary agents play as real player characters. It logs
 // in over the game port exactly as meridian.exe does, so an agent driven through
-// it holds a genuine session: the server validates its movement, it perceives
+// it holds a genuine session: its caller validates movement like the real client, it perceives
 // only what a player would perceive, and it can connect from anywhere. That is
 // strictly better than driving a body over the admin socket, which has no
 // session, bypasses game rules, and must stay bound to loopback.
@@ -91,7 +91,9 @@ export const BP = {
   OFFER: 211, OFFER_CANCELED: 212, OFFERED: 213,
   COUNTEROFFER: 214, COUNTEROFFERED: 215,
   BUY_LIST: 216, CREATE: 217, REMOVE: 218, CHANGE: 219,
-  LIGHT_AMBIENT: 220, INVALIDATE_DATA: 228,
+  LIGHT_AMBIENT: 220, SECTOR_MOVE: 223, SECTOR_LIGHT: 224,
+  WALL_ANIMATE: 225, SECTOR_ANIMATE: 226, CHANGE_TEXTURE: 227,
+  INVALIDATE_DATA: 228,
 };
 export const BPNAME = Object.fromEntries(Object.entries(BP).map(([k, v]) => [v, k]));
 
@@ -223,7 +225,8 @@ export class M59Client {
     this.keepaliveTimer = null;      // see startKeepalive — the session dies without it
     this.keepalivePending = 0;       // heartbeat inventory replies still owed to us
 
-    this.room = { id: null, objects: new Map() };   // object id -> room object
+    this.room = { id: null, security: null, flags: 0, overrideDepths: [0, 0, 0, 0],
+                  objects: new Map(), collisionInvalidated: null };
     // SEND_ROOM_CONTENTS has no request id on the wire, but replies preserve request
     // order. Monotonic local ordinals let a correctness-sensitive caller wait for the
     // reply to *its* request instead of accepting an older asynchronous resync that
@@ -840,6 +843,9 @@ export class M59Client {
   // regeneration rate, so burning it in a safe town is pure loss, while crossing a
   // field of groundworms slowly is how you arrive dead.
   moveTo(x, y, speed = 18, room = this.room.id) {
+    if (!Number.isInteger(x) || x < 0 || x > 0xffff
+        || !Number.isInteger(y) || y < 0 || y > 0xffff)
+      throw new RangeError(`movement coordinates must be unsigned 16-bit integers, got (${x},${y})`);
     this.send(BP.REQ_MOVE, u16b(y), u16b(x), u8b(speed), u32(objId(room || 0)));
   }
   // Grid-square convenience: centre of square (col,row).
@@ -1153,6 +1159,10 @@ export class M59Client {
         const p = parsePlayer(body);
         this.selfId = p.id;
         this.room.id = p.roomId;
+        this.room.security = p.security;
+        this.room.flags = p.roomFlags;
+        this.room.overrideDepths = p.overrideDepths;
+        this.room.collisionInvalidated = null;
         this.roomNameRsc = p.roomNameRsc;
         this.roomRsc = p.roomRsc;
         this.inGame = true;
@@ -1315,6 +1325,66 @@ export class M59Client {
           if (now > was)
             this.emit('got', { items: [describeObject(held, this.lookup)],
                                amount: now - was, stacked: true });
+        }
+        break;
+      }
+
+      // The stock client mutates its in-memory BSP when these arrive. Moving sectors
+      // alter floor/ceiling heights and wall animation can change passability, so the
+      // baked snapshot is no longer authoritative. Until those programs are modeled,
+      // fail closed rather than treating the server as a collision oracle.
+      case BP.SECTOR_MOVE:
+        this.room.collisionInvalidated = {
+          opcode: op,
+          kind: BPNAME[op] || `bp ${op}`,
+          at: Date.now(),
+        };
+        this.emit('collision-geometry-invalidated', { ...this.room.collisionInvalidated });
+        break;
+
+      case BP.WALL_ANIMATE: {
+        // WORD wall id, then the stock variable-length Animate, then RA_*. The
+        // action byte is not safely "the last byte" until the Animate type has
+        // established the exact packet length: accepting trailing bytes could hide
+        // a passability change at the canonical action offset.
+        const animateType = body.length >= 3 ? body.readUInt8(2) : 0;
+        const layout = animateType === 1 ? { length: 6, actionOffset: 5 }
+          : animateType === 2 ? { length: 12, actionOffset: 11 }
+          : animateType === 3 ? { length: 14, actionOffset: 13 }
+          : null;
+        const action = layout && body.length === layout.length
+          ? body.readUInt8(layout.actionOffset) : 0xff;
+        if (action !== 0) {
+          this.room.collisionInvalidated = {
+            opcode: op,
+            kind: BPNAME[op] || `bp ${op}`,
+            at: Date.now(),
+            action,
+          };
+          this.emit('collision-geometry-invalidated', { ...this.room.collisionInvalidated });
+        }
+        break;
+      }
+
+      // Sector animation changes floor/ceiling bitmap groups, not geometry. Likewise,
+      // normal-wall, floor, and ceiling texture replacements are visual only. Above-
+      // and below-wall bitmap presence participates in IntersectNode's headroom/step
+      // tests, however, so those two CHANGE_TEXTURE forms invalidate collision.
+      case BP.SECTOR_ANIMATE:
+        break;
+
+      case BP.CHANGE_TEXTURE: {
+        // WORD id, WORD texture, BYTE flags. Malformed or unknown flag bits fail
+        // conservatively because their effect cannot be classified.
+        const flags = body.length === 5 ? body.readUInt8(4) : 0xff;
+        if (flags & (0x01 | 0x04 | 0xe0)) {
+          this.room.collisionInvalidated = {
+            opcode: op,
+            kind: BPNAME[op] || `bp ${op}`,
+            at: Date.now(),
+            flags,
+          };
+          this.emit('collision-geometry-invalidated', { ...this.room.collisionInvalidated });
         }
         break;
       }

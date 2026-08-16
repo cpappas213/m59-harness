@@ -30,6 +30,7 @@ import { loadSpawns, huntingGrounds, huntMatcher, huntedCreatures,
          FORGIVING_RATING as GENTLE_RATING } from './m59-spawns.mjs';
 import { findPath, roomsWithin } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
+import { isTerminalMovementReason } from './m59-movement.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
 import { inboxIfAny, unwrapSpeech } from './m59-inbox.mjs';
 import { arenaCall } from './m59-chatter.mjs';
@@ -2608,6 +2609,8 @@ export class Autopilot {
                        .catch(e => ({ arrived: false, reason: e.message }));
     this.movedAt = Date.now();
     if (!out.arrived) {
+      const terminal = this.terminalMovement(out, 'pull movement');
+      if (terminal) return { pulled: false, ...terminal };
       const home = await skills.returnToSpot(s, spot, { maxSteps: 24 }).catch(() => ({ arrived: false }));
       this.movedAt = Date.now();
       if (!home.arrived) this.releaseHold('could not get back after a failed pull');
@@ -2828,10 +2831,10 @@ export class Autopilot {
     // at those tables — but it is wrong in the direction that makes a keeper conclude
     // there is nowhere to go and stand in the doorway for ever.
     //
-    // The server does not use that grid; it validates against the fine BSP geometry.
-    // So keep the best square the grid endorses AND the best one it merely dislikes,
-    // and let settle() walk to the second in fine coordinates, where the server is the
-    // judge of each step. Same rule the ledge-walking code already follows.
+    // The fine BSP has more resolution than that grid. So keep the best square the
+    // grid endorses AND the best one it merely dislikes, and let settle() walk to the
+    // second with local BSP collision. The server accepts player coordinates and must
+    // never be treated as the judge of a step.
     let best = null, byFine = null;
     for (let row = 2; row < geo.rows; row++) {
       for (let col = 2; col < geo.cols; col++) {
@@ -2907,6 +2910,8 @@ export class Autopilot {
       : await this.s.walkTo(spot.col, spot.row, { maxSteps: Math.max(20, spot.steps + 8) })
                     .catch(e => ({ arrived: false, reason: e.message }));
     this.movedAt = Date.now();
+    const terminal = this.terminalMovement(w, 'settling movement', { room: room.name });
+    if (terminal) return { settled: false, ...terminal, spot };
     if (w.arrived) { this.settledIn = room.num; this.settleTries = 0; }
     else this.settleTries = tries + 1;
     this.note(w.arrived ? 'found a quiet corner to rest in' : 'could not reach the quiet corner', {
@@ -5227,6 +5232,31 @@ export class Autopilot {
       this.note('STALLED', { why, passes: this.idlePasses,
                              hint: 'nothing has worked for several passes running' });
     } else if (this.stalledSince) this.stalledWhy = why;
+  }
+
+  // A COLLISION-CONTRACT FAILURE IS NOT AN OCCUPIED SQUARE OR A BAD TACTIC.
+  //
+  // Every keeper movement path uses this one classification seam. Retrying a missing,
+  // stale, mismatched, or live-mutated room geometry contract cannot produce a better
+  // route; it only burns retry budgets and eventually teaches the wrong room lesson.
+  // Preserve the exact machine-readable reason, leave ordinary retry counters alone,
+  // and surface the recovery action to the controller.
+  terminalMovement(result, context, detail = {}) {
+    if (!isTerminalMovementReason(result?.reason)) return null;
+    this.stalledSince ??= Date.now();
+    this.stalledWhy = `${context} stopped: ${result.reason}`;
+    this.note(`${context} stopped by the local collision contract`, {
+      ...detail,
+      reason: result.reason,
+      note: result.note,
+      recovery: 'refresh/re-enter with matching room geometry; do not retry or classify the room',
+    });
+    return {
+      terminal: true,
+      reason: result.reason,
+      note: result.note,
+      why: result.note ?? result.reason,
+    };
   }
 
   // A REFUSAL IS NOT A STALL, AND SAYING SO IN PROSE MADE SOMETHING ELSE PARSE PROSE.
@@ -12789,6 +12819,8 @@ export class Autopilot {
     }
     if (!best) { this.note('nowhere to withdraw to', { why: 'no reachable square far enough away' }); return; }
     const walk = await s.walkTo(best.col, best.row, { maxSteps: Math.max(30, best.steps + 10) });
+    const terminal = this.terminalMovement(walk, 'withdrawal movement');
+    if (terminal) return { withdrawn: false, ...terminal };
     this.note('withdrew', { to: { col: best.col, row: best.row }, steps: walk.steps, arrived: walk.arrived });
   }
 }

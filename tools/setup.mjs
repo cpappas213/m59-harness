@@ -27,7 +27,7 @@
 // tools/m59-client.mjs; no Meridian.exe is involved. You need the Steam client
 // to *watch* the fleet with your own eyes, and for the compendium's sprites.
 
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,10 +38,13 @@ import { findClient, findClientExe, roster, writeShortcuts, report, SHORTCUT_DIR
   from './m59-shortcuts.mjs';
 import * as webui from './m59-webui.mjs';
 import { loadResources } from './m59-rsc.mjs';
+import { loadMap, movementMapReadiness } from './m59-map.mjs';
+import { LOCAL_MAP_FILE, movementMapFile } from './m59-map-path.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
 const WIN = process.platform === 'win32';
+const LOCAL_MAP = LOCAL_MAP_FILE;
 
 // Upstream is the default because it is the plainest thing that works. The Deck
 // fork (github.com/tpeppers/Meridian59-deck) builds and runs here too and adds
@@ -77,6 +80,33 @@ function run(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, { stdio: 'inherit', ...opts });
   if (r.error) { console.error(`  cannot run ${cmd}: ${r.error.message}`); return false; }
   return r.status === 0;
+}
+
+function ensureLocalGeometry(src, { force = false } = {}) {
+  if (!src) return false;
+  if (!force && movementMapStatus(LOCAL_MAP)?.ok) return true;
+  console.log('\nbaking collision geometry from the exact server room resources...');
+  const roomDir = join(src, 'resource', 'rooms');
+  const ok = run(process.execPath, [join(HERE, 'm59-map.mjs'), 'refresh-geometry'], {
+    cwd: REPO,
+    // An explicit room directory is exclusive during refresh. Never fill a missing
+    // server room from an unrelated Steam/client install and mislabel the result.
+    env: { ...process.env, M59_ROOT: src, M59_ROO_DIR: roomDir, M59_MAP: LOCAL_MAP },
+  });
+  if (!ok) console.error(c.bad('could not build a server-matched collision map; broker movement will not start'));
+  if (!ok) return false;
+  const ready = movementMapStatus(LOCAL_MAP);
+  if (!ready?.ok) {
+    console.error(c.bad(`the generated collision map validated only ${ready?.ready ?? 0}/` +
+      `${ready?.total ?? 0} rooms; broker movement will not start`));
+    return false;
+  }
+  return true;
+}
+
+function movementMapStatus(file = movementMapFile()) {
+  try { return movementMapReadiness(loadMap(file)); }
+  catch { return null; }
 }
 
 // Is the daemon actually up? `docker info` talks to it; `docker --version` does not.
@@ -182,6 +212,13 @@ async function doctor() {
   const src = findServerSrc();
   add('server source', src, `node tools/setup.mjs server  (clones one)`);
 
+  const mapFile = movementMapFile();
+  const mapStatus = movementMapStatus(mapFile);
+  add('collision map', mapStatus?.ok
+    ? `${mapStatus.ready}/${mapStatus.total} rooms (${mapFile === LOCAL_MAP ? 'server-local' : 'reference'})`
+    : null,
+  'node tools/setup.mjs server  (or set M59_MAP to an exact, validated map)');
+
   const client = findClient();
   add('steam client', client, `node tools/setup.mjs client  (finds or explains)`);
 
@@ -256,6 +293,11 @@ async function server() {
     return 1;
   }
   console.log(`server source: ${src}`);
+
+  // The broker must collide against the same .roo revisions the server announces.
+  // A checked snapshot inevitably drifts as upstream source changes, so generate a
+  // local, gitignored artifact before building this source tree.
+  if (!ensureLocalGeometry(src, { force: true })) return 1;
 
   if (!dockerReady()) {
     if (have('docker')) {
@@ -341,24 +383,27 @@ async function broker() {
     console.error(c.bad('no server on 5959 — start it first: node tools/setup.mjs server'));
     return 1;
   }
-  console.log('starting the broker (detached)...');
-  const out = join(REPO, 'substrate');
-  mkdirSync(out, { recursive: true });
-  const child = spawn(process.execPath,
-    [join(HERE, 'm59-broker.mjs'), '--http', '8901', '--dashboard', '8902'],
-    { detached: true, stdio: 'ignore', cwd: REPO });
-  child.unref();
-  for (let i = 0; i < 30; i++) {
-    if (await portOpen(8901)) {
-      console.log(c.ok('broker up: rpc 8901, dashboard http://127.0.0.1:8902/fleet'));
-      return 0;
-    }
-    await new Promise(r => setTimeout(r, 1000));
+  let movementMap = process.env.M59_MAP ? movementMapFile() : null;
+  if (!movementMap) {
+    const src = findServerSrc();
+    if (src) {
+      if (!ensureLocalGeometry(src)) return 1;
+      movementMap = LOCAL_MAP;
+    } else movementMap = movementMapFile();
   }
-  console.error(c.bad('the broker did not come up on 8901.'));
-  console.error('  run it in the foreground to see why:');
-  console.error('    node tools/m59-broker.mjs --http 8901 --dashboard 8902');
-  return 1;
+  const mapStatus = existsSync(movementMap) ? movementMapStatus(movementMap) : null;
+  if (!mapStatus?.ok) {
+    console.error(c.bad('no server-matched collision map is available.'));
+    console.error('  set M59_ROOT to the source tree used by this server, or M59_MAP to a map');
+    console.error('  baked from its exact room resources; unchecked movement is intentionally disabled.');
+    if (mapStatus) console.error(`  validation: ${mapStatus.ready}/${mapStatus.total} rooms; ` +
+      `manifest ${mapStatus.manifest_matches ? 'matches' : 'does not match'}`);
+    return 1;
+  }
+  console.log('starting the supervised broker...');
+  return run(process.execPath, [join(HERE, 'm59-service.mjs'), 'start'], {
+    cwd: REPO, env: { ...process.env, M59_MAP: movementMap },
+  }) ? 0 : 1;
 }
 
 // ------------------------------------------------------------------ fleet
