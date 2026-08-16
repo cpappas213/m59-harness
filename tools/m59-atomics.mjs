@@ -50,6 +50,12 @@ export function brokerDriver(baseURL, callTool) {
     buySkills: (agents)            => tool('buy_next_planned_skills', { agents }),
     // leave the newbie zone (Raza)
     leaveRaza: (agent)             => tool('leave_raza', { agent }),
+    // Arm-errand primitives. These are the pieces the old m59-outfit.mjs monolith
+    // did in one 8-step function; each is one tool call with one effect.
+    purse:  (agent)                => tool('inventory', { agent }),
+    bank:   (agent, action, amount)=> tool('bank', { agent, action, ...(amount != null ? { amount } : {}) }),
+    sellAll:(agent, merchant, keep)=> tool('sell_all', { agent, merchant, ...(keep ? { keep } : {}) }),
+    shop:   (agent, seller, buyIds)=> tool('shop', { agent, seller, ...(buyIds ? { buy_ids: buyIds } : {}) }),
   };
 }
 
@@ -84,6 +90,17 @@ export function keeperDriver(keeper) {
       ? k.makeWeapon(why) : Promise.resolve(false),
     buyWeapon: (_agent, why) => typeof k.buyWeaponsAtNearestSmith === 'function'
       ? k.buyWeaponsAtNearestSmith({ why }) : Promise.resolve(false),
+    // Arm-errand primitives, in-process. The keeper reads its own purse from the
+    // live client rather than over the wire; bank/sell/shop fall back to the
+    // methods that already exist so a mock only implements what a test asks for.
+    purse:   (_agent) => (k.client && typeof k.client.inventory === 'object'
+      ? Promise.resolve({ items: k.client.inventory }) : Promise.resolve({ items: [] })),
+    bank:    (_agent, action, amount) => typeof k.bank === 'function'
+      ? k.bank(action, amount) : Promise.resolve(null),
+    sellAll: (_agent, merchant, keep) => typeof k.sellAll === 'function'
+      ? k.sellAll(merchant, keep) : Promise.resolve(null),
+    shop:    (_agent, seller, buyIds) => typeof k.shop === 'function'
+      ? k.shop(seller, buyIds) : Promise.resolve(null),
   };
 }
 
@@ -111,6 +128,21 @@ async function _httpTool(baseURL, name, args) {
 // home, exactly as the effect discipline does.
 export function innDest(room) {
   return (room ?? 0) < 400 ? 52 : 370;
+}
+
+// Bounded call: a hung tool call must not hang the errand forever. The old
+// m59-outfit.mjs had no timeout on any HTTP call, so one stuck shop call left a
+// character driven and inert with a child process that never returned. Every
+// arm-errand atom goes through this, so the worst case is a reported failure,
+// not a hang.
+async function _bounded(fn, ms = 20000) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(fn),
+      new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('timed out')), ms); }),
+    ]).catch(e => ({ __timedOut: true, message: e.message }));
+  } finally { clearTimeout(timer); }        // do not leak the timer into the errand
 }
 
 // Composite: stop the keeper, travel to `to`, revive it. The five GOAP town-trip
@@ -190,9 +222,71 @@ const ATOMICS = {
     run: (ctx, { agent, why }) => ctx.conjureWeapon(agent, why),
   },
   // buy_weapon: walk to a smith and buy one. effect: hasWeapon=true.
+  // SUPERSEDED for new code by the decomposed pair below (ensure_funded +
+  // buy_item); kept because the BT's existing get_armed subtree and the legacy
+  // keeper still call it, and deleting it would break the proven field path.
   buy_weapon: {
     effect: 'hasWeapon=true',
     run: (ctx, { agent, why }) => ctx.buyWeapon(agent, why),
+  },
+
+  // ── The decomposed arm-errand. ─────────────────────────────────────────
+  // The old m59-outfit.mjs did the whole errand in one 8-step function with no
+  // timeouts and no notion of who owned the character. These two atoms are the
+  // funding and purchase steps pulled out as single-decision units, each with
+  // one precondition, one effect, and a bounded call, so the keeper, GOAP and
+  // the BT can compose them and a unit test can drive each one offline.
+  //
+  // ensure_funded: get the character holding at least `need` shillings. It
+  // reads the purse, withdraws from the bank in the current room if short, and
+  // (if still short) sells what it is carrying except the keep-list. It does NOT
+  // move the character and does NOT buy anything — those are separate atoms. A
+  // failed withdrawal (no bank here, money in another town) is reported, not
+  // thrown, because carrying on with what you have is the right call.
+  ensure_funded: {
+    effect: 'purse>=need (best effort)',
+    async run(ctx, { agent, need, withdraw = 1000, keep = [] } = {}) {
+      const count = (inv) => (inv?.items || []).reduce((t, i) => t + (i.amount || 0), 0);
+      let inv = await _bounded(() => ctx.purse(agent));
+      let purse = count(inv);
+      const did = [];
+      if (purse < need) {
+        const b = await _bounded(() => ctx.bank(agent, 'withdraw', withdraw));
+        const now = count(await _bounded(() => ctx.purse(agent)));
+        if (now > purse) { did.push(`withdrew ${now - purse}sh`); purse = now; }
+        else if (b?.__timedOut) did.push('withdrawal timed out');
+        else if (b?.error) did.push('no withdrawal here');
+        else did.push('bank said yes, purse did not grow');
+      }
+      if (purse < need) {
+        const sold = await _bounded(() => ctx.sellAll(agent, null, keep));
+        const gained = Number(sold?.total_received || 0);
+        if (gained > 0) { purse += gained; did.push(`sold for ${gained}sh`); }
+      }
+      return { purse, funded: purse >= need, steps: did };
+    },
+  },
+
+  // buy_item: purchase one named item from an already-adjacent merchant's stock.
+  // Precondition: the character is in the room with the merchant (ensure_moved_to)
+  // and holds enough (ensure_funded). It reads the stock, picks the cheapest
+  // item matching `want` (or `fallback`), buys it, and reports. It does not move
+  // or fund — that is the composition order. A missing item is a clean { bought:false },
+  // never a throw, so the caller can try the next candidate shop.
+  buy_item: {
+    effect: 'item in pack, purse debited',
+    async run(ctx, { agent, seller, want, fallback } = {}) {
+      const stock = (await _bounded(() => ctx.shop(agent, seller)))?.items || [];
+      const nameOf = (i) => i?.name || i?.label || '';
+      const opt = stock.filter(i => want?.test?.(nameOf(i)) ?? nameOf(i) === want)
+        .sort((a, b) => (a.cost ?? a.price ?? 9e9) - (b.cost ?? b.price ?? 9e9))[0]
+        || stock.filter(i => fallback?.test?.(nameOf(i)) ?? nameOf(i) === fallback)
+        .sort((a, b) => (a.cost ?? a.price ?? 9e9) - (b.cost ?? b.price ?? 9e9))[0];
+      if (!opt) return { bought: false, reason: 'not in stock', stock: stock.length };
+      const cost = Number(opt.cost ?? opt.price ?? 0);
+      await _bounded(() => ctx.shop(agent, seller, [opt.id]));
+      return { bought: true, item: nameOf(opt), cost, id: opt.id };
+    },
   },
 };
 

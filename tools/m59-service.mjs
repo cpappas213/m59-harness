@@ -55,6 +55,14 @@ const SUB = join(REPO, 'substrate');
 // /substrate/*.log, the pid file because it is worthless to anyone else.
 const PID_FILE = join(SUB, `broker-${LABEL}.pid`);
 const LOG_FILE = join(SUB, `broker-${LABEL}.log`);
+// The GOAP supervisor (m59-goap.mjs) is a second, smaller service on the same
+// machine: a 60-second planning loop over the broker's HTTP port. It holds no
+// sessions and takes no lock, so it has nothing to collide with the broker over —
+// but it dies exactly the same death a hand-started terminal process does, so it
+// gets the same treatment: a pid file, a log in substrate/, and start/stop.
+// Per fleet too: the loop is scoped to one broker, and two fleets are two brokers.
+const GOAP_PID = join(SUB, `goap-${LABEL}.pid`);
+const GOAP_LOG = join(SUB, `goap-${LABEL}.log`);
 
 const c = process.stdout.isTTY
   ? { ok: s => `\x1b[32m${s}\x1b[0m`, bad: s => `\x1b[31m${s}\x1b[0m`, dim: s => `\x1b[2m${s}\x1b[0m` }
@@ -366,11 +374,123 @@ function cmdLogs() {
   return null;                                 // follow never returns
 }
 
+// ---------------------------------------------------------------- goap service
+
+// The goap process owns its own pid file (it removes it on clean exit), so
+// identity is the pid file plus a process liveness check — the same belt and
+// braces as the broker, minus a /health endpoint it does not have.
+async function findGoap() {
+  if (!existsSync(GOAP_PID)) return { running: false };
+  try {
+    const { pid } = JSON.parse(readFileSync(GOAP_PID, 'utf8'));
+    return alive(pid) ? { running: true, pid } : { running: false, stale: pid };
+  } catch { return { running: false, stale: true }; }
+}
+
+async function cmdGoapStart() {
+  const found = await findGoap();
+  if (found.running) { console.log(c.ok(`goap already up — pid ${found.pid}`)); return 0; }
+  if (found.stale) console.log(c.dim(`  (removed stale pid ${found.stale} — the process is gone)`));
+  mkdirSync(SUB, { recursive: true });
+  const fd = openSync(GOAP_LOG, 'a');
+  const child = spawn(process.execPath, [join(HERE, 'm59-goap.mjs')],
+    { detached: true, stdio: ['ignore', fd, fd], cwd: REPO, env: { ...process.env } });
+  child.unref();
+  // The goap writes its own pid file from within; wait for it rather than trusting
+  // the spawn-time pid, which can be re-used before the child starts.
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 250));
+    const f = await findGoap();
+    if (f.running && f.pid !== child.pid) break;
+    if (f.running) { f.pid = child.pid; break; }
+  }
+  // A second live goap means THIS child refused to take the lock and exited — the
+  // other one is who is serving, and saying "up" about this dead child would be a lie.
+  const final = await findGoap();
+  if (final.running && final.pid !== child.pid) {
+    console.log(c.ok(`already up — pid ${final.pid} took the lock; this child exited`));
+    console.log(`  log ${GOAP_LOG}`);
+    return 0;
+  }
+  if (!final.running) {
+    console.log(c.bad('did not come up'));
+    console.error(`  read ${GOAP_LOG}`);
+    return 1;
+  }
+  console.log(c.ok(`goap up — pid ${child.pid}, fleet "${LABEL}"`));
+  console.log(`  log ${GOAP_LOG}`);
+  return 0;
+  console.log(c.bad('did not come up'));
+  console.error(`  read ${GOAP_LOG}`);
+  return 1;
+}
+
+async function cmdGoapStop() {
+  const found = await findGoap();
+  if (!found.running) {
+    console.log(`no goap for "${LABEL}"`);
+    if (existsSync(GOAP_PID)) unlinkSync(GOAP_PID);
+    return 0;
+  }
+  console.log(`stopping goap pid ${found.pid} ("${LABEL}")`);
+  killPid(found.pid);
+  for (let i = 0; i < 20; i++) {
+    if (!alive(found.pid)) {
+      if (existsSync(GOAP_PID)) unlinkSync(GOAP_PID);
+      console.log(c.ok('stopped'));
+      return 0;
+    }
+    await new Promise(r => setTimeout(r, 250));
+  }
+  console.error(c.bad(`pid ${found.pid} did not stop`));
+  return 1;
+}
+
+async function cmdGoapStatus() {
+  const found = await findGoap();
+  if (!found.running) {
+    console.log(c.bad(`goap "${LABEL}"  DOWN`));
+    if (existsSync(GOAP_LOG)) console.log(c.dim(`  log ${GOAP_LOG}`));
+    console.log(`  start it:  node tools/m59-service.mjs goap start${FLEET ? ' --fleet ' + FLEET : ''}`);
+    return 1;
+  }
+  console.log(c.ok(`goap "${LABEL}"  UP`) + `  pid ${found.pid}`);
+  console.log(`  log   ${existsSync(GOAP_LOG) ? GOAP_LOG : '(none yet)'}`);
+  return 0;
+}
+
+function cmdGoapLogs() {
+  if (!existsSync(GOAP_LOG)) { console.error(`no log at ${GOAP_LOG}`); return 1; }
+  const lines = Number(arg('--lines', 80));
+  console.log(readFileSync(GOAP_LOG, 'utf8').split('\n').slice(-lines).join('\n'));
+  return has('--follow') ? cmdLogs() : 0;
+}
+
 // ---------------------------------------------------------------- main
 
-const cmd = argv.find(a => !a.startsWith('-')) || 'status';
+const sub = argv.find(a => !a.startsWith('-'));
+const goapMode = sub === 'goap';
+const cmd = goapMode
+  ? (argv.find(a => a !== 'goap' && !a.startsWith('-')) || 'status')
+  : (sub || 'status');
 let code = 0;
-switch (cmd) {
+if (goapMode) {
+  switch (cmd) {
+    case 'start':   code = await cmdGoapStart(); break;
+    case 'stop':    code = await cmdGoapStop(); break;
+    case 'restart': {
+      const st = await cmdGoapStop();
+      code = st === 0 ? await cmdGoapStart() : st;
+      break;
+    }
+    case 'status':  code = await cmdGoapStatus(); break;
+    case 'logs':    code = cmdGoapLogs(); break;
+    default:
+      console.error(`unknown goap command "${cmd}"`);
+      console.error('usage: m59-service.mjs goap start|stop|restart|status|logs [--fleet <name>]');
+      code = 2;
+  }
+} else switch (cmd) {
   case 'start':   code = await cmdStart(); break;
   case 'stop':    code = await cmdStop({ force: FORCE }); break;
   case 'restart': {

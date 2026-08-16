@@ -28,16 +28,25 @@ import { travelToAction, reviveKeeperAction } from './m59-bt-nodes.mjs';
 // Tiny test harness.
 let _passed = 0;
 let _failed = 0;
+const _tests = [];
 function test(name, fn) {
-  try {
-    fn();
-    _passed++;
-    console.log(`PASS  ${name}`);
-  } catch (err) {
-    _failed++;
-    console.log(`FAIL  ${name}: ${err.message}`);
-    if (err.stack) console.log(err.stack.split('\n').slice(1, 3).join('\n'));
+  _tests.push({ name, fn });
+}
+async function runTests() {
+  for (const { name, fn } of _tests) {
+    try {
+      await fn();
+      _passed++;
+      console.log(`PASS  ${name}`);
+    } catch (err) {
+      _failed++;
+      console.log(`FAIL  ${name}: ${err.message}`);
+      if (err.stack) console.log(err.stack.split('\n').slice(1, 3).join('\n'));
+    }
   }
+  console.log('');
+  console.log(`${_passed}/${_passed + _failed} passing`);
+  process.exit(_failed > 0 ? 1 : 0);
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 function assertEq(a, b, msg) {
@@ -60,6 +69,10 @@ function makeBroker() {
       case 'inn':       return {};
       case 'buy_next_planned_skills': return { results: [{ queued: true, ability: 'blink', price: 500 }] };
       case 'leave_raza': return { left: true };
+      case 'inventory':  return { items: [{ name: 'shillings', amount: (globalThis.__purse ?? 0) }] };
+      case 'bank':       return globalThis.__bankFails ? { error: 'no bank in this room' } : { balance: 500 };
+      case 'sell_all':   return { total_received: globalThis.__sellFor ?? 0 };
+      case 'shop':       return globalThis.__shopStock ?? { items: [] };
       default: return null;
     }
   };
@@ -80,6 +93,15 @@ function makeKeeper() {
     async travel(to)                    { calls.push(['travel', to]); return { arrived: true }; },
     async revive(why)                   { calls.push(['revive', why]); return true; },
     async stop(why)                     { calls.push(['stop', why]); return true; },
+    // Arm-errand primitives. In-process reads come off the live client inventory;
+    // the mock re-reads globalThis so a test can vary the purse between steps.
+    client: { get inventory() { return globalThis.__purseInv ?? [{ name: 'shillings', amount: 0 }]; } },
+    async bank(action, amount)          { calls.push(['bank', action, amount]);
+      return globalThis.__bankFails ? { error: 'no bank in this room' } : { balance: 500 }; },
+    async sellAll(merchant, keep)       { calls.push(['sellAll', merchant, keep]);
+      return { total_received: globalThis.__sellFor ?? 0 }; },
+    async shop(seller, buyIds)          { calls.push(['shop', seller, buyIds]);
+      if (buyIds) return { bought: buyIds.length }; return globalThis.__shopStock ?? { items: [] }; },
   };
   return { k, calls };
 }
@@ -180,18 +202,105 @@ test('atomic_names_cover_both_systems', () => {
   }
 });
 
+test('ensure_funded_withdraws_when_purse_short', async () => {
+  const b = makeBroker();
+  globalThis.__purse = 10;              // starts short of 500
+  const ctx = brokerDriver('http://x', b.callTool);
+  const res = await runAtomic('ensure_funded', ctx, { agent: 't1', need: 500, withdraw: 1000 });
+  delete globalThis.__purse;
+  // The mock re-read returns the same purse (no real money moves), so funded stays
+  // false -- the point is the withdraw was ATTEMPTED and the step recorded, not a
+  // hang or a throw, and that a failed withdrawal is NOT mislabeled as a withdrawal.
+  assert(res.steps.includes('bank said yes, purse did not grow'), 'a silent-failed withdraw is reported honestly, not as a sale');
+  assert(b.calls.some(c => c.name === 'bank' && c.args.action === 'withdraw'), 'bank withdraw was issued');
+});
+
+test('ensure_funded_reports_no_bank_without_throwing', async () => {
+  const b = makeBroker();
+  globalThis.__purse = 0;
+  globalThis.__bankFails = true;
+  const ctx = brokerDriver('http://x', b.callTool);
+  const res = await runAtomic('ensure_funded', ctx, { agent: 't1', need: 500 });
+  delete globalThis.__purse; delete globalThis.__bankFails;
+  assertEq(res.funded, false, 'still short');
+  assert(res.steps.includes('no withdrawal here'), 'the failed withdrawal is reported, not thrown');
+});
+
+test('ensure_funded_sells_to_make_up_difference', async () => {
+  const b = makeBroker();
+  globalThis.__purse = 0;
+  globalThis.__bankFails = true;       // no bank here
+  globalThis.__sellFor = 600;          // selling covers the need
+  const ctx = brokerDriver('http://x', b.callTool);
+  const res = await runAtomic('ensure_funded', ctx, { agent: 't1', need: 500 });
+  delete globalThis.__purse; delete globalThis.__bankFails; delete globalThis.__sellFor;
+  assertEq(res.funded, true, 'selling made it funded');
+  assert(res.steps.some(s => s.startsWith('sold for')), 'the sale was recorded');
+  assert(b.calls.some(c => c.name === 'sell_all'), 'sell_all was issued');
+});
+
+test('buy_item_buys_cheapest_matching_from_stock', async () => {
+  const b = makeBroker();
+  globalThis.__shopStock = { items: [
+    { id: 11, name: 'fine long sword', cost: 900 },
+    { id: 12, name: 'long sword', cost: 150 },
+    { id: 13, name: 'leather armor', cost: 800 },
+  ] };
+  const ctx = brokerDriver('http://x', b.callTool);
+  const res = await runAtomic('buy_item', ctx, { agent: 't1', seller: 'smith', want: /long sword/i });
+  delete globalThis.__shopStock;
+  assertEq(res.bought, true, 'bought something');
+  assertEq(res.id, 12, 'the cheapest matching item, not the fine one');
+  assertEq(res.cost, 150, 'paid the right price');
+  const buy = b.calls.find(c => c.name === 'shop' && c.args.buy_ids);
+  assert(buy, 'a buy call was issued');
+  assertEq(buy.args.buy_ids[0], 12, 'bought id 12');
+});
+
+test('buy_item_falls_back_and_reports_missing', async () => {
+  const b = makeBroker();
+  globalThis.__shopStock = { items: [{ id: 21, name: 'chain armor', cost: 1800 }] };
+  const ctx = brokerDriver('http://x', b.callTool);
+  // want leather (absent), fallback matches chain -> buys it
+  const r1 = await runAtomic('buy_item', ctx, { agent: 't1', seller: 's', want: /leather/i, fallback: /chain/i });
+  assertEq(r1.bought, true, 'fallback matched');
+  // want leather, no fallback, absent -> clean { bought:false }, not a throw
+  const r2 = await runAtomic('buy_item', ctx, { agent: 't1', seller: 's', want: /leather/i });
+  assertEq(r2.bought, false, 'missing item is a clean miss');
+  delete globalThis.__shopStock;
+});
+
+test('buy_item_times_out_without_hanging_the_errand', async () => {
+  // The regression this whole decomposition exists for: a hung shop call must not
+  // hang the errand forever. The mock broker blocks forever on the shop call.
+  const b = makeBroker();
+  const ctx = brokerDriver('http://x', async (name, args) => {
+    if (name === 'shop' && !args.buy_ids) return new Promise(() => {});   // hang
+    return { items: [] };
+  });
+  const t0 = Date.now();
+  const res = await runAtomic('buy_item', ctx, { agent: 't1', seller: 's', want: /sword/i });
+  const ms = Date.now() - t0;
+  assertEq(res.bought, false, 'a hang reads as a miss, not a hang');
+  assert(ms < 21000, `returned at the 20s bound (took ${ms}ms), not hung forever`);
+});
+
+test('atomic_names_include_the_arm_errand_atoms', () => {
+  for (const n of ['ensure_funded', 'buy_item'])
+    assert(ATOMIC_NAMES.includes(n), `atomic ${n} should exist`);
+});
+
 test('bt_travelToAction_wraps_atomic_into_running_slot', async () => {
   // A BT Action node built on the travel_to atomic must follow the RUNNING/slot
-  // protocol: tick 0 kicks off and returns RUNNING, tick 1 reports SUCCESS.
+  // protocol: tick 0 kicks off and returns RUNNING, a later tick reports SUCCESS.
   const { k, calls } = makeKeeper();
   const bb = { client: null, session: k, _bt: {} };
   const action = travelToAction(k, 52);
-  const first = action.tick(bb);
-  assertEq(first, RUNNING, 'first tick kicks off and returns RUNNING');
-  // The travel call is fire-and-forget; let the microtask land.
-  await Promise.resolve();
-  const second = action.tick(bb);
-  assertEq(second, SUCCESS, 'second tick reports SUCCESS');
+  assertEq(action.tick(bb), RUNNING, 'first tick kicks off and returns RUNNING');
+  // The travel call is fire-and-forget; it resolves on a macrotask, not a microtask,
+  // so a single Promise.resolve() is not enough for the slot to settle.
+  await new Promise(r => setTimeout(r, 10));
+  assertEq(action.tick(bb), SUCCESS, 'second tick reports SUCCESS');
   assertEq(calls[0][0], 'travel', 'travel method called');
   assertEq(calls[0][1], 52, 'travel to=52');
 });
@@ -201,12 +310,9 @@ test('bt_reviveKeeperAction_reports_success', async () => {
   const bb = { client: null, session: k, _bt: {} };
   const action = reviveKeeperAction(k);
   assertEq(action.tick(bb), RUNNING, 'kick off');
-  await Promise.resolve();
+  await new Promise(r => setTimeout(r, 10));
   assertEq(action.tick(bb), SUCCESS, 'revive succeeded');
   assertEq(calls[0][0], 'revive', 'revive method called');
 });
 
-console.log('');
-console.log(`${_passed}/${_passed + _failed} passing`);
-if (_failed > 0) process.exit(1);
-process.exit(0);
+runTests();

@@ -21,7 +21,7 @@
 // The action library is exported (buildActionLibrary) so the test can run the planner
 // against fixture states without touching the broker.
 
-import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
@@ -823,6 +823,31 @@ async function runPass(dryRun) {
 const isMain = import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isMain) {
+  // One process per repo+fleet: the pid file is a hint, but a stale one from a crashed
+  // run must not block the new one, and a LIVE one must.
+  const pidPath = join(HERE, '..', 'substrate', `goap-${process.env.M59_FLEET || 'default'}.pid`);
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  if (existsSync(pidPath)) {
+    let held = null;
+    try { held = JSON.parse(readFileSync(pidPath, 'utf8')).pid; } catch { /* stale, take it */ }
+    if (held && alive(held) && held !== process.pid) {
+      console.error(`[goap] already running (pid ${held}, ${pidPath})`);
+      process.exit(1);
+    }
+  }
+  mkdirSync(dirname(pidPath), { recursive: true });
+  writeFileSync(pidPath, JSON.stringify({ pid: process.pid, at: Date.now() }, null, 2));
+  const rmPid = () => { try { unlinkSync(pidPath); } catch { /* gone already */ } };
+  // SIGTERM must EXIT, not just clean up: a handler that returns leaves the default
+  // disposition, so the process would ignore the signal and the service's stop and
+  // restart would time out on a process that was, from outside, perfectly alive.
+  process.on('exit', rmPid);
+  process.on('SIGTERM', () => { rmPid(); process.exit(0); });
+  process.on('SIGINT', () => { rmPid(); process.exit(0); });
+  // The loop must not die silently: a dead supervisor is the exact failure this pid
+  // file exists to catch, so log the reason and exit loudly for whoever restarts it.
+  process.on('uncaughtException', (e) => { console.error('[goap] uncaught:', e.stack || e); rmPid(); process.exit(1); });
+  process.on('unhandledRejection', (e) => { console.error('[goap] unhandled rejection:', e); });
   const args = process.argv.slice(2);
   const dryRun  = args.includes('--dry-run');
   const once    = args.includes('--once');
@@ -838,7 +863,8 @@ if (isMain) {
     await runPass(dryRun);
   } else {
     console.log(`[goap] starting loop every ${INTERVAL_MS / 1000}s${dryRun ? ' (dry-run)' : ''}`);
-    await runPass(dryRun);
-    setInterval(() => runPass(dryRun), INTERVAL_MS);
+    const pass = async () => { try { await runPass(dryRun); } catch (e) { console.error('[goap] pass failed:', e.message); } };
+    await pass();
+    setInterval(pass, INTERVAL_MS);
   }
 }
