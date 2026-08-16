@@ -1196,7 +1196,7 @@ export class RoomGeometry {
     return ok;
   }
 
-  neighbors(row, col, { fine = true, collision = true } = {}) {
+  neighbors(row, col, { fine = true, collision = false } = {}) {
     const out = [];
     for (const d of this.openDirections(row, col, { fine })) {
       const r = row + d.dr, c = col + d.dc;
@@ -1293,7 +1293,17 @@ export class RoomGeometry {
 
   path(fromRow, fromCol, toRow, toCol,
        { fine = true, maxNodes = 200000, avoid = null, threats = null, threatCost = null,
-         collision = true } = {}) {
+         // OFF UNTIL IT IS CHEAP. Turning this on fleet-wide caused a rejoin storm: the
+         // trace is synchronous and CPU-bound, A* calls it tens of thousands of times, and
+         // every session in the broker shares one event loop — so a cold 1.2s path stops
+         // the loop, keepalives go unanswered, and the server drops the connection. Twelve
+         // of twenty-one characters were out of the world inside five minutes.
+         //
+         // The IDEA is right and the measurements are good (room 150 replans 34 -> 38
+         // steps that can actually be walked). What it needs is a budget: a cap on traces
+         // per call, falling back to the coarse grid beyond it, so one route can never
+         // block the loop. Until then the router plans on the grid as it always did.
+         collision = false } = {}) {
     threatCost = threatCost ?? this.threatField(threats);
     if (!this.inBounds(fromRow, fromCol)) return { found: false, reason: 'start is outside the room grid' };
     if (!this.inBounds(toRow, toCol)) return { found: false, reason: 'goal is outside the room grid' };
