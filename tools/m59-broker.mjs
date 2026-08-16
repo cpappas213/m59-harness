@@ -76,6 +76,7 @@ import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRA
          applyFightAboveVigor } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
+import * as exitgap from './m59-exitgap.mjs';
 import { TitheBook, guildRentStatus, payGuildTithe, titheFleet } from './m59-tithe.mjs';
 import { RANK, RANK_NAME, COMMANDS, mayI, commandsIn, validateGuild,
          DEFAULT_RANK_TITLES, maturityWait, inductionPlan, INVITATION_MS,
@@ -783,6 +784,12 @@ function startLedger() {
   first.unref?.();
   const t = setInterval(tick, LEDGER_INTERVAL_MS);
   t.unref?.();
+  // OUTSIDE EVERY LIFTED METHOD, which is the only reason this is a timer rather than a
+  // call at the site that knows. `travel`, `leaveVia`, `leaveViaAny`, `validateFineTarget`
+  // and `queueValidatedMove` are all extracted by text and evaluated by tests, so none of
+  // them may name a module-scope function; they queue onto their session and this drains.
+  const gaps = setInterval(() => { try { drainExitGaps(); } catch { /* never fatal */ } }, 15_000);
+  gaps.unref?.();
 }
 
 // Rejoining is a login plus a walk, so it is slow and it can fail; nothing waits on
@@ -3635,6 +3642,12 @@ class Session {
                tried, note: 'the trigger is ' + exit.trigger };
     }
 
+    // THE SQUARE WE ACTUALLY STOOD ON. Recorded on `this` rather than written anywhere,
+    // because this method is lifted out of this file by text and evaluated by
+    // m59-collision-test — it may touch nothing but `this`, its injected dependencies and
+    // built-ins. A non-lifted caller flushes it; see flushExitGaps.
+    this.lastExitStand = c.self ? { col: c.self.col, row: c.self.row } : null;
+
     if (exit.kind === 'portal') {
       // Nothing to send: Portal.SomethingMoved fires on arrival at its square and
       // teleports whatever is standing there. So walking IS the action.
@@ -3657,6 +3670,49 @@ class Session {
     return { left: false, reason: 'cannot leave through a ' + exit.kind };
   }
 
+  /**
+   * THE LAST RESORT AT A DOORWAY THE MODEL CANNOT DESCRIBE — bounded, counted, and only
+   * ever reached once the ordinary path has refused every square it could offer.
+   *
+   * #18 made the harness enforce collision the way the stock client does, which was right:
+   * the server accepts whatever coordinates you send, so nothing else was enforcing it and
+   * bots crossed walls. But the approach model is incomplete at some doorways, and a
+   * doorway the model cannot describe became a doorway nothing could use — ten of
+   * twenty-one characters could not reach a bank, which is the same blockage that starves
+   * the whole fleet of reagents.
+   *
+   * So where the model has refused EVERY square it offered, take the one step it would
+   * not, onto a square IT ITSELF published as crossing that boundary. That is far narrower
+   * than "movement without validation": the target is the model's own answer, and every
+   * step up to it was fully validated.
+   *
+   * Recorded every time, with the square the model believed in beside the square that
+   * actually worked — a bypass nobody measures is a bypass that becomes permanent.
+   * `M59_EXIT_FALLBACK=0` turns it off.
+   */
+  async leaveViaUnvalidated(exit, { movementGeneration = this.movementGeneration } = {}) {
+    const c = this.need();
+    const target = exit?.stand_on;
+    if (!target || !Number.isInteger(target.col) || !Number.isInteger(target.row))
+      return { left: false, reason: 'no square to fall back to' };
+    if (this.movementWasCancelled(movementGeneration)) return this.cancelledMovement({});
+    const before = c.evSeq, startRoom = c.room.id;
+    const half = KOD_FINENESS >> 1;
+    const x = target.col * KOD_FINENESS + half, y = target.row * KOD_FINENESS + half;
+    if (!Number.isInteger(x) || x < 0 || x > 0xffff ||
+        !Number.isInteger(y) || y < 0 || y > 0xffff)
+      return { left: false, reason: 'fallback target is off the wire grid' };
+    this.exitFallbacks = (this.exitFallbacks || 0) + 1;
+    try { c.moveTo(x, y, 18, startRoom); }
+    catch (e) { return { left: false, reason: e.message }; }
+    const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 })
+                      .catch(() => ({ events: [] }));
+    const entered = ev.events?.find(e => e.kind === 'room-entered');
+    if (entered) return { left: true, arrived_in: entered.roomName, via: 'exit-fallback',
+                          stood_on: { col: target.col, row: target.row } };
+    return { left: false, reason: 'the unvalidated step did not change rooms either' };
+  }
+
   // One doorway is often published as several squares, and they are NOT
   // interchangeable: in the Royal Bank of Jasper (9,7) has a brazier standing on
   // it and refuses, while (9,6) one square north opens. Which is which is not in
@@ -3670,13 +3726,35 @@ class Session {
     for (const exit of orderExits(spreadEdges(candidates))) {
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement({ tried });
       const r = await this.leaveVia(exit, { movementGeneration, controlToken });
-      if (r.left) return { ...r, used_exit: exit, ...(tried.length ? { tried } : {}) };
+      if (r.left) return { ...r, used_exit: exit, stood_on: this.lastExitStand ?? null,
+                           ...(tried.length ? { tried } : {}) };
       if (isTerminalMovementReason(r.reason))
         return { ...r, left: false, used_exit: exit, ...(tried.length ? { tried } : {}) };
       tried.push({ stand_on: exit.stand_on, why: r.reason || r.note || 'no reason reported' });
     }
+    // EVERY SQUARE REFUSED — so before reporting a wall where players walk, take the one
+    // step the model would not, onto a square it published itself. Only here, only after
+    // the whole ordered list has been tried, and only when nothing terminal stopped us
+    // (a terminal reason returned above; it means the contract itself is broken, and
+    // walking anyway would be walking on geometry we know is wrong).
+    if (tried.length && process.env.M59_EXIT_FALLBACK !== '0') {
+      const best = orderExits(spreadEdges(candidates))[0] ?? null;
+      if (best) {
+        const forced = await this.leaveViaUnvalidated(best, { movementGeneration });
+        if (forced.left) return { ...forced, used_exit: best, fallback: true, tried };
+      }
+    }
     const last = tried[tried.length - 1];
+    // THE EVIDENCE FOR A GAP REPORT, carried out rather than filed here. What makes a
+    // refusal actionable is not that it happened but WHAT THE MODEL BELIEVED — the best
+    // square it could offer — so that it can be set against the square a character is
+    // standing on when the same door works. See m59-exitgap.mjs.
+    const offered = orderExits(spreadEdges(candidates))[0] ?? null;
     return { left: false, tried,
+             gap: { believed: offered?.stand_on
+                      ? { col: offered.stand_on.col, row: offered.stand_on.row } : null,
+                    direction: offered?.direction ?? candidates?.[0]?.direction ?? null,
+                    offered: tried.length },
              reason: tried.length > 1
                ? `every square for that exit refused (${tried.length} tried)`
                : (last ? last.why : 'no exit to try') };
@@ -4050,6 +4128,22 @@ class Session {
       // out to be in the gap between them, the fix is in the planner, not the legs.
       const walkBegan = Date.now();
       const r = await this.leaveViaAny(candidates, { movementGeneration, controlToken });
+      // QUEUE THE GAP ON `this`, AND LET SOMETHING ELSE FILE IT.
+      //
+      // Three methods in this chain are lifted out of this file by text and evaluated —
+      // validateFineTarget and queueValidatedMove by m59-collision-test, and `travel`
+      // itself by m59-travel-test — so a module-scope call here is a ReferenceError in a
+      // test rather than a runtime error, which is the good kind of caught but only if
+      // somebody runs it. Pushing onto `this` needs nothing but the object we already
+      // have; drainExitGaps() does the writing from outside the lifted region.
+      (this.pendingExitGaps ??= []).push({
+        room: here?.num ?? null,
+        direction: r?.gap?.direction ?? r?.used_exit?.direction ?? null,
+        left: !!r.left, reason: r.reason ?? null,
+        believed: r?.gap?.believed ?? null,
+        stood_on: r.stood_on ?? null,
+        tried: (r.tried ?? []).slice(0, 8).map(t => ({ ...(t.stand_on ?? {}), why: t.why })),
+      });
       // Never log an empty reason: a hop that fails without saying why is exactly the
       // silent failure this whole broker exists to avoid, so surface whatever stage
       // it got to.
@@ -12785,6 +12879,47 @@ function geometryDriftReport() {
     }
   }
   return [...merged.values()].sort((a, b) => b.at - a.at);
+}
+
+// WHAT THE MODEL BELIEVED, AND WHAT ACTUALLY WORKED.
+//
+// Written here rather than inside leaveVia/leaveViaAny because both are lifted out of
+// this file by text and evaluated by m59-collision-test, which means neither may reference
+// anything in module scope. They hand the evidence out; this files it.
+//
+// A refusal alone is not a bug report — the fix depends entirely on whether every gap
+// shares one offset (a coordinate bug) or they are scattered (an incomplete approach
+// search at particular doorways), and only the believed/actual PAIR can tell those apart.
+// `m59-exitgap.mjs --delta` is that question asked of the data.
+function drainExitGaps() {
+  for (const s of sessions.values()) {
+    const queued = s?.pendingExitGaps;
+    if (!queued?.length) continue;
+    s.pendingExitGaps = [];
+    for (const g of queued) {
+      try {
+        if (g.room == null) continue;
+        if (g.left) {
+          // Only where the model has ALREADY been seen to come up short. A doorway that
+          // has always worked is not a gap, and filing every successful exit in the world
+          // would bury the handful that matter under tens of thousands of rows a day.
+          if (g.stood_on) exitgap.noteEscapedIfKnown(g.room, g.direction, g.stood_on);
+          continue;
+        }
+        if (!/refused|no exit to try/.test(String(g.reason ?? ''))) continue;
+        let crossings = 0, approaches = 0;
+        try {
+          const geo = s.world?.geometry ?? null;
+          if (geo && g.direction) {
+            crossings = (geo.edgeCrossingCandidates?.(g.direction) ?? []).length;
+            approaches = (geo.edgeApproachCandidates?.(g.direction) ?? []).length;
+          }
+        } catch { /* the counts are context; the believed/actual pair is the point */ }
+        exitgap.noteRefused(g.room, g.direction,
+          { believed: g.believed, crossings, approaches, tried: g.tried });
+      } catch { /* an instrument must never be the reason a hop fails */ }
+    }
+  }
 }
 
 function brokerHealth() {
