@@ -48,6 +48,9 @@ import { mayShareSpot } from './m59-party.mjs';
 // about. A LOOKUP, never a request — see the note above checkAttackedByPlayer().
 import * as playbook from './m59-playbook.mjs';
 import { CITY_INNS } from './m59-underworld.mjs';
+import { recordSightings, addTarget, recordTargetKill, targetsFor,
+         declareConflict, clearConflict, activeConflicts,
+         knownFleetNames } from './m59-intel.mjs';
 // WHAT THIS PARTICULAR CHARACTER IS SUPPOSED TO BE CARRYING, if anybody has said. Every
 // buy, sell, keep and drop rule below used to be one constant for twenty-one characters;
 // a loadout is that answer per character, written in the compendium's planner. It is an
@@ -3887,6 +3890,21 @@ export class Autopilot {
         .filter(o => o.id !== c.selfId && (o.flags & OF.PLAYER))
         .map(o => c.rsc.get(o.nameRsc)).slice(0, 6),
     };
+    // Record non-fleet player sightings for intel tracking.
+    {
+      const myName = c.me?.name ?? this.s?.name ?? this.who();
+      const strangerObjs = [...c.room.objects.values()]
+        .filter(o => o.id !== c.selfId && (o.flags & OF.PLAYER));
+      if (strangerObjs.length) {
+        recordSightings(
+          myName,
+          strangerObjs.map(o => ({ id: o.id, name: c.rsc.get(o.nameRsc) })),
+          this.s.world?.room?.num ?? null,
+          null,  // intel derives fleet names from fleet-state.json
+        );
+      }
+    }
+
     this.recent5 = (this.recent5 || []);
     // WHEN THE RECORD LAST BREATHED. The watchdog spaces its own frames against this, so
     // an ordinary busy pass costs nothing extra and only a genuinely blind stretch does.
@@ -4303,6 +4321,16 @@ export class Autopilot {
                   : 'no playbook covers this, so the ordinary survival ladder applies — ' +
                     'which treats this exactly as it treats a giant rat',
     });
+    // Auto-add attacker to intel target list and declare a conflict.
+    // Fleet members are excluded — two keepers sharing a room fight the same monster
+    // and one registers as attacking the other. knownFleetNames() reads fleet-state.json.
+    if (facts.who && !knownFleetNames().has(facts.who)) {
+      addTarget(facts.who, {
+        auto_attack: true,
+        reason: `attacked ${this.s?.name ?? this.who()} in room ${facts.room}`,
+      });
+      declareConflict(this.s?.name ?? this.who(), facts.who, facts.room);
+    }
     if (!action) return null;
     return this.runPlaybook('attacked_by_player', action, facts);
   }
@@ -7096,13 +7124,114 @@ export class Autopilot {
     return false;
   }
 
-  // Stub: engage an auto-attack intel target in the room. Returns true when it
-  // handles the pass. Not yet implemented — falls through to normal farming.
-  async engagePlayerTarget() { return false; }
+  async engagePlayerTarget() {
+    const c = this.s.client;
+    if (!c) return false;
+    const v = c.vitals?.();
+    const hp = pct(v?.health);
+    const safe = this.safety();
+    if (hp !== null && hp < safe.engageAt) return false;
 
-  // Stub: respond to another fleet member's declared conflict with a target player.
-  // Returns true when it handles the pass. Not yet implemented — falls through.
-  async respondToConflict() { return false; }
+    const myName = c.me?.name ?? this.s?.name ?? this.who();
+    const tList = targetsFor(myName);
+    if (!tList.length) return false;
+
+    const roomObjs = c.room?.objects;
+    if (!roomObjs) return false;
+
+    for (const tEntry of tList) {
+      const tName = tEntry.name;
+      const found = [...roomObjs.values()].find(o =>
+        o.id !== c.selfId && (o.flags & OF.PLAYER) && (o.flags & OF.ATTACKABLE) &&
+        (c.rsc.get(o.nameRsc) || '') === tName);
+      if (!found) continue;
+
+      this.note('engaging player target', {
+        target: tName, id: found.id, room: this.s.world?.room?.num,
+        health: hp == null ? null : Math.round(hp * 100) + '%',
+        why: 'intel auto-attack target is in this room and we are healthy enough to engage',
+      });
+
+      const f = await skills.fight(this.s, {
+        target: tName, exactTargetId: found.id, includePlayers: true,
+        rounds: this.policy.fightRounds ?? 30, disengageAt: safe.fleeAt,
+        loot: false, holdPosition: !!this.hold, reach: REACH,
+        weaponPriority: this.weaponPriorityNow(),
+      }).catch(e => ({ killed: false, died: false, note: e.message }));
+
+      const roomNum = this.s.world?.room?.num ?? null;
+      declareConflict(myName, tName, roomNum);
+
+      if (f.killed) {
+        recordTargetKill(myName, tName);
+        clearConflict(tName);
+        this.note('killed player target', { target: tName });
+        this.progress('killed a player target');
+      } else if (f.died) {
+        clearConflict(tName);
+        this.noProgress('died fighting a player target');
+      } else {
+        this.note('broke off player target engagement', { target: tName, why: f.note });
+        this.noProgress('broke off from player target');
+      }
+      return true;
+    }
+    return false;
+  }
+
+  async respondToConflict() {
+    const c = this.s.client;
+    if (!c) return false;
+
+    const vit   = c.vitals?.();
+    const hp    = pct(vit?.health);
+    const level = vit?.health?.max ?? 0;
+    if (level <= 30) return false;
+    if (hp !== null && hp < this.safety().engageAt) return false;
+
+    const comm = this.commitment();
+    if (comm && comm.takeable === false) return false;
+
+    const myRoom    = this.s.world?.room?.num ?? null;
+    const conflicts = activeConflicts();
+    if (Object.keys(conflicts).length === 0) return false;
+
+    const myName  = c.me?.name ?? this.s?.name ?? this.who();
+    const maxHops = this.policy.conflict_response_hops ?? 0;
+
+    const candidates = Object.values(conflicts)
+      .filter(cf => cf.reporter !== myName && cf.room !== myRoom)
+      .sort((a, b) => b.updated_at - a.updated_at);
+
+    if (!candidates.length) return false;
+
+    for (const cf of candidates) {
+      if (maxHops > 0) {
+        const path = findPath(myRoom, cf.room, { maxHops });
+        if (!path || path.length > maxHops) continue;
+      }
+
+      this.note('converging on conflict', {
+        target: cf.target, conflict_room: cf.room, reporter: cf.reporter,
+        why: `${cf.reporter} is fighting ${cf.target} — travelling to assist`,
+        max_hops: maxHops || 'unlimited',
+      });
+      this.doing = 'converging';
+
+      const tResult = await this.travel(cf.room, {
+        maxHops: maxHops > 0 ? maxHops : 50,
+      }).catch(() => ({ arrived: false }));
+
+      if (!(tResult?.arrived)) {
+        this.note('could not reach conflict room', { room: cf.room, target: cf.target });
+        return false;
+      }
+
+      this.progress('arrived at conflict room');
+      return true;
+    }
+    return false;
+  }
 
   // ── passPlaybook: extracted from pass() ────────────────────────────────
   async passPlaybook() {

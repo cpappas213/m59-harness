@@ -1,0 +1,38 @@
+{
+  "Gountrug": [
+    {
+      "condition": "level >= 30",
+      "then": { "hunt": "zombie", "room": 70, "mode": "farm" }
+    }
+  ],
+  "Kage": [
+    {
+      "condition": "reagents.elderberry < 4 || reagents.herbs < 4",
+      "then": { "resupply": true }
+    },
+    {
+      "condition": "level >= 30",
+      "then": { "hunt": "zombie", "room": 70, "mode": "farm" }
+    }
+  ],
+  "JayB": [
+    {
+      "condition": "level <= 25 && room >= 1006 && room <= 1018",
+      "then": { "hunt": "giant rat", "room": 586, "mode": "farm" }
+    },
+    {
+      "condition": "level >= 30",
+      "then": { "hunt": "zombie", "room": 70, "mode": "farm" }
+    }
+  ],
+  "Lee": [
+    {
+      "condition": "level <= 25 && room >= 1006 && room <= 1018",
+      "then": { "hunt": "giant rat", "room": 586, "mode": "farm" }
+    },
+    {
+      "condition": "level >= 30",
+      "then": { "hunt": "zombie", "room": 70, "mode": "farm" }
+    }
+  ]
+}
