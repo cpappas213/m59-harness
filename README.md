@@ -53,7 +53,7 @@ hold real passwords, so `shortcuts/` is gitignored; the details are in
 
 | | |
 |---|---|
-| Node 18+ | everything. Tools in `tools/` are standalone `.mjs` with no dependencies |
+| Node 22+ | everything. Node 24 LTS is recommended; tools in `tools/` are standalone `.mjs` with no dependencies |
 | Docker | building and running the server, the same way on both platforms |
 | git | fetching the server source |
 | Python 3 | the sprite puller and the source-analysis scripts. Optional |
