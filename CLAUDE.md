@@ -2139,6 +2139,45 @@ remarks and a value may collect both.
   fine units" change was inert by construction. Do not reach for sub-square positioning
   to explain a safe spot; the answer is always in the squares.
 
+- **A SAFE WALL IS THE TWO GRIDS DISAGREEING, AND THAT IS MEASURABLE RATHER THAN POETIC.**
+  This started as an operator's hunch — that safe spots turn up exactly where the coarse
+  walkable grid and the client's BSP disagree — and the recorded book bears it out.
+
+  "Disagree" means: the one-byte-a-square grid offers a neighbour that
+  `traceFineMoveClient` refuses. Measured across every tested square in
+  `substrate/m59-safespots.json`:
+
+  | | at a disagreeing square |
+  |---|---|
+  | squares that HELD | **44.0%** (405/920) |
+  | squares that FAILED | 34.5% (688/1997) |
+  | ordinary floor, same rooms | **23.9%** (3249/13594) |
+
+  And it is dose-responsive, which is what makes it a mechanism rather than a coincidence
+  — by how many of the grid's neighbours the BSP refuses:
+
+  | refused | held |
+  |---|---|
+  | 0 | 28.2% (515/1824) |
+  | 1 | 26.6% (175/657) |
+  | 2 | 49.1% (141/287) |
+  | 3 | 55.2% (58/105) |
+  | 4+ | **70.5% (31/44)** |
+
+  Not a room-level confound: comparing high- against low-disagreement squares WITHIN each
+  room, 12 rooms favour it, 3 go against and 2 tie.
+
+  **The mechanism is the asymmetry below, seen from the other side.** A square the BSP
+  hems in is a square whose lines to the surrounding floor are broken — and it is exactly
+  those lines that `Room.LineOfSight` tests for the monster and nothing tests for us. The
+  disagreement and the safe wall are one geometric fact.
+
+  Two things follow. A safe spot is **predictable from geometry** rather than only
+  discoverable by standing somewhere and being hit for it, which is what the book pays for
+  today. And the routing fragmentation those same disagreements cause is mostly harmless —
+  it is tiny dead corners, not severed halves of a room — so it is a poor reason to refuse
+  a route and a good reason to rank a wall.
+
 - **The safe wall is an asymmetry in who checks line of sight.** `Monster.CanReach`
   calls `Room.LineOfSight` (`monster.kod:1782`); `Player.TargetWithinSightAndRange`
   (`player.kod:4115`) checks range and a facing cone and **never calls it**. So a square
