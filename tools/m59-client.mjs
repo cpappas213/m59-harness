@@ -203,6 +203,15 @@ function sysinfo() {
   return b;
 }
 
+// HOW LONG A ROOM ANIMATION MAKES THE BAKED COLLISION SNAPSHOT UNTRUSTWORTHY.
+//
+// Long enough to cover a sector or wall program in flight; short enough that it can never
+// become a cage. The refusal it drives is the right one — the stock client mutates its BSP
+// on these packets and we cannot — but the first version never expired, and a flag cleared
+// ONLY by a room change, gating the movement needed to change rooms, is a deadlock. Three
+// characters were caught in one within ten minutes of it shipping.
+const COLLISION_ANIMATION_MS = Number(process.env.M59_COLLISION_ANIMATION_MS || 8000);
+
 export class M59Client {
   constructor({ host = '127.0.0.1', port = 5959, verbose = true, resources = null } = {}) {
     Object.assign(this, { host, port, verbose });
@@ -1333,11 +1342,25 @@ export class M59Client {
       // alter floor/ceiling heights and wall animation can change passability, so the
       // baked snapshot is no longer authoritative. Until those programs are modeled,
       // fail closed rather than treating the server as a collision oracle.
+      //
+      // BUT FAIL CLOSED FOR A BOUNDED TIME, NOT FOR EVER — this froze three characters
+      // solid within ten minutes of shipping. The flag was cleared in exactly one place,
+      // BP_PLAYER, which arrives on a ROOM CHANGE; movement is refused while it is set;
+      // and changing rooms requires walking to an exit. So any room that ever animates a
+      // sector became a trap: North Barloque and room 589 held Bunsen, Rizzo and Scooter
+      // with "could not reach the bank" six times over, and nothing short of a restart,
+      // a death or a teleport would have freed them.
+      //
+      // An animation is a moment, so the refusal is a moment. After it, the walls are
+      // still where the bake says — only sector HEIGHTS can have shifted — and a
+      // character that may mis-step is a far smaller problem than one that can never
+      // move again. `until` is what the movement check reads; see m59-broker.mjs.
       case BP.SECTOR_MOVE:
         this.room.collisionInvalidated = {
           opcode: op,
           kind: BPNAME[op] || `bp ${op}`,
           at: Date.now(),
+          until: Date.now() + COLLISION_ANIMATION_MS,
         };
         this.emit('collision-geometry-invalidated', { ...this.room.collisionInvalidated });
         break;
@@ -1359,6 +1382,7 @@ export class M59Client {
             opcode: op,
             kind: BPNAME[op] || `bp ${op}`,
             at: Date.now(),
+            until: Date.now() + COLLISION_ANIMATION_MS,
             action,
           };
           this.emit('collision-geometry-invalidated', { ...this.room.collisionInvalidated });
@@ -1382,6 +1406,7 @@ export class M59Client {
             opcode: op,
             kind: BPNAME[op] || `bp ${op}`,
             at: Date.now(),
+            until: Date.now() + COLLISION_ANIMATION_MS,
             flags,
           };
           this.emit('collision-geometry-invalidated', { ...this.room.collisionInvalidated });

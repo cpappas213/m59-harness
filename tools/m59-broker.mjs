@@ -2652,11 +2652,22 @@ class Session {
       reason: 'collision_geometry_unavailable',
       note: 'this room has no locally validated BSP collision geometry',
     };
-    if (c.room.collisionInvalidated) return {
+    // BOUNDED, AND THE BOUND IS THE WHOLE FIX. This refusal is correct while a sector or
+    // wall program is in flight — the stock client mutates its BSP on those packets and we
+    // cannot. It was NOT correct for ever: the flag is cleared only by BP_PLAYER, which
+    // arrives on a room change, and changing rooms needs the movement this refuses. Any
+    // room that animates became a cage, and three characters were in one inside ten
+    // minutes. `until` is stamped by the client; a legacy record without one still blocks,
+    // which is the safe reading of "we do not know when this ends".
+    //
+    // Pure on purpose: m59-collision-test lifts this method out by text, so this may use
+    // nothing but `this`, the injected dependencies and built-ins.
+    const invalidated = c.room.collisionInvalidated;
+    if (invalidated && (invalidated.until == null || Date.now() < invalidated.until)) return {
       available: false, moved: false, blocked: true,
       reason: 'collision_geometry_changed',
-      note: `${c.room.collisionInvalidated.kind} changed live room geometry; ` +
-            'movement is fail-closed until that animation is modeled or the room is re-entered',
+      note: `${invalidated.kind} changed live room geometry; movement is fail-closed ` +
+            'until that animation finishes or the room is re-entered',
     };
     const roomSecurity = c.room.security;
     if (!Number.isInteger(roomSecurity) || !Number.isInteger(geo.security)) return {

@@ -379,6 +379,20 @@ consequences the design turns on:
   what says the WORLD changed, which is the half anyone can act on. Refresh with
   `node tools/setup.mjs server`.
 
+**A LIVE ROOM ANIMATION BLOCKS MOVEMENT, AND THE BLOCK HAS TO EXPIRE.** `BP_SECTOR_MOVE`
+and the two collision-bearing `BP_CHANGE_TEXTURE` forms set `room.collisionInvalidated`,
+because the stock client mutates its in-memory BSP on those packets and we cannot. The
+refusal is right. **Refusing for ever is a cage**: the flag is cleared in exactly one
+place — `BP_PLAYER`, which arrives on a ROOM CHANGE — and changing rooms requires the
+movement the flag refuses. Any room that animates a sector traps whoever is standing in
+it until a restart, a death or a teleport.
+
+That is not hypothetical: within ten minutes of shipping it, Bunsen and Rizzo were held in
+North Barloque and Scooter in room 589, each reporting `could not reach the bank` six times
+over. So the record carries `until` (`M59_COLLISION_ANIMATION_MS`, 8s) and the check honours
+it — while a record with **no** `until` still blocks, because "we do not know when this ends"
+is not "it has ended".
+
 Two things to know before editing that path:
 
 - **`validateFineTarget` and `queueValidatedMove` are LIFTED OUT OF `m59-broker.mjs` BY
@@ -391,7 +405,7 @@ Two things to know before editing that path:
   ~399 MB RSS** to load and validate 264/264 rooms at broker start. The PR that introduced
   it measured 3.2 s and 303 MB elsewhere, so budget for the machine rather than the number.
 
-`node tools/m59-collision-test.mjs` (150) pins it, and **10 of those skip without the raw
+`node tools/m59-collision-test.mjs` (153) pins it, and **10 of those skip without the raw
 `.roo` files** — set `M59_ROO_DIR` (or `M59_ROOT`) to a tree containing `resource/rooms`
 or the suite quietly reports 137 and calls it a pass.
 

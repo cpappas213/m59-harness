@@ -1197,6 +1197,28 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
      oneUnit.target?.x === 65 && oneUnit.target?.y === 64,
      JSON.stringify({ wireCalls, oneUnit }));
 
+  // A LIVE ANIMATION BLOCKS, AND THE BLOCK EXPIRES. Both halves matter and only the
+  // first was ever true: the flag is cleared by BP_PLAYER, which arrives on a ROOM
+  // CHANGE, and changing rooms needs the very movement this refuses — so without an
+  // expiry any animating room is a cage. Three characters were caught in one on prod
+  // within ten minutes, all reporting "could not reach the bank".
+  const animating = fakeBrokerSession(twoSides());
+  const setAnimation = (record) => { animating.session.client.room.collisionInvalidated = record; };
+  const tryMove = () => validateFineTarget.call(animating.session,
+    clientToWire(3072), clientToWire(2048));
+
+  setAnimation({ kind: 'BP_SECTOR_MOVE', at: Date.now(), until: Date.now() + 10_000 });
+  ok('a live room animation fails movement closed while it is in flight',
+     tryMove().reason === 'collision_geometry_changed');
+  setAnimation({ kind: 'BP_SECTOR_MOVE', at: Date.now() - 60_000, until: Date.now() - 30_000 });
+  ok('and once the animation has finished, movement is allowed again rather than caged',
+     tryMove().reason !== 'collision_geometry_changed');
+  // "We do not know when this ends" is not "it has ended".
+  setAnimation({ kind: 'BP_SECTOR_MOVE', at: Date.now() });
+  ok('a record with no expiry still blocks, because unknown is not finished',
+     tryMove().reason === 'collision_geometry_changed');
+  setAnimation(null);
+
   const mismatch = fakeBrokerSession(twoSides(), { roomSecurity: TEST_SECURITY ^ 1 });
   const mismatched = await queueValidatedMove.call(mismatch.session,
     clientToWire(3072), clientToWire(2048));
