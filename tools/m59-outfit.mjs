@@ -62,14 +62,20 @@ const URL = `http://127.0.0.1:${PORT}/`;
 const DRY = !!arg('dry-run', false);
 const AT = arg('at', null) == null ? null : Number(arg('at'));
 const WITHDRAW = Number(arg('withdraw', 1000));
-// How many weapons a character may carry away from the smith: the wielded one and one
-// spare. A spare matters more than it looks — a weapon that SHATTERS is unequipped and
-// left in the pack (weapon.kod:547 unuses it, nothing deletes it), and the pack sweep
-// then drops it as junk, so a character with no spare falls back to whatever it last
-// looted. That is how a fleet re-armed with maces ends up wielding long swords again.
-// `--keep-weapons N` overrides; it is passed to sell_all rather than left to default,
-// because that default is null and null keeps every weapon in the pack.
-const WEAPONS_TO_KEEP = Number(arg('keep-weapons', 2));
+// HOW MANY OF THE WORKING WEAPON TO CARRY AWAY. A weapon in use shatters, and a shattered
+// one is unequipped, left in the pack under its own name (weapon.kod:788 changes only the
+// icon), refused silently by the next wield, and dropped by the keeper's 120s sweep. So the
+// character needs DEPTH here, not a spare: one replacement per trip loses the race against
+// a fleet that re-armed four times in an afternoon and was back on looted long swords each
+// time. Three is a few hours of farming rather than one.
+const WEAPON_SPARES = Number(arg('weapon-spares', 3));
+// And what sell_all may keep, which must LEAVE ROOM FOR THOSE — selling runs first, so a
+// keep limit below the spare depth would sell a mace at the start of every trip and buy it
+// back at the end, paying the vendor spread for the privilege. One above the depth, for
+// whatever is currently wielded. `sell_all` defaults this to null, and null means "no
+// weapon limit configured", which keeps every long sword in the pack — so it is always
+// passed explicitly rather than left to the default.
+const WEAPONS_TO_KEEP = Number(arg('keep-weapons', WEAPON_SPARES + 1));
 // Planned-learning buttons know the exact fixed ability price before leaving. In that
 // mode, carry the bill rather than the outfitter's ordinary 200-shilling contingency;
 // the character is going to one teacher for one purchase, not shopping speculatively.
@@ -331,7 +337,38 @@ async function outfit(row) {
   // Sorted here rather than in wantsFor, so a loadout keeps meaning what it says about
   // WHICH items are wanted and only the sequence of spending is imposed.
   const SLOT_ORDER = { armour: 0, shield: 1, weapon: 2 };
-  const allMissing = WANT_GEAR ? missingFor(items, wants) : [];
+  // DOWN TO THE LAST WORKING WEAPON IS A REASON TO GO, AND `missingFor` CANNOT SAY IT.
+  //
+  // That test is count-blind — it asks whether the pack holds ANYTHING matching the want,
+  // so a character with one mace and a character with four both read "already stocked"
+  // and neither travels. Combined with a fallback that accepts the whole family, an AXE
+  // satisfies the mace want too, which is how Kermit, Camilla, Sweetums and Bunsen were
+  // all reported stocked while carrying no blunt weapon at all against skeletons that
+  // resist edges at 70%.
+  //
+  // The weapon is the one slot where that matters, because it is the one that is
+  // CONSUMED — see the spares purchase below. So running down to the last one is treated
+  // as missing, which is what makes the trip happen; the spares loop then fills to depth
+  // once the character is standing at the counter.
+  //
+  // Deliberately `<= 1` rather than `< WEAPON_SPARES`: the trigger is "about to be
+  // fighting bare-handed", not "not completely stocked". Sending twenty-one characters
+  // shopping every time one of them is a mace short of ideal costs more farming than the
+  // spare is worth, and this tool stops a keeper to run.
+  const bluntDepth = (list) => {
+    const w = (list || WANTS).find(x => x.slot === 'weapon');
+    return w ? (items || []).filter(i => w.re.test(nameOf(i)) && !i.broken).length : 0;
+  };
+  const runningOut = WANT_GEAR && WEAPON_SPARES > 0 && bluntDepth(wants) <= 1;
+  const allMissing = WANT_GEAR
+    ? (() => {
+        const m = missingFor(items, wants);
+        const weaponWant = (wants || WANTS).find(w => w.slot === 'weapon');
+        return runningOut && weaponWant && !m.some(w => w.slot === 'weapon')
+          ? [...m, { ...weaponWant, what: `${weaponWant.what} (down to ${bluntDepth(wants)})` }]
+          : m;
+      })()
+    : [];
   const suppressedWeapons = allMissing.filter(w => w.slot === 'weapon' && !mayBuyWeapons);
   const missing = WANT_GEAR
     ? allMissing.filter(w => w.slot !== 'weapon' || mayBuyWeapons).sort((a, b) =>
@@ -779,6 +816,51 @@ async function outfit(row) {
                        .flatMap(c => c.limited_by || []))].join('/') || 'purse/weight/bulk'}` : '') +
                     (res?.messages?.length ? ` — the counter said: ${res.messages.join('; ').slice(0, 80)}` : '') +
                     ' ***');
+    }
+
+    // A WEAPON IS A CONSUMABLE HERE, AND ARMOUR IS NOT. Buy spares of the weapon.
+    //
+    // This fleet re-armed with maces four times in one afternoon and was back on looted
+    // long swords within hours each time, and the reason is not that anything sells or
+    // drops them deliberately. A weapon in use SHATTERS — and when it does the server
+    // unequips it and leaves it in the pack under its own name, because `weapon.kod:788`
+    // changes only the ICON. So the broken mace still out-scores nothing, `equip_best` is
+    // refused with no message at all, and the keeper's 120-second sweep
+    // (`dropBrokenEverySec`) drops it as junk. The character then wields the best thing
+    // left, which is whatever it last looted — a long sword, 70% resisted by the very
+    // creature that broke the mace.
+    //
+    // THE LOOT NEVER BREAKS, WHICH IS WHY THE PACK FILLS WITH IT. Long swords are never
+    // swung, so they accumulate — nineteen on one character — while the one weapon doing
+    // the work is consumed. Buying a single replacement per trip loses that race.
+    //
+    // So the weapon slot, and only the weapon slot, is stocked to a depth. Armour is not
+    // treated this way on purpose: it wears but is not destroyed the same way, and a spare
+    // suit is dead weight in a pack that is already the binding constraint.
+    if (WEAPON_SPARES > 0 && !DRY) {
+      const want = missing.find(w => w.slot === 'weapon') ??
+                   { re: /mace|hammer/i, fallback: /mace|hammer|axe/i, what: 'weapon', slot: 'weapon' };
+      const held = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
+      const haveBlunt = held.filter(i => want.re.test(String(i.name || ''))).length;
+      const shortfall = Math.max(0, WEAPON_SPARES - haveBlunt);
+      for (let n = 0; n < shortfall; n++) {
+        const opt = stock.filter(i => want.re.test(nameOf(i)))
+                         .sort((a, b) => (a.cost ?? a.price ?? 9e9) - (b.cost ?? b.price ?? 9e9))[0];
+        if (!opt) break;
+        const cost = opt.cost ?? opt.price ?? 0;
+        // Spares are the FIRST thing to give up when money is short — the trip has already
+        // bought what the character was actually missing.
+        if (cost > money) { log.push(`spare ${nameOf(opt)}: ${cost}sh, only ${money}sh left`); break; }
+        const res = await call('shop', { agent: row.agent, seller: seller.id, buy_ids: [opt.id] })
+                            .catch(() => ({}));
+        money -= cost;
+        if (!(Array.isArray(res?.got) && res.got.length)) {
+          log.push(`spare ${nameOf(opt)} @${cost}: got nothing` +
+                   (res?.messages?.length ? ` — ${res.messages.join('; ').slice(0, 60)}` : ''));
+          break;   // a refusal will refuse the next one too; do not spend the trip on it
+        }
+        log.push(`spare ${nameOf(opt)} @${cost}`);
+      }
     }
 
     // LEARN IT. The same list and the same purchase — a skill in the offer list is an
