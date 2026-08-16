@@ -4325,10 +4325,17 @@ export class Autopilot {
     // that can never be acted on, because `mayReturnFire` re-reads the live flag and
     // refuses without it — so this is evidence, and only evidence, until the server
     // agrees the person is a murderer or an outlaw.
+    // ASKED A SECOND TIME, ON PURPOSE. The `strangers` filter above already excluded
+    // fleetmates — and on the first live run it let six of our own characters into the
+    // book anyway, because `party.isFleetmate` is populated one keeper at a time and a
+    // broker that restarted thirty seconds ago knows nobody. That is fixed at the source
+    // (party now falls back to the roster), and it is checked again here because the cost
+    // of the two disagreeing is a record that accuses our own people of murder.
     for (const s of strangers) {
       const sName = c.rsc.get(s.nameRsc);
-      if (sName) grudge.recordAttack(sName, { who: this.who(), room: this.s.world?.room?.num ?? null,
-                                              playerClass: playerClassName(s.flags) });
+      if (!sName || party.isFleetmate(sName)) continue;
+      grudge.recordAttack(sName, { who: this.who(), room: this.s.world?.room?.num ?? null,
+                                   playerClass: playerClassName(s.flags) });
     }
 
     const pb = playbook.playbookFor(this.who());

@@ -702,6 +702,12 @@ function fleetCharacters() {
   return names.size ? names : null;
 }
 
+// TELL THE PARTY MODULE WHO IS OURS BEFORE ANY KEEPER HAS HAD A PASS. Its own map fills
+// up one keeper at a time, so for the first seconds after a restart every fleetmate reads
+// as a stranger — which is what put six of our own characters in the grudge book on its
+// first live run. This is a resolver rather than a copy, so it can never go stale.
+parties.setRosterSource(fleetCharacters);
+
 // MAKE EVERY CHARACTER LISTEN, from the moment it is in game.
 //
 // The conversational machinery was all present and none of it was switched on. The
