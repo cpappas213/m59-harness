@@ -44,18 +44,18 @@ everything else there.</p><div class="tablewrap"><table class="data">
 <tbody><tr><td class=""><code class="k">AI_NPC</code></td><td class="">—</td></tr>
 <tr><td class=""><code class="k">AI_NOMOVE</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h3>What it is</h3><div class="tablewrap"><table class="data">
 <thead><tr><th class="">Flag</th><th class="">What it means</th></tr></thead>
-<tbody><tr><td class=""><code class="k">MOB_NOFIGHT</code></td><td class="">—</td></tr>
+<tbody><tr><td class=""><code class="k">MOB_NOFIGHT</code></td><td class="">Doesn't fight</td></tr>
 <tr><td class=""><code class="k">MOB_ROLE_BARTENDER</code></td><td class="">—</td></tr>
-<tr><td class=""><code class="k">MOB_NOMOVE</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_NOMOVE</code></td><td class="">Doesn't move</td></tr>
 <tr><td class=""><code class="k">MOB_ROLE_APOTHECARY</code></td><td class="">—</td></tr>
-<tr><td class=""><code class="k">MOB_RANDOM</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_RANDOM</code></td><td class="">Performs random actions</td></tr>
 <tr><td class=""><code class="k">MOB_ROLE_URCHIN</code></td><td class="">—</td></tr>
-<tr><td class=""><code class="k">MOB_LISTEN</code></td><td class="">—</td></tr>
+<tr><td class=""><code class="k">MOB_LISTEN</code></td><td class="">Responds to speech</td></tr>
 <tr><td class=""><code class="k">MOB_ROLE_TAILOR</code></td><td class="">—</td></tr>
-<tr><td class=""><code class="k">MOB_RECEIVE</code></td><td class="">—</td></tr>
-<tr><td class=""><code class="k">MOB_TEACHER</code></td><td class="">—</td></tr>
-<tr><td class=""><code class="k">MOB_COND_SELLER</code></td><td class="">—</td></tr>
-<tr><td class=""><code class="k">MOB_PERM_QUESTER</code></td><td class="">—</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
+<tr><td class=""><code class="k">MOB_RECEIVE</code></td><td class="">Will accept items/gifts</td></tr>
+<tr><td class=""><code class="k">MOB_TEACHER</code></td><td class="">Has skills or spells for sale</td></tr>
+<tr><td class=""><code class="k">MOB_COND_SELLER</code></td><td class="">Has things that must be asked for</td></tr>
+<tr><td class=""><code class="k">MOB_PERM_QUESTER</code></td><td class="">is a perm questor</td></tr></tbody></table></div><p class="cite">kod/include/blakston.khd</p><h2>Karma</h2><p>Neutral. Killing it moves your karma not at all.</p>
 <p class="cite">kod/object/active/holder/nomoveon/battler/player.kod:6551</p><h2>What it offers</h2><h3>Spells taught</h3><p><a href="../spells/light.html">light</a>, <a href="../spells/zap.html">zap</a>, <a href="../spells/winds.html">winds</a>, <a href="../spells/resistfire.html">withstand fire</a>, <a href="../spells/resistcold.html">resist cold</a>, <a href="../spells/resistshock.html">resist shock</a>, <a href="../spells/touchofflame.html">touch of flame</a>, <a href="../spells/icyfingers.html">icy fingers</a>, <a href="../spells/manafocus.html">mana focus</a>, <a href="../spells/brittle.html">brittle</a>, <a href="../spells/fireball.html">fireball</a>, <a href="../spells/earthquake.html">earthquake</a>, <a href="../spells/shatter.html">shatter</a>, <a href="../spells/sandstorm.html">sandstorm</a>, <a href="../spells/summonfog.html">fog</a>, <a href="../spells/mystictouch.html">mystic touch</a></p><p class="cite">kod/object/active/holder/nomoveon/battler/monster/temples/farnprst.kod — <code class="k">plFor_Sale</code>: element 1 goods, element 2 skills, element 3 spells (kod/object/active/holder/nomoveon/battler/monster.kod:2773, :2797)</p><hr><h2>In the source</h2>
 <p class="cite">kod/object/active/holder/nomoveon/battler/monster/temples/farnprst.kod:11</p>
 <p><code class="k">FarenPriestess</code> is <code class="k">Temples</code> — full chain <code class="k">FarenPriestess</code> ← <code class="k">Temples</code> ← <code class="k">Monster</code> ← <code class="k">Battler</code> ← <code class="k">NoMoveOn</code> ← <code class="k">Holder</code> ← <code class="k">ActiveObject</code> ← <code class="k">Object</code>.</p>
