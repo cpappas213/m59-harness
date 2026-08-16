@@ -35,6 +35,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fleetName } from './m59-fleetpath.mjs';
 import * as uptime from './m59-uptime.mjs';
+import * as webui from './m59-webui.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -161,6 +162,13 @@ async function cmdStart() {
   if (found.running) {
     console.log(c.ok(`already up — pid ${found.pid}, fleet "${LABEL}", ` +
                      `${found.health.sessions?.length ?? 0} session(s)`));
+    // AND STILL CHECK THE PAGE. "The broker is up" and "everything is up" are different
+    // answers, and returning the first for the second is how `start` becomes a command
+    // that silently does nothing about the half that is actually down.
+    if (!has('--no-ui')) {
+      const r = await webui.start({ log: (m) => console.log(c.dim(`  field cmd  ${m}`)) });
+      if (r.ok) console.log(`  field cmd  http://127.0.0.1:${r.port}`);
+    }
     return 0;
   }
   mkdirSync(SUB, { recursive: true });
@@ -189,6 +197,18 @@ async function cmdStart() {
       console.log(`  rpc        http://127.0.0.1:${HTTP_PORT}`);
       console.log(`  dashboard  http://127.0.0.1:${DASH_PORT}/fleet`);
       console.log(`  log        ${LOG_FILE}`);
+      // AND THE PAGE, IF IT IS HERE. Started AFTER the broker answers, because it exists
+      // only to talk to one and a page that comes up first spends its first seconds
+      // reporting a fleet that is not there yet.
+      //
+      // NEVER FATAL. This function's contract is "the fleet is up", and it already is by
+      // the time we get here — twenty-one sessions do not depend on a web server. So an
+      // absent sibling, an uninstalled one and a failed build are all REPORTED and the
+      // exit code stays 0. `--no-ui` skips it entirely.
+      if (!has('--no-ui')) {
+        const r = await webui.start({ log: (m) => console.log(c.dim(`  field cmd  ${m}`)) });
+        if (r.ok) console.log(`  field cmd  http://127.0.0.1:${r.port}`);
+      }
       return 0;
     }
     process.stdout.write('.');
@@ -271,6 +291,14 @@ async function cmdStop({ quiet = false, force = false } = {}) {
     console.error('  carrying undelivered, with their walk wasted. Wait, or pass --force.');
     return 1;
   }
+  // THE PAGE GOES FIRST, and it goes even when the broker is already down. It is a view
+  // of a broker; leaving it running after one is stopped leaves a control surface whose
+  // every button fails, which reads as the fleet being broken rather than absent. Only
+  // ever stops what this checkout started — see m59-webui.mjs.
+  if (!has('--no-ui')) {
+    const r = await webui.stop({ log: (m) => { if (!quiet) console.log(c.dim(`  field cmd  ${m}`)); } });
+    if (r.stopped && !quiet) console.log(c.dim(`  field cmd  stopped pid ${r.stopped}`));
+  }
   const found = await findBroker();
   if (found.foreign) { console.error(c.bad(found.why)); return 1; }
   if (!found.running) {
@@ -340,6 +368,12 @@ async function cmdStatus() {
   console.log(`  roster     ${h.state}`);
   console.log(`  characters ${inGame == null ? agents + ' registered' : `${inGame}/${agents} in game`}`);
   console.log(`  log        ${existsSync(LOG_FILE) ? LOG_FILE : '(none yet)'}`);
+  const ui = await webui.status();
+  console.log(`  field cmd  ${ui.absent ? c.dim('absent — maps/m59-strategy-game is not beside this checkout')
+    : ui.running ? (ui.ours ? `http://127.0.0.1:${ui.port}  pid ${ui.pid}`
+                            : c.dim(`http://127.0.0.1:${ui.port} — up, but this checkout did not start it`))
+    : !ui.installed ? c.dim('not installed — node tools/m59-webui.mjs install')
+    : c.dim(`down — node tools/m59-webui.mjs start`)}`);
   if (inGame != null && agents && inGame < agents)
     console.log(c.bad(`  ${agents - inGame} character(s) are not in game`) +
                 c.dim(' — the broker rejoins them on its own; watch the log'));

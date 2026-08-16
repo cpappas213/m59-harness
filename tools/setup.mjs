@@ -8,6 +8,7 @@
 //   node tools/setup.mjs fleet 10      create ten characters
 //   node tools/setup.mjs rsc           copy the resource table out of the container
 //   node tools/setup.mjs shortcuts     one click-to-play shortcut per character
+//   node tools/setup.mjs webui         install the browser command surface (its own repo)
 //   node tools/setup.mjs all 10        all of the above, in order
 //   node tools/setup.mjs shutdown      checkpoint the world, then stop everything
 //
@@ -35,6 +36,7 @@ import net from 'node:net';
 // `doctor` and the shortcut writer can never disagree about where the client is.
 import { findClient, findClientExe, roster, writeShortcuts, report, SHORTCUT_DIR }
   from './m59-shortcuts.mjs';
+import * as webui from './m59-webui.mjs';
 import { loadResources } from './m59-rsc.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -434,6 +436,16 @@ const commands = {
   fleet: () => fleet(n),
   rsc: async () => rsc(),
   shortcuts: async () => shortcuts({ desktop: process.argv.includes('--desktop') }),
+  // THE BROWSER COMMAND SURFACE, WHICH IS ITS OWN REPOSITORY AND MAY NOT BE HERE.
+  // `npm install` in maps/m59-strategy-game, once, so that m59-service.mjs can start it
+  // with the broker from then on. Absent is reported and is NOT a failure — the harness
+  // has to keep working for somebody who cloned it on its own.
+  webui: async () => {
+    const s = webui.state();
+    if (s.absent) { console.log(s.why); return 0; }
+    if (s.installed) { console.log(`field command already installed at ${s.dir}`); return 0; }
+    return webui.install().ok ? 0 : 1;
+  },
   all: async () => {
     let rc = await server(); if (rc) return rc;
     client();
@@ -441,6 +453,10 @@ const commands = {
     rsc();
     rc = await broker(); if (rc) return rc;
     rc = await fleet(n); if (rc) return rc;
+    // After the fleet exists, so the first page it serves has characters on it. Never
+    // fatal: `all` has produced a working fleet by this point and a web page failing to
+    // install is not a reason to report that it did not.
+    await commands.webui();
     console.log('');
     return shortcuts();
   },
@@ -453,7 +469,7 @@ const commands = {
 if (!commands[cmd]) {
   console.error(`unknown command: ${cmd}`);
   console.error('usage: node tools/setup.mjs ' +
-                '[doctor|server|client|broker|fleet N|rsc|shortcuts|all N|shutdown]');
+                '[doctor|server|client|broker|fleet N|rsc|shortcuts|webui|all N|shutdown]');
   process.exit(2);
 }
 process.exit(await commands[cmd]());

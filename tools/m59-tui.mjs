@@ -27,6 +27,7 @@ import { resolveFleet } from './m59-fleetpath.mjs';
 import { findClient, findClientExe, isSteamInstall, clientArgs, STEAM_APPID }
   from './m59-shortcuts.mjs';
 import { ensureServing, openBrowser, importUrl, COMPENDIUM_PORT } from './m59-compendium.mjs';
+import * as webui from './m59-webui.mjs';
 import { commitmentOf, stepSelection, firstSelectable, allCommitted } from './m59-commitment.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -232,7 +233,8 @@ function listView() {
         c.dim(' off ' + cut(curHeld.label ?? 'fleet work', 24))
       : c.bold(c.yellow('X')) + c.dim(' leave override');
   L.push(c.dim('  ↑↓/jk move · ⏎ open · L launch · ') + c.cyan('S swarm') + c.dim(' · ') +
-         c.cyan('B board') + c.dim(' · C compendium · P plan · ') + xSays +
+         c.cyan('B board') + c.dim(' · ') + c.cyan('F field cmd') +
+         c.dim(' · C compendium · P plan · ') + xSays +
          c.dim(' · r refresh · q quit'));
   if (S.status) L.push('  ' + S.status);
   if (S.lastError) L.push('  ' + c.red(S.lastError));
@@ -305,6 +307,7 @@ function heroView() {
   L.push(c.dim('  ⏎/q back · ') + c.bold(c.yellow('L')) + c.dim(' LAUNCH the client as this character · ') +
          c.bold(c.cyan('S')) + c.dim(' SWARM — launch and the fleet follows · ') +
          c.bold(c.cyan('B')) + c.dim(` BOARD — the whole ${FLEET_LABEL} fleet in the commander · `) +
+         c.bold(c.cyan('F')) + c.dim(' FIELD COMMAND — the same fleet on a map, in a browser · ') +
          (held ? c.bold(c.yellow('X')) + c.dim(' take it off ' + cut(held.label ?? 'fleet work', 22)) + c.dim(' · ') : '') +
          c.dim('r refresh'));
   if (S.status) L.push('  ' + S.status);
@@ -772,6 +775,53 @@ async function compendium(row, to = '/creatures/') {
   draw();
 }
 
+// F — THE FIELD COMMAND PAGE, WHICH IS THE BROWSER HALF OF THIS TERMINAL.
+//
+// `maps/m59-strategy-game` is a command surface for the fleet this broker already holds:
+// a world map, the roster on it, and a small set of orders that become ordinary broker
+// calls. It is the view this terminal cannot give — a map — and the terminal is the view
+// it cannot give, which is why both exist and why this is one key rather than a rewrite.
+//
+// ENSURES, THEN OPENS. Same contract as `C`: if it is not running, start it and wait for
+// it to answer before pointing a browser at it, because a browser opened at a port that
+// is still compiling shows a connection error and teaches the operator the key is broken.
+//
+// IT IS A SEPARATE REPOSITORY AND IT MAY NOT BE HERE. Absent, uninstalled, and somebody
+// else's server on the port are three different answers and this says which — the same
+// arrangement `B` has with maps/m59-boswars.
+async function fieldCommand() {
+  S.status = c.dim('opening field command…');
+  draw();
+  try {
+    const before = await webui.status();
+    if (before.absent) {
+      S.status = c.yellow('field command: not installed beside this checkout') + ' ' +
+                 c.dim(`· ${before.why}`);
+      return draw();
+    }
+    if (!before.installed && !before.running) {
+      S.status = c.yellow('field command is not installed') + ' ' +
+                 c.dim('· run: node tools/m59-webui.mjs install');
+      return draw();
+    }
+    const r = before.running ? before : await webui.start({ log: () => {} });
+    if (!r.ok && !r.running) {
+      S.status = c.red('field command did not come up') + ' ' +
+                 c.dim(`· read substrate/webui.log`);
+      return draw();
+    }
+    const url = `http://127.0.0.1:${r.port ?? 3000}`;
+    openBrowser(url);
+    S.status = c.green(before.running ? 'field command already serving' : 'started field command') +
+               ' ' + c.dim(`· ${url}`) +
+               (before.running && before.ours === false
+                 ? ' ' + c.yellow('(this checkout did not start it)') : '');
+  } catch (e) {
+    S.status = c.red('field command: ' + e.message);
+  }
+  draw();
+}
+
 // ------------------------------------------------------------------ keys
 
 // THE OVERRIDE KEY, and what it does depends on where the cursor is — which is why the
@@ -832,6 +882,7 @@ function onKey(str, key) {
     else if (str === 'S' || str === 's') swarm(S.rows[S.sel]).then(draw, fail);
     // B is about the FLEET, not the row under the cursor — the board draws all of them.
     else if (str === 'B' || str === 'b') commander();
+    else if (str === 'F' || str === 'f') fieldCommand();
     else if (str === 'C' || str === 'c') compendium(S.rows[S.sel]);
     else if (str === 'P' || str === 'p') compendium(S.rows[S.sel], '/planner/');
     else if (str === 'r') { S.status = c.dim('refreshing…'); refresh().then(draw); }
@@ -842,6 +893,7 @@ function onKey(str, key) {
     else if (str === 'L' || str === 'l') launch(S.hero).then(draw, fail);
     else if (str === 'S' || str === 's') swarm(S.hero).then(draw, fail);
     else if (str === 'B' || str === 'b') commander();
+    else if (str === 'F' || str === 'f') fieldCommand();
     else if (str === 'C' || str === 'c') compendium(S.hero);
     else if (str === 'P' || str === 'p') compendium(S.hero, '/planner/');
     else if (str === 'r') { refresh().then(() => { S.hero = S.rows.find(r => r.agent === S.hero.agent) ?? S.hero; draw(); }); }

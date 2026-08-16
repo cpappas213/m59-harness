@@ -299,6 +299,56 @@ answering "not in game". Three things it will not do:
 
 `--no-rejoin` or `M59_REJOIN=0` turns it off.
 
+## The two front ends, and the one command that starts everything
+
+```bash
+./m59.sh                 # the fleet terminal (m59.ps1 on Windows)
+./m59.sh up              # broker + field command page, for this checkout's fleet
+./m59.sh status          # both of them, and which fleet
+./m59.sh down            # both of them again
+./m59.sh field           # just open the page
+```
+
+`npm run terminal|start|stop|status|field` are the same commands for anyone who reaches
+for npm first. **Nothing lives in these scripts** — every behaviour is in `tools/`, so
+prefer changing the tool.
+
+There are two views of the same fleet and neither replaces the other. `m59-tui.mjs` is a
+list and a keyboard: it is the only one that can start a program, which is what `L`, `B`,
+`C` and `F` are for. **`maps/m59-strategy-game` is a map in a browser** — the world, the
+roster on it, and a small order set that becomes ordinary broker calls. It holds no
+credentials, starts no broker, pins itself to `127.0.0.1`, and its worker refuses
+non-loopback hosts, because it is a control plane rather than a dashboard.
+
+`m59-webui.mjs` owns its lifecycle, and `m59-service.mjs` starts and stops it with the
+broker — **after** the broker answers, since a page that comes up first spends its first
+seconds reporting a fleet that is not there. `F` in the terminal ensures it is running and
+then opens a browser at it. `node tools/setup.mjs webui` installs it; `all` runs that.
+
+Four things it does rather than documents:
+
+- **IT NEVER BLOCKS THE BROKER.** The broker holds twenty-one irreplaceable sessions and a
+  web page failing to build is not a reason for the fleet not to come up. An absent
+  sibling, an uninstalled one and a failed start are all reported and `start` still exits 0.
+- **IT IS A SEPARATE REPOSITORY AND MAY NOT BE HERE** — same arrangement `B` has with
+  `maps/m59-boswars`. `M59_STRATEGY_DIR` names it when it does not live beside us, and
+  "absent", "not installed" and "somebody else is on the port" are three different answers
+  that the tool says apart.
+- **IT NEVER STOPS SOMETHING IT DID NOT START.** The pid file is the authority; a port
+  answering with no pid file of ours is reported as somebody else's and left alone. Stop
+  signals the process GROUP, because `npm run dev` is npm with a child and a bare kill
+  leaves the dev server orphaned and holding the port — which then reads as "not ours" for
+  ever after.
+- **It runs `npm run dev`, not the bundler directly**, because that script's `predev`
+  refreshes the page's generated world and room maps out of this harness. Skipping it
+  serves whatever the map looked like the last time somebody built.
+
+A one-shot HTTP GET in that module has a hard timer under it and settles on `close` as
+well as on `end`. The first version capped the body with `req.destroy()`, which emits no
+`end` — so the promise never settled, the status line silently stopped printing, and the
+only symptom was Node's "Detected unsettled top-level await" on the one code path where it
+happened to be the last thing running.
+
 ## Backing the fleet up, and putting it back
 
 ```bash
