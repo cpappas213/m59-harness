@@ -45,7 +45,7 @@ export function brokerDriver(baseURL, callTool) {
     pickPrey:  (agent, { goals, karma, under } = {}) => tool('prey', { agent, goals, ...(karma ? { karma } : {}), ...(under != null ? { under } : {}) }),
     who:       (agent)             => tool('who',      { agent }),
     // inn claim / release
-    claimInn:  (agent, character)  => tool('inn', { agent, action: 'claim', character }),
+    claimInn:  (agent, character)  => tool('autopilot', { agent, action: 'park', why: `resting ${character ?? ''}`.trim() }),
     // skill purchasing: returns { results: [ { queued, ability, price, reason } ] }
     buySkills: (agents)            => tool('buy_next_planned_skills', { agents }),
     // leave the newbie zone (Raza)
