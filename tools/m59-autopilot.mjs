@@ -630,6 +630,38 @@ export const belowRoomRetreatHealth = (health, restBelow) =>
   health != null && Number.isFinite(restBelow) && health < restBelow;
 const BARLOQUE_VAULT = { room: 114, name: "Obert Cair'bre's vault, North Barloque" };
 
+// WHICH COUNTER A TOWN TRIP IS AIMED AT, AS ONE ORDERED ANSWER RATHER THAN A NESTED
+// CONDITIONAL INSIDE A 200-LINE METHOD.
+//
+// Every door into a town trip has a different remedy and they are NOT interchangeable —
+// this file already records what aiming a full pack at a banker cost (Camilla and Floyd
+// at the Jasper counter with sixteen stacks each and nobody who would pay for any of it),
+// and it cost the same again in the other direction when a REAGENT shortfall was aimed at
+// a market, which sells nothing and buys only what you have. Written out as a table, the
+// mismatches are visible; written inline, the supply row was simply never added.
+//
+// | door | what fixes it | counter |
+// |---|---|---|
+// | needs cash first | a withdrawal | a bank, and the shop is the last hop after it |
+// | reagent floor | buying | the apothecary |
+// | empty larder | buying | the bread shop |
+// | full pack, or broke with goods | selling | Roq, the one NPC that pays |
+// | rich | depositing | a bank |
+//
+// `richEnoughToBank` outranks the three shopping doors because a purse over the banking
+// threshold is money that is dropped on death; the shops it was going to visit are all
+// hung off the end of that same trip anyway.
+export function townDestinations({ needsCashFirst = false, supplyTrip = false, starving = false,
+                                   packFull = false, brokeWithGoods = false,
+                                   richEnoughToBank = false } = {}) {
+  if (needsCashFirst) return BANKS;
+  if (richEnoughToBank) return BANKS;
+  if (supplyTrip) return [REAGENT_SHOP];
+  if (starving && !packFull) return [FOOD_SHOP];
+  if (packFull || brokeWithGoods) return MARKETS;
+  return BANKS;
+}
+
 export const MODES = ['survive', 'farm', 'idle'];
 
 // Farming patterns, as a table rather than scattered conditionals, so that adding a
@@ -9887,7 +9919,29 @@ export class Autopilot {
     // the override seam; duplicating the arithmetic at the call site is how a quantity in
     // this repository ends up with two answers.
     const sellCall = this.checkIfShouldSell();
-    const packFull = sellCall.sell && sellCall.trigger !== 'broke';
+    // A SUPPLY SHORTFALL IS NOT A FULL PACK, AND SENDING IT TO A MARKET IS THE SAME
+    // MISTAKE AS SENDING A FULL PACK TO A BANKER — THE ONE THIS FUNCTION ALREADY RECORDS.
+    //
+    // `supply` was added to checkIfShouldSell long after bankRun learned to read that
+    // function's answer as "the pack is full", and the two triggers have OPPOSITE
+    // remedies. A full pack becomes money the moment it reaches Roq, which is why the
+    // cooldown note below says this trip "cannot spin, because it always achieves
+    // something". A reagent shortfall becomes nothing at all there: it is fixed by BUYING,
+    // and the money for that is usually in a bank.
+    //
+    // Measured on the live fleet, 2026-08-16: Fozzie held 2 shillings against a bank
+    // balance of 27,282 and made the 110 -> 104 round trip every thirty-five seconds for
+    // more than five hours — 155 `buy_declined` in one day, every one of them reading
+    // `spendable: 2` — with 0 kills in the last half hour and its purse never once above
+    // 13. Twelve of twenty-one characters were in the same loop, while the fleet sat on
+    // 666,540 banked shillings. Nothing errored, nothing stalled, and the board said
+    // "travelling", which is what it always says.
+    //
+    // So the trigger is separated here and routed like hunger already is: the character is
+    // not poor, it is ILLIQUID, and `needsCashFirst` is the door that was built for
+    // exactly that and never wired to this trigger.
+    const supplyShort = sellCall.sell && sellCall.trigger === 'supply';
+    const packFull = sellCall.sell && sellCall.trigger !== 'broke' && !supplyShort;
 
     // AND AN EMPTY LARDER IS THE THIRD REASON, FOR EXACTLY THE REASON THE PACK WAS THE
     // SECOND: the food is in town and the only doors to town were money and a full pack.
@@ -9943,9 +9997,27 @@ export class Autopilot {
     const starving = purchaseEnabled(this.policy, 'food') &&
                      !this.larder(c).length && !canCook &&
                      (spendable >= 60 || canFetch) && !triedRecently;
+    // AND THE SAME QUESTION FOR REAGENTS, WHICH IS THE ONE NOBODY ASKED.
+    //
+    // The bill is what this character's own floors are short of at counter prices, so it
+    // is the loadout's number rather than a constant — a caster wanting 200 of each and a
+    // fighter wanting six are not on the same errand. `withdrawForFood` sizes its draw from
+    // the identical call, so the trip and the withdrawal cannot disagree about what it
+    // costs.
+    //
+    // A COOLDOWN AS WELL AS A DESTINATION, because the destination fix assumes there is a
+    // balance to fetch. With an empty bank too, the shortfall is real and unfixable this
+    // hour, and the character should be farming rather than walking — the trip is bounded
+    // instead of being tried again on the very next pass. Ten minutes, matching the sell
+    // trip, because both answer "this walk achieved nothing; do not repeat it immediately".
+    const supplyBill = supplyShort ? this.reagentGapCost() : 0;
+    const SUPPLY_TRIP_COOLDOWN_MS = 600_000;
+    const supplyTriedRecently = Date.now() - (this.supplyTripAt ?? 0) < SUPPLY_TRIP_COOLDOWN_MS;
+    const supplyTrip = supplyShort && !supplyTriedRecently;
     // Which counter first. With money in hand the bread shop is the whole trip; without
     // it, the bank comes first and buyFoodInTown walks the last hop afterwards.
-    const needsCashFirst = starving && spendable < 60 && canFetch;
+    const needsCashFirst = (starving && spendable < 60 && canFetch) ||
+                           (supplyTrip && carried < supplyBill && canFetch);
 
     // BROKE WHILE CARRYING A FORTUNE IN LOOT, WHICH IS THE SAME SHAPE AS THE LAST TWO.
     //
@@ -10013,7 +10085,7 @@ export class Autopilot {
     }
     if (!starving) this.notedStarving = false;
 
-    if (carried <= above && !packFull && !starving && !brokeWithGoods) {
+    if (carried <= above && !packFull && !starving && !brokeWithGoods && !supplyTrip) {
       // Say what we saw, occasionally. A threshold that never trips is indistinguishable
       // from one that is never checked, and that cost an eight-minute run to find out.
       if (carried > 0 && (!this.notedPurse || Date.now() - this.notedPurse > 120_000)) {
@@ -10038,9 +10110,8 @@ export class Autopilot {
     // A full pack goes to the market, money goes to the bank, an empty larder to the bread
     // shop — and a broke character with goods goes to the market too, for the same reason
     // the full pack does: Roq is the one who pays, and a banker takes and gives nothing.
-    const destinations = needsCashFirst ? BANKS
-                       : (starving && !packFull && carried <= above ? [FOOD_SHOP]
-                       : ((packFull || brokeWithGoods) && carried <= above ? MARKETS : BANKS));
+    const destinations = townDestinations({ needsCashFirst, supplyTrip, starving, packFull,
+                                            brokeWithGoods, richEnoughToBank: carried > above });
     const options = destinations
       .map(b => { const r = s.world?.route?.(b.room);
                   return { ...b, hops: r?.found ? r.hops.length : Infinity }; })
@@ -10068,10 +10139,32 @@ export class Autopilot {
     // set it.
     if (starving) this.foodTripAt = Date.now();
     if (brokeWithGoods) this.sellTripAt = Date.now();
-    this.note(starving && !packFull && carried <= above ? 'going to town for food' : 'going to the bank', {
+    if (supplyTrip) this.supplyTripAt = Date.now();
+    // SAY WHICH ERRAND THIS IS, BECAUSE THE LABEL WAS PART OF WHAT HID THE LOOP.
+    //
+    // Every trip that was not the food one said "going to the bank" — including the ones
+    // walking to a market and, until the fix above, the ones walking to a market for
+    // reagents. So a character ping-ponging between Roq and the apothecary logged "going
+    // to the bank" thirty times an hour, and the RECENT panel read as a fleet doing its
+    // banking. It was the only line an operator had, and it named neither the destination
+    // nor the reason.
+    const errand = supplyTrip
+        ? (needsCashFirst ? 'going to the bank to pay for reagents' : 'going to the apothecary')
+      : starving && !packFull && carried <= above ? 'going to town for food'
+      : needsCashFirst ? 'going to the bank for food money'
+      : (packFull || brokeWithGoods) && carried <= above ? 'going to market'
+      : 'going to the bank';
+    this.note(errand, {
       carrying: carried, to: target.name, hops: target.hops, keeping: this.policy.walkingMoney ?? 400,
-      why: starving && !packFull && carried <= above
+      trigger: sellCall.trigger, bill: supplyTrip ? supplyBill : undefined,
+      banked: supplyTrip || needsCashFirst ? balance : undefined,
+      why: supplyTrip
+        ? 'below its own reagent floor with no meals aboard; the shortfall is fixed by ' +
+          'buying, so this needs a counter and the money to spend at one'
+        : starving && !packFull && carried <= above
         ? 'no food and not both reagents, so the only vigor above the resting cap is bought'
+        : (packFull || brokeWithGoods) && carried <= above
+        ? 'the pack has stopped earning; Roq is the one NPC that pays for a full one'
         : 'everything carried is dropped on death and usually unrecoverable; a balance is not' });
     if ((await this.leaveHold('walking to the bank')).refused) return true;
     const r = await this.travel(target.room, { maxHops: Math.max(12, target.hops + 4) })
@@ -10307,8 +10400,37 @@ export class Autopilot {
   // runs the purse is either already sufficient (and `need` is met, so this does nothing)
   // or genuinely short. Taking the food money out after banking the surplus is one round
   // trip at the counter we are already standing at.
+  // WHAT THE SHORTFALL COSTS AT A COUNTER, IN SHILLINGS. One definition, because two
+  // callers now need it and they must not disagree: the trip that decides whether a bank
+  // has to come first, and the withdrawal that pays for it. A bill computed twice is how a
+  // character draws pocket money for an 8,400sh fill and is back on the road inside the
+  // hour — see the note on `withdrawMax` below.
+  //
+  // Counter prices, read off the shelf at Joguer: elderberry 28, herbs 14. Only the two
+  // halves of `create food` are priced; a loadout may ask for anything, and being short of
+  // a spare shield is not a bank errand.
+  reagentGapCost() {
+    const l = this.loadout();
+    if (!l?.carry?.length) return 0;
+    const pack = this.packAsItems();
+    let sh = 0;
+    for (const entry of l.carry) {
+      if (!/elder\s?berry|^herbs?$/i.test(entry.item)) continue;
+      const held = pack.filter(i => norm(i.name) === norm(entry.item))
+                       .reduce((t, i) => t + i.amount, 0);
+      if (held >= entry.min) continue;                   // only when a trip is warranted
+      const target = Number.isFinite(entry.max) && entry.max > entry.min ? entry.max : entry.min;
+      sh += Math.max(0, target - held) * (/elder/i.test(entry.item) ? 28 : 14);
+    }
+    return sh;
+  }
+
   async withdrawForFood() {
-    if (!purchaseEnabled(this.policy, 'food')) return;
+    // THE DRAW PAYS FOR TWO SHOPPING LISTS AND THE GATE ONLY KNEW ABOUT ONE. The reagent
+    // half is what a bank-first supply trip came here for, so turning food purchases off
+    // must not silently leave that trip drawing nothing and walking to the apothecary with
+    // an empty purse — which is the loop this whole path exists to end.
+    if (!purchaseEnabled(this.policy, 'food') && !purchaseEnabled(this.policy, 'reagents')) return;
     const s = this.s, c = s.need();
     const room = s.world?.room;
     if (!room) return;
@@ -10338,7 +10460,11 @@ export class Autopilot {
       // the climb the pack has to be able to pay for, whenever it cannot pay for any of it
       larder <= 0 ? Math.max(0, floorVigor - REST_VIGOR_CAP * vigorMax) : 0,
       Math.max(0, floorVigor - (vg?.value ?? 0) - larder));
-    if (shortBy <= 20) return;                                   // fed enough to not bother
+    // Fed enough to not bother — UNLESS the reagents are what this trip came for. A pack
+    // with meals in it can be well short of its reagent floor, and the vigor question does
+    // not know that.
+    const bill = this.reagentGapCost();
+    if (shortBy <= 20 && bill <= 0) return;
 
     await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
     await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
@@ -10359,22 +10485,7 @@ export class Autopilot {
     // ceiling a policy value rather than a constant. Measured while the 900 stood: purses
     // of 5, 7, 8, 13 against bank balances of 10,000 to 36,000, and six characters at 88%
     // or more travel-and-trade with ZERO fighting.
-    const reagentGap = (() => {
-      const l = this.loadout();
-      if (!l?.carry?.length) return 0;
-      const pack = this.packAsItems();
-      let sh = 0;
-      for (const entry of l.carry) {
-        if (!/elder\s?berry|^herbs?$/i.test(entry.item)) continue;
-        const held = pack.filter(i => norm(i.name) === norm(entry.item))
-                         .reduce((t, i) => t + i.amount, 0);
-        if (held >= entry.min) continue;                 // only when a trip is warranted
-        const target = Number.isFinite(entry.max) && entry.max > entry.min ? entry.max : entry.min;
-        // Counter prices, read off the shelf: elderberry 28, herbs 14.
-        sh += Math.max(0, target - held) * (/elder/i.test(entry.item) ? 28 : 14);
-      }
-      return sh;
-    })();
+    const reagentGap = bill;
     const cap = Math.max(900, Number(this.policy.withdrawMax ?? 10000));
     const want = Math.min(cap, Math.round(shortBy * 4.5) + reagentGap + (this.policy.hungryFloor ?? 100));
     if (carried >= want) return;

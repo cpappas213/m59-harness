@@ -1524,6 +1524,44 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   against server-built fixtures, the title ordering, the rent sign and its overlapping
   sentences, the Bookmaker's override, and the pooling arithmetic.
 
+- **A TRIP THAT CANNOT FIX THE THING THAT OPENED IT WILL RUN FOR EVER, AND EVERY LAP OF IT
+  REPORTS SUCCESS.** `bankRun` has five doors and they have different remedies: a full pack
+  is fixed by SELLING, a reagent shortfall only by BUYING, and buying needs money. The
+  `supply` trigger was added to `checkIfShouldSell` long after `bankRun` learned to read
+  that function's answer as `packFull`, so a shortfall was routed to a **market** — Roq
+  buys and sells nothing — and the character arrived with an empty pack, sold nothing,
+  walked one room to the apothecary with the two shillings it set out with, was refused,
+  and walked back with the condition exactly as true as when it started.
+
+  Measured 2026-08-16: **Fozzie made the 110 → 104 round trip every thirty-five seconds for
+  over five hours** — 155 `buy_declined` in one day, every one reading `spendable: 2`, 0
+  kills in the last half hour — **while holding 27,282 shillings in the bank**. Twelve of
+  twenty-one were in the same loop and the fleet was sitting on **666,540 banked
+  shillings**. Nothing errored, nothing stalled, and `m59-supervise.mjs` had nothing to
+  unstick because the character was moving perfectly well.
+
+  Three things kept it invisible, and all three are the general lesson:
+
+  - **Every trip that was not the food one logged `going to the bank`**, including the ones
+    walking to a market. The one line an operator had named neither the destination nor the
+    reason, so an hour of ping-pong read as a fleet doing its banking. The note now names
+    the errand and carries the trigger and the bill.
+  - **THE CHARACTER WAS NOT POOR, IT WAS ILLIQUID** — and the door for that already existed.
+    `needsCashFirst` sends a character to a bank before the shop and was written for hunger;
+    nobody wired it to supply. A balance buys nothing while it is in the bank.
+  - **The comment saying this trip "cannot spin, because it always achieves something" was
+    true when it was written** and stopped being true when the trigger was added. A cooldown
+    was declined on that reasoning, so the loop ran at one lap per keeper pass.
+
+  `townDestinations` is now the single ordered answer to "which counter", written as a table
+  so the next door added is a row rather than another arm of a nested conditional, and
+  `reagentGapCost` is the single answer to "what does this errand cost" — the trip and the
+  withdrawal both read it, and two answers there is how a character draws pocket money for
+  an 8,400sh fill and is back on the road inside the hour. There is a cooldown as well as a
+  destination, because the destination fix assumes there is a balance to fetch: with an
+  empty bank too, the shortfall is real and unfixable this hour and the character should be
+  farming rather than walking.
+
 - **A KEEPER EARNING NOTHING LOOKS EXACTLY LIKE A HEALTHY ONE, AND THE CHECK THAT SAYS SO
   WAS UNREACHABLE FOR A YEAR.** `noProgress()` fires when nothing WORKS. `yieldCheck()` fires
   when everything works and none of it is worth anything — the keeper kills something every
@@ -1865,6 +1903,11 @@ remarks and a value may collect both.
   enough to be handed it, and how far a courier walks: that a loadout shortfall of any kind
   reaches the board with its quantity, that the neighbourhood is polled nearest-first, and
   that a stale declaration and a zero shortfall are both refused as delivery orders) and
+  `node tools/m59-townrun-test.mjs` (15 — **which counter a town trip is aimed at, and what
+  the errand costs**: that a reagent shortfall goes to the apothecary and never to a market
+  that cannot sell it anything, that an empty purse sends it to a bank FIRST, that a full
+  pack still goes to Roq, and that the bill the trip and the withdrawal both read has one
+  home. See the trap below on a trip that cannot fix the thing that opened it) and
   `node tools/m59-guild-test.mjs` (192 — **the contract test for a command space that
   refuses in total silence**: that the permission check runs off the server's own bitmask
   rather than the rank table, that invite is LORD while exile is LIEUTENANT, that
