@@ -600,10 +600,15 @@ console.log('\n--- stopping is not instant, and starting has to know that ---');
   p.stop('code is being reloaded', { hard: true });
   ok('a hard stop is only a request at first', p.running && p.stopping,
      'the loop is still mid-pass; it has not noticed yet');
+  ok('a hard stop turns off its independent watchdog immediately', !p.watchTimer);
   p.start();
   ok('a start cancels a hard stop that has not landed', p.running && !p.stopping);
+  ok('cancelling that stop restores the independent watchdog', !!p.watchTimer);
+  ok('and restores the current pass observation window', p.passStartedAt != null);
   ok('and says so in the journal',
-     p.journal.some(e => /start cancelled a stop/.test(e.what)));
+     p.journal.some(e => /start cancelled a stop/.test(e.what) &&
+                         e.watchdog_restarted === true && e.uptime_resumed === true &&
+                         e.pass_watch_restored === true));
 
   await new Promise(r => setTimeout(r, 150));   // let several passes go by
   ok('it is still running afterwards', p.running,
