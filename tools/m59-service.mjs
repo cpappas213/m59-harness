@@ -404,7 +404,7 @@ async function cmdStatus() {
     return 1;
   }
   // How many are actually playing, which is the question status is really asked for.
-  let inGame = null, agents = h.sessions?.length ?? 0;
+  let inGame = null, stalled = 0, agents = h.sessions?.length ?? 0;
   try {
     const j = await fetchJson(`http://127.0.0.1:${HTTP_PORT}/`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, timeoutMs: 20000,
@@ -412,13 +412,26 @@ async function cmdStatus() {
                              params: { name: 'fleet', arguments: {} } }) });
     const f = JSON.parse(j.result.content[0].text);
     agents = f.agents ?? agents;
-    inGame = agents - (f.stalled_count ?? 0);
+    // NOT "IN GAME". This is agents MINUS the ones the stall detector has flagged, and a
+    // flagged character is nearly always logged in and busy: `ms_since_moved` measures the
+    // KEEPER, so it climbs right through a multi-minute travel and through any errand that
+    // holds the keeper inert by design.
+    //
+    // Labelled "in game" it read as five characters having fallen out of the world, which
+    // is the one thing it does not mean — checked at the moment this was written: 21
+    // sessions, 0 reporting `in_game: false`, and the five "missing" were two travelling
+    // and three hunting. A number under a wrong name sends you looking for a fault that
+    // is not there, which is expensive at exactly the moment status is being read.
+    stalled = f.stalled_count ?? 0;
+    inGame = (f.fleet ?? []).filter(r => r.in_game !== false).length || null;
   } catch { /* the broker is up; the fleet call is a nicety */ }
   console.log(c.ok(`broker "${LABEL}"  UP`) + `  pid ${h.pid}`);
   console.log(`  rpc        http://127.0.0.1:${HTTP_PORT}`);
   console.log(`  dashboard  http://127.0.0.1:${DASH_PORT}/fleet`);
   console.log(`  roster     ${h.state}`);
-  console.log(`  characters ${inGame == null ? agents + ' registered' : `${inGame}/${agents} in game`}`);
+  console.log(`  characters ${inGame == null ? agents + ' registered' : `${inGame}/${agents} in game`}` +
+              (stalled ? c.dim(`  ·  ${stalled} flagged by the stall detector` +
+                               ` (a travelling character trips it — see ms_since_moved)`) : ''));
   console.log(`  log        ${existsSync(LOG_FILE) ? LOG_FILE : '(none yet)'}`);
   // HAS PROD MOVED UNDER US? The baked collision map is evidence about somebody else's
   // server, and that server can be patched without telling us. Every room where the live
