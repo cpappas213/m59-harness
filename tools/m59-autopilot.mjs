@@ -4541,6 +4541,10 @@ export class Autopilot {
         'and the wait it asked for has elapsed' });
     }
     await this.checkAttackedByPlayer();
+    // BEFORE returning fire, so a fleetmate's shout counts on this pass rather than the
+    // next one — the difference matters most for the character that cannot report itself.
+    await this.hearAlarm().catch(error =>
+      this.note('could not read the alarm', { why: error.message }));
     // AFTER the detection, so a blow landing this pass is already in the grudge book and
     // the answer to it is this pass rather than the next one.
     await this.defendAgainstPlayers().catch(error =>
@@ -9337,6 +9341,70 @@ export class Autopilot {
         this.note('could not answer where', { why: e.message });
       }
     }
+  }
+
+  /**
+   * A FLEETMATE CALLING FOR HELP, AND THE ONLY ROUTE THAT WORKS FOR A PILOTED CHARACTER.
+   *
+   * THE PROBLEM THIS SOLVES, STATED HONESTLY. When a human logs in on one of ours, the
+   * server hands them the single connection that character is allowed and the broker is
+   * bumped off it. From that moment the harness has NO connection to that character:
+   * `checkAttackedByPlayer` cannot fire for it, because there is no keeper, no health
+   * reading, and no room view. And a fleetmate standing right next to them cannot see it
+   * either — a bystander is sent no packet when one player hits another, so "Scooter is
+   * losing health" is not observable by anybody but Scooter.
+   *
+   * So the character the operator is actually playing is the LEAST defended thing in the
+   * fleet, which is exactly backwards. There are only two ways round it: play through
+   * `m59-proxy.mjs`, which keeps the harness in the stream and makes all of this
+   * automatic, or have the person say something. This is the second one, because it
+   * needs no change to how the game is launched.
+   *
+   * WHY A SPOKEN NAME IS SAFE HERE, when it would not be from a stranger:
+   *
+   *   - the speaker must be ONE OF OURS, checked against the roster rather than against
+   *     the runtime party map (see the note on `setRosterSource` — the map is empty for
+   *     the first seconds after a restart, which is when this would be worst);
+   *   - the channel must be a guild tell or a direct tell, never open room speech, so a
+   *     stranger cannot put a name in our book by shouting it;
+   *   - and it grants a GRUDGE, not an attack. The live `PF_KILLER`/`PF_OUTLAW` check
+   *     still stands between the grudge and any swing, and so does the server's own
+   *     safety. Naming an innocent achieves nothing at all.
+   *
+   * The alarm is deliberately a plain sentence a person can type in a hurry.
+   */
+  async hearAlarm() {
+    if (this.policy.defendAgainstPlayers !== true) return null;
+    const box = inboxIfAny(this.s.name);
+    if (!box) return null;
+    const since = Date.now() - 120_000;
+    const heard = box.select({ since, limit: 30 });
+    let acted = 0;
+    for (const m of heard) {
+      if (this.alarmsSeen?.has(m.id)) continue;
+      (this.alarmsSeen ??= new Set()).add(m.id);
+      // GUILD OR A DIRECT TELL ONLY. `say` reaches the whole room, which is precisely
+      // where a stranger stands.
+      if (m.channel !== 'guild' && m.channel !== 'group' && m.channel !== 'group-one') continue;
+      if (!party.isFleetmate(m.speaker_name)) continue;
+      const said = String(m.text || '');
+      // "help <name>" / "murderer <name>" / "attacking me <name>" — the word, then who.
+      const hit = /\b(?:help|murderer|killer|attacked by|attacking me)\b[\s:,-]*(.{2,32})$/i.exec(said.trim());
+      if (!hit) continue;
+      const named = hit[1].trim().replace(/[.!?,]+$/, '');
+      if (!named || party.isFleetmate(named)) continue;   // never against one of ours
+      grudge.recordAttack(named, { who: `${m.speaker_name} (called for help)`,
+                                   room: this.s.world?.room?.num ?? null });
+      acted++;
+      this.note('a fleetmate called for help', {
+        from: m.speaker_name, channel: m.channel, named, said,
+        why: 'a piloted character has no keeper and cannot report an attack itself, so ' +
+             'the person driving it is the only witness there is',
+        note: 'this grants a GRUDGE and never an attack — the live murderer flag and the ' +
+              'server\'s own safety both still stand in the way of a swing',
+      });
+    }
+    return acted ? { grudges: acted } : null;
   }
 
   // HIT WHILE RESTING. The one response that must never happen is the one that used
