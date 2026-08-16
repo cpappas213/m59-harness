@@ -115,7 +115,33 @@ export function report(agent, patch = {}) {
 // the caller wants corroborating evidence before it treats anyone as hostile, and why
 // this returns the set rather than a verdict.
 export const knownCharacters = () => new Set(roster.keys());
-export const isFleetmate = (name) => !!name && roster.has(name);
+
+// AND THE ROSTER UNDERNEATH IT, BECAUSE THE MAP ABOVE IS EMPTY AT BOOT AND THAT IS
+// EXACTLY WHEN THIS IS ASKED.
+//
+// The map is populated by `report`, once a pass, per keeper — so for the first seconds
+// after a broker restart it is EMPTY, and every one of our own characters answers
+// "stranger". That is not a hypothetical: the first live run of the grudge book recorded
+// six fleetmates as attackers within a minute of a restart, because a keeper starting up
+// saw a fleetmate standing next to it while its own health happened to tick down.
+//
+// Nothing fired — the live PF flag is what gates an actual swing, and none of ours is a
+// murderer — but the record was wrong, and a record of who attacked us is exactly the
+// thing that must not name our own people.
+//
+// `resumeFleet` already learned this and wrote it down: match against the ROSTER rather
+// than against sessions, because at boot there are none. So the resolver is installed by
+// the broker (`fleetCharacters`, which unions the live sessions WITH the roster file) and
+// consulted whenever the runtime map does not already know the name.
+let rosterSource = null;
+export function setRosterSource(fn) { rosterSource = typeof fn === 'function' ? fn : null; }
+
+export const isFleetmate = (name) => {
+  if (!name) return false;
+  if (roster.has(name)) return true;
+  try { const known = rosterSource?.(); return !!known && known.has(name); }
+  catch { return false; }
+};
 
 // The partner's record, or null if there is no partner or the reading is stale.
 export function mateOf(agent) {

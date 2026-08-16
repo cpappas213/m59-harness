@@ -47,23 +47,142 @@ asymmetry: it is worth <strong>20 points per step</strong> when you buy and only
 <tbody>
 <tr><td>0</td><td><code class="k">MERCHANT_FLAT</code></td><td>100%</td><td>100%</td><td>×1.00</td><td>none in the current world</td></tr>
 <tr><td>1</td><td><code class="k">MERCHANT_BARGAIN</code></td><td>120%</td><td>90%</td><td>×1.33</td><td>4</td></tr>
-<tr><td>2</td><td><code class="k">MERCHANT_DISCOUNT</code></td><td>140%</td><td>80%</td><td>×1.75</td><td>7</td></tr>
+<tr><td>2</td><td><code class="k">MERCHANT_DISCOUNT</code></td><td>140%</td><td>80%</td><td>×1.75</td><td>8</td></tr>
 <tr><td>3</td><td><code class="k">MERCHANT_NORMAL</code></td><td>160%</td><td>70%</td><td>×2.29</td><td>3, and the default for everyone unset</td></tr>
 <tr><td>4</td><td><code class="k">MERCHANT_EXPENSIVE</code></td><td>180%</td><td>60%</td><td>×3.00</td><td>21</td></tr>
-<tr><td>5</td><td><code class="k">MERCHANT_RIPOFF</code></td><td>200%</td><td>50%</td><td>×4.00</td><td>9</td></tr>
+<tr><td>5</td><td><code class="k">MERCHANT_RIPOFF</code></td><td>200%</td><td>50%</td><td>×4.00</td><td>10</td></tr>
 </tbody>
 </table>
-<p class="cite">kod/include/blakston.khd:1368–1373 · counted from <code class="k">viMerchant_markup</code> across every Monster subclass that declares it</p>
+<p class="cite">kod/include/blakston.khd:1368–1373 · counted from <code class="k">viMerchant_markup</code> in every Monster subclass that declares one — read out of the parsed class table, not by grepping files, because several .kod files declare more than one class and a file-at-a-time count silently misses the second</p>
 
 <div class="warn"><strong>Buying from a ripoff merchant and selling back to them loses you 75% of
 the item's value in one round trip.</strong> Buying from a bargain merchant and selling to a
 different bargain merchant loses 25%. Over a career the difference is enormous, and nothing in
 the game tells you which is which — the <a href="../npcs/index.html">NPC list</a> does.</div>
 
-<p>The four bargain merchants are <strong>Ravi, Tomas, Quintor and Skivlat</strong>. The nine
-ripoff merchants include <strong>Esseldi, Roq, Rook, Zhieu B'hob, Xacal ko'Ixca</strong> and
-<strong>Cital ko'Manca</strong> — note how many of those are in outlying or hostile territory.
-You pay for convenience.</p>
+<h2>Who is in each band</h2>
+
+<p>Every merchant in the world that declares <code class="k">viMerchant_markup</code>, by band.
+Anyone not listed here inherits <code class="k">MERCHANT_NORMAL</code> from
+<code class="k">Monster</code>. Rooms are the room the class is <em>created</em> in. The
+<a href="../npcs/index.html">NPC list</a> carries the same bands in a sortable column.</p>
+
+<h3>Bargain — 120% / 90%, spread ×1.33</h3>
+<table class="data">
+<thead><tr><th>Who</th><th>Class</th><th>Room</th><th>Trade</th></tr></thead>
+<tbody>
+<tr><td>Ravi</td><td><code class="k">HazarApothecary</code></td><td>1014</td><td>apothecary, Hazar</td></tr>
+<tr><td>Tomas</td><td><code class="k">HazarBlacksmith</code></td><td>1013</td><td>blacksmith, Hazar</td></tr>
+<tr><td>Quintor</td><td><code class="k">JasperBlacksmith</code></td><td>374</td><td>blacksmith, Jasper</td></tr>
+<tr><td>Skivlat</td><td><code class="k">TosBanker</code></td><td>54</td><td>banker, Tos — <strong>see the warning below</strong></td></tr>
+</tbody>
+</table>
+
+<div class="warn"><strong>Three of the four bargains are worth walking to. The fourth is a
+banker, and a banker is not a market.</strong> Skivlat's band says 90% and he pays
+<em>nothing</em>: he accepts whatever you hand over, thanks you, and that is the end of it. It
+is a trick played on new players, and nothing on the wire distinguishes it from a sale — the
+merchant flags cheerfully report <code class="k">buys_anything</code> for every banker. The same
+goes for the two vaults, which "buy" anything and sell it back at about a shilling because they
+are storage. Sell to <strong>Ravi, Tomas and Quintor</strong>.</div>
+
+<h3>Discount — 140% / 80%, spread ×1.75</h3>
+<table class="data">
+<thead><tr><th>Who</th><th>Class</th><th>Room</th><th>Trade</th></tr></thead>
+<tbody>
+<tr><td>Joguer</td><td><code class="k">BarloqueApothecary</code></td><td>104</td><td>apothecary, Barloque</td></tr>
+<tr><td>Herbutte</td><td><code class="k">BarloqueMerchant</code></td><td>109</td><td>general merchant, Barloque</td></tr>
+<tr><td>D'Franco</td><td><code class="k">CorNothInnkeeper</code></td><td>153</td><td>innkeeper, Cor Noth</td></tr>
+<tr><td>Hester Gilk</td><td><code class="k">CorNothTailor</code></td><td>155</td><td>tailor, Cor Noth</td></tr>
+<tr><td>Izzio</td><td><code class="k">Izzio</code></td><td>wanders</td><td>pedlar — one of only two merchants with a <em>finite</em> stock</td></tr>
+<tr><td>Lady Aftyn</td><td><code class="k">MarionHealer</code></td><td>205</td><td>healer, Marion</td></tr>
+<tr><td>Frisconar</td><td><code class="k">TosApothecary</code></td><td>53</td><td>apothecary, Tos</td></tr>
+<tr><td>Paddock</td><td><code class="k">TosInnKeeper</code></td><td>52</td><td>innkeeper, Tos (Familiars)</td></tr>
+</tbody>
+</table>
+
+<h3>Normal — 160% / 70%, spread ×2.29</h3>
+<p>Three declare it explicitly, and it is also what every merchant that says nothing inherits.</p>
+<table class="data">
+<thead><tr><th>Who</th><th>Class</th><th>Room</th><th>Trade</th></tr></thead>
+<tbody>
+<tr><td>Eric d'Jorn</td><td><code class="k">HazarBartender</code></td><td>1017</td><td>bartender, Hazar</td></tr>
+<tr><td>Pietro</td><td><code class="k">JasperBartender</code></td><td>371</td><td>bartender, Jasper (Pietro's Wicked Brews)</td></tr>
+<tr><td>Colhorr</td><td><code class="k">MarionBlacksmith</code></td><td>201</td><td>blacksmith, Marion — buys weapons and shields, <em>not</em> body armour</td></tr>
+</tbody>
+</table>
+
+<h3>Expensive — 180% / 60%, spread ×3.00</h3>
+<p>Twenty-one classes declare it; <strong>twenty of them actually stand somewhere</strong> (see
+the note under the table). Twelve are in Ko'catan.</p>
+<table class="data">
+<thead><tr><th>Who</th><th>Class</th><th>Room</th><th>Trade</th></tr></thead>
+<tbody>
+<tr><td>Meidei</td><td><code class="k">BarloqueBartender</code></td><td>103</td><td>bartender, Barloque (The Bhrama &amp; Falcon)</td></tr>
+<tr><td>Fehr'loi Qan</td><td><code class="k">BarloqueBlacksmith</code></td><td>113</td><td>blacksmith, Barloque</td></tr>
+<tr><td>Madelia</td><td><code class="k">Barloquetailor</code></td><td>856</td><td>tailor, Barloque</td></tr>
+<tr><td>Obert Cair'bre</td><td><code class="k">barloqueVaultman</code></td><td>114</td><td>vault, North Barloque — storage, not a market</td></tr>
+<tr><td>Rycksher</td><td><code class="k">BasicInnKeeper</code></td><td>954</td><td>innkeeper</td></tr>
+<tr><td>Solomon</td><td><code class="k">CornothGrocer</code></td><td>151</td><td>grocer, Cor Noth</td></tr>
+<tr><td>an interior design consultant</td><td><code class="k">Decorator</code></td><td>rented rooms (10000+)</td><td>furnishings for a rented room</td></tr>
+<tr><td>Zala ix'Mecya</td><td><code class="k">KocatanApothecary</code></td><td>2002</td><td>apothecary, Ko'catan</td></tr>
+<tr><td>Huital ko'Nosak</td><td><code class="k">KocatanBanker</code></td><td>2005</td><td>banker — pays nothing, as all bankers do</td></tr>
+<tr><td>Oxal ix'Tokak</td><td><code class="k">KocatanBartender</code></td><td>2008</td><td>bartender, Ko'catan</td></tr>
+<tr><td>Ixla cha'Totlak</td><td><code class="k">KocatanBlacksmith</code></td><td>2003</td><td>blacksmith, Ko'catan</td></tr>
+<tr><td>The Bone Priestess</td><td><code class="k">KocatanBonePriestess</code></td><td>2141</td><td>Ko'catan</td></tr>
+<tr><td>Hanla zax'Ta</td><td><code class="k">KocatanBowMaker</code></td><td>2100</td><td>bowyer, Ko'catan</td></tr>
+<tr><td>Moxal ix'Hanak</td><td><code class="k">KocatanInnkeeper</code></td><td>2001</td><td>innkeeper, Ko'catan</td></tr>
+<tr><td>Bahal zax'Ot</td><td><code class="k">KocatanMadScientist</code></td><td>2136</td><td>the mad scientist's hut, Ko'catan forest</td></tr>
+<tr><td>Pacal ix'Anoak</td><td><code class="k">KocatanShopkeeper</code></td><td>2004</td><td>buys anything — the <em>other</em> merchant with a finite stock</td></tr>
+<tr><td>Tepal ix'Zonak</td><td><code class="k">KocatanTailor</code></td><td>2006</td><td>tailor, Ko'catan</td></tr>
+<tr><td>Itzal cha'Nosak</td><td><code class="k">KocatanVaultman</code></td><td>2005</td><td>vault, Ko'catan — storage, not a market</td></tr>
+<tr><td>Kochtal ko'Tulca</td><td><code class="k">KocatanWeaponsMaster</code></td><td>2014</td><td>weapons and tuition, Ko'catan</td></tr>
+<tr><td>Monk of Riija</td><td><code class="k">RiijaMonk</code></td><td>2151</td><td>temple of Riija</td></tr>
+<tr><td><em>nobody</em></td><td><code class="k">TosBlacksmith</code></td><td>—</td><td><strong>declared, compiled, and created in no room at all</strong></td></tr>
+</tbody>
+</table>
+
+<div class="warn"><strong>There is no blacksmith in Tos.</strong>
+<code class="k">TosBlacksmith</code> exists as a class, declares its markup, and even carries the
+name resource <em>Fehr'loi Qan</em> — the same name as the Barloque smith, who is a different
+person and is real. No room anywhere calls <code class="k">Create(&amp;TosBlacksmith)</code>, so
+a table built from the source alone will list a smith that nobody has ever met. It is the same
+shape as <code class="k">BarloqueBanker</code> ("Setag'lib"), which is likewise declared and
+likewise placed nowhere: <strong>a class that exists is not an NPC that stands somewhere.</strong></div>
+
+<h3>Ripoff — 200% / 50%, spread ×4.00</h3>
+<table class="data">
+<thead><tr><th>Who</th><th>Class</th><th>Room</th><th>Trade</th></tr></thead>
+<tbody>
+<tr><td>Roq</td><td><code class="k">Assassin</code></td><td>110</td><td>Barloque — the only NPC known to buy an unlimited quantity of anything</td></tr>
+<tr><td>Rook</td><td><code class="k">CorNothSergeant</code></td><td>154</td><td>Cor Noth — teaches ten skills, including every weapon proficiency</td></tr>
+<tr><td>Esseldi</td><td><code class="k">FiveCouncilor</code></td><td>526</td><td>the Council of Five</td></tr>
+<tr><td>Zhieu B'hob</td><td><code class="k">JasperMerchant</code></td><td>373</td><td>general merchant, Jasper</td></tr>
+<tr><td>Xacal ko'Ixca</td><td><code class="k">KocatanCaptainEvil</code></td><td>2013</td><td>east guard tower, Ko'catan</td></tr>
+<tr><td>Cital ko'Manca</td><td><code class="k">KocatanCaptainGood</code></td><td>2013</td><td>east guard tower, Ko'catan</td></tr>
+<tr><td>Quetzal</td><td><code class="k">KocatanLanguageMaster</code></td><td>2015</td><td>language tuition, Ko'catan</td></tr>
+<tr><td>Wulfgang zax'Ak</td><td><code class="k">kocatanTradeMaster</code></td><td>2101</td><td>trade master, Ko'catan</td></tr>
+<tr><td>Tova</td><td><code class="k">MarionBartender</code></td><td>202</td><td>bartender, Marion</td></tr>
+<tr><td>Morrigan</td><td><code class="k">MarionInnkeeper</code></td><td>202</td><td>innkeeper, Marion — the same room as Tova, and it sells reagents</td></tr>
+</tbody>
+</table>
+
+<p>The two Ko'catan captains share room 2013 because they are the two sides of the island's
+allegiance — which one is standing in the east tower depends on who holds Ko'catan, so you will
+not meet both.</p>
+
+<p class="cite">derived from <code class="k">viMerchant_markup</code> in every
+<code class="k">Monster</code> subclass that declares one, joined to the room that calls
+<code class="k">Create(&amp;<em>Class</em>)</code>. <strong>Match class names case-insensitively</strong>
+— the tree spells them inconsistently (<code class="k">barloqueVaultman</code> is declared with a
+small b and created as <code class="k">Barloquevaultman</code>; <code class="k">CorNothTown</code>
+and <code class="k">CornothTown</code> are one class), and a case-sensitive join silently drops
+them.</p>
+
+<div class="warn"><strong>Ko'catan is the expensive island and that is not an accident.</strong>
+Twelve of the twenty-one expensive merchants and five of the ten ripoffs are there, so almost
+everything on the island trades at ×3 or ×4 against ×1.33 on the mainland. Carry what you mean
+to sell back to Hazar or Jasper; the boat is cheaper than the spread.</div>
 
 <h2>Condition is price, for anything that wears out</h2>
 
@@ -165,8 +284,15 @@ for goods charges the standard rate for tuition.</p>
 <h2>Practical advice</h2>
 
 <ul>
-<li><strong>Sell to bargain merchants, buy from bargain merchants.</strong> Ravi, Tomas, Quintor
-and Skivlat. The difference against a ripoff merchant is a factor of three on the round trip.</li>
+<li><strong>Sell to bargain merchants, buy from bargain merchants.</strong> Ravi, Tomas and
+Quintor. The difference against a ripoff merchant is a factor of three on the round trip.
+<strong>Not Skivlat</strong> — he is in the bargain band and he is a banker, and a banker takes
+what you hand over and gives nothing back.</li>
+<li><strong>"Buys anything" is usually a robbery.</strong> Three different NPCs answer to it and
+only one is a market: <strong>Roq</strong> in Barloque, who really will take an unlimited
+quantity; the <strong>two vaults</strong>, which are storage and sell it back at about a
+shilling; and <strong>the bankers</strong>, who are the trick. Being wrong about a buyer costs
+the whole pack, and being wrong about a walk costs a walk.</li>
 <li><strong>Do not carry worn gear home to sell.</strong> Condition is quadratic; below about half
 condition an item is worth a tenth of new, and the weight and bulk are better spent on reagents
 or gems.</li>

@@ -21,7 +21,9 @@
 //     find itself somewhere else can find out why.
 
 import * as skills from './m59-skills.mjs';
-import { OF, affordances, dropSpec as dropSpecFor } from './m59-parse.mjs';
+import { OF, affordances, dropSpec as dropSpecFor,
+         playerClassName, flaggedAggressor } from './m59-parse.mjs';
+import * as grudge from './m59-grudge.mjs';
 import { isFood, foodValue } from './m59-items.mjs';
 import { loadSpawns, huntingGrounds, huntMatcher, huntedCreatures,
          roomThreats, goalYield, roomCap, karmaSafe,
@@ -638,6 +640,38 @@ export const belowRoomRetreatHealth = (health, restBelow) =>
   health != null && Number.isFinite(restBelow) && health < restBelow;
 const BARLOQUE_VAULT = { room: 114, name: "Obert Cair'bre's vault, North Barloque" };
 
+// WHICH COUNTER A TOWN TRIP IS AIMED AT, AS ONE ORDERED ANSWER RATHER THAN A NESTED
+// CONDITIONAL INSIDE A 200-LINE METHOD.
+//
+// Every door into a town trip has a different remedy and they are NOT interchangeable —
+// this file already records what aiming a full pack at a banker cost (Camilla and Floyd
+// at the Jasper counter with sixteen stacks each and nobody who would pay for any of it),
+// and it cost the same again in the other direction when a REAGENT shortfall was aimed at
+// a market, which sells nothing and buys only what you have. Written out as a table, the
+// mismatches are visible; written inline, the supply row was simply never added.
+//
+// | door | what fixes it | counter |
+// |---|---|---|
+// | needs cash first | a withdrawal | a bank, and the shop is the last hop after it |
+// | reagent floor | buying | the apothecary |
+// | empty larder | buying | the bread shop |
+// | full pack, or broke with goods | selling | Roq, the one NPC that pays |
+// | rich | depositing | a bank |
+//
+// `richEnoughToBank` outranks the three shopping doors because a purse over the banking
+// threshold is money that is dropped on death; the shops it was going to visit are all
+// hung off the end of that same trip anyway.
+export function townDestinations({ needsCashFirst = false, supplyTrip = false, starving = false,
+                                   packFull = false, brokeWithGoods = false,
+                                   richEnoughToBank = false } = {}) {
+  if (needsCashFirst) return BANKS;
+  if (richEnoughToBank) return BANKS;
+  if (supplyTrip) return [REAGENT_SHOP];
+  if (starving && !packFull) return [FOOD_SHOP];
+  if (packFull || brokeWithGoods) return MARKETS;
+  return BANKS;
+}
+
 export const MODES = ['survive', 'farm', 'idle'];
 
 // Farming patterns, as a table rather than scattered conditionals, so that adding a
@@ -956,6 +990,11 @@ export class Autopilot {
       // while the other keeps the fight going. Higher than fleeBelow on purpose: the
       // point is to leave the fight early and cheaply, not to survive leaving it late.
       partyHealBelow: 0.5,
+      // SWING BACK AT A FLAGGED PLAYER WHO HAS ATTACKED THIS FLEET. Unset, so a fresh
+      // clone behaves exactly as before: whether a fleet should fight a person at all is
+      // a decision about the server it is on and the people on it, not a mechanic, and
+      // it belongs in a local policy. See defendAgainstPlayers() for the interlocks.
+      defendAgainstPlayers: false,
       // Reconnect before stepping off a spot that has a crowd on it. See breakOut().
       breakOutViaLogoff: true,
       // How many monsters camped on us make leaving worth a reconnect.
@@ -4298,11 +4337,38 @@ export class Autopilot {
       !party.isFleetmate(c.rsc.get(o.nameRsc)));
     if (!strangers.length) return null;
 
+    // WRITE IT DOWN FOR THE WHOLE FLEET, BEFORE DECIDING ANYTHING.
+    //
+    // One character being hit is everybody's information. The record is what lets the
+    // eight fleetmates standing in the same room defend the one that got hit, and what
+    // lets any of them recognise the same person an hour later in a different town —
+    // which is the entire difference between a player and a monster.
+    //
+    // Recorded whatever the attacker's flags say. An unflagged attacker produces a grudge
+    // that can never be acted on, because `mayReturnFire` re-reads the live flag and
+    // refuses without it — so this is evidence, and only evidence, until the server
+    // agrees the person is a murderer or an outlaw.
+    // ASKED A SECOND TIME, ON PURPOSE. The `strangers` filter above already excluded
+    // fleetmates — and on the first live run it let six of our own characters into the
+    // book anyway, because `party.isFleetmate` is populated one keeper at a time and a
+    // broker that restarted thirty seconds ago knows nobody. That is fixed at the source
+    // (party now falls back to the roster), and it is checked again here because the cost
+    // of the two disagreeing is a record that accuses our own people of murder.
+    for (const s of strangers) {
+      const sName = c.rsc.get(s.nameRsc);
+      if (!sName || party.isFleetmate(sName)) continue;
+      grudge.recordAttack(sName, { who: this.who(), room: this.s.world?.room?.num ?? null,
+                                   playerClass: playerClassName(s.flags) });
+    }
+
     const pb = playbook.playbookFor(this.who());
     const facts = {
       who: c.rsc.get(strangers[0].nameRsc) ?? null,
       health_pct: pct(hp), room: this.s.world?.room?.num ?? null,
       attackers: strangers.length,
+      // What the server thinks of the one hitting us, so a playbook can tell a flagged
+      // murderer from somebody who has just this second become an outlaw by hitting us.
+      attacker_class: playerClassName(strangers[0].flags),
       // `this.hold` is the square we have claimed; `proven` is whether it has been stood
       // in and held. A playbook that wants the difference asks holdWorks() — this is the
       // weaker "we are on a wall at all", which is the one that matters against a player,
@@ -4396,6 +4462,47 @@ export class Autopilot {
           return done(`said it`, { to: action.args.to ?? 'the room' });
         }
 
+        case 'yell':
+        case 'tell_guild': {
+          const text = String(action.args.message ?? '');
+          if (!text) return done('nothing — no message was written');
+          const c = this.s.client;
+          if (action.verb === 'yell') await this.s.pacer.submit('say', () => c.yell(text));
+          else await this.s.pacer.submit('say', () => c.sayGuild(text));
+          // A GUILD TELL FROM A GUILDLESS CHARACTER IS REFUSED WITH A SENTENCE
+          // (`user_no_say_guild`, user.kod:4117) and nothing on the wire, so this reports
+          // what it sent rather than claiming it arrived — the same standard as every
+          // other spoken thing here.
+          return done(action.verb === 'yell' ? 'shouted it to the room and the ones next door'
+                                             : 'sent it to the guild (unverified — a guildless ' +
+                                               'character is refused with prose)');
+        }
+
+        case 'call_for_help': {
+          // THE ORDER IS THE POINT, AND IT IS WHY THIS IS ONE VERB. Shout, tell the guild,
+          // then go. Logging off first would mean nobody ever learns where it happened;
+          // this trigger fires one rule per pass and there is no guarantee of a second.
+          const c = this.s.client;
+          const shout = String(action.args.message ?? '');
+          const toGuild = String(action.args.guild_message ?? '');
+          const said = [];
+          if (shout) {
+            await this.s.pacer.submit('say', () => c.yell(shout)).catch(() => {});
+            said.push('yelled');
+          }
+          if (toGuild) {
+            await this.s.pacer.submit('say', () => c.sayGuild(toGuild)).catch(() => {});
+            said.push('told the guild');
+          }
+          const s = Number(action.args.stay_off_s) || 0;
+          this.stayOffUntil = Date.now() + s * 1000;
+          this.goInert(`playbook: ${trigger} — staying off for ${s}s`, { maxMs: (s + 60) * 1000 });
+          const out = await this.breakOut(`playbook: ${trigger}`).catch(e => ({ did: false, why: e.message }));
+          return done(`${said.join(', ') || 'said nothing'}, then ` +
+                      (out?.did ? `logged off for ${s}s` : `could NOT log off (${out?.why ?? 'refused'})`),
+                      { stay_off_s: s, until: this.stayOffUntil, shouted: !!shout, guild: !!toGuild });
+        }
+
         case 'stand_down':
           this.goInert(`playbook: ${trigger}`);
           return done('stood down and waited to be told');
@@ -4467,6 +4574,94 @@ export class Autopilot {
         'and the wait it asked for has elapsed' });
     }
     await this.checkAttackedByPlayer();
+    // BEFORE returning fire, so a fleetmate's shout counts on this pass rather than the
+    // next one — the difference matters most for the character that cannot report itself.
+    await this.hearAlarm().catch(error =>
+      this.note('could not read the alarm', { why: error.message }));
+    // AFTER the detection, so a blow landing this pass is already in the grudge book and
+    // the answer to it is this pass rather than the next one.
+    await this.defendAgainstPlayers().catch(error =>
+      this.note('could not return fire', { why: error.message }));
+  }
+
+  /**
+   * SWING BACK AT SOMEBODY WHO HAS ATTACKED THIS FLEET — the one place in this
+   * repository that can make a character hit a real person, and the reason every
+   * condition in it is checked rather than assumed.
+   *
+   * THE SERVER IS THE SAFETY, AND WE DO NOT TURN IT OFF. `PFLAG_SAFETY` stays on. Its
+   * whole behaviour is in the docstring of `Player.CheckStatusAndSafety`
+   * (player.kod:3767): *"PFLAG_SAFETY prevents accidental attacks. You can always
+   * successfully hit a murderer or outlaw, though."* So with safety ON the server:
+   *
+   *   - REFUSES any attack on a player who is neither murderer nor outlaw, and says so
+   *     ("Hey! You almost hit %s%s! Good thing your safety was on!", player.kod:177);
+   *   - ALLOWS an attack on one who is, with no outlaw penalty — the branch that makes
+   *     an aggressor an outlaw is skipped entirely for such a victim (player.kod:3816);
+   *   - and if the fight is won, counts it as `piJustified_kill_count` rather than
+   *     making US a murderer (player.kod:4841, 4856). No faction loss either.
+   *
+   * That is a stronger interlock than anything written here could be, because it is
+   * enforced on the other side of the wire. Everything below is about not RELYING on it:
+   * a fleet whose only protection against hitting an innocent is a remote server's
+   * refusal is one server-flag change away from being a griefer.
+   *
+   * OFF UNLESS ASKED FOR. `defendAgainstPlayers` is unset by default, so a fresh clone
+   * behaves exactly as before — silence means the behaviour that was already there. This
+   * is a bet about a particular fleet on a particular shared server, not a mechanic, so
+   * it belongs in a local policy rather than in a committed default.
+   */
+  async defendAgainstPlayers() {
+    if (this.policy.defendAgainstPlayers !== true) return null;
+    const c = this.s?.client, me = c?.self;
+    if (!me || !c?.room) return null;
+
+    // Everything in reach that the grudge book and the live flags both agree on.
+    const candidates = [...c.room.objects.values()]
+      .filter(o => o.id !== c.selfId &&
+                   Math.hypot(o.col - me.col, o.row - me.row) <= REACH)
+      .map(o => {
+        const name = c.rsc.get(o.nameRsc) || null;
+        return { o, name, verdict: grudge.mayReturnFire({ name, flags: o.flags },
+                                     { fleetmate: party.isFleetmate(name) }) };
+      })
+      .filter(row => row.verdict.engage);
+    if (!candidates.length) return null;
+
+    // THE ONE THAT HAS HIT US MOST RECENTLY. Not the nearest and not the weakest: a fight
+    // with a person is about making one of them stop, and spreading damage over two
+    // attackers finishes neither.
+    candidates.sort((a, b) => (b.verdict.grudge?.at ?? 0) - (a.verdict.grudge?.at ?? 0));
+    const pick = candidates[0];
+
+    // NO THREAT CEILING HERE, AND THAT IS DELIBERATE. `refuseEngagement` exists to stop a
+    // character picking a fight with a monster it cannot beat — a choice it did not have
+    // to make. This is not that choice: somebody is already hitting us, and declining to
+    // swing back does not end the fight, it just means losing it without trying. The
+    // survival floor still applies exactly as before, which is what bounds this: the
+    // ordinary ladder disengages and runs at `fleeBelow` whether or not we are swinging.
+    if (this.foeId !== pick.o.id) {
+      this.note('returning fire on a flagged attacker', {
+        who: pick.name, room: this.s.world?.room?.num ?? null,
+        their_class: playerClassName(pick.o.flags),
+        grudge_age_m: Math.round((pick.verdict.grudge?.age_ms ?? 0) / 60000),
+        they_have_hit: pick.verdict.grudge?.victims ?? [],
+        why: pick.verdict.why,
+        safety: 'our own PFLAG_SAFETY is left ON — the server refuses this attack ' +
+                'outright if they are not actually flagged, which is the interlock',
+      });
+      recordEvent(this.who(), 'returned_fire', {
+        target: pick.name, target_class: playerClassName(pick.o.flags),
+        room: this.s.world?.room?.num ?? null,
+        hits_on_us: pick.verdict.grudge?.hits ?? null,
+      });
+    }
+    this.doing = 'fighting';
+    await this.s.faceToward(pick.o).catch(() => {});
+    await this.s.pacer.submit('attack', () => c.attack(pick.o.id), 1050).catch(() => {});
+    this.swungAt = Date.now();
+    this.foeId = pick.o.id;
+    return { engaged: pick.name, why: pick.verdict.why };
   }
 
   /** An object in this room whose name matches, for `tell`. */
@@ -9454,6 +9649,70 @@ export class Autopilot {
     }
   }
 
+  /**
+   * A FLEETMATE CALLING FOR HELP, AND THE ONLY ROUTE THAT WORKS FOR A PILOTED CHARACTER.
+   *
+   * THE PROBLEM THIS SOLVES, STATED HONESTLY. When a human logs in on one of ours, the
+   * server hands them the single connection that character is allowed and the broker is
+   * bumped off it. From that moment the harness has NO connection to that character:
+   * `checkAttackedByPlayer` cannot fire for it, because there is no keeper, no health
+   * reading, and no room view. And a fleetmate standing right next to them cannot see it
+   * either — a bystander is sent no packet when one player hits another, so "Scooter is
+   * losing health" is not observable by anybody but Scooter.
+   *
+   * So the character the operator is actually playing is the LEAST defended thing in the
+   * fleet, which is exactly backwards. There are only two ways round it: play through
+   * `m59-proxy.mjs`, which keeps the harness in the stream and makes all of this
+   * automatic, or have the person say something. This is the second one, because it
+   * needs no change to how the game is launched.
+   *
+   * WHY A SPOKEN NAME IS SAFE HERE, when it would not be from a stranger:
+   *
+   *   - the speaker must be ONE OF OURS, checked against the roster rather than against
+   *     the runtime party map (see the note on `setRosterSource` — the map is empty for
+   *     the first seconds after a restart, which is when this would be worst);
+   *   - the channel must be a guild tell or a direct tell, never open room speech, so a
+   *     stranger cannot put a name in our book by shouting it;
+   *   - and it grants a GRUDGE, not an attack. The live `PF_KILLER`/`PF_OUTLAW` check
+   *     still stands between the grudge and any swing, and so does the server's own
+   *     safety. Naming an innocent achieves nothing at all.
+   *
+   * The alarm is deliberately a plain sentence a person can type in a hurry.
+   */
+  async hearAlarm() {
+    if (this.policy.defendAgainstPlayers !== true) return null;
+    const box = inboxIfAny(this.s.name);
+    if (!box) return null;
+    const since = Date.now() - 120_000;
+    const heard = box.select({ since, limit: 30 });
+    let acted = 0;
+    for (const m of heard) {
+      if (this.alarmsSeen?.has(m.id)) continue;
+      (this.alarmsSeen ??= new Set()).add(m.id);
+      // GUILD OR A DIRECT TELL ONLY. `say` reaches the whole room, which is precisely
+      // where a stranger stands.
+      if (m.channel !== 'guild' && m.channel !== 'group' && m.channel !== 'group-one') continue;
+      if (!party.isFleetmate(m.speaker_name)) continue;
+      const said = String(m.text || '');
+      // "help <name>" / "murderer <name>" / "attacking me <name>" — the word, then who.
+      const hit = /\b(?:help|murderer|killer|attacked by|attacking me)\b[\s:,-]*(.{2,32})$/i.exec(said.trim());
+      if (!hit) continue;
+      const named = hit[1].trim().replace(/[.!?,]+$/, '');
+      if (!named || party.isFleetmate(named)) continue;   // never against one of ours
+      grudge.recordAttack(named, { who: `${m.speaker_name} (called for help)`,
+                                   room: this.s.world?.room?.num ?? null });
+      acted++;
+      this.note('a fleetmate called for help', {
+        from: m.speaker_name, channel: m.channel, named, said,
+        why: 'a piloted character has no keeper and cannot report an attack itself, so ' +
+             'the person driving it is the only witness there is',
+        note: 'this grants a GRUDGE and never an attack — the live murderer flag and the ' +
+              'server\'s own safety both still stand in the way of a swing',
+      });
+    }
+    return acted ? { grudges: acted } : null;
+  }
+
   // HIT WHILE RESTING. The one response that must never happen is the one that used
   // to: note it and rest again next pass on the same square.
   //
@@ -10193,7 +10452,29 @@ export class Autopilot {
     // the override seam; duplicating the arithmetic at the call site is how a quantity in
     // this repository ends up with two answers.
     const sellCall = this.checkIfShouldSell();
-    const packFull = sellCall.sell && sellCall.trigger !== 'broke';
+    // A SUPPLY SHORTFALL IS NOT A FULL PACK, AND SENDING IT TO A MARKET IS THE SAME
+    // MISTAKE AS SENDING A FULL PACK TO A BANKER — THE ONE THIS FUNCTION ALREADY RECORDS.
+    //
+    // `supply` was added to checkIfShouldSell long after bankRun learned to read that
+    // function's answer as "the pack is full", and the two triggers have OPPOSITE
+    // remedies. A full pack becomes money the moment it reaches Roq, which is why the
+    // cooldown note below says this trip "cannot spin, because it always achieves
+    // something". A reagent shortfall becomes nothing at all there: it is fixed by BUYING,
+    // and the money for that is usually in a bank.
+    //
+    // Measured on the live fleet, 2026-08-16: Fozzie held 2 shillings against a bank
+    // balance of 27,282 and made the 110 -> 104 round trip every thirty-five seconds for
+    // more than five hours — 155 `buy_declined` in one day, every one of them reading
+    // `spendable: 2` — with 0 kills in the last half hour and its purse never once above
+    // 13. Twelve of twenty-one characters were in the same loop, while the fleet sat on
+    // 666,540 banked shillings. Nothing errored, nothing stalled, and the board said
+    // "travelling", which is what it always says.
+    //
+    // So the trigger is separated here and routed like hunger already is: the character is
+    // not poor, it is ILLIQUID, and `needsCashFirst` is the door that was built for
+    // exactly that and never wired to this trigger.
+    const supplyShort = sellCall.sell && sellCall.trigger === 'supply';
+    const packFull = sellCall.sell && sellCall.trigger !== 'broke' && !supplyShort;
 
     // AND AN EMPTY LARDER IS THE THIRD REASON, FOR EXACTLY THE REASON THE PACK WAS THE
     // SECOND: the food is in town and the only doors to town were money and a full pack.
@@ -10249,9 +10530,27 @@ export class Autopilot {
     const starving = purchaseEnabled(this.policy, 'food') &&
                      !this.larder(c).length && !canCook &&
                      (spendable >= 60 || canFetch) && !triedRecently;
+    // AND THE SAME QUESTION FOR REAGENTS, WHICH IS THE ONE NOBODY ASKED.
+    //
+    // The bill is what this character's own floors are short of at counter prices, so it
+    // is the loadout's number rather than a constant — a caster wanting 200 of each and a
+    // fighter wanting six are not on the same errand. `withdrawForFood` sizes its draw from
+    // the identical call, so the trip and the withdrawal cannot disagree about what it
+    // costs.
+    //
+    // A COOLDOWN AS WELL AS A DESTINATION, because the destination fix assumes there is a
+    // balance to fetch. With an empty bank too, the shortfall is real and unfixable this
+    // hour, and the character should be farming rather than walking — the trip is bounded
+    // instead of being tried again on the very next pass. Ten minutes, matching the sell
+    // trip, because both answer "this walk achieved nothing; do not repeat it immediately".
+    const supplyBill = supplyShort ? this.reagentGapCost() : 0;
+    const SUPPLY_TRIP_COOLDOWN_MS = 600_000;
+    const supplyTriedRecently = Date.now() - (this.supplyTripAt ?? 0) < SUPPLY_TRIP_COOLDOWN_MS;
+    const supplyTrip = supplyShort && !supplyTriedRecently;
     // Which counter first. With money in hand the bread shop is the whole trip; without
     // it, the bank comes first and buyFoodInTown walks the last hop afterwards.
-    const needsCashFirst = starving && spendable < 60 && canFetch;
+    const needsCashFirst = (starving && spendable < 60 && canFetch) ||
+                           (supplyTrip && carried < supplyBill && canFetch);
 
     // BROKE WHILE CARRYING A FORTUNE IN LOOT, WHICH IS THE SAME SHAPE AS THE LAST TWO.
     //
@@ -10319,7 +10618,7 @@ export class Autopilot {
     }
     if (!starving) this.notedStarving = false;
 
-    if (carried <= above && !packFull && !starving && !brokeWithGoods) {
+    if (carried <= above && !packFull && !starving && !brokeWithGoods && !supplyTrip) {
       // Say what we saw, occasionally. A threshold that never trips is indistinguishable
       // from one that is never checked, and that cost an eight-minute run to find out.
       if (carried > 0 && (!this.notedPurse || Date.now() - this.notedPurse > 120_000)) {
@@ -10344,9 +10643,8 @@ export class Autopilot {
     // A full pack goes to the market, money goes to the bank, an empty larder to the bread
     // shop — and a broke character with goods goes to the market too, for the same reason
     // the full pack does: Roq is the one who pays, and a banker takes and gives nothing.
-    const destinations = needsCashFirst ? BANKS
-                       : (starving && !packFull && carried <= above ? [FOOD_SHOP]
-                       : ((packFull || brokeWithGoods) && carried <= above ? MARKETS : BANKS));
+    const destinations = townDestinations({ needsCashFirst, supplyTrip, starving, packFull,
+                                            brokeWithGoods, richEnoughToBank: carried > above });
     const options = destinations
       .map(b => { const r = s.world?.route?.(b.room);
                   return { ...b, hops: r?.found ? r.hops.length : Infinity }; })
@@ -10374,10 +10672,32 @@ export class Autopilot {
     // set it.
     if (starving) this.foodTripAt = Date.now();
     if (brokeWithGoods) this.sellTripAt = Date.now();
-    this.note(starving && !packFull && carried <= above ? 'going to town for food' : 'going to the bank', {
+    if (supplyTrip) this.supplyTripAt = Date.now();
+    // SAY WHICH ERRAND THIS IS, BECAUSE THE LABEL WAS PART OF WHAT HID THE LOOP.
+    //
+    // Every trip that was not the food one said "going to the bank" — including the ones
+    // walking to a market and, until the fix above, the ones walking to a market for
+    // reagents. So a character ping-ponging between Roq and the apothecary logged "going
+    // to the bank" thirty times an hour, and the RECENT panel read as a fleet doing its
+    // banking. It was the only line an operator had, and it named neither the destination
+    // nor the reason.
+    const errand = supplyTrip
+        ? (needsCashFirst ? 'going to the bank to pay for reagents' : 'going to the apothecary')
+      : starving && !packFull && carried <= above ? 'going to town for food'
+      : needsCashFirst ? 'going to the bank for food money'
+      : (packFull || brokeWithGoods) && carried <= above ? 'going to market'
+      : 'going to the bank';
+    this.note(errand, {
       carrying: carried, to: target.name, hops: target.hops, keeping: this.policy.walkingMoney ?? 400,
-      why: starving && !packFull && carried <= above
+      trigger: sellCall.trigger, bill: supplyTrip ? supplyBill : undefined,
+      banked: supplyTrip || needsCashFirst ? balance : undefined,
+      why: supplyTrip
+        ? 'below its own reagent floor with no meals aboard; the shortfall is fixed by ' +
+          'buying, so this needs a counter and the money to spend at one'
+        : starving && !packFull && carried <= above
         ? 'no food and not both reagents, so the only vigor above the resting cap is bought'
+        : (packFull || brokeWithGoods) && carried <= above
+        ? 'the pack has stopped earning; Roq is the one NPC that pays for a full one'
         : 'everything carried is dropped on death and usually unrecoverable; a balance is not' });
     if ((await this.leaveHold('walking to the bank')).refused) return true;
     const r = await this.travel(target.room, { maxHops: Math.max(12, target.hops + 4) })
@@ -10613,8 +10933,37 @@ export class Autopilot {
   // runs the purse is either already sufficient (and `need` is met, so this does nothing)
   // or genuinely short. Taking the food money out after banking the surplus is one round
   // trip at the counter we are already standing at.
+  // WHAT THE SHORTFALL COSTS AT A COUNTER, IN SHILLINGS. One definition, because two
+  // callers now need it and they must not disagree: the trip that decides whether a bank
+  // has to come first, and the withdrawal that pays for it. A bill computed twice is how a
+  // character draws pocket money for an 8,400sh fill and is back on the road inside the
+  // hour — see the note on `withdrawMax` below.
+  //
+  // Counter prices, read off the shelf at Joguer: elderberry 28, herbs 14. Only the two
+  // halves of `create food` are priced; a loadout may ask for anything, and being short of
+  // a spare shield is not a bank errand.
+  reagentGapCost() {
+    const l = this.loadout();
+    if (!l?.carry?.length) return 0;
+    const pack = this.packAsItems();
+    let sh = 0;
+    for (const entry of l.carry) {
+      if (!/elder\s?berry|^herbs?$/i.test(entry.item)) continue;
+      const held = pack.filter(i => norm(i.name) === norm(entry.item))
+                       .reduce((t, i) => t + i.amount, 0);
+      if (held >= entry.min) continue;                   // only when a trip is warranted
+      const target = Number.isFinite(entry.max) && entry.max > entry.min ? entry.max : entry.min;
+      sh += Math.max(0, target - held) * (/elder/i.test(entry.item) ? 28 : 14);
+    }
+    return sh;
+  }
+
   async withdrawForFood() {
-    if (!purchaseEnabled(this.policy, 'food')) return;
+    // THE DRAW PAYS FOR TWO SHOPPING LISTS AND THE GATE ONLY KNEW ABOUT ONE. The reagent
+    // half is what a bank-first supply trip came here for, so turning food purchases off
+    // must not silently leave that trip drawing nothing and walking to the apothecary with
+    // an empty purse — which is the loop this whole path exists to end.
+    if (!purchaseEnabled(this.policy, 'food') && !purchaseEnabled(this.policy, 'reagents')) return;
     const s = this.s, c = s.need();
     const room = s.world?.room;
     if (!room) return;
@@ -10644,7 +10993,11 @@ export class Autopilot {
       // the climb the pack has to be able to pay for, whenever it cannot pay for any of it
       larder <= 0 ? Math.max(0, floorVigor - REST_VIGOR_CAP * vigorMax) : 0,
       Math.max(0, floorVigor - (vg?.value ?? 0) - larder));
-    if (shortBy <= 20) return;                                   // fed enough to not bother
+    // Fed enough to not bother — UNLESS the reagents are what this trip came for. A pack
+    // with meals in it can be well short of its reagent floor, and the vigor question does
+    // not know that.
+    const bill = this.reagentGapCost();
+    if (shortBy <= 20 && bill <= 0) return;
 
     await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
     await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
@@ -10665,22 +11018,7 @@ export class Autopilot {
     // ceiling a policy value rather than a constant. Measured while the 900 stood: purses
     // of 5, 7, 8, 13 against bank balances of 10,000 to 36,000, and six characters at 88%
     // or more travel-and-trade with ZERO fighting.
-    const reagentGap = (() => {
-      const l = this.loadout();
-      if (!l?.carry?.length) return 0;
-      const pack = this.packAsItems();
-      let sh = 0;
-      for (const entry of l.carry) {
-        if (!/elder\s?berry|^herbs?$/i.test(entry.item)) continue;
-        const held = pack.filter(i => norm(i.name) === norm(entry.item))
-                         .reduce((t, i) => t + i.amount, 0);
-        if (held >= entry.min) continue;                 // only when a trip is warranted
-        const target = Number.isFinite(entry.max) && entry.max > entry.min ? entry.max : entry.min;
-        // Counter prices, read off the shelf: elderberry 28, herbs 14.
-        sh += Math.max(0, target - held) * (/elder/i.test(entry.item) ? 28 : 14);
-      }
-      return sh;
-    })();
+    const reagentGap = bill;
     const cap = Math.max(900, Number(this.policy.withdrawMax ?? 10000));
     const want = Math.min(cap, Math.round(shortBy * 4.5) + reagentGap + (this.policy.hungryFloor ?? 100));
     if (carried >= want) return;

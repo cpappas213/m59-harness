@@ -46,6 +46,7 @@ import { loadMap, resolveRoom, forgetInferredExit, findPath } from './m59-map.mj
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
 import * as skills from './m59-skills.mjs';
+import * as buyers from './m59-buyers.mjs';
 import * as abilities from './m59-abilities.mjs';
 import { RemainingRequiredToLearnNewSkills, PointsToNextLevelOfTarget } from '../compendium/tools/learn.mjs';
 import * as bankbook from './m59-bank.mjs';
@@ -701,6 +702,12 @@ function fleetCharacters() {
   for (const e of fleetState.values()) if (e?.credentials?.character) names.add(e.credentials.character);
   return names.size ? names : null;
 }
+
+// TELL THE PARTY MODULE WHO IS OURS BEFORE ANY KEEPER HAS HAD A PASS. Its own map fills
+// up one keeper at a time, so for the first seconds after a restart every fleetmate reads
+// as a stranger — which is what put six of our own characters in the grudge book on its
+// first live run. This is a resolver rather than a copy, so it can never go stale.
+parties.setRosterSource(fleetCharacters);
 
 // MAKE EVERY CHARACTER LISTEN, from the moment it is in game.
 //
@@ -7459,6 +7466,37 @@ const TOOLS = [
     },
   },
   {
+    name: 'who_buys',
+    description:
+      'WHICH MERCHANTS DEAL IN WHAT, before you walk. Every merchant class declares what it will ' +
+      'take (ObjectDesired) and a refusal is a sentence spoken to the room rather than an error on ' +
+      'the wire, so offering a smith a mushroom costs a full round trip and returns a silence. ' +
+      'Pass items to learn who buys them; pass merchant to learn what one counter deals in; pass ' +
+      'both to see what would be offered and what would be held back. Reads a table, moves nobody, ' +
+      'and needs no character in the room.\n' +
+      'CANNOT SAY IS NOT NO: an unrecognised merchant or an item missing from the index answers ' +
+      'null, and sell_all offers those anyway rather than silently skipping a sale.',
+    schema: { type: 'object', properties: {
+      items: { type: 'array', items: { type: 'string' },
+        description: 'item names as they appear in the pack' },
+      merchant: { type: 'string', description: 'merchant name, e.g. Quintor' },
+      merchant_id: { type: 'number', description: 'live object id, resolved through the merchant index' },
+    } },
+    run: async (a) => {
+      const items = (a.items || []).map(String);
+      const index = loadMerchants();
+      if (a.merchant || a.merchant_id != null) {
+        const p = buyers.partition(items.map(name => ({ name })),
+          { name: a.merchant || null, id: a.merchant_id ?? null, index });
+        return items.length ? p : { merchant: p.merchant };
+      }
+      if (!items.length) return { table: Object.entries(buyers.BUY_RULES).map(([cls, r]) => ({
+        class: cls, buys: r.all ? ['any category'] : [...(r.any || []), ...(r.onlyClasses || [])],
+        but_not: r.not ?? null, cite: r.cite })) };
+      return { items: items.map(i => buyers.whoBuys(i)) };
+    },
+  },
+  {
     name: 'loadout',
     description:
       'What this character is SUPPOSED to be carrying, and how far off it is.\n' +
@@ -7741,6 +7779,14 @@ const TOOLS = [
         description: 'how many top-ranked walls may each fail repeated, fully-waited pulls before ' +
           'the keeper stops searching this room (default 3). This makes a room-scoped choice to ' +
           'fight open when the safety gates permit it or relocate; it never blocks the goal' },
+      defend_against_players: { type: 'boolean',
+        description: 'swing back at a PLAYER who has attacked this fleet, default false. Three ' +
+          'things must all hold: the name is in the fleet-wide grudge book from the last hour, the ' +
+          'object in front of us is carrying PF_KILLER or PF_OUTLAW right now, and our own ' +
+          'PFLAG_SAFETY — which stays ON — means the server refuses the attack outright if it is ' +
+          'not. Killing a flagged attacker is a justified kill and carries no murderer, outlaw or ' +
+          'faction penalty (player.kod:3816, 4856). The survival floor is unchanged: the ordinary ' +
+          'ladder still disengages and runs at flee_below.' },
       break_out_via_logoff: { type: 'boolean',
         description: 'reconnect before stepping off a crowded safe spot, default true. The entry ' +
           'grace period means the swarm has to notice you one at a time instead of all at once' },
@@ -8009,6 +8055,8 @@ const TOOLS = [
       if (a.barren_spots_before_room_decision !== undefined)
         p.policy.barrenSpotsBeforeRoomDecision = Math.max(1,
           Math.floor(Number(a.barren_spots_before_room_decision) || 1));
+      if (a.defend_against_players !== undefined)
+        p.policy.defendAgainstPlayers = !!a.defend_against_players;
       if (a.break_out_via_logoff !== undefined) p.policy.breakOutViaLogoff = !!a.break_out_via_logoff;
       if (p.mode === 'farm' && !p.policy.hunt)
         return { started: false, reason: 'farm mode needs something to hunt — pass hunt with a creature name' };

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shrines — Meridian 59 Compendium</title>
+<meta name="description" content="A shrine is a stone object in a room that is dedicated to one of the six gods, and while it is dedicated it adds a flat bonus to the spell power of every caster of that god in the world — not just the person who dedicated it. There are three of them, each behind something unpleasant, and any player can take one from another god by walking up and leaving a different offering. That is the whole design: a small permanent buff to a whole faction, held in a place that is deliberately hard to reach and impossible to hold.">
+<link rel="stylesheet" href="../assets/style.css">
+
+<script>(function(){try{var t=localStorage.getItem('m59-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">Meridian&nbsp;<span>59</span> Compendium</a>
+  <nav><a href="../index.html">Home</a><a href="../guides/index.html" class="on">Guides</a><a href="../spells/index.html">Spells</a><a href="../planner/index.html">Planner</a><a href="../skills/index.html">Skills</a><a href="../items/index.html">Items</a><a href="../weapons/index.html">Weapons</a><a href="../armor/index.html">Armour</a><a href="../creatures/index.html">Bestiary</a><a href="../npcs/index.html">NPCs</a><a href="../reagents/index.html">Reagents</a><a href="../zones/index.html">Zones</a></nav>
+  <input id="q" type="search" placeholder="Search everything…" autocomplete="off" spellcheck="false">
+  <button class="theme-toggle" id="themeToggle" title="Toggle light/dark">◐</button>
+  <div id="results"></div>
+</header>
+<main>
+<p class="crumbs"><a href="../index.html">Home</a> › <a href="index.html">Guides</a> › Shrines</p>
+<h1>Shrines</h1>
+
+<p class="lede">A shrine is a stone object in a room that is dedicated to one of the six gods, and
+while it is dedicated it adds a flat bonus to the spell power of <em>every caster of that god in
+the world</em> — not just the person who dedicated it. There are three of them, each behind
+something unpleasant, and any player can take one from another god by walking up and leaving a
+different offering. That is the whole design: a small permanent buff to a whole faction, held in a
+place that is deliberately hard to reach and impossible to hold.</p>
+
+<h2>What the bonus actually is</h2>
+
+<p>Every shrine declares <code class="k">piShrine_power = 6</code>. The server keeps a running total
+per school in <code class="k">plShrine_Powers</code>, rebuilt from scratch whenever any shrine changes
+hands, and a spell being cast adds its school's total after every other modifier has been
+applied.</p>
+
+<div class="formula">RecomputeShrineTotals()
+    plShrine_Powers = [0,0,0,0,0,0]                      % one slot per school
+    for each shrine:  plShrine_Powers[allegiance] += GetPower()   % 6 per shrine
+
+GetShrineBonus(school)
+    0                       if school is outside SS_SHALILLE(1) … SS_JALA(6)
+    5                       if plShrine_Powers has never been built
+    plShrine_Powers[school] otherwise
+
+% and in the spell itself:
+iSpellPower = iSpellPower + iShrines + iItemModifier</div>
+<p class="cite">kod/util/system.kod:2795 <code class="k">RecomputeShrineTotals</code>, :2827
+<code class="k">GetShrineBonus</code>; kod/object/passive/spell.kod:2221–2225;
+kod/object/passive/shrine.kod:48 <code class="k">piShrine_power</code></p>
+
+<p>Two things about that read backwards. <strong>The bonus is added last</strong>, after all the
+ordinary scaling, so it is a flat addition rather than a percentage and is worth proportionally more
+to a weak caster than a strong one. And <strong>the fallback when the table has never been built is
+5, not 0</strong> — a freshly started server gives every school a small bonus until the first
+recompute, so a measurement taken early is not a measurement of anybody's shrines.</p>
+
+<h2>How a shrine changes hands</h2>
+
+<p>You do not talk to a shrine or use it. You <strong>drop an offering next to it</strong>. The room
+posts a check on anything that lands, and if the item is within one square of the shrine and is an
+<code class="k">Offering</code>, the shrine takes it.</p>
+
+<ul>
+  <li><code class="k">GotOffering</code> tests <code class="k">IsClass(what,&amp;Offering)</code>.
+  Anything else gets <em>"The shrine finds nothing to its liking."</em></li>
+  <li><code class="k">MakeOffering</code> sets <code class="k">piAllegiance</code> to the offering's
+  own god, calls <code class="k">RecomputeShrineTotals</code>, and <strong>deletes the offering</strong>
+  — the gods eat it.</li>
+  <li>An offering is a plain <code class="k">PassiveItem</code>: average value 1000, weight 25, bulk
+  30, carrying a <code class="k">vrAllegiance</code> that says which god it belongs to.</li>
+</ul>
+<p class="cite">kod/object/passive/shrine.kod:82 <code class="k">GotOffering</code>, :101
+<code class="k">MakeOffering</code>; kod/object/item/passitem/offering.kod;
+kod/util/system.kod <code class="k">ShrineCheckItem</code> (radius test is
+<code class="k">distance² &lt; radius²</code>, called with radius 1)</p>
+
+<p><strong>Dedicating a shrine is announced to every player logged on.</strong> Not to the room, not
+to the guild — <code class="k">TellServer</code> loops over
+<code class="k">GetUsersLoggedOn</code> and sends each of them a line and a sound chosen by the god:
+a triumphant call for Kraanan, a chill up the spine for Qor, mischievous noises for Riija. There is
+no quiet way to do this, which is the point of it being contested.</p>
+
+<h2>The three shrines, and why they are where they are</h2>
+
+<div class="tablewrap"><table class="data">
+<thead><tr><th>Constant</th><th>Where</th><th>What is in the way</th></tr></thead>
+<tbody>
+<tr><td><code class="k">SHRINE_ORCSHRINE</code> (1)</td><td>Obfal's Sepulchre</td><td>an orc cave</td></tr>
+<tr><td><code class="k">SHRINE_ISLAND</code> (3)</td><td>A dark, humid cavern (Ko'catan)</td><td>the island, and everything on it</td></tr>
+<tr><td><code class="k">SHRINE_FOREST</code> (5)</td><td>The Forest Shrine — room 555</td><td>an acid gas maze that kills</td></tr>
+</tbody></table></div>
+<p class="cite">kod/include/blakston.khd:2648–2652; kod/object/active/holder/room/monsroom/orccave5.kod:123,
+kcforest/ka0.kod:166, e5.kod:98</p>
+
+<p>The numbering is 1, 3, 5 with gaps. Two more identifiers exist in the range and nothing in the
+room tree creates a shrine with them, so either two shrines were planned and never built or two were
+removed — a constant that exists is not an object that stands somewhere, and the source cannot tell
+the difference.</p>
+
+<h2>The Forest Shrine maze, in detail</h2>
+
+<p>This is the one worth explaining, because it is the one that kills. Room 555 is a field of acidic
+fog with a single safe row through it. The room picks that row <strong>at random</strong> when the
+puzzle initialises, and it <strong>moves as you cross</strong>.</p>
+
+<p>Standing at the entrance is an NPC, <strong>Lady Phoenix</strong>. You ask her for protection; she
+registers you as <em>the runner</em> and then tells you, one step at a time, which row is currently
+safe. Only one runner is allowed at a time — a second is told <em>"A mysterious force prevents you
+from entering the gas field."</em> and refused.</p>
+
+<p>Step onto a wrong square and the room punishes you:</p>
+
+<div class="formula">PunishPlayer(who)
+    damage = GetBaseMaxHealth(who) / 3          % as ATCK_SPELL_ACID
+    if AssessDamage(...) kills them:
+        killed(who)                             % outright, not "reduced to 0"
+        "The acid steam melts the flesh from your bones."
+    otherwise:
+        teleport them back to row 9, col 3      % the entrance
+        InitPuzzle()                            % and the safe row is re-rolled</div>
+<p class="cite">kod/object/active/holder/room/monsroom/e5.kod:452 <code class="k">PunishPlayer</code>,
+:42 and :44 for the two messages</p>
+
+<p>A third of base max health per wrong step means <strong>three mistakes kill anyone, from full
+health, regardless of level</strong> — armour does not enter into it and neither does how tough the
+character is, because the damage is computed from their own maximum. And being bounced back to the
+entrance re-rolls the puzzle, so a failed attempt does not leave you with partial knowledge of the
+route.</p>
+
+<div class="callout"><p><strong>This room is a hard block for bots in this repository.</strong>
+Nothing about the safe row is visible to a router: it is random, it moves, and the only way to learn
+it is to hold a conversation with an NPC. A character that has not been taught the protocol is not
+taking a risk in there, it is walking a fixed number of steps to its death — which is how the fleet
+lost Statler. Room 555 is in <code class="k">NEVER_ENTER</code> in
+<code>tools/m59-map.mjs</code>: it is removed from the routing graph on every pass including the
+permissive fallback, so an errand that would need to cross it fails and says so. A character already
+standing in it can always walk out, and an operator can still send someone deliberately by passing
+<code class="k">allowHazardDestination</code>.</p></div>
+
+<h2>So why would anyone run it?</h2>
+
+<p>Not for loot — there is none. The shrine pays nothing to the person who reaches it. What it buys
+is <strong>+6 spell power for every caster of your god on the server, for as long as it stays
+yours</strong>, plus a server-wide announcement that it happened.</p>
+
+<p>That makes shrines a <em>faction</em> objective rather than a personal one, and the only kind of
+persistent territory in the game that is contested by errand rather than by combat. Holding one is
+not possible: there is no lock, no cooldown and no ownership check on
+<code class="k">MakeOffering</code>. Anyone who can reach the shrine with an offering of their own
+takes it, immediately, and the whole world is told. The maze is not a difficulty gate protecting a
+prize — it is the cost of flipping it, paid again by every side, every time.</p>
+
+</main>
+<footer class="sitefoot">
+Every number on this site is compiled from the Meridian 59 server source in
+<code>kod/</code> and the client sprites in <code>run/localclient/resource</code>.
+Citations are <code>file:line</code> in that tree. Sprites are the game's own bitmaps,
+decoded from <code>.bgf</code>. Where a page states a formula, it is the formula the
+server actually runs — not a community estimate.
+</footer>
+<script>window.M59_REL="..";</script>
+<script src="../assets/site.js"></script>
+
+</body>
+</html>

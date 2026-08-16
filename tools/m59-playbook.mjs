@@ -93,6 +93,23 @@ export const VERBS = {
   logoff: { args: ['stay_off_s'], why: 'log out, and stay out for a while' },
   say: { args: ['message'], outward: true, why: 'speak to the room' },
   tell: { args: ['to', 'message'], outward: true, why: 'speak to one character' },
+  // SAY_YELL (2) reaches this room AND the ones next to it (user.kod:4088), which is the
+  // difference between telling the person killing you and telling somebody who might come.
+  yell: { args: ['message'], outward: true, why: 'shout to this room and the adjacent ones' },
+  // SAY_GUILD (10) reaches every guild member who is logged on, anywhere in the world
+  // (UserSayGuild, user.kod:4112). Refused with a sentence if the character has no guild.
+  tell_guild: { args: ['message'], outward: true, why: 'tell the guild, wherever they are' },
+  // WHAT A PLAYER ACTUALLY DOES WHEN SOMEBODY IS KILLING THEM, as one verb because the
+  // order matters and the playbook fires ONE rule per trigger. Shout where you are, tell
+  // the guild so somebody equipped can come, and only then go offline — a chaser cannot
+  // follow you off, but neither can help find you once you have gone.
+  //
+  // BOTH SENTENCES ARE LITERALS AND THE LOCATION IS IN THEM. That is not a limitation to
+  // work around: `room` is a fact on this trigger, so a playbook writes one rule per room
+  // with the room named in the sentence its author chose. Assembling "help, I am in %s"
+  // here would be the fleet saying something nobody wrote.
+  call_for_help: { args: ['message', 'guild_message', 'stay_off_s'], outward: true,
+                   why: 'shout for help, tell the guild, then log off and stay off' },
   // THE ESCAPE HATCH, and the only verb that waits. Marks the character busy and hands
   // the decision to whoever holds it, time-boxed. Explicit, per trigger, opt-in — so
   // that "we blocked on a bot while being attacked" is always something somebody chose.
@@ -255,7 +272,18 @@ export function validate(pb) {
           say(`${at}.message`, 'over 160 characters; the game truncates and the tail is lost');
       }
       if (r.do === 'tell' && !r.to) say(`${at}.to`, 'tell needs somebody to tell');
-      if (r.do === 'logoff') {
+      // The second sentence is optional — a character with no guild has nobody to tell —
+      // but if one is written it goes to real people and is held to the same standard.
+      if (r.do === 'call_for_help' && r.guild_message !== undefined) {
+        if (typeof r.guild_message !== 'string' || !r.guild_message.trim())
+          say(`${at}.guild_message`, 'written but empty. Leave it out to skip the guild tell');
+        else if (/[{}$]|\bundefined\b/.test(r.guild_message))
+          say(`${at}.guild_message`, 'looks like a template. This is sent verbatim to real ' +
+                                     'people — write the sentence you mean');
+        else if (r.guild_message.length > 160)
+          say(`${at}.guild_message`, 'over 160 characters; the game truncates and the tail is lost');
+      }
+      if (r.do === 'logoff' || r.do === 'call_for_help') {
         const s = num(r.stay_off_s);
         if (s === null || s < 0) say(`${at}.stay_off_s`, 'must be a number of seconds');
         else if (s > 3600) say(`${at}.stay_off_s`, 'over an hour. A character that is off is ' +

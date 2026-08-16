@@ -946,6 +946,94 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   — it drives both ends and verifies the receiver actually holds the goods afterwards, which
   is the whole reason it exists.
 
+- **"BOUGHT X BUT WON'T WIELD IT" IS ALMOST ALWAYS "CAN'T PUT DOWN Y", AND THERE ARE
+  EXACTLY TWO THINGS THAT DO IT.** A character that buys a mace and keeps swinging a long
+  sword is not a ranking bug and not a failed purchase — something already in its hands
+  refuses to come off, and both culprits are silent about it in the ways this file keeps
+  warning about.
+
+  **A CURSED WEAPON CANNOT BE PUT DOWN, EVER.** `WeapAttCursed.ItemReqUnuse`
+  (`wacursed.kod:97`) tests nothing at all — it returns FALSE unconditionally and says
+  *"%s%s seems to cling to your hand!"* — and `ItemReqLeaveOwner` refuses the drop for as
+  long as the item is in `getplayerusing`. So **wielding one is the only irreversible
+  mistake in this repository**: no swap, no sale, no handover, no drop, for the life of
+  the character.
+
+  And it is a **downgrade, not a trade-off**: `ModifyDamage` and `ModifyHitRoll` both
+  return `x - 2*power`, so it is strictly worse than what it replaced at hitting *and* at
+  hurting. There is no upside to weigh against being stuck with it.
+
+  Nothing in the harness knew the attribute existed. The name is `"cursed %s"`, so a
+  cursed long sword matches `/long ?sword/` and scored **7** — ahead of every mace in the
+  pack. It is **10% of the item-attribute treasure table**
+  (`AddToItemAttTreasureTable(#percent=10)`) and this fleet loots a weapon from almost
+  every kill, so it is a live hazard rather than a curiosity. `isCursed` in
+  `m59-skills.mjs` keeps it out of `weaponRanking`.
+
+  **The guard is on WIELDING only, and that is deliberate.** One that is merely carried is
+  harmless and still sellable — `ItemReqLeaveOwner` refuses only while it is in the use
+  list — so it stays a weapon to `weaponScore`, `sellable` and the equipment plan, and the
+  ordinary sell rules shed it. Scoring it zero would make it invisible to the very code
+  that should be getting rid of it. **Unwieldable, not invisible.**
+
+  **The other culprit is a TOKEN**, which takes both hand slots and is already on the
+  fleet row as `holding_token` — see the note in `m59-broker.mjs` about why it is a flag
+  rather than a reading. Check that first; it is free.
+
+- **A SMITH DOES NOT BUY MUSHROOMS, AND OFFERING HIM ONE IS A SUCCESSFUL CALL THAT RETURNS
+  A SILENCE.** What a merchant deals in is `ObjectDesired`, declared per class.
+  `Monster.ObjectDesired` (`monster.kod:4707`) returns TRUE and its own docstring says
+  *"This is set in individual buyers. It allows them to pick and choose what they want to
+  buy."* — **fifteen classes in the tree override it**, each in a couple of lines of
+  category tests. That is the whole vocabulary, and `m59-buyers.mjs` is it with citations.
+
+  The categories are **not** the item kinds, and nothing else groups them this way:
+
+  | predicate | is | `monster.kod` |
+  |---|---|---|
+  | `IsObjectWeapon` | Weapon | :4142 |
+  | `IsObjectWearable` | Armor, Helmet, Gauntlet, Necklace, **Shield**, Pants | :4183 |
+  | `IsObjectSundry` | Torch, Flask, Mug, **Food** | :4152 |
+  | `IsObjectMisc` | Chalice, Scepter, SpecialWand, SpellItem, Book, Arsenic, SpiderEgg(Shell), Key | :4165 |
+  | `IsObjectGem` | JewelofFroz, Emerald, Ruby, Sapphire, Diamond, **Ring** | :4198 |
+  | `IsObjectReagent` | `IsItemType(ITEMTYPE_REAGENT)` — asks the item | :4213 |
+
+  **A GEM IS ALSO A REAGENT**, which is why three of the four apothecaries name the
+  exclusion explicitly (`TsApoth.kod:66`, `bqapoth.kod:128`, `kcapoth.kod:49`) and why
+  **Hazar is the only apothecary that takes one** (`hzapoth.kod:55`). `Ring` counting as a
+  gem is how a signet ring gets refused by a counter buying every other reagent. And the
+  smiths are not interchangeable: five buy weapons *and* wearables, but **Marion's buys
+  weapons and shields and no body armour** (`MrSmith.kod:80`), so folding the six into one
+  rule sells his leather to a silence.
+
+  **`buys_anything` on the merchant row does not answer this and inverts it.** It is
+  computed as "did this class override `ObjectDesired`", which is accurate and is a
+  different question: it is TRUE for the bankers who take your goods and thank you, and
+  FALSE for every merchant actually worth walking to.
+
+  This cost real trips. `sell_all` offered whatever the loadout marked sellable to whoever
+  was standing there, so a run at Quintor's Smithy in Jasper offered him sapphires,
+  mushrooms and water skins — each a full offer/cancel round trip plus 900ms of pacing,
+  each returning `no counteroffer came back`, and together burying the one line that
+  mattered. It now partitions first and returns **`not_offered`** beside `sold` and
+  `refused`, with a reason and a citation per item.
+
+  ```bash
+  node tools/m59-buyers.mjs                              # the whole table
+  node tools/m59-buyers.mjs Quintor "long sword" sapphire
+  node tools/m59-buyers.mjs --who-buys sapphire          # who takes it — ask BEFORE the walk
+  ```
+
+  The MCP tool is `who_buys`, and it moves nobody. **`refused` and `not_offered` are
+  different facts**: the first was turned down at the counter, the second never left the
+  pack and is still saleable somewhere else.
+
+  **CANNOT SAY IS NOT NO, and that asymmetry is the whole safety argument.** An
+  unrecognised merchant class or an item missing from the index answers `null`, and every
+  caller offers it anyway. Being wrong about a category costs a round trip; holding
+  something back that would have sold costs the sale **invisibly** — the trip reports
+  success, the goods are still in the pack, and nothing says why.
+
 - **TWO MERCHANTS HOLD A REAL INVENTORY AND CAN RUN OUT — OF STOCK, AND OF SHELF SPACE.**
   Every other merchant assembles its list on demand and cannot run dry: `monster.kod`
   declares `vbSellFromInventory = FALSE` and only two classes in the whole tree override
@@ -1436,6 +1524,98 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   against server-built fixtures, the title ordering, the rent sign and its overlapping
   sentences, the Bookmaker's override, and the pooling arithmetic.
 
+- **THE RED NAME IS ALREADY ON THE WIRE, AND `PF_*` IS AN ENUM RATHER THAN A BITMASK — SO
+  THE OBVIOUS TEST OPENS FIRE ON EVERY DUNGEON MASTER.** The client colours a player's
+  name from nothing but its object flags (`GetPlayerNameColor`, `clientd3d/color.c:619`):
+  red for a killer, orange for an outlaw. Every room description we already receive
+  carries it; this repository simply never read it.
+
+  The bits live in `OF.PLAYER_MASK` (0x1C000) as an **enumerated field**, and
+  **`PF.DM` is 0xC000, which is exactly `PF.KILLER | PF.OUTLAW`**. So `flags & PF.KILLER`
+  is true for every DM on the server. The game's own client `switch`es on the masked
+  value; `playerClass()` in `m59-parse.mjs` does the same, and `flaggedAggressor()` is the
+  only predicate anything defensive should ask.
+
+- **THE SERVER IS THE SAFETY, AND THE RIGHT MOVE IS TO LEAVE IT ON.** `PFLAG_SAFETY` is a
+  real server-side flag, not a client courtesy, and `Player.CheckStatusAndSafety`
+  (`player.kod:3767`) says what it does in its own docstring: *"PFLAG_SAFETY prevents
+  accidental attacks. **You can always successfully hit a murderer or outlaw, though.**"*
+
+  So with safety ON the server does exactly the discrimination a defensive fleet wants:
+
+  | | with our safety ON |
+  |---|---|
+  | attack an ordinary player | **refused** — *"Hey! You almost hit %s%s! Good thing your safety was on!"* (`player.kod:177`) |
+  | attack a murderer or outlaw | allowed, and the outlaw-granting branch is skipped entirely (`player.kod:3816`) |
+  | **kill** a murderer or outlaw | `piJustified_kill_count`, **no** murderer flag, **no** outlaw flag, no faction loss (`player.kod:4841`, `:4856`) |
+
+  Turning safety off to fight back would be strictly worse: it buys nothing we need and
+  removes the interlock. `defend_against_players` therefore never touches it.
+
+- **A MONSTER DOES NOT COME BACK TOMORROW, SO SELF-DEFENCE NEEDS A MEMORY AND THE MEMORY
+  IS THE FLEET'S.** `m59-grudge.mjs` records who attacked us, fleet-wide, for an hour. One
+  character being hit is everybody's information — that is what lets eight fleetmates in
+  the room defend the one that got hit, and what lets any of them recognise the same
+  person later in another town.
+
+  **Three things must all hold before a swing**, and only the first is ours to get wrong:
+
+  1. the **grudge** — this name attacked one of ours inside the hour;
+  2. the **live flag** — the object in front of us is carrying `PF_KILLER` or `PF_OUTLAW`
+     *right now*, re-read every time and never taken from the record;
+  3. the **server's own safety**, above.
+
+  **It is keyed on the NAME, which is the weaker key, and deliberately.** Everything else
+  here insists on the object id — but that rule exists because a live session gives the
+  server's own answer, and **a stranger gives us no session**, while object ids are
+  renumbered on every save. An hour-long grudge keyed on an id would outlive the id. The
+  cost is bounded by rule 2: to be hit under a coincidental name you must *also* be
+  currently flagged, which the server permits and penalises nobody for.
+
+  `node tools/m59-grudge.mjs` reads the book; `--forgive <name>` and `--clear` empty it.
+  It is **gitignored**, because every row is an accusation against a named real person.
+
+  `node tools/m59-grudge-test.mjs` (48) is the contract test, and the DM assertion in it
+  should never be deleted.
+
+- **A TRIP THAT CANNOT FIX THE THING THAT OPENED IT WILL RUN FOR EVER, AND EVERY LAP OF IT
+  REPORTS SUCCESS.** `bankRun` has five doors and they have different remedies: a full pack
+  is fixed by SELLING, a reagent shortfall only by BUYING, and buying needs money. The
+  `supply` trigger was added to `checkIfShouldSell` long after `bankRun` learned to read
+  that function's answer as `packFull`, so a shortfall was routed to a **market** — Roq
+  buys and sells nothing — and the character arrived with an empty pack, sold nothing,
+  walked one room to the apothecary with the two shillings it set out with, was refused,
+  and walked back with the condition exactly as true as when it started.
+
+  Measured 2026-08-16: **Fozzie made the 110 → 104 round trip every thirty-five seconds for
+  over five hours** — 155 `buy_declined` in one day, every one reading `spendable: 2`, 0
+  kills in the last half hour — **while holding 27,282 shillings in the bank**. Twelve of
+  twenty-one were in the same loop and the fleet was sitting on **666,540 banked
+  shillings**. Nothing errored, nothing stalled, and `m59-supervise.mjs` had nothing to
+  unstick because the character was moving perfectly well.
+
+  Three things kept it invisible, and all three are the general lesson:
+
+  - **Every trip that was not the food one logged `going to the bank`**, including the ones
+    walking to a market. The one line an operator had named neither the destination nor the
+    reason, so an hour of ping-pong read as a fleet doing its banking. The note now names
+    the errand and carries the trigger and the bill.
+  - **THE CHARACTER WAS NOT POOR, IT WAS ILLIQUID** — and the door for that already existed.
+    `needsCashFirst` sends a character to a bank before the shop and was written for hunger;
+    nobody wired it to supply. A balance buys nothing while it is in the bank.
+  - **The comment saying this trip "cannot spin, because it always achieves something" was
+    true when it was written** and stopped being true when the trigger was added. A cooldown
+    was declined on that reasoning, so the loop ran at one lap per keeper pass.
+
+  `townDestinations` is now the single ordered answer to "which counter", written as a table
+  so the next door added is a row rather than another arm of a nested conditional, and
+  `reagentGapCost` is the single answer to "what does this errand cost" — the trip and the
+  withdrawal both read it, and two answers there is how a character draws pocket money for
+  an 8,400sh fill and is back on the road inside the hour. There is a cooldown as well as a
+  destination, because the destination fix assumes there is a balance to fetch: with an
+  empty bank too, the shortfall is real and unfixable this hour and the character should be
+  farming rather than walking.
+
 - **A KEEPER EARNING NOTHING LOOKS EXACTLY LIKE A HEALTHY ONE, AND THE CHECK THAT SAYS SO
   WAS UNREACHABLE FOR A YEAR.** `noProgress()` fires when nothing WORKS. `yieldCheck()` fires
   when everything works and none of it is worth anything — the keeper kills something every
@@ -1777,6 +1957,16 @@ remarks and a value may collect both.
   enough to be handed it, and how far a courier walks: that a loadout shortfall of any kind
   reaches the board with its quantity, that the neighbourhood is polled nearest-first, and
   that a stale declaration and a zero shortfall are both refused as delivery orders) and
+  `node tools/m59-grudge-test.mjs` (48 — **the contract test for the only code here that
+  can make a character hit a real person**: that `PF_*` is read as an enum so a Dungeon
+  Master is never mistaken for a murderer, that a grudge and a live flag are BOTH required
+  and neither alone is enough, that the hour is measured from the last blow, and that a
+  fleetmate is refused before anything else is asked) and
+  `node tools/m59-townrun-test.mjs` (15 — **which counter a town trip is aimed at, and what
+  the errand costs**: that a reagent shortfall goes to the apothecary and never to a market
+  that cannot sell it anything, that an empty purse sends it to a bank FIRST, that a full
+  pack still goes to Roq, and that the bill the trip and the withdrawal both read has one
+  home. See the trap below on a trip that cannot fix the thing that opened it) and
   `node tools/m59-guild-test.mjs` (192 — **the contract test for a command space that
   refuses in total silence**: that the permission check runs off the server's own bitmask
   rather than the rank table, that invite is LORD while exile is LIEUTENANT, that
@@ -1803,6 +1993,12 @@ remarks and a value may collect both.
   room object id read out of a reply header, a karma figure a hundred times too small, a
   name with a digit in it that the server accepts and silently replaces — and all of those
   are decidable from a string) and
+  `node tools/m59-buyers-test.mjs` (38 — **what a merchant will actually buy**: that a gem
+  is also a reagent and the apothecaries' exclusion turns on it, that Marion's smith takes
+  no body armour, that an exclusive rule excludes a sibling of the same family, and above
+  all that "cannot say" falls through to OFFERING. The two failure directions are not
+  symmetric — a wasted offer costs a round trip, a wrongly withheld item costs the sale and
+  is invisible) and
   `node tools/m59-merchants-test.mjs` (77, dropping to 43 without `M59_ROOT`) and
   `node tools/m59-roo-test.mjs` (57, of which 9 skip without a copy of the game's
   `resource/rooms`). The rest need a live server —
