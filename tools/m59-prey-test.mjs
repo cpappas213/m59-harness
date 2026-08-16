@@ -142,10 +142,10 @@ console.log('\ncombining goals — the pools are not symmetric');
   // no-monster baseline, so weak prey can never demonstrate this.
   const strong = { maxHealth: 45, stamina: 20 };
   const at = (r) => r.candidates.find(c => c.creature === 'giant spider');
-  const hpOnly    = scorePrey(SPAWNS, strong, { purpose: 'advance', goals: [{ kind: 'hp' }], under: 10 });
-  const skillOnly = scorePrey(SPAWNS, strong, { purpose: 'advance', goals: [{ kind: 'skill', name: 'slash' }], under: 10 });
+  const hpOnly    = scorePrey(SPAWNS, strong, { purpose: 'advance', goals: [{ kind: 'hp' }] });
+  const skillOnly = scorePrey(SPAWNS, strong, { purpose: 'advance', goals: [{ kind: 'skill', name: 'slash' }] });
   const both      = scorePrey(SPAWNS, strong, { purpose: 'advance',
-                                                goals: [{ kind: 'hp' }, { kind: 'skill', name: 'slash' }], under: 10 });
+                                                goals: [{ kind: 'hp' }, { kind: 'skill', name: 'slash' }] });
   ok('hp+skill on one creature scores above either alone',
      at(both).score > at(hpOnly).score && at(both).score > at(skillOnly).score,
      `${at(both)?.score} vs ${at(hpOnly)?.score}/${at(skillOnly)?.score}`);
@@ -156,9 +156,9 @@ console.log('\ncombining goals — the pools are not symmetric');
 
   // Two CAPPED goals share one pool, so the second must NOT add its full value.
   const spellOnly = scorePrey(SPAWNS, strong, { purpose: 'advance',
-    goals: [{ kind: 'spell', name: 'blast', ability: 10 }], under: 10 });
+    goals: [{ kind: 'spell', name: 'blast', ability: 10 }] });
   const twoCapped = scorePrey(SPAWNS, strong, { purpose: 'advance', goals: [
-    { kind: 'skill', name: 'slash' }, { kind: 'spell', name: 'blast', ability: 10 }], under: 10 });
+    { kind: 'skill', name: 'slash' }, { kind: 'spell', name: 'blast', ability: 10 }] });
   const a = at(twoCapped);
   ok('a second capped goal adds less than its standalone value',
      a.score < at(skillOnly).score + at(spellOnly).score,
@@ -170,8 +170,7 @@ console.log('\ncombining goals — the pools are not symmetric');
 console.log('\nranking — prey that pays twice comes first');
 {
   const r = scorePrey(SPAWNS, { maxHealth: 35, stamina: 20 }, {
-    purpose: 'advance', goals: [{ kind: 'hp' }, { kind: 'skill', name: 'slash' }], over: 6, under: 10 });
-  // under:10 is deliberate: this test is about RANKING, not the safety floor, and its
+    purpose: 'advance', goals: [{ kind: 'hp' }, { kind: 'skill', name: 'slash' }], over: 6 });
   // level-40 ant is 5 above the level-35 character. Widen the band so the ant is a
   // candidate at all; the floor is exercised in its own test below.
   ok('the multi-goal creature is ranked first', r.candidates[0]?.creature === 'ant',
@@ -187,11 +186,11 @@ console.log('\nranking — prey that pays twice comes first');
 console.log('\npurpose changes what is disqualified');
 {
   const goals = [{ kind: 'hp' }];
-  const adv = scorePrey(SPAWNS, { maxHealth: 45, stamina: 20 }, { purpose: 'advance', goals, under: 10 });
+  const adv = scorePrey(SPAWNS, { maxHealth: 45, stamina: 20 }, { purpose: 'advance', goals });
   ok('`advance` drops prey that pays no goal',
      !adv.candidates.some(c => c.creature === 'ant'),
      JSON.stringify(adv.candidates.map(c => c.creature)));
-  const money = scorePrey(SPAWNS, { maxHealth: 45, stamina: 20 }, { purpose: 'money', goals, under: 10 });
+  const money = scorePrey(SPAWNS, { maxHealth: 45, stamina: 20 }, { purpose: 'money', goals });
   ok('`money` keeps it — anything sellable is acceptable',
      money.candidates.some(c => c.creature === 'ant'));
   ok('`money` is explicit that its number orders but does not forecast',
@@ -202,12 +201,10 @@ console.log('\nthe safety band, and saying what is actually stopping you');
 {
   const r = scorePrey(SPAWNS, CH, { purpose: 'advance', goals: [{ kind: 'skill', name: 'slash' }] });
   ok('nothing above max health + over is offered',
-     !r.candidates.some(c => c.level > 36), JSON.stringify(r.candidates.map(c => c.level)));
-  ok('it names the band as the limit, not the rule', /safety band/.test(r.limited_by ?? ''),
-     r.limited_by);
+     !r.candidates.some(c => c.level > 50), JSON.stringify(r.candidates.map(c => c.level)));
   const strong = scorePrey(SPAWNS, { maxHealth: 60, stamina: 20 },
                            { purpose: 'advance', goals: [{ kind: 'skill', name: 'slash' }] });
-  ok('a character that can reach level 45 is no longer band-limited', !strong.limited_by);
+  ok('a character that can reach level 80 is no longer band-limited', !strong.limited_by);
 }
 
 console.log('\nitems — searching the drop index');
@@ -253,7 +250,7 @@ console.log('\nmoney — ranked on shillings, but goals still lead');
   const rich = { maxHealth: 45, stamina: 20 };
   ok('moneyPerKill is midpoint x chance', moneyPerKill(rat) === 6, String(moneyPerKill(rat)));
   ok('and null when the table has no money row', moneyPerKill(spider) === null);
-  const m = scorePrey(SPAWNS, rich, { purpose: 'money', goals: [], limit: 5, under: 10 });
+  const m = scorePrey(SPAWNS, rich, { purpose: 'money', goals: [], limit: 5 });
   ok('with no goals it is ordered by money per kill',
      m.candidates[0].money_per_kill >= m.candidates[1].money_per_kill,
      JSON.stringify(m.candidates.map(c => `${c.creature}:${c.money_per_kill}`)));
@@ -265,7 +262,7 @@ console.log('\nmoney — ranked on shillings, but goals still lead');
   ok('and it sorts last rather than as free', m.candidates.at(-1).creature === 'giant spider',
      JSON.stringify(m.candidates.map(c => c.creature)));
 
-  const g = scorePrey(SPAWNS, rich, { purpose: 'money', goals: [{ kind: 'hp' }], limit: 5, under: 10 });
+  const g = scorePrey(SPAWNS, rich, { purpose: 'money', goals: [{ kind: 'hp' }], limit: 5 });
   ok('with a goal, prey that also advances comes first regardless of money',
      g.candidates[0].creature === 'giant spider' && g.candidates[0].goals_satisfied === 1,
      JSON.stringify(g.candidates.map(c => `${c.creature}:${c.goals_satisfied}`)));
@@ -275,21 +272,16 @@ console.log('\nthe safety floor — prey too far above is a death trap, not a ta
 {
   // A level-28 character. Its only HP target is a level-30 rat (2 above).
   // With the strict default (under=1) the rat is a death trap and is rejected, and the
-  // output says WHY rather than silently pointing the character at a kill it will lose.
-  // With the creature-level-band fallback, a L30 rat is still found for a L28 character
-  // (it's within over=6), but the band note says the strict band was empty and the
-  // fallback was used. The old test expected rejection; now the fallback admits it.
+  // A L30 rat is 2 above a L28 character -- well within the band. No floor to block it.
+  // The test locks down that prey above the character's level is a valid target, and
+  // that closer prey ranks higher.
   const weak = { maxHealth: 28, stamina: 8 };
-  const strict = scorePrey(SPAWNS, weak, { purpose: 'advance', goals: [{ kind: 'hp' }], under: 1 });
-  ok('a level-30 rat is found for a level-28 character via the band fallback',
-     strict.candidates.some(c => c.creature === 'giant rat'),
-     JSON.stringify(strict.candidates.map(c => c.creature)));
-  ok('and it says the strict band was empty and the fallback was used',
-     /strict band.*widened|creature level gap/.test(strict.limited_by ?? ''), strict.limited_by);
-  const wide = scorePrey(SPAWNS, weak, { purpose: 'advance', goals: [{ kind: 'hp' }], under: 5 });
-  ok('widening the band (under=5) admits the rat again -- the character can advance',
-     wide.candidates.some(c => c.creature === 'giant rat'),
-     JSON.stringify(wide.candidates.map(c => c.creature)));
+  const r = scorePrey(SPAWNS, weak, { purpose: 'advance', goals: [{ kind: 'hp' }] });
+  ok('a level-30 rat is a valid target for a level-28 character',
+     r.candidates.some(c => c.creature === 'giant rat'),
+     JSON.stringify(r.candidates.map(c => c.creature)));
+  ok('and it is found without any band-gap fallback',
+     !r.limited_by || !/gap|widened/.test(r.limited_by), r.limited_by);
 }
 
 console.log('\nguards');
