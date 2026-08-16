@@ -67,26 +67,50 @@ The GOAP `buy_next_skill` action handles purchases automatically when funds are 
 **Polls:** broker at `http://127.0.0.1:8901` every 60 seconds. Reads the `/fleet` endpoint,
 derives world state for each character, plans and executes one action per character per pass.
 
+### GOAP Atomics (shared with the behavior tree)
+
+`tools/m59-atomics.mjs` is the single implementation of the primitive keeper operations that
+both the GOAP planner and the behavior tree delegate to — so a primitive has one home instead
+of two copies (GOAP over broker MCP tools, the BT over in-process keeper methods) that could
+drift. Each atomic is invoked `runAtomic(name, ctx, params)` through a small driver:
+
+- `brokerDriver(baseURL)` — GOAP: verbs issue broker MCP tool calls over HTTP.
+- `keeperDriver(keeper)` — BT: verbs call in-process keeper methods.
+
+Atomics: `revive_keeper`, `stop_keeper`, `travel_to`, `set_policy`, `pick_prey`, `claim_inn`,
+`buy_skills`, `leave_raza`, `who_in_room`, `equip_best`, `conjure_weapon`, `buy_weapon`, plus
+the `relocate_then_revive` composite (the `stop→travel→revive` triple the five town-trip actions
+used to copy-paste) and `innDest(room)`. Each atomic declares its `effect` (the world-state field
+it moves forward), so GOAP's cycle-guard and the BT's docs read the same monotonicity answer.
+
+GOAP actions keep their planning decisions (which prey, which room) in `m59-goap.mjs` and
+delegate only the mechanical tool calls to atomics. The BT action nodes in `m59-bt-nodes.mjs`
+wrap atomics into the RUNNING/slot protocol, and `get_armed` is unchanged by the refactor.
+
+**The GOAP action library (`buildActionLibrary`)** — each action is `{name, cost, pre, effect, run}`,
+with `run` delegating to atomics via the broker driver (`_ctx`).
+
 ### Actions and what triggers them
 
 | Action | Precondition | What it does |
 |---|---|---|
-| `revive_inert` | `keeperRunning && inert` | Clears post-restart inert state |
+| `revive_inert` | `keeperRunning && inert && !busyErrand && inertWhy not "unarmed…"` | Clears post-restart inert state |
 | `stop_and_travel` | Off assigned room | Travels to assigned room |
 | `set_purpose` | No purpose set | Sets `advance` purpose with hp goal |
 | `set_prey` | No hunt or yield paying=false | Picks best prey via `prey` tool |
 | `rest_in_inn` | In inn, not rested | Parks at inn to rest |
 | `avoid_crowded_room` | Stalled, healthy, outsider players in room | Moves to different room |
+| `retarget_on_stall` | Stalled, healthy, no assigned room | Picks new prey via `prey` tool |
 | `retreat_to_inn` | Stalled, hurt (<70%), not at inn | Travels to inn to rest |
 | `leave_capped_room` | Stall: `room capped by creatures we will not fight` | Clears assigned_room |
 | `relocate_no_safe_wall` | Stall: `no safe wall here` | Clears assigned_room |
 | `town_trip_bags_full` | Stall: `bags full` | Travels to town to sell/bank |
 | `retarget_unreachable` | Stall: `cannot reach` or `roam limit` | Picks new prey |
 | `rescue_trapped` | Stall: `trapped` or `too hurt to fight` | Evacuates to inn |
-| `send_to_town_for_gear` | Stall: `unarmed — N mana` | Travels to town, keeper buys weapon |
+| `send_to_town_for_gear` | Stall: `unarmed — N mana`, **or** inert-with-unarmed reason | Travels to town, keeper buys weapon |
 | `buy_next_skill` | Has skill plan, has funds | Queues next skill purchase |
 | `escalate_to_operator` | Stalled >5min, nothing else worked | Writes needs-operator flag |
-| `leave_raza` | In Raza (rooms 1011–1018) | Walks out of Raza |
+| `leave_raza` | In Raza (rooms 1011–1018) **and level ≥ 25** | Walks out of Raza |
 
 ### World state fields
 
@@ -96,6 +120,20 @@ Derived in `deriveWorldState()`. Key ones for writing new actions:
 - `unarmedStall` — true when stall why starts with "unarmed"
 - `learningCooldown` — true while `buy_next_skill` is cooling down (5 min)
 - `gearTripCooldown` — true while `send_to_town_for_gear` is cooling down (10 min)
+- `inert` — the keeper is awake but not steering. **The fleet row publishes no `inert`
+  field** (its `autopilot` is a deliberate subset); it surfaces as
+  `committed.kind === 'driven'` (describeCommitment returns 'driven' exactly when inert)
+  or the activity string `"inert -- <why>"`. Without that, `revive_inert` could never fire.
+- `busyErrand` — busy from a REAL operation (parked, busy.busy, an errand/partner/bot
+  commitment, or an external faculty claim). `committed.kind === 'driven'` (the inert
+  keeper) is NOT an errand and does not set it — that distinction is what lets
+  `revive_inert` fire while the inert-driven state itself reports `busy`.
+- `committedKind` — the commitment kind: `errand` | `parked` | `partner` | `bot` | `driven` | null
+- `inertWhy` — why the keeper is inert (the 'driven' label, or the activity after
+  `"inert -- "`). Distinguishes post-restart inert (revive fixes it) from unarmed inert
+  (revive just re-inerts — `send_to_town_for_gear` must arm it instead). `revive_inert`
+  is gated off the unarmed case for exactly this reason, which is what stops it looping
+  on an unarmed keeper.
 - `fleetNames` — Set of all fleet character names, used to identify outsiders
 
 ### Adding a new action
@@ -156,6 +194,32 @@ keeps ending up in bad rooms.
 
 **Settings that still require manual set after restart (none — fixed):** All per-character
 policy settings are now in loadout files and applied automatically.
+
+**`leave_raza` needs the map graph, not rsc (fixed 2026-08-16):** The broker tool's
+`inRaza()` used to test `rsc.get(roomNameRsc)`. When the local resource table holds zero
+strings (no container, so `setup.mjs rsc` never ran — see the m59-rsc.mjs trap), that
+returns `"<rsc 23197>"`, `inRaza()` always failed, and the GOAP supervisor re-fired
+`leave_raza` every pass with no effect (Sasquatch stalled in the Mausoleum for hours).
+`inRaza()` now resolves the room name from `worldMap.rooms[room_num].name` first, falling
+back to rsc. It is also gated in the GOAP on `level >= 25` (the tool's own threshold), so
+a sub-25 character stays in Raza — a capped-room stall there is handled by
+`leave_capped_room` instead.
+
+**Sasquatch (t5) left Raza early on 2026-08-16** during the above fix's validation: it was
+level 20, the GOAP's pre-gate `leave_raza` dragged it out, and the portal is one-way — it
+cannot return. It now hunts mummy (Raza-only prey) outside Raza and will roam until it
+stalls and the GOAP retargets it to non-Raza prey. It has no loadout; if its progression
+matters, give it one.
+
+**Latent: `stop_and_travel` inside Raza to an outside-Raza room loops.** Raza rooms
+(1011–1018) have zero exits in the map graph, so the router cannot plan a trip out; the
+broker's `leave_raza` is the only way out. With `leave_raza` now gated on `level >= 25`,
+a sub-25 character stalled in Raza whose `assigned_room` is outside Raza (an anomalous
+assignment — the keeper normally assigns a Raza room for mummy hunting) falls to
+`stop_and_travel` (cost 1), which outbids `leave_capped_room` (4) and cannot complete.
+Not fixed yet — no live character is in this state (Sasquatch is out); a future fix would
+exclude the in-Raza/outside-assignment case from `stop_and_travel` so `leave_capped_room`
+wins.
 
 ---
 

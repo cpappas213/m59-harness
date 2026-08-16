@@ -41,6 +41,7 @@ import {
   selector, sequence,
   SUCCESS, FAILURE, RUNNING,
 } from './m59-bt.mjs';
+import { keeperDriver, runAtomic } from './m59-atomics.mjs';
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -127,32 +128,32 @@ export function manaAtLeastCondition(threshold = 15) {
 }
 
 // ---------------------------------------------------------------------------
-// Action factories
+// Action factories -- all delegate to the GOAP atomic layer
 // ---------------------------------------------------------------------------
 
-// equip_best: wraps keeper.armSelf or, failing that, skills.equipBest. The
-// factory accepts the keeper so unit tests can pass a mock that records calls
-// and resolves with a fixed result. The action is synchronous from the BT's
-// point of view: on the first tick it kicks off the equip and returns RUNNING.
-// The promise's eventual status is stored on the slot so the next tick can resolve
-// to SUCCESS or FAILURE.
+// atomicAction: build a BT Action node that runs ONE GOAP atomic against a
+// keeper driver. This is the seam the atomics refactor exists for: the BT and
+// GOAP now share a single implementation of each primitive operation (see
+// m59-atomics.mjs), and a BT action node is a thin wrapper that adapts the
+// atomic's promise into the tree's RUNNING/slot protocol.
+//
+// On the first tick it kicks the atomic off fire-and-forget and returns RUNNING.
+// The promise's eventual status lands on the slot; the next tick reads it and
+// resolves to SUCCESS / FAILURE (and clears the slot, so a Retry of the
+// surrounding sequence starts clean).
 //
 // IMPORTANT: the fn returns RUNNING synchronously. If it returned the promise
 // directly, m59-bt.mjs's Action.tick would intercept the promise and replace
 // our slot with `{promise: out}`, breaking the "read slot.done next tick"
 // pattern. Run fire-and-forget side effects via .then() instead.
-export function equipBestAction(keeper) {
-  const key = 'bt_equip_best';
+function atomicAction(keeper, atomicName, params, { key, name }) {
+  const ctx = keeperDriver(keeper);
   return new Action((bb, slot) => {
     if (!slot || slot.done === undefined) {
       slot = { done: false, ok: false, error: null };
       bb._bt[key] = slot;
       Promise.resolve()
-        .then(() => (typeof keeper.armSelf === 'function'
-                       ? keeper.armSelf('BT: equip from pack')
-                       : (typeof keeper.equipBest === 'function'
-                            ? keeper.equipBest()
-                            : Promise.resolve(false))))
+        .then(() => runAtomic(atomicName, ctx, params))
         .then(r => { slot.ok = !!r; slot.done = true; })
         .catch(err => { slot.error = err; slot.ok = false; slot.done = true; });
       return RUNNING;
@@ -163,69 +164,74 @@ export function equipBestAction(keeper) {
     const ok = slot.ok;
     delete bb._bt[key];
     return ok ? SUCCESS : FAILURE;
-  }, { key, name: 'equip_best' });
+  }, { key, name });
+}
+
+// equip_best: runs the `equip_best` GOAP atomic -- wraps keeper.armSelf or,
+// failing that, skills.equipBest. The keeper driver supplies the mechanism; the
+// atomic is the single shared definition (see m59-atomics.mjs).
+export function equipBestAction(keeper) {
+  return atomicAction(keeper, 'equip_best',
+    { agent: null, why: 'BT: equip from pack' },
+    { key: 'bt_equip_best', name: 'equip_best' });
 }
 // Hoist the action key onto the factory so tests can find / clear the slot
 // without holding a reference to the constructed action.
 equipBestAction._key = 'bt_equip_best';
 
-// cast_create_weapon: wraps keeper.makeWeapon (which stands the character up,
-// checks mana, requests the spell list, casts, and verifies the weapon landed
-// before equipBest runs). Returns RUNNING while the cast is in flight, then
-// SUCCESS if a weapon appeared in the inventory, FAILURE otherwise. The
-// keeper already does the mana and spell checks; the BT only guards against
-// the case the keeper's "wait for mana" branch used to spin on forever, and
-// that guard lives in the conjure_weapon SEQUENCE's conditions.
+// cast_create_weapon: runs the `conjure_weapon` GOAP atomic -- wraps
+// keeper.makeWeapon (which stands the character up, checks mana, requests the
+// spell list, casts, and verifies the weapon landed before equipBest runs).
+// Returns RUNNING while the cast is in flight, then SUCCESS if a weapon
+// appeared, FAILURE otherwise. The keeper already does the mana and spell
+// checks; the BT only guards against the case the keeper's "wait for mana"
+// branch used to spin on forever, and that guard lives in the conjure_weapon
+// SEQUENCE's conditions.
 export function castCreateWeaponAction(keeper) {
-  const key = 'bt_cast_create_weapon';
-  return new Action((bb, slot) => {
-    if (!slot || slot.done === undefined) {
-      slot = { done: false, ok: false, error: null };
-      bb._bt[key] = slot;
-      Promise.resolve()
-        .then(() => (typeof keeper.makeWeapon === 'function'
-                       ? keeper.makeWeapon('BT: conjure weapon')
-                       : Promise.resolve(false)))
-        .then(r => { slot.ok = !!r; slot.done = true; })
-        .catch(err => { slot.error = err; slot.ok = false; slot.done = true; });
-      return RUNNING;
-    }
-    if (!slot.done) return RUNNING;
-    const ok = slot.ok;
-    delete bb._bt[key];
-    return ok ? SUCCESS : FAILURE;
-  }, { key, name: 'cast_create_weapon' });
+  return atomicAction(keeper, 'conjure_weapon',
+    { agent: null, why: 'BT: conjure weapon' },
+    { key: 'bt_cast_create_weapon', name: 'cast_create_weapon' });
 }
 castCreateWeaponAction._key = 'bt_cast_create_weapon';
 
-// travel_and_buy: walks the character to the nearest smith and buys the
-// cheapest weapon the smith has in stock. Delegates to keeper.buyWeaponsAtNearestSmith,
-// which spawns m59-outfit.mjs as a child process — the same mechanism the broker
-// uses for ability buying. The outfit script stops the keeper, walks to the smith,
-// buys, then restarts the keeper. Returns SUCCESS when the character is armed afterwards.
+// travel_and_buy: runs the `buy_weapon` GOAP atomic -- wraps
+// keeper.buyWeaponsAtNearestSmith, which spawns m59-outfit.mjs as a child
+// process (the same mechanism the broker uses for ability buying). The outfit
+// script stops the keeper, walks to the smith, buys, then restarts the keeper.
+// Returns SUCCESS when the character is armed afterwards.
 export function travelAndBuyAction(keeper) {
-  const key = 'bt_travel_and_buy';
-  return new Action((bb, slot) => {
-    if (!slot || slot.done === undefined) {
-      slot = { done: false, ok: false, error: null };
-      bb._bt[key] = slot;
-      Promise.resolve()
-        .then(() => {
-          if (typeof keeper.buyWeaponsAtNearestSmith === 'function')
-            return keeper.buyWeaponsAtNearestSmith({ why: 'BT: travel and buy' });
-          return false;
-        })
-        .then(r => { slot.ok = !!r; slot.done = true; })
-        .catch(err => { slot.error = err; slot.ok = false; slot.done = true; });
-      return RUNNING;
-    }
-    if (!slot.done) return RUNNING;
-    const ok = slot.ok;
-    delete bb._bt[key];
-    return ok ? SUCCESS : FAILURE;
-  }, { key, name: 'travel_and_buy' });
+  return atomicAction(keeper, 'buy_weapon',
+    { agent: null, why: 'BT: travel and buy' },
+    { key: 'bt_travel_and_buy', name: 'travel_and_buy' });
 }
 travelAndBuyAction._key = 'bt_travel_and_buy';
+
+// travel_to: runs the `travel_to` GOAP atomic -- wraps keeper.travel(to).
+// Spans ticks via the RUNNING/slot pattern; SUCCESS when the travel call
+// reports arrival. Not wired into get_armed (that subtree uses travelAndBuy);
+// this is the node the next subtrees (banking, errands, retreat) build on.
+export function travelToAction(keeper, to) {
+  return atomicAction(keeper, 'travel_to',
+    { agent: null, to },
+    { key: `bt_travel_to_${Math.random().toString(36).slice(2, 8)}`, name: 'travel_to' });
+}
+
+// revive_keeper: runs the `revive_keeper` GOAP atomic -- wraps keeper.revive.
+// Used by a BT recovery arm to un-inert a keeper that stopped without a revive.
+export function reviveKeeperAction(keeper) {
+  return atomicAction(keeper, 'revive_keeper',
+    { agent: null, why: 'BT: un-inert keeper' },
+    { key: 'bt_revive_keeper', name: 'revive_keeper' });
+}
+
+// stop_keeper: runs the `stop_keeper` GOAP atomic -- wraps keeper.stop.
+// Soft-stop (goInert); an intermediate of the relocate composite, exposed as a
+// node for a BT arm that needs to park a keeper before an errand.
+export function stopKeeperAction(keeper) {
+  return atomicAction(keeper, 'stop_keeper',
+    { agent: null, why: 'BT: park keeper' },
+    { key: 'bt_stop_keeper', name: 'stop_keeper' });
+}
 
 // ---------------------------------------------------------------------------
 // Subtree factories

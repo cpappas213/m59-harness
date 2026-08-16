@@ -24,6 +24,9 @@
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import {
+  brokerDriver, relocateThenRevive, runAtomic, innDest,
+} from './m59-atomics.mjs';
 
 const HERE         = dirname(fileURLToPath(import.meta.url));
 const LOADOUT_DIR  = join(HERE, '..', 'substrate', 'loadouts');
@@ -66,6 +69,12 @@ export async function callTool(name, args = {}) {
   const text = j.result?.content?.[0]?.text;
   return text ? JSON.parse(text) : null;
 }
+
+// The broker driver for the atomic layer -- one HTTP implementation, shared
+// with m59-atomics.mjs. GOAP actions delegate their mechanical tool calls to
+// runAtomic / relocateThenRevive; this driver is the mechanism that reaches the
+// broker. Planning decisions (which prey, which room) stay in the actions.
+const _ctx = brokerDriver(BROKER_URL, callTool);
 
 async function fetchFleet() {
   const data = await callTool('fleet', {});
@@ -133,7 +142,25 @@ export function deriveWorldState(row, fleetNames = new Set()) {
     purpose:       policy.purpose ?? null,
     goals:         policy.goals ?? null,
     keeperRunning: !!(row.autopilot?.running ?? row.keeper_running),
-    inert:         !!(row.autopilot?.inert ?? row.inert),
+    // The fleet row does NOT publish an `inert` field: its `autopilot` is a deliberate
+    // subset (mode/running/kills/hunt). The keeper's inert state surfaces instead as
+    // `committed.kind === 'driven'` (describeCommitment returns 'driven' exactly when
+    // inert is set) and as the activity string "inert -- <why>". Without this the
+    // revive_inert action could never fire on a live fleet.
+    inert: !!((row.autopilot?.inert ?? row.inert) ||
+              (row.committed?.kind === 'driven') ||
+              (typeof row.activity === 'string' && row.activity.startsWith('inert'))),
+    // Why the keeper is inert, when it is: the 'driven' commitment's label is the inert
+    // reason, and the activity string is "inert -- <why>". Used to tell a post-restart
+    // inert (revive fixes it) from an unarmed inert (revive just re-inerts -- it needs
+    // a weapon, so send_to_town_for_gear must handle it instead).
+    inertWhy: (row.committed?.kind === 'driven'
+               ? (row.committed?.label ?? null) : null) ||
+              (typeof row.activity === 'string' && row.activity.startsWith('inert')
+               ? row.activity.replace(/^inert\s*--?\s*/, '') : null),
+    // Which commitment, if any: 'errand' | 'parked' | 'partner' | 'bot' | 'driven' | null.
+    // 'driven' IS the inert keeper (awake, not steering) and is not a real operation.
+    committedKind: row.committed?.kind ?? null,
     stalled:       !!stalledObj,
     stalledSeconds,
     stalledWhy:    stalledObj?.why ?? null,
@@ -157,6 +184,16 @@ export function deriveWorldState(row, fleetNames = new Set()) {
     ),
     yieldPaying:   row.yield_check ? row.yield_check.paying !== false : true,
     yieldCheck:    row.yield_check ?? null,
+    // "busyErrand" -- busy from a REAL operation, as opposed to the inert-driven state.
+    // committed.kind === 'driven' is the inert keeper (awake, not steering), which is
+    // not an errand and must not block revive_inert; parked/busy.busy/errand-kind and
+    // an external faculty claim are real and do block it.
+    busyErrand: !!(
+      row.parked ||
+      (row.busy && row.busy.busy) ||
+      (row.faculties && Object.values(row.faculties).some(f => f !== 'keeper')) ||
+      (row.committed?.kind != null && row.committed?.kind !== 'driven')
+    ),
     inGame:        row.character != null && row.activity != null,
     parked_at_inn: !!(row.parked && row.parked_room != null),
     inn_room:      INN_ROOMS.has(row.room_num),
@@ -281,12 +318,15 @@ export function buildActionLibrary() {
       // Fires when the keeper loop is running but the keeper is in the inert state —
       // the typical result of a broker restart or a stop that was never followed by a
       // revive. Cost 0 so it wins over everything else when applicable.
+      // Excluded: an inert keeper whose reason is "unarmed" -- reviving it just makes it
+      // re-inert the moment it resumes (it wants a weapon it does not have), so this
+      // would loop every pass. That case belongs to send_to_town_for_gear instead.
       cost:   0,
-      pre:    'inGame && keeperRunning && inert && !busy',
+      pre:    'inGame && keeperRunning && inert && !busyErrand && !(inertWhy && inertWhy.startsWith("unarmed"))',
       effect: 'revive_inert',
       run:    async (state) => {
-        await callTool('autopilot', { agent: state.agent, action: 'revive',
-                                      why: 'goap: clearing inert state (post-restart or missed revive)' });
+        await runAtomic('revive_keeper', _ctx, { agent: state.agent,
+          why: 'goap: clearing inert state (post-restart or missed revive)' });
         console.log(`[goap] ${state.character} revive_inert: cleared`);
         return { note: 'revive_inert: keeper un-inerted' };
       },
@@ -304,11 +344,11 @@ export function buildActionLibrary() {
       run:    async (state) => {
         // `autopilot stop` = goInert (soft stop — keeps the loop running but idle).
         // Travel, then revive to un-inert the keeper on arrival.
-        await callTool('autopilot', { agent: state.agent, action: 'stop',
-                                      why: 'goap: stalled or vitals unknown -- relocate' });
-        const result = await callTool('travel', { agent: state.agent, to: state.assignedRoom });
-        await callTool('autopilot', { agent: state.agent, action: 'revive',
-                                      why: 'goap: arrived at assigned room — resuming keeper' });
+        const result = await relocateThenRevive(_ctx, {
+          agent: state.agent, to: state.assignedRoom,
+          stopWhy:  'goap: stalled or vitals unknown -- relocate',
+          reviveWhy: 'goap: arrived at assigned room — resuming keeper',
+        });
         console.log(`[goap] ${state.character} stop_and_travel: arrived=${result?.arrived} room=${state.assignedRoom}`);
         return { note: `stop_and_travel to room ${state.assignedRoom}` };
       },
@@ -320,9 +360,8 @@ export function buildActionLibrary() {
       pre:    'inGame && keeperRunning && purpose !== "advance" && purpose !== "equip"',
       effect: 'set_purpose',
       run:    async (state) => {
-        await callTool('autopilot', { agent: state.agent, action: 'set',
-                                      purpose: 'advance',
-                                      goals: [{ kind: 'hp' }] });
+        await runAtomic('set_policy', _ctx, { agent: state.agent,
+          fields: { purpose: 'advance', goals: [{ kind: 'hp' }] } });
         return { purpose: 'advance', goals: [{ kind: 'hp' }] };
       },
     }),
@@ -337,9 +376,8 @@ export function buildActionLibrary() {
         // from the goal passed into `run`. Action library stays pure.
         const target = state.goalTarget ?? state.hunt ?? 'giant rat';
         const room   = state.assignedRoom ?? state.room ?? null;
-        await callTool('autopilot', { agent: state.agent, action: 'set',
-                                      hunt: target,
-                                      assigned_room: room });
+        await runAtomic('set_policy', _ctx, { agent: state.agent,
+          fields: { hunt: target, assigned_room: room } });
         return { hunt: target };
       },
     }),
@@ -354,8 +392,7 @@ export function buildActionLibrary() {
       run:    async (state) => {
         // In the real fleet this would call `inn` (claim an inn room); the broker
         // exposes that tool. For the planner we record the intent.
-        await callTool('inn', { agent: state.agent, action: 'claim',
-                                character: state.character });
+        await runAtomic('claim_inn', _ctx, { agent: state.agent, character: state.character });
         return { parked_at_inn: true };
       },
     }),
@@ -369,7 +406,8 @@ export function buildActionLibrary() {
               'health !== null && healthMax !== null && (health / healthMax) >= 0.7',
       effect: 'retarget_on_stall',
       run:    async (state) => {
-        const result = await callTool('prey', { agent: state.agent, goals: [{ kind: 'hp' }], ...(state.karma ? { karma: state.karma } : {}) });
+        const result = await runAtomic('pick_prey', _ctx, {
+          agent: state.agent, goals: [{ kind: 'hp' }], karma: state.karma });
         const candidates = result?.candidates ?? [];
         // Pick the first candidate that differs from what we are already hunting.
         const next = candidates.find(c => c.creature !== state.hunt);
@@ -377,9 +415,8 @@ export function buildActionLibrary() {
           console.log(`[goap] ${state.character} retarget_on_stall: no alternative prey found`);
           return null;
         }
-        await callTool('autopilot', { agent: state.agent, action: 'set',
-                                      hunt: next.creature,
-                                      assigned_room: next.best_room ?? null });
+        await runAtomic('set_policy', _ctx, { agent: state.agent,
+          fields: { hunt: next.creature, assigned_room: next.best_room ?? null } });
         return { note: `retarget_on_stall: ${state.hunt} -> ${next.creature} room ${next.best_room}` };
       },
     }),
@@ -394,7 +431,7 @@ export function buildActionLibrary() {
               'health !== null && healthMax !== null && (health / healthMax) >= 0.7',
       effect: 'avoid_crowded_room',
       run:    async (state) => {
-        const whoResult = await callTool('who', { agent: state.agent });
+        const whoResult = await runAtomic('who_in_room', _ctx, { agent: state.agent });
         const here = whoResult?.here ?? [];
         const outsiders = here.filter(p => !state.fleetNames.has(p.name));
         if (outsiders.length === 0) {
@@ -403,7 +440,8 @@ export function buildActionLibrary() {
           return null;
         }
         console.log(`[goap] ${state.character} avoid_crowded_room: ${outsiders.length} outsider(s) in room ${state.room}: ${outsiders.map(p => p.name).join(', ')}`);
-        const result = await callTool('prey', { agent: state.agent, goals: [{ kind: 'hp' }], ...(state.karma ? { karma: state.karma } : {}) });
+        const result = await runAtomic('pick_prey', _ctx, {
+          agent: state.agent, goals: [{ kind: 'hp' }], karma: state.karma });
         const candidates = result?.candidates ?? [];
         // Pick the first candidate in a DIFFERENT room from where we are now.
         const next = candidates.find(c => c.best_room != null && c.best_room !== state.room);
@@ -411,9 +449,8 @@ export function buildActionLibrary() {
           console.log(`[goap] ${state.character} avoid_crowded_room: no alternative room found`);
           return null;
         }
-        await callTool('autopilot', { agent: state.agent, action: 'set',
-                                      hunt: next.creature,
-                                      assigned_room: next.best_room });
+        await runAtomic('set_policy', _ctx, { agent: state.agent,
+          fields: { hunt: next.creature, assigned_room: next.best_room } });
         console.log(`[goap] ${state.character} avoid_crowded_room: ${state.hunt} room ${state.room} -> ${next.creature} room ${next.best_room}`);
         return { note: `avoid_crowded_room: moved to room ${next.best_room} (${outsiders.length} outsider(s) in ${state.room})` };
       },
@@ -430,12 +467,12 @@ export function buildActionLibrary() {
       run:    async (state) => {
         // Pick any inn — the travel tool will route to whichever is reachable.
         // Prefer Tos (52) when west of room 400, Jasper (370) when east.
-        const dest = state.room < 400 ? 52 : 370;
-        await callTool('autopilot', { agent: state.agent, action: 'stop',
-                                      why: 'goap: hurt and stalled — retreating to inn' });
-        const result = await callTool('travel', { agent: state.agent, to: dest });
-        await callTool('autopilot', { agent: state.agent, action: 'revive',
-                                      why: 'goap: arrived at inn — resuming keeper to rest' });
+        const dest = innDest(state.room);
+        const result = await relocateThenRevive(_ctx, {
+          agent: state.agent, to: dest,
+          stopWhy:  'goap: hurt and stalled — retreating to inn',
+          reviveWhy: 'goap: arrived at inn — resuming keeper to rest',
+        });
         console.log(`[goap] ${state.character} retreat_to_inn: arrived=${result?.arrived} room=${dest}`);
         return { note: `retreat_to_inn: arrived at inn room ${dest}` };
       },
@@ -451,7 +488,7 @@ export function buildActionLibrary() {
       pre:    'inGame && keeperRunning && !busy && nextSkillCost !== null && totalFunds >= nextSkillCost && !learningCooldown',
       effect: 'buy_next_skill',
       run:    async (state) => {
-        const result = await callTool('buy_next_planned_skills', { agents: [state.agent] });
+        const result = await runAtomic('buy_skills', _ctx, { agents: [state.agent] });
         const row = result?.results?.[0];
         if (row?.queued) {
           setCooldown('buy_next_skill', state.agent, 5 * 60 * 1000);
@@ -467,23 +504,26 @@ export function buildActionLibrary() {
     }),
     mk({
       name:   'send_to_town_for_gear',
-      // Fires when the keeper is stalled because it is unarmed and has no food spell.
-      // The keeper's buyWeapons/buyFood flags will handle the purchase once it reaches
-      // town — this just gets it there and un-inerts it so the town trip fires.
+      // Fires when the keeper is stalled because it is unarmed and has no food spell,
+      // OR is inert for the same reason (an unarmed keeper re-inerts the moment it is
+      // revived, so revive_inert deliberately steps aside and this is the only path to
+      // arm it). The keeper's buyWeapons/buyFood flags will handle the purchase once it
+      // reaches town — this just gets it there and un-inerts it so the town trip fires.
       // A 10-minute cooldown prevents looping if the town trip also fails.
       cost:   6,
-      pre:    'inGame && keeperRunning && unarmedStall && !busy && !gearTripCooldown',
+      pre:    'inGame && keeperRunning && !gearTripCooldown && !busyErrand && ' +
+              '(unarmedStall || (inert && inertWhy && inertWhy.startsWith("unarmed")))',
       effect: 'send_to_town_for_gear',
       run:    async (state) => {
         setCooldown('gear_trip', state.agent, 10 * 60 * 1000);
         // Pick the nearest town inn as destination.
-        const dest = (state.room ?? 0) < 400 ? 52 : 370;
+        const dest = innDest(state.room ?? 0);
         console.log(`[goap] ${state.character} send_to_town_for_gear: unarmed stall — travelling to inn ${dest}`);
-        await callTool('autopilot', { agent: state.agent, action: 'stop',
-                                      why: 'goap: unarmed — sending to town to buy gear' });
-        const result = await callTool('travel', { agent: state.agent, to: dest });
-        await callTool('autopilot', { agent: state.agent, action: 'revive',
-                                      why: 'goap: arrived at town — keeper will buy gear on next pass' });
+        const result = await relocateThenRevive(_ctx, {
+          agent: state.agent, to: dest,
+          stopWhy:  'goap: unarmed — sending to town to buy gear',
+          reviveWhy: 'goap: arrived at town — keeper will buy gear on next pass',
+        });
         console.log(`[goap] ${state.character} send_to_town_for_gear: arrived=${result?.arrived}`);
         return { note: `send_to_town_for_gear: travelled to inn ${dest}` };
       },
@@ -492,13 +532,33 @@ export function buildActionLibrary() {
       name:   'relocate_no_safe_wall',
       // No safe wall in this room and nowhere better to go. Clearing the assigned room
       // lets the keeper's own room-selection pick somewhere with a usable wall.
+      // Requires assignedRoom !== null so the effect (clearing it) weakens the
+      // precondition: when the assignment is already null there is nothing to clear and
+      // the no-op would fire every pass -- and a hurt character in that state belongs
+      // in retreat_to_inn, not in a useless clear.
       cost:   4,
-      pre:    'inGame && keeperRunning && stallNoSafeWall && !busy',
+      pre:    'inGame && keeperRunning && stallNoSafeWall && !busy && assignedRoom !== null',
       effect: 'relocate_no_safe_wall',
       run:    async (state) => {
         console.log(`[goap] ${state.character} relocate_no_safe_wall: room ${state.room} — clearing assignment`);
-        await callTool('autopilot', { agent: state.agent, action: 'set', assigned_room: null });
+        await runAtomic('set_policy', _ctx, { agent: state.agent, fields: { assigned_room: null } });
         return { note: `relocate_no_safe_wall: cleared assigned_room ${state.room}` };
+      },
+    }),
+    mk({
+      name:   'leave_capped_room',
+      // Stall: the assigned room is capped by creatures we will not fight (all spawns
+      // above the engagement ceiling). Clearing the assignment lets the keeper's own
+      // room-selection pick a room that actually generates huntable prey.
+      // Same monotone guard as relocate_no_safe_wall: clear is only useful while
+      // assignedRoom !== null, so require it to avoid a no-op loop.
+      cost:   4,
+      pre:    'inGame && keeperRunning && stallRoomCapped && !busy && assignedRoom !== null',
+      effect: 'leave_capped_room',
+      run:    async (state) => {
+        console.log(`[goap] ${state.character} leave_capped_room: room ${state.room} capped — clearing assignment`);
+        await runAtomic('set_policy', _ctx, { agent: state.agent, fields: { assigned_room: null } });
+        return { note: `leave_capped_room: cleared assigned_room ${state.room}` };
       },
     }),
     mk({
@@ -510,13 +570,13 @@ export function buildActionLibrary() {
       effect: 'town_trip_bags_full',
       run:    async (state) => {
         setCooldown('gear_trip', state.agent, 10 * 60 * 1000);
-        const dest = (state.room ?? 0) < 400 ? 52 : 370;
+        const dest = innDest(state.room ?? 0);
         console.log(`[goap] ${state.character} town_trip_bags_full: bags full — travelling to inn ${dest}`);
-        await callTool('autopilot', { agent: state.agent, action: 'stop',
-                                      why: 'goap: bags full — sending to town to sell' });
-        const result = await callTool('travel', { agent: state.agent, to: dest });
-        await callTool('autopilot', { agent: state.agent, action: 'revive',
-                                      why: 'goap: arrived at town — keeper will sell on next pass' });
+        const result = await relocateThenRevive(_ctx, {
+          agent: state.agent, to: dest,
+          stopWhy:  'goap: bags full — sending to town to sell',
+          reviveWhy: 'goap: arrived at town — keeper will sell on next pass',
+        });
         console.log(`[goap] ${state.character} town_trip_bags_full: arrived=${result?.arrived}`);
         return { note: `town_trip_bags_full: travelled to inn ${dest}` };
       },
@@ -530,15 +590,16 @@ export function buildActionLibrary() {
       effect: 'retarget_unreachable',
       run:    async (state) => {
         console.log(`[goap] ${state.character} retarget_unreachable: ${state.stalledWhy} — picking new prey`);
-        const result = await callTool('prey', { agent: state.agent, goals: [{ kind: 'hp' }], ...(state.karma ? { karma: state.karma } : {}) });
+        const result = await runAtomic('pick_prey', _ctx, {
+          agent: state.agent, goals: [{ kind: 'hp' }], karma: state.karma });
         const candidates = result?.candidates ?? [];
         const next = candidates.find(c => c.creature !== state.hunt);
         if (!next) {
           console.log(`[goap] ${state.character} retarget_unreachable: no alternative found`);
           return null;
         }
-        await callTool('autopilot', { agent: state.agent, action: 'set',
-                                      hunt: next.creature, assigned_room: next.best_room ?? null });
+        await runAtomic('set_policy', _ctx, { agent: state.agent,
+          fields: { hunt: next.creature, assigned_room: next.best_room ?? null } });
         return { note: `retarget_unreachable: ${state.hunt} -> ${next.creature} room ${next.best_room}` };
       },
     }),
@@ -550,13 +611,13 @@ export function buildActionLibrary() {
       pre:    'inGame && keeperRunning && (stallTrapped || stallTooHurt) && !busy && !inn_room',
       effect: 'rescue_trapped',
       run:    async (state) => {
-        const dest = (state.room ?? 0) < 400 ? 52 : 370;
+        const dest = innDest(state.room ?? 0);
         console.log(`[goap] ${state.character} rescue_trapped: ${state.stalledWhy} — evacuating to inn ${dest}`);
-        await callTool('autopilot', { agent: state.agent, action: 'stop',
-                                      why: 'goap: trapped/too hurt — evacuating to inn' });
-        const result = await callTool('travel', { agent: state.agent, to: dest });
-        await callTool('autopilot', { agent: state.agent, action: 'revive',
-                                      why: 'goap: arrived at inn — keeper will rest' });
+        const result = await relocateThenRevive(_ctx, {
+          agent: state.agent, to: dest,
+          stopWhy:  'goap: trapped/too hurt — evacuating to inn',
+          reviveWhy: 'goap: arrived at inn — keeper will rest',
+        });
         console.log(`[goap] ${state.character} rescue_trapped: arrived=${result?.arrived}`);
         return { note: `rescue_trapped: travelled to inn ${dest}` };
       },
@@ -585,11 +646,16 @@ export function buildActionLibrary() {
       // Raza rooms 1011-1018 have zero exits in the map graph — the router cannot
       // plan a path out and travel will return arrived:false indefinitely. The broker
       // exposes leave_raza which walks the character out through the known door sequence.
+      // Gated on level >= 25 (the leave_raza tool's own threshold): Raza generates only
+      // level-25 mummies, and advancement needs monster_level > base_max_health, so below
+      // 25 the newbie zone is where the character belongs. A sub-25 character stalled in a
+      // capped Raza room is handled by leave_capped_room instead — it stays in Raza and
+      // clears the bad assignment rather than stranding a mummy-only hunter outside.
       cost:   0,   // lower than stop_and_travel: being in Raza is the worst situation
-      pre:    'inGame && room !== null && room >= 1011 && room <= 1018',
+      pre:    'inGame && level !== null && level >= 25 && room !== null && room >= 1011 && room <= 1018',
       effect: 'leave_raza',
       run:    async (state) => {
-        await callTool('leave_raza', { agent: state.agent });
+        await runAtomic('leave_raza', _ctx, { agent: state.agent });
         return { note: `leave_raza from room ${state.room}` };
       },
     }),
@@ -624,8 +690,14 @@ export function buildActionLibrary() {
 //                     keep returning paying:false only for the same reason.
 //   rest_in_inn      -- effect sets parked_at_inn=true, so the precondition
 //                     `!parked_at_inn` fails on the next pass.
-// All four are monotone: each one moves one field of the world state forward and
-// never back. The test in m59-goap-test.mjs verifies this with a hand-driven pass.
+//   relocate_no_safe_wall -- effect clears assigned_room; the precondition requires
+//                     assignedRoom !== null, so the clear makes it fail on the next
+//                     pass. The keeper's room-selection then picks a room with a wall.
+//   leave_capped_room -- same clear-assignment shape as relocate_no_safe_wall; the
+//                     room is capped by creatures we will not fight, and clearing
+//                     the assignment makes the precondition fail on the next pass.
+// All of the above are monotone: each one moves one field of the world state forward
+// and never back. The test in m59-goap-test.mjs verifies this with a hand-driven pass.
 
 // ============================================================================
 // PLANNER -- forward search over the action library.

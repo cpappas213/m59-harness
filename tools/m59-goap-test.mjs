@@ -57,6 +57,10 @@ function makeRow(overrides = {}) {
   return {
     character: 'Kage',
     agent:     'Kage',
+    // Real /fleet rows publish `activity` (ap.activity(), 'no keeper' when none) and
+    // never publish `in_game` for in-game characters -- deriveWorldState reads
+    // `row.character != null && row.activity != null` as the in-game test.
+    activity:  'hunting giant rat',
     in_game:   true,
     room_num:  12,
     assigned_room: 14,
@@ -110,6 +114,66 @@ function rowPurposeUnset() {
     policy: { purpose: null, hunt: 'giant rat', goals: [{ kind: 'hp' }] },
     room_num: 14,
     assigned_room: 14,
+  });
+}
+
+function rowInRazaLevel(level) {
+  return makeRow({
+    level,
+    room_num: 1016,       // in Raza, the Grand Museum / Mausoleum range
+    assigned_room: null,
+  });
+}
+
+// The fleet row omits `inert`; the keeper's inert state surfaces as
+// committed.kind === 'driven' (describeCommitment returns 'driven' exactly when
+// inert is set) and as activity "inert -- <why>".
+function rowInertDriven() {
+  return makeRow({
+    activity: 'inert -- post-restart, keeper stopped without a reason',
+    committed: { kind: 'driven', label: 'post-restart, keeper stopped without a reason' },
+    health: '45/50',
+  });
+}
+
+// A real errand in flight -- committed.kind 'errand' -- must NOT be revived.
+function rowInertErrand() {
+  return makeRow({
+    activity: 'inert -- checking the crate',
+    committed: { kind: 'errand', label: 'checking the crate' },
+    health: '45/50',
+  });
+}
+
+// An inert keeper whose reason is "unarmed": reviving just makes it re-inert, so
+// revive_inert must step aside and send_to_town_for_gear must arm it instead.
+function rowInertUnarmed() {
+  return makeRow({
+    activity: 'inert -- unarmed, does not know create weapon',
+    committed: { kind: 'driven', label: 'unarmed, does not know create weapon' },
+    has_weapon: false,
+    health: '45/50',
+  });
+}
+
+function rowCappedRoom() {
+  return makeRow({
+    stalled: { since_seconds: 300, why: 'room capped by creatures we will not fight', ms_since_moved: 300000 },
+    room_num: 14,          // at the capped assigned room, so stop_and_travel cannot outbid
+    assigned_room: 14,
+    health: '45/50',
+  });
+}
+
+// Stalled on "no safe wall" with no assigned room: there is nothing for
+// relocate_no_safe_wall to clear, so it must step aside and let the keeper
+// retarget instead.
+function rowNoSafeWallUnassigned() {
+  return makeRow({
+    stalled: { since_seconds: 300, why: 'no safe wall here and nowhere better to go', ms_since_moved: 300000 },
+    room_num: 12,
+    assigned_room: null,
+    health: '45/50',
   });
 }
 
@@ -187,6 +251,129 @@ test('purpose_unset_triggers_set_purpose', () => {
   assert(plan, 'planner should produce an action for unset purpose');
   assertEq(plan.action.name, 'set_purpose',
     'expected set_purpose when purpose is null');
+});
+
+// ---------------------------------------------------------------------------
+// Test 7: capped-room stall -> leave_capped_room
+// ---------------------------------------------------------------------------
+
+test('capped_room_triggers_leave_capped_room', () => {
+  const state = deriveWorldState(rowCappedRoom());
+  const lib   = buildActionLibrary();
+  const plan  = planAction(state, NO_GOALS, lib);
+  assert(plan, 'planner should produce an action for a capped-room stall');
+  assertEq(plan.action.name, 'leave_capped_room',
+    'expected leave_capped_room when room is capped by creatures we will not fight');
+});
+
+// ---------------------------------------------------------------------------
+// Test 8: leave_capped_room's effect removes its own precondition (no loop).
+// Clearing assigned_room makes `assignedRoom !== null` fail on the next pass.
+// ---------------------------------------------------------------------------
+
+test('leave_capped_room_no_infinite_loop', () => {
+  const state  = deriveWorldState(rowCappedRoom());
+  const lib    = buildActionLibrary();
+  const action = lib.find(a => a.name === 'leave_capped_room');
+  assert(action, 'leave_capped_room should exist in library');
+
+  assertEq(action.preFn(state), true,
+    'precondition should be true before the action runs');
+
+  // Simulate the effect: the assignment is cleared.
+  const post = { ...state, assignedRoom: null };
+  assertEq(action.preFn(post), false,
+    'precondition should be false after assigned_room is cleared');
+});
+
+// ---------------------------------------------------------------------------
+// Test 9: relocate_no_safe_wall refuses to fire when there is nothing to clear.
+// With assigned_room already null, the no-op clear would loop, so the guard must
+// keep it off the table. (Which cheaper action wins instead -- avoid_crowded_room
+// at 5, then retarget_on_stall at 6 -- is the designed escalation.)
+// ---------------------------------------------------------------------------
+
+test('relocate_no_safe_wall_requires_an_assignment', () => {
+  const state  = deriveWorldState(rowNoSafeWallUnassigned());
+  const lib    = buildActionLibrary();
+  const action = lib.find(a => a.name === 'relocate_no_safe_wall');
+  assert(action, 'relocate_no_safe_wall should exist in library');
+
+  assertEq(action.preFn(state), false,
+    'relocate_no_safe_wall must not fire when assigned_room is already null');
+
+  // The planner picks a cheaper applicable action instead.
+  const plan = planAction(state, NO_GOALS, lib);
+  assert(plan, 'planner should still produce an action');
+  assert(plan.action.name !== 'relocate_no_safe_wall',
+    'relocate_no_safe_wall should not be chosen');
+});
+
+// ---------------------------------------------------------------------------
+// Test 10: leave_raza is gated on level >= 25. Raza generates only level-25
+// mummies, and advancement needs monster_level > base_max_health, so below 25
+// the newbie zone is where the character belongs -- the tool's own threshold.
+// ---------------------------------------------------------------------------
+
+test('leave_raza_gated_on_level', () => {
+  const lib  = buildActionLibrary();
+  const raza = lib.find(a => a.name === 'leave_raza');
+  assert(raza, 'leave_raza should exist in library');
+
+  const low  = deriveWorldState(rowInRazaLevel(24));
+  assertEq(raza.preFn(low), false,
+    'leave_raza must not fire below level 25');
+
+  const high = deriveWorldState(rowInRazaLevel(50));
+  assertEq(raza.preFn(high), true,
+    'leave_raza should fire at level 25+');
+});
+
+// ---------------------------------------------------------------------------
+// Test 11: revive_inert detects the inert keeper from committed.kind === 'driven'
+// (the fleet row omits `inert`), and fires despite the inert-driven busy. A real
+// errand (committed.kind 'errand') is NOT revived.
+// ---------------------------------------------------------------------------
+
+test('revive_inert_fires_on_driven_committed', () => {
+  const lib = buildActionLibrary();
+  const state = deriveWorldState(rowInertDriven());
+  assertEq(state.inert, true, 'inert should be true from committed.kind driven');
+  const plan = planAction(state, NO_GOALS, lib);
+  assert(plan, 'planner should produce an action');
+  assertEq(plan.action.name, 'revive_inert',
+    'an inert-driven keeper should be revived');
+});
+
+test('revive_inert_skips_real_errand', () => {
+  const lib = buildActionLibrary();
+  const state = deriveWorldState(rowInertErrand());
+  assertEq(state.inert, true, 'inert is true while an errand is driving');
+  const raza = lib.find(a => a.name === 'revive_inert');
+  assertEq(raza.preFn(state), false,
+    'revive_inert must not fire while a real errand is in flight');
+});
+
+// ---------------------------------------------------------------------------
+// Test 12: an inert keeper whose reason is unarmed must NOT be revived (reviving
+// just makes it re-inert) -- send_to_town_for_gear arms it instead.
+// ---------------------------------------------------------------------------
+
+test('unarmed_inert_goes_to_gear_not_revive', () => {
+  const lib = buildActionLibrary();
+  const state = deriveWorldState(rowInertUnarmed());
+  assertEq(state.inert, true, 'inert should be true');
+  assertEq(state.inertWhy, 'unarmed, does not know create weapon',
+    'inertWhy should carry the unarmed reason');
+
+  const raza = lib.find(a => a.name === 'revive_inert');
+  assertEq(raza.preFn(state), false,
+    'revive_inert must not fire for an unarmed keeper -- it would just re-inert');
+
+  const plan = planAction(state, NO_GOALS, lib);
+  assert(plan, 'planner should produce an action');
+  assertEq(plan.action.name, 'send_to_town_for_gear',
+    'an unarmed inert keeper should be sent to town to buy a weapon');
 });
 
 // ---------------------------------------------------------------------------

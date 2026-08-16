@@ -10071,7 +10071,19 @@ const TOOLS = [
     run: async (a) => {
       const s = session(a.agent);
       s.need();
-      const inRaza = () => /Raza|Mausoleum|Museum/i.test(s.client.rsc.get(s.client.roomNameRsc) || '');
+      // Resolve "am I in the newbie zone" from the map graph, not rsc: the room-name
+      // resource is static and the local table may hold zero strings (see m59-rsc.mjs),
+      // in which case rsc.get(roomNameRsc) returns "<rsc N>" and inRaza() always fails
+      // -- the GOAP supervisor then re-fires leave_raza every pass with no effect.
+      // worldMap.rooms carries the same name the client's map labels the room with.
+      const inRaza = () => {
+        // Room NUMBER is s.world.room.num (the fleet row's room_num); c.room.id is the
+        // room's OBJECT id, which is not a map-graph key.
+        const num = s.world?.room?.num;
+        const nm = (num != null ? worldMap?.rooms?.[num]?.name : null) ||
+                   (s.client.rsc.get(s.client.roomNameRsc) || '');
+        return /Raza|Mausoleum|Museum/i.test(nm);
+      };
       if (!inRaza()) return { left: false, note: 'not in the newbie zone -- nothing to leave' };
 
       const log = [];
