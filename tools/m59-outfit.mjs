@@ -80,11 +80,12 @@ const LEARN = (arg('learn', null) === true || arg('learn', null) == null)
 const WANT_GEAR = !LEARN.length || !!arg('gear', false);
 
 let id = 0;
-async function call(name, args = {}) {
+async function call(name, args = {}, timeoutMs = 30_000) {
   const r = await fetch(URL, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method: 'tools/call',
                            params: { name, arguments: args } }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const j = await r.json();
   if (j.error) throw new Error(`${name}: ${JSON.stringify(j.error)}`);
@@ -107,9 +108,9 @@ const OWNER = `outfit/${process.pid}`;
 // This is the FLEET default and it is one answer for twenty-one characters. A character
 // with a loadout gets its own list instead — see wantsFor below.
 const WANTS = [
-  { slot: 'armour', re: /leather (armor|armour)/i,  fallback: /armor|armour|mail/i, what: 'leather armour' },
+  { slot: 'armour', re: /leather (armor|armour)/i,  fallback: /armor|armour|mail|leather|scale/i, what: 'armour' },
   { slot: 'shield', re: /metal shield/i,            fallback: /shield/i,            what: 'a shield' },
-  { slot: 'weapon', re: /\bmace\b/i,                fallback: /sword|axe|hammer|mace/i, what: 'a mace' },
+  { slot: 'weapon', re: /\bmace\b/i,                fallback: /sword|axe|hammer|mace|staff|spear|dagger|knife/i, what: 'a weapon' },
 ];
 
 const nameOf = (i) => String(i?.name ?? i ?? '');
