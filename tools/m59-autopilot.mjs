@@ -591,6 +591,19 @@ const ITEM_VALUE = (() => {
 // state where reagents were delivered to characters too tired to spend them.
 const CREATE_FOOD_MANA = 10;
 
+// BLINK — Riija 1, 15 mana, no reagents, no target. The game's own answer to "there is no
+// step out of here", and the only way onto the upper cliff in the Cragged Mountains. The
+// cooldown is long because the failure it treats is a standing condition rather than a
+// moment: a character marooned by geometry is still marooned in thirty seconds, and a
+// spell fired every pass is a mana leak that also teleports working characters off their
+// safe spot.
+const BLINK_MANA = 15;
+const BLINK_COOLDOWN_MS = 120_000;
+// The stall reasons that are about GETTING OUT of somewhere, as opposed to having nothing
+// worth doing. Only these are worth a spell — blinking because the prey ran out would move
+// a perfectly mobile character for no reason.
+const STUCK_IN_PLACE = /could not reach|cannot reach|no route|refused|no floor|stuck|could not get|unreachable|no exit/i;
+
 const vigorPct = v => {
   const g = v?.vigor;
   if (!g || g.value == null) return null;
@@ -4632,6 +4645,11 @@ export class Autopilot {
       this.note('stay-off window is over', { why: 'the playbook logged this character off ' +
         'and the wait it asked for has elapsed' });
     }
+    // A CHARACTER THAT CANNOT LEAVE WHERE IT IS CANNOT DO ANYTHING ELSE EITHER, so this
+    // goes before the rest. Flagged by noProgress, bounded by its own cooldown, and a
+    // no-op on every pass where nothing is stuck.
+    await this.blinkFree().catch(error =>
+      this.note('could not blink free', { why: error.message }));
     await this.checkAttackedByPlayer();
     // BEFORE returning fire, so a fleetmate's shout counts on this pass rather than the
     // next one — the difference matters most for the character that cannot report itself.
@@ -5232,6 +5250,76 @@ export class Autopilot {
       this.note('STALLED', { why, passes: this.idlePasses,
                              hint: 'nothing has worked for several passes running' });
     } else if (this.stalledSince) this.stalledWhy = why;
+    // A STALL THAT IS ABOUT GETTING OUT OF A ROOM HAS A SPELL FOR IT — see blinkFree.
+    // Flagged rather than cast, because this is called from synchronous code deep in the
+    // pass and casting is several seconds of protocol.
+    if (this.idlePasses >= 5 && STUCK_IN_PLACE.test(String(why ?? '')))
+      this.wantsBlink = { why, at: Date.now() };
+  }
+
+  /**
+   * BLINK IS THE WAY OUT OF A PLACE YOU CANNOT WALK OUT OF, and it is the game's own
+   * answer rather than ours.
+   *
+   * Riija level 1, 15 mana, no reagents, no target. It relocates you within the room, and
+   * the guarantee that matters is that it lands you somewhere you can reach at least one
+   * exit from. In the Cragged Mountains it is the ONLY way onto the upper cliff — there is
+   * no walking route there from the lower entrance, so a router that refuses to plan one
+   * is right and a character that keeps trying is not.
+   *
+   * WHY THIS IS NEEDED NOW. Movement is validated against the client's collision model as
+   * of #18, and that model is stricter than what the old code sent. Characters that the
+   * old code had walked into places the model does not accept were left marooned — not
+   * standing in a wall exactly, but with no step the mover will take. Every one of them
+   * re-planned the same impossible route every pass. Outside Castle Victoria and North
+   * Barloque both produced one.
+   *
+   * BOUNDED, because a spell that fires on every stalled pass is a mana leak that also
+   * teleports a working character away from its safe spot. One attempt per cooldown, only
+   * when the stall is about MOVEMENT, and never below the mana a cast costs.
+   */
+  async blinkFree() {
+    const want = this.wantsBlink;
+    if (!want) return null;
+    this.wantsBlink = null;
+    if (Date.now() - (this.blinkedAt ?? 0) < BLINK_COOLDOWN_MS) return null;
+    const s = this.s, c = s.client;
+    if (!c) return null;
+    const mana = c.vitals?.()?.mana?.value ?? null;
+    if (mana !== null && mana < BLINK_MANA)
+      return this.note('would blink free, but cannot afford it',
+        { mana, needs: BLINK_MANA, why: want.why,
+          note: 'mana comes back by resting; this is not a permanent refusal' });
+    await s.pacer.submit('read', () => c.requestSpells()).catch(() => {});
+    await new Promise(r => setTimeout(r, 400));
+    const spell = (c.spells || []).find(sp => (c.rsc.get(sp.nameRsc) || '').toLowerCase() === 'blink');
+    if (!spell) return this.note('stuck, and this character does not know blink',
+      { why: want.why, note: 'Riija 1 — the only in-room escape the game offers' });
+
+    const before = c.self ? { col: c.self.col, row: c.self.row } : null;
+    this.blinkedAt = Date.now();
+    await s.pacer.submit('cast', () => c.cast(spell.id, []), 1050).catch(() => {});
+    // THE POSITION IS THE EVIDENCE, not the cast reply. A cast that reports success and
+    // leaves the character where it was is the same shape as every other silent refusal
+    // in this game, and the whole point here is whether we MOVED.
+    await new Promise(r => setTimeout(r, 1200));
+    await s.pacer.submit('read', () => c.roomContents()).catch(() => {});
+    await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 }).catch(() => {});
+    const after = c.self ? { col: c.self.col, row: c.self.row } : null;
+    const moved = !!(before && after && (before.col !== after.col || before.row !== after.row));
+    this.tally.blinks = (this.tally.blinks || 0) + 1;
+    this.note(moved ? 'blinked free' : 'blinked and did not move', {
+      from: before, to: after, why: want.why, mana_before: mana,
+      because: 'the collision model would not take any step from there; blink is the ' +
+               'game\'s own way out and lands somewhere an exit is reachable from',
+    });
+    if (moved) {
+      // A new square is a new situation: forget the safe spot we were holding and let the
+      // ordinary pass decide again with fresh geometry.
+      this.releaseHold?.('blinked to a different square');
+      this.progress('blinked out of somewhere unwalkable');
+    }
+    return { moved, from: before, to: after };
   }
 
   // A COLLISION-CONTRACT FAILURE IS NOT AN OCCUPIED SQUARE OR A BAD TACTIC.

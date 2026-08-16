@@ -1157,12 +1157,53 @@ export class RoomGeometry {
   }
 
   // Every square reachable in one step, as an agent would actually step.
-  neighbors(row, col, { fine = true } = {}) {
+  /**
+   * CAN THE MOVER ACTUALLY TAKE THIS STEP? Asked with the same trace the movement path
+   * uses, because a router that plans on a different map from the one the mover enforces
+   * does not produce a wrong route — it produces a character walking into a wall for ever.
+   *
+   * The two views really do disagree. `openDirections` and `walkable` are the SERVER's
+   * coarse grid, one byte a square; `traceFineMoveClient` is the client's BSP with walls,
+   * sector heights and the player radius in it. Since movement began being validated
+   * against the second, planning against the first put the fleet in exactly that state:
+   * squares the grid calls open, that the mover then refuses, re-planned every pass.
+   *
+   * MEMOISED, because A* on a 46x70 outdoor room asks this tens of thousands of times and
+   * the answer for a given pair of adjacent squares never changes. The geometry object is
+   * shared across sessions (sharedRoomGeometry), so the cache is filled once per room.
+   *
+   * NO GEOMETRY MEANS NO OPINION, not "refused". A room whose collision could not be baked
+   * still has a usable coarse grid, and this must not be the thing that makes it unroutable.
+   */
+  stepAllowedByCollision(fromRow, fromCol, toRow, toCol) {
+    if (!this.collisionReady || typeof this.traceFineMoveClient !== 'function') return true;
+    const cache = (this._stepCollisionCache ??= new Map());
+    const k = ((fromRow * this.cols + fromCol) << 4) ^ ((toRow - fromRow + 1) * 3 + (toCol - fromCol + 1));
+    const hit = cache.get(k);
+    if (hit !== undefined) return hit;
+    const half = KOD_FINENESS >> 1;
+    let ok = true;
+    try {
+      const t = this.traceFineMoveClient(
+        protocolToClient(fromCol * KOD_FINENESS + half),
+        protocolToClient(fromRow * KOD_FINENESS + half),
+        protocolToClient(toCol * KOD_FINENESS + half),
+        protocolToClient(toRow * KOD_FINENESS + half),
+        { slide: false });
+      ok = !!(t?.available && t?.arrived);
+    } catch { ok = true; }        // a trace that throws is not evidence of a wall
+    cache.set(k, ok);
+    return ok;
+  }
+
+  neighbors(row, col, { fine = true, collision = true } = {}) {
     const out = [];
     for (const d of this.openDirections(row, col, { fine })) {
       const r = row + d.dr, c = col + d.dc;
       if (!this.inBounds(r, c)) continue;          // leaving the room is a separate act
       if (!this.walkable(r, c)) continue;
+      // The mover's own answer, last because it is the expensive one.
+      if (collision && !this.stepAllowedByCollision(row, col, r, c)) continue;
       out.push({ row: r, col: c, dir: d.name, diagonal: d.dr !== 0 && d.dc !== 0 });
     }
     return out;
@@ -1251,7 +1292,8 @@ export class RoomGeometry {
   }
 
   path(fromRow, fromCol, toRow, toCol,
-       { fine = true, maxNodes = 200000, avoid = null, threats = null, threatCost = null } = {}) {
+       { fine = true, maxNodes = 200000, avoid = null, threats = null, threatCost = null,
+         collision = true } = {}) {
     threatCost = threatCost ?? this.threatField(threats);
     if (!this.inBounds(fromRow, fromCol)) return { found: false, reason: 'start is outside the room grid' };
     if (!this.inBounds(toRow, toCol)) return { found: false, reason: 'goal is outside the room grid' };
@@ -1350,7 +1392,7 @@ export class RoomGeometry {
         return { found: true, steps: lead ? [lead, ...steps] : steps, expanded,
                  ...(lead ? { recovered_from: { row: start.row, col: start.col } } : {}) };
       }
-      for (const n of this.neighbors(cur.r, cur.c, { fine })) {
+      for (const n of this.neighbors(cur.r, cur.c, { fine, collision })) {
         const nk = key(n.row, n.col);
         if (closed.has(nk)) continue;
         // Never the GOAL, only the way there: if the destination itself is occupied we
