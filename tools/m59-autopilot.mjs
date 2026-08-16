@@ -7465,6 +7465,32 @@ export class Autopilot {
 
   // ── passFleeAndRest: extracted from pass() ────────────────────────────────
   async passFleeAndRest(s, c, room, v, hp) {
+    // ------------------------------------------------------------------
+    // BEHAVIOR-TREE FLEE/REST (opt-in via policy.useBTFlee)
+    //
+    // When policy.useBTFlee is true, hand the flee/rest pass to the BT.
+    // The tree ticks in priority order: doomed, flee_threshold,
+    // sanctuary_settle, get_a_wall, vigor_walk, leave_room, rest.
+    // The first node that returns SUCCESS ends the pass.
+    //
+    // The sequential code below is the fallback: if the BT is not enabled,
+    // or if it returns FAILURE, the old code runs.
+    // ------------------------------------------------------------------
+    if (this.policy?.useBTFlee === true) {
+      const { getFleeTree } = await import('./m59-bt-flee.mjs');
+      const bb = {
+        session: this,
+        client: c,
+        policy: this.policy,
+        room,
+        _bt: {},
+      };
+      const tree = getFleeTree({ session: { keeper: this } });
+      const result = await tree.tickAsync(bb);
+      if (result === 'SUCCESS' || result === 'RUNNING') return true;
+      // FAILURE: no node handled the pass, fall through to the sequential code.
+    }
+
     // 2. In danger. "Something attackable is adjacent and we are hurt" is the only
     //    threat signal available -- the protocol does not say who is targeting us.
     //
@@ -8233,6 +8259,76 @@ export class Autopilot {
       return true;
     }
     return false;
+  }
+
+  // ── BT flee helpers ────────────────────────────────────────────────
+  // These are the seam between the BT flee nodes (m59-bt-flee.mjs) and the
+  // keeper's internal state. Each one is a thin adapter that the nodes call
+  // instead of reaching into the keeper's fields directly.
+
+  _btFleeNear() {
+    const c = this.s.client;
+    const me = c.self;
+    if (!me) return [];
+    const { OF } = this.constructor._combatSkills || {};
+    if (!OF) return [];
+    return [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER) &&
+      Math.hypot(o.col - me.col, o.row - me.row) <= 2
+    );
+  }
+
+  _btFleeHostiles() {
+    const c = this.s.client;
+    const { OF } = this.constructor._combatSkills || {};
+    if (!OF) return [];
+    return [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER)
+    );
+  }
+
+  _btFleeStrategy() {
+    const STRATS = this.constructor.STRATEGIES;
+    return STRATS?.[this.policy.strategy] || STRATS?.baseline || {};
+  }
+
+  _btFleeRestAndCook() {
+    const { skills } = this.constructor._combatSkills;
+    return (async () => {
+      await skills?.restUntil?.(this.s, { health: 0.95, vigor: 0.4, maxSeconds: 90 }).catch(() => {});
+      await this.cookSomething('got out of a bad room and need food before going back').catch(() => {});
+    })();
+  }
+
+  _btFleeTurnInPlace() {
+    const { skills } = this.constructor._combatSkills;
+    return skills?.turnInPlace?.(this.s) ?? Promise.resolve({ turned: false });
+  }
+
+  _btFleeNudge() {
+    const { skills } = this.constructor._combatSkills;
+    return skills?.nudge?.(this.s) ?? Promise.resolve({ moved: false });
+  }
+
+  _btFleeReturnToSpot() {
+    const { skills } = this.constructor._combatSkills;
+    if (!skills?.returnToSpot || !this.hold) return Promise.resolve({ arrived: false });
+    return skills.returnToSpot(
+      this.s,
+      { col: this.hold.col, row: this.hold.row, x: this.hold.x, y: this.hold.y },
+      { maxSteps: 12 }
+    );
+  }
+
+  _btFleeHealUp(target) {
+    const { skills } = this.constructor._combatSkills;
+    return skills?.healUp?.(this.s, { target }) ?? Promise.resolve({ healed: false });
+  }
+
+  _btFleeRestUntil() {
+    const { skills } = this.constructor._combatSkills;
+    return skills?.restUntil?.(this.s, { health: 0.98, vigor: 0.4, maxSeconds: 120 })
+      ?? Promise.resolve(null);
   }
 
   // ── BT farm helpers ────────────────────────────────────────────────
