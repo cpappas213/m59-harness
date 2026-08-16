@@ -28,7 +28,7 @@ node tools/setup.mjs doctor
 
 | | needed for | if missing |
 |---|---|---|
-| **Node 18+** | everything | https://nodejs.org |
+| **Node 22+** | everything; Node 24 LTS is recommended | https://nodejs.org |
 | **git** | fetching the server source | https://git-scm.com |
 | **Docker** | building and running the server | https://docs.docker.com/get-docker/ |
 | **Python 3** | sprite decoding, source analysis | optional |
