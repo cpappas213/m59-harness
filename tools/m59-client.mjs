@@ -1809,6 +1809,12 @@ export class M59Client {
   }
 
   sendLogin() {
+    if (!this.user) {
+      // AP_GETLOGIN arrived before login() was called — the socket connected
+      // before credentials were set. Close the socket; the caller will retry.
+      console.error('[m59-client] sendLogin called with no user — closing socket');
+      this.sock?.destroy(); return;
+    }
     this.log(`sending login as "${this.user}"`);
     this.send(AP.LOGIN, Buffer.from([MAJOR_REV, MINOR_REV]), sysinfo(),
               pstr(this.user), pbuf(mdpass(this.pass)));

@@ -145,47 +145,33 @@ function yesno(v, { yes = 'Y', no = 'N' } = {}) {
 //
 // When gear_condition is null (never inspected) we fall back to the old boolean display.
 // When the slot is null (nothing equipped) it renders as a dash.
-const COND_LABEL = ['broken', 'poor', 'worn', 'good', 'flawless'];
-const COND_MAX   = 4;  // matches the 4-step scale
-
-function condBar(level, name) {
-  // Not yet inspected — show placeholder in gear colour
-  if (level == null)
-    return `<span class="bar-cells gr none" title="${name ? esc(name) + ' — ' : ''}condition not yet read">${'█'.repeat(COND_MAX)}</span>`;
-  const pct = Math.max(0, Math.min(1, level / COND_MAX));
-  const label = COND_LABEL[level] ?? '?';
-  let out = '';
-  for (let i = 1; i <= COND_MAX; i++) {
-    const top = i / COND_MAX, bottom = (i - 1) / COND_MAX;
-    const cls = pct >= top ? 'full' : pct > bottom ? 'edge' : 'gone';
-    out += `<span class="${cls}">█</span>`;
-  }
-  return `<span class="bar-cells gr" title="${esc(name)} — ${label}">${out}</span>`;
-}
+const COND_LABEL = ['broken', 'poor', 'worn', 'good', '★'];
+const COND_CLS   = ['bad',    'bad',  'warn', '',    'good'];
 
 // gearCondition is the whole gear_condition object (or undefined if absent from row).
 // slot is 'weapon' or 'armor'. fallbackBool is has_weapon for the weapon slot.
 //
 // Three states:
 //   gearCondition === undefined  — old broker, field not present; fall back to Y/N
-//   gearCondition === null       — broker present but sweepGearCondition hasn't run yet;
-//                                  show placeholder bar (grey squares)
+//   gearCondition === null       — broker present but sweepGearCondition hasn't run yet
 //   gearCondition[slot] === null — sweep ran but nothing equipped in that slot; dash
-//   gearCondition[slot]          — show name + condition bar
+//   gearCondition[slot]          — show shortened name + coloured condition badge
 function gearCell(gearCondition, slot, fallbackBool) {
   if (gearCondition === undefined) {
-    // legacy broker without this feature
     return `<span class="dim">${fallbackBool == null ? '?' : fallbackBool ? 'Y' : 'N'}</span>`;
   }
   if (gearCondition === null) {
-    // broker supports it but sweep hasn't run yet — show pending placeholder
-    return condBar(null, null);
+    return `<span class="dim">—</span>`;
   }
   const slotData = gearCondition[slot];
-  if (!slotData) return '<span class="dim">—</span>';
+  if (!slotData) return `<span class="dim">—</span>`;
   const { name, level } = slotData;
   const shortName = (name || '').replace(/\b(leather|chain|scale|plate)\b.*/i, m => m.split(' ')[0]);
-  return `<span class="gear-name" title="${esc(name)}">${esc(shortName)}</span>${condBar(level, name)}`;
+  if (level == null)
+    return `<span title="${esc(name)}">${esc(shortName)}</span><span class="dim" title="condition not yet read"> ?</span>`;
+  const label = COND_LABEL[level] ?? '?';
+  const cls   = COND_CLS[level]   ?? '';
+  return `<span title="${esc(name)}">${esc(shortName)}</span> <span class="${cls || 'dim'}" title="condition: ${label}">${label}</span>`;
 }
 
 // Vitals arrive from the ledger as "16/23" strings, because that is what the fleet
@@ -455,11 +441,9 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
      row reads identically across all three columns. */
   .bar-cells .full { color:var(--good); }
   .bar-cells.mp .full { color:var(--mana); }
-  .bar-cells.gr .full { color:#b87c2a; }
   .bar-cells .edge { color:var(--edge); }
   .bar-cells .gone { color:var(--bad); opacity:.5; }
   .bar-cells.none { color:var(--line); }
-  .gear-name { color:var(--dim); font-size:.75rem; margin-right:.2rem; }
   .vnum { color:var(--dim); font-size:.72rem; margin-left:.4rem;
           font-variant-numeric:tabular-nums; }
   .bar { width:110px; }

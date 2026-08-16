@@ -10382,6 +10382,11 @@ const TOOLS = [
         'first-time character in the login list, which is what you want; override only to test the wire ' +
         'format. Sending 0 gets CHARINFO_OK with id 0 — an acknowledgement that creates nothing' },
       confirm: { type: 'boolean', description: 'required for action=reroll. There is no undo.' },
+      account: { type: 'string', description: 'account name — set credentials without joining first. ' +
+        'Use when the character was made first-time via the admin socket rather than via suicide.' },
+      password: { type: 'string', description: 'account password (with account param)' },
+      host: { type: 'string', description: 'game server host (default: broker default)' },
+      port: { type: 'number', description: 'game server port (default: broker default)' },
     }, required: ['action'] },
     run: async (a) => {
       const plan = planCharacter({
@@ -10390,6 +10395,18 @@ const TOOLS = [
       if (!plan.ok) return { done: false, plan, note: 'the plan is invalid; nothing was sent' };
 
       const s = session(a.agent);
+
+      // CREDENTIALS-FIRST PATH: caller already arranged first-time state via the
+      // admin socket (zeroing piLastLoginTime and piLast_Restart_time). Set credentials
+      // so joinAsNewCharacter can connect, without going through a join+suicide cycle
+      // that would re-set those fields.
+      if (a.account && a.password && !s.credentials) {
+        s.credentials = {
+          account: a.account, password: a.password,
+          host: a.host || HOST, port: a.port || PORT,
+        };
+      }
+
       const before = (() => {
         const c = s.client; if (!c) return null;
         const st = {};

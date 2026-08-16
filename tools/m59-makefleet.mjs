@@ -13,12 +13,13 @@
 //    (101 + stamina), so it is permanently capped at 102 max health and permanently
 //    bad at everything. It is a placeholder, not a character.
 //
-// 2. `join` through the broker logs in as it.
+//    The reply includes the user object ID: `<acct_id> <obj_id> User <name>`.
+//    We immediately zero piLastLoginTime AND piLast_Restart_time on that object via
+//    the admin socket, which makes IsFirstTime() return true (user.kod:558 checks both).
 //
-// 3. `reroll` suicides it and sends BP_NEW_CHARINFO with real stats. The suicide is
-//    not incidental — the server only accepts a new character while IsFirstTime()
-//    holds, and PerformSuicide (user.kod:1447) setting piLastLoginTime = 0 is what
-//    makes that true.
+// 2. `reroll` with credentials passed inline (no prior join). Since the session has
+//    never logged in, s.client is null, the suicide is skipped, and joinAsNewCharacter
+//    connects fresh, sees flags=1 in BP_CHARACTERS, and sends BP_NEW_CHARINFO.
 //
 // THE SERVER NEVER SAYS NO. Over budget, out of range, wrong list length — none of it
 // is refused. It silently stamps 3/1/4/1/5/9 and the default face on you, and you find
@@ -26,11 +27,10 @@
 // verified after the fact against what was asked for, and a mismatch is reported as a
 // failure rather than counted as a success.
 //
-// Suicide cooldown is ten minutes per character (user.kod:32), but a brand-new one has
-// none, which is why this works in a single pass on a fresh account. It also means a
-// re-run against a character that already exists cannot re-roll it for ten minutes —
-// so this script skips accounts that already have a grown character rather than
-// stepping on them.
+// WHY NOT JOIN+SUICIDE? PerformSuicide (user.kod:1447) sets piLastLoginTime=0 but also
+// piLast_Restart_time=GetTime(). IsFirstTime checks BOTH (user.kod:558), so a suicided
+// character is never first-time. Zeroing both fields via admin socket before any login
+// is the only path that works without editing the server.
 
 import net from 'node:net';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -255,15 +255,39 @@ async function main() {
         saveRoster(roster);
       }
 
-      // 2. log in as the placeholder.
-      process.stdout.write('join ');
-      await rpc(a.broker, 'join', { agent, account: p.account, password });
+      // 2. Zero both login-time fields so IsFirstTime() returns true (user.kod:558).
+      //    AdminShowOneUser (blakserv/adminfn.c:1652) prints: "<acct_id> <obj_id> <class> <name>".
+      //    PerformSuicide sets piLastLoginTime=0 but piLast_Restart_time=GetTime(),
+      //    so suicide alone is never first-time. Admin socket is the only clean path.
+      {
+        // For a fresh account, the object id is in the create automated reply.
+        // For an existing account, look it up via `show account <name>`.
+        let rawForObjId = out;
+        if (existed) rawForObjId = clean(await admin([`show account ${p.account}`], 800));
+        const objMatch = rawForObjId.match(/^\s*\d+\s+(\d+)\s+\w+/m);
+        if (!objMatch) {
+          console.log(`FAILED — could not find object id (reply: ${rawForObjId.slice(0, 120)})`);
+          failed.push({ ...p, why: 'could not parse user object id' });
+          continue;
+        }
+        const objId = objMatch[1];
+        process.stdout.write('zero-first-time ');
+        await admin([
+          `set object ${objId} piLastLoginTime INT 0`,
+          `set object ${objId} piLast_Restart_time INT 0`,
+        ], 1000);
+      }
 
-      // 3. replace it with a real character.
+      // 3. Replace the zeroed placeholder with a real character. Credentials are
+      //    passed inline so the broker sets them without a join — joinAsNewCharacter
+      //    then connects fresh and sees flags=1 in BP_CHARACTERS.
       process.stdout.write('reroll ');
       const r = await rpc(a.broker, 'reroll', {
         action: 'reroll', agent, name: p.name,
         stats: p.stats, loadout: a.loadout, confirm: true,
+        account: p.account, password,
+        host: process.env.M59_HOST || undefined,
+        port: process.env.M59_PORT ? Number(process.env.M59_PORT) : undefined,
       });
 
       // ABSENCE IS NOT AGREEMENT. The broker already compares every stat against
