@@ -946,6 +946,40 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   — it drives both ends and verifies the receiver actually holds the goods afterwards, which
   is the whole reason it exists.
 
+- **"BOUGHT X BUT WON'T WIELD IT" IS ALMOST ALWAYS "CAN'T PUT DOWN Y", AND THERE ARE
+  EXACTLY TWO THINGS THAT DO IT.** A character that buys a mace and keeps swinging a long
+  sword is not a ranking bug and not a failed purchase — something already in its hands
+  refuses to come off, and both culprits are silent about it in the ways this file keeps
+  warning about.
+
+  **A CURSED WEAPON CANNOT BE PUT DOWN, EVER.** `WeapAttCursed.ItemReqUnuse`
+  (`wacursed.kod:97`) tests nothing at all — it returns FALSE unconditionally and says
+  *"%s%s seems to cling to your hand!"* — and `ItemReqLeaveOwner` refuses the drop for as
+  long as the item is in `getplayerusing`. So **wielding one is the only irreversible
+  mistake in this repository**: no swap, no sale, no handover, no drop, for the life of
+  the character.
+
+  And it is a **downgrade, not a trade-off**: `ModifyDamage` and `ModifyHitRoll` both
+  return `x - 2*power`, so it is strictly worse than what it replaced at hitting *and* at
+  hurting. There is no upside to weigh against being stuck with it.
+
+  Nothing in the harness knew the attribute existed. The name is `"cursed %s"`, so a
+  cursed long sword matches `/long ?sword/` and scored **7** — ahead of every mace in the
+  pack. It is **10% of the item-attribute treasure table**
+  (`AddToItemAttTreasureTable(#percent=10)`) and this fleet loots a weapon from almost
+  every kill, so it is a live hazard rather than a curiosity. `isCursed` in
+  `m59-skills.mjs` keeps it out of `weaponRanking`.
+
+  **The guard is on WIELDING only, and that is deliberate.** One that is merely carried is
+  harmless and still sellable — `ItemReqLeaveOwner` refuses only while it is in the use
+  list — so it stays a weapon to `weaponScore`, `sellable` and the equipment plan, and the
+  ordinary sell rules shed it. Scoring it zero would make it invisible to the very code
+  that should be getting rid of it. **Unwieldable, not invisible.**
+
+  **The other culprit is a TOKEN**, which takes both hand slots and is already on the
+  fleet row as `holding_token` — see the note in `m59-broker.mjs` about why it is a flag
+  rather than a reading. Check that first; it is free.
+
 - **A SMITH DOES NOT BUY MUSHROOMS, AND OFFERING HIM ONE IS A SUCCESSFUL CALL THAT RETURNS
   A SILENCE.** What a merchant deals in is `ObjectDesired`, declared per class.
   `Monster.ObjectDesired` (`monster.kod:4707`) returns TRUE and its own docstring says
