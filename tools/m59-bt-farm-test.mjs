@@ -276,5 +276,77 @@ t('tree: falls through to next node when provision is full', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Resting while waiting in a proven safe spot
+//
+// The fix for a character parked in a spot with nothing to hunt standing
+// still and regenerating nothing. The wait path must sit (regen vigor to the
+// 0.4 cap) when vitals are below the ceiling, and skip the sit when already
+// whole.
+// ---------------------------------------------------------------------------
+
+t('wait-in-spot sits and rests when vigor is below the ceiling', async () => {
+  const k = mockKeeper({
+    hold: { col: 5, row: 5, proven: true },
+    holdWorks: () => true,
+    sanctuary: () => false,
+  });
+  // Vigor 60/200 = 0.3, below the 0.4 cap -> must rest.
+  k.s.client.vitals = () => ({ health: { value: 36, max: 36 }, vigor: { value: 60, max: 200 } });
+  let rested = 0;
+  k._btFarmRestWhileWaiting = async () => { rested++; return { rested: true }; };
+  const node = noTargetFoundNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS, got ${r}`);
+  if (rested !== 1) throw new Error(`expected one rest call, got ${rested}`);
+  if (k.tally.rests !== 1) throw new Error(`expected tally.rests=1, got ${k.tally.rests}`);
+});
+
+t('wait-in-spot does not sit when already whole', async () => {
+  const k = mockKeeper({
+    hold: { col: 5, row: 5, proven: true },
+    holdWorks: () => true,
+    sanctuary: () => false,
+  });
+  // Vigor 140/200 = 0.7 (>= 0.4) and health full -> already whole, no sit.
+  k.s.client.vitals = () => ({ health: { value: 36, max: 36 }, vigor: { value: 140, max: 200 } });
+  let rested = 0;
+  k._btFarmRestWhileWaiting = async () => { rested++; return { rested: true }; };
+  const node = noTargetFoundNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS, got ${r}`);
+  if (rested !== 0) throw new Error(`expected no rest call, got ${rested}`);
+});
+
+t('wait-in-spot does not sit when a target is present (falls to fight)', async () => {
+  const k = mockKeeper({
+    hold: { col: 5, row: 5, proven: true },
+    holdWorks: () => true,
+    sanctuary: () => false,
+  });
+  k.s.client.vitals = () => ({ health: { value: 36, max: 36 }, vigor: { value: 60, max: 200 } });
+  // A rat is in the room -> noTargetFound returns FAILURE, no rest, fight handles it.
+  k._btFarmFoundTargets = () => [{ id: 1, nameRsc: 'giant rat' }];
+  let rested = 0;
+  k._btFarmRestWhileWaiting = async () => { rested++; return { rested: true }; };
+  const node = noTargetFoundNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== FAILURE) throw new Error(`expected FAILURE (target present), got ${r}`);
+  if (rested !== 0) throw new Error(`expected no rest call, got ${rested}`);
+});
+
+t('wait-in-spot still waits (SUCCESS) when not holding a spot', async () => {
+  const k = mockKeeper({ hold: null, holdWorks: () => false, sanctuary: () => false });
+  k.s.client.vitals = () => ({ health: { value: 36, max: 36 }, vigor: { value: 60, max: 200 } });
+  k._btFarmFoundTargets = () => [];
+  let rested = 0;
+  k._btFarmRestWhileWaiting = async () => { rested++; return { rested: true }; };
+  const node = noTargetFoundNode(k);
+  const r = await node.tickAsync(bb(k));
+  // Not holding a spot -> the empty-room path, not the rest path.
+  if (rested !== 0) throw new Error(`expected no rest when not holding, got ${rested}`);
+  if (r !== SUCCESS && r !== RUNNING) throw new Error(`expected SUCCESS/RUNNING, got ${r}`);
+});
+
+// ---------------------------------------------------------------------------
 
 run();

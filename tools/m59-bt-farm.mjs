@@ -307,10 +307,25 @@ export function noTargetFoundNode(keeper) {
     const found = keeper._btFarmFoundTargets();
     if (found.length) return FAILURE;
 
-    // Holding a wall in a spawning room: waiting is the job
+    // Holding a wall in a spawning room: waiting is the job -- and a waiting
+    // character SITS. Standing still regens nothing, so without this the
+    // character idles at whatever vigor a fight left it at, with no path back to
+    // fighting strength. Sitting is always safe in a proven spot, and restUntil()
+    // aborts the moment every vital is at its cap or something hits us.
     const waitingInASpot = !!keeper.hold && keeper.holdWorks() && !keeper.sanctuary(room);
     if (waitingInASpot) {
       keeper.doing = 'waiting';
+      const v = vitals(bb);
+      const vigPct = v.vigor?.max ? v.vigor.value / v.vigor.max : null;
+      const hp = v.health?.max ? v.health.value / v.health.max : 1;
+      const whole = (vigPct ?? 1) >= 0.4 && (hp ?? 1) >= 0.98;
+      if (!whole) {
+        await keeper._btFarmRestWhileWaiting?.().catch(() => {});
+        keeper.tally.rests = (keeper.tally.rests || 0) + 1;
+        keeper.note('resting in a proven spot while we wait for a spawn', {
+          vigor: v.vigor?.value, health: v.health?.value,
+        });
+      }
       return SUCCESS;
     }
 

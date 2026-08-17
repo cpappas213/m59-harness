@@ -8511,6 +8511,31 @@ export class Autopilot {
     return shouldRelocate ? shouldRelocate(this.policy, room, denied) : false;
   }
 
+  // SIT AND REGENERATE WHILE PARKED IN A PROVEN SAFE SPOT WAITING FOR PREY.
+  //
+  // Holding a spot with nothing to hunt was, until now, a stand-still: the node set
+  // doing='waiting' and returned, and the character's body just sat in the corner. A
+  // standing character regens nothing, so vigor sat pinned at whatever a fight left
+  // it at (60 of 200) while health and mana read full and the stall monitor, seeing a
+  // fresh 'holding a spot' note every pass, reported the character as working. It was
+  // not working; it was idling with no regen and no path back to fighting vigor.
+  //
+  // A proven safe spot is safe by definition -- nothing can reach the square -- so
+  // sitting in it is always the right call: regen vigor/health/mana to the natural
+  // ceiling (0.4 of vigor, 80 of 200, the REST_VIGOR_CAP) while the room cycles for a
+  // spawn. restUntil() aborts early if anything hits us, which would mean the spot we
+  // believed proven is not -- the same signal the flee rest path acts on.
+  //
+  // We pass maxSeconds generously: the wait is for a spawn, which is minutes, and
+  // restUntil returns the moment every vital is at its cap anyway, so an early return
+  // (fully rested) just lets the next pass resume the wait. It is also bounded so a
+  // room that blocks resting cannot hold the pass for the whole limit.
+  _btFarmRestWhileWaiting() {
+    const { skills } = this.constructor._combatSkills;
+    if (!skills?.restUntil) return Promise.resolve(null);
+    return skills.restUntil(this.s, { health: 0.98, vigor: 0.4, maxSeconds: 90 }).catch(() => null);
+  }
+
   _btFarmFindCreature(name) {
     const { findCreature } = this.constructor._combatSkills;
     return findCreature ? findCreature(this.s, name) : [];
