@@ -328,6 +328,18 @@ const squaresPerSecond = speed => SQUARES_PER_SECOND[speed] ?? (speed > WALK_SPE
 // 25, comfortably inside it. Eight is the ceiling this uses, which is still only 64.
 const MOVE_HOP_MAX_SQUARES = Number(process.env.M59_MOVE_HOP_MAX || 8);
 
+// HOW MANY OFF-PLAN LANDINGS BEFORE THE WALKER STOPS TALKING IN SQUARES.
+//
+// Measured on room 587's approach to its western gap: 4 of 9 planned steps land somewhere
+// other than the plan asked for from one start, 24 of 42 from another — so the rate is
+// high enough that a threshold of two or three separates "the world moved" from "my plan
+// is in the wrong unit", while a walk across open floor never reaches it at all. Three,
+// because two is within the noise of a single monster stepping across a doorway.
+//
+// Raise it to disable the behaviour without removing it; the square walk below is
+// unchanged and still ends the walk honestly on its own budget.
+const OFFPLAN_BEFORE_FINE = Number(process.env.M59_OFFPLAN_BEFORE_FINE || 3);
+
 // ---------------------------------------------------------------- pacing
 
 // A serial queue per session. Each entry declares how long the session must be
@@ -3580,6 +3592,10 @@ class Session {
     let monsterBlocks = 0;
     const blockedBy = new Set();       // squares a body was standing on
     const sidestepped = new Set();     // squares we have already tried to go round, once each
+    // HOW OFTEN THE MOVER PUT US SOMEWHERE THE PLAN DID NOT ASK FOR. See the note where
+    // this is incremented; past a handful it means the square-by-square plan is not the
+    // thing being walked, and continuing to replan it is how a room takes three minutes.
+    let offPlan = 0, wentFine = false;
     while (queue.length && taken < maxSteps) {
       if (this.movementWasCancelled(movementGeneration, controlToken))
         return this.cancelledMovement({ steps: taken, replans });
@@ -3619,6 +3635,20 @@ class Session {
                    note: 'lost authoritative own-position state while walking',
                    steps: taken, replans };
       if (now.col === next.col && now.row === next.row) { stalledOn = null; stalledTimes = 0; continue; }
+
+      // LANDED SOMEWHERE ELSE — counted, because the RATE is the diagnosis.
+      //
+      // The router validates a step centre-to-centre (`moverStepLands` asks "from the
+      // CENTRE of A, can I land in B"), and after the first slide the walker is never at
+      // a centre again. Simulated on room 587's approach to its western gap with the real
+      // fine position carried forward: 4 of 9 planned steps land off-plan from one start
+      // and 24 of 42 from another, while the model calls every one of them legal.
+      //
+      // Each of those costs a replan, and the replan produces the same square-to-square
+      // plan that just failed — which is why crossing one room took 88-208s against 15s
+      // for a direct walk to the same gap, and why a four-square doorway becomes a
+      // pile-up as soon as a second character wants it.
+      offPlan++;
 
       // DID NOT MOVE AT ALL vs ENDED UP SOMEWHERE ELSE. These were treated the same and
       // they need opposite responses. Ending up elsewhere means the route is stale, so
@@ -3731,6 +3761,23 @@ class Session {
                  ...(monsterBlocks ? { monster_blocked: monsterBlocks,
                                        blocked_by_bodies_at: [...blockedBy] } : {}),
                  note: 'kept ending up somewhere other than the planned square' };
+      // A SWITCH TO FINE MOVEMENT HERE WAS TRIED, AND ITS MEASUREMENT WAS INVALID.
+      //
+      // The idea was to hand the remainder of a walk to `walkFine` once `offPlan` passed
+      // a threshold. It A/B'd at 1/5 against 4/5 for the plain square walk, which looked
+      // decisive — and was not: a second agent was committing to this same file between
+      // the two arms (5421a69, a4d4c71), so the arms differed by more than the change
+      // under test. The comparison is withdrawn rather than reported.
+      //
+      // It is still not reinstated, for a reason that survives the bad measurement: those
+      // two commits found the actual causes of the same symptom — the outward step past a
+      // boundary was clipped and never sent, and `neighbors()` was gating every step on
+      // the monster grid — and both are upstream of the off-plan rate this was trying to
+      // paper over. Fixing a rate is the wrong move when the thing generating it has just
+      // been fixed properly.
+      //
+      // `offPlan` is kept as TELEMETRY only. It costs an integer, it is the number that
+      // would say whether the remaining slide still matters, and nothing acts on it.
       // A replan is exactly when something has moved into the way, so the threat field
       // is re-read here rather than reused from the top of the walk.
       const re = geo.path(now.row, now.col, row, col,
