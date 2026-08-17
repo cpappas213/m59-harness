@@ -31,7 +31,8 @@
  "gear": {
   "weapon": [
    "mace",
-   "hammer"
+   "hammer",
+   "axe"
   ],
   "slots": {
    "body": [
@@ -43,7 +44,7 @@
     "small round shield"
    ]
   },
-  "from": "the fleet's proven answer, applied deliberately, 2026-08-08 23:50"
+  "why": "SKELETONS RESIST EDGES. skel.kod:73 sets pierce and thrust to 70 and BLUDGEON to -20 — negative, so blunt does EXTRA. BatteredSkeleton is Skeleton and does not override it, so the whole family this fleet hunts is the same. A long sword thrusts: 70% resisted. Maces and hammers bludgeon; axes slash, which is not in the table at all, so neutral."
  },
  "carry": [
   {
@@ -99,10 +100,18 @@
    "kind": "food"
   }
  ],
- "sell": [],
+ "sell": [
+  "long sword",
+  "short sword",
+  "scimitar",
+  "knight's shield",
+  "gold round shield",
+  "small round shield"
+ ],
  "keep": [],
  "purse": {
   "float": null,
   "bank_above": null
- }
+ },
+ "sell_why": "Spares of these are dead weight and they pile up: one character held TEN long swords and FIVE knight's shields, thirty stacks against a max_carry of 14, and merchants refused to hand over a mace because of it. The worn one is never at risk — plUsing is the server's own list and no sell list can take the shield off an arm — so this sheds only the surplus. Swords are on it twice over: skeletons resist thrust at 70 (skel.kod:73), so a sword is not a weapon this fleet should be carrying at all."
 }
