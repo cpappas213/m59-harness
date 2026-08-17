@@ -260,3 +260,4 @@ __pycache__/
 # and storage/ above. Useful to review, not reference data.
 /substrate/exit-gaps.json
 
+/substrate/traces/

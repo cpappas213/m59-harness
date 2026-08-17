@@ -131,6 +131,11 @@ export const MIN_SIDE_MOVE = CLIENT_FINENESS / 16;   // 64 — MOVEUNITS / 4
 // wall. Treating those as collision data would silently bring the original bug
 // back: a drawable/passable bit alone cannot distinguish a low step from a cliff.
 export const COLLISION_VERSION = 2;
+
+// Answers to `collisionReady`, keyed by geometry instance — see the note on that getter.
+// A WeakMap rather than a field so it never reaches toJSON, and so a dropped room's
+// answer is collected with the room.
+const COLLISION_READY_CACHE = new WeakMap();
 const SIDE_EXISTS = 0x01;
 const SIDE_PASSABLE = 0x02;
 const SIDE_ABOVE = 0x04;
@@ -574,8 +579,22 @@ export class RoomGeometry {
   // Fine movement is allowed only with the complete, versioned collision payload.
   // Five-field legacy wall tuples can still draw a minimap, but cannot distinguish
   // directional sidedefs, low steps, low ceilings, or cliffs.
+  // MEMOISED, BECAUSE THIS IS ASKED PER PATHFINDING NODE AND ANSWERS BY SCANNING THE ROOM.
+  // The two `every()` walks below are O(leaves + walls), and `moverStepLands`/`walkable`
+  // consult this for every candidate step — so a single path re-scanned the whole room
+  // thousands of times. Measured on the live fleet before this cache: 96.6% of the broker's
+  // entire CPU was in this file and 87% of it in these nine lines, which pegged the event
+  // loop hard enough that only 2 or 3 of 21 characters ever reached the world.
+  //
+  // Safe to cache because the fields it reads are fixed at construction: nothing in this
+  // repository assigns walls, leaves, sectors, nodes, bspRoot, security or collisionVersion
+  // after a geometry is built, and a changed room arrives as a NEW instance via fromJSON.
+  // Kept in a module-level WeakMap rather than on the object so it cannot reach toJSON and
+  // end up baked into substrate/m59-map.json as a stored answer about geometry.
   get collisionReady() {
-    return this.collisionVersion === COLLISION_VERSION
+    const cached = COLLISION_READY_CACHE.get(this);
+    if (cached !== undefined) return cached;
+    const ready = this.collisionVersion === COLLISION_VERSION
       && Number.isInteger(this.security)
       && Array.isArray(this.walls) && Array.isArray(this.sectors) && this.sectors.length > 0
       && Array.isArray(this.leaves) && this.leaves.length > 0
@@ -584,6 +603,8 @@ export class RoomGeometry {
       && this.leaves.every(leaf => !!leaf.sector)
       && this.walls.every(wall => !wall.drawable || (wall.collisionMetadata === true
         && this.nodes[wall.collisionNode - 1]?.type === 'internal'));
+    COLLISION_READY_CACHE.set(this, ready);
+    return ready;
   }
 
   leafAtClient(x, y, { preferSectorNum = null } = {}) {
