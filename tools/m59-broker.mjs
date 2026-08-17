@@ -77,6 +77,7 @@ import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRA
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
 import * as exitgap from './m59-exitgap.mjs';
+import { attachStepMasks } from './m59-routes.mjs';
 import { TitheBook, guildRentStatus, payGuildTithe, titheFleet } from './m59-tithe.mjs';
 import { RANK, RANK_NAME, COMMANDS, mayI, commandsIn, validateGuild,
          DEFAULT_RANK_TITLES, maturityWait, inductionPlan, INVITATION_MS,
@@ -406,6 +407,27 @@ if (!worldMapReadiness.ok) {
     `${worldMapReadiness.manifest_matches ? 'matches' : 'does not match'}). ` +
     'Run node tools/setup.mjs server or refresh from one explicit authoritative room directory.');
 }
+
+// THE ROUTER'S HALF OF THE COLLISION CONTRACT, IF SOMEBODY HAS BAKED IT.
+//
+// Movement is validated against the client's BSP; the router planned on the server's
+// coarse grid; those disagree, and a router planning on a different map from the one the
+// mover enforces does not produce a wrong route — it produces a character walking into a
+// wall for ever. Answering the mover's own question at runtime cannot be done (a cold path
+// measured 1.2s on the one event loop every session shares, which is how twelve of
+// twenty-one characters left the world in five minutes), so it is answered once, offline,
+// by tools/m59-routebake.mjs, and this hands the result to the geometry.
+//
+// ABSENT IS NOT AN ERROR. No table, or one baked from different geometry, means the router
+// plans on the grid exactly as it always did — so a checkout that has never run the bake
+// behaves precisely as before. The line is printed either way, because a fleet quietly
+// walking on the wrong map is the failure this whole path exists to remove.
+let stepMasks = { attached: 0, ok: false, why: 'not attempted' };
+try { stepMasks = attachStepMasks(worldMap); } catch (error) { stepMasks = { attached: 0, ok: false, why: error.message }; }
+console.error(stepMasks.attached
+  ? `[routes] ${stepMasks.attached} room(s) planning on the mover's own geometry` +
+    (stepMasks.refused ? `, ${stepMasks.refused} mask(s) refused as the wrong size` : '')
+  : `[routes] planning on the coarse grid — ${stepMasks.why ?? 'no step masks attached'}`);
 
 // Who buys what, who sells what, who teaches what, and where they stand. Built once
 // from the running world plus the source tree — a merchant's buying rule is a kod
@@ -3185,6 +3207,20 @@ class Session {
     // about occupancy, and these rooms cap at seven to twelve monsters — so the common
     // reason a step does not happen is that something is in the way.
     const occupied = new Set();
+    // AND EDGES THE MOVER WILL NOT CROSS, WHICH IS A DIFFERENT FACT AND WAS NOT RECORDED
+    // AT ALL. A monster moves; a wall does not. Blaming the SQUARE for a wall between two
+    // squares removes a perfectly good place to stand that other neighbours still reach,
+    // and — much worse — a step that SLID and landed one square sideways recorded nothing
+    // whatever, so the replan from the new position produced the same step and the walker
+    // bounced along the wall until its replan budget ran out.
+    //
+    // Measured offline against the baked geometry, on the twelve boundaries the exit-gap
+    // record complains about most: 249 of 422 walks to an exit — 59% — died exactly that
+    // way, with trails reading `4,15->5,15=5,15` / `5,15->4,16=4,15` over and over. Nobody
+    // was trapped: the same rooms are 96-100% connected to their own exits when the mover's
+    // edges are the ones being walked. The walker simply never learned.
+    const blockedEdges = new Set();
+    const edgeKey = (fr, fc, tr, tc) => `${fr},${fc}>${tr},${tc}`;
     let stalledOn = null, stalledTimes = 0;
     while (queue.length && taken < maxSteps) {
       if (this.movementWasCancelled(movementGeneration, controlToken))
@@ -3209,6 +3245,7 @@ class Session {
         const peek = queue[0];
         if (Math.sign(peek.col - next.col) !== dc0 || Math.sign(peek.row - next.row) !== dr0) break;
         if (occupied.has(`${peek.row},${peek.col}`)) break;
+        if (blockedEdges.has(edgeKey(next.row, next.col, peek.row, peek.col))) break;
         next = queue.shift(); hop++;
       }
       const was = c.self ? { col: c.self.col, row: c.self.row } : null;
@@ -3233,12 +3270,39 @@ class Session {
       // monster and then reported "kept ending up somewhere other than the planned
       // square" about a character that had not moved at all.
       const didNotMove = was && now.col === was.col && now.row === was.row;
-      if (didNotMove) {
+
+      // A MONSTER MOVES AND A WALL DOES NOT, SO THEY GET OPPOSITE TREATMENT — and the
+      // server already tells us which it was. `object_blocked` is the obstacle arm of the
+      // local collision pass; every other refusal is geometry. Waiting 700ms for a wall to
+      // wander off was pure cost, and it was paid on every lap of the bounce above.
+      const hitSomething = r.reason === 'object_blocked';
+
+      // THE EDGE THAT REFUSED IS THE ONE WE ASKED FOR, AND IT IS NAMED FROM WHERE WE
+      // ASKED IT — not from where we ended up. That distinction is the whole of this fix.
+      // A slid step leaves the character at neither end of the step it requested, so
+      // blaming the edge out of the LANDING square blames an edge nobody tried: measured,
+      // the two-square bounce simply carried on, alternating between the refused edge and
+      // an unblocked twin. `was -> was + one step in the requested direction` is exactly
+      // what the mover was asked to do and exactly what a replan would ask again.
+      //
+      // A coalesced hop covers several squares and only names its first, so when one fails
+      // this attributes the first rather than the guilty one. That is deliberate and it is
+      // the safe direction: the cost of blocking a good edge is a slightly longer route,
+      // the replan re-asks from nearer, and the real blocker is found on the next lap.
+      const bdr = Math.sign(next.row - (was?.row ?? next.row));
+      const bdc = Math.sign(next.col - (was?.col ?? next.col));
+      let learned = false;
+      if (!hitSomething && was && (bdr || bdc)) {
+        const k = edgeKey(was.row, was.col, was.row + bdr, was.col + bdc);
+        if (!blockedEdges.has(k)) { blockedEdges.add(k); learned = true; }
+      }
+
+      if (didNotMove && hitSomething) {
         // Monsters wander. One retry costs a second and often clears it, which is
         // cheaper and less disruptive than routing the long way round.
         if (stalledOn === `${next.row},${next.col}` && stalledTimes >= 1) {
           occupied.add(`${next.row},${next.col}`);
-          stalledOn = null; stalledTimes = 0;
+          stalledOn = null; stalledTimes = 0; learned = true;
         } else {
           stalledOn = `${next.row},${next.col}`;
           stalledTimes++;
@@ -3248,22 +3312,42 @@ class Session {
         }
       }
 
-      if (++replans > 8)
+      // A REPLAN THAT LEARNED SOMETHING IS NOT THE ONE THIS BUDGET IS FOR. The cap exists
+      // to stop an endless loop, and a loop is precisely a replan that discovers nothing:
+      // every walk of a wall of any length would otherwise exhaust eight tries and report a
+      // room impassable. So an informative failure is free — the edge set is finite and
+      // shrinks the search each time — and only a repeat burns the budget. `hardCap` still
+      // bounds the whole walk in steps, so this cannot run away.
+      if (!learned && ++replans > 8)
         return { arrived: false, blocked_at: { col: now.col, row: now.row }, steps: taken,
-                 routed_around: [...occupied],
+                 routed_around: [...occupied], refused_edges: blockedEdges.size,
                  note: 'kept ending up somewhere other than the planned square' };
       // A replan is exactly when something has moved into the way, so the threat field
       // is re-read here rather than reused from the top of the walk.
-      const re = geo.path(now.row, now.col, row, col, { avoid: occupied, threats: this.threatsHere() });
+      const re = geo.path(now.row, now.col, row, col,
+        { avoid: occupied, blockedEdges, threats: this.threatsHere() });
       if (!re.found) {
-        // With nothing to route around, the answer is genuinely "no route". With
-        // squares excluded, the exclusions may BE the problem — so try once more
-        // without them rather than reporting a room as impassable because of a monster.
-        const open = occupied.size ? geo.path(now.row, now.col, row, col) : re;
+        // RELAX IN THE ORDER THE FACTS DECAY. Occupancy is a guess about where something
+        // was standing a moment ago and is dropped first; a refused edge is a wall and is
+        // kept. Only if that still fails is the collision model itself set aside — being
+        // wrong about a wall costs a walk, and refusing costs the errand, so the last try
+        // is the coarse grid we planned on before any of this existed.
+        let open = occupied.size
+          ? geo.path(now.row, now.col, row, col, { blockedEdges, threats: this.threatsHere() })
+          : re;
+        if (open.found) occupied.clear();
+        else if (blockedEdges.size) {
+          // NOT CLEARED, ONLY SET ASIDE FOR THIS ONE PLAN. Forgetting the refusals would
+          // re-enter the same bounce with the same enthusiasm; keeping them means the hop
+          // coalescer still steps over them and the next replan still knows. If the coarse
+          // plan's own first step is one of them we fail again, learn nothing new, and the
+          // budget above ends the walk honestly instead of grinding.
+          open = geo.path(now.row, now.col, row, col, { collision: false });
+          if (open.found) occupied.clear();
+        }
         if (!open.found)
           return { arrived: false, blocked_at: { col: now.col, row: now.row }, steps: taken,
-                   reason: open.reason };
-        occupied.clear();
+                   refused_edges: blockedEdges.size, reason: open.reason };
         queue = open.steps.slice();
         continue;
       }

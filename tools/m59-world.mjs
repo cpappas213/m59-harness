@@ -366,36 +366,64 @@ export class World {
       let approach = null, alternates = [], viableCount = 0;
       const precise = [];
       if (geo && me && origin) {
-        // One flood fill prices every coarse staging square. Running a fresh A* for
-        // every sub-square opening made a single exits() call take tens of seconds.
-        const reachable = [{ row: origin.row, col: origin.col, steps: 0 }];
-        const seen = new Set([`${origin.row},${origin.col}`]);
-        for (let index = 0; index < reachable.length; index++) {
-          const at = reachable[index];
-          for (const next of geo.neighbors(at.row, at.col)) {
-            const key = `${next.row},${next.col}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            reachable.push({ row: next.row, col: next.col, steps: at.steps + 1 });
+        // One flood fill prices every staging square. Running a fresh A* for every
+        // sub-square opening made a single exits() call take tens of seconds.
+        //
+        // TWO FLOODS, AND THE MASK MAY ONLY EVER PREFER. The first walks the edges the
+        // MOVER will actually take (free where the room has a baked step mask, and
+        // identical to the second where it does not); the second is the coarse grid as it
+        // always was. Preferring the first is what stops a character being sent to a
+        // staging square it will bounce off a wall trying to reach — which is where 59% of
+        // walks to an exit died, measured.
+        //
+        // But the mask is a MODEL of somebody else's server and it is stricter than the
+        // world: on room 579's north boundary it offers no reachable stage at all for 19
+        // of 35 starting squares. If that were the last word, the exit would not appear in
+        // this list, `travel` would report "cannot find the exit to X from here", and a
+        // doorway people walk through would have been deleted by a bake. So a crossing
+        // with no mover-reachable stage falls back to a coarse-reachable one and is
+        // flagged rather than dropped. Being wrong about a wall costs a walk; refusing
+        // costs the errand, and does it silently.
+        const flood = collision => {
+          const reachable = [{ row: origin.row, col: origin.col, steps: 0 }];
+          const seen = new Set([`${origin.row},${origin.col}`]);
+          for (let index = 0; index < reachable.length; index++) {
+            const at = reachable[index];
+            for (const next of geo.neighbors(at.row, at.col, { collision })) {
+              const key = `${next.row},${next.col}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              reachable.push({ row: next.row, col: next.col, steps: at.steps + 1 });
+            }
           }
-        }
-        const reachableBySquare = new Map(reachable.map(stage => [`${stage.col},${stage.row}`, stage]));
+          return new Map(reachable.map(stage => [`${stage.col},${stage.row}`, stage]));
+        };
+        const coarseBySquare = flood(false);
+        const moverBySquare = geo.hasStepMask ? flood(true) : coarseBySquare;
+        const nearestIn = (by, stages) => stages
+          .map(stage => by.get(`${stage.col},${stage.row}`))
+          .filter(Boolean)
+          .sort((a, b) => a.steps - b.steps)[0] ?? null;
         for (const crossing of edgeCandidatesOf(room, e, null, { live: true })) {
-          const bestStage = crossing.stages
-            .map(stage => reachableBySquare.get(`${stage.col},${stage.row}`))
-            .filter(Boolean)
-            .sort((a, b) => a.steps - b.steps)[0] ?? null;
+          let bestStage = nearestIn(moverBySquare, crossing.stages);
+          const onlyCoarse = !bestStage;
+          if (onlyCoarse) bestStage = nearestIn(coarseBySquare, crossing.stages);
           if (!bestStage) continue;
           const fineSteps = Math.ceil(Math.hypot(
             crossing.fine_stand_on.x - (bestStage.col * KOD_FINENESS + (KOD_FINENESS >> 1)),
             crossing.fine_stand_on.y - (bestStage.row * KOD_FINENESS + (KOD_FINENESS >> 1))) / 48);
           precise.push({ col: bestStage.col, row: bestStage.row,
             fine_stand_on: crossing.fine_stand_on, edge_target: crossing.edge_target,
-            fine_path: [crossing.fine_stand_on], steps: bestStage.steps + fineSteps });
+            fine_path: [crossing.fine_stand_on], steps: bestStage.steps + fineSteps,
+            ...(onlyCoarse ? { grid_only: true } : {}) });
         }
       }
       if (!precise.length) continue;
-      precise.sort((a, b) => a.steps - b.steps);
+      // A SQUARE THE MOVER CAN REACH BEATS A NEARER ONE IT CANNOT, and distance only
+      // decides between equals. Sorting on steps alone put the whole fleet at the nearest
+      // opening on the wall whether or not it could be walked to, and that nearest opening
+      // is exactly where the bounce happened.
+      precise.sort((a, b) => (!!a.grid_only - !!b.grid_only) || (a.steps - b.steps));
       approach = precise[0];
       const MIN_FINE_APART = 4 * KOD_FINENESS, MAX_FINE_CANDIDATES = 8;
       const fineAlong = candidate => (e.leave === LEAVE.NORTH || e.leave === LEAVE.SOUTH)

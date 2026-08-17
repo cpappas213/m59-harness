@@ -141,6 +141,25 @@ const f32 = Math.fround;
 export const protocolToClient = value => (value - KOD_FINENESS) * CLIENT_PER_KOD;
 export const clientToProtocol = value => value / CLIENT_PER_KOD + KOD_FINENESS;
 
+// A CLIENT COORDINATE, ROUNDED TO THE INTEGER PROTOCOL UNIT THE WIRE CARRIES — AND
+// ROUNDED TOWARD WHERE THE MOVE STARTED, never to nearest.
+//
+// The trace answers in client units; the packet can only carry integer KOD ones. Rounding
+// to nearest can round PAST what the trace allowed, which is a coordinate the collision
+// pass never approved — so the bias is always back toward the start, and the result is
+// then re-traced to prove it is reachable.
+//
+// One home, two callers: `Session.validateFineTarget` in m59-broker.mjs decides what to
+// send, `RoomGeometry.moverStepLands` below decides what to plan. Those must be the same
+// arithmetic or the router plans steps the mover will not make, which is the whole bug
+// this pair of functions exists to close.
+export const protocolToward = (value, fromValue) => {
+  const wire = value / CLIENT_PER_KOD + KOD_FINENESS;
+  if (value > fromValue) return Math.floor(wire + 1e-9);
+  if (value < fromValue) return Math.ceil(wire - 1e-9);
+  return Math.round(wire);
+};
+
 // Separators are floats in the stock client. Keep every multiply/add in float32;
 // JS's default double arithmetic changes a handful of exact boundary decisions.
 function separatorValue(separator, x, y) {
@@ -456,6 +475,15 @@ export const DIR = {
   NW: { mask: 0x80, dr: -1, dc: -1, name: 'northwest' },
 };
 const DIRS = Object.values(DIR);
+
+// THE BIT ORDER OF A BAKED STEP MASK, AND IT MAY NEVER BE REORDERED.
+//
+// `RoomGeometry.buildStepMask` writes it and `moverStepLands` reads it, and a mask read
+// against a different order is not a degraded map — it is a confident map of the wrong
+// doors, which nothing downstream can detect. It is deliberately the same order as `DIR`
+// so there is one table rather than two that agree by luck.
+export const STEP_MASK_DIRS = DIRS;
+const STEP_MASK_BIT = new Map(DIRS.map((d, i) => [`${d.dr},${d.dc}`, 1 << i]));
 
 // Where the .roo files live. The server tree and the client tree are separate copies
 // and can differ (a mismatch black-screens the real client in that room), so prefer
@@ -1196,14 +1224,141 @@ export class RoomGeometry {
     return ok;
   }
 
-  neighbors(row, col, { fine = true, collision = false } = {}) {
+  // WHAT THE MOVER ACTUALLY DOES — WHICH IS NOT WHAT `stepAllowedByCollision` ASKS.
+  //
+  // The two questions look interchangeable and produce different worlds.
+  //
+  //   stepAllowedByCollision — does the straight line from one square CENTRE to the next
+  //     arrive exactly, without sliding? A fair question about a LINE, and the wrong one
+  //     about a character. The player is a disc of radius 248 in a square of 1024, so any
+  //     centre within a quarter-square of a wall is a place nobody can stand — and a person
+  //     walking that corridor never tries to stand there. Measured: it refuses 10% of
+  //     grid-adjacent walkable pairs and breaks room 150 into 159 pieces and room 578 into
+  //     214. That is plainly not what a room is, and it is why the collision-aware router
+  //     was turned off rather than fixed.
+  //
+  //   this one — what `Session.validateFineTarget` will do with the same request: aim at
+  //     the centre, SLIDE (the stock client's UserMovePlayer does), quantize toward the
+  //     start, re-trace until an integer protocol endpoint is proved reachable — and then
+  //     ask only whether that endpoint is IN THE TARGET SQUARE. `walkTo` compares squares,
+  //     so an off-centre arrival is an arrival.
+  //
+  // The same rooms under the second question: 150 in 15 pieces with 96% of it in one, 578
+  // in TWO with 99.4% in one, 545 in 10 with 98.5% in one. THAT is what a room is, and it
+  // is why a router may plan on this and could never plan on the other.
+  //
+  // GEOMETRY ONLY, AND IT FAILS OPEN. The live mover also has monsters, room flags and
+  // vertical motion in front of it and none of those can be baked, so this models the
+  // WALLS and nothing else. Every step it allows is still validated for real before a
+  // packet is sent; every step it refuses only costs a longer route. Being wrong here
+  // cannot put a character through a wall — the direction the whole file cares about.
+  //
+  // MEMOISED, for the same reason `stepAllowedByCollision` is: A* asks tens of thousands
+  // of times and the answer for a pair of adjacent squares never changes. The geometry is
+  // shared across sessions, so the cache is filled once per room rather than once per
+  // character. Prefer the baked mask (`attachStepMask`) where there is one — the cold cost
+  // of filling this cache for a whole big room is seconds, which is exactly what stopped
+  // the event loop the first time collision-aware routing shipped.
+  moverStepLands(fromRow, fromCol, toRow, toCol) {
+    if (!this.collisionReady || typeof this.traceFineMoveClient !== 'function') return true;
+    if (!this.inBounds(toRow, toCol) || !this.walkable(toRow, toCol)) return false;
+    const mask = this._stepMask;
+    if (mask) {
+      const bit = STEP_MASK_BIT.get(`${toRow - fromRow},${toCol - fromCol}`);
+      if (bit !== undefined && this.inBounds(fromRow, fromCol))
+        return (mask[(fromRow - 1) * this.cols + (fromCol - 1)] & bit) !== 0;
+    }
+    const cache = (this._moverStepCache ??= new Map());
+    const k = ((fromRow * this.cols + fromCol) * 9)
+            + ((toRow - fromRow + 1) * 3 + (toCol - fromCol + 1));
+    const hit = cache.get(k);
+    if (hit !== undefined) return hit;
+    const ok = this._traceMoverStep(fromRow, fromCol, toRow, toCol);
+    cache.set(k, ok);
+    return ok;
+  }
+
+  // `validateFineTarget`'s arithmetic, with the live half (obstacles, room flags, vertical
+  // motion) left out — see moverStepLands. Kept separate so the memo above stays a lookup.
+  _traceMoverStep(fromRow, fromCol, toRow, toCol) {
+    const half = KOD_FINENESS >> 1;
+    const fromX = protocolToClient(fromCol * KOD_FINENESS + half);
+    const fromY = protocolToClient(fromRow * KOD_FINENESS + half);
+    const toX = protocolToClient(toCol * KOD_FINENESS + half);
+    const toY = protocolToClient(toRow * KOD_FINENESS + half);
+    try {
+      const requested = this.traceFineMoveClient(fromX, fromY, toX, toY, { slide: true });
+      if (!requested.available || !requested.moved) return false;
+      let qx = protocolToward(requested.x, fromX), qy = protocolToward(requested.y, fromY);
+      let arrived = false;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const trace = this.traceFineMoveClient(fromX, fromY,
+          protocolToClient(qx), protocolToClient(qy), { slide: true });
+        if (!trace.available || !trace.moved) return false;
+        if (trace.arrived) { arrived = true; break; }
+        const nx = protocolToward(trace.x, fromX), ny = protocolToward(trace.y, fromY);
+        if (nx === qx && ny === qy) return false;
+        qx = nx; qy = ny;
+      }
+      if (!arrived) return false;
+      return Math.floor(qx / KOD_FINENESS) === toCol && Math.floor(qy / KOD_FINENESS) === toRow;
+    } catch { return true; }        // a trace that throws is not evidence of a wall
+  }
+
+  // ONE BYTE A SQUARE, ONE BIT A DIRECTION — the whole of `moverStepLands`, precomputed.
+  //
+  // This is what makes collision-aware routing affordable. The trace is correct and far
+  // too slow to run in a keeper pass: synchronous, CPU-bound, and every session in the
+  // broker shares one event loop, so a cold path in a big room measured 1.2s during which
+  // no character's keepalive is answered. Shipped on by default it took twelve of
+  // twenty-one characters out of the world in five minutes. Built offline it costs nothing
+  // anybody is waiting on, and the runtime does an array index.
+  //
+  // The bit order is `STEP_MASK_DIRS` and it must never be reordered: a stored mask read
+  // against a different order is a map of confidently wrong doors, which is worse than no
+  // mask at all. That is why this lives here, next to the reader, rather than in the bake.
+  buildStepMask() {
+    const mask = new Uint8Array(this.rows * this.cols);
+    for (let row = 1; row <= this.rows; row++) {
+      for (let col = 1; col <= this.cols; col++) {
+        if (!this.walkable(row, col)) continue;
+        let bits = 0;
+        for (let i = 0; i < STEP_MASK_DIRS.length; i++) {
+          const d = STEP_MASK_DIRS[i];
+          const r = row + d.dr, c = col + d.dc;
+          if (!this.inBounds(r, c) || !this.walkable(r, c)) continue;
+          if (this._traceMoverStep(row, col, r, c)) bits |= (1 << i);
+        }
+        mask[(row - 1) * this.cols + (col - 1)] = bits;
+      }
+    }
+    return mask;
+  }
+
+  // Adopt a mask built by tools/m59-routebake.mjs. Refused unless it is exactly the right
+  // size for this room, because a mask off by one row is a map of the wrong doors and
+  // nothing downstream would ever notice.
+  attachStepMask(mask) {
+    const usable = (mask instanceof Uint8Array) && mask.length === this.rows * this.cols;
+    this._stepMask = usable ? mask : null;
+    return usable;
+  }
+
+  get hasStepMask() { return !!this._stepMask; }
+
+  // `blockedEdges` is a Set of "fromRow,fromCol>toRow,toCol" the CALLER has learned the
+  // mover refuses — see walkTo in m59-broker.mjs. It is an edge and not a square on
+  // purpose: a step is refused by the wall BETWEEN two squares, and blaming the square
+  // removes a perfectly good place to stand that other neighbours can still reach.
+  neighbors(row, col, { fine = true, collision = false, blockedEdges = null } = {}) {
     const out = [];
     for (const d of this.openDirections(row, col, { fine })) {
       const r = row + d.dr, c = col + d.dc;
       if (!this.inBounds(r, c)) continue;          // leaving the room is a separate act
       if (!this.walkable(r, c)) continue;
+      if (blockedEdges?.size && blockedEdges.has(`${row},${col}>${r},${c}`)) continue;
       // The mover's own answer, last because it is the expensive one.
-      if (collision && !this.stepAllowedByCollision(row, col, r, c)) continue;
+      if (collision && !this.moverStepLands(row, col, r, c)) continue;
       out.push({ row: r, col: c, dir: d.name, diagonal: d.dr !== 0 && d.dc !== 0 });
     }
     return out;
@@ -1293,17 +1448,21 @@ export class RoomGeometry {
 
   path(fromRow, fromCol, toRow, toCol,
        { fine = true, maxNodes = 200000, avoid = null, threats = null, threatCost = null,
-         // OFF UNTIL IT IS CHEAP. Turning this on fleet-wide caused a rejoin storm: the
-         // trace is synchronous and CPU-bound, A* calls it tens of thousands of times, and
-         // every session in the broker shares one event loop — so a cold 1.2s path stops
-         // the loop, keepalives go unanswered, and the server drops the connection. Twelve
-         // of twenty-one characters were out of the world inside five minutes.
+         blockedEdges = null,
+         // ON WHEN, AND ONLY WHEN, IT IS FREE.
          //
-         // The IDEA is right and the measurements are good (room 150 replans 34 -> 38
-         // steps that can actually be walked). What it needs is a budget: a cap on traces
-         // per call, falling back to the coarse grid beyond it, so one route can never
-         // block the loop. Until then the router plans on the grid as it always did.
-         collision = false } = {}) {
+         // Turning this on fleet-wide once caused a rejoin storm: the trace is synchronous
+         // and CPU-bound, A* calls it tens of thousands of times, and every session in the
+         // broker shares one event loop — so a cold 1.2s path stops the loop, keepalives go
+         // unanswered, and twelve of twenty-one characters were out of the world in five
+         // minutes. The idea was right and the cost was fatal.
+         //
+         // A baked mask (`attachStepMask`) removes the cost entirely: the answer is an
+         // array index, so there is nothing left to budget. So the default is "collision-
+         // aware if this room has a mask, coarse grid exactly as before if it does not" —
+         // and a checkout that has never run tools/m59-routebake.mjs behaves precisely as
+         // it did, which is the property that makes this safe to ship on.
+         collision = this.hasStepMask } = {}) {
     threatCost = threatCost ?? this.threatField(threats);
     if (!this.inBounds(fromRow, fromCol)) return { found: false, reason: 'start is outside the room grid' };
     if (!this.inBounds(toRow, toCol)) return { found: false, reason: 'goal is outside the room grid' };
@@ -1402,7 +1561,7 @@ export class RoomGeometry {
         return { found: true, steps: lead ? [lead, ...steps] : steps, expanded,
                  ...(lead ? { recovered_from: { row: start.row, col: start.col } } : {}) };
       }
-      for (const n of this.neighbors(cur.r, cur.c, { fine, collision })) {
+      for (const n of this.neighbors(cur.r, cur.c, { fine, collision, blockedEdges })) {
         const nk = key(n.row, n.col);
         if (closed.has(nk)) continue;
         // Never the GOAL, only the way there: if the destination itself is occupied we
@@ -1417,7 +1576,17 @@ export class RoomGeometry {
         push({ r: n.row, c: n.col, f: cost + h(n.row, n.col) });
       }
     }
-    return { found: false, reason: expanded >= maxNodes ? 'search budget exhausted' : 'no route through the geometry', expanded };
+    // WHICH VIEW SAID NO IS PART OF THE ANSWER. "No route on the coarse grid" is a claim
+    // about the room; "no route the mover will walk" is a claim about our model of it, and
+    // the caller is entitled to retry on the grid rather than report a wall where people
+    // walk. Without this the two are one string and nothing can tell them apart.
+    return { found: false, expanded,
+             ...(collision ? { collision_view: true } : {}),
+             ...(blockedEdges?.size ? { blocked_edges: blockedEdges.size } : {}),
+             reason: expanded >= maxNodes ? 'search budget exhausted'
+                   : collision || blockedEdges?.size
+                     ? 'no route the mover can walk through this geometry'
+                     : 'no route through the geometry' };
   }
 
   // How much of the room is floor. A near-zero figure usually means the parse is

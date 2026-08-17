@@ -361,6 +361,74 @@ in `m59-movement.mjs` is the closed list of failures that no other heading can f
 `collision_geometry_unavailable`, `room_geometry_mismatch`, `room_security_unknown` and the
 rest. They propagate instead of looping, which is what stops a bad route being learned.
 
+### THE ROUTER HAS TO PLAN ON THE MAP THE MOVER ENFORCES, AND THE TWO ARE NOT THE SAME MAP
+
+The mover validates against the client's BSP; the router planned on the server's coarse
+one-byte-a-square grid. A router planning on a different map from the one the mover
+enforces does not produce a wrong route — **it produces a character sliding along a wall,
+replanning into the same wall, and giving up.** The trail reads
+`4,15->5,15=5,15` / `5,15->4,16=4,15`, over and over, eight times, then "kept ending up
+somewhere other than the planned square". Measured offline against the twelve boundaries
+`m59-exitgap.mjs` complains about most, **that killed 59% of all walks to an exit**; on
+prod it killed characters, who bounced between two squares in the Western border of the
+Twisted Wood with spiders on them.
+
+**THE PREDICATE THAT LOOKS RIGHT AND IS NOT.** `stepAllowedByCollision` asks whether the
+straight line between two square CENTRES arrives exactly, with no sliding. That is a fair
+question about a line and the wrong one about a character: the player is a disc of radius
+248 in a square of 1024, so a centre within a quarter-square of a wall is a place nobody
+stands, and a person walking that corridor never tries to. Asked that way, room 150 comes
+out in 159 disconnected pieces and room 578 in 214 — which is why collision-aware routing
+was measured, disbelieved and switched off.
+
+**`moverStepLands` is the question that decides anything**: what `validateFineTarget` will
+actually do — aim at the centre, SLIDE, quantize toward the start, and land IN the target
+square, because `walkTo` compares squares. Same rooms: 150 in 15 pieces with 96% in one,
+578 in **two** with 99.4% in one. `protocolToward` is exported from `m59-roo.mjs` so the
+planning half and the sending half cannot drift; the test compares them directly.
+
+Three things hold this up and each fails in the dangerous direction if inverted:
+
+- **The mask is what makes it affordable, and it is baked offline.** `buildStepMask` is one
+  byte a square, one bit a direction, in `STEP_MASK_DIRS` order — which may never be
+  reordered, because a mask read against a different order is a confident map of the wrong
+  doors and nothing downstream can detect it. `node tools/m59-routebake.mjs` writes it,
+  `attachStepMasks` in `m59-routes.mjs` hands it to the geometry at broker start, and
+  `path()` then defaults to `collision: this.hasStepMask`. **No table means the coarse grid,
+  exactly as before** — a checkout that has never run the bake behaves precisely as it did.
+  Running the trace live is what caused the rejoin storm: 0.44ms a pair, tens of thousands
+  of pairs, on the one event loop twenty-one sessions share.
+- **`walkTo` learns the EDGES it is refused, not the squares.** A wall sits between two
+  squares; blaming the square removes a good place to stand that other neighbours reach,
+  and a step that SLID recorded nothing at all, which is what made the bounce eternal. The
+  edge is attributed from where the step was ASKED, never from where it landed — a slid
+  step ends at neither end of the step it requested, and blaming the landing square blames
+  an edge nobody tried. `object_blocked` is treated as the opposite fact: **a monster moves
+  and a wall does not**, so only the first is worth waiting 700ms for.
+- **The mask may only ever PREFER.** It is a model of somebody else's server and it is
+  stricter than the world — on room 579's north boundary it offers no reachable staging
+  square at all from 19 of 35 starting squares. So `exits()` floods twice and falls back to
+  the coarse answer, flagged `grid_only`, rather than dropping the exit; `walkTo` relaxes
+  occupancy first, then refused edges, then the collision view. **A bake must never be the
+  reason a doorway disappears.** Being wrong about a wall costs a walk; refusing costs the
+  errand, silently.
+
+**AND THE BAKE'S "REGIONS" ARE THE SAFE SPOTS.** They are strongly connected components
+now, not a flood fill, and a room coming out in ninety pieces is one body of floor plus a
+scatter of corners the BSP hems in — the same geometric fact the safe-spot book measures
+from the other side. Do not smooth them away to make the count look tidy. What the old
+flood could not say, and this can, is the difference between a pocket you can leave but not
+enter and one you can enter but not leave; for routing one is a trap and the other a
+detour, and for a safe spot only the second is worth walking to. **"Outside the main body"
+is not "cannot be walked to"** — a doorway is a pocket by design, which is why an exit
+anchor is chosen from a staging square the body can REACH rather than the first one the
+boundary publishes, and why the report says "go and look before believing it". **The one
+place in the world genuinely joined only by blink is the Cragged Mountains cliff** (578,
+and 598 by the same name): entering by the north-west, the south-west and south-east exits
+are a one-way trip unless you blink up the cliff near the north-west corner.
+
+`node tools/m59-routing-test.mjs` (33) pins all of it, offline.
+
 **THE BAKE IS LOCAL AND THE SERVER IS NOT.** The map is generated from a source tree here;
 `prod` is somebody else's machine and can be patched on a Tuesday without telling us. Two
 consequences the design turns on:
@@ -2116,6 +2184,14 @@ remarks and a value may collect both.
   cannot tunnel, stock endpoint-0 slope and water-depth rules are preserved, every
   emitted packet is revalidated, and the documented Brownestone, Limping Toad, Icky,
   Farol, Ukgoth, Cor Noth, Temple, and Fey precision cases remain usable) and
+  `node tools/m59-routing-test.mjs` (33 — **the contract test for planning on the map the
+  mover enforces**: that `moverStepLands` and not `stepAllowedByCollision` is the question
+  that decides anything, that the quantizer has one answer for the planning half and the
+  sending half, that a mask round-trips bit for bit and one of the wrong size is refused
+  rather than mis-indexed, that with no mask the router plans exactly as it did before any
+  of this existed, that a refusal removes an EDGE and not a SQUARE, that the tiny pockets
+  against the walls are kept because they are the safe-spot signal, and that an exit a bake
+  cannot reach is still OFFERED — a bake must never be the reason a doorway disappears) and
   `node tools/m59-roo-test.mjs` (74, with raw-room checks skipping without a copy of the game's
   `resource/rooms`). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on

@@ -19,6 +19,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROUTES_FILE, replay } from './m59-routebake.mjs';
+import { sharedRoomGeometry } from './m59-roo.mjs';
 
 let cache = { mtime: -1, value: null };
 
@@ -50,6 +51,44 @@ export function routesFor(mapManifest) {
   if (!t.geometryManifestSha256 || !mapManifest) return null;
   if (t.geometryManifestSha256 !== mapManifest) return null;
   return t;
+}
+
+/**
+ * Hand every baked step mask to the geometry that will be planning on it.
+ *
+ * THIS IS THE ONE CALL THAT CHANGES HOW THE FLEET WALKS. Without it the router plans on
+ * the server's coarse one-byte-a-square grid while the mover enforces the client's BSP,
+ * and those disagree: measured across the twelve boundaries the exit-gap record complains
+ * about most, 59% of walks to an exit ended with a character sliding along a wall,
+ * replanning into the same wall, and giving up. With it, `neighbors({collision:true})` is
+ * an array index and the router plans the steps the mover will actually make.
+ *
+ * REFUSED WHOLESALE IF THE MAP HAS MOVED, by the same manifest check as the routes: a mask
+ * baked against different geometry is a confident map of the wrong doors. And refused per
+ * room if the dimensions disagree, because a mask off by one row would never be noticed.
+ *
+ * Returns what it did rather than throwing. A missing or stale table is not an error — it
+ * means "plan on the grid, exactly as this repository did before any of this existed" —
+ * so a fresh clone that has never run the bake behaves precisely as it always has.
+ */
+export function attachStepMasks(map, { geometryOf } = {}) {
+  const table = routesFor(map?.geometryManifestSha256 ?? null);
+  if (!table) return { attached: 0, rooms: 0, ok: false,
+                       why: load() ? 'the routing table was baked from different geometry'
+                                   : 'no routing table — run node tools/m59-routebake.mjs' };
+  let attached = 0, rooms = 0, refused = 0;
+  for (const [num, baked] of Object.entries(table.rooms)) {
+    const room = map?.rooms?.[num] ?? map?.rooms?.[Number(num)];
+    if (!room?.roo || typeof baked?.stepMask !== 'string') continue;
+    rooms++;
+    const geometry = geometryOf ? geometryOf(room) : sharedRoomGeometry(room);
+    if (!geometry) continue;
+    const bytes = Buffer.from(baked.stepMask, 'base64');
+    if (geometry.attachStepMask(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.length)))
+      attached++;
+    else refused++;
+  }
+  return { attached, rooms, refused, ok: attached > 0, view: table.view ?? 'grid' };
 }
 
 /** Is this room's exit set split by geometry, and into how many reachable groups? */
