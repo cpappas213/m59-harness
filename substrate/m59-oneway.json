@@ -1,0 +1,10 @@
+{
+ "note": "Edges the MAP DECLARES that a player cannot actually walk, in that direction. Operator knowledge about the world, not a measurement of this machine — which is why it is committed. Directed: the reverse of each of these is a legitimate route and must not be blocked. Delete an entry to let the router try it again.",
+ "blocked": [
+  {
+   "from": 589,
+   "to": 599,
+   "why": "Under the shadow of the Sentinel -> Ukgoth is westward-only in the real game; the operator confirms a player cannot go this way. The route to Ukgoth from An ancient place [579] is 578 -> 576 -> 587 -> 597 -> 598 -> 599, which is a pain to walk and is how it is done. Our geometry catches the 599->598 half (zero routable crossing squares) and misses this half, which offers four."
+  }
+ ]
+}

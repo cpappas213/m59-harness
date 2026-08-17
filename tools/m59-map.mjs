@@ -648,6 +648,57 @@ export function forgetInferredExit(from, to) {
 }
 export function inferredExitCount() { return badInferred.size; }
 
+// A DECLARED EDGE THAT IS ONE-WAY IN THE ACTUAL GAME HAS HAD NOWHERE TO LIVE.
+//
+// `badInferred` above only ever filters edges this file INFERRED — reverses it invented
+// and the server then refused. An edge the map genuinely declares, which a player
+// nonetheless cannot walk, is a different fact and there was no home for it.
+//
+// The instance that forced this: the operator, who knows the world, states that going
+// from *An ancient place, its origin forgotten* [579] to *Ukgoth* [599] **through Under
+// the shadow of the Sentinel [589] is impossible for a player**, and that the real way
+// round is 578 -> 576 -> 587 -> 597 -> 598. Our router planned the impossible way, in two
+// hops, and would have kept planning it for ever: the geometry catches the `599 -> 598`
+// half of that corridor (zero routable crossing squares) and misses the `589 -> 599` half,
+// which offers four.
+//
+// SO THE RECORD IS OPERATOR KNOWLEDGE, NOT A MEASUREMENT, and it is committed for exactly
+// that reason — it is a fact about the world rather than about this machine, the same
+// class of thing as the merchant allowlist. Anything derived from geometry belongs in the
+// bake instead; if a future scan can prove the crossing impossible on its own, the entry
+// becomes redundant rather than wrong.
+//
+// DIRECTED, and the direction matters: 599 -> 589 is walkable and only the reverse is not.
+// Recording it as a symmetric block would delete a legitimate route.
+const ONE_WAY_FILE = process.env.M59_ONE_WAY ||
+  path.join(path.dirname(fileURLToPath(import.meta.url)),
+            '..', 'substrate', 'm59-oneway.json');
+
+let oneWayCache = null;
+export function oneWayBlocks() {
+  if (oneWayCache) return oneWayCache;
+  const out = new Map();
+  try {
+    const j = JSON.parse(fs.readFileSync(ONE_WAY_FILE, 'utf8'));
+    for (const e of j.blocked ?? [])
+      if (Number.isFinite(e?.from) && Number.isFinite(e?.to))
+        out.set(e.from + '->' + e.to, e.why ?? 'recorded as one-way');
+  } catch { /* no file is "nothing is known", which routes exactly as it used to */ }
+  oneWayCache = out;
+  return out;
+}
+export const isOneWayBlocked = (from, to) => oneWayBlocks().has(from + '->' + to);
+
+// The one place both searches ask "where can I go from here", so a rule added here cannot
+// be honoured by one of them and not the other — which is how the two would come to
+// disagree about which routes exist.
+export function passableExits(map, at) {
+  const room = map.rooms[at];
+  if (!room) return [];
+  return [...exitsOf(room), ...inferredExits(map, at), ...codeExits(at)]
+    .filter(ex => ex.to != null && !isOneWayBlocked(Number(at), Number(ex.to)));
+}
+
 export function inferredExits(map, roomNum) {
   if (!map.__reverse) {
     const rev = new Map();
@@ -801,7 +852,7 @@ function bfsPath(map, fromNum, toNum, avoid) {
     const [at, sofar] = q.shift();
     const room = map.rooms[at];
     if (!room) continue;
-    for (const ex of [...exitsOf(room), ...inferredExits(map, at), ...codeExits(at)]) {
+    for (const ex of passableExits(map, at)) {
       if (ex.to == null || seen.has(ex.to)) continue;
       const hop = { from: at, fromName: room.name, to: ex.to,
                     toName: map.rooms[ex.to]?.name || `room ${ex.to}`, ...ex };
@@ -895,7 +946,7 @@ function safestPath(map, fromNum, toNum, avoid, danger, budget) {
     if (budget != null && cur.hops > budget) continue;
     const room = map.rooms[cur.at];
     if (!room) continue;
-    for (const ex of [...exitsOf(room), ...inferredExits(map, cur.at), ...codeExits(cur.at)]) {
+    for (const ex of passableExits(map, cur.at)) {
       if (ex.to == null) continue;
       const hop = { from: cur.at, fromName: room.name, to: ex.to,
                     toName: map.rooms[ex.to]?.name || `room ${ex.to}`, ...ex };
