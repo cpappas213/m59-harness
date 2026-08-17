@@ -238,6 +238,15 @@ const ATTACK_INTERVAL_MS = 1050;     // IsOkayAttackTime, plus a little
 // past something is walking past it rather than standing beside it.
 const MOVE_INTERVAL_MS = Number(process.env.M59_MOVE_INTERVAL_MS || 250);
 
+// HOW LONG A BOUNDARY CROSSING MAY TAKE TO COME BACK. Not the same question as a door,
+// and not the same answer: the operator's account of doing this by hand is that under
+// load you stop dead against the edge and are moved a beat later, so a slow crossing is
+// the ordinary case rather than a failed one. At the old 4s this gave up on crossings
+// that were still in flight and reported them as "stepping past the edge did nothing" —
+// the reading that makes a working exit look like a phantom, and the one that would have
+// had us delete a real edge from the map.
+const EDGE_CROSSING_WAIT_MS = Number(process.env.M59_EDGE_CROSSING_WAIT_MS || 10000);
+
 // The server may silently discard UserGo when it follows the final movement packet
 // too closely. Preserve normal 250ms walking, but leave half a second between the
 // most recent movement packet and every door request. Pacer waits only the remaining
@@ -2797,12 +2806,51 @@ class Session {
   }
 
   async queueValidatedMove(x, y, { speed = 18, slide = true, beforeMutation = null,
-                                    minGap = MOVE_INTERVAL_MS, expectedRoomId = null } = {}) {
+                                    minGap = MOVE_INTERVAL_MS, expectedRoomId = null,
+                                    offMap = false } = {}) {
     const c = this.need();
     const roomId = expectedRoomId ?? c.room.id;
     if (c.room.id !== roomId) return { sent: false, validation: {
       available: false, moved: false, blocked: true, reason: 'room_changed_before_move',
     } };
+
+    // OFF THE MAP IS A LEGAL DESTINATION, AND THE LOCAL VALIDATOR CANNOT KNOW THAT.
+    //
+    // One move in the whole client deliberately targets a square that does not exist:
+    // the outward step past a room boundary, which is the ONLY thing that reaches
+    // `Room.SomethingMoved`'s `new_col < 1` branch and therefore the only thing that
+    // triggers StandardLeaveDir (room.kod:2232-2258). The BSP has no floor out there, so
+    // `validateFineTarget` clips at the boundary, never reports `arrived`, and the packet
+    // is never sent. Measured on Alpha against 587 -> 576: 50 attempts, 5 crossings, and
+    // 28 of the 45 failures were "every square for that exit refused". The operator's
+    // description of watching it was exact — it looked scared to touch the wall.
+    //
+    // Sending anyway is not a relaxation of collision. `UserMove` BYPASSES
+    // `ReqSomethingMoved` for users — room.kod's own comment is "already been checked by
+    // client (HAHA!)" — so there is no server-side geometry check on a player move to
+    // defer to, and the real client sends this same packet. See the dead-reckoning note
+    // below, which is the same argument.
+    //
+    // It is opt-in per call and used in exactly one place. NO BREADCRUMB IS RECORDED: the
+    // escape logic replays crumbs in reverse and its whole safety argument is that every
+    // crumb was a move the validator accepted, so a crumb pointing off the map would let
+    // it "undo" its way through a wall.
+    if (offMap) {
+      const target = { x: Math.round(x), y: Math.round(y) };
+      return this.pacer.submit('move', () => {
+        if (c.room.id !== roomId) return { sent: false, validation: {
+          available: false, moved: false, blocked: true, reason: 'room_changed_before_move' } };
+        const before = c.self ? { x: c.self.x, y: c.self.y, col: c.self.col, row: c.self.row } : null;
+        if (!before) return { sent: false, validation: {
+          available: false, moved: false, blocked: true, reason: 'own position unknown' } };
+        if (typeof beforeMutation === 'function') beforeMutation('move', { x, y });
+        const eventSeq = c.evSeq;
+        c.moveTo(target.x, target.y, speed, roomId);
+        return { sent: true, roomId, eventSeq, before, target,
+                 validation: { available: true, moved: true, blocked: false, offMap: true, target } };
+      }, minGap);
+    }
+
     const initial = this.validateFineTarget(x, y, { slide });
     // WRITE DOWN THAT PROD MOVED. Otherwise a drifted room is only ever visible as a move
     // that did not happen — and the baked map is evidence about somebody else's server,
@@ -3946,15 +3994,15 @@ class Session {
                    note: fine.note ?? 'could not reach the exact BSP-valid edge opening' };
       }
       // One more step OUTWARD, past the grid. Nothing else triggers
-      // Room.StandardLeaveDir. It is still an ordinary client move first: the stock
-      // client clips it against BSP walls/objects before deciding it left the room.
+      // Room.StandardLeaveDir, and `offMap` is what stops our own collision view
+      // refusing to send it — there is no floor out there and there is not meant to be.
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
       const edgeMove = await this.queueValidatedMove(
         exit.edge_target.x, exit.edge_target.y,
         // Stock UserMovePlayer sends speed zero for the one StandardLeaveDir
         // out-of-room request; it is not a run/vigor-bearing in-room step.
         { speed: 0, slide: false, minGap: MOVE_INTERVAL_MS,
-          expectedRoomId: edgeStartRoom });
+          expectedRoomId: edgeStartRoom, offMap: true });
       if (!edgeMove.sent && c.room.id !== edgeStartRoom)
         return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
                  note: 'the room changed before the final edge packet was needed' };
@@ -3962,12 +4010,27 @@ class Session {
         left: false, stage: 'edge',
         reason: edgeMove.validation?.reason ?? 'geometry_blocked',
         note: edgeMove.validation?.note ??
-          'the outward edge segment was rejected by local client collision before any packet was sent',
+          'the outward edge packet could not be sent at all — not a collision refusal',
       };
       const tGo = Date.now();
-      const ev = await c.waitFor({ since: edgeMove.eventSeq, kinds: ['room-entered'], timeoutMs: 4000 });
+      // THE CROSSING IS SLOW WHEN THE SERVER IS BUSY, AND IT STILL WORKS.
+      //
+      // The operator's description of playing this by hand: you stop dead against the
+      // invisible wall, and a beat later it jumps you to the next map. So a late
+      // `room-entered` is the ORDINARY case under load, not a failure — and at 4s we
+      // were giving up on crossings that were still in flight and recording them as
+      // "stepping past the edge did nothing", which is the one reading that makes a
+      // working exit look like a phantom.
+      const ev = await c.waitFor({ since: edgeMove.eventSeq, kinds: ['room-entered'],
+                                   timeoutMs: EDGE_CROSSING_WAIT_MS });
       Pacer.note('go', 'blocked', Date.now() - tGo);
-      const entered = ev.events.find(e => e.kind === 'room-entered');
+      let entered = ev.events.find(e => e.kind === 'room-entered');
+      // ASK THE WORLD, NOT ONLY THE EVENT RING. The event can be missed — evicted, or
+      // arriving on a rejoined client — while the character is demonstrably somewhere
+      // else. Having crossed is a fact about where we are standing.
+      if (!entered && c.room.id !== edgeStartRoom)
+        return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
+                 note: 'the room changed but no room-entered event was seen' };
       if (!entered) {
         // If this was an edge we INFERRED rather than one the room declared, the
         // inference was simply wrong — drop it so neither the planner nor anything
@@ -4136,13 +4199,60 @@ class Session {
         !Number.isInteger(y) || y < 0 || y > 0xffff)
       return { left: false, reason: 'fallback target is off the wire grid' };
     this.exitFallbacks = (this.exitFallbacks || 0) + 1;
-    try { c.moveTo(x, y, 18, startRoom); }
-    catch (e) { return { left: false, reason: e.message }; }
-    const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 })
+    // AN EDGE IS LEFT BY STEPPING PAST IT, NOT ONTO IT — and this fallback stepped onto
+    // it. `Room.SomethingMoved` only reaches StandardLeaveDir when the new row or col is
+    // OUT of the room (room.kod:2232-2258), so moving to the boundary square is an
+    // ordinary in-room step and can never cross. For a region exit arriving is the whole
+    // trigger, which is why this went unnoticed: the fallback worked for the kind of exit
+    // that needs no outward step, and silently could not work for the kind that does.
+    //
+    // Measured before this: 587 -> 576 reported "every square for that exit refused"
+    // even though the outward step had been fixed, because every square WAS refused and
+    // then the fallback took the one step that cannot cross either.
+    // AND IT MUST ALREADY BE AT THE OPENING. This is the dangerous half, and without the
+    // guard the fix above is worse than the bug it repairs.
+    //
+    // The server does no geometry check on a player move, so an unvalidated packet aimed
+    // off the map from ANYWHERE in the room would cross — straight through whatever
+    // stands between here and the boundary. Meridian has one-way overland links that are
+    // one-way precisely because of terrain near the seam: 589 -> 599 -> 598 is walkable
+    // westward and not eastward, because eastward you would have to climb the cliffs you
+    // drop off going the other way. The boundary openings are wide (30 and 40 squares);
+    // it is the APPROACH that is impossible, and this fallback firing from mid-room would
+    // step straight over it and call a one-way link two-way.
+    //
+    // That is the same failure the breadcrumb note below warns about — relaxing collision
+    // exactly where the two views disagree is what let bots climb cliffs no client can.
+    // So: only when we are already standing within a square of the published opening,
+    // which means the approach succeeded and the only thing left is the step the model
+    // will not take.
+    const outward = exit?.edge_target;
+    const opening = exit?.fine_stand_on;
+    const near = Number.isFinite(c.self?.x) && Number.isFinite(opening?.x)
+      && Math.abs(c.self.x - opening.x) <= KOD_FINENESS
+      && Math.abs(c.self.y - opening.y) <= KOD_FINENESS;
+    const useOutward = exit?.kind === 'edge' && outward
+      && Number.isFinite(outward.x) && Number.isFinite(outward.y) && near;
+    if (exit?.kind === 'edge' && !useOutward)
+      return { left: false, reason: 'not at the opening',
+               note: 'the unvalidated outward step is only taken from the boundary itself — ' +
+                     'firing it from mid-room would cross terrain the approach could not' };
+    try {
+      if (useOutward) c.moveTo(Math.round(outward.x), Math.round(outward.y), 0, startRoom);
+      else c.moveTo(x, y, 18, startRoom);
+    } catch (e) { return { left: false, reason: e.message }; }
+    const ev = await c.waitFor({ since: before, kinds: ['room-entered'],
+                                 timeoutMs: EDGE_CROSSING_WAIT_MS })
                       .catch(() => ({ events: [] }));
     const entered = ev.events?.find(e => e.kind === 'room-entered');
     if (entered) return { left: true, arrived_in: entered.roomName, via: 'exit-fallback',
                           stood_on: { col: target.col, row: target.row } };
+    // The room is the authority on having left, not the event — see the same argument
+    // at the end of leaveVia.
+    if (c.room.id !== startRoom)
+      return { left: true, arrived_in: c.rsc.get(c.roomNameRsc), via: 'exit-fallback',
+               stood_on: { col: target.col, row: target.row },
+               note: 'the room changed but no room-entered event was seen' };
     return { left: false, reason: 'the unvalidated step did not change rooms either' };
   }
 

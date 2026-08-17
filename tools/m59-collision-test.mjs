@@ -901,6 +901,11 @@ const walkTo = compileSessionMethod(brokerSource,
 const leaveVia = compileSessionMethod(brokerSource,
   'async leaveVia(exit, {', 'leaveVia', {
     isTerminalMovementReason, KOD_FINENESS, MOVE_INTERVAL_MS: 0,
+    // Zero here, not the broker's 10s: these tests drive a fake client that answers
+    // immediately or not at all, so the real wait would only add ten seconds per
+    // never-crossing case. What the constant is FOR is live lag, which is not
+    // reproducible in a sandbox.
+    EDGE_CROSSING_WAIT_MS: 0,
     Pacer: { note() {} }, forgetInferredExit() {},
   });
 const leaveViaAny = compileSessionMethod(brokerSource,
