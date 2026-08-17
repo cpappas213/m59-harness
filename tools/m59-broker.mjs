@@ -3245,14 +3245,26 @@ class Session {
   // already knows — the mover's step relation, the edges it has been refused, and the
   // squares it has seen bodies on — so a sidestep cannot propose a traversal the ordinary
   // path would reject.
-  sidestepAround(was, blocked, { blockedEdges, occupied, geo }) {
+  sidestepAround(was, blocked, { blockedEdges, occupied, geo, prefer = 0 }) {
     if (!was || !blocked || !geo) return null;
     const dr = Math.sign(blocked.row - was.row), dc = Math.sign(blocked.col - was.col);
     if (!dr && !dc) return null;
     // Perpendiculars of the refused direction. For a diagonal step these are the two
     // cardinals it decomposes into, which is the right answer for the same reason.
-    const sides = (dr && dc) ? [{ dr, dc: 0 }, { dr: 0, dc }]
-                             : [{ dr: dc, dc: dr }, { dr: -dc, dc: -dr }];
+    let sides = (dr && dc) ? [{ dr, dc: 0 }, { dr: 0, dc }]
+                           : [{ dr: dc, dc: dr }, { dr: -dc, dc: -dr }];
+    // BREAK THE TIE ON SOMETHING THAT DIFFERS BETWEEN THE TWO PARTIES, or the fix becomes
+    // the bug. Both characters run this identical function, so with a fixed side order
+    // two of them meeting head-on both dodge the same way, collide, both dodge back, and
+    // mirror each other indefinitely — watched live and described exactly: *"like two
+    // people stuck in a hallway, I'll go left, no you go left, no my left, no your
+    // left"*. Ordering by the mover's own object id makes two characters prefer opposite
+    // sides by construction, which is the one thing a shared rule cannot achieve.
+    //
+    // The object id and not a random number: a coin flip breaks the deadlock eventually
+    // and produces a different dance each pass, which is both slower to converge and
+    // impossible to reproduce in a test.
+    if (prefer & 1) sides = [sides[1], sides[0]];
     const free = (r, c) => geo.walkable(r, c) && !occupied.has(`${r},${c}`);
     const canStep = (fr, fc, tr, tc) =>
       !blockedEdges.has(`${fr},${fc}>${tr},${tc}`) && geo.moverStepLands(fr, fc, tr, tc);
@@ -3539,7 +3551,8 @@ class Session {
           // It is only ever a PREFERENCE. If neither side works the ordinary occupancy
           // path below runs exactly as it did before, so this can cost a couple of steps
           // and cannot cost the walk.
-          const side = this.sidestepAround(was, next, { blockedEdges, occupied, geo });
+          const side = this.sidestepAround(was, next,
+            { blockedEdges, occupied, geo, prefer: Number(c.self?.id ?? 0) });
           if (side && !sidestepped.has(`${next.row},${next.col}`)) {
             sidestepped.add(`${next.row},${next.col}`);
             queue.unshift(next);
