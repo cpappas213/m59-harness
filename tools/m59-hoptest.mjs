@@ -81,6 +81,22 @@ export async function tryHop(agent, roomObj, start, to, { maxMs = 180000, pollMs
 
   const t0 = Date.now();
   const sent = await broker('travel', { agent, to, background: true, max_hops: 4 }, { timeoutMs: 60000 });
+  // A BOT THAT WAS ALREADY BUSY IS NOT A BROKEN DOORWAY, AND SCORING IT AS ONE POISONS
+  // THE WHOLE MEASUREMENT.
+  //
+  // `travel` refuses while the character is mid-operation — that is `busy` doing its job —
+  // and the refusal arrives here looking exactly like a boundary that would not let a
+  // character through. It is the artefact this file already names for `568 -> 350` ("the
+  // bots were still busy; not a boundary result"), and it recurs the moment a bot is left
+  // parked mid-errand by anything else: a run scored 1/4 on 587 -> The King's Way with one
+  // of the three failures reading `arena2 is busy: walk to Wester…`, and that run was then
+  // compared against a 33% baseline as though the numbers meant the same thing.
+  //
+  // Reported as `skipped`, not as a failure, because the two are opposite claims about the
+  // doorway and a rate that mixes them is not a rate.
+  if (sent?._error && /\bis busy\b/i.test(String(sent._error)))
+    return { skipped: true, ms: 0, start,
+             why: 'the bot was already busy — not a boundary result: ' + sent._error };
   if (sent?._error) return { ok: false, ms: 0, why: 'travel refused: ' + sent._error, start };
 
   for (;;) {
@@ -164,14 +180,22 @@ if (process.argv[1]?.endsWith('m59-hoptest.mjs')) {
 
     // One bot per try, all at once. They are in the same room and may block each other,
     // which is a fact about the fleet rather than a flaw in the test.
-    const results = await Promise.all(starts.map((s, k) =>
+    const attempts = await Promise.all(starts.map((s, k) =>
       tryHop(agentFor(bots[k % bots.length]), roomObj, s, to)));
 
+    // Skipped attempts are not tries. See the note on `skipped` above: a bot that was
+    // already busy tells us nothing about the doorway, so it must leave the denominator
+    // as well as the numerator, or the pass rate silently understates every boundary
+    // whose turn came round while something else held a character.
+    const skipped = attempts.filter(r => r.skipped);
+    const results = attempts.filter(r => !r.skipped);
     const ok = results.filter(r => r.ok);
     const times = ok.map(r => r.ms).sort((a, b) => a - b);
     const med = times.length ? times[Math.floor(times.length / 2)] : 0;
     totalOk += ok.length; totalTry += results.length;
     const fails = results.filter(r => !r.ok);
+    if (skipped.length)
+      console.log(`      (${skipped.length} attempt(s) skipped — the bot was busy, not a boundary result)`);
     console.log(`  ${String(from).padStart(4)} -> ${String(to).padStart(4)}   ` +
                 `${ok.length}/${results.length}    ${String(Math.round(med / 1000) + 's').padStart(6)}   ` +
                 (fails.length ? `${fails[0].start.row},${fails[0].start.col} — ${String(fails[0].why).slice(0, 46)}` : ''));

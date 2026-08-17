@@ -44,7 +44,7 @@ import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath }
   from './m59-map.mjs';
-import { CLIENT_FINENESS } from './m59-roo.mjs';
+import { CLIENT_FINENESS, protocolToClient } from './m59-roo.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -339,6 +339,15 @@ const MOVE_HOP_MAX_SQUARES = Number(process.env.M59_MOVE_HOP_MAX || 8);
 // Raise it to disable the behaviour without removing it; the square walk below is
 // unchanged and still ends the walk honestly on its own budget.
 const OFFPLAN_BEFORE_FINE = Number(process.env.M59_OFFPLAN_BEFORE_FINE || 3);
+
+// HOW CLOSE A TRACED LINE MUST LAND TO COUNT AS ARRIVING, when deciding whether several
+// planned squares can be crossed in one packet.
+//
+// A sixteenth of a square. It is deliberately tight: the whole safety argument for
+// skipping ground is that the line ARRIVED rather than slid, and a loose threshold would
+// quietly readmit the sliding this is meant to avoid. Loosening it does not make walks
+// succeed, it makes them skip ground nothing checked.
+const PIVOT_ARRIVE_WITHIN = Number(process.env.M59_PIVOT_ARRIVE_WITHIN || 64);
 
 // ---------------------------------------------------------------- pacing
 
@@ -3611,16 +3620,64 @@ class Session {
       // so the line we skip along is the line we planned. Coalescing across a TURN
       // would cut the corner — through whatever the turn was avoiding — which is the
       // one way this could put a character through a wall on purpose.
+      // AND COLLINEAR IS TOO NARROW A TEST ON GEOMETRY THAT IS NOT AXIS-ALIGNED.
+      //
+      // The paragraph above is right that coalescing across a turn could cut a corner —
+      // IF the only thing known about the skipped ground is that the router accepted the
+      // squares. But there is a stronger check available and it is the one the mover
+      // itself uses: trace the straight line and require it to ARRIVE, with `slide:false`.
+      // A line that arrives without sliding has not clipped anything, whatever direction
+      // it runs, so the corner-cutting argument does not apply to it.
+      //
+      // This matters because the rooms are not boxes. Room 587's wall length is 54.9% NOT
+      // axis-aligned; the exit to the Twisted Wood is a 45 degree run. Measured there,
+      // stepping centre-to-centre along a grid route fails 218 of 311 steps, and 200 of
+      // those 218 — 92% — do not move the character AT ALL. Collinear coalescing cannot
+      // help with any of them, because the refused step is a single step.
+      //
+      // Same six routes, reaching as far as the line still clears: 311 grid steps become
+      // 66 pivots. See RoomGeometry.stringPull and m59-stringpull-test.mjs.
       let next = queue.shift();
       let hop = 1;
-      const dc0 = Math.sign(next.col - (c.self?.col ?? next.col));
-      const dr0 = Math.sign(next.row - (c.self?.row ?? next.row));
-      while (hop < MOVE_HOP_MAX_SQUARES && queue.length) {
-        const peek = queue[0];
-        if (Math.sign(peek.col - next.col) !== dc0 || Math.sign(peek.row - next.row) !== dr0) break;
-        if (occupied.has(`${peek.row},${peek.col}`)) break;
-        if (blockedEdges.has(edgeKey(next.row, next.col, peek.row, peek.col))) break;
-        next = queue.shift(); hop++;
+      const from0 = c.self ? { col: c.self.col, row: c.self.row } : null;
+      const half0 = KOD_FINENESS >> 1;
+      const fineOf = s => ({ x: protocolToClient(s.col * KOD_FINENESS + half0),
+                             y: protocolToClient(s.row * KOD_FINENESS + half0) });
+      const arrives = (a, b) => {
+        const t = geo.traceFineMoveClient?.(a.x, a.y, b.x, b.y, { slide: false });
+        return !!t && Math.hypot(t.x - b.x, t.y - b.y) <= PIVOT_ARRIVE_WITHIN;
+      };
+      if (from0 && geo.collisionReady) {
+        const here = fineOf(from0);
+        // FURTHEST FIRST, so a long clear run costs one trace rather than one per square.
+        // Bounded by the same hop ceiling as before, so the packet a walk sends is no
+        // bigger than it ever was — this changes WHICH squares may be skipped, not how
+        // many.
+        const reach = [];
+        for (let i = 0; i < queue.length && reach.length < MOVE_HOP_MAX_SQUARES - 1; i++) {
+          const s = queue[i];
+          if (occupied.has(`${s.row},${s.col}`)) break;
+          reach.push(s);
+        }
+        for (let i = reach.length - 1; i >= 0; i--) {
+          if (arrives(here, fineOf(reach[i]))) {
+            for (let k = 0; k <= i; k++) { next = queue.shift(); hop++; }
+            hop--;                       // `next` was already counted by the shift above
+            break;
+          }
+        }
+      } else {
+        // NO COLLISION MODEL MEANS THE OLD RULE, EXACTLY. A checkout with no baked
+        // geometry has nothing to trace against, and must walk precisely as it did.
+        const dc0 = Math.sign(next.col - (c.self?.col ?? next.col));
+        const dr0 = Math.sign(next.row - (c.self?.row ?? next.row));
+        while (hop < MOVE_HOP_MAX_SQUARES && queue.length) {
+          const peek = queue[0];
+          if (Math.sign(peek.col - next.col) !== dc0 || Math.sign(peek.row - next.row) !== dr0) break;
+          if (occupied.has(`${peek.row},${peek.col}`)) break;
+          if (blockedEdges.has(edgeKey(next.row, next.col, peek.row, peek.col))) break;
+          next = queue.shift(); hop++;
+        }
       }
       const was = c.self ? { col: c.self.col, row: c.self.row } : null;
       const r = await this.step(next.col, next.row, { beforeMutation });
