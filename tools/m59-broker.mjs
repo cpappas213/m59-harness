@@ -3812,7 +3812,28 @@ class Session {
       // room impassable. So an informative failure is free — the edge set is finite and
       // shrinks the search each time — and only a repeat burns the budget. `hardCap` still
       // bounds the whole walk in steps, so this cannot run away.
-      if (!learned && ++replans > 8)
+      // AND THE BUDGET HAS TO SCALE WITH THE ROUTE, FOR THE SAME REASON `maxSteps` DOES.
+      //
+      // Eight was a fixed number against a route of any length, and the step budget ten
+      // lines above already scales (`plan.steps.length + 10`) — that asymmetry was
+      // arbitrary and it is what ends long walks. The King's Way is 129x88 with 8,639
+      // walkable squares and its east boundary is a median 91 steps away; in geometry
+      // where ~70% of steps land off-plan, eight uninformative replans are gone in the
+      // first quarter of the walk.
+      //
+      // Measured, with an operator watching the character it happened to: Western border
+      // of the Twisted Wood -> The Twisted Wood failed six times over 40s, every attempt
+      // reporting "kept ending up somewhere other than the planned square" — this exact
+      // message — against the SAME staging square, which it then re-planned and tried
+      // again. The character was standing on a square with seven of seven mover
+      // neighbours and an eighteen-step route to the boundary.
+      //
+      // One extra replan per ten planned steps, so a short walk is unchanged (a 9-step
+      // route still gets 8) and a 91-step crossing gets 17. `hardCap` still bounds the
+      // whole walk at 400 steps, so this cannot run away — the cap that actually stops a
+      // runaway is the step count, not this.
+      const replanBudget = 8 + Math.floor((plan.steps?.length ?? 0) / 10);
+      if (!learned && ++replans > replanBudget)
         return { arrived: false, blocked_at: { col: now.col, row: now.row }, steps: taken,
                  routed_around: [...occupied], refused_edges: blockedEdges.size,
                  ...(monsterBlocks ? { monster_blocked: monsterBlocks,

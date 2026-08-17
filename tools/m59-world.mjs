@@ -460,7 +460,14 @@ export class World {
       // anybody play and must behave exactly as it did.
       const observed = observedCrossings(Number(room?.num ?? 0), Number(e.to));
       const seenAt = new Map(observed.map(o => [o.row + ',' + o.col, o.seen]));
-      const witness = c => seenAt.get(c.row + ',' + c.col) ?? 0;
+      // AGAINST THE CROSSING SQUARE, NOT THE STAGING SQUARE. A `precise` entry carries the
+      // staging square in col/row and the crossing it stages for in `fine_stand_on`, and
+      // the book records where a player actually CROSSED. Comparing the two silently
+      // matched nothing: on Western border of the Twisted Wood -> The Twisted Wood the
+      // book holds row 47 and the entry chosen staged at 66,45, so the preference had no
+      // effect at all while appearing to work.
+      const witness = c => seenAt.get(Math.floor(c.fine_stand_on.y / KOD_FINENESS) + ',' +
+                                      Math.floor(c.fine_stand_on.x / KOD_FINENESS)) ?? 0;
       precise.sort((a, b) => (witness(b) - witness(a))
                           || (!!a.grid_only - !!b.grid_only)
                           || (a.steps - b.steps));
