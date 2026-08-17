@@ -427,6 +427,35 @@ place in the world genuinely joined only by blink is the Cragged Mountains cliff
 and 598 by the same name): entering by the north-west, the south-west and south-east exits
 are a one-way trip unless you blink up the cliff near the north-west corner.
 
+**THE TABLE IS COMMITTED, AND THE ARGUMENT FOR THAT IS THE MANIFEST.** It used to be
+gitignored on the grounds that it is "regenerated in seconds, so it is build output" and
+that "a committed copy is actively misleading the moment the map is rebaked". The first
+half is simply false — it is **about thirteen minutes** on this machine — and the second
+half is backwards: the table carries `geometryManifestSha256` and is **refused outright**
+when it does not match, so a stale committed copy is inert and says so
+(`[routes] planning on the coarse grid — the routing table was baked from different
+geometry`). What is genuinely misleading is its ABSENCE, which is silent and puts a fresh
+clone straight back into walking into walls. `substrate/m59-map.json` (27 MB), `m59-spawns.json`
+and `m59-items.json` are all committed derived data already; this is 1.4 MB of the same kind,
+and it is regenerated in the same breath as the map it comes from.
+
+```bash
+node tools/setup.mjs routes        # bake it; `all` runs this, before the broker
+node tools/setup.mjs doctor        # says whether the table on disk carries masks
+node tools/m59-routebake.mjs --resume    # after a killed bake: keeps what is on disk
+node tools/m59-routes.mjs                # what is baked, and whether it matches the map
+node tools/m59-routes.mjs --verify       # re-walk every baked route
+```
+
+Three things about running it that are not obvious. **`--resume` adopts only what was baked
+from the same geometry AND the same view** — a half-table stitched from two maps is the one
+kind of wrong nothing downstream could detect. **The partial table is flushed every minute
+and carries `complete: false`**, because the whole thing used to be a single write after the
+loop and a Ctrl-C at room 250 of 264 produced nothing at all. And **`doctor` counts MASKS,
+not rooms**: a table baked before masks existed has all 264 rooms, matches the manifest, and
+leaves the broker on the coarse grid — counting rooms put a green tick over exactly the
+failure that line exists to catch.
+
 `node tools/m59-routing-test.mjs` (33) pins all of it, offline.
 
 **THE BAKE IS LOCAL AND THE SERVER IS NOT.** The map is generated from a source tree here;

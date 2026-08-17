@@ -1350,15 +1350,27 @@ export class RoomGeometry {
   // mover refuses — see walkTo in m59-broker.mjs. It is an edge and not a square on
   // purpose: a step is refused by the wall BETWEEN two squares, and blaming the square
   // removes a perfectly good place to stand that other neighbours can still reach.
-  neighbors(row, col, { fine = true, collision = false, blockedEdges = null } = {}) {
+  neighbors(row, col, { fine = true, collision = false, blockedEdges = null,
+                        allowInto = null } = {}) {
     const out = [];
     for (const d of this.openDirections(row, col, { fine })) {
       const r = row + d.dr, c = col + d.dc;
       if (!this.inBounds(r, c)) continue;          // leaving the room is a separate act
       if (!this.walkable(r, c)) continue;
+      // AN OBSERVATION OUTRANKS A MODEL, AND THE GOAL IS EXEMPT FROM ONLY ONE OF THEM.
+      // `blockedEdges` is a step we actually asked for and were actually refused, so it
+      // applies everywhere including the last one — exempting the goal there is how a
+      // walker loops forever on the step it has already failed. The collision mask is a
+      // MODEL, and it is stricter than the world at exactly the squares that matter here:
+      // a doorway is a pocket by design, and 346 of the 383 exit anchors this bake cannot
+      // reach are `go` exits, whose square is the door tile itself. Refusing to plan a
+      // route to a door because the model dislikes the last step into it costs the whole
+      // errand; being wrong about that step costs one refused packet and a fine-positioned
+      // correction, which `leaveVia` already does.
       if (blockedEdges?.size && blockedEdges.has(`${row},${col}>${r},${c}`)) continue;
+      const isGoal = allowInto && r === allowInto.row && c === allowInto.col;
       // The mover's own answer, last because it is the expensive one.
-      if (collision && !this.moverStepLands(row, col, r, c)) continue;
+      if (collision && !isGoal && !this.moverStepLands(row, col, r, c)) continue;
       out.push({ row: r, col: c, dir: d.name, diagonal: d.dr !== 0 && d.dc !== 0 });
     }
     return out;
@@ -1561,7 +1573,8 @@ export class RoomGeometry {
         return { found: true, steps: lead ? [lead, ...steps] : steps, expanded,
                  ...(lead ? { recovered_from: { row: start.row, col: start.col } } : {}) };
       }
-      for (const n of this.neighbors(cur.r, cur.c, { fine, collision, blockedEdges })) {
+      for (const n of this.neighbors(cur.r, cur.c,
+             { fine, collision, blockedEdges, allowInto: { row: toRow, col: toCol } })) {
         const nk = key(n.row, n.col);
         if (closed.has(nk)) continue;
         // Never the GOAL, only the way there: if the destination itself is occupied we

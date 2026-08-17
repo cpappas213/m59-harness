@@ -4,7 +4,12 @@
 //   node tools/m59-routebake.mjs                 bake every room
 //   node tools/m59-routebake.mjs --rooms 150,578 just these
 //   node tools/m59-routebake.mjs --check         report, write nothing
+//   node tools/m59-routebake.mjs --resume        keep what is already on disk, bake the rest
 //   node tools/m59-routebake.mjs --grid          the old coarse view, for comparison only
+//
+// THIRTEEN MINUTES ON THIS MACHINE, FLUSHED EVERY MINUTE. `--resume` adopts the rooms
+// already in the table when — and only when — they were baked from the same geometry and
+// the same view, so a killed bake costs a minute rather than the lot.
 //
 // WHAT THE RUNTIME ACTUALLY USES OUT OF THIS IS THE STEP MASK. The routes and the region
 // labels are useful; the mask is the thing that changes behaviour, because it turns "would
@@ -387,13 +392,65 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   const collision = !argv.includes('--grid');
 
   const map = loadMap(movementMapFile());
+  const manifest = map.geometryManifestSha256 ?? null;
   const rooms = Object.values(map.rooms)
     .filter(r => r?.roo && (!only || only.includes(Number(r.num))));
-  console.error(`baking ${rooms.length} room(s)…`);
 
-  const out = {}; let skipped = 0, pairs = 0, pockets = 0, stranded = 0;
+  // THIRTEEN MINUTES THAT USED TO BE ALL-OR-NOTHING. The whole table was one write after
+  // the loop, so a Ctrl-C, a reboot or an OOM at room 250 of 264 produced nothing at all
+  // and the next run started from the beginning. Two things fix that and they are the same
+  // mechanism: the partial table is flushed as it goes, and a rerun can adopt what is
+  // already on disk.
+  //
+  // ADOPTION IS GATED ON THE MANIFEST AND ON THE VIEW, because a half-table stitched from
+  // two different maps is exactly the confidently-wrong artifact this file keeps warning
+  // about — and unlike a stale table, nothing downstream could detect it. Same geometry
+  // and same view, or the existing rooms are ignored and it bakes from scratch.
+  const resume = argv.includes('--resume');
+  const out = {};
+  if (resume) {
+    try {
+      const prior = JSON.parse(readFileSync(ROUTES_FILE(), 'utf8'));
+      const sameMap = prior?.geometryManifestSha256 && manifest
+        && prior.geometryManifestSha256 === manifest;
+      const sameView = (prior?.view ?? 'grid') === (collision ? 'collision' : 'grid');
+      if (sameMap && sameView) {
+        for (const [num, baked] of Object.entries(prior.rooms ?? {}))
+          if (baked && !baked.skipped) out[num] = baked;
+        console.error(`resuming: ${Object.keys(out).length} room(s) already baked from the same map`);
+      } else {
+        console.error(`ignoring the table on disk — ` +
+          (!sameMap ? 'it was baked from different geometry' : `it is the ${prior?.view} view`));
+      }
+    } catch { console.error('nothing usable on disk to resume from'); }
+  }
+  const todo = rooms.filter(r => !(String(r.num) in out));
+  console.error(`baking ${todo.length} room(s)${resume && todo.length !== rooms.length
+    ? ` (${rooms.length - todo.length} already done)` : ''}…`);
+
+  let skipped = 0, pairs = 0, pockets = 0, stranded = 0;
   const t0 = Date.now();
-  for (const [i, room] of rooms.entries()) {
+  // Flushed on a CLOCK rather than every N rooms, because room sizes vary by two orders
+  // of magnitude here: 264 rooms is anything from 18ms to 30s each, so "every 25 rooms"
+  // is thirty seconds in one place and six minutes in another.
+  const FLUSH_MS = 60_000;
+  let lastFlush = Date.now();
+  const write = () => {
+    mkdirSync(dirname(ROUTES_FILE()), { recursive: true });
+    writeFileSync(ROUTES_FILE(), JSON.stringify({
+      format: 'm59-routes/1',
+      view: collision ? 'collision' : 'grid',
+      builtAt: new Date().toISOString(),
+      builtFrom: movementMapFile(),
+      geometryManifestSha256: manifest,
+      // Says outright that the table is short of the map it was built from, so a partial
+      // flush cannot be mistaken for a finished bake by anything reading it.
+      complete: Object.keys(out).length + skipped >= rooms.length && !only,
+      rooms: out,
+    }));
+  };
+
+  for (const [i, room] of todo.entries()) {
     const t = Date.now();
     const baked = bakeRoom(room, { collision });
     if (baked.skipped) { skipped++; continue; }
@@ -401,11 +458,12 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
     pairs += Object.keys(baked.routes).length;
     pockets += baked.pockets ?? 0;
     stranded += baked.stranded_exits ?? 0;
-    if (rooms.length > 5)
-      process.stderr.write(`\r  ${i + 1}/${rooms.length}  room ${baked.room} ` +
+    if (todo.length > 5)
+      process.stderr.write(`\r  ${i + 1}/${todo.length}  room ${baked.room} ` +
         `${baked.anchors.length} exits, ${baked.main_region_squares}/${baked.walkable} ` +
         `in the main body, ${baked.pockets} pocket(s), ` +
         `${Object.keys(baked.routes).length} routes, ${Date.now() - t}ms      `);
+    if (!check && Date.now() - lastFlush >= FLUSH_MS) { write(); lastFlush = Date.now(); }
   }
   process.stderr.write('\n');
   const took = ((Date.now() - t0) / 1000).toFixed(1);
@@ -444,15 +502,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
           ? `${r.stranded_exits} of ${r.anchors.length} exit(s) this model cannot walk to from that body — go and look before believing it`
           : `all ${r.anchors.length} exit(s) reachable from it`));
   } else {
-    mkdirSync(dirname(ROUTES_FILE()), { recursive: true });
-    writeFileSync(ROUTES_FILE(), JSON.stringify({
-      format: 'm59-routes/1',
-      view: collision ? 'collision' : 'grid',
-      builtAt: new Date().toISOString(),
-      builtFrom: movementMapFile(),
-      geometryManifestSha256: map.geometryManifestSha256 ?? null,
-      rooms: out,
-    }));
+    write();
     const mb = (readFileSync(ROUTES_FILE()).length / 1048576).toFixed(2);
     console.error(`wrote ${ROUTES_FILE()} (${mb} MB)`);
   }

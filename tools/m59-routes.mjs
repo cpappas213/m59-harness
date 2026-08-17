@@ -76,11 +76,17 @@ export function attachStepMasks(map, { geometryOf } = {}) {
   if (!table) return { attached: 0, rooms: 0, ok: false,
                        why: load() ? 'the routing table was baked from different geometry'
                                    : 'no routing table — run node tools/m59-routebake.mjs' };
-  let attached = 0, rooms = 0, refused = 0;
+  // `rooms` is what the TABLE holds and `masked` is how many of those carry the payload.
+  // Two counters rather than one, because "the table is empty" and "the table predates
+  // step masks" are different problems with different fixes, and a single counter told
+  // the second story with the first one's words.
+  let attached = 0, refused = 0, masked = 0;
+  const rooms = Object.keys(table.rooms).length;
   for (const [num, baked] of Object.entries(table.rooms)) {
+    if (typeof baked?.stepMask !== 'string') continue;
+    masked++;
     const room = map?.rooms?.[num] ?? map?.rooms?.[Number(num)];
-    if (!room?.roo || typeof baked?.stepMask !== 'string') continue;
-    rooms++;
+    if (!room?.roo) continue;
     const geometry = geometryOf ? geometryOf(room) : sharedRoomGeometry(room);
     if (!geometry) continue;
     const bytes = Buffer.from(baked.stepMask, 'base64');
@@ -88,7 +94,17 @@ export function attachStepMasks(map, { geometryOf } = {}) {
       attached++;
     else refused++;
   }
-  return { attached, rooms, refused, ok: attached > 0, view: table.view ?? 'grid' };
+  // A TABLE WITH NO MASKS IN IT IS ITS OWN ANSWER, and it is one somebody will actually
+  // hit: every table baked before masks existed has all 264 rooms, matches the manifest,
+  // and carries nothing the router can use. "No routing table" would send them looking for
+  // a file that is sitting right there.
+  return { attached, rooms, masked, refused, ok: attached > 0, view: table.view ?? 'grid',
+           ...(attached ? {} : { why: !rooms
+             ? 'the routing table has no rooms in it'
+             : !masked
+               ? `the routing table has ${rooms} room(s) and no step masks — it predates them; ` +
+                 'rerun node tools/m59-routebake.mjs'
+               : `${masked} step mask(s) on disk and none of them fit the map in play` }) };
 }
 
 /** Is this room's exit set split by geometry, and into how many reachable groups? */
@@ -186,7 +202,21 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   console.log(current ? 'manifest MATCHES the map in play — the table is usable'
                       : 'manifest DOES NOT match the map in play — the table is refused, ' +
                         'run node tools/m59-routebake.mjs');
-  const split = rooms.filter(r => new Set(r.anchors.map(a => a.region)).size > 1);
-  console.log(`${split.length} room(s) have exits in more than one region — walking cannot ` +
-              `join those, which is what blink is for`);
+  // NOT "REGIONS", AND NOT "BLINK". This line used to count rooms whose exits fall in more
+  // than one region and call those unwalkable. Both halves were wrong. A region is a
+  // strongly connected component, and an exit square is very often a pocket BY DESIGN —
+  // you step into the doorway and cannot step back off it — so "more than one region" is
+  // the normal shape of a room with two doors in it. What can be said is one-directional:
+  // how many exits the body of the room cannot walk to. Even that is a claim about this
+  // MODEL, which is stricter than the client it models; the one place in the world
+  // genuinely joined only by blink is the Cragged Mountains cliff (578, 598).
+  const masked = rooms.filter(r => typeof r.stepMask === 'string').length;
+  console.log(`${masked} room(s) carry a step mask — the part the router actually plans on`);
+  const stranded = rooms.reduce((n, r) => n + (r.stranded_exits ?? 0), 0);
+  const anchors = rooms.reduce((n, r) => n + r.anchors.length, 0);
+  const pockets = rooms.reduce((n, r) => n + (r.pockets ?? 0), 0);
+  console.log(`${pockets} pocket(s) off the main body across the world — these are the ` +
+              `safe-spot candidates, not damage`);
+  console.log(`${stranded} of ${anchors} exit anchor(s) this model cannot walk to from ` +
+              `their own room's body — go and look before believing any one of them`);
 }

@@ -3190,7 +3190,23 @@ class Session {
     // re-deriving a whole field every square would cost more than the detour saves,
     // and the replan below picks up anything that has moved into the way since.
     const threats = this.threatsHere();
-    const plan = geo.path(from.row, from.col, row, col, { threats });
+    let plan = geo.path(from.row, from.col, row, col, { threats });
+    // THE MASK MAY ONLY EVER PREFER, AND THAT HAS TO HOLD AT PLAN TIME TOO.
+    //
+    // The replan below already falls back to the coarse grid when the collision view runs
+    // out of routes; the FIRST plan did not, so a goal the model dislikes was refused
+    // before a single packet — which is the same silent refusal this whole path exists to
+    // remove, just arriving earlier. It bites hardest at doors: an exit anchor for a `go`
+    // exit is the door tile itself, a pocket by design, and 346 of the 383 anchors this
+    // bake cannot reach from their room's body are exactly those. Exempting the last step
+    // into the goal recovers 57 of them; the other 326 have the whole approach refused, and
+    // for those the answer is to plan on the grid and let the mover clip each step for
+    // real — which is what `leaveVia` then finishes with fine positioning.
+    //
+    // Only when the COLLISION view is what refused. A coarse-grid "no route" is the room
+    // telling us something, and re-asking it the same question would just be slower.
+    if (!plan.found && plan.collision_view)
+      plan = geo.path(from.row, from.col, row, col, { threats, collision: false });
     if (!plan.found)
       return { arrived: false, reason: plan.reason, position: { col: from.col, row: from.row },
                ...(plan.stuck ? { nearest_floor: plan.nearest_floor } : {}),

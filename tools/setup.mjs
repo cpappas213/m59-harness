@@ -8,6 +8,7 @@
 //   node tools/setup.mjs fleet 10      create ten characters
 //   node tools/setup.mjs rsc           copy the resource table out of the container
 //   node tools/setup.mjs shortcuts     one click-to-play shortcut per character
+//   node tools/setup.mjs routes        bake the routing table the mover agrees with (~13 min)
 //   node tools/setup.mjs webui         install the browser command surface (its own repo)
 //   node tools/setup.mjs all 10        all of the above, in order
 //   node tools/setup.mjs shutdown      checkpoint the world, then stop everything
@@ -241,6 +242,34 @@ async function doctor() {
     catch { /* never written */ }
     add('client shortcuts', made ? `${made} of ${chars}` : null, 'node tools/setup.mjs shortcuts');
   }
+
+  // REPORTED BECAUSE ITS ABSENCE IS SILENT AND EXPENSIVE. Without a routing table the
+  // broker plans on the server's coarse grid while the mover enforces the client's BSP,
+  // and the fleet walks into walls — not with an error, but by sliding along one,
+  // replanning into it, and giving up. `attachStepMasks` says the same thing at broker
+  // start; this says it before anybody has started one.
+  let routes = null;
+  try {
+    const { readFileSync } = await import('node:fs');
+    const { movementMapFile } = await import('./m59-map-path.mjs');
+    const { loadMap } = await import('./m59-map.mjs');
+    const { ROUTES_FILE } = await import('./m59-routebake.mjs');
+    const table = JSON.parse(readFileSync(ROUTES_FILE(), 'utf8'));
+    const rooms = Object.values(table.rooms ?? {});
+    // COUNT THE MASKS, NOT THE ROOMS. The payload is the step mask; the routes and region
+    // labels beside it are useful and change nothing. A table baked before masks existed
+    // has all 264 rooms in it, matches the manifest, and leaves the broker planning on the
+    // coarse grid — so counting rooms reported a green tick over exactly the failure this
+    // line exists to catch.
+    const masked = rooms.filter(r => typeof r?.stepMask === 'string').length;
+    const manifest = loadMap(movementMapFile()).geometryManifestSha256 ?? null;
+    const current = table.geometryManifestSha256 && manifest
+      && table.geometryManifestSha256 === manifest;
+    routes = current && masked
+      ? `${masked} rooms` + (table.complete === false ? ', INCOMPLETE' : '')
+      : null;
+  } catch { routes = null; }
+  add('routing table', routes, 'node tools/setup.mjs routes');
 
   const game = await portOpen(5959);
   add('server :5959', game ? 'listening' : null, 'node tools/setup.mjs server');
@@ -480,6 +509,22 @@ const commands = {
   broker,
   fleet: () => fleet(n),
   rsc: async () => rsc(),
+  // THE ROUTER'S HALF OF THE COLLISION CONTRACT. About thirteen minutes, all CPU, no
+  // network and no server — it reads the baked map and writes a table of the steps the
+  // MOVER will actually make, so the router stops planning routes that end with a
+  // character sliding along a wall. `--resume` because a killed bake should cost a minute
+  // rather than the lot, and because rerunning it after `server` refreshes the map is then
+  // nearly free for the rooms that did not change.
+  //
+  // NEVER FATAL. Without the table the broker plans on the coarse grid exactly as it did
+  // before any of this existed, which is worse and is not a reason to fail a setup that
+  // has otherwise produced a working fleet.
+  routes: async () => {
+    const ok = run(process.execPath, [join(HERE, 'm59-routebake.mjs'), '--resume'], { cwd: REPO });
+    if (!ok) console.error(c.warn('the routing table did not bake; the broker will plan on ' +
+      'the coarse grid. Rerun with node tools/setup.mjs routes when you can.'));
+    return 0;
+  },
   shortcuts: async () => shortcuts({ desktop: process.argv.includes('--desktop') }),
   // THE BROWSER COMMAND SURFACE, WHICH IS ITS OWN REPOSITORY AND MAY NOT BE HERE.
   // `npm install` in maps/m59-strategy-game, once, so that m59-service.mjs can start it
@@ -496,6 +541,9 @@ const commands = {
     client();
     // Before the broker, so the first session it opens can already read names.
     rsc();
+    // Also before the broker, because the table is read once at startup: bake it after and
+    // the fleet spends its first session planning on the wrong map.
+    await commands.routes();
     rc = await broker(); if (rc) return rc;
     rc = await fleet(n); if (rc) return rc;
     // After the fleet exists, so the first page it serves has characters on it. Never
@@ -514,7 +562,7 @@ const commands = {
 if (!commands[cmd]) {
   console.error(`unknown command: ${cmd}`);
   console.error('usage: node tools/setup.mjs ' +
-                '[doctor|server|client|broker|fleet N|rsc|shortcuts|webui|all N|shutdown]');
+                '[doctor|server|client|broker|fleet N|rsc|routes|shortcuts|webui|all N|shutdown]');
   process.exit(2);
 }
 process.exit(await commands[cmd]());
