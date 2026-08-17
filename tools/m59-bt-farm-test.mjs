@@ -467,4 +467,53 @@ t('not-holding empty room does not rest when already whole', async () => {
 
 // ---------------------------------------------------------------------------
 
+// Fight node: out_of_reach must NOT loop "broke off, landed_hits 0" for ever
+//
+// The root of Lee's clearing deadlock: holding a safe spot, the nearest quarry is
+// 9+ squares away, so fight() reports out_of_reach (it did NOT swing). Without a
+// response the next pass re-fights the same distant quarry and reports the same
+// out_of_reach, and the character loops "broke off, landed_hits 0" for ever while a
+// monster sits across the room. The fix pulls the quarry to the wall (walk, hit once,
+// walk back -- the legacy pull), so the next pass fights it where it can land hits.
+// ---------------------------------------------------------------------------
+
+t('fightNode pulls the quarry to the wall on out_of_reach (no infinite broke-off loop)', async () => {
+  const k = mockKeeper({ hibernation: false });
+  k.hold = { col: 5, row: 5, proven: true };
+  k.holdWorks = () => true;
+  k.policy.hunt = 'giant rat';
+  k.policy.clearing = 'centipede';
+  k.clearing = 'centipede';
+  k._btFarmFoundTargets = () => [{ id: 7573, nameRsc: 'centipede' }];
+  k.inReachOfUs = () => [];
+  let pulled = 0;
+  k.pull = async (quarry) => { pulled++; return { pulled: true, back: true, target: quarry.nameRsc, steps: 12 }; };
+  // fight() reported out_of_reach: nothing matching within melee reach while holding.
+  k._btFarmFight = async () => ({ out_of_reach: true,
+    nearest: { id: 7573, name: 'centipede', distance: 9.2, col: 9, row: 10 } });
+  const node = fightNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS (handled the pass by pulling), got ${r}`);
+  if (pulled !== 1) throw new Error(`expected exactly one pull, got ${pulled}`);
+});
+
+t('fightNode does not pull when out_of_reach with no safe spot (lets the next pass approach)', async () => {
+  const k = mockKeeper({ hibernation: false });
+  k.hold = null;
+  k.holdWorks = () => false;
+  k.policy.hunt = 'giant rat';
+  k._btFarmFoundTargets = () => [{ id: 7573, nameRsc: 'centipede' }];
+  k.inReachOfUs = () => [];
+  let pulled = 0;
+  k.pull = async () => { pulled++; return { pulled: true, back: true, target: 'x', steps: 1 }; };
+  k._btFarmFight = async () => ({ out_of_reach: true,
+    nearest: { id: 7573, name: 'centipede', distance: 6.0, col: 2, row: 2 } });
+  const node = fightNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS, got ${r}`);
+  if (pulled !== 0) throw new Error(`no safe spot -> no pull, got ${pulled}`);
+});
+
+// ---------------------------------------------------------------------------
+
 run();

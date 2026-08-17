@@ -536,6 +536,40 @@ export function fightNode(keeper) {
       keeper.note('stale object id during a fight -- reconnecting', { why: f.note });
       await keeper.reconnect('clearing a stale object id mid-fight').catch(() => {});
       keeper.noProgress('reconnected after a stale object id');
+    } else if (f.out_of_reach) {
+      // Holding position and nothing matching is within melee reach. The fight did NOT
+      // swing -- it reported the nearest quarry and walked away. Without a response the
+      // next pass re-fights the same distant quarry, reports the same out_of_reach, and
+      // the character loops "broke off, landed_hits 0" for ever while a monster sits
+      // across the room. The legacy pass does the pull here: walk to it, hit it once
+      // (which wounds and aggros it so it follows), walk back to the wall, and fight
+      // where we chose. Delegate to the same pull() the legacy uses -- it knows the
+      // safe-spot geometry and the return-to-spot step. When there is no safe spot to
+      // pull back to, just let the next pass approach it the ordinary way.
+      if (keeper.hold && typeof keeper.pull === 'function') {
+        const quarry = f.nearest ?? (found.length ? found.find(o => o.id === f.nearest?.id) || found[0] : null);
+        if (quarry) {
+          const p = await keeper.pull(quarry).catch(() => ({ pulled: false, why: 'pull failed' }));
+          if (p.pulled && p.back) {
+            keeper.note('waiting for it at the wall', {
+              target: p.target, pull_steps: p.steps,
+              why: 'hit once and walked back; the next pass fights it at the wall',
+            });
+            keeper.progress('pulled the quarry to the wall');
+          } else {
+            keeper.note('could not bring it to the wall', { why: p.why, target: p.target });
+            keeper.noProgress('the pull did not complete: ' + (p.why || 'unknown'));
+          }
+        }
+      } else if (f.nearest) {
+        // No safe spot to hold: let the ordinary (non-holding) fight approach next pass.
+        keeper.note('out of reach, no safe spot -- will approach next pass', {
+          target: f.nearest?.name, distance: f.nearest?.distance });
+        keeper.noProgress('out of reach, will approach');
+      } else {
+        keeper.noProgress('out of reach and nothing to pull');
+      }
+      return SUCCESS;
     } else if (f.disengaged) {
       // Broke off at low health mid-fight. The recovery move depends on where we stand.
       // Behind a proven safe spot, sitting still IS the heal (nothing can hit us unless
