@@ -281,3 +281,4 @@ __pycache__/
 /substrate/circuit-runs.json
 /substrate/hoptests.json
 /substrate/hoptest-*.log
+/substrate/walktrials.json

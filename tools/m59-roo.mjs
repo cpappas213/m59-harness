@@ -1374,7 +1374,39 @@ export class RoomGeometry {
   neighbors(row, col, { fine = true, collision = false, blockedEdges = null,
                         allowInto = null } = {}) {
     const out = [];
-    for (const d of this.openDirections(row, col, { fine })) {
+    // WHICH MAP GETS TO SAY A STEP IS IMPOSSIBLE — and it must not be both.
+    //
+    // This iterated `openDirections`, which is the SERVER'S COARSE GRID: one byte a square,
+    // and the thing MONSTERS move and see on. The mover's own answer was then applied as a
+    // second filter. So a step needed permission from both, the coarse grid held a silent
+    // veto, and the fleet navigated with monster permissions while being enforced with
+    // player collision. That is the whole of "the bots behave like monsters", and it is why
+    // a person walks corridors the router calls impossible.
+    //
+    // MEASURED AGAINST A HUMAN WALKING, 2026-08-17, room 587. Two steps taken at a run,
+    // one second apart, in a corridor with nothing wrong with it:
+    //
+    //   53,28 -> 52,27   moverStepLands TRUE    coarse grid FALSE   router refused
+    //   33,20 -> 34,20   moverStepLands TRUE    coarse grid FALSE   router refused
+    //
+    // Every square on both paths is walkable, has floor under its centre, and is 44-100%
+    // covered. Nothing is wrong with the SQUARES; the EDGES were being vetoed by a map that
+    // is not about players. `path()` reported no route at all between points the operator
+    // ran between in one second.
+    //
+    // So with a baked mask, `moverStepLands` is the authority and the coarse grid gets no
+    // veto: consider every direction and let the mover decide. WITHOUT a mask nothing
+    // changes — the coarse grid is then the only opinion available, and a checkout that has
+    // never run the bake behaves exactly as it always has, which is the property that makes
+    // this safe to ship.
+    //
+    // `walkable(r, c)` still gates the DESTINATION, deliberately and separately: that is a
+    // question about a square rather than about an edge, both failing steps above had
+    // walkable endpoints, and changing two things at once is how a fix stops being
+    // measurable.
+    const authoritative = collision && this.hasStepMask;
+    const dirs = authoritative ? DIRS : this.openDirections(row, col, { fine });
+    for (const d of dirs) {
       const r = row + d.dr, c = col + d.dc;
       if (!this.inBounds(r, c)) continue;          // leaving the room is a separate act
       if (!this.walkable(r, c)) continue;

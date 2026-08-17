@@ -2766,7 +2766,51 @@ class Session {
       overrideDepths: c.room.overrideDepths ?? null,
       motionZ,
     };
-    const requestedTrace = geo.traceFineMoveClient(fromX, fromY, toClient(x), toClient(y), traceOptions);
+    let requestedTrace = geo.traceFineMoveClient(fromX, fromY, toClient(x), toClient(y), traceOptions);
+
+    // A TRACE FROM NOWHERE ANSWERS NOTHING, AND REFUSING ON IT IS A CAGE.
+    //
+    // `traceFineMoveClient` tests the leaf under the ORIGIN before it tests a single wall,
+    // and answers `start_has_no_floor` when there is none. That refusal is about where we
+    // ARE, not about where we are going — so it is identical for every heading, and the
+    // fan in `walkFine` tries nine of them, at four reaches, and gets it thirty-six times.
+    // Measured offline against room 587's real geometry: from the centre of square 2,4 the
+    // walk to the west exit fails with `blocked — every heading refused` having sent
+    // ZERO PACKETS, while from three of the surrounding squares — and from the parts of
+    // 2,4 that do have floor, 21 of 64 points sampled — the identical call arrives in
+    // three or four packets. A character whose position reads as such a point cannot move
+    // by any path this file owns: `walkTo`'s off-grid recovery routes through here too,
+    // which is why it reports `could not step back onto solid ground`.
+    //
+    // The server has no opinion about any of this. It does not validate player movement at
+    // all — `ReqSomethingMoved` is bypassed for users — so the only thing holding the
+    // character still is our own check, applied from an origin the check itself calls
+    // invalid. That is the definition of failing closed on no information.
+    //
+    // SO: WHEN THE ORIGIN HAS NO FLOOR, THE DESTINATION DECIDES. Narrowly, and every
+    // clause is load-bearing:
+    //
+    //   * only for `start_has_no_floor` — a wall between here and there is still a wall,
+    //     and every other refusal is about the journey rather than the origin;
+    //   * the destination must itself be standable, checked by the same BSP that just
+    //     refused, so this can only ever move a character ONTO valid floor;
+    //   * at most one square, so it is a recovery step and not a licence to cross a room;
+    //   * and it is reported as `recovered_from_no_floor`, because a move nothing
+    //     validated must be visible to whatever reads the result.
+    //
+    // This cannot widen what the fleet may traverse: the reachable set is unchanged for
+    // every character standing anywhere the trace can start from. It only restores the
+    // ability to leave a square the model cannot reason about — which the game plainly
+    // allows, because a person walks off those squares without noticing they exist.
+    let recovered = null;
+    if (requestedTrace.reason === 'start_has_no_floor'
+        && Math.abs(x - fromWireX) <= KOD_FINENESS && Math.abs(y - fromWireY) <= KOD_FINENESS
+        && geo.leafAtClient(toClient(x), toClient(y))) {
+      recovered = { from: { x: fromWireX, y: fromWireY } };
+      requestedTrace = { available: true, moved: true, arrived: true, blocked: false,
+                         slid: false, x: toClient(x), y: toClient(y),
+                         reason: 'recovered_from_no_floor' };
+    }
     if (!requestedTrace.available) return requestedTrace;
     if (!requestedTrace.moved) return requestedTrace;
 
@@ -2776,7 +2820,16 @@ class Session {
     let quantizedX = toProtocol(requestedTrace.x, fromX);
     let quantizedY = toProtocol(requestedTrace.y, fromY);
     let trace = null;
-    for (let attempt = 0; attempt < 8; attempt++) {
+    // THE QUANTIZER RE-TRACES FROM THE SAME ORIGIN, so a recovery has to carry through it
+    // or it is undone one line later — the loop below would ask the identical question,
+    // get `start_has_no_floor` again, and refuse. The endpoint is already an exact integer
+    // wire coordinate (it is the caller's own target, checked for floor above), so there
+    // is nothing left for the quantizer to converge on.
+    if (recovered) {
+      quantizedX = Math.round(x); quantizedY = Math.round(y);
+      trace = { ...requestedTrace, arrived: true };
+    }
+    for (let attempt = 0; !recovered && attempt < 8; attempt++) {
       trace = geo.traceFineMoveClient(fromX, fromY, toClient(quantizedX), toClient(quantizedY),
         traceOptions);
       if (!trace.available) return trace;

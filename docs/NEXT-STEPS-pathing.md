@@ -308,3 +308,99 @@ on the retry so they do not decide in lockstep.
 Find out why 586->587 and 587->576 fail from EVERY start when 587's own floor routes
 perfectly. It is a boundary problem, not a floor problem, and `m59-exitgap.mjs` asks the
 model the same question `m59-hoptest.mjs` now asks a body — the pair should localise it.
+
+---
+
+# 2026-08-17 (later) — THE BOUNDARY PROBLEM IS A SQUARE WHOSE CENTRE IS INSIDE THE WALL
+
+This answers the question the section above ends on: *why do 586->587 and 587->576 fail
+from every start when 587's own floor routes perfectly?* It is neither the floor nor the
+boundary. It is one square on the approach, and the refusal is about where the character
+IS rather than where it is going.
+
+## The mechanism
+
+`traceFineMoveClient` tests the BSP leaf under the **origin** before it tests a single
+wall, and answers `start_has_no_floor` when there is none. That answer is the same for
+every heading, so `walkFine` fans nine headings at four reaches, collects it thirty-six
+times, and **sends zero packets**. `walkTo`'s off-grid recovery routes through the same
+call, which is why it reports `could not step back onto solid ground`. A character whose
+position reads as such a point cannot be moved by any path this repository owns.
+
+Room 587's west exit staging is `2,5`; the approach passes `2,4`. **21 of 64 points
+sampled inside `2,4` have floor** — an operator walked it and called it ordinary corridor —
+but its **centre does not**, and the centre is the only address the planner has.
+
+Reproduced offline, no server, driving the real `walkFine` against the real baked geometry:
+
+    from 2,5  -> arrived, 3 packets
+    from 2,4  -> FAILED, "every heading refused", 0 packets, start_has_no_floor
+    from 3,4  -> arrived, 5 packets
+    from 3,5  -> arrived, 5 packets
+    from the parts of 2,4 that DO have floor -> arrived, 3-4 packets
+
+That last line is the whole thing: the same square succeeds or fails depending only on
+whether the position used is the square's centre.
+
+**The server never had an opinion.** It does not validate player movement at all, so the
+only thing holding the character still was our own check, run from an origin the check
+itself calls invalid — failing closed on no information.
+
+## The fix
+
+`validateFineTarget`: when the trace refuses with `start_has_no_floor`, the DESTINATION
+decides. Only for that reason; the destination must have a leaf, checked by the same
+geometry; at most one square; reported as `recovered_from_no_floor`. It also carries
+through the quantizer, which re-traces from the same origin and would undo it otherwise.
+
+From `2,4` the walk to the west exit now arrives in **4 packets, off by 0.0**.
+`m59-collision-test.mjs` (162) pins it, including that a distant target and a neighbour
+with no floor are both still refused.
+
+Four of the five interior refusals a walk trace exposed in western 587 are this same
+cause seen from either side (`1,6 -> 1,5`, `1,6 -> 2,5` are origin-side; `1,5 -> 1,6`,
+`3,5 -> 2,6` are destination-side). The fifth, `4,4 -> 3,5`, is genuine: both centres have
+floor and the mover slides short to `3,4`. Still unexplained.
+
+## And `neighbors()` was asking the monster map
+
+Separate defect, same investigation. `neighbors()` iterated `openDirections()` — the
+server's coarse grid, which is what MONSTERS move on — and applied the mover's answer only
+as a second filter, so the coarse grid held a silent veto. Measured against a human walking
+587 at a run: `53,28 -> 52,27` and `33,20 -> 34,20` both have `moverStepLands TRUE` and
+coarse grid FALSE, and the router refused both. With a mask, `moverStepLands` is now the
+authority; with no mask nothing changes.
+
+| | before | after |
+|---|---|---|
+| squares in the main body | 185,211 | **235,588** (+50,377 = 19.5% of all floor) |
+| pockets world-wide | 17,402 | **2,492** |
+| traps | 4,823 | 3,600 |
+| stranded exit anchors | 383 of 1,293 | 181 of 1,290 |
+| room 50, planned NO ROUTE from a fortress square | 41.7% | **3.3%** |
+
+That last row is measured with `m59-walktrial.mjs --plan-only --compare`, the same tool
+the section above used, so it is directly comparable. Room 587 now reports 1.5% and
+**0.0% coarse-only**.
+
+## Corrections to earlier entries
+
+- **Deaths are 323, not 325.** The 325 was carried from an older handoff and never
+  re-measured; `m59-postmortems.mjs` reports 323.
+- **`m59-shortcuts.mjs` does not hardcode 5959** — it takes `--host`/`--port`, and 5959 is
+  only the default. But its `--fleet` is a NAME FILTER, not a fleet selector: it silently
+  matched nothing against the prod roster. `M59_FLEET=arena` is the resolver that works.
+- **`m59-postmortems.mjs` reported the wrong fleet's deaths** — 3 instead of 323 — because
+  `fleetScope`'s lone-broker shortcut adopted whichever broker was answering, overriding
+  `--fleet`, `M59_FLEET` and `substrate/fleet-default`. Fixed; `m59-fleetscope-test.mjs`
+  (33) pins it. The first line of that tool is what the fleet check-in reads as its safety
+  gate, so it was wrong at exactly the moment it mattered.
+
+## Still open
+
+- **Live confirmation.** Everything here is our model agreeing with itself. The one thing
+  that has ever broken this open is a person walking and saying what they saw.
+- `4,4 -> 3,5`, above.
+- **The position pulse does not cover keeperless movement.** It lives on the keeper's
+  watchdog, so a bare `travel` call — which is how this fault was reproduced — raises no
+  `!` at all. That gap cost a measurement in this investigation.

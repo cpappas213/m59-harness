@@ -1482,5 +1482,99 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
      JSON.stringify({ ordinaryResult, packets: ordinary.packets }));
 }
 
+
+// ---------------------------------------------------------------------------
+console.log('\na square whose CENTRE has no floor is not a cage');
+{
+  // THE FAULT THIS PINS, and it took six wrong diagnoses to reach it.
+  //
+  // `traceFineMoveClient` tests the leaf under the ORIGIN before it tests any wall, and
+  // answers `start_has_no_floor`. That refusal is about where we ARE, so it is identical
+  // for every heading — `walkFine` fans nine of them at four reaches, collects it
+  // thirty-six times, and sends ZERO PACKETS. `walkTo`'s off-grid recovery routes through
+  // the same call, so it reports `could not step back onto solid ground`, and the
+  // character is immovable by every path this repository owns.
+  //
+  // Room 587 square 2,4 is the real case: 21 of 64 points sampled inside it have a BSP
+  // leaf — an operator walked it and reported ordinary corridor — but its CENTRE does not,
+  // and the centre is the only address the planner has. Measured before the fix: from 2,4
+  // the walk to the west exit failed having sent nothing, while from 2,5, 3,4 and 3,5 the
+  // identical call arrived in three to five packets.
+  //
+  // The server never had an opinion. It does not validate player movement at all, so the
+  // only thing holding the character still was our own check, run from an origin that
+  // check itself calls invalid — failing closed on no information.
+  const wedgeMap = JSON.parse(readFileSync(new URL('../substrate/m59-map.json', import.meta.url), 'utf8'));
+  const wedgeRoom = wedgeMap.rooms['587'];
+  if (!wedgeRoom?.roo) {
+    skip('a centre-less square can still be walked off', 'room 587 is not in the baked map');
+  } else {
+    const geometry = RoomGeometry.fromJSON(wedgeRoom.roo);
+    const half = KOD_FINENESS >> 1;
+    const centreWire = square => square * KOD_FINENESS + half;
+    const hasFloor = (wx, wy) => !!geometry.leafAtClient(wireToClient(wx), wireToClient(wy));
+
+    ok('room 587 square 2,4 has no floor under its centre',
+       !hasFloor(centreWire(2), centreWire(4)));
+    let sampled = 0;
+    for (let fx = 0; fx < KOD_FINENESS; fx += 8)
+      for (let fy = 0; fy < KOD_FINENESS; fy += 8)
+        if (hasFloor(2 * KOD_FINENESS + fx, 4 * KOD_FINENESS + fy)) sampled++;
+    ok('and yet much of that square is real floor a person walks on', sampled > 12,
+       `${sampled}/64 sampled points have a leaf`);
+
+    // The west exit's own numbers, as the live broker reported them.
+    const EXIT = { x: 96, y: 335 };
+    // `fakeBrokerSession` builds what validateFineTarget/queueValidatedMove need; walkFine
+    // additionally reaches for the cancellation hooks and stepFine, so they are supplied
+    // here rather than widened into the shared fixture, which every other case uses.
+    const walkOff = (col, row) => {
+      const made = fakeBrokerSession(geometry,
+        { x: centreWire(col), y: centreWire(row), roomId: 587 });
+      Object.assign(made.session, {
+        movementGeneration: 0,
+        movementWasCancelled: () => false,
+        cancelledMovement: extra => ({ cancelled: true, ...extra }),
+        stepFine,
+      });
+      return made;
+    };
+
+    // PINNED ON THE DECISION, NOT ON THE FAN. `walkFine` tries nine headings at four
+    // reaches; asserting through it would make this case depend on which of thirty-six
+    // candidates happens to land, and a fixture detail could pass it while the rule was
+    // broken. `validateFineTarget` IS the rule, and it is the thing that used to refuse.
+    const caged0 = walkOff(2, 4);
+    const towardFloor = validateFineTarget.call(caged0.session, 142, 315, { slide: true });
+    ok('a move OFF the centre-less square onto real floor is authorised',
+       towardFloor.moved === true && towardFloor.available === true,
+       JSON.stringify({ reason: towardFloor.reason }));
+    ok('and it is reported as a recovery rather than an ordinary validated move',
+       towardFloor.reason === 'recovered_from_no_floor', String(towardFloor.reason));
+    ok('with the endpoint it was actually asked for',
+       towardFloor.target?.x === 142 && towardFloor.target?.y === 315,
+       JSON.stringify(towardFloor.target));
+
+    const fine = walkOff(2, 5);
+    const ordinary = await walkFine.call(fine.session, EXIT.x, EXIT.y,
+      { maxSteps: 60, stride: 32, arriveWithin: 1 });
+    ok('an ordinary square is unaffected by the recovery', ordinary.arrived === true);
+    ok('and an ordinary move is NOT labelled a recovery',
+       validateFineTarget.call(fine.session, 96, 335, { slide: true }).reason
+         !== 'recovered_from_no_floor');
+
+    // THE RECOVERY MUST NOT WIDEN WHAT THE FLEET MAY TRAVERSE. One square, onto floor,
+    // and only when the ORIGIN is the thing that has none.
+    const caged = walkOff(2, 4);
+    const target = caged.session;
+    const leap = validateFineTarget.call(target, centreWire(40), centreWire(30), { slide: false });
+    ok('it cannot be used to cross a room — a distant target is still refused',
+       leap.moved === false || leap.available === false, JSON.stringify(leap.reason));
+    const intoWall = validateFineTarget.call(target, centreWire(2), centreWire(3), { slide: false });
+    ok('and it cannot land on a neighbour that has no floor either',
+       intoWall.moved === false || intoWall.available === false, JSON.stringify(intoWall.reason));
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed${skipped ? `, ${skipped} skipped` : ''}`);
 process.exitCode = fail ? 1 : 0;
