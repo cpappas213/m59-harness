@@ -2289,6 +2289,104 @@ export class Autopilot {
   // a journey. A failure still discredits the square permanently either way: a blow that
   // got through is a bad square however we came to be standing on it. The tag is so the
   // travel-only rejections can be told apart afterwards without reconstructing anything.
+  // ── Safe spot decomposition ────────────────────────────────────────
+  // These are the seam between takeSafeSpot() and its internal decisions. Each
+  // method is independently testable and can be reused elsewhere.
+
+  /**
+   * Check if the room is already known to be wall-less.
+   *
+   * @returns {string|null} the reason if wall-less, null if not known
+   */
+  _takeSafeSpotCheckNoWall(quarry, source = 'fight') {
+    const room = this.s.world?.room;
+    if (!room) return null;
+
+    const roomWallDecision = source === 'fight' ? this.noWallRooms?.get(room.num) : null;
+    if (roomWallDecision)
+      return roomWallDecision;
+
+    return null;
+  }
+
+  /**
+   * Search for a safe spot with a share cap.
+   *
+   * @param {object} geo the room geometry
+   * @param {object} me the player position
+   * @param {object} room the room
+   * @param {object} opts search options
+   * @returns {object|null} the spot or null
+   */
+  _takeSafeSpotSearch(geo, me, room, opts = {}) {
+    const { quarryReach, strictQuarryReach, los, quarry, barren, stats, shareCap } = opts;
+    const within = Math.max(geo.rows ?? 0, geo.cols ?? 0) || 64;
+    const spotStats = {};
+
+    const configuredShareCap = Number.isFinite(this.policy.maxBotsPerSafeSpot) &&
+      this.policy.maxBotsPerSafeSpot > 0
+      ? Math.max(1, Math.floor(this.policy.maxBotsPerSafeSpot)) : null;
+
+    let spot = null, cap = configuredShareCap == null ? Infinity : 1;
+    for (; configuredShareCap == null || cap <= configuredShareCap; cap++) {
+      for (const k of Object.keys(spotStats)) delete spotStats[k];
+      spot = this.searchSafeSpot(geo, me, room, {
+        within, quarryReach, strictQuarryReach, los, quarry, barren,
+        stats: spotStats, shareCap: cap });
+      if (spot) break;
+      if (configuredShareCap == null) break;
+    }
+
+    if (spot && Number.isFinite(cap) && cap > 1)
+      this.note('sharing a wall rather than standing in the open', {
+        with: spotOccupancy(this.s.name, room.num, spot.col, spot.row),
+        at: { col: spot.col, row: spot.row },
+        why: `every wall in this room already had ${cap - 1} on it, and two to a wall ` +
+             'beats one on a wall and one in the open' });
+
+    return { spot, shareCap: cap, spotStats };
+  }
+
+  /**
+   * Check if all defensible squares are empirically barren.
+   *
+   * @param {object} spotStats the stats from the search
+   * @returns {boolean}
+   */
+  _takeSafeSpotAllBarren(spotStats) {
+    return spotStats.eligible > 0 &&
+           spotStats.empirically_barren === spotStats.eligible;
+  }
+
+  /**
+   * Walk to a safe spot and claim it.
+   *
+   * @param {object} spot the spot to walk to
+   * @returns {Promise<{arrived: boolean, why?: string}>}
+   */
+  async _takeSafeSpotWalkToSpot(spot) {
+    const s = this.s;
+    claimSpot(this.s.name, this.s.world?.room?.num, spot.col, spot.row);
+
+    if ((spot.steps_away ?? 99) > 0) {
+      this.doing = 'travelling';
+      const { skills } = this.constructor._combatSkills;
+      const fine = spot.fine;
+      const arrival = fine
+        ? await skills.returnToSpot(s, { col: spot.col, row: spot.row, ...fine }, { maxSteps: 24 })
+                      .catch(e => ({ arrived: false, why: e.message }))
+        : await skills.walkToSquare(s, spot.col, spot.row, { maxSteps: 24 })
+                      .catch(e => ({ arrived: false, why: e.message }));
+
+      if (!arrival.arrived) {
+        releaseSpot(this.s.name, this.s.world?.room?.num, spot.col, spot.row);
+        return { arrived: false, why: arrival.why || 'could not reach the spot' };
+      }
+    }
+
+    return { arrived: true };
+  }
+
   async takeSafeSpot(why, quarry = null, { source = 'fight', islandCrossings = 0 } = {}) {
     const s = this.s, c = s.client;
     const room = s.world?.room, geo = s.world?.geometry, me = c?.self;
