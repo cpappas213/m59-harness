@@ -50,6 +50,7 @@ import { RemainingRequiredToLearnNewSkills, PointsToNextLevelOfTarget } from '..
 import * as bankbook from './m59-bank.mjs';
 import * as hitbook from './m59-hits.mjs';
 import * as transits from './m59-transits.mjs';
+import * as navLearned from './m59-nav-learned.mjs';
 import * as descriptions from './m59-describe.mjs';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { loadoutFor, reconcile as reconcileLoadout, plannedAbilities } from './m59-loadout.mjs';
@@ -1711,7 +1712,7 @@ const arrivalReport = (s) => {
   };
 };
 
-const orderExits = (candidates) => candidates.slice().sort((a, b) =>
+const orderExits = (candidates, fromRoom) => candidates.slice().sort((a, b) =>
   (a.reachable === false) - (b.reachable === false) ||
   // AN EXIT WITH NO SQUARE TO STAND ON GOES LAST. Without a stand_on, leaveVia falls
   // back to scanning the whole boundary line for somewhere walkable -- and when that
@@ -1719,6 +1720,9 @@ const orderExits = (candidates) => candidates.slice().sort((a, b) =>
   // boundary" dead end. A sibling exit that names an actual square is strictly better,
   // even if it is further away, because it is the one that can be walked to.
   (a.stand_on == null) - (b.stand_on == null) ||
+  // Learned navigation: penalize edges that have been failing. Advisory only --
+  // a bad edge still gets tried, just after the good ones.
+  ((fromRoom != null) ? (navLearned.penalty(fromRoom, a.to) - navLearned.penalty(fromRoom, b.to)) : 0) ||
   (a.steps_away ?? Infinity) - (b.steps_away ?? Infinity));
 
 class Session {
@@ -3199,7 +3203,7 @@ class Session {
     // spreadEdges turns each declared edge into one candidate per square that crosses
     // that boundary -- see m59-world.mjs. Without it this tried the nearest square and
     // called the whole wall refused.
-    for (const exit of orderExits(spreadEdges(candidates))) {
+    for (const exit of orderExits(spreadEdges(candidates), this.world?.room?.num)) {
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement({ tried });
       const r = await this.leaveVia(exit, { movementGeneration, controlToken });
       if (r.left) return { ...r, used_exit: exit, ...(tried.length ? { tried } : {}) };
@@ -3511,7 +3515,7 @@ class Session {
       // journeys. Take them all and let orderExits choose -- it already prefers
       // reachable ones and then the nearest.
       const candidates = this.world.exits().filter(e => e.to === nextHop.to);
-      const exit = orderExits(candidates)[0];
+      const exit = orderExits(candidates, here.num)[0];
       if (!exit)
         return { arrived: false, log, reason: 'cannot find the exit to ' + nextHop.to_name + ' from here' };
 
@@ -3550,6 +3554,10 @@ class Session {
         reason: r.left ? null : why,
         journey: journeyId, hop: i, destination: toRoomNum,
       });
+      // Learned navigation: record the outcome so the overlay can mark
+      // persistently-failing edges. Advisory only -- the router still uses
+      // the static graph, it just avoids edges the overlay has flagged.
+      try { navLearned.recordHop(here.num, nextHop.to, r.left, r.left ? null : why); } catch {}
       if (!r.left) return { arrived: false, log, reason: why };
 
       // Arriving brings a fresh BP_PLAYER, and with it the identity the world model

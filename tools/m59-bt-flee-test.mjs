@@ -151,6 +151,46 @@ t('doomedNode: FAILURE when health is above doomedAt', async () => {
   if (r !== 'FAILURE') throw new Error(`expected FAILURE, got ${r}`);
 });
 
+t('doomedNode: playDead refused -> abandons spot and runs (not a silent FAILURE)', async () => {
+  // THE BUG: when playDead() refuses (the "refusing to freeze again" guard fired),
+  // the old code returned FAILURE, which let the pass fall through to the legacy
+  // fallback. The legacy also refused, and the character bled out in place -- Lee
+  // froze 13 times at 1-4 HP in Main gate to the city of Tos and died. The fix: when
+  // playDead refuses, abandon the safe spot and run for a town. Moving is the only
+  // thing that changes the situation; staying still is how you die.
+  let leftHold = false, townTrip = false;
+  const k = mockKeeper({
+    _btFleeNear: () => [{ id: 2, nameRsc: 1 }],
+    holdWorks: () => true,          // sheltered
+    hold: { col: 3, row: 17 },
+    playDead: async () => false,    // playDead REFUSES (not helping)
+    leaveHold: async () => { leftHold = true; return { refused: false }; },
+    townTripIfCornered: async () => { townTrip = true; return true; },
+  });
+  k.s.client.vitals = () => ({ health: { value: 3, max: 30 }, vigor: { value: 80, max: 200 } });
+  const node = doomedNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'SUCCESS') throw new Error(`expected SUCCESS (ran for a town), got ${r}`);
+  if (!leftHold) throw new Error('expected leaveHold to be called (abandon the spot)');
+  if (!townTrip) throw new Error('expected townTripIfCornered to be called (run)');
+});
+
+t('doomedNode: playDead accepted -> SUCCESS (stays and freezes)', async () => {
+  let townTrip = false;
+  const k = mockKeeper({
+    _btFleeNear: () => [{ id: 2, nameRsc: 1 }],
+    holdWorks: () => true,
+    hold: { col: 3, row: 17 },
+    playDead: async () => true,    // playDead ACCEPTS
+    townTripIfCornered: async () => { townTrip = true; return true; },
+  });
+  k.s.client.vitals = () => ({ health: { value: 3, max: 30 }, vigor: { value: 80, max: 200 } });
+  const node = doomedNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'SUCCESS') throw new Error(`expected SUCCESS, got ${r}`);
+  if (townTrip) throw new Error('should NOT run for a town when playDead accepted');
+});
+
 t('fleeThresholdNode: FAILURE when health is above fleeBelow', async () => {
   const k = mockKeeper({
     _btFleeNear: () => [{ id: 2, nameRsc: 1 }],

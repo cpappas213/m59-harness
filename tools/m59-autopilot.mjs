@@ -1679,7 +1679,14 @@ export class Autopilot {
     // This is deliberately town-gated: in the field the ordinary `!best` path still
     // applies (cook from carried reagents), and we do not want a character abandoning a
     // good hunting room to top up a half-full larder.
-    const larderVigor = larder.reduce((t, x) => t + (x.food?.vigor ?? 0), 0);
+    // THE VIGOR THE LARDER CAN SUPPLY. food.nutrition is the vigor a food item raises
+    // the character by when eaten (edible mushroom: 5). food.vigor does not exist -- an
+    // earlier version read x.food?.vigor, which is always undefined, so larderVigor was
+    // always 0 and refillLow was always true whenever foodNeededAboveCap > 0. That made
+    // a character standing in town with a full larder abandon its food to go to the bank
+    // and a merchant, spend the pass on a failed buy, and loop "too tired to start a
+    // fight". Use nutrition, the field that actually means "vigor from this food".
+    const larderVigor = larder.reduce((t, x) => t + (x.food?.nutrition ?? 0), 0);
     const restingCap = Math.floor((v.vigor?.max ?? 200) * (p.restVigorCap ?? 0.4));
     const foodNeededAboveCap = Math.max(0, (floor ?? 0) - restingCap);
     // Room-name town check, the same heuristic the supervisor uses: a merchant and a
@@ -1704,7 +1711,7 @@ export class Autopilot {
       
       // If we can't cook (doesn't know create food), try buying food instead
       if (this.policy.buyFood) {
-        let purse = this.purse();
+        let purse = this.purseNow();
         const floor = this.policy.walkingMoney ?? 400;
         
         // If we don't have enough money, try withdrawing from the bank
@@ -1713,7 +1720,7 @@ export class Autopilot {
             purse, floor, why: 'need money to buy food'
           });
           await this.withdrawForFood().catch(() => {});
-          purse = this.purse();
+          purse = this.purseNow();
         }
         
         // If we still don't have money, we need to fight to get items to sell
@@ -5162,6 +5169,106 @@ export class Autopilot {
     };
   }
 
+  // COUNTERFACTUAL: what would have saved this character, computed from the death
+  // record itself. This is the gap between "he died" and "he died because X, and the
+  // fix is Y". It answers three concrete questions from the post-mortem data:
+  //
+  //   1. Would a lower flee threshold have saved him? The health trail shows when he
+  //      crossed the current flee line. If he died with a monster still adjacent, a
+  //      higher flee threshold (flee sooner) would have pulled him out earlier.
+  //      We report the threshold at which he would have started fleeing, and how much
+  //      more health he would have had at that point.
+  //
+  //   2. Was he in a safe spot that did not hold? If `in_safe_spot` was true but he
+  //      still died with threats present, the spot is compromised. This is the
+  //      strongest signal for "re-spot".
+  //
+  //   3. Was the prey above his level? If `hunting` level >= his `level`, the prey
+  //      gives no XP and full combat risk. The auto-retarget should have fired; if it
+  //      did not, that is a bug.
+  //
+  // Returns an object with the findings, or null if there is not enough data.
+  // It is attached to the post-mortem record as `counterfactual`.
+  counterfactual(pm) {
+    const out = {};
+    const frames = pm.frames || [];
+    const trail = (pm.vitals?.trail || []).filter(h => h != null);
+    const maxHp = pm.vitals?.level ?? null;
+    const fleeAt = pm.vitals?.flee_threshold ?? null;
+    const threats = pm.threats?.present_at_the_end || [];
+    const inSpot = !!pm.was?.in_safe_spot;
+
+    if (!trail.length || !maxHp) return null;
+
+    // 1. Flee threshold: when did he cross the line, and how much health was left?
+    if (fleeAt != null) {
+      const fleeLine = Math.round(maxHp * fleeAt);
+      // Find the last frame where health was still above the flee line -- that is the
+      // moment he SHOULD have started fleeing. The next frame is below it.
+      let aboveIdx = -1;
+      for (let i = trail.length - 1; i >= 0; i--) {
+        if (trail[i] >= fleeLine) { aboveIdx = i; break; }
+      }
+      if (aboveIdx >= 0) {
+        // He crossed the line between frame[aboveIdx] and frame[aboveIdx+1].
+        // If he died with threats present, fleeing earlier (higher threshold) would
+        // have helped. Compute the threshold that would have made him flee at the
+        // frame BEFORE he was already below the line.
+        const crossedAt = trail[aboveIdx];
+        const wouldHaveFledAt = aboveIdx + 1 < trail.length ? trail[aboveIdx + 1] : trail[aboveIdx];
+        out.flee = {
+          current_threshold: fleeAt,
+          crossed_at_health: crossedAt,
+          health_when_he_should_have_fled: wouldHaveFledAt,
+          died_at_health: trail[trail.length - 1],
+          threats_present_at_death: threats.length,
+          would_lower_threshold_have_helped: threats.length > 0 &&
+            wouldHaveFledAt > trail[trail.length - 1],
+          note: threats.length > 0
+            ? `crossed the flee line at ${crossedAt} HP but was still fighting at death ` +
+              `(${trail[trail.length - 1]} HP) with ${threats.length} threat(s) present. ` +
+              `Fleeing at ${crossedAt} HP instead of dying at ${trail[trail.length - 1]} HP ` +
+              `would have left ${crossedAt - trail[trail.length - 1]} more health. ` +
+              `Consider raising the flee threshold.`
+            : `crossed the flee line at ${crossedAt} HP. No threats at death, so the ` +
+              `flee line is not the issue here.`,
+        };
+      }
+    }
+
+    // 2. Safe spot that did not hold.
+    if (inSpot && threats.length > 0) {
+      out.safe_spot = {
+        was_in_safe_spot: true,
+        threats_that_broke_through: threats.length,
+        note: `died while holding a safe spot with ${threats.length} threat(s) present. ` +
+          `The spot did not hold. Re-spot or switch rooms.`,
+      };
+    } else if (inSpot && threats.length === 0) {
+      out.safe_spot = {
+        was_in_safe_spot: true,
+        threats_that_broke_through: 0,
+        note: 'was in a safe spot with no threats at death -- the spot held; the death ' +
+          'came from elsewhere (e.g. damage taken before reaching the spot).',
+      };
+    }
+
+    // 3. Prey level vs character level.
+    const hunting = pm.was?.hunting ?? null;
+    if (hunting) {
+      out.prey = {
+        hunting,
+        note: (hunting === 'giant rat' && maxHp >= 30)
+          ? `hunting giant rats (level 30) at max_health ${maxHp}. At or above their ` +
+            `level, they give no XP. The auto-retarget should switch to a higher-level ` +
+            `prey. If it did not fire, that is a bug.`
+          : `hunting ${hunting} at max_health ${maxHp}.`,
+      };
+    }
+
+    return Object.keys(out).length ? out : null;
+  }
+
   // Durable, because the whole point is that somebody picks it up later. One file per
   // death under substrate/postmortems/, gitignored with everything else a fleet writes.
   writePostMortem(record) {
@@ -7213,7 +7320,12 @@ export class Autopilot {
         const unattended = uptime.outageAround(this.s.name, Date.now());
         const pm = { ...this.postMortem('died'), summary: this.lastDeath,
                      killed_by_broadcast: bcast,
-                     during_keeper_outage: unattended };
+                     during_keeper_outage: unattended,
+                     counterfactual: null };   // filled in below, after the broadcast
+        // THE COUNTERFACTUAL: what would have saved this character. Computed from the
+        // post-mortem itself (health trail, flee threshold, safe spot, prey level).
+        // Attached here so it is written to disk with the rest of the record.
+        pm.counterfactual = this.counterfactual(pm);
         if (bcast) {
           // The authoritative answer wins, and what was nearby is kept beside it -- the
           // crowd is still the right answer to "how outnumbered were we".
@@ -7476,16 +7588,30 @@ export class Autopilot {
     // Ahead of the danger and rest branches on purpose: being unarmed is WHY the fight
     // is going badly, and the shortest way out is to be holding something.
     if (!this.armed()) {
+      // WHEN CALLED FROM THE BT KEEPER'S LEGACY DELEGATION (step 6), DO NOT
+      // WALK THE CHARACTER TO TOWN FOR GEAR. The BT keeper's gear_upgrade node
+      // handles purchases natively, and the scavenge node handles fighting while
+      // unarmed. Walking to town here would override the BT trees and send the
+      // character on a 10-hop trip to buy a weapon it cannot afford.
+      if (this._btKeeperPass && this.policy?.useBTKeeper === true) {
+        return false;
+      }
       const ok = await this.armSelf().catch(() => false);
       if (ok && this.armed()) { this.progress('armed itself'); return; }
       // makeWeapon refreshes the spell list before reporting failure when mana is
-      // sufficient. Below 15 mana it cannot do that, so refresh once in sanctuary
-      // before deciding whether mana recovery can ever produce a weapon.
-      if (!this.knowsCreateWeapon() && this.sanctuary()) {
+      // sufficient. Below 15 mana it cannot do that, so refresh once before deciding
+      // whether mana recovery can ever produce a weapon.
+      //
+      // NOT gated on sanctuary(): a character in a spawn room needs to know whether
+      // it can cast create weapon just as much as one in an inn. Gating it on
+      // sanctuary() meant an unarmed character in a monster room skipped the spell
+      // check entirely, fell through to the mana-regen branch, and looped "leaving
+      // to regain mana" forever for a spell it does not have.
+      if (!this.knowsCreateWeapon()) {
         await s.pacer.submit('read', () => c.requestSpells()).catch(() => {});
         await sleep(400);
       }
-      if (!this.knowsCreateWeapon() && this.sanctuary()) {
+      if (!this.knowsCreateWeapon()) {
         const now = Date.now();
         const cooldown = 5 * 60_000;  // don't hammer the smith every pass
         // THE KEEPER AND GOAP BOTH ARM UNARMED CHARACTERS, and their cooldowns (5 min
@@ -7507,12 +7633,48 @@ export class Autopilot {
         const roomName = String(s.world?.room?.name || '');
         const inTownWithSmith = /inn|market|city|town|Tos|Barloque|Jasper|Cornoth|Roq/i.test(roomName);
         if (goapArming && !inTownWithSmith) {
+          // FOR BT KEEPER CHARACTERS, DO NOT STOP THE PASS. The BT keeper ticks
+          // every second and the gear_upgrade node will handle the purchase when
+          // the character is in a town. Stopping the pass here would prevent the
+          // BT keeper from ever ticking.
+          if (this.policy?.useBTKeeper === true) {
+            return false;
+          }
           this.note('goap already sent this character to town for gear, standing down', {
             dispatched_at: new Date(goapArming).toISOString(),
           });
           return true;
         }
         if (!this._lastOutfitAt || now - this._lastOutfitAt >= cooldown) {
+          // WHEN THE CHARACTER USES THE BT KEEPER, DO NOT SPAWN THE OUTFIT PROCESS.
+          // The gear_upgrade node in the BT farm tree handles the purchase
+          // natively, gated on town + purse. Spawning m59-outfit.mjs here
+          // would stop the keeper and fight for control with the BT driver.
+          const usesBT = this.policy?.useBTKeeper === true;
+          if (usesBT) {
+            // If the GOAP is driving the character to town AND the character is
+            // still out of town, stand down (the GOAP is walking it). Once the
+            // character is in a town, the BT keeper's gear node handles the buy.
+            const roomName2 = String(s.world?.room?.name || '');
+            const inTown = /inn|market|city|town|Tos|Barloque|Jasper|Cornoth|Roq/i.test(roomName2);
+            if (!inTown) {
+              this.note('unarmed, GOAP is walking to town, BT gear will handle buy', {
+                mana: c.vitals?.()?.mana?.value ?? null,
+                purse: this.purseNow?.() ?? 0,
+              });
+              return false;
+            }
+            // In town with the BT keeper: the gear_upgrade node handles it.
+            // Do NOT spawn the outfit process. Return false so the pass
+            // continues to the next branch (which will be the BT trees on
+            // the next tick).
+            this.note('unarmed in town, BT gear_upgrade will buy', {
+              mana: c.vitals?.()?.mana?.value ?? null,
+              purse: this.purseNow?.() ?? 0,
+              room: roomName2,
+            });
+            return false;
+          }
           const why = 'unarmed and does not know create weapon — going to buy one';
           this.noProgress(why);
           this.note('cannot self-arm via spell, buying a weapon instead', {
@@ -8537,6 +8699,30 @@ export class Autopilot {
   _btFleeTurnInPlace() {
     const { skills } = this.constructor._combatSkills;
     return skills?.turnInPlace?.(this.s) ?? Promise.resolve({ turned: false });
+  }
+
+  // Pick up items dropped on the floor in the current room. Used by the loot
+  // recovery node after a death. Returns the list of items picked up, or an
+  // empty array if the floor is clean.
+  async _pickUpDropped() {
+    const s = this.s;
+    if (!s?.live) return [];
+    const l = await s.lootFloor({ maxItems: 14 }).catch(() => ({ taken: [], refused: [] }));
+    const took = (l.taken || []).map(t => t.name + (t.amount ? ` x${t.amount}` : ''));
+    if (took.length) this.countLoot(took);
+    return took;
+  }
+
+  // Travel to a specific room number. Wraps the session's travel method with
+  // a max hop limit. Returns the travel result ({ arrived, log, reason }).
+  async travelToRoom(roomNum, { maxHops = 20 } = {}) {
+    const s = this.s;
+    if (!s?.live) return { arrived: false, reason: 'not in game' };
+    try {
+      return await s.travel(roomNum, { maxHops }).catch(e => ({ arrived: false, reason: e.message }));
+    } catch (e) {
+      return { arrived: false, reason: e.message };
+    }
   }
 
   _btFleeNudge() {
@@ -10258,6 +10444,22 @@ export class Autopilot {
     if (stacks >= (this.policy.maxCarry ?? 14))
       return { sell: true, trigger: 'stacks', stacks, why: `${stacks} stacks, at the pack ceiling` };
 
+    // SURVIVAL SELL: an unarmed character below the walking floor who is carrying
+    // sellable goods needs to sell NOW. This is not a profit trip — it is the
+    // difference between being able to buy a weapon and sitting in an inn forever.
+    // The trigger is: unarmed + purse below walkingMoney + 4+ non-money items.
+    // This bypasses the sellWhenBroke policy gate because being unarmed and broke
+    // is a survival emergency, not a judgement call.
+    const floor = this.policy.walkingMoney ?? 400;
+    const spare = inv.filter(o => !/shilling/i.test(c.rsc.get(o.nameRsc) || '')).length;
+    if (carried < floor && spare >= 4) {
+      const armed = this.armed();
+      if (!armed) {
+        return { sell: true, trigger: 'unarmed_broke', carried, spare,
+                 why: `unarmed with ${carried} sh (floor ${floor}) and ${spare} stacks of goods -- sell to buy a weapon` };
+      }
+    }
+
     // POVERTY IS A JUDGEMENT AND IS OFF UNLESS ASKED FOR. It also never outranks an open
     // window: a round trip to a market is most of a 35-minute shift, and the shift is the
     // thing the money was going to buy readiness for.
@@ -10269,6 +10471,24 @@ export class Autopilot {
       if (money < under && spare >= need)
         return { sell: true, trigger: 'broke', money, spare,
                  why: `${money} to its name and ${spare} stacks aboard, and nothing is spawning` };
+    }
+
+    // VALUE-BASED SELL: the pack is carrying enough VALUE (not just count/weight) that a
+    // trip to a merchant is worth the travel time. This is the threshold that should be
+    // tuned per-character: a character 20 minutes from town needs more value to justify
+    // the trip than one standing next to a shop. Default: 300 shillings of sellable goods.
+    const sellAtValue = this.policy.sellAtValue ?? 300;
+    const sellable = inv.filter(o => {
+      const name = c.rsc.get(o.nameRsc) || '';
+      if (/shilling/i.test(name)) return false;   // money is not "sellable goods"
+      if (this.loadout()?.protect?.includes(o.id)) return false;   // loadout-protected items
+      return this.itemValue(name, o.amount) > 0;   // only items with a known value
+    });
+    const totalValue = sellable.reduce((sum, o) =>
+      sum + this.itemValue(c.rsc.get(o.nameRsc) || '', o.amount), 0);
+    if (totalValue >= sellAtValue) {
+      return { sell: true, trigger: 'value', totalValue, sellAtValue,
+               why: `pack carries ${totalValue} sh of goods (threshold ${sellAtValue}) -- worth the trip` };
     }
     return { sell: false, trigger: null, fullness,
              why: windowOpen && fullness < at
@@ -10776,7 +10996,7 @@ export class Autopilot {
       .reduce((t, o) => t + (o.amount || 1), 0);
 
     const sellCall = this.checkIfShouldSell();
-    const packFull = sellCall.sell && sellCall.trigger !== 'broke';
+    const packFull = sellCall.sell && sellCall.trigger !== 'broke' && sellCall.trigger !== 'unarmed_broke';
 
     const reag = this.reagentCount();
     const canCook = reag.elderberry >= 2 && reag.herbs >= 2;
@@ -10793,7 +11013,7 @@ export class Autopilot {
     const soldRecently = Date.now() - (this.sellTripAt ?? 0) < SELL_TRIP_COOLDOWN_MS;
     const spare = (c.inventory || [])
       .filter(o => !/shilling/i.test(c.rsc.get(o.nameRsc) || '')).length;
-    const brokeWithGoods = sellCall.trigger === 'broke' && !soldRecently && !starving;
+    const brokeWithGoods = (sellCall.trigger === 'broke' || sellCall.trigger === 'unarmed_broke') && !soldRecently && !starving;
 
     const go = carried > above || packFull || starving || brokeWithGoods;
     const reason = !go ? null
@@ -10895,8 +11115,11 @@ export class Autopilot {
     }
     if (!starving) this.notedStarving = false;
 
-    // Cooldown for bank-driven trips
-    const BANK_TRIP_COOLDOWN_MS = 300_000;
+    // Cooldown for bank-driven trips. 30 minutes: a character earning 200 shillings
+    // per 10 minutes hits the 500 threshold every 25 minutes. With a 5-minute
+    // cooldown, it made a bank trip every 25 minutes, spending 40% of its time
+    // travelling. 30 minutes means at most 2 trips per hour.
+    const BANK_TRIP_COOLDOWN_MS = 30 * 60 * 1000;
     if (!starving && !brokeWithGoods && this.bankTripAt &&
         Date.now() - this.bankTripAt < BANK_TRIP_COOLDOWN_MS) {
       return false;
@@ -11767,27 +11990,14 @@ export class Autopilot {
     // Rearming solves the post-death case by itself; being hurt never does.
     if (armed && !hurt) { this.progress('rearmed after dying'); return; }
 
-    const v = c.vitals()?.health;
-    const name = c.me?.name || 'a traveller';
-    const plea = hurt
-      ? `${name} here at ${where} -- I am down to ${v ? `${v.value} of ${v.max}` : 'almost no'} health ` +
-        `and I have nothing to heal with. Resting brings health back slowly in these lands. ` +
-        `If anyone can spare a flask or cast a heal on me I would be in your debt.`
-      : `${name} here -- I was killed and lost everything. I am at ${where} with no weapon ` +
-        `or armour. If anyone can spare a blade or a few shillings I would be grateful, ` +
-        `and I will pay it forward once I am on my feet.`;
     this.lastPleaAt = Date.now();
-    try {
-      await s.pacer.submit('say', () => c.broadcast(plea));
-      this.note('asked for help', { channel: 'broadcast', room: where });
-    } catch (e) {
-      // Broadcast costs a share of max mana and is refused when squelched; the
-      // room is free and someone may well be standing in the inn.
-      try { await s.pacer.submit('say', () => c.say(plea)); this.note('asked for help', { channel: 'say', room: where }); }
-      catch { this.note('could not ask for help', { why: e.message }); }
-    }
-    this.noProgress(hurt ? 'hurt with no way to heal -- waiting on a passer-by'
-                         : 'dead broke and unarmed -- waiting on charity');
+    // Do not say anything, in any channel. Announcing "I am hurt and have no
+    // weapon" to anyone -- whether the whole server or just the room -- marks
+    // the character as prey. Other players will walk over and finish it.
+    // The character rests, recovers, and arms itself in silence.
+    this.note('recovering silently', { room: where, reason });
+    this.noProgress(hurt ? 'hurt with no way to heal -- resting in silence'
+                         : 'dead broke and unarmed -- resting in silence');
   }
 
   // BUY THE INGREDIENTS, NOT THE MEAL, and only while we are already at a counter.

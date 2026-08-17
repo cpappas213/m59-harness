@@ -37,6 +37,7 @@
 
 import { getFleeTree } from './m59-bt-flee.mjs';
 import { getFarmTree } from './m59-bt-farm.mjs';
+import { getTownTree } from './m59-bt-town.mjs';
 import { updateBlackboard } from './m59-bt-nodes.mjs';
 
 const PASS_LIMIT_MS = 30_000;   // a full pass may travel, but never forever
@@ -48,6 +49,7 @@ export class BTKeeper {
     this._bb = opts.blackboard || {};      // persists across ticks (slot state)
     this._fleeTree = null;
     this._farmTree = null;
+    this._townTreeCache = null;
   }
 
   _flee() {
@@ -57,6 +59,92 @@ export class BTKeeper {
   _farm() {
     if (!this._farmTree) this._farmTree = getFarmTree({ session: { keeper: this.k } });
     return this._farmTree;
+  }
+
+  // ── Decision trace ──────────────────────────────────────────────────────────
+  //
+  // WHY THIS EXISTS: post-mortems record WHAT happened (health trail, threats,
+  // where) but not WHY the decisions were wrong. A death at 2 HP with 6 monsters
+  // is only actionable if you can see which BT nodes evaluated, which fired,
+  // which returned FAILURE, and what each one decided. Without this, every death
+  // is reverse-engineered by hand from the journal + frames. With this, the
+  // journal carries a one-line-per-pass trace: which node won, which were
+  // consulted and rejected, and the state that drove the decision.
+  //
+  // The trace is a compact array on the blackboard (bb._trace), one entry per
+  // leaf node that was ticked this pass. After the pass settles, it is emitted
+  // as a single journal note. The entries are tiny (name + status + key state)
+  // so the journal stays readable.
+  //
+  // It is NOT a full node-evaluation log (that would be noise: a pass ticks
+  // 10+ nodes, most of which trivially return FAILURE). It records the nodes
+  // that MATTER: the one that won (SUCCESS/RUNNING) and, for safety-critical
+  // trees, the ones that were consulted but rejected (so you can see "doomed
+  // was checked, health was 5/29, and it correctly passed" vs "doomed was
+  // checked, health was 5/29, and it FAILED when it should have fired").
+  _traceTree(label, tree, bb) {
+    const trace = (bb._trace = bb._trace || []);
+    trace.push(`[BT:${label}]`);
+    const children = tree.children;
+    if (!Array.isArray(children)) return tree;   // not a flat selector; no trace
+    // Wrap each child: record its result, pass through its return value.
+    const wrapped = children.map(child => ({
+      tick: (b) => {
+        const r = child.tick(b);
+        trace.push({ node: child._name || child.key || 'node', r });
+        return r;
+      },
+      tickAsync: async (b) => {
+        const r = typeof child.tickAsync === 'function'
+          ? await child.tickAsync(b) : child.tick(b);
+        trace.push({ node: child._name || child.key || 'node', r });
+        return r;
+      },
+      _name: child._name,
+      key: child.key,
+    }));
+    // Return a new selector that ticks the wrapped children in order.
+    return {
+      tick: (b) => {
+        for (const c of wrapped) {
+          const r = c.tick(b);
+          if (r === 'SUCCESS' || r === 'RUNNING') return r;
+        }
+        return 'FAILURE';
+      },
+      tickAsync: async (b) => {
+        for (const c of wrapped) {
+          const r = await c.tickAsync(b);
+          if (r === 'SUCCESS' || r === 'RUNNING') return r;
+        }
+        return 'FAILURE';
+      },
+    };
+  }
+
+  // Emit the accumulated trace as a single journal note. Called at the end of
+  // a pass, or before a return, so the trace is never lost.
+  _emitTrace(bb) {
+    const trace = bb._trace;
+    if (!trace || !trace.length) return;
+    // Compact: [BT:flee] doomed=SUCCESS  provision=FAILURE  fight=RUNNING
+    const parts = [];
+    for (const entry of trace) {
+      if (typeof entry === 'string') { parts.push(entry); continue; }
+      parts.push(`${entry.node}=${entry.r}`);
+    }
+    // Only log the trace when it is informative: something fired (SUCCESS or
+    // RUNNING), or the pass fell through to legacy (all FAILURE). A pass where
+    // farm/fight simply ran is the steady state and logging it every pass would
+    // bury the signal. Log when: any node returned SUCCESS/RUNNING in a safety
+    // tree, OR the whole pass delegated to legacy.
+    const fired = trace.some(e => typeof e !== 'string' && (e.r === 'SUCCESS' || e.r === 'RUNNING'));
+    const delegated = this._delegatedThisPass;
+    if (fired || delegated) {
+      this.k.note?.('bt-trace', { trace: parts.join(' ') });
+    }
+    bb._trace = null;
+    this._delegatedThisPass = false;
   }
 
   // One pass of the driver. Drop-in replacement for keeper.pass().
@@ -110,9 +198,10 @@ export class BTKeeper {
     if (await k.passArm?.(s, c)) return;
 
     // 3. FLEE AND REST. Safety always beats work.
-    let r = await this._flee().tickAsync(bb);
-    if (r === 'RUNNING') { await this._drain(bb, this._flee(), limit); }
-    if (r === 'SUCCESS' || r === 'RUNNING') return;   // handled this pass
+    const fleeTree = this._traceTree('flee', this._flee(), bb);
+    let r = await fleeTree.tickAsync(bb);
+    if (r === 'RUNNING') { await this._drain(bb, fleeTree, limit); }
+    if (r === 'SUCCESS' || r === 'RUNNING') { this._emitTrace(bb); return; }   // handled this pass
 
     // 4. TOWN BUSINESS: sell loot and bank the surplus before farming spends the
     //    pass. The legacy pass() does this (bankSurplus / bankRun) but the BT keeper
@@ -120,18 +209,21 @@ export class BTKeeper {
     //    converted the loot to money -- the bags filled, the purse never moved, and
     //    "sustainably profitable" was never testable. Delegate to the same legacy
     //    methods so the sell/bank/restock logic is not reimplemented here.
-    if (await this._townBusiness(k, s, c)) return;
+    if (await this._townBusiness(k, s, c)) { this._emitTrace(bb); return; }
 
-    // 2. FARM. The hunting pass; provision is its first node, so "eat if
+    // 5. FARM. The hunting pass; provision is its first node, so "eat if
     //    hungry" runs before any swing.
-    r = await this._farm().tickAsync(bb);
-    if (r === 'RUNNING') { await this._drain(bb, this._farm(), limit); }
-    if (r === 'SUCCESS' || r === 'RUNNING') return;   // handled this pass
+    const farmTree = this._traceTree('farm', this._farm(), bb);
+    r = await farmTree.tickAsync(bb);
+    if (r === 'RUNNING') { await this._drain(bb, farmTree, limit); }
+    if (r === 'SUCCESS' || r === 'RUNNING') { this._emitTrace(bb); return; }   // handled this pass
 
-    // 3. NOTHING THE TREES HANDLE. Delegate to the legacy pass() so a
+    // 6. NOTHING THE TREES HANDLE. Delegate to the legacy pass() so a
     //    not-yet-decomposed behaviour still runs. This is the seam that
     //    shrinks as the decomposition completes. The _btKeeperPass flag stops
     //    the legacy pass() from re-entering this driver and recursing.
+    this._delegatedThisPass = true;
+    this._emitTrace(bb);   // log the all-FAILURE trace before delegating
     k.note?.('bt-keeper: trees found nothing; delegating to legacy pass');
     const prev = k._btKeeperPass;
     k._btKeeperPass = true;
@@ -155,23 +247,20 @@ export class BTKeeper {
     return 'RUNNING';
   }
 
-  // Town business: sell loot, bank the surplus, restock. Delegates to the legacy
-  // methods (bankSurplus / bankRun) so the sell/bank logic is not reimplemented.
-  // Both are safe no-ops when not applicable (bankSurplus checks it is standing in a
-  // bank; bankRun checks the bankAbove threshold and bank reachability), so this can
-  // run every pass without a location pre-check.
-  // Returns true when the pass was spent on a bank run (no farming this pass).
+  // Town business: BT-native subtree. Replaces the legacy delegation.
+  // The tree ticks: in_bank → trip_machine (should_trip → travel → business → return).
+  // Returns true when the pass was spent on town business (no farming this pass).
+  _townTree() {
+    if (!this._townTreeCache) this._townTreeCache = getTownTree(this.k);
+    return this._townTreeCache;
+  }
+
   async _townBusiness(k, s, c) {
     if (k._btKeeperPass) return false;             // guard against re-entry via legacy pass
-    // Standing in a bank: put the takings away before anything can take them.
-    if (typeof k.bankSurplus === 'function') await k.bankSurplus().catch(() => {});
-    // Carrying enough that it is worth WALKING to a bank? Go sell + bank. This is the
-    // path that converts looted kills into shillings. bankRun() returns false (no-op)
-    // when there is nothing to sell or no reachable bank.
-    if (k.policy?.bankAbove && typeof k.bankRun === 'function') {
-      const did = await k.bankRun().catch(() => false);
-      if (did) return true;   // spent the pass travelling to / doing a bank run
-    }
+    const tree = this._traceTree('town', this._townTree(), this._bb);
+    const r = await tree.tickAsync(this._bb);
+    if (r === 'RUNNING') return true;   // trip in progress
+    if (r === 'SUCCESS') return true;   // did town business this pass
     return false;
   }
 }

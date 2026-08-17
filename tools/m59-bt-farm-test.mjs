@@ -10,7 +10,7 @@ import { SUCCESS, FAILURE, RUNNING } from './m59-bt.mjs';
 import {
   getFarmTree, provisionNode, autoRetargetNode, roomInvalidNode,
   bagsFullNode, capBlockedNode, noHuntTargetNode, noTargetFoundNode,
-  unarmedNode, tooHurtNode, tooTiredNode, fightNode,
+  unarmedNode, tooHurtNode, tooTiredNode, fightNode, scavengeNode,
 } from './m59-bt-farm.mjs';
 
 let passed = 0, failed = 0;
@@ -157,6 +157,19 @@ t('provisionNode: FAILURE when provision returns not-ate', async () => {
   const node = provisionNode(k);
   const r = await node.tickAsync(bb(k));
   if (r !== FAILURE) throw new Error(`expected FAILURE, got ${r}`);
+});
+
+t('provisionNode: SUCCESS when provision returns waiting (stomach drain)', async () => {
+  // THE BUG: when the stomach is full and the character is below the fight floor,
+  // provision() returns 'waiting' -- it is deliberately holding the pass so the
+  // stomach can drain and the character can eat its way up to the floor. Treating
+  // this as FAILURE let the tooTired node run next, but resting is a no-op above the
+  // resting cap, so the pass spun at "too tired to start a fight" for ever while the
+  // larder sat full. 'waiting' must end the pass like a meal does.
+  const k = mockKeeper({ provision: async () => 'waiting' });
+  const node = provisionNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS for 'waiting', got ${r}`);
 });
 
 t('autoRetargetNode: FAILURE when purpose is not set', async () => {
@@ -512,6 +525,93 @@ t('fightNode does not pull when out_of_reach with no safe spot (lets the next pa
   const r = await node.tickAsync(bb(k));
   if (r !== SUCCESS) throw new Error(`expected SUCCESS, got ${r}`);
   if (pulled !== 0) throw new Error(`no safe spot -> no pull, got ${pulled}`);
+});
+
+// ---------------------------------------------------------------------------
+// Scavenge node
+// ---------------------------------------------------------------------------
+
+t('scavengeNode: FAILURE when armed', async () => {
+  const k = mockKeeper({ armed: () => true });
+  k._btFarmFoundTargets = () => [];
+  const node = scavengeNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== FAILURE) throw new Error(`expected FAILURE, got ${r}`);
+});
+
+t('scavengeNode: SUCCESS when hunt targets exist but we are unarmed', async () => {
+  const k = mockKeeper({ armed: () => false });
+  k._btFarmFoundTargets = () => [{ id: 1, nameRsc: 'fungus beast' }];
+  k.s.client.vitals = () => ({ health: { value: 30, max: 30 }, vigor: { value: 140 } });
+  k.s.client.rsc = { get: () => 'ant' };
+  const weakCreature = { id: 50, nameRsc: 'ant', health: { value: 8, max: 8 } };
+  k.constructor = { _combatSkills: {
+    findCreature: () => [weakCreature],
+    fight: async () => ({ ok: true, killed: true, xp: 1 }),
+  }};
+  k.takeSafeSpot = async () => ({ took: false });
+  const node = scavengeNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS (scavenge ant while fungus beast present), got ${r}`);
+});
+
+t('scavengeNode: FAILURE when no creatures in room', async () => {
+  const k = mockKeeper({ armed: () => false });
+  k._btFarmFoundTargets = () => [];
+  // Mock the combat skills to return no creatures
+  k.constructor = { _combatSkills: { findCreature: () => [], fight: async () => ({ ok: false }) } };
+  const node = scavengeNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== FAILURE) throw new Error(`expected FAILURE, got ${r}`);
+});
+
+t('scavengeNode: SUCCESS when it kills a weak creature', async () => {
+  const k = mockKeeper({ armed: () => false });
+  k._btFarmFoundTargets = () => [];
+  k.s.client.vitals = () => ({ health: { value: 30, max: 30 }, vigor: { value: 140 } });
+  k.s.client.rsc = { get: () => 'rat' };
+  const weakCreature = { id: 100, nameRsc: 'rat', health: { value: 5, max: 5 } };
+  k.constructor = { _combatSkills: {
+    findCreature: () => [weakCreature],
+    fight: async () => ({ ok: true, killed: true, xp: 2 }),
+  }};
+  k.takeSafeSpot = async () => ({ took: false });
+  const node = scavengeNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS, got ${r}`);
+});
+
+t('scavengeNode: FAILURE when creature is too strong', async () => {
+  const k = mockKeeper({ armed: () => false });
+  k._btFarmFoundTargets = () => [];
+  k.s.client.vitals = () => ({ health: { value: 30, max: 30 }, vigor: { value: 140 } });
+  k.s.client.rsc = { get: () => 'dragon' };
+  // 50 max hp > 30 * 1.5 = 45, so too strong
+  const strongCreature = { id: 200, nameRsc: 'dragon', health: { value: 50, max: 50 } };
+  k.constructor = { _combatSkills: {
+    findCreature: () => [strongCreature],
+    fight: async () => ({ ok: false }),
+  }};
+  const node = scavengeNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== FAILURE) throw new Error(`expected FAILURE (too strong), got ${r}`);
+});
+
+t('scavengeNode: FAILURE when too hurt to fight', async () => {
+  const k = mockKeeper({ armed: () => false });
+  k._btFarmFoundTargets = () => [];
+  // HP at 30%, below engageAt of 75%
+  k.s.client.vitals = () => ({ health: { value: 9, max: 30 }, vigor: { value: 140 } });
+  k.s.client.rsc = { get: () => 'rat' };
+  const weakCreature = { id: 300, nameRsc: 'rat', health: { value: 5, max: 5 } };
+  k.constructor = { _combatSkills: {
+    findCreature: () => [weakCreature],
+    fight: async () => ({ ok: true, killed: true }),
+  }};
+  k.safety = () => ({ engageAt: 0.75, fleeAt: 0.3 });
+  const node = scavengeNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== FAILURE) throw new Error(`expected FAILURE (too hurt), got ${r}`);
 });
 
 // ---------------------------------------------------------------------------

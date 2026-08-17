@@ -306,6 +306,12 @@ console.log('\nprovisionTree:');
 // conjunction inside provision(). We test it by calling provision() on a mock
 // keeper that is in a town, has a low larder, and a fight floor above the resting
 // cap -- and assert it attempts to refill (cook/buy) rather than just eating.
+//
+// THE BUG THIS TEST GUARDS: provision()'s buy-food path called this.purse(), which
+// is not a method on Autopilot -- the real method is purseNow(). A mock that set
+// k.purse (matching the buggy code) masked the crash. Lee looped "too tired to start
+// a fight" for ever because provision threw TypeError on this.purse before it could
+// eat or buy. The mock must set purseNow, the method the real code calls.
 // ---------------------------------------------------------------------------
 console.log('\nprovision() refill-low gate:');
 {
@@ -317,7 +323,7 @@ console.log('\nprovision() refill-low gate:');
   k.s = { client: {}, world: { room: { name: 'Market square in the city of Tos' } } };
   k.larder = () => [{ food: { filling: 5, nutrition: 5, vigor: 5 } }];  // 1 mushroom, low
   k.fightFloor = () => 130;  // needs 130; resting cap 80 -> needs 50 above cap
-  k.purse = () => 1;  // poor
+  k.purseNow = () => 1;  // poor (purseNow, the real method name -- NOT purse)
   k.inTown = () => true;
   k.cookSomething = async () => { cookCalled++; return false; };
   k.buyFoodInTown = async () => { buyCalled++; return {}; };
@@ -325,10 +331,46 @@ console.log('\nprovision() refill-low gate:');
   k.reagentCount = () => ({ elderberry: 1, herb: 1 });
   k.warnedNoFood = false;
   k.note = () => {};
-  // provision(plan, v) -- the refill-low path should call cookSomething (larder low in town)
-  const res = await k.provision({ vigorCeiling: 200 }, { vigor: { value: 80, max: 200 } });
+  let threw = false, res;
+  try { res = await k.provision({ vigorCeiling: 200 }, { vigor: { value: 80, max: 200 } }); } catch (e) { threw = true; res = e; }
+  check('refill-low path does not throw (purseNow, not purse)', !threw, threw ? String(res) : '');
   check('low larder in town attempts a refill (cook)', cookCalled >= 1);
   check('low larder in town with no money attempts a withdraw', withdrawCalled >= 1);
+}
+
+// THE BUG THIS TEST GUARDS: larderVigor read x.food?.vigor, a field that does not
+// exist (the food table has nutrition, not vigor), so larderVigor was always 0 and
+// refillLow was always true whenever foodNeededAboveCap > 0. A character in town with
+// a full larder of edible mushrooms (nutrition 5) would abandon the food, go to the
+// bank/merchant, spend the pass on a failed buy, and loop "too tired to start a fight".
+// The fix: larderVigor sums food.nutrition, so a larder that can bridge the floor does
+// NOT trigger the refill path.
+console.log('\nprovision() refill-low uses nutrition (not the nonexistent vigor field):');
+{
+  const { Autopilot } = await import('./m59-autopilot.mjs');
+  let cookCalled = 0, buyCalled = 0;
+  const k = Object.create(Autopilot.prototype);
+  k.policy = { buyFood: true, walkingMoney: 400, vigorCeiling: 200, restVigorCap: 0.4 };
+  k.s = { client: {}, world: { room: { name: 'Market square in the city of Tos' } } };
+  // larder has one edible mushroom: nutrition 5, filling 15. NO 'vigor' field.
+  // fightFloor 85, restCap 80 -> foodNeededAboveCap 5. larderVigor (nutrition) = 5.
+  // 5 < 5 is false -> refillLow false -> does NOT enter the refill/buy path.
+  k.larder = () => [{ food: { filling: 15, nutrition: 5 } }];
+  k.fightFloor = () => 85;
+  k.purseNow = () => 1;
+  k.cookSomething = async () => { cookCalled++; return false; };
+  k.buyFoodInTown = async () => { buyCalled++; return {}; };
+  k.withdrawForFood = async () => {};
+  k.reagentCount = () => ({ elderberry: 0, herb: 0 });
+  k.warnedNoFood = false;
+  k.note = () => {};
+  k.stomach = { level: 0, roomFor: () => true, secondsUntilRoomFor: () => 0 };
+  k.protectedItemNames = () => [];
+  k.climbing = false;
+  let threw = false, res;
+  try { res = await k.provision({ vigorCeiling: 200 }, { vigor: { value: 83, max: 200 } }); } catch (e) { threw = true; res = e; }
+  check('full larder (nutrition covers the floor) does not trigger refill', cookCalled === 0 && buyCalled === 0,
+        `cook=${cookCalled} buy=${buyCalled} res=${res} err=${threw ? String(res) : 'none'}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

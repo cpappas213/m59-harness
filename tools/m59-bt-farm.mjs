@@ -8,17 +8,18 @@
 //
 // Priority order (highest first):
 //   1. provision       -- eat food if hungry
-//   2. auto_retarget   -- prey pays nothing, switch
-//   3. room_invalid    -- this room can't spawn the prey, travel
-//   4. bags_full       -- sell/drop junk
-//   5. cap_blocked     -- room at spawn cap, clear or leave
-//   6. no_hunt_target  -- nothing named to hunt, hibernate
-//   7. no_target_found -- empty room, wait or roam
-//   8. unarmed         -- arm self
-//   9. too_hurt        -- heal or ask for help
-//   10. too_tired      -- rest up
-//   11. safe_wall      -- take/require a wall
-//   12. fight          -- engage, pull, loot
+//   2. gear_upgrade    -- buy missing loadout gear when in a town
+//   3. auto_retarget   -- prey pays nothing, switch
+//   4. room_invalid    -- this room can't spawn the prey, travel
+//   5. bags_full       -- sell/drop junk
+//   6. cap_blocked     -- room at spawn cap, clear or leave
+//   7. no_hunt_target  -- nothing named to hunt, hibernate
+//   8. no_target_found -- empty room, wait or roam
+//   9. unarmed         -- arm self
+//   10. too_hurt       -- heal or ask for help
+//   11. too_tired      -- rest up
+//   12. safe_wall      -- take/require a wall
+//   13. fight          -- engage, pull, loot
 //
 // Each node is a factory: it takes a keeper reference and returns a BT node.
 // The blackboard (bb) carries the live session state, refreshed by
@@ -31,6 +32,7 @@ import {
   SUCCESS, FAILURE, RUNNING,
 } from './m59-bt.mjs';
 import { updateBlackboard } from './m59-bt-nodes.mjs';
+import { gearUpgradeNode } from './m59-bt-gear.mjs';
 import * as skills from './m59-skills.mjs';
 
 // The combat/rest skill set, shaped the way the nodes below consume it. This is
@@ -114,10 +116,17 @@ export function provisionNode(keeper) {
   return asyncAction(async (bb) => {
     const plan = keeper._btFarmStrategy();
     const result = await keeper.provision(plan, vitals(bb));
-    // Only a real meal ends the pass; "stomach full" falls through.
-    if (result === 'ate') {
+    // 'ate'  -- a real meal raised the vigor; the pass is spent.
+    // 'waiting' -- provision is deliberately holding the pass so the stomach can
+    //   drain and the character can eat its way up to the fight floor. Treating this
+    //   as FAILURE (the old behaviour) let the tooTired node run next, but resting is a
+    //   no-op when the character is already above the resting cap, so the pass spun at
+    //   "too tired to start a fight" for ever while the larder sat full. Let it through.
+    if (result === 'ate' || result === 'waiting') {
       return SUCCESS;
     }
+    // false -- nothing to eat and nothing to make it from; fall through to the fight
+    //   gate, which decides whether the character can set out at its current vigor.
     return FAILURE;
   });
 }
@@ -308,6 +317,93 @@ export function noHuntTargetNode(keeper) {
 }
 
 // ---------------------------------------------------------------------------
+// Node: scavenge (unarmed character punches weak creatures for XP)
+// ---------------------------------------------------------------------------
+// When the character is unarmed and the hunt creature is not present, look
+// for any weak creature in the room (max health <= 1.5x our max health) and
+// fight it with fists. This breaks the "unarmed + no hunt target = idle" loop
+// and earns slow XP while the gear node saves up for a real weapon.
+
+export function scavengeNode(keeper) {
+  return asyncAction(async (bb) => {
+    const c = bb.client;
+    const room = bb.room;
+    if (!room || !c) return FAILURE;
+
+    // Only when unarmed.
+    if (keeper.armed()) return FAILURE;
+
+    // Find any attackable creature in the room (not a player).
+    const { findCreature, fight } = keeper.constructor._combatSkills || {};
+    if (!findCreature || !fight) return FAILURE;
+    const all = findCreature(keeper.s, '', { attackableOnly: true, includePlayers: false });
+    if (!all.length) return FAILURE;
+
+    // Filter to weak creatures: max health <= 1.5x our max health.
+    // This runs even when hunt targets are present: an unarmed character
+    // should punch the rat next to it, not try to fight the fungus beast.
+    const myMaxHp = c.vitals?.()?.health?.max ?? 30;
+    const weak = all.filter(o => {
+      const hp = o.health?.max ?? o.health?.value ?? 0;
+      return hp > 0 && hp <= myMaxHp * 1.5;
+    });
+    if (!weak.length) return FAILURE;
+
+    // Check we can fight: not too hurt, not too tired.
+    const hp = c.vitals?.()?.health;
+    const hpFrac = hp?.max ? hp.value / hp.max : 1;
+    const safe = keeper.safety?.() ?? { engageAt: 0.5 };
+    if (hpFrac < safe.engageAt) return FAILURE; // too_hurt will handle this
+
+    const target = weak[0];
+    const targetName = c.rsc.get(target.nameRsc) || 'something';
+
+    // Take a wall if we don't have one.
+    if (keeper.policy?.useSafeSpots && !keeper.hold) {
+      await keeper.takeSafeSpot('scavenging: taking a wall before punching', target).catch(() => {});
+    }
+
+    keeper.note('scavenging: punching a weak creature while unarmed', {
+      target: targetName,
+      target_hp: target.health?.value ?? target.health?.max ?? null,
+      our_max_hp: myMaxHp,
+      our_hp: Math.round(hpFrac * 100) + '%',
+      room: room?.name,
+    });
+
+    // Fight it with fists.
+    const holding = !!keeper.hold;
+    const r = await fight(keeper.s, {
+      target: targetName,
+      preferId: target.id,
+      rounds: 10,
+      disengageAt: safe.fleeAt ?? 0.3,
+      loot: true,
+      equip: true,
+      holdPosition: holding,
+      reach: 3,
+    }).catch(e => ({ ok: false, why: e.message }));
+
+    if (r.ok && r.killed) {
+      keeper.note('scavenge kill', { target: targetName, xp: r.xp ?? null });
+      keeper.progress('killed a weak creature with fists');
+      keeper.foeId = target.id;
+      keeper.swungAt = target.id;
+    } else if (r.ok) {
+      keeper.note('scavenge: disengaged', { target: targetName, hp_after: r.hp_after ?? null });
+      if (r.hp_after != null && r.hp_after < 0.3) {
+        keeper.doing = 'recovering';
+        await keeper._btFarmRestWhileWaiting?.().catch(() => {});
+      }
+    } else {
+      keeper.note('scavenge failed', { target: targetName, why: r.why });
+    }
+
+    return SUCCESS; // handled this pass
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Node: no_target_found (empty room, wait or roam)
 // ---------------------------------------------------------------------------
 
@@ -406,10 +502,17 @@ export function unarmedNode(keeper) {
       if (keeper.waitingOn?.code === 'MANA_FOR_CREATE_WEAPON') keeper.doneWaiting();
       return FAILURE;
     }
+    // armSelf() tries: (1) wield a weapon from the pack, (2) conjure via create weapon
+    // spell. It does NOT spawn the outfit process — that is passArm()'s job, and the
+    // BT keeper's gear_upgrade node handles the purchase natively. So this is safe to
+    // call even when the BT keeper is active: it only costs mana (conjure) or nothing
+    // (wield from pack). If it fails, the character fights with fists and the
+    // gear_upgrade node will buy a weapon when the purse covers it.
     const armed = await keeper.armSelf().catch(() => false);
     if (!armed) {
-      keeper.note('about to fight unarmed', {
+      keeper.note('unarmed, will buy gear when purse allows', {
         mana: c?.vitals?.()?.mana?.value,
+        purse: keeper.purseNow?.() ?? 0,
       });
     }
     return armed ? SUCCESS : FAILURE;
@@ -497,14 +600,47 @@ export function fightNode(keeper) {
       releaseQuarry?.(keeper.s.name);
     }
 
-    // Check for bystander (something hitting us)
+    // Check for bystander (something hitting us).
+    // STICKY TARGET: if we already have a foeId and that target is still in the
+    // room, do NOT switch to a bystander. The whipsawing between a hunt target
+    // and an adjacent bystander looked like "fighting two things at once" —
+    // the character swings at A, then B, then A again. Only switch if the
+    // current foe is gone (dead or left the room).
     const adjacent = keeper.inReachOfUs?.() ?? [];
     const want = String(keeper.clearing || keeper.policy.hunt || '').toLowerCase();
-    const bystander = adjacent.find(o =>
+    const currentFoeAlive = keeper.foeId && found.some(o => o.id === keeper.foeId);
+    const bystander = currentFoeAlive ? null : adjacent.find(o =>
       !(c.rsc.get(o.nameRsc) || '').toLowerCase().includes(want));
 
     let engageName = bystander ? c.rsc.get(bystander.nameRsc)
                                : (keeper.clearing || keeper.policy.hunt);
+
+    // TAKE A WALL BEFORE FIGHTING. The legacy pass() takes a safe spot when it
+    // sees hostiles in a spawn room (line 8570: wantWall). The BT farm tree
+    // skipped this entirely, so a BT character walked into the room, found
+    // prey, and swung in the open -- taking hits from every direction while
+    // the wall was never even tried. Without a wall, "fighting two things at
+    // once" is the norm: the character is in the middle of the room with a
+    // fungus beast on each side.
+    //
+    // Only take a wall if we don't already have one (proven or not) and safe
+    // spots are enabled. The spot may not be proven yet -- proving it takes
+    // a few seconds of standing still with enemies adjacent. But even an
+    // unproven wall is better than no wall: it blocks at least one direction.
+    if (keeper.policy?.useSafeSpots && !keeper.hold) {
+      const nearest = found[0] ?? null;
+      await keeper.takeSafeSpot(
+        'taking a wall before fighting in a spawn room',
+        nearest
+      ).catch(() => {});
+      if (keeper.hold) {
+        keeper.note?.('took a wall before the fight', {
+          col: keeper.hold.col, row: keeper.hold.row,
+          proven: keeper.hold.proven,
+          monsters_in_room: found.length,
+        });
+      }
+    }
 
     // Fight
     const safe = keeper.safety();
@@ -518,6 +654,14 @@ export function fightNode(keeper) {
     // fight, and when it breaks off at low health it just sits and waits to be hit
     // again instead of resting behind the wall or retreating.
     keeper.swungAt = Date.now();
+    // Log a target switch so the journal shows when the character changes
+    // focus. This makes "fighting two things" visible instead of silent.
+    if (f.foe_id && keeper._prevFoeId && f.foe_id !== keeper._prevFoeId) {
+      keeper.note?.('target switch', {
+        from: keeper._prevFoeId, to: f.foe_id, target: f.target,
+      });
+    }
+    keeper._prevFoeId = f.foe_id;
     keeper.foeId = f.foe_id ?? null;
 
     if (f.killed) {
@@ -572,13 +716,23 @@ export function fightNode(keeper) {
       return SUCCESS;
     } else if (f.disengaged) {
       // Broke off at low health mid-fight. The recovery move depends on where we stand.
-      // Behind a proven safe spot, sitting still IS the heal (nothing can hit us unless
-      // we swing first), so rest here. Otherwise the monster is still hostile and we
-      // must leave the room before resting, or it keeps hitting us.
-      const holding = !!keeper.hold && keeper.holdWorks?.();
-      if (holding) {
-        keeper.note('broke off behind the wall -- resting here rather than running', {
-          at_health: f.disengaged.at_health, mid_round: !!f.disengaged.mid_round });
+      // Behind ANY wall (proven or not), rest here rather than running. An unproven
+      // wall is still a wall -- it is blocking at least one direction, and the
+      // disengage means we stopped swinging, so the monster has to walk around the
+      // corner to hit us. Running away from an unproven wall throws away the position
+      // and the next pass has to re-take it from scratch. Only run when there is no
+      // wall at all -- then the monster is in the open with us and resting is suicide.
+      const atWall = !!keeper.hold;
+      const proven = atWall && keeper.holdWorks?.();
+      if (atWall) {
+        keeper.note('broke off at the wall -- resting here rather than running', {
+          at_health: f.disengaged.at_health, mid_round: !!f.disengaged.mid_round,
+          proven,
+          why: proven ? 'a proven wall blocks the hit; resting here is free'
+                      : 'an unproven wall still blocks one direction; the monster '
+                        + 'has to walk around the corner, and re-taking this spot '
+                        + 'costs more than the time it buys',
+        });
         const skills = getSkills();
         await skills.restUntil(keeper.s, { health: 0.95, vigor: 0.4, maxSeconds: 120 }).catch(() => null);
         keeper.progress('rested after breaking off a fight');
@@ -623,20 +777,25 @@ export function getFarmTree(opts = {}) {
   if (!keeper) throw new Error('getFarmTree: no keeper supplied');
 
   const children = [
-    provisionNode(keeper),
-    autoRetargetNode(keeper),
-    roomInvalidNode(keeper),
-    bagsFullNode(keeper),
-    capBlockedNode(keeper),
-    noHuntTargetNode(keeper),
-    noTargetFoundNode(keeper),
-    unarmedNode(keeper),
-    tooHurtNode(keeper),
-    tooTiredNode(keeper),
-    fightNode(keeper),
+    Object.assign(provisionNode(keeper), { _name: 'provision' }),
+    Object.assign(gearUpgradeNode(keeper), { _name: 'gear_upgrade' }),
+    Object.assign(autoRetargetNode(keeper), { _name: 'auto_retarget' }),
+    Object.assign(roomInvalidNode(keeper), { _name: 'room_invalid' }),
+    Object.assign(bagsFullNode(keeper), { _name: 'bags_full' }),
+    Object.assign(capBlockedNode(keeper), { _name: 'cap_blocked' }),
+    Object.assign(noHuntTargetNode(keeper), { _name: 'no_hunt_target' }),
+    Object.assign(noTargetFoundNode(keeper), { _name: 'no_target_found' }),
+    Object.assign(scavengeNode(keeper), { _name: 'scavenge' }),
+    Object.assign(unarmedNode(keeper), { _name: 'unarmed' }),
+    Object.assign(tooHurtNode(keeper), { _name: 'too_hurt' }),
+    Object.assign(tooTiredNode(keeper), { _name: 'too_tired' }),
+    Object.assign(fightNode(keeper), { _name: 'fight' }),
   ];
 
   return {
+    // Exposed for the decision trace (m59-keeper-bt.mjs _traceTree). The
+    // trace wrapper reads .children to wrap each node with a result logger.
+    children,
     // Synchronous tick (for compatibility with the existing BT framework)
     tick: (bb) => {
       for (const child of children) {

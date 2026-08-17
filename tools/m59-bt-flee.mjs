@@ -26,6 +26,7 @@ import {
   SUCCESS, FAILURE, RUNNING,
 } from './m59-bt.mjs';
 import { updateBlackboard } from './m59-bt-nodes.mjs';
+import { lootRecoveryNode } from './m59-bt-recover.mjs';
 
 // ---------------------------------------------------------------------------
 // Helper: read vitals from the blackboard
@@ -117,7 +118,24 @@ export function doomedNode(keeper) {
         'at ' + v.health.value + ' health with ' + near.length +
         ' adjacent, behind a wall that holds'
       );
-      return result ? SUCCESS : FAILURE;
+      if (result) return SUCCESS;
+      // playDead REFUSED: the "refusing to freeze again" guard fired because the
+      // character has already frozen from this health (or worse) and gained nothing.
+      // Returning FAILURE here was the bug: the rest of the tree has nothing that
+      // moves a character that is about to die in a held spot, so the pass fell
+      // through to the legacy fallback, which also refused, and the character bled
+      // out in place (Lee, Main gate to the city of Tos, 13 freezes at 1-4 HP).
+      // The answer when freezing is not working is to MOVE: give up the spot and
+      // run. Dying in a corner with a monster adjacent is worse than losing the
+      // safe spot and having a chance at distance.
+      keeper.note('playDead refused -- abandoning the spot and running', {
+        health: v.health.value, adjacent: near.length,
+        why: 'freezing is not recovering; the only thing that changes the situation is distance',
+      });
+      keeper.doing = 'travelling';
+      await keeper.leaveHold?.().catch(() => {});
+      const went = await keeper.townTripIfCornered().catch(() => false);
+      return went ? SUCCESS : FAILURE;
     }
 
     keeper.note('hurt in the open -- running for a town rather than playing dead', {
@@ -139,30 +157,63 @@ export function fleeThresholdNode(keeper) {
   return asyncAction(async (bb) => {
     const hp = hpFrac(bb);
     const near = keeper._btFleeNear();
+    const hostiles = keeper._btFleeHostiles?.() || [];
     const sheltered = keeper.holdWorks();
+    const atWall = !!keeper.hold;   // any hold, proven or not
 
-    if (hp === null || hp >= keeper.policy.fleeBelow || !near.length) return FAILURE;
+    // Below the flee threshold with something near: run or mulligan.
+    // Below the flee threshold with nothing near but hostiles in the room:
+    // the room is contested and healing in place is not safe.
+    const threat = near.length > 0 ? near : (hostiles.length > 0 ? hostiles : []);
+    if (hp === null || hp >= keeper.policy.fleeBelow || !threat.length) return FAILURE;
 
-    if (!sheltered) {
+    if (!atWall) {
+      // No wall at all: run.
       keeper.tally.withdrawals = (keeper.tally.withdrawals || 0) + 1;
       keeper.note('running for safety', {
         health: Math.round(hp * 100) + '%',
-        from: near.map(o => bb.client.rsc.get(o.nameRsc)),
+        from: threat.map(o => bb.client.rsc.get(o.nameRsc)),
         why: 'below the flee threshold in the open -- distance is the only thing that ' +
              'stops this, and a wall four squares away is not distance',
       });
       await keeper.retreatToSafety({
         because: 'below the flee threshold in the open',
-        from: near.map(o => bb.client.rsc.get(o.nameRsc)),
+        from: threat.map(o => bb.client.rsc.get(o.nameRsc)),
       });
       return SUCCESS;
     }
 
-    // Sheltered: mulligan (break off without moving)
+    // At a wall (proven or not): the wall is blocking at least one direction.
+    // Only run if critically low (below 20%) or the wall is not proven AND
+    // there are multiple attackers (the wall can't block them all).
+    const critical = hp < 0.2;
+    const unprovenCrowd = !sheltered && threat.length >= 2;
+    if (critical || unprovenCrowd) {
+      keeper.tally.withdrawals = (keeper.tally.withdrawals || 0) + 1;
+      keeper.note(critical ? 'safe spot is not enough at this HP -- running'
+                            : 'unproven wall with multiple attackers -- running', {
+        health: Math.round(hp * 100) + '%',
+        crowd: threat.length,
+        where: { col: keeper.hold.col, row: keeper.hold.row },
+        proven: sheltered,
+        why: critical ? 'a proven spot holds against normal hits, but below 20% the margin is '
+                        + 'gone -- one more hit and we are dead, and resting here is not safe'
+                      : 'an unproven wall with two or more attackers is not a wall -- '
+                        + 'they get around it, and the character is taking hits from both sides',
+      });
+      await keeper.retreatToSafety({
+        because: critical ? 'below 20% in a safe spot -- the spot is not enough'
+                          : 'unproven wall, multiple attackers',
+        from: threat.map(o => bb.client.rsc.get(o.nameRsc)),
+      });
+      return SUCCESS;
+    }
+
+    // Sheltered and above critical: mulligan (break off without moving)
     keeper.tally.mulligans = (keeper.tally.mulligans || 0) + 1;
     keeper.note('breaking off without moving', {
       health: Math.round(hp * 100) + '%',
-      crowd: near.length,
+      crowd: threat.length,
       where: { col: keeper.hold.col, row: keeper.hold.row },
       why: 'we are in a spot that has held under attack, so nothing can hit us unless we ' +
            'swing first. Stopping is the whole withdrawal.',
@@ -600,16 +651,19 @@ export function getFleeTree(opts = {}) {
   if (!keeper) throw new Error('getFleeTree: no keeper supplied');
 
   const children = [
-    doomedNode(keeper),
-    fleeThresholdNode(keeper),
-    sanctuarySettleNode(keeper),
-    getAWallNode(keeper),
-    vigorWalkNode(keeper),
-    leaveRoomNode(keeper),
-    restNode(keeper),
+    Object.assign(doomedNode(keeper), { _name: 'doomed' }),
+    Object.assign(fleeThresholdNode(keeper), { _name: 'flee_threshold' }),
+    Object.assign(lootRecoveryNode(keeper), { _name: 'loot_recovery' }),
+    Object.assign(sanctuarySettleNode(keeper), { _name: 'sanctuary_settle' }),
+    Object.assign(getAWallNode(keeper), { _name: 'get_a_wall' }),
+    Object.assign(vigorWalkNode(keeper), { _name: 'vigor_walk' }),
+    Object.assign(leaveRoomNode(keeper), { _name: 'leave_room' }),
+    Object.assign(restNode(keeper), { _name: 'rest' }),
   ];
 
   return {
+    // Exposed for the decision trace (m59-keeper-bt.mjs _traceTree).
+    children,
     tick: (bb) => {
       for (const child of children) {
         const r = child.tick(bb);

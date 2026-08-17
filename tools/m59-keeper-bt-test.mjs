@@ -234,29 +234,38 @@ console.log('\nSafety-first routing (Underworld / arm before the trees):');
 // ---------------------------------------------------------------------------
 console.log('\nTown business (sell + bank before farming):');
 {
-  // bankRun returns true -> the pass was spent on a bank run (no farming this pass)
-  let bankSurplusCalled = 0, bankRunResult = true;
+  // BT town tree: in a bank with surplus -> native deposit called
+  let depositCalled = 0;
   const k = mockKeeper({
     policy: { bankAbove: 500 },
-    bankSurplus: async () => { bankSurplusCalled++; },
-    bankRun: async () => bankRunResult,
+    s: {
+      ...mockKeeper().s,
+      world: { room: { num: 2003, name: 'First Royal Bank of Tos' } },
+      client: {
+        ...mockKeeper().s.client,
+        inventory: [{ nameRsc: 'shilling', amount: 2000 }],
+        rsc: { get: (id) => id === 'shilling' ? 'shilling' : '' },
+        vitals: () => ({ vigor: { value: 200 } }),
+        deposit: async () => { depositCalled++; },
+        requestInventory: async () => {},
+        waitFor: async () => ({ events: [] }),
+      },
+    },
   });
   const d = new BTKeeper(k);
   const r = await d._townBusiness(k, k.s, k.s.client);
-  check('bank run done -> pass returned (no farming this pass)', r === true);
-  check('bankSurplus was called', bankSurplusCalled >= 1);
+  check('in bank with surplus -> pass consumed (banked)', r === true);
+  check('deposit was called natively', depositCalled >= 1);
 }
 {
-  // bankRun returns false (nothing to sell / no bank) -> farming continues
-  let bankRunResult = false;
+  // Not in a bank, no trip needed -> farming continues
   const k = mockKeeper({
     policy: { bankAbove: 500 },
-    bankSurplus: async () => {},
-    bankRun: async () => bankRunResult,
+    larder: () => [{ food: { nutrition: 100 }, o: { amount: 1 } }],
   });
   const d = new BTKeeper(k);
   const r = await d._townBusiness(k, k.s, k.s.client);
-  check('no bank run -> pass NOT consumed (farming continues)', r === false);
+  check('no bank, no trip -> pass NOT consumed (farming continues)', r === false);
 }
 {
   // No bankAbove set -> no bank run attempted at all
@@ -295,6 +304,108 @@ console.log('\nGOAP gear deadlock (buy in town, stand down only out of town):');
   const outTown = inTownRegex.test(outRoom);
   const outStandDown = goapArming && !outTown;
   check('out of town with GOAP armed -> stands down (GOAP walking)', outStandDown === true);
+}
+
+// ---------------------------------------------------------------------------
+// Decision trace: the journal carries a compact record of which BT nodes
+// evaluated and what each returned, so a death is readable without reverse-
+// engineering it from the post-mortem frames. The trace is emitted as a
+// single 'bt-trace' note when something fired (SUCCESS/RUNNING) or when the
+// pass delegated to legacy (all FAILURE).
+// ---------------------------------------------------------------------------
+console.log('\nDecision trace (which BT nodes evaluated and what they returned):');
+{
+  // A tree WITH children (the real shape) so the trace wrapper engages.
+  function realTree(results) {
+    let i = 0;
+    const children = results.map((r, idx) => ({
+      _name: `node${idx}`,
+      key: `node${idx}`,
+      tick: () => results[Math.min(i, results.length - 1)],
+      tickAsync: async () => results[Math.min(i++, results.length - 1)],
+    }));
+    return { children };
+  }
+
+  // Case 1: a node fires SUCCESS -> trace is emitted.
+  {
+    const notes = [];
+    const k = mockKeeper({
+      s: { live: true, client: { self: {} }, world: { room: { num: 1, name: 'Test' } } },
+      note: (msg, detail) => notes.push([msg, detail]),
+      pass: async () => {},
+    });
+    const d = new BTKeeper(k);
+    // flee: node0=FAILURE, node1=SUCCESS  -> trace should fire
+    d._flee = () => realTree([FAILURE, SUCCESS]);
+    d._farm = () => ({ tickAsync: async () => FAILURE });
+    await d.pass();
+    const traceNote = notes.find(n => n[0] === 'bt-trace');
+    check('trace emitted when a node fired SUCCESS', !!traceNote);
+    if (traceNote) {
+      check('trace names the tree (flee)', traceNote[1].trace.includes('[BT:flee]'));
+      check('trace shows node0=FAILURE', traceNote[1].trace.includes('node0=FAILURE'));
+      check('trace shows node1=SUCCESS', traceNote[1].trace.includes('node1=SUCCESS'));
+    }
+  }
+
+  // Case 2: all nodes FAILURE -> delegated to legacy -> trace still emitted.
+  {
+    const notes = [];
+    let legacyCalled = false;
+    const k = mockKeeper({
+      s: { live: true, client: { self: {} }, world: { room: { num: 1, name: 'Test' } } },
+      note: (msg, detail) => notes.push([msg, detail]),
+      pass: async () => { legacyCalled = true; },
+    });
+    const d = new BTKeeper(k);
+    d._flee = () => realTree([FAILURE]);
+    d._farm = () => realTree([FAILURE]);
+    await d.pass();
+    check('legacy called when all trees fail', legacyCalled);
+    const traceNote = notes.find(n => n[0] === 'bt-trace');
+    check('trace emitted when delegating to legacy', !!traceNote);
+    if (traceNote) {
+      // Both trees appear in the trace (flee and farm were both consulted).
+      check('trace shows both trees (flee + farm)',
+        traceNote[1].trace.includes('[BT:flee]') && traceNote[1].trace.includes('[BT:farm]'));
+    }
+  }
+
+  // Case 3: a tree WITHOUT children (mock shape) -> no trace wrapper, no crash.
+  {
+    const notes = [];
+    const k = mockKeeper({
+      s: { live: true, client: { self: {} }, world: { room: { num: 1, name: 'Test' } } },
+      note: (msg, detail) => notes.push([msg, detail]),
+      pass: async () => {},
+    });
+    const d = new BTKeeper(k);
+    d._flee = () => ({ tickAsync: async () => SUCCESS });   // no .children
+    d._farm = () => ({ tickAsync: async () => FAILURE });
+    let threw = false;
+    try { await d.pass(); } catch { threw = true; }
+    check('tree without children does not crash the trace', !threw);
+  }
+
+  // Case 4: trace is reset between passes (no cross-pass leakage).
+  {
+    const notes = [];
+    const k = mockKeeper({
+      s: { live: true, client: { self: {} }, world: { room: { num: 1, name: 'Test' } } },
+      note: (msg, detail) => notes.push([msg, detail]),
+      pass: async () => {},
+    });
+    const d = new BTKeeper(k);
+    d._flee = () => realTree([SUCCESS]);
+    d._farm = () => ({ tickAsync: async () => FAILURE });
+    await d.pass();   // pass 1: fires
+    const after1 = notes.filter(n => n[0] === 'bt-trace').length;
+    d._flee = () => realTree([SUCCESS]);
+    await d.pass();   // pass 2: fires again
+    const after2 = notes.filter(n => n[0] === 'bt-trace').length;
+    check('each pass emits its own trace', after1 === 1 && after2 === 2);
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

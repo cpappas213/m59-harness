@@ -688,7 +688,8 @@ console.log('\n--- nobody calls for rescue from a pub ---');
   p.sanctuary = () => false;                      // out in the world
   p.lastPleaAt = 0;
   await p.askForHelp('badly hurt and out of flasks').catch(() => {});
-  ok('but the same character in the field still asks', broadcasts > 0);
+  ok('and the same character in the field is also silent', broadcasts === 0,
+     'broadcasting health and location marks us as prey; recovery is silent');
 }
 
 console.log('\n--- no dead zone between "too hurt to fight" and "hurt enough to rest" ---');
