@@ -64,7 +64,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadMap, edgeCandidatesOf } from './m59-map.mjs';
 import { movementMapFile } from './m59-map-path.mjs';
-import { sharedRoomGeometry, CLIENT_FINENESS } from './m59-roo.mjs';
+import { sharedRoomGeometry, CLIENT_FINENESS, STEP_MASK_VERSION } from './m59-roo.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -234,7 +234,10 @@ export function components(geometry, { collision = true } = {}) {
 
   for (let r0 = 1; r0 <= rows; r0++) {
     for (let c0 = 1; c0 <= cols; c0++) {
-      if (!geometry.walkable(r0, c0) || index[at(r0, c0)] !== -1) continue;
+      // `standable`, the same predicate `neighbors` plans with. Labelling only the coarse
+      // grid's squares would leave every square the BSP adds unlabelled — outside every
+      // region, and so "unreachable" to anything that asks whether two exits connect.
+      if (!geometry.standable(r0, c0) || index[at(r0, c0)] !== -1) continue;
       // Each frame is one square plus how many of its neighbours have been dealt with.
       const work = [{ r: r0, c: c0, i: 0, ns: null }];
       while (work.length) {
@@ -338,7 +341,7 @@ export function bakeRoom(room, { collision = true } = {}) {
   let mainSeed = null;
   for (let r = 1; r <= geometry.rows && !mainSeed; r++)
     for (let c = 1; c <= geometry.cols && !mainSeed; c++)
-      if (geometry.walkable(r, c) && comp.label[comp.at(r, c)] === mainRegion) mainSeed = { r, c };
+      if (geometry.standable(r, c) && comp.label[comp.at(r, c)] === mainRegion) mainSeed = { r, c };
   const reachedFromBody = new Set();
   if (mainSeed) {
     const stack = [mainSeed];
@@ -477,7 +480,10 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       const sameMap = prior?.geometryManifestSha256 && manifest
         && prior.geometryManifestSha256 === manifest;
       const sameView = (prior?.view ?? 'grid') === (collision ? 'collision' : 'grid');
-      if (sameMap && sameView) {
+      // A half-table stitched from two PREDICATES is the same kind of undetectable wrong
+      // as one stitched from two maps, so --resume refuses it for the same reason.
+      const samePredicate = (prior?.stepMaskVersion ?? 1) === STEP_MASK_VERSION;
+      if (sameMap && sameView && samePredicate) {
         for (const [num, baked] of Object.entries(prior.rooms ?? {}))
           if (baked && !baked.skipped) out[num] = baked;
         console.error(`resuming: ${Object.keys(out).length} room(s) already baked from the same map`);
@@ -506,6 +512,10 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       builtAt: new Date().toISOString(),
       builtFrom: movementMapFile(),
       geometryManifestSha256: manifest,
+      // WHAT THE MASK BITS MEAN. The manifest above hashes the geometry and therefore
+      // cannot notice the PREDICATE changing, so a table baked by older code against the
+      // same map verifies perfectly and encodes the wrong doors. See STEP_MASK_VERSION.
+      stepMaskVersion: STEP_MASK_VERSION,
       // Says outright that the table is short of the map it was built from, so a partial
       // flush cannot be mistaken for a finished bake by anything reading it.
       complete: Object.keys(out).length + skipped >= rooms.length && !only,

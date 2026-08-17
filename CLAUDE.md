@@ -487,10 +487,23 @@ enter and one you can enter but not leave; for routing one is a trap and the oth
 detour, and for a safe spot only the second is worth walking to. **"Outside the main body"
 is not "cannot be walked to"** — a doorway is a pocket by design, which is why an exit
 anchor is chosen from a staging square the body can REACH rather than the first one the
-boundary publishes, and why the report says "go and look before believing it". **The one
-place in the world genuinely joined only by blink is the Cragged Mountains cliff** (578,
-and 598 by the same name): entering by the north-west, the south-west and south-east exits
-are a one-way trip unless you blink up the cliff near the north-west corner.
+boundary publishes, and why the report says "go and look before believing it".
+
+**CORRECTION, 2026-08-17: this used to say the Cragged Mountains cliff was "the one place in
+the world genuinely joined only by blink", and that entering by the north-west made the
+south-west and south-east exits a one-way trip. BOTH HALVES ARE WRONG.** Walked by the
+operator: from the southern exits you CAN walk north; it is **north to south that does not
+go**. And it is not the only one — the operator names Ukgoth, Under the shadow of the
+Sentinel, the Cragged Mountains/Ukgoth border and the Underworld as further one-way trips.
+
+**ONE-WAY COMES IN TWO KINDS AND ONLY ONE OF THEM HAS A HOME.** A link between two ROOMS
+is recorded in `substrate/m59-oneway.json` and honoured by `passableExits` in
+`m59-map.mjs`. A one-way *inside* a room cannot be expressed there at all, and room 578 is
+that second kind: `path()` plans straight down the cliff, 48 steps from the north exit to
+the southern ones, on a route that contains a **+1600 climb and four 1600-unit drops
+against a `MAX_STEP_HEIGHT` of 384**. Terraces, walked like stairs. That is a live routing
+bug — a character sent that way gets a confident plan it cannot execute — and it predates
+the standable/stand-point work, which only made the same wrong route shorter.
 
 **THE TABLE IS COMMITTED, AND THE ARGUMENT FOR THAT IS THE MANIFEST.** It used to be
 gitignored on the grounds that it is "regenerated in seconds, so it is build output" and

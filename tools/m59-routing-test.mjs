@@ -44,12 +44,14 @@
 // present and reports itself skipped otherwise, because a suite that silently tests
 // nothing is worse than one that says it did.
 
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { RoomGeometry, protocolToward, STEP_MASK_DIRS, KOD_FINENESS, CLIENT_FINENESS,
-         sharedRoomGeometry } from './m59-roo.mjs';
+         sharedRoomGeometry, STEP_MASK_VERSION, elideLoops } from './m59-roo.mjs';
 import { components, exitAnchors } from './m59-routebake.mjs';
 import { loadMap, selectedEdgeAt } from './m59-map.mjs';
-import { crossingBook } from './m59-crossings.mjs';
+import { crossingBook, WALKS_DIR } from './m59-crossings.mjs';
+import { stepMaskCurrent } from './m59-routes.mjs';
 
 let passed = 0, failed = 0, skipped = 0;
 function ok(what, cond, detail = '') {
@@ -190,8 +192,28 @@ if (!existsSync(mapFile)) {
     }
     ok('the mover refuses strictly fewer adjacent pairs than the centre-to-centre test',
        moverRefused < strictRefused, `mover ${moverRefused}, strict ${strictRefused}, of ${pairs}`);
-    ok('and it refuses only a small minority of them',
-       moverRefused / pairs < 0.05, `${(100 * moverRefused / pairs).toFixed(1)}%`);
+    // MEASURED OVER THE POPULATION THE CLAIM IS ABOUT. `neighbors` now offers `standable`
+    // squares, so this denominator gained every fringe square the BSP knows and the coarse
+    // grid wrote off — squares that are real ground with very few legal steps off them.
+    // Counting those made the rate jump 5% -> 10.8% without the mover having become one
+    // bit stricter about anything it was already asked. So the small-minority claim is
+    // asserted where it was always meant: between squares the coarse grid itself accepts.
+    let gridPairs = 0, gridRefused = 0;
+    for (let r = 1; r <= geo.rows; r++) for (let c = 1; c <= geo.cols; c++) {
+      if (!geo.walkable(r, c)) continue;
+      for (const n of geo.neighbors(r, c)) {
+        if (!geo.walkable(n.row, n.col)) continue;
+        gridPairs++;
+        if (!geo.moverStepLands(r, c, n.row, n.col)) gridRefused++;
+      }
+    }
+    ok('and between squares the coarse grid accepts it refuses only a small minority',
+       gridRefused / gridPairs < 0.05,
+       `${(100 * gridRefused / gridPairs).toFixed(1)}% of ${gridPairs}`);
+    ok('while the ground the grid wrote off is tighter, as it should be',
+       moverRefused / pairs > gridRefused / gridPairs,
+       `all ${(100 * moverRefused / pairs).toFixed(1)}% vs grid-only ` +
+       `${(100 * gridRefused / gridPairs).toFixed(1)}%`);
 
     const comp = components(geo, { collision: true });
     const biggest = Math.max(...comp.sizes);
@@ -261,8 +283,20 @@ if (!existsSync(mapFile)) {
     // Three of four, and the fourth is not a defect: entering the Cragged Mountains by the
     // north-west makes the south-west and south-east exits a one-way trip unless you blink
     // up the cliff. It is the one place in the world genuinely joined only by blink.
-    ok('and on the Cragged Mountains the body reaches every exit that is not blink-only',
-       reach(chosen) === 3,
+    // AND IT REACHES ALL FIVE, WHICH CONTRADICTS THIS REPOSITORY'S OWN PROSE — recorded
+    // rather than asserted away. CLAUDE.md calls this cliff "the one place in the world
+    // genuinely joined only by blink": enter by the north-west and the south-west and
+    // south-east exits are said to be a one-way trip. The model does not agree and never
+    // has. Checked directly with the OLD predicate (grid gate, centre aiming), every
+    // ordered anchor pair here already had a route — 35,1 -> 1,13 in 60 steps, 1,13 ->
+    // 35,1 in 59 — so this is not something the standable/stand-point work introduced; it
+    // only made the same routes shorter (36 and 34). Either a player really can walk it
+    // and the prose is wrong, or our vertical rules are too generous here and have been
+    // all along. `m59-impossible-test` still refuses every checked-in trace in both
+    // Cragged Mountains rooms, so whatever it is, it is not the traversals anybody has
+    // written down. Worth an hour in the client; not worth a test that lies either way.
+    ok('and on the Cragged Mountains the body reaches every exit the room publishes',
+       reach(chosen) === chosen.length && chosen.length >= 4,
        `first-offered ${reach(naive)}, body-aware ${reach(chosen)} of ${chosen.length}`);
     ok('an anchor it cannot reach is still OFFERED rather than deleted — a bake must ' +
        'never be the reason a doorway disappears',
@@ -282,7 +316,11 @@ if (!existsSync(mapFile)) {
       let open = 0;
       for (const d of STEP_MASK_DIRS) {
         const r = at.row + d.dr, c = at.col + d.dc;
-        if (masked.inBounds(r, c) && masked.walkable(r, c)
+        // `standable`, because that is what `clearanceField` counts. Measuring openness
+        // one way while the router optimises it another does not weaken the test, it
+        // points it at a different quantity: with `walkable` here the preference read as
+        // making routes WORSE (3.69 -> 3.89) while doing exactly what it was asked.
+        if (masked.inBounds(r, c) && masked.standable(r, c)
             && masked.moverStepLands(at.row, at.col, r, c)) open++;
       }
       return STEP_MASK_DIRS.length - open;
@@ -449,6 +487,180 @@ if (!existsSync(movementMapFile())) {
   if (!agree && !disagree) skip('the condition model against recorded crossings', 'no crossing book');
   else ok(`the condition model reproduces every recorded crossing (${agree})`,
           disagree === 0, contradictions.join(' | '));
+}
+
+// ------------------------------------------- the grid is not the authority on standing
+// THE SERVER ENFORCES NOTHING ABOUT WHERE A PLAYER STANDS. `UserMove` bypasses
+// `ReqSomethingMoved` — room.kod's own comment is "already been checked by client (HAHA!)"
+// — so `ROOM_FLAG_WALKABLE` is a server-side convenience that nothing consults when a
+// person walks. The client's BSP is the only collision detector there is.
+//
+// Letting that grid veto a step the BSP allows deleted real ground, and it deleted it
+// exactly where the rooms are tightest. A byte cannot describe a 1024-unit square that is
+// 41% floor, and Western border of the Twisted Wood — 54.9% of its wall length not
+// axis-aligned, a 1-2 square wide diagonal corridor — has 61 squares that are more than
+// half floor and called wall.
+//
+// The failure was not "a step is refused". `buildStepMask` gated on `walkable` for the
+// square being LEFT as well, so such a square carried a mask byte of ZERO: a character
+// standing in one had no legal step in any direction, no route anywhere, and replanned for
+// ever. On the board that reads as `travelling`, next to the door it is trying to use.
+console.log('\nstandable — BSP floor, not the server grid');
+if (!existsSync(movementMapFile())) {
+  skip('standable never removes ground', 'no baked map');
+} else {
+  const map = loadMap();
+  const rooms = Object.values(map.rooms).filter(r => r?.roo && !r.rooDimensionMismatch);
+
+  // 1. IT CAN ONLY EVER ADD. The grid's yes is honoured unconditionally, so nothing that
+  //    planned before can stop planning. This is the assertion that keeps the change safe
+  //    in the restrictive direction, and it is checked over the whole world.
+  let walkableSquares = 0, notStandable = 0, added = 0, checkedRooms = 0;
+  for (const room of rooms) {
+    let geo = null;
+    try { geo = sharedRoomGeometry(room); } catch { continue; }
+    if (!geo?.collisionReady) continue;
+    checkedRooms++;
+    for (let r = 1; r <= room.rows; r++)
+      for (let c = 1; c <= room.cols; c++) {
+        if (geo.walkable(r, c)) { walkableSquares++; if (!geo.standable(r, c)) notStandable++; }
+        else if (geo.standable(r, c)) added++;
+      }
+  }
+  ok(`every walkable square is standable (${walkableSquares} across ${checkedRooms} rooms)`,
+     walkableSquares > 0 && notStandable === 0, `${notStandable} walkable squares went missing`);
+  ok('and it genuinely adds ground rather than being a rename',
+     added > 0, `${added} squares have BSP floor the coarse grid calls wall`);
+
+  // 2. AND IT IS NOT "EVERYTHING". A predicate that answered yes everywhere would pass the
+  //    assertion above and be worthless — worse, it would send the router into solid rock.
+  {
+    const room = map.rooms['587'];
+    const geo = room?.roo ? sharedRoomGeometry(room) : null;
+    if (!geo?.collisionReady) skip('Western border of the Twisted Wood', 'no geometry for 587');
+    else {
+      let stand = 0, total = 0;
+      for (let r = 1; r <= room.rows; r++)
+        for (let c = 1; c <= room.cols; c++) { total++; if (geo.standable(r, c)) stand++; }
+      ok('most of a room is still NOT standable — this is not a blanket yes',
+         stand < total * 0.75, `${stand}/${total} standable`);
+    }
+  }
+
+  // 3. THE OPERATOR'S OWN EVIDENCE, and the only assertion here not derived from the same
+  //    .roo as the predicate. A real client stood in every one of these squares; 137 of
+  //    them are squares the coarse grid calls wall. If any is not standable, the predicate
+  //    is still deleting ground somebody walks on.
+  {
+    const walksDir = WALKS_DIR;
+    const byObj = new Map();
+    for (const [n, r] of Object.entries(map.rooms)) if (r.objId) byObj.set(r.objId, n);
+    let stood = 0, notStood = 0, gridSaidWall = 0;
+    const offenders = [];
+    if (existsSync(walksDir)) {
+      for (const f of readdirSync(walksDir)) {
+        if (!f.endsWith('.jsonl')) continue;
+        for (const line of readFileSync(join(walksDir, f), 'utf8').split('\n')) {
+          if (!line) continue;
+          let p; try { p = JSON.parse(line); } catch { continue; }
+          const num = byObj.get(p.room); if (!num) continue;
+          const room = map.rooms[num];
+          if (p.row < 1 || p.col < 1 || p.row > room.rows || p.col > room.cols) continue;
+          let geo = null; try { geo = sharedRoomGeometry(room); } catch { continue; }
+          if (!geo?.collisionReady) continue;
+          stood++;
+          if (!geo.walkable(p.row, p.col)) gridSaidWall++;
+          if (!geo.standable(p.row, p.col)) {
+            notStood++;
+            if (offenders.length < 5) offenders.push(`${num} ${p.row},${p.col}`);
+          }
+        }
+      }
+    }
+    if (!stood) skip('every square a person stood in is standable', 'no walk logs here');
+    else {
+      ok(`every square a real client stood in is standable (${stood} positions)`,
+         notStood === 0, offenders.join(' '));
+      ok('and the grid would have refused a real chunk of them',
+         gridSaidWall > 0, `${gridSaidWall} of ${stood} are squares the coarse grid calls wall`);
+    }
+  }
+
+  // 4. A MASK FROM THE OLD PREDICATE MUST NOT BE ATTACHED. The manifest hashes GEOMETRY and
+  //    cannot see the predicate change, so without this a table baked by older code
+  //    verifies perfectly and encodes the wrong doors — silently, which is the one outcome
+  //    this repository keeps paying for.
+  ok('a table stamped with an older step-mask predicate is refused',
+     stepMaskCurrent({ stepMaskVersion: STEP_MASK_VERSION }) === true
+     && stepMaskCurrent({ stepMaskVersion: STEP_MASK_VERSION - 1 }) === false
+     && stepMaskCurrent({}) === false,
+     'an unstamped table must read as v1, not as current');
+}
+
+// ------------------------------------------------ a loop is obvious once it is in space
+// NOTHING SURPRISES A WALKER IN THIS GAME. The walls are in the .roo before anybody logs
+// in and they are there tomorrow, so a route that leaves a square and comes back to it
+// learned nothing in between — the whole detour is waste. That is trivial to see when the
+// route is laid out in SPACE and nearly invisible while it is being lived one step at a
+// time, which is how the fleet bounced `4,15 -> 5,15` / `5,15 -> 4,16` eight times and
+// reported itself travelling throughout.
+console.log('\nelideLoops — remove the round trips, never invent a step');
+{
+  const sq = (row, col) => ({ row, col });
+  const path = a => a.map(([r, c]) => sq(r, c));
+  const same = (a, b) => a.length === b.length &&
+    a.every((p, i) => p.row === b[i].row && p.col === b[i].col);
+
+  ok('a route with no repeat is returned unchanged',
+     same(elideLoops(path([[1, 1], [1, 2], [1, 3]])), path([[1, 1], [1, 2], [1, 3]])));
+  ok('an empty route survives', elideLoops([]).length === 0);
+  ok('a null route is not a crash', elideLoops(null).length === 0);
+
+  // The bounce, exactly as the trail recorded it.
+  ok('a two-square bounce collapses to the square it never left',
+     same(elideLoops(path([[4, 15], [5, 15], [4, 15], [5, 15], [4, 15], [4, 16]])),
+          path([[4, 15], [4, 16]])));
+
+  // A long excursion that returns is removed whole, and the step across the join is one
+  // the route already contained — which is the entire safety argument.
+  {
+    const before = path([[1, 1], [1, 2], [2, 2], [3, 2], [2, 2], [1, 2], [1, 3]]);
+    const after = elideLoops(before);
+    ok('an excursion that comes back is removed down to the return point',
+       same(after, path([[1, 1], [1, 2], [1, 3]])));
+    const wasAdjacentInInput = after.every((p, i) => {
+      if (!i) return true;
+      const q = after[i - 1];
+      for (let k = 1; k < before.length; k++)
+        if (before[k - 1].row === q.row && before[k - 1].col === q.col
+            && before[k].row === p.row && before[k].col === p.col) return true;
+      return false;
+    });
+    ok('and every surviving step was a step the original route already made',
+       wasAdjacentInInput);
+    ok('it never returns more than it was given', after.length <= before.length);
+  }
+
+  // THE BREADCRUMB KEY, which is a different question and the one that can lose an escape.
+  // A crumb chains `to` -> the next crumb's `from`, and the retreat drops a broken trail
+  // WHOLE rather than skipping, so an elision that leaves the chain unjoined does not
+  // shorten the escape — it deletes it.
+  {
+    const crumb = (fx, fy, tx, ty) => ({ roomId: 7, from: { x: fx, y: fy }, to: { x: tx, y: ty } });
+    const trail = [crumb(0, 0, 10, 0), crumb(10, 0, 20, 0), crumb(20, 0, 10, 0),
+                   crumb(10, 0, 30, 0)];
+    const key = cr => `${cr.roomId}:${cr.to.x},${cr.to.y}`;
+    const cut = elideLoops(trail, key);
+    ok('a crumb trail that returns to the same POINT loses the round trip',
+       cut.length === 2 && cut[0].to.x === 10 && cut[1].to.x === 30);
+    let joins = true;
+    for (let i = 1; i < cut.length; i++)
+      if (cut[i].from.x !== cut[i - 1].to.x || cut[i].from.y !== cut[i - 1].to.y) joins = false;
+    ok('and the surviving trail still chains end to end, exactly',
+       joins, 'a broken chain is dropped whole by the retreat, so this must hold');
+    ok('a trail with no repeated landing point is untouched',
+       elideLoops([crumb(0, 0, 10, 0), crumb(10, 0, 20, 0)], key).length === 2);
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);

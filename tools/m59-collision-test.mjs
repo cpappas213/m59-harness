@@ -9,7 +9,8 @@ import { createHash } from 'node:crypto';
 import {
   CLIENT_FINENESS, COLLISION_VERSION, DEFAULT_ROO_DIRS, KOD_FINENESS,
   MAX_STEP_HEIGHT, MIN_SIDE_MOVE, PLAYER_HEIGHT, PLAYER_RADIUS,
-  RoomGeometry, WF, canCrossWallAt, parseRoo, setWallHeights, sharedRoomGeometry,
+  RoomGeometry, WF, canCrossWallAt, parseRoo, protocolToClient, setWallHeights,
+  sharedRoomGeometry,
 } from './m59-roo.mjs';
 import { BP, M59Client } from './m59-client.mjs';
 import { MOVEON, blocksMovement, parsePlayer } from './m59-parse.mjs';
@@ -23,7 +24,7 @@ import {
   geometryRefreshBaseFile, movementMapFile,
 } from './m59-map-path.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
-import { World, boundedRegionEntry, spreadEdges } from './m59-world.mjs';
+import { World, boundedRegionEntry, boundedSilentGo, spreadEdges } from './m59-world.mjs';
 
 let pass = 0, fail = 0, skipped = 0;
 const ok = (name, condition, detail = '') => {
@@ -856,9 +857,90 @@ function sessionMethod(source, signature, name) {
   return end > body && method.trim().endsWith('}') ? method : null;
 }
 
+// EVERY MODULE-SCOPE NAME THE BROKER DECLARES, so a lifted method can be checked against
+// the dependency map it was handed instead of against somebody's memory.
+//
+// THE MAP DRIFTS, SILENTLY, AND THE SUITE STAYS GREEN WHILE IT DOES. A lifted method is
+// compiled with `new Function(...Object.keys(dependencies))`, so any module-scope symbol
+// missing from that map is a free identifier — fine in the broker, a ReferenceError here.
+// It only throws on the line that uses it, so a branch no fixture reaches is never
+// compiled-in-anger and the omission is invisible. Found exactly that way: `walkTo`
+// referenced `protocolToClient`, `PIVOT_ARRIVE_WITHIN` and `sidestepAround`, none of them
+// declared, and 162 assertions passed because every walkTo fixture has falsy
+// `collisionReady` and never enters the coalescer.
+//
+// So the check is mechanical rather than a habit. It is deliberately a WARNING about names
+// that appear, not a proof of what executes — a name inside a comment or a string counts,
+// which errs toward declaring one identifier too many. That is the safe direction: an
+// extra dependency is inert, a missing one is a test that silently stops testing.
+function moduleScopeNames(source) {
+  const names = new Set();
+  // Declarations at column 0 — and IMPORTS, which are module scope too and are the half
+  // that matters most here: `protocolToClient` reaches a lifted method exactly this way.
+  for (const m of source.matchAll(
+    /^(?:export\s+)?(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm))
+    names.add(m[1]);
+  for (const m of source.matchAll(/^import\s+([^;]+?)\s+from\s+/gm))
+    for (const part of m[1].replace(/[{}]/g, ',').split(','))
+      { const n = part.trim().split(/\s+as\s+/).pop()?.trim(); if (/^[A-Za-z_$][\w$]*$/.test(n)) names.add(n); }
+  return names;
+}
+const BROKER_SCOPE = new Set();
+
+// A NAME THE METHOD BINDS ITSELF IS NOT A FREE ONE. `controlToken` is a destructured
+// parameter and `session` is a local; both also exist at module scope, and counting those
+// as undeclared would bury the two real omissions under noise nobody would read twice.
+function locallyBound(method) {
+  const bound = new Set();
+  const add = t => { for (const part of t.replace(/[{}[\]]/g, ',').split(',')) {
+    const n = part.trim().split(/[:=]/)[0].trim().replace(/^\.\.\./, '');
+    if (/^[A-Za-z_$][\w$]*$/.test(n)) bound.add(n);
+  } };
+  // The parameter list, which is where a destructured option like `controlToken` lives.
+  const open = method.indexOf('(');
+  if (open >= 0) {
+    let depth = 0, at = open;
+    for (; at < method.length; at++) {
+      if (method[at] === '(') depth++;
+      else if (method[at] === ')') { depth--; if (!depth) break; }
+    }
+    add(method.slice(open + 1, at));
+  }
+  for (const m of method.matchAll(/\b(?:const|let|var)\s+([^=;\n]+)/g)) add(m[1]);
+  for (const m of method.matchAll(/\bfunction\s+([A-Za-z_$][\w$]*)/g)) bound.add(m[1]);
+  // `for (const x of ...)` and catch bindings are covered by the const/let scan above.
+  return bound;
+}
+
+// COMMENTS ARE NOT CODE, and in this repository they are most of the file. Scanning the
+// raw text reported `session` undeclared in `step` and `exitgap` undeclared in
+// `leaveViaAny` — both appearing only in prose — which is exactly the noise that gets a
+// mechanical check switched off before it earns its keep.
+const stripComments = t => t.replace(/\/\*[\s\S]*?\*\//g, ' ')
+                            .replace(/(^|[^:])\/\/.*$/gm, '$1 ');
+
+function checkDependencies(rawMethod, name, dependencies) {
+  const method = stripComments(rawMethod);
+  const declared = new Set(Object.keys(dependencies));
+  const bound = locallyBound(method);
+  const missing = [];
+  for (const symbol of BROKER_SCOPE) {
+    if (declared.has(symbol) || bound.has(symbol)) continue;
+    // Word-boundary, and not preceded by a dot — `this.walkTo` is not the free `walkTo`.
+    // Not preceded by a quote either, so a name inside a string is not counted.
+    const re = new RegExp(`(^|[^.\\w$'"\`])${symbol.replace(/\$/g, '\\$')}\\b`);
+    if (re.test(method)) missing.push(symbol);
+  }
+  ok(`Session.${name}'s dependency map names everything it can reach`,
+     missing.length === 0,
+     missing.length ? `undeclared: ${missing.join(', ')} — a branch reaching one of these ` +
+                      `throws ReferenceError here while working in the broker` : '');
+}
+
 function compileSessionMethod(source, signature, name, dependencies = {}) {
   const method = sessionMethod(source, signature, name);
   if (!method) return null;
+  if (BROKER_SCOPE.size) checkDependencies(method, name, dependencies);
   try {
     const compiled = new Function(...Object.keys(dependencies),
       `return ({${method}}).${name}`)(...Object.values(dependencies));
@@ -871,6 +953,7 @@ function compileSessionMethod(source, signature, name, dependencies = {}) {
 }
 
 const brokerSource = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+for (const n of moduleScopeNames(brokerSource)) BROKER_SCOPE.add(n);
 const validateFineTarget = compileSessionMethod(brokerSource,
   'validateFineTarget(x, y, {', 'validateFineTarget',
   { CLIENT_FINENESS, KOD_FINENESS, blocksMovement });
@@ -897,10 +980,22 @@ const walkFine = compileSessionMethod(brokerSource,
 const walkTo = compileSessionMethod(brokerSource,
   'async walkTo(col, row, {', 'walkTo', {
     isTerminalMovementReason, KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8,
+    // The coalescer's two, which were free identifiers here for as long as the coalescer
+    // existed. No fixture reached that branch — they all have falsy `collisionReady` —
+    // so nothing ever threw and nothing ever said so. The value matches the broker's own
+    // default; it is duplicated rather than imported because importing the broker takes
+    // the fleet lock, which is the reason this whole file lifts methods by text.
+    PIVOT_ARRIVE_WITHIN: 64, protocolToClient,
   });
 const leaveVia = compileSessionMethod(brokerSource,
   'async leaveVia(exit, {', 'leaveVia', {
     isTerminalMovementReason, KOD_FINENESS, MOVE_INTERVAL_MS: 0,
+    // THE REAL FUNCTIONS, NOT STUBS. Both are ordinary exports of m59-world.mjs — which,
+    // unlike the broker, imports without taking the fleet lock — so lifting `leaveVia`
+    // and handing it hand-written imitations of the two helpers it drives would be
+    // testing the imitations. `DOOR_SETTLE_MS` is zeroed for the same reason
+    // MOVE_INTERVAL_MS is: the fake client answers immediately or not at all.
+    boundedSilentGo, boundedRegionEntry, DOOR_SETTLE_MS: 0,
     // Zero here, not the broker's 10s: these tests drive a fake client that answers
     // immediately or not at all, so the real wait would only add ten seconds per
     // never-crossing case. What the constant is FOR is live lag, which is not
@@ -1040,6 +1135,11 @@ console.log('\nterminal movement propagation and edge packet authority');
     const client = { self: { col: 1, row: 1, x: 96, y: 96 } };
     const geometry = {
       walkable: () => true,
+      // `standable` is what walkTo asks now — see RoomGeometry.standable. A fixture that
+      // models only `walkable` is a fixture of the old predicate, and the failure is a
+      // TypeError rather than a wrong answer, which is the good direction: it says the
+      // fake has fallen behind rather than quietly testing something else.
+      standable: () => true,
       path: () => ({ found: true, steps: [{ col: 2, row: 1 }] }),
     };
     const session = {
@@ -1070,7 +1170,11 @@ console.log('\nterminal movement propagation and edge packet authority');
 
     const floorless = {
       client: { self: { col: 9, row: 9 } }, movementGeneration: 0,
-      world: { geometry: { walkable: () => false, nearestWalkable: () => null } },
+      // Floorless to BOTH predicates: the grid says no and there is no BSP floor either,
+      // which is the only combination that is genuinely `start_has_no_floor`. A square the
+      // grid alone refuses is now a place a character may legitimately be standing.
+      world: { geometry: { walkable: () => false, standable: () => false,
+                           nearestWalkable: () => null } },
       need() { return this.client; }, movementWasCancelled() { return false; },
     };
     const floorlessResult = await walkTo.call(floorless, 2, 1, { maxSteps: 5, hardCap: 10 });

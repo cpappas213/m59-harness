@@ -19,7 +19,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROUTES_FILE, replay } from './m59-routebake.mjs';
-import { sharedRoomGeometry } from './m59-roo.mjs';
+import { sharedRoomGeometry, STEP_MASK_VERSION } from './m59-roo.mjs';
 
 let cache = { mtime: -1, value: null };
 
@@ -51,6 +51,23 @@ export function routesFor(mapManifest) {
   if (!t.geometryManifestSha256 || !mapManifest) return null;
   if (t.geometryManifestSha256 !== mapManifest) return null;
   return t;
+}
+
+/**
+ * Was this table's mask built by the predicate this build reads it with?
+ *
+ * THE MANIFEST CANNOT ANSWER THIS AND THAT IS THE WHOLE PROBLEM. It hashes the GEOMETRY,
+ * so a table baked by older code against an unchanged map passes every check here and is
+ * attached without a word — while every bit in it encodes a question nobody is asking any
+ * more. When `moverStepLands` stopped gating on the server's coarse grid, that would have
+ * kept the fleet out of hundreds of steps per room, silently, on a table that verified.
+ *
+ * A mismatch is NOT an error. It degrades to "plan on the coarse grid", which is exactly
+ * what a checkout that has never run the bake does, and it says so — because the fix is a
+ * rebake and the operator has to be told that rather than left to wonder.
+ */
+export function stepMaskCurrent(table) {
+  return (table?.stepMaskVersion ?? 1) === STEP_MASK_VERSION;
 }
 
 /**
@@ -95,6 +112,17 @@ export function attachStepMasks(map, { geometryOf } = {}) {
   // step masks" are different problems with different fixes, and a single counter told
   // the second story with the first one's words.
   attachedTable = table;
+  // A MASK FROM A DIFFERENT PREDICATE IS WORSE THAN NO MASK, so it is refused wholesale.
+  // See stepMaskCurrent: the manifest hashes GEOMETRY and cannot see the predicate change,
+  // so such a table verifies perfectly while encoding the wrong doors.
+  //
+  // REFUSED, BUT NOT SHORT-CIRCUITED — this loop is how several callers BUILD their
+  // geometry. `geometryOf` is not only a lookup, it is a constructor with a cache behind
+  // it (m59-stringpull-test, m59-overlay, m59-highlight, m59-hoptest and m59-provewall all
+  // populate a Map from inside it), so returning early left every one of them holding an
+  // empty cache and a TypeError. Refusing to attach is the decision; not visiting the
+  // rooms was an accident of where the decision was made.
+  const stale = !stepMaskCurrent(table);
   let attached = 0, refused = 0, masked = 0;
   const rooms = Object.keys(table.rooms).length;
   for (const [num, baked] of Object.entries(table.rooms)) {
@@ -104,6 +132,7 @@ export function attachStepMasks(map, { geometryOf } = {}) {
     if (!room?.roo) continue;
     const geometry = geometryOf ? geometryOf(room) : sharedRoomGeometry(room);
     if (!geometry) continue;
+    if (stale) continue;                 // geometry built above; the mask is not trusted
     const bytes = Buffer.from(baked.stepMask, 'base64');
     if (geometry.attachStepMask(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.length)))
       attached++;
@@ -113,6 +142,11 @@ export function attachStepMasks(map, { geometryOf } = {}) {
   // hit: every table baked before masks existed has all 264 rooms, matches the manifest,
   // and carries nothing the router can use. "No routing table" would send them looking for
   // a file that is sitting right there.
+  if (stale)
+    return { attached: 0, rooms, masked, refused: 0, ok: false, view: table.view ?? 'grid',
+             why: `the routing table's step masks were baked by an older predicate ` +
+                  `(v${table.stepMaskVersion ?? 1}, this build reads v${STEP_MASK_VERSION}) — ` +
+                  `rerun node tools/m59-routebake.mjs` };
   return { attached, rooms, masked, refused, ok: attached > 0, view: table.view ?? 'grid',
            ...(attached ? {} : { why: !rooms
              ? 'the routing table has no rooms in it'

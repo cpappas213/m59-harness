@@ -45,7 +45,13 @@ attachStepMasks(map, { geometryOf: r => {
 
 const geo = byRoom.get(map.rooms['587']);
 ok('room 587 geometry loaded', !!geo);
-const C = (r, c) => ({ x: (c - 0.5) * CLIENT_FINENESS, y: (r - 0.5) * CLIENT_FINENESS });
+// THE SAME POINT THE PLANNER AND THE MOVER USE, not the square's centre. `standPoint` is
+// the centre for every ordinary square, so this changes nothing in open ground — but a
+// square a diagonal wall cuts in half has its centre inside the wall, and feeding those
+// centres in asks `stringPull` to verify legs between points nobody ever aims at. Measured
+// that way it reported 36 of 66 legs unverified while doing its job perfectly.
+const C = (r, c) => geo.standPoint(r, c)
+                 ?? { x: (c - 0.5) * CLIENT_FINENESS, y: (r - 0.5) * CLIENT_FINENESS };
 const arrives = (a, b) => {
   const t = geo.traceFineMoveClient(a.x, a.y, b.x, b.y, { slide: false });
   return !!t && Math.hypot(t.x - b.x, t.y - b.y) <= 64;

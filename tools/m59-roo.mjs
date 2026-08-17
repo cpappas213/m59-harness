@@ -165,6 +165,46 @@ export const protocolToward = (value, fromValue) => {
   return Math.round(wire);
 };
 
+/**
+ * Cut every loop out of a route: if it visits a square twice, drop everything between.
+ *
+ * A FREE FUNCTION AND NOT ONLY A STATIC, because the callers that need it most are the
+ * `Session` methods in `m59-broker.mjs`, and those are lifted out of that file BY TEXT and
+ * evaluated by the test suites. A lifted method can be handed a function; it cannot be
+ * handed a class it has no import for. `RoomGeometry.elideLoops` delegates here so there
+ * is one implementation rather than two that agree by luck.
+ *
+ * `key` decides what "the same place" means, and the caller has to choose it, because the
+ * two callers mean different things. A planned ROUTE is a list of squares and two visits
+ * to a square are a loop. A BREADCRUMB is a validated move with exact `from`/`to` fine
+ * coordinates chained end to end, and there the key must be the exact landing point: the
+ * chain's invariant is `crumb[i].to === crumb[i+1].from`, so excising between two crumbs
+ * that landed on the SAME POINT leaves `crumb[i].to` followed by a `from` equal to it and
+ * the chain still joins exactly. Keyed by square instead, two landings in one square at
+ * different fine positions would break that join — and the retreat drops a broken trail
+ * WHOLE, so a sloppy key here would lose the entire escape rather than shorten it.
+ *
+ * See the class method's note for the argument that this can only ever REMOVE steps.
+ */
+export function elideLoops(squares, key = sq => `${sq.row},${sq.col}`) {
+  const out = [];
+  const seenAt = new Map();
+  for (const sq of squares ?? []) {
+    const k = key(sq);
+    const had = seenAt.get(k);
+    if (had !== undefined) {
+      // Everything after the first visit is a round trip back to here. Drop it, and forget
+      // the entries that only ever existed inside the cycle.
+      for (let i = had + 1; i < out.length; i++) seenAt.delete(key(out[i]));
+      out.length = had + 1;
+      continue;
+    }
+    seenAt.set(k, out.length);
+    out.push(sq);
+  }
+  return out;
+}
+
 // Separators are floats in the stock client. Keep every multiply/add in float32;
 // JS's default double arithmetic changes a handful of exact boundary decisions.
 function separatorValue(separator, x, y) {
@@ -488,6 +528,28 @@ const DIRS = Object.values(DIR);
 // doors, which nothing downstream can detect. It is deliberately the same order as `DIR`
 // so there is one table rather than two that agree by luck.
 export const STEP_MASK_DIRS = DIRS;
+
+// WHAT THE BITS MEAN, VERSIONED — because the manifest cannot notice this.
+//
+// `geometryManifestSha256` hashes the GEOMETRY, so a mask baked by different CODE against
+// the same map matches it perfectly and is attached without a word. That is exactly what
+// happened when `moverStepLands` stopped gating on the server's coarse grid and started
+// gating on `standable`: every mask on disk still encoded the old, stricter answer, still
+// verified, and silently kept the fleet out of 773 steps per room that the new predicate
+// allows. Bump this whenever the predicate changes, and an old table degrades to "plan on
+// the coarse grid" — which is loud, correct, and fixed by a rebake — instead of lying.
+//
+//   1  gated on ROOM_FLAG_WALKABLE, aimed centre to centre
+//   2  gates on standable() — BSP floor rather than the server's one-byte grid
+//   3  and aims at standPoint() rather than the square's centre. The two are not separable
+//      and v2 alone was nearly inert: recognising a square a diagonal wall cuts in half,
+//      while still aiming at its middle, leaves it recognised and unreachable. Measured in
+//      Western border of the Twisted Wood, v2 alone turned 277 such squares into 277
+//      isolated one-square regions; with the aim as well, the room's connected body goes
+//      from 1403 squares to 1612. v3 also requires a sector with an INTERIOR rather than
+//      merely a floor height — see `_occupiable`, which is what stops the room compiler's
+//      solid filler being read as ground (2,582 slabs of it in The King's Way alone).
+export const STEP_MASK_VERSION = 3;
 const STEP_MASK_BIT = new Map(DIRS.map((d, i) => [`${d.dr},${d.dc}`, 1 << i]));
 
 // Where the .roo files live. The server tree and the client tree are separate copies
@@ -1170,6 +1232,29 @@ export class RoomGeometry {
   // rather than infer.
   //
   // Input and output are CLIENT units. `points` is the grid route including the start.
+  /**
+   * Cut every loop out of a route: if it visits a square twice, drop everything between.
+   *
+   * NOTHING SURPRISES A WALKER HERE. The walls were in the .roo before the character
+   * logged in, and they will be there tomorrow — so a route that leaves a square and comes
+   * back to it has learned nothing in between and the detour was pure waste. That is
+   * trivial to see once the route is laid out in SPACE and effectively invisible while it
+   * is being lived through one step at a time, which is exactly why the fleet used to
+   * bounce `4,15->5,15` / `5,15->4,16` eight times and call it travelling.
+   *
+   * Last occurrence wins, in one pass with a Map: the final visit is the one that led
+   * somewhere, and every earlier visit to the same square is the top of a cycle.
+   *
+   * WHAT IT CANNOT DO IS INVENT A TRAVERSAL, and that is the whole safety argument. Every
+   * step it keeps was already in the route, adjacent to the step now before it, because
+   * both ends of an excised cycle are THE SAME SQUARE — so the join is `X -> (whatever
+   * followed X the last time)`, a pair the route itself already contained. It only ever
+   * removes.
+   *
+   * Squares in, squares out. Give it `{row, col}` and it returns the same objects.
+   */
+  static elideLoops(squares) { return elideLoops(squares); }
+
   stringPull(points, { arriveWithin = 64, maxProbe = 64 } = {}) {
     if (!Array.isArray(points) || points.length < 2)
       return { points: points ?? [], unverified: 0, legs: 0 };
@@ -1308,6 +1393,182 @@ export class RoomGeometry {
     return (this.flags[(row - 1) * this.cols + (col - 1)] & ROOM_FLAG_WALKABLE) !== 0;
   }
 
+  /**
+   * Could a player be at this exact point? Floor under it, and a sector with an INTERIOR.
+   *
+   * "HAS A FLOOR HEIGHT" IS NOT "IS A PLACE", AND THE DIFFERENCE IS 33.8% OF THE WORLD.
+   * `floorBaseAtClient` answers for any leaf carrying a sector, and the room compiler emits
+   * sectors for the solid space OUTSIDE the room as well — filler with `ceilingHeight`
+   * exactly equal to `floorHeight`. Asked for floor alone, 85,261 of the world's 252,320
+   * unwalkable squares answer yes, and in The King's Way that swallowed 2,708 slabs of
+   * rock into the room's own body, 263 of which the mover would have stepped into.
+   *
+   * AND THE SPACE HAS TO BE TALLER THAN THE PLAYER, which is not a rule about ducking.
+   * I first wrote this as `ceiling > floor` and argued from a distribution that anything
+   * finer was inventing a mechanic the game does not have: across six rooms 92.5% of leaf
+   * sectors are 1536 units or taller, 5.7% are exactly zero, and the 24 in between are
+   * 0.8%. That reasoning was wrong twice over. The measurement behind "and none of them is
+   * a square the mover would enter" was itself broken, and when the operator was walked to
+   * one of the survivors — The Queen's Way 22,10, floor 5632, ceiling 6144, 512 units of
+   * room — it turned out to be the inside of a LOCKED TOWER. A building, not a crawlspace.
+   *
+   * So the rule is not "can you duck under it", it is "a 768-unit player is not inside a
+   * 512-unit space". `PLAYER_HEIGHT` is the client's own figure (game.c:262) and it is the
+   * same constant `traceFineMoveClient` already enforces for the space a move passes
+   * through; asking it of the destination as well is consistency, not a new model.
+   *
+   * `ceilingHeightAt`/`floorHeightAt` rather than the raw sector fields, because both can
+   * be sloped and a slope is exactly where the two could cross.
+   */
+  _occupiable(x, y) {
+    const leaf = this.leafAtClient(x, y);
+    if (!leaf?.sector) return false;
+    if (this.floorBaseAtClient(x, y, leaf) == null) return false;
+    const ceiling = ceilingHeightAt(x, y, leaf.sector);
+    const floor = floorHeightAt(x, y, leaf.sector);
+    if (!Number.isFinite(ceiling) || !Number.isFinite(floor)) return false;
+    return ceiling - floor >= PLAYER_HEIGHT;
+  }
+
+  /**
+   * Is there anywhere in this square a player could be? A PRE-FILTER, not an authority.
+   *
+   * THE SERVER'S GRID IS NOT AUTHORITATIVE FOR PLAYERS AND NEVER WAS. `UserMove` bypasses
+   * `ReqSomethingMoved` — room.kod's own comment is "already been checked by client
+   * (HAHA!)" — so nothing server-side consults `ROOM_FLAG_WALKABLE` when a person walks.
+   * The client is the only collision detector, and the client uses the BSP.
+   *
+   * Measured against the operator's own recorded walks: **137 of 2164 positions a real
+   * client occupied are in squares this grid calls unwalkable, and every one of the 137
+   * has real BSP floor under it**. 102 of them are in Western border of the Twisted Wood,
+   * which is the room the fleet gets stuck in. The grid is one byte for a 1024-unit square
+   * and this room's wall length is 54.9% NOT axis-aligned, so a 1-2 square wide corridor
+   * cutting diagonally leaves squares that are 41%, 47%, 50%, 56% floor — and a byte has
+   * to round them. 61 squares in that room are more than half floor and called wall.
+   *
+   * WHY A CHARACTER STANDING IN ONE COULD NOT MOVE AT ALL. `buildStepMask` gated on
+   * `walkable` for the square being left as well as the square being entered, so such a
+   * square got a mask byte of ZERO — no legal step in any direction. A character that slid
+   * into one had no route to anywhere, replanned, was refused, and replanned again, which
+   * on the board reads as `travelling` while the character twitches in a corner next to
+   * the door it is trying to use.
+   *
+   * PERMISSIVE ON PURPOSE, BECAUSE THE TRACE IS THE REAL GATE. This only asks whether any
+   * point in the square has floor; it does not ask whether the player CYLINDER fits, and
+   * it must not, because `_traceMoverStep` already decides that with the stock client's
+   * own rules and refuses to record an arrival otherwise. Being loose here costs bake
+   * time. Being tight here deletes real ground, which is the failure above.
+   *
+   * The grid's YES is always honoured, so nothing that worked before can stop working.
+   */
+  standable(row, col) {
+    if (!this.inBounds(row, col)) return false;
+    if (this.walkable(row, col)) return true;
+    const i = (row - 1) * this.cols + (col - 1);
+    const memo = (this._standable ??= new Uint8Array(this.rows * this.cols));
+    if (memo[i]) return memo[i] === 2;
+    // A 5x5 lattice — 205 units apart, comfortably finer than the 496-unit player
+    // width, so a sliver that could actually hold somebody cannot fall between samples.
+    let found = false;
+    const x0 = (col - 1) * CLIENT_FINENESS, y0 = (row - 1) * CLIENT_FINENESS;
+    for (let sy = 0; sy < 5 && !found; sy++)
+      for (let sx = 0; sx < 5; sx++) {
+        const x = x0 + Math.round((sx + 0.5) * CLIENT_FINENESS / 5);
+        const y = y0 + Math.round((sy + 0.5) * CLIENT_FINENESS / 5);
+        if (this._occupiable(x, y)) { found = true; break; }
+      }
+    memo[i] = found ? 2 : 1;
+    return found;
+  }
+
+  /**
+   * The point in this square to aim at, in CLIENT units, or null if there is nowhere.
+   *
+   * A SQUARE IS 1024 UNITS AND THE PLAYER IS 496 WIDE, SO "THE SQUARE" IS NOT A PLACE.
+   * Every step in this repository was aimed at a square's CENTRE, which is the right point
+   * for a square that is entirely floor and the wrong one for a square a diagonal wall cuts
+   * in half — there, the centre is inside the wall, the trace refuses, and the square is
+   * reported unreachable although a person walks through it daily.
+   *
+   * That is not a rare shape. Western border of the Twisted Wood has 54.9% of its wall
+   * length off the axes and a corridor 1-2 squares wide running diagonally through it, so
+   * the squares along it are 41%, 47%, 50%, 56% floor. Recognising them as ground
+   * (`standable`) without moving the aim leaves them recognised and unreachable: measured,
+   * that turned 277 of them into 277 isolated one-square regions.
+   *
+   * THE CENTRE WINS WHENEVER THE CENTRE HAS FLOOR, and that is what keeps this change from
+   * rewriting behaviour it was not meant to touch. Every ordinary square in the world is
+   * aimed at exactly as before, so the checked-in refusal traces and the collision suite
+   * are asking the same questions they were.
+   *
+   * Otherwise the square is sampled and the FURTHEST-FROM-THE-EDGE floor sample wins —
+   * crudely the medial axis of the floor within the square, which is where a body fits if
+   * a body fits anywhere. It is an aim, not a promise: `_traceMoverStep` still has to get
+   * there, still slides, and still has to land in this square, so a point this returns
+   * that the mover cannot reach costs a refused step and authorises nothing.
+   */
+  standPoint(row, col) {
+    if (!this.inBounds(row, col)) return null;
+    const i = (row - 1) * this.cols + (col - 1);
+    const memo = (this._standPoint ??= new Array(this.rows * this.cols));
+    const hit = memo[i];
+    if (hit !== undefined) return hit;
+    const x0 = (col - 1) * CLIENT_FINENESS, y0 = (row - 1) * CLIENT_FINENESS;
+    const half = CLIENT_FINENESS / 2;
+    const centre = { x: x0 + half, y: y0 + half };
+    if (!this.collisionReady || this._occupiable(centre.x, centre.y))
+      return (memo[i] = centre);
+    // N x N samples; N odd so the centre is one of them and the lattice is symmetric.
+    const N = 9, step = CLIENT_FINENESS / N;
+    const floor = [];
+    for (let sy = 0; sy < N; sy++)
+      for (let sx = 0; sx < N; sx++) {
+        const x = x0 + Math.round((sx + 0.5) * step), y = y0 + Math.round((sy + 0.5) * step);
+        if (this._occupiable(x, y)) floor.push({ x, y, sx, sy });
+      }
+    if (!floor.length) return (memo[i] = null);
+    // Distance to the nearest sample that is NOT floor, counting the outside of the square
+    // as not-floor: a point hard against the square's own boundary is a point whose body
+    // hangs into the neighbour, and aiming there is how a step lands next door.
+    const isFloor = new Set(floor.map(p => `${p.sx},${p.sy}`));
+    let best = floor[0], bestScore = -1;
+    for (const p of floor) {
+      let d = Infinity;
+      for (let sy = -1; sy <= N; sy++)
+        for (let sx = -1; sx <= N; sx++) {
+          if (sx >= 0 && sx < N && sy >= 0 && sy < N && isFloor.has(`${sx},${sy}`)) continue;
+          const dd = Math.max(Math.abs(sx - p.sx), Math.abs(sy - p.sy));
+          if (dd < d) d = dd;
+        }
+      // Ties go to the sample nearest the centre, so the answer is stable and as close to
+      // the old behaviour as the geometry allows.
+      const toCentre = Math.hypot(p.x - centre.x, p.y - centre.y);
+      const score = d * 1e6 - toCentre;
+      if (score > bestScore) { bestScore = score; best = p; }
+    }
+    return (memo[i] = { x: best.x, y: best.y });
+  }
+
+  /**
+   * The same point, in WIRE units, ready to be put in a movement packet.
+   *
+   * ONE HOME FOR THE CONVERSION. The planner works in client units and the packet carries
+   * wire units, and this repository has already paid once for that conversion being
+   * written out at the call site — `x * 16` instead of `(x - 64) * 16` is a whole square,
+   * and it fails hardest exactly where the geometry is tightest, so it reads as a local
+   * map defect rather than as arithmetic.
+   *
+   * For any square whose centre is floor this returns `col * KOD_FINENESS + half` exactly,
+   * which is the integer every caller used to compute inline — so ordinary movement is
+   * unchanged to the byte, and only the squares a wall cuts in half move at all.
+   */
+  standPointWire(row, col) {
+    const p = this.standPoint(row, col);
+    if (!p) return null;
+    return { x: Math.round(p.x / CLIENT_PER_KOD + KOD_FINENESS),
+             y: Math.round(p.y / CLIENT_PER_KOD + KOD_FINENESS) };
+  }
+
   // The eight direction bits of the square you are standing on.
   openDirections(row, col, { fine = true } = {}) {
     if (!this.inBounds(row, col)) return [];
@@ -1407,7 +1668,11 @@ export class RoomGeometry {
   // the event loop the first time collision-aware routing shipped.
   moverStepLands(fromRow, fromCol, toRow, toCol) {
     if (!this.collisionReady || typeof this.traceFineMoveClient !== 'function') return true;
-    if (!this.inBounds(toRow, toCol) || !this.walkable(toRow, toCol)) return false;
+    // `standable`, not `walkable` — see standable(). The coarse grid is a SERVER artifact
+    // and nothing server-side consults it for a player move, so letting it veto a step the
+    // BSP allows removed ground people demonstrably walk on. The trace below is still the
+    // gate: it has to arrive, and it has to arrive IN this square.
+    if (!this.inBounds(toRow, toCol) || !this.standable(toRow, toCol)) return false;
     const mask = this._stepMask;
     if (mask) {
       const bit = STEP_MASK_BIT.get(`${toRow - fromRow},${toCol - fromCol}`);
@@ -1427,11 +1692,15 @@ export class RoomGeometry {
   // `validateFineTarget`'s arithmetic, with the live half (obstacles, room flags, vertical
   // motion) left out — see moverStepLands. Kept separate so the memo above stays a lookup.
   _traceMoverStep(fromRow, fromCol, toRow, toCol) {
-    const half = KOD_FINENESS >> 1;
-    const fromX = protocolToClient(fromCol * KOD_FINENESS + half);
-    const fromY = protocolToClient(fromRow * KOD_FINENESS + half);
-    const toX = protocolToClient(toCol * KOD_FINENESS + half);
-    const toY = protocolToClient(toRow * KOD_FINENESS + half);
+    // AIMED AT THE SQUARE'S STAND POINT, WHICH IS ITS CENTRE FOR EVERY ORDINARY SQUARE.
+    // See standPoint: a square a diagonal wall cuts in half has its centre in the wall, so
+    // aiming there refuses a step people make daily. The sender must use the SAME point —
+    // `Session.step` and walkTo's coalescer both call standPoint — or the planner and the
+    // mover are back to asking different questions, which is the bug this file exists for.
+    const from = this.standPoint(fromRow, fromCol);
+    const to = this.standPoint(toRow, toCol);
+    if (!from || !to) return false;
+    const fromX = from.x, fromY = from.y, toX = to.x, toY = to.y;
     try {
       const requested = this.traceFineMoveClient(fromX, fromY, toX, toY, { slide: true });
       if (!requested.available || !requested.moved) return false;
@@ -1467,12 +1736,17 @@ export class RoomGeometry {
     const mask = new Uint8Array(this.rows * this.cols);
     for (let row = 1; row <= this.rows; row++) {
       for (let col = 1; col <= this.cols; col++) {
-        if (!this.walkable(row, col)) continue;
+        // BOTH GATES ARE `standable` NOW, AND THE ONE ON THE SQUARE BEING LEFT IS THE ONE
+        // THAT MATTERED. A square the coarse grid called wall got a mask byte of zero, so
+        // a character standing in it — which happens, 137 recorded times — had no legal
+        // step in any direction and could not plan its way out of a corridor it was
+        // standing in the middle of.
+        if (!this.standable(row, col)) continue;
         let bits = 0;
         for (let i = 0; i < STEP_MASK_DIRS.length; i++) {
           const d = STEP_MASK_DIRS[i];
           const r = row + d.dr, c = col + d.dc;
-          if (!this.inBounds(r, c) || !this.walkable(r, c)) continue;
+          if (!this.inBounds(r, c) || !this.standable(r, c)) continue;
           if (this._traceMoverStep(row, col, r, c)) bits |= (1 << i);
         }
         mask[(row - 1) * this.cols + (col - 1)] = bits;
@@ -1525,16 +1799,23 @@ export class RoomGeometry {
     // never run the bake behaves exactly as it always has, which is the property that makes
     // this safe to ship.
     //
-    // `walkable(r, c)` still gates the DESTINATION, deliberately and separately: that is a
-    // question about a square rather than about an edge, both failing steps above had
-    // walkable endpoints, and changing two things at once is how a fix stops being
-    // measurable.
+    // THE DESTINATION GATE WAS `walkable` AND IS NOW `standable`, AND THAT WAS THE SECOND
+    // HALF. This comment used to say the square question was left alone deliberately,
+    // because both failing steps at the time had walkable endpoints and changing two
+    // things at once is how a fix stops being measurable. That was right, and the
+    // measurement has since been made: the coarse grid is a SERVER artifact that nothing
+    // server-side consults for a player move, and 137 of 2164 positions in the operator's
+    // own walk logs are squares it calls wall with real BSP floor under every one.
+    //
+    // Leaving it on `walkable` made the rest of this change inert. `moverStepLands` can be
+    // as permissive as it likes; if `neighbors` never OFFERS the square, the router never
+    // asks. Measured: converting only the mover moved room 587's region count not at all.
     const authoritative = collision && this.hasStepMask;
     const dirs = authoritative ? DIRS : this.openDirections(row, col, { fine });
     for (const d of dirs) {
       const r = row + d.dr, c = col + d.dc;
       if (!this.inBounds(r, c)) continue;          // leaving the room is a separate act
-      if (!this.walkable(r, c)) continue;
+      if (!this.standable(r, c)) continue;
       // AN OBSERVATION OUTRANKS A MODEL, AND THE GOAL IS EXEMPT FROM ONLY ONE OF THEM.
       // `blockedEdges` is a step we actually asked for and were actually refused, so it
       // applies everywhere including the last one — exempting the goal there is how a
@@ -1665,11 +1946,13 @@ export class RoomGeometry {
       const pen = new Float32Array(this.rows * this.cols);
       for (let r = 1; r <= this.rows; r++) {
         for (let c = 1; c <= this.cols; c++) {
-          if (!this.walkable(r, c)) continue;
+          if (!this.standable(r, c)) continue;
           let open = 0;
           for (const d of DIRS) {
             const rr = r + d.dr, cc = c + d.dc;
-            if (this.inBounds(rr, cc) && this.walkable(rr, cc)
+            // Same predicate the router plans with, or the clearance penalty is measured
+            // against a ring of neighbours that is not the ring it can actually step to.
+            if (this.inBounds(rr, cc) && this.standable(rr, cc)
                 && this.moverStepLands(r, c, rr, cc)) open++;
           }
           pen[(r - 1) * this.cols + (c - 1)] = (DIRS.length - open) * weight;
@@ -1713,7 +1996,7 @@ export class RoomGeometry {
     const clearanceCost = this.clearanceField({ weight: clearance });
     if (!this.inBounds(fromRow, fromCol)) return { found: false, reason: 'start is outside the room grid' };
     if (!this.inBounds(toRow, toCol)) return { found: false, reason: 'goal is outside the room grid' };
-    if (!this.walkable(toRow, toCol)) return { found: false, reason: 'goal square has no floor' };
+    if (!this.standable(toRow, toCol)) return { found: false, reason: 'goal square has no floor' };
     if (fromRow === toRow && fromCol === toCol) return { found: true, steps: [] };
 
     // STANDING ON A SQUARE IS PROOF THAT IT IS STANDABLE, whatever the grid says.
@@ -1739,7 +2022,11 @@ export class RoomGeometry {
     // So: start from the nearest square the grid does believe in and prepend the step
     // to it. Fine movement covers that first hop with local BSP collision, not the grid.
     let start = { row: fromRow, col: fromCol }, lead = null;
-    if (!this.walkable(fromRow, fromCol)) {
+    // ...and `standable` is what makes that comment true rather than aspirational. Asked
+    // the grid's way, a character standing in a diagonal corridor square was "off the
+    // floor" and had its route start somewhere else — every walk, from a square it was
+    // legitimately on.
+    if (!this.standable(fromRow, fromCol)) {
       const near = this.nearestWalkable(fromRow, fromCol);
       if (!near) return { found: false, reason: 'no floor anywhere near the starting square', stuck: true };
       start = near;

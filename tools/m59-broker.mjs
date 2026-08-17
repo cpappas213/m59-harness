@@ -44,7 +44,7 @@ import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath }
   from './m59-map.mjs';
-import { CLIENT_FINENESS, protocolToClient } from './m59-roo.mjs';
+import { CLIENT_FINENESS, elideLoops, protocolToClient } from './m59-roo.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -3068,9 +3068,25 @@ class Session {
     // full second. Both are the same 5 squares/second.
     const gap = this._moveGapMs ?? MOVE_INTERVAL_MS;
     const dist = before ? Math.max(Math.abs(col - before.col), Math.abs(row - before.row)) : 1;
+    // THE ONE PLACE A PLANNED SQUARE BECOMES A PACKET, so it is the one place the aim can
+    // diverge from the plan. `moverStepLands` decides what to plan by tracing between the
+    // two squares' STAND POINTS; if this kept aiming at centres, the router would be
+    // authorising steps against one point and the mover attempting them against another —
+    // the exact split this whole subsystem exists to close.
+    //
+    // For every square whose centre is floor `standPointWire` returns `col * KOD_FINENESS
+    // + half` exactly, so ordinary movement is unchanged to the byte and only a square a
+    // wall cuts in half moves at all. Measured in Western border of the Twisted Wood: 1406
+    // squares identical to their centre — precisely the count the coarse grid calls
+    // walkable — and 299 moved, none of which the grid had accepted.
+    //
+    // Falls back to the centre when there is no geometry, which is both the honest answer
+    // for a room with no collision payload and what keeps this method liftable: it had no
+    // dependency on `this.world` at all before, and one of its test fixtures has none.
     const half = KOD_FINENESS >> 1;
-    const queued = await this.queueValidatedMove(col * KOD_FINENESS + half,
-      row * KOD_FINENESS + half, { speed, slide: true,
+    const aim = this.world?.geometry?.standPointWire?.(row, col)
+             ?? { x: col * KOD_FINENESS + half, y: row * KOD_FINENESS + half };
+    const queued = await this.queueValidatedMove(aim.x, aim.y, { speed, slide: true,
         beforeMutation: typeof beforeMutation === 'function'
           ? () => beforeMutation('move', { col, row }) : null,
         minGap: gap, expectedRoomId: roomId });
@@ -3312,6 +3328,29 @@ class Session {
     movementGeneration = this.movementGeneration, controlToken } = {}) {
     const c = this.need();
     const crumbs = this.breadcrumbs ?? [];
+    // TRIM THE LOOPS OUT OF THE TRAIL BEFORE WALKING IT BACKWARDS.
+    //
+    // The trail is what the character actually did, and what it actually did includes the
+    // bouncing that got it into trouble — `4,15 -> 5,15` / `5,15 -> 4,16`, over and over.
+    // Replaying that in reverse spends the crumb budget re-doing a round trip that arrived
+    // exactly where it started. `maxCrumbs` is 12, so a single eight-step bounce can eat
+    // the whole retreat and leave the character in the pocket it was trying to leave.
+    //
+    // Nothing here can be invented by removing a cycle, because both ends of a cycle are
+    // THE SAME SQUARE: the join is "X, then whatever followed X the last time", which is a
+    // pair the trail already contained. And every step is still put through the validator
+    // on the way back out, so a one-way ledge still stops the retreat rather than being
+    // teleported over — see the note below about a refused reverse step.
+    //
+    // Measured over the recorded walks: 41% of per-room runs contain a loop, and across
+    // all of them 47% of the squares visited are revisits. Some of that is a person
+    // exploring on purpose; none of it is worth undoing.
+    if (crumbs.length > 2) {
+      // Keyed on the EXACT landing point, which is what keeps the chain joinable — see
+      // elideLoops. A crumb is a validated move, not a square.
+      const trimmed = elideLoops(crumbs, cr => `${cr.roomId}:${cr.to.x},${cr.to.y}`);
+      if (trimmed.length < crumbs.length) crumbs.length = 0, crumbs.push(...trimmed);
+    }
     const roomId = c.room?.id;
     let steps = 0, blocked = null;
     while (steps < maxCrumbs && crumbs.length) {
@@ -3387,7 +3426,10 @@ class Session {
     // and produces a different dance each pass, which is both slower to converge and
     // impossible to reproduce in a test.
     if (prefer & 1) sides = [sides[1], sides[0]];
-    const free = (r, c) => geo.walkable(r, c) && !occupied.has(`${r},${c}`);
+    // `standable`: somewhere to step round a body is somewhere a body can BE, which is a
+    // question about floor rather than about the server's byte. `moverStepLands` still has
+    // to authorise the step itself, so this only widens the candidates, never the rules.
+    const free = (r, c) => geo.standable(r, c) && !occupied.has(`${r},${c}`);
     const canStep = (fr, fc, tr, tc) =>
       !blockedEdges.has(`${fr},${fc}>${tr},${tc}`) && geo.moverStepLands(fr, fc, tr, tc);
 
@@ -3459,7 +3501,14 @@ class Session {
     // all. The server does not check walls for players, so we can simply step onto
     // solid ground and carry on — but it has to be done deliberately, because from
     // here the pathfinder has nothing to say.
-    if (!geo.walkable(me0.row, me0.col)) {
+    //
+    // `standable`, NOT `walkable`, AND THIS ONE IS LOAD-BEARING. Asked the coarse grid's
+    // way, a character standing in a diagonal corridor square that the grid rounds down to
+    // wall — 137 such positions are recorded in the operator's own walk logs — reads as
+    // "parked off the floor" and gets DRAGGED to `nearestWalkable` before the walk even
+    // begins. That is the opposite of the repair: it takes a character that is standing
+    // somewhere perfectly legitimate and moves it, every walk, for ever.
+    if (!geo.standable(me0.row, me0.col)) {
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
       const spot = geo.nearestWalkable(me0.row, me0.col);
       if (!spot) return { arrived: false, reason: 'start_has_no_floor',
@@ -3505,7 +3554,9 @@ class Session {
         if (isTerminalMovementReason(fine?.reason))
           return { arrived: false, ...fine, position: fine.position ?? { col: me0.col, row: me0.row } };
         const now = c.self;
-        if (!now || !geo.walkable(now.row, now.col))
+        // Same question as above — did we reach ground a player can occupy — so it has to
+        // be the same predicate, or the recovery declares failure while standing on floor.
+        if (!now || !geo.standable(now.row, now.col))
           return { arrived: false, reason: 'could not step back onto solid ground',
                    position: now ?? r.position,
                    recovered_by: 'neither one clipped step nor fine walking reached floor',
@@ -3640,9 +3691,15 @@ class Session {
       let next = queue.shift();
       let hop = 1;
       const from0 = c.self ? { col: c.self.col, row: c.self.row } : null;
+      // THE SECOND AIM, AND IT HAS TO MATCH THE FIRST. This traces a straight line across
+      // several squares to decide which of them may be skipped, so if it measured that
+      // line between CENTRES while `step` sends stand points, the line proved clear is not
+      // the line walked. `standPoint` is the centre for every ordinary square, so this is
+      // unchanged wherever the old aim was right.
       const half0 = KOD_FINENESS >> 1;
-      const fineOf = s => ({ x: protocolToClient(s.col * KOD_FINENESS + half0),
-                             y: protocolToClient(s.row * KOD_FINENESS + half0) });
+      const fineOf = s => geo.standPoint?.(s.row, s.col)
+                       ?? { x: protocolToClient(s.col * KOD_FINENESS + half0),
+                            y: protocolToClient(s.row * KOD_FINENESS + half0) };
       const arrives = (a, b) => {
         const t = geo.traceFineMoveClient?.(a.x, a.y, b.x, b.y, { slide: false });
         return !!t && Math.hypot(t.x - b.x, t.y - b.y) <= PIVOT_ARRIVE_WITHIN;
@@ -7099,7 +7156,7 @@ const TOOLS = [
       if (!geometry)
         throw new Error(`move intent refused: room ${room} has no local ROO geometry`);
       if (row < 1 || row > geometry.rows || col < 1 || col > geometry.cols ||
-          !geometry.walkable(row, col))
+          !geometry.standable(row, col))
         throw new Error(`move intent destination ${col},${row} is outside the walkable room floor`);
       const maxSteps = Math.max(1, Math.min(400, Math.trunc(num(a.max_steps, 120))));
       const guard = rtsPacketAuthority({
@@ -7109,13 +7166,13 @@ const TOOLS = [
         validate: (packet, detail) => {
           const currentGeometry = s.world?.geometry;
           if (!currentGeometry || row < 1 || row > currentGeometry.rows ||
-              col < 1 || col > currentGeometry.cols || !currentGeometry.walkable(row, col))
+              col < 1 || col > currentGeometry.cols || !currentGeometry.standable(row, col))
             throw new Error(`RTS ${packet} refused: destination ${col},${row} is no longer on the walkable floor`);
           if (!detail || !Number.isSafeInteger(detail.col) || !Number.isSafeInteger(detail.row))
             throw new Error(`RTS ${packet} refused: no exact next-step square accompanied the packet`);
           if (detail.row < 1 || detail.row > currentGeometry.rows ||
               detail.col < 1 || detail.col > currentGeometry.cols ||
-              !currentGeometry.walkable(detail.row, detail.col))
+              !currentGeometry.standable(detail.row, detail.col))
             throw new Error(`RTS ${packet} refused: next step ${detail.col},${detail.row} is not walkable`);
         },
       });
@@ -7194,7 +7251,7 @@ const TOOLS = [
         if (!geometry)
           throw new Error(`${action} refused: room ${room} has no local ROO geometry`);
         if (row < 1 || row > geometry.rows || col < 1 || col > geometry.cols ||
-            !geometry.walkable(row, col))
+            !geometry.standable(row, col))
           throw new Error(`${action} destination ${col},${row} is outside the walkable room floor`);
       } else if (action === 'take' || action === 'grab_nearby') {
         targets = action === 'take' ? [Number(a.target)]
@@ -7350,7 +7407,7 @@ const TOOLS = [
           const geometry = s.world?.geometry;
           if (!geometry || detail.row < 1 || detail.row > geometry.rows ||
               detail.col < 1 || detail.col > geometry.cols ||
-              !geometry.walkable(detail.row, detail.col))
+              !geometry.standable(detail.row, detail.col))
             throw new Error(`RTS ${packet} refused: next step ${detail.col},${detail.row} is not walkable`);
         }
         if (action === 'rest_here' || action === 'recover_here') {

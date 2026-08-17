@@ -25,6 +25,7 @@
 //   5. walkTo USES IT AND THEN RE-PLANS — and a genuine dead end still reports itself,
 //      with the retreat named rather than swallowed.
 import { readFileSync } from 'node:fs';
+import { elideLoops } from './m59-roo.mjs';
 
 let pass = 0, fail = 0;
 const ok = (what, cond) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}`); } };
@@ -50,8 +51,10 @@ function lift(signature, name, deps = {}) {
 const KOD_FINENESS = 64;
 const queueValidatedMove = lift('async queueValidatedMove(x, y, {', 'queueValidatedMove',
   { MOVE_INTERVAL_MS: 0, CLIENT_FINENESS: 1024, noteGeometryDrift() {} });
+// THE REAL `elideLoops`, not a stand-in: the retreat now trims cycles out of the trail
+// before replaying it, and a hand-written imitation here would be testing the imitation.
 const retreatAlongBreadcrumbs = lift('async retreatAlongBreadcrumbs({', 'retreatAlongBreadcrumbs',
-  { KOD_FINENESS });
+  { KOD_FINENESS, elideLoops });
 const walkTo = lift('async walkTo(col, row, {', 'walkTo',
   { KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8, isTerminalMovementReason: () => false });
 
@@ -90,6 +93,10 @@ function fakeSession({ at = { col: 5, row: 5 }, roomId = 587, legal = () => true
     async stepFine() { return { moved: true }; },
     world: { geometry: {
       walkable: () => true,
+      // walkTo asks `standable` now — the BSP question rather than the server grid's.
+      // See RoomGeometry.standable. Modelled as true for the same reason `walkable` is:
+      // this fixture is about the breadcrumb trail, not about floor.
+      standable: () => true,
       nearestWalkable: () => null,
       // The router only ever offers a route out of a square it considers connected.
       path(fr, fc, tr, tc) {
