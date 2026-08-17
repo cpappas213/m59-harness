@@ -2660,7 +2660,16 @@ class Session {
     const request = await this.pacer.submit('read', () => c.roomContents());
     const t0 = Date.now();
     let cursor = since, fresh = true;
+    // BOUNDED IN WALL CLOCK, NOT ONLY PER REPLY. The per-wait timeout below only ends this
+    // loop if replies STOP; every reply that arrives for an older request advances `cursor`
+    // and sends it round again, so a stream of traffic keeps it spinning while the ordinal
+    // it wants never lands. That is not hypothetical — measured on the live fleet, 18 of 21
+    // characters sat inside one keeper pass for 300-1090s and CLIMBING, completing zero
+    // passes, at ~38% CPU. Low CPU is the tell: they were not computing, they were waiting
+    // 2s at a time, for ever. The board said "travelling" throughout and nobody moved.
+    const CONFIRM_DEADLINE_MS = 8000;
     while ((c.roomContentsReceived ?? request) < request) {
+      if (Date.now() - t0 >= CONFIRM_DEADLINE_MS) { fresh = false; break; }
       const reply = await c.waitFor({ since: cursor, kinds: ['room-contents'], timeoutMs: 2000 });
       if (reply.timedOut) { fresh = false; break; }
       cursor = reply.seq;
