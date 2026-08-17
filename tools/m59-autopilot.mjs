@@ -10499,6 +10499,92 @@ export class Autopilot {
     return true;
   }
 
+  // ── Bank trip decomposition ────────────────────────────────────────
+  // These are the seam between bankRun() and its internal decisions. Each
+  // method is independently testable and can be reused elsewhere.
+
+  /**
+   * Should we go to town?
+   *
+   * @returns {{go: boolean, reason: string|null, carried: number, packFull: boolean, starving: boolean, brokeWithGoods: boolean}}
+   */
+  _bankRunShouldGo() {
+    const above = this.policy.bankAbove;
+    if (!above) return { go: false, reason: 'disabled', carried: 0, packFull: false, starving: false, brokeWithGoods: false };
+
+    const c = this.s.need();
+    const carried = (c.inventory || [])
+      .filter(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))
+      .reduce((t, o) => t + (o.amount || 1), 0);
+
+    const sellCall = this.checkIfShouldSell();
+    const packFull = sellCall.sell && sellCall.trigger !== 'broke';
+
+    const reag = this.reagentCount();
+    const canCook = reag.elderberry >= 2 && reag.herbs >= 2;
+    const spendable = carried - (this.policy.hungryFloor ?? 100);
+    const FOOD_TRIP_COOLDOWN_MS = 300_000;
+    const triedRecently = Date.now() - (this.foodTripAt ?? 0) < FOOD_TRIP_COOLDOWN_MS;
+    const balance = this.s.bankKnown?.()?.balance ?? 0;
+    const canFetch = balance >= 200;
+    const starving = purchaseEnabled(this.policy, 'food') &&
+                     !this.larder(c).length && !canCook &&
+                     (spendable >= 60 || canFetch) && !triedRecently;
+
+    const SELL_TRIP_COOLDOWN_MS = 600_000;
+    const soldRecently = Date.now() - (this.sellTripAt ?? 0) < SELL_TRIP_COOLDOWN_MS;
+    const spare = (c.inventory || [])
+      .filter(o => !/shilling/i.test(c.rsc.get(o.nameRsc) || '')).length;
+    const brokeWithGoods = sellCall.trigger === 'broke' && !soldRecently && !starving;
+
+    const go = carried > above || packFull || starving || brokeWithGoods;
+    const reason = !go ? null
+      : (starving && !packFull && carried <= above ? 'starving'
+      : (packFull || brokeWithGoods) && carried <= above ? 'pack_full_or_broke'
+      : 'carrying_enough');
+
+    return { go, reason, carried, packFull, starving, brokeWithGoods };
+  }
+
+  /**
+   * Rank destinations by hops.
+   *
+   * @param {{packFull: boolean, brokeWithGoods: boolean, starving: boolean, carried: number}} ctx
+   * @returns {Array<{room: number, name: string, hops: number}>}
+   */
+  _bankRunRankDestinations(ctx) {
+    const s = this.s;
+    const needsCashFirst = ctx.starving && (ctx.carried - (this.policy.hungryFloor ?? 100)) < 60 && (this.s.bankKnown?.()?.balance ?? 0) >= 200;
+
+    const destinations = needsCashFirst ? BANKS
+                       : (ctx.starving && !ctx.packFull && ctx.carried <= this.policy.bankAbove ? [FOOD_SHOP]
+                       : ((ctx.packFull || ctx.brokeWithGoods) && ctx.carried <= this.policy.bankAbove ? MARKETS : BANKS));
+
+    return destinations
+      .map(b => { const r = s.world?.route?.(b.room);
+                  return { ...b, hops: r?.found ? r.hops.length : Infinity }; })
+      .sort((x, y) => x.hops - y.hops);
+  }
+
+  /**
+   * Do town business: sell, bank, restock, buy food/reagents.
+   */
+  async _bankRunDoTownBusiness() {
+    await this.contributeGuildWants().catch(error =>
+      this.note('could not contribute to the guild chests', { why: error.message }));
+    const sale = await this.sellInTown().catch(() => null);
+    await this.guildTitheFromSale(sale).catch(error =>
+      this.note('could not pay guild tithe', { why: error.message }));
+    await this.bankSurplus().catch(() => {});
+    await this.withdrawForFood().catch(() => {});
+    await this.restockInTown().catch(() => {});
+    await this.buyFoodInTown().catch(() => {});
+    await this.buyReagentsInTown().catch(() => {});
+    await this.buyFarmDeliveryCargo().catch(() => {});
+    await this.vaultRunIfPassing().catch(() => {});
+    this.lastTownServiceAt = Date.now();
+  }
+
   async bankRun() {
     const above = this.policy.bankAbove;
     if (!above) return false;                       // 0 or null turns the trips off
@@ -10514,155 +10600,28 @@ export class Autopilot {
     // file keeps re-learning.
     await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
     await c.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
-    const carried = (c.inventory || [])
-      .filter(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))
-      .reduce((t, o) => t + (o.amount || 1), 0);
-    // A FULL PACK IS ALSO A REASON TO GO TO TOWN, AND WITHOUT IT THE LOOP CANNOT START.
-    //
-    // The trip fired on money alone: carry more than bankAbove and go and deposit it.
-    // But the money comes from SELLING, selling happens in town, and the fleet had no
-    // way to get there -- twenty-one characters sat between 0 and 491 shillings against
-    // a threshold of 500, hauling 1,864 units of mushroom, gem and tooth they could not
-    // convert. Rich enough to bank was the only door, and it was the door on the far
-    // side of the thing they needed to do.
-    //
-    // So a pack at or over its cap opens the same trip. The walk pays for itself the
-    // moment the goods are sold, which is the whole point of going.
-    // FULL IS A WEIGHT, NOT A COUNT OF STACKS, AND THE TWO DISAGREE COMPLETELY.
-    //
-    // Measured across the fleet in one pass: Kermit held ELEVEN stacks at 99 of 2400 --
-    // four per cent loaded -- while Statler held SIX at 2084 of 2400, nearly full. Counting
-    // stacks sent the empty character to market and left the loaded one in the field, which
-    // is exactly backwards, and it is why the fleet was seen queueing at Roq with almost
-    // nothing to sell.
-    //
-    // The server gives the real numbers: `weight_max = 1700 + might * 20` (player.kod:10456)
-    // and an exact `load`, both weight and bulk. Either can bind, so the fuller of the two
-    // decides. The stack cap is kept as a ceiling -- the pack does hold about fourteen -- but
-    // it is now the second test rather than the only one.
-    const stacks = (c.inventory || []).length;
-    const cap = this.policy.maxCarry ?? 14;
-    // `carryCapacity` is the one place that knows the formula, and it REFUSES to guess:
-    // when an item is not in the weight table the load it returns is a lower bound and
-    // `room_for` comes back null. Reading it as "there is room" is the failure direction,
-    // so an inexact load is treated as a reason to go and sell rather than a reason to
-    // carry on -- the same rule that file states for making room.
-    // ONE DEFINITION, ASKED HERE. `checkIfShouldSell` above owns both the thresholds and
-    // the override seam; duplicating the arithmetic at the call site is how a quantity in
-    // this repository ends up with two answers.
-    const sellCall = this.checkIfShouldSell();
-    const packFull = sellCall.sell && sellCall.trigger !== 'broke';
 
-    // AND AN EMPTY LARDER IS THE THIRD REASON, FOR EXACTLY THE REASON THE PACK WAS THE
-    // SECOND: the food is in town and the only doors to town were money and a full pack.
-    //
-    // Everything needed to buy food already worked. restockReagents ranks a shop's menu by
-    // vigor per shilling and buys until the gap closes; buyFoodInTown walks the last hop to
-    // 103. Neither ever ran, because both hang off the end of a bank trip and the trip
-    // needs 500 shillings or fourteen stacks to start. The fleet settles at a 400-shilling
-    // walking float and six to twelve stacks, so neither door opens: measured this pass,
-    // THREE of twenty-one keepers had any spending recorded at all, while thirteen of
-    // twenty-one carried no food. The buying was never the problem; the arriving was.
-    //
-    // Casting is the cheaper route and stays the first one -- but it needs 2 elderberry and
-    // 2 herbs in the same pack, and this fleet's reagents segregate by which room each
-    // character farms. Five passes running, the almoner has redistributed them and they
-    // have re-separated by the next. So the test is "no food AND no way to make any",
-    // which is precisely the state a shop fixes and nothing else in the field does.
-    //
-    // A hunger trip aims at the BREAD SHOP, not a bank. Sending it to a counter that sells
-    // no food is the same mistake as aiming a full pack at a banker -- the one this file
-    // already records as leaving Camilla and Floyd standing at Jasper with sixteen stacks
-    // and nobody who would pay for any of it.
-    const reag = this.reagentCount();
-    const canCook = reag.elderberry >= 2 && reag.herbs >= 2;
-    // ENOUGH TO BUY SOMETHING AFTER THE FLOAT IS TAKEN OUT, AND NOT MORE OFTEN THAN THE
-    // SHELF CAN CHANGE.
-    //
-    // The first version of this asked only for 60 shillings, reasoning that the cheapest
-    // thing on that shelf is an apple at 45. That ignored the float: restockReagents keeps
-    // `hungryFloor` (100) back for the walk home and spends only what is above it, so a
-    // character holding 108 arrives with a budget of 8, buys nothing, walks back still
-    // starving, and sets off again on the very next pass. It is a closed loop with a walk
-    // across the world in it, and it ran: FIVE characters logged one town trip per keeper
-    // pass -- t13 made 386 trips in 386 passes -- until this was capped. The whole fleet's
-    // time went into it and the board still said "travelling", which is what it always
-    // says.
-    //
-    // So the test is what will be SPENDABLE on arrival, not what is in the purse, plus a
-    // cooldown so a shelf that had nothing affordable is not re-checked every eight
-    // seconds. Selling is what fixes a poor character, and the pack-full door already
-    // takes it to a market to do that.
-    const spendable = carried - (this.policy.hungryFloor ?? 100);
-    const FOOD_TRIP_COOLDOWN_MS = 300_000;
-    const triedRecently = Date.now() - (this.foodTripAt ?? 0) < FOOD_TRIP_COOLDOWN_MS;
-    // A BALANCE IS ALSO MONEY, PROVIDED SOMETHING GOES AND FETCHES IT.
-    //
-    // Requiring 60 spendable in HAND made the door useless to exactly the characters that
-    // needed it: eight of the eleven with no food and no way to cook were carrying 104-115
-    // against a 100 float, while holding thousands in the bank. They are not poor, they are
-    // illiquid -- and withdrawForFood() is now the thing that fixes that, at a counter.
-    const balance = s.bankKnown?.()?.balance ?? 0;
-    const canFetch = balance >= 200;
-    const starving = purchaseEnabled(this.policy, 'food') &&
-                     !this.larder(c).length && !canCook &&
-                     (spendable >= 60 || canFetch) && !triedRecently;
-    // Which counter first. With money in hand the bread shop is the whole trip; without
-    // it, the bank comes first and buyFoodInTown walks the last hop afterwards.
-    const needsCashFirst = starving && spendable < 60 && canFetch;
+    // Should we go?
+    const { go, reason, carried, packFull, starving, brokeWithGoods } = this._bankRunShouldGo();
+    if (!go) {
+      // Say what we saw, occasionally. A threshold that never trips is indistinguishable
+      // from one that is never checked, and that cost an eight-minute run to find out.
+      if (carried > 0 && (!this.notedPurse || Date.now() - this.notedPurse > 120_000)) {
+        this.notedPurse = Date.now();
+        const stacks = (c.inventory || []).length;
+        const cap = this.policy.maxCarry ?? 14;
+        this.note('carrying, but under the banking threshold', { carrying: carried, banks_at: above, stacks, pack_cap: cap });
+      }
+      return false;
+    }
 
-    // BROKE WHILE CARRYING A FORTUNE IN LOOT, WHICH IS THE SAME SHAPE AS THE LAST TWO.
-    //
-    // A bank trip needs 500 shillings and the pack trip needs a full pack, so a character
-    // with 103 shillings, nothing banked and ten stacks of goods opens neither door and
-    // never sells. Measured this pass: Scooter carrying 110 elderberry, 36 red mushroom,
-    // 28 purple, 24 mushroom, 10 sapphire and 3 emerald, unable to buy the 480 leather it
-    // needs; Bunsen and Beaker the same. They are not poor, they are holding stock.
-    //
-    // The door that fixes the condition required the condition already fixed -- the same
-    // trap as "cannot afford food because it never goes to the shop that sells it" and
-    // "cannot re-arm because the check cannot see broken gear". Being unable to replace
-    // your armour is exactly when selling matters, so that is the trigger.
-    //
-    // A MARKET, NOT A BANK: Roq buys, a banker takes and gives nothing back. And unlike
-    // the food trip this one cannot spin, because it always achieves something -- the goods
-    // become money on arrival and the condition clears itself. The cooldown is here anyway,
-    // because a character that reaches Roq and sells nothing (everything protected, or the
-    // walk failed) must not turn round and set off again on the next pass.
-    const SELL_TRIP_COOLDOWN_MS = 600_000;
-    const soldRecently = Date.now() - (this.sellTripAt ?? 0) < SELL_TRIP_COOLDOWN_MS;
-    // What a replacement piece of armour costs at the dearest counter the router might
-    // pick, which is the bill this trip exists to make payable.
-    const tooPoorToReplaceGear = carried + balance < 500;
-    // Only worth a walk if there is something aboard to sell. This is a PROXY -- stacks
-    // that are not money -- and deliberately not a call to skills.sellable, which judges one
-    // item at a time and needs the worn list and the keep regex to answer. Getting that
-    // exactly right here would duplicate sellAll's decision in a second place, and a
-    // quantity with two homes in this repository has always ended up with two answers.
-    //
-    // Being wrong costs a walk that sells less than hoped, which sellAll reports honestly;
-    // the trip is still the right call for a character that cannot replace its armour.
-    const spare = (c.inventory || [])
-      .filter(o => !/shilling/i.test(c.rsc.get(o.nameRsc) || '')).length;
-    // OFF BY DEFAULT NOW, AND THE POLICY LIVES IN DUM.
-    //
-    // `spare >= 4` is four stacks -- four kinds of mushroom clears it -- and `< 500` catches
-    // most of the fleet the moment a moot or a hand-out moves money around. Both were true
-    // for nearly everyone at once, so twenty characters set off for the same NPC carrying
-    // almost nothing. The trip is not wrong in principle; the threshold made it fire when
-    // there was nothing worth selling, and it competed with the thing the fleet was
-    // actually for, which is being ready for the next window.
-    //
-    // Selling when the pack is genuinely HEAVY is now the default, above. Selling because
-    // a character is poor is a judgement about what the fleet is saving for, which is
-    // exactly the kind of decision that belongs in a doctrine rather than in the keeper --
-    // see `market` in meridian59-dum-bot. `sell_when_broke: true` restores the old
-    // behaviour for anyone who wants it.
-    const brokeWithGoods = sellCall.trigger === 'broke' && !soldRecently && !starving;
+    // Notes for the trip
     if (brokeWithGoods && !this.notedBroke) {
       this.notedBroke = true;
       this.note('out of money with a pack worth selling -- going to market', {
-        purse: carried, banked: balance, sellable_stacks: spare, to: MARKETS[0]?.name,
+        purse: carried, banked: this.s.bankKnown?.()?.balance ?? 0,
+        sellable_stacks: (c.inventory || []).filter(o => !/shilling/i.test(c.rsc.get(o.nameRsc) || '')).length,
+        to: MARKETS[0]?.name,
         why: 'a bank trip needs 500 and a pack trip needs a full pack; with neither, a ' +
              'character carrying loot it could sell stands in a field unable to replace ' +
              'its armour' });
@@ -10670,6 +10629,7 @@ export class Autopilot {
     if (!brokeWithGoods) this.notedBroke = false;
     if (starving && !this.notedStarving) {
       this.notedStarving = true;
+      const reag = this.reagentCount();
       this.note('out of food and cannot cook -- going to town for some', {
         purse: carried, reagents: reag, to: FOOD_SHOP.name,
         why: 'resting stops at 80 vigor and everything above it has to be eaten; with no ' +
@@ -10677,75 +10637,35 @@ export class Autopilot {
     }
     if (!starving) this.notedStarving = false;
 
-    if (carried <= above && !packFull && !starving && !brokeWithGoods) {
-      // Say what we saw, occasionally. A threshold that never trips is indistinguishable
-      // from one that is never checked, and that cost an eight-minute run to find out.
-      if (carried > 0 && (!this.notedPurse || Date.now() - this.notedPurse > 120_000)) {
-        this.notedPurse = Date.now();
-        this.note('carrying, but under the banking threshold', { carrying: carried, banks_at: above, stacks, pack_cap: cap });
-      }
-      return false;
-    }
-
-    // A BANK-DRIVEN TRIP (not food, not sell) needs a cooldown, or a character standing
-    // in a market with an unweighable pack fires a 0-hop trip every pass. The food and
-    // sell trips already have their own cooldowns above; this one covers the rest.
+    // Cooldown for bank-driven trips
     const BANK_TRIP_COOLDOWN_MS = 300_000;
     if (!starving && !brokeWithGoods && this.bankTripAt &&
         Date.now() - this.bankTripAt < BANK_TRIP_COOLDOWN_MS) {
       return false;
     }
 
-    // Jasper and Tos share one account, so the only question is which is nearer.
-    // world.route() returns {found, hops:[...]}, NOT an array -- taking .length off it
-    // gives undefined, every bank scores Infinity, and the character stands in a field
-    // with 5,840 shillings reporting that it cannot reach a bank seven hops away.
-    // A FULL PACK GOES TO THE MARKET; MONEY GOES TO THE BANK. Aiming a pack-driven trip
-    // at a bank is what left Camilla and Floyd standing at the Jasper counter with
-    // sixteen stacks each and nobody there who would pay for any of it -- the banker
-    // being the one NPC that takes goods and gives nothing back.
-    // A full pack goes to the market, money goes to the bank, and an empty larder goes to
-    // the bread shop -- but only when hunger is the ONLY reason. A character that is also
-    // rich or also full has business at the counter that pays, and buyFoodInTown runs at
-    // the end of that trip anyway, so it gets both out of one walk.
-    // A full pack goes to the market, money goes to the bank, an empty larder to the bread
-    // shop -- and a broke character with goods goes to the market too, for the same reason
-    // the full pack does: Roq is the one who pays, and a banker takes and gives nothing.
-    const destinations = needsCashFirst ? BANKS
-                       : (starving && !packFull && carried <= above ? [FOOD_SHOP]
-                       : ((packFull || brokeWithGoods) && carried <= above ? MARKETS : BANKS));
-    const options = destinations
-      .map(b => { const r = s.world?.route?.(b.room);
-                  return { ...b, hops: r?.found ? r.hops.length : Infinity }; })
-      .sort((x, y) => x.hops - y.hops);
+    // Where to?
+    const options = this._bankRunRankDestinations({ packFull, brokeWithGoods, starving, carried });
     const target = options[0];
     if (!Number.isFinite(target.hops)) {
       if (!this.warnedNoBank) {
         this.warnedNoBank = true;
-        this.note("cannot reach a market or bank", { carrying: carried, stacks, tried: options.map(o => o.name) });
+        this.note("cannot reach a market or bank", { carrying: carried, stacks: (c.inventory || []).length, tried: options.map(o => o.name) });
       }
       return false;
     }
 
-    // Claim the return cargo while the destination is still unambiguous: this is the
-    // farming room the seller is leaving, not whichever shop the town leg ends in.
+    // Claim the return cargo while the destination is still unambiguous
     this.prepareFarmDelivery(room.num);
     if (packFull || brokeWithGoods) await this.farmCleanupBeforeSale().catch(error => {
       this.coordination.cleanup.refused++;
       this.note('farm clean-up could not finish', { why: error.message, consequence: 'selling trip continues' });
     });
 
+    // Travel there
     this.doing = 'travelling';
-    // Stamp the attempt, not the success -- the cooldown exists to stop a walk that buys
-    // nothing from repeating, and "bought nothing" is the case that would otherwise never
-    // set it.
     if (starving) this.foodTripAt = Date.now();
     if (brokeWithGoods) this.sellTripAt = Date.now();
-    // A BANK TRIP HAS NO COOLDOWN, and a 0-hop bank trip (character already at the bank)
-    // completes in the same pass it fires. Without a cooldown the next pass fires it
-    // again: the character stands in a market with an unweighable pack, "travels" 0
-    // hops, sells/banks what it can, and the next pass does the same. The trip must
-    // set a cooldown so a no-op round doesn't repeat every eight seconds.
     if (!starving && !brokeWithGoods) this.bankTripAt = Date.now();
     this.note(starving && !packFull && carried <= above ? 'going to town for food' : 'going to the bank', {
       carrying: carried, to: target.name, hops: target.hops, keeping: this.policy.walkingMoney ?? 400,
@@ -10753,10 +10673,6 @@ export class Autopilot {
         ? 'no food and not both reagents, so the only vigor above the resting cap is bought'
         : 'everything carried is dropped on death and usually unrecoverable; a balance is not' });
     if ((await this.leaveHold('walking to the bank')).refused) return true;
-    // ALREADY AT THE DESTINATION: 0 hops means the character is standing where it needs
-    // to be. Travel is a no-op and the trip should just do the selling/banking in place.
-    // Without this, a character standing in a market with an unweighable pack fires a
-    // sell trip to the same room every pass -- "travel" 0 hops, arrive, next pass, repeat.
     const r = target.hops === 0
       ? { arrived: true, room: room.num, position: { col: c.me?.col, row: c.me?.row } }
       : await this.travel(target.room, { maxHops: Math.max(12, target.hops + 4) })
@@ -10770,53 +10686,11 @@ export class Autopilot {
       this.money.trips_failed++;
       if (this.money.why_not.length < 6) this.money.why_not.push({ to: target.room, why: r.reason || 'did not arrive' });
       this.noProgress('could not reach the bank');
-      return true;                                   // the pass was spent walking either way
+      return true;
     }
-    // A TOWN TRIP IS THE ONLY TIME SELLING IS FREE, AND IT WAS BEING WASTED.
-    //
-    // Selling lived in exactly one place -- makeRoom(), reached when
-    // `inventory.length >= policy.maxCarry`. maxCarry defaults to 40 and the game's pack
-    // holds about fourteen STACKS, so the condition is unreachable and the keeper has
-    // never sold anything. Measured across the fleet: 1,864 units of mushroom, gem and
-    // tooth being carried, Floyd alone hauling 311, every one of them saleable and none
-    // of it wanted by anybody.
-    //
-    // The walk to the bank is already paid for, so the order is sell, bank, restock:
-    // sell first so the proceeds are bankable and spendable, bank the surplus so death
-    // cannot take it, and buy food and reagents last with the float that is left.
-    // BEFORE THE VENDOR SEES ANY OF IT. The order is pack -> the character's own floor ->
-    // the guild's chests -> sold -> banked, and it has to be that order: a mushroom sold in
-    // the first line of a town trip cannot be un-sold into a chest in the last. The keep
-    // test below is the belt to this braces, for the sell paths that do not come through
-    // here.
-    await this.contributeGuildWants().catch(error =>
-      this.note('could not contribute to the guild chests', { why: error.message }));
-    const sale = await this.sellInTown().catch(() => null);
-    await this.guildTitheFromSale(sale).catch(error =>
-      this.note('could not pay guild tithe', { why: error.message }));
-    await this.bankSurplus().catch(() => {});
-    await this.withdrawForFood().catch(() => {});
-    await this.restockInTown().catch(() => {});
-    // AND THE WHOLE POINT OF THE MONEY IS FOOD, SO GO AND GET SOME.
-    //
-    // restockInTown buys where the trip ENDED, and the two destinations sell nothing
-    // edible: Roq deals in everything but stocks nothing, and a bank is a bank. So the
-    // sell leg ran, the buy leg did not, and the fleet got rich and hungry at the same
-    // time -- 67,669 shillings banked with twenty of twenty-one characters under 100
-    // vigor, which is the resting cap doing all the work.
-    //
-    // Roq is in Barloque and so is the bread: 103 The Bhrama & Falcon is a short hop,
-    // and it is the one shelf carrying cheese, meat pie, bread and apples together.
-    await this.buyFoodInTown().catch(() => {});
-    // One more hop, for the ingredients rather than the meal. Cheaper per vigor point than
-    // bread and it is what keeps the character fed in the FIELD, where no shop is.
-    await this.buyReagentsInTown().catch(() => {});
-    // Own food and reagent floors are filled first. Whatever remains above the walking
-    // reserve now buys the room's shared cargo, so helping the fleet cannot strand the
-    // courier that is carrying it.
-    await this.buyFarmDeliveryCargo().catch(() => {});
-    await this.vaultRunIfPassing().catch(() => {});
-    this.lastTownServiceAt = Date.now();
+
+    // Do town business
+    await this._bankRunDoTownBusiness();
     this.progress('banked the takings');
     return true;
   }
