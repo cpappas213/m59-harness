@@ -9,6 +9,7 @@
 import {
   getFleeTree, doomedNode, fleeThresholdNode, sanctuarySettleNode,
   getAWallNode, vigorWalkNode, leaveRoomNode, restNode,
+  armHealthNode, healNode, restUntilNode,
 } from './m59-bt-flee.mjs';
 
 let passed = 0, failed = 0;
@@ -218,6 +219,49 @@ t('restNode: SUCCESS when safe and hurt', async () => {
   });
   k.s.client.vitals = () => ({ health: { value: 20, max: 36 }, vigor: { value: 140, max: 200 } });
   const node = restNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'SUCCESS') throw new Error(`expected SUCCESS, got ${r}`);
+});
+
+// --- Sub-nodes: armHealth, heal, restUntil ---
+
+t('armHealthNode: FAILURE when not hurt', async () => {
+  const k = mockKeeper({
+    hold: null,
+    holdWorks: () => false,
+  });
+  k.s.client.vitals = () => ({ health: { value: 36, max: 36 }, vigor: { value: 140, max: 200 } });
+  const node = armHealthNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'FAILURE') throw new Error(`expected FAILURE, got ${r}`);
+});
+
+t('armHealthNode: SUCCESS when hurt', async () => {
+  const k = mockKeeper({
+    hold: null,
+    holdWorks: () => false,
+    _btFleeNudge: async () => ({ moved: true }),
+  });
+  k.s.client.vitals = () => ({ health: { value: 20, max: 36 }, vigor: { value: 140, max: 200 } });
+  const node = armHealthNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'SUCCESS') throw new Error(`expected SUCCESS, got ${r}`);
+});
+
+t('healNode: SUCCESS when healed', async () => {
+  const k = mockKeeper({
+    _btFleeHealUp: async () => ({ healed: true, used: ['flask'] }),
+  });
+  const node = healNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'SUCCESS') throw new Error(`expected SUCCESS, got ${r}`);
+});
+
+t('restUntilNode: SUCCESS', async () => {
+  const k = mockKeeper({
+    _btFleeRestUntil: async () => null,
+  });
+  const node = restUntilNode(k);
   const r = await node.tickAsync(bb(k));
   if (r !== 'SUCCESS') throw new Error(`expected SUCCESS, got ${r}`);
 });

@@ -380,10 +380,107 @@ export function leaveRoomNode(keeper) {
 // Node: rest (safe to sit down, heal and recover)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Node: arm_health (turn or nudge to arm health regeneration)
+// ---------------------------------------------------------------------------
+
+export function armHealthNode(keeper) {
+  return asyncAction(async (bb) => {
+    const hp = hpFrac(bb);
+    const v = vitals(bb);
+    const sheltered = keeper.holdWorks();
+
+    const restAt = Math.max(
+      keeper.policy.restBelow,
+      sheltered ? keeper.policy.holdResumeAbove : 0,
+      keeper.recoverUntilWhole && !keeper.recovered() ? 1 : 0,
+      keeper.mode === 'farm' && keeper.policy.hunt && !keeper.recoverUntilWhole && keeper.armed()
+        ? keeper.safety().engageAt : 0
+    );
+
+    if (hp === null || hp >= restAt) return FAILURE; // not hurt enough to need healing
+
+    const n = keeper.hold
+      ? await keeper._btFleeTurnInPlace().catch(() => ({ turned: false }))
+      : await keeper._btFleeNudge().catch(() => ({ moved: false }));
+
+    if (n.turned) keeper.turnedAt = Date.now();
+    if (n.moved) keeper.movedAt = Date.now();
+
+    if (n.moved && keeper.hold) {
+      // Drifted off the safe square -- walk back
+      const back = await keeper._btFleeReturnToSpot().catch(() => ({ arrived: false }));
+      if (back.arrived) {
+        keeper.note('drifted off the safe square and walked back', {
+          where: { col: keeper.hold.col, row: keeper.hold.row },
+          off_by: back.off_by ?? null,
+          why: 'the square is known to hold and we are too hurt to fight in the open; ' +
+               'returning is cheaper than finding another one',
+        });
+      } else {
+        keeper.releaseHold(`moved off the square and could not get back: ${back.why || 'unknown'}`);
+      }
+    } else if (n.turned) {
+      keeper.note('turned to arm health regeneration', {
+        kept: keeper.hold ? { col: keeper.hold.col, row: keeper.hold.row } : null,
+        why: 'this wakes the monsters, and in a working safe spot that costs nothing -- ' +
+             'they cannot reach us, and the flag it sets is what lets health come back',
+      });
+    } else if (n.moved) {
+      keeper.note('stepped to arm health regeneration', n);
+    }
+
+    return SUCCESS;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Node: heal (use flasks or wait for HealthTimer)
+// ---------------------------------------------------------------------------
+
+export function healNode(keeper) {
+  return asyncAction(async (bb) => {
+    const hp = hpFrac(bb);
+    const sheltered = keeper.holdWorks();
+
+    const h = await keeper._btFleeHealUp(0.95).catch(() => ({ healed: false }));
+    if (h.healed) {
+      keeper.note('healed', { used: h.used, health: h.health });
+    } else {
+      keeper.note('healing the slow way', {
+        why: 'no flasks, waiting for HealthTimer',
+      });
+      if ((hp ?? 1) < 0.25 && !sheltered) {
+        // Very hurt in the open -- this is dangerous
+        keeper.note('very hurt in the open', {
+          health: Math.round(hp * 100) + '%',
+          why: 'below 25% outside a safe spot -- this is how characters die',
+        });
+      }
+    }
+    return SUCCESS;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Node: rest (rest until fit)
+// ---------------------------------------------------------------------------
+
+export function restUntilNode(keeper) {
+  return asyncAction(async (bb) => {
+    await keeper._btFleeRestUntil().catch(() => {});
+    keeper.tally.rests = (keeper.tally.rests || 0) + 1;
+    keeper.progress('resting up to fighting strength');
+    return SUCCESS;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Node: rest (composite: arm health, heal, rest until fit)
+// ---------------------------------------------------------------------------
+
 export function restNode(keeper) {
   return asyncAction(async (bb) => {
-    const s = bb.session.s;
-    const c = bb.client;
     const hostiles = keeper._btFleeHostiles();
     const hp = hpFrac(bb);
     const v = vitals(bb);
@@ -423,60 +520,16 @@ export function restNode(keeper) {
 
     keeper.doing = 'recovering';
 
-    // Arm health regeneration
-    if (hp !== null && hp < restAt) {
-      const n = keeper.hold
-        ? await keeper._btFleeTurnInPlace().catch(() => ({ turned: false }))
-        : await keeper._btFleeNudge().catch(() => ({ moved: false }));
+    // Tick the sub-nodes
+    const armHealth = armHealthNode(keeper);
+    const heal = healNode(keeper);
+    const restUntil = restUntilNode(keeper);
 
-      if (n.turned) keeper.turnedAt = Date.now();
-      if (n.moved) keeper.movedAt = Date.now();
-
-      if (n.moved && keeper.hold) {
-        // Drifted off the safe square -- walk back
-        const back = await keeper._btFleeReturnToSpot().catch(() => ({ arrived: false }));
-        if (back.arrived) {
-          keeper.note('drifted off the safe square and walked back', {
-            where: { col: keeper.hold.col, row: keeper.hold.row },
-            off_by: back.off_by ?? null,
-            why: 'the square is known to hold and we are too hurt to fight in the open; ' +
-                 'returning is cheaper than finding another one',
-          });
-        } else {
-          keeper.releaseHold(`moved off the square and could not get back: ${back.why || 'unknown'}`);
-        }
-      } else if (n.turned) {
-        keeper.note('turned to arm health regeneration', {
-          kept: keeper.hold ? { col: keeper.hold.col, row: keeper.hold.row } : null,
-          why: 'this wakes the monsters, and in a working safe spot that costs nothing -- ' +
-               'they cannot reach us, and the flag it sets is what lets health come back',
-        });
-      } else if (n.moved) {
-        keeper.note('stepped to arm health regeneration', n);
-      }
-
-      // Heal
-      const h = await keeper._btFleeHealUp(0.95).catch(() => ({ healed: false }));
-      if (h.healed) {
-        keeper.note('healed', { used: h.used, health: h.health });
-      } else {
-        keeper.note('healing the slow way', {
-          why: 'no flasks, waiting for HealthTimer',
-        });
-        if ((hp ?? 1) < 0.25 && !sheltered) {
-          // Very hurt in the open -- this is dangerous
-          keeper.note('very hurt in the open', {
-            health: Math.round(hp * 100) + '%',
-            why: 'below 25% outside a safe spot -- this is how characters die',
-          });
-        }
-      }
+    for (const node of [armHealth, heal, restUntil]) {
+      const r = await node.tickAsync(bb);
+      if (r === FAILURE) return FAILURE;
     }
 
-    // Rest until fit
-    await keeper._btFleeRestUntil().catch(() => {});
-    keeper.tally.rests = (keeper.tally.rests || 0) + 1;
-    keeper.progress('resting up to fighting strength');
     return SUCCESS;
   });
 }
