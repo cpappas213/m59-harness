@@ -225,7 +225,11 @@ t('noHuntTargetNode: SUCCESS when hunt is not set', async () => {
 });
 
 t('unarmedNode: FAILURE when armed', async () => {
+  // Armed now means "a weapon in the pack" (the node checks weaponsOf, not just the
+  // wielding flag), so the mock must actually carry one for this to be a fair test.
   const k = mockKeeper({ armed: () => true });
+  k.s.client.inventory = [{ nameRsc: 7 }];
+  k.s.client.rsc = { get: (r) => (r === 7 ? 'mace' : '') };
   const node = unarmedNode(k);
   const r = await node.tickAsync(bb(k));
   if (r !== FAILURE) throw new Error(`expected FAILURE, got ${r}`);
@@ -246,6 +250,23 @@ t('tooTiredNode: FAILURE when vigor is above floor', async () => {
   const node = tooTiredNode(k);
   const r = await node.tickAsync(bb(k));
   if (r !== FAILURE) throw new Error(`expected FAILURE, got ${r}`);
+});
+
+t('tooTiredNode: rests (SUCCESS) when vigor is below floor', async () => {
+  // Regression guard for the broken m59-combat.mjs import: with the fix in, the node
+  // reaches a live restUntil and actually attempts a rest rather than logging
+  // "resting" while doing nothing. The mock session has no real pacer, so restUntil
+  // fails inside its own .catch -- that is fine; what we assert is that the node went
+  // the rest path (SUCCESS, doing='recovering', tally.rests bumped, resting noted).
+  const k = mockKeeper();
+  k.s.client.vitals = () => ({ health: { value: 36, max: 36 }, vigor: { value: 60, max: 200 } });
+  k.fightFloor = () => 70;          // starved floor; 60 < 70 -> must rest
+  k.hold = null; k.policy.useSafeSpots = false;   // skip takeSafeSpot
+  const node = tooTiredNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS (rested), got ${r}`);
+  if (k.doing !== 'recovering') throw new Error(`expected doing='recovering', got ${k.doing}`);
+  if (k.tally.rests < 1) throw new Error(`expected tally.rests >= 1, got ${k.tally.rests}`);
 });
 
 t('tree: provision wins when hungry', async () => {

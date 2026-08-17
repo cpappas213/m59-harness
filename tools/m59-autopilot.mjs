@@ -738,6 +738,16 @@ export function applyFightAboveVigor(policy, value) {
 }
 
 export class Autopilot {
+  // The combat/rest skill set and the object-flag bitfield, exposed to the BT
+  // helper methods (m59-bt-farm.mjs, m59-bt-flee.mjs and the _btFlee*/_btFarm*
+  // adapters below) under one stable name. Without this, those helpers destructure
+  // `this.constructor._combatSkills` (undefined) and silently do nothing -- which
+  // is how a character could log "resting" every pass while never once sitting,
+  // and never regen the vigor the fight floor demands. skills is the whole
+  // m59-skills.mjs namespace (healUp, restUntil, fight, findCreature, ...);
+  // OF is the flag bitfield from m59-parse.mjs.
+  static _combatSkills = { skills, OF };
+
   constructor(session, { mode = 'survive', policy = {} } = {}) {
     this.s = session;
     this.mode = mode;

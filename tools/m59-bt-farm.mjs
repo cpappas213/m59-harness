@@ -31,6 +31,16 @@ import {
   SUCCESS, FAILURE, RUNNING,
 } from './m59-bt.mjs';
 import { updateBlackboard } from './m59-bt-nodes.mjs';
+import * as skills from './m59-skills.mjs';
+
+// The combat/rest skill set, shaped the way the nodes below consume it. This is
+// the module that used to be m59-combat.mjs -- it was renamed to m59-skills.mjs
+// when the bt-keeper branch merged, and these dynamic imports still pointed at the
+// old name. The .catch(() => ({ skills: null })) swallowed the failed import, so
+// tooTiredNode called restUntil() on undefined and the character logged "resting"
+// every pass while never once sitting. Import statically and hand the nodes a
+// live object instead.
+const getSkills = () => skills;
 
 // AsyncAction: wraps an async function into a BT Action node.
 // The async tick() on the tree handles the awaiting.
@@ -362,7 +372,7 @@ export function noTargetFoundNode(keeper) {
 export function unarmedNode(keeper) {
   return asyncAction(async (bb) => {
     const c = bb.client;
-    const { skills } = await import('./m59-combat.mjs').catch(() => ({ skills: null }));
+    const skills = getSkills();
     if (!skills) {
       // Fall back to the keeper's own check
       if (keeper.armed()) return FAILURE;
@@ -394,7 +404,7 @@ export function tooHurtNode(keeper) {
     const safe = keeper.safety();
     if (hp >= safe.engageAt) return FAILURE;
 
-    const { skills } = await import('./m59-combat.mjs').catch(() => ({ skills: null }));
+    const skills = getSkills();
     if (!skills) return FAILURE;
     const h = await skills.healUp(keeper.s, { target: 0.95 }).catch(() => ({ healed: false }));
     keeper.recordHealUse(h, 'too hurt to start the fight in front of us');
@@ -428,7 +438,7 @@ export function tooTiredNode(keeper) {
     keeper.doing = 'recovering';
     if (!keeper.hold && keeper.policy.useSafeSpots && bb.room)
       await keeper.takeSafeSpot('too tired to fight -- need somewhere safe to rest', null).catch(() => {});
-    const { skills } = await import('./m59-combat.mjs').catch(() => ({ skills: null }));
+    const skills = getSkills();
     const r = skills
       ? await skills.restUntil(keeper.s, { health: 0.98, vigor: 0.4, maxSeconds: 120 }).catch(() => null)
       : null;
