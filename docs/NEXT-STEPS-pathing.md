@@ -210,3 +210,101 @@ order of work.
   committed `m59-shortcuts.mjs` writes `127.0.0.1:5959` for every character — **wrong port
   for the local server and wrong host for prod** — and takes no `--fleet`. Worth fixing.
 - room 587 reproduces the wedge on demand: travel a character from 60 to 544.
+
+
+---
+
+# 2026-08-17 — MEASURED. COLLISION ROUTING IS NOT DANGEROUS, IT IS UNRELIABLE.
+
+**Do not turn this on for prod yet.** Three independent measurements agree and the
+number that matters is arrival, not speed or death.
+
+## What was measured
+
+`m59-circuit.mjs`, Streets of Tos -> East Jasper, five bots kitted to the prod fleet's
+own profile (max_health 56, block 90, stamina 50 — read off `substrate/sheets/` and
+`substrate/abilities/`, where prod runs 46-62 health and block median 97):
+
+    1/5 arrived    median 559s    0 deaths    135 swings taken
+
+**Speed is not the problem and neither is danger.** 559s against a 984s baseline is 43%
+FASTER, and nothing died in any run all night. Four of five simply never got there.
+
+`m59-hoptest.mjs` then asked the same question per BOUNDARY rather than per journey —
+`UtilGoNearSquare` places a body on an exact square in 0.2s, so each doorway is tested on
+its own from spread starts, in parallel:
+
+    7/21 hops crossed (33%)
+
+      50 -> 586   3/3   median 11s
+     586 -> 587   0/3   stopped without arriving, from all three starts
+     587 -> 576   0/3   timed out / stopped
+     576 -> 566   2/3   median 77s
+     566 -> 567   0/3   timed out / stopped
+     567 -> 568   2/3   median 152s
+     568 -> 350   0/3   TOOL ARTEFACT — the bots were still busy; not a boundary result
+
+So the broken boundaries are **586->587, 587->576 and 566->567**, which is exactly where
+the live journey stalled and exactly where an operator watching the client saw characters
+"barely wiggling" at the western edge of 587.
+
+## Where the risk actually lives, and it is not where this file has been looking
+
+`m59-walktrial.mjs --plan-only`, hundreds of planned routes per room, stratified by
+whether the START is a safe wall (`exposureAt().attackers === 0`):
+
+    room                       NO ROUTE from a fortress square    from ordinary
+    50  The Streets of Tos                41.7%                       0.0%
+    586 Main gate to Tos                   0.0%                       0.0%
+    587 W. border Twisted Wood             0.0%                       0.0%
+    576 The King's Way                     0.8%                       0.8%
+    566 Off the beaten path               20.0%                       8.4%
+    567 Off the beaten path               10.0%                       3.4%
+    568 Lake of Jala's Song                0.8%                       0.0%
+    350 East Jasper                        0.8%                       0.0%
+
+**From ordinary squares the router is essentially perfect.** The failure is specific to
+starting on a safe wall — and the fleet SEEKS THOSE SQUARES OUT to rest on, so it begins
+its journeys from precisely the places the router handles worst. That is the mechanism,
+and it is a much narrower claim than "the fleet gets stuck near safe walls".
+
+Offline over the 13 rooms the fleet uses, a fortress square is **145x** more likely to be
+one the router cannot step off at all (5.21% against 0.04%) and 6.3x more likely to be a
+trap or isolated. The correlation this document has always asserted is real — FOR
+PLAN-TIME REFUSALS. It did not explain either live failure observed tonight.
+
+## Two live failures that were NOT the safe wall, and cost hours to tell apart
+
+**A corridor plugged with monsters.** The same three-step walk read `steps: 40,
+replans: 0` with eleven rats across a two-wide corridor and `steps: 3, arrived` once they
+moved. `walkTo` counted a body-blocked step as `learned`, which SUPPRESSES the replan
+counter, so a walk entirely consumed by squeezing past bodies returned "stopped after 40
+steps" — byte-identical to one that merely had too small a budget. Now counted and named
+(`monster_blocked`, `blocked_by_bodies_at`) on every reply including successful ones.
+
+**Two characters meeting head-on.** `sidestepAround` was added to go round a blocker, and
+made it worse: both run the identical rule, so both dodge the same way, collide, and
+mirror each other. Watched live: *"like two people stuck in a hallway — I'll go left, no
+you go left, no my left, no your left."* Broken now on the mover's object id, plus jitter
+on the retry so they do not decide in lockstep.
+
+## Corrections to this document
+
+- **587 is not the wedge room.** It has **zero traps** and 23 isolated squares of 1406
+  walkable (1.6%), and its safe-wall routing is 0% failure. Its boundaries are broken;
+  its floor is fine. The reputation came from this document, not from the corpus.
+- **17,402 is a count of strongly-connected COMPONENTS, not of places to get stuck.**
+  The trap count is 4,823.
+- **The trap-dense rooms are towns**: West Jasper has **795 traps** — the worst in the
+  world, and on every Jasper bank run. The Streets of Tos is 41.7% unroutable from its
+  safe walls.
+- **Castle Victoria does not need a jump to enter.** Its three `go` exits at (3..5, 44)
+  are all walkable, in the main body, with five mover-neighbours each. The hazard in
+  Outside Castle Victoria is that 277 of 576 walkable squares are isolated and only 225
+  are in the main body. Ukgoth's north boundary is reachable from 8 of its 12 squares.
+
+## The next thing to do
+
+Find out why 586->587 and 587->576 fail from EVERY start when 587's own floor routes
+perfectly. It is a boundary problem, not a floor problem, and `m59-exitgap.mjs` asks the
+model the same question `m59-hoptest.mjs` now asks a body — the pair should localise it.
