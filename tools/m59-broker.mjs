@@ -3567,7 +3567,19 @@ class Session {
           stalledOn = `${next.row},${next.col}`;
           stalledTimes++;
           queue.unshift(next);                       // try the same square once more
-          await new Promise(res => setTimeout(res, 700));
+          // JITTERED, TO BREAK LOCKSTEP IN TIME AS WELL AS IN SPACE.
+          //
+          // Two characters that meet head-on retry on the same 700ms cadence, so they
+          // step, collide, wait, and step again in perfect unison — and a side preference
+          // alone does not help if both are always deciding at the same instant. A few
+          // hundred milliseconds of spread means one of them acts while the other is
+          // still waiting, which is how two people actually get past each other.
+          //
+          // THE JITTER IS ON THE WAIT AND NEVER ON THE CHOICE. Randomising which side to
+          // try would make the walker unreproducible, and every routing test here depends
+          // on the same inputs giving the same route; a timing difference changes when a
+          // decision happens, not what it is.
+          await new Promise(res => setTimeout(res, 500 + Math.floor(Math.random() * 500)));
           continue;
         }
       }

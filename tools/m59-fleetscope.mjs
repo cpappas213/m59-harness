@@ -161,8 +161,30 @@ export async function fleetScope({ argv = process.argv.slice(2), env = process.e
   if (portOk(Number(port))) picked = brokers.find(b => b.http === Number(port)) ?? null;
   if (!picked) picked = brokers.find(b => b.state && resolve(b.state) === wantState) ?? null;
   // One broker and no ambiguity is the ordinary case, and it is what a person means by
-  // "the fleet" when they have not said which.
-  if (!picked && brokers.length === 1) picked = brokers[0];
+  // "the fleet" WHEN THEY HAVE NOT SAID WHICH — which this used to claim and not check.
+  //
+  // A NAMED FLEET OUTRANKS A RUNNING BROKER, ALWAYS. The line above already tries to
+  // match a broker to the roster the name resolves to; if that fails, the honest answer
+  // is "that fleet has no broker" and the records on disk, not "here is a different fleet
+  // I found running". Adopting it silently answers a question nobody asked.
+  //
+  // Measured, on this machine, 2026-08-17: `m59-postmortems.mjs` reported **3 deaths** for
+  // prod. The real number is 323. Prod's broker was down and a `boscontrol` broker on 8911
+  // was the only one answering, so it was adopted — and the tool said so in its second
+  // line, while the FIRST line, which is the one the fleet check-in reads
+  // (`m59-postmortems.mjs | head -1`), was a confident wrong number about the wrong fleet.
+  // The same command had answered 323 an hour earlier; nothing changed but which brokers
+  // happened to be up.
+  //
+  // It also contradicted the documented resolution order outright: `--fleet prod`,
+  // `M59_FLEET=prod` and `substrate/fleet-default` were all ignored. CLAUDE.md states that
+  // order for every fleet tool, and a tool that quietly exempts itself from it is worse
+  // than one that has no opinion, because the operator has no reason to check.
+  //
+  // The guard is on the SOURCE rather than on the name being non-empty, because
+  // `--fleet -` names the unnamed fleet ON PURPOSE and must be honoured the same way.
+  const namedExplicitly = resolved.source !== 'no fleet named';
+  if (!picked && brokers.length === 1 && !namedExplicitly) picked = brokers[0];
 
   if (picked) {
     const names = charactersInRoster(picked.state);

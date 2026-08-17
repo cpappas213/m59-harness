@@ -278,3 +278,6 @@ __pycache__/
 # silent — the client's own caption says "no overlay" — so unlike the routing
 # table there is no argument for carrying it in git.
 /substrate/overlay/
+/substrate/circuit-runs.json
+/substrate/hoptests.json
+/substrate/hoptest-*.log
