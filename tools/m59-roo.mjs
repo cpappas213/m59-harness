@@ -1070,6 +1070,73 @@ export class RoomGeometry {
     return frozen;
   }
 
+  // PULL THE STRING TIGHT: A ROUTE OF SQUARES BECOMES A ROUTE OF PIVOTS.
+  //
+  // THE SQUARE IS THE WRONG UNIT AND THE GEOMETRY SAYS SO. Measured on room 587, whose
+  // wall length is 54.9% NOT axis-aligned (45 deg and 135 deg are the largest non-axis
+  // components): stepping centre-to-centre along a grid route, with the real fine
+  // position carried forward, 143 of 242 steps fail — and 136 of those 143, **95%**, do
+  // not move the character AT ALL. They are not slides landing in a neighbouring square;
+  // they are one refused step, retried. `walkTo` then replans from an unchanged position,
+  // gets the identical route, and asks for the same refused step again. Watched from
+  // inside the game that is a character "barely wiggling" against a wall.
+  //
+  // The cause is that an axis-aligned step between two square CENTRES runs at 45 degrees
+  // into a wall face that is itself at 45 degrees, and the trace refuses it. The operator
+  // put it better than the measurements did: the rooms are "parallel lines going
+  // diagonally", the walkable squares read as "bishop diagonals" over continuous floor,
+  // and the natural unit would be a diamond rather than a box.
+  //
+  // SO DO NOT ARGUE WITH THE GRID — USE IT AND THEN THROW AWAY THE STEPS. The grid A* is
+  // good at "which way round", which is the part the geometry makes hard. It is bad at
+  // "and then walk it", which is the part the geometry makes unnecessary: most of a route
+  // is straight line. Greedily reaching as far along the route as still clears geometry
+  // turns 311 grid steps into 66 pivots across six routes in 587 — 4.7x fewer moves.
+  //
+  // EVERY LEG IS CHECKED WITH `slide: false`, WHICH IS STRICTER THAN A STEP. A slid step
+  // is allowed to end somewhere other than it aimed; a leg here is kept only if the
+  // straight line ARRIVES. So this cannot authorise a traversal the ordinary mover would
+  // refuse — it can only refuse ones the mover would have allowed, which is the safe
+  // direction and is why it needs no separate safety argument.
+  //
+  // IT SIMPLIFIES A ROUTE; IT DOES NOT REPAIR ONE. That distinction is the contract and
+  // it was got wrong first time. When no further point on the route clears, the only
+  // thing to fall back to is the ORIGINAL next step — which, on this geometry, is
+  // frequently the very step the mover refuses. So the output can contain a leg that does
+  // not arrive, and pretending otherwise would be a promise this cannot keep.
+  //
+  // The property that IS guaranteed: every leg spanning more than one grid step has been
+  // checked to arrive. A single-step leg is passed through untouched and carries whatever
+  // the square walk already had. `unverified` counts them, because a route that is mostly
+  // unverified legs is one string-pulling cannot help with and the caller should know
+  // rather than infer.
+  //
+  // Input and output are CLIENT units. `points` is the grid route including the start.
+  stringPull(points, { arriveWithin = 64, maxProbe = 64 } = {}) {
+    if (!Array.isArray(points) || points.length < 2)
+      return { points: points ?? [], unverified: 0, legs: 0 };
+    const clear = (a, b) => {
+      const t = this.traceFineMoveClient(a.x, a.y, b.x, b.y, { slide: false });
+      return !!t && Math.hypot(t.x - b.x, t.y - b.y) <= arriveWithin;
+    };
+    const out = [points[0]];
+    let at = 0, unverified = 0;
+    while (at < points.length - 1) {
+      // FURTHEST FIRST, so the common case — a long clear run — costs one trace rather
+      // than one per square. `maxProbe` bounds the scan on a very long route; without it
+      // a 200-step route is O(n^2) traces at 0.44ms each, which is the cost that made
+      // running the collision trace live cause a rejoin storm.
+      const limit = Math.min(points.length - 1, at + maxProbe);
+      let next = -1;
+      for (let j = limit; j > at; j--)
+        if (clear(points[at], points[j])) { next = j; break; }
+      if (next < 0) { next = at + 1; unverified++; }
+      out.push(points[next]);
+      at = next;
+    }
+    return { points: out, unverified, legs: out.length - 1 };
+  }
+
   // A bounded local A* for sub-square approaches that need to round a corner. This
   // is deliberately not the room router: the coarse grid gets us near the exit,
   // then this resolves only the final BSP-scale gap with locally validated segments.
