@@ -1635,11 +1635,32 @@ export class Autopilot {
       if (await this.cookSomething()) return 'ate';  // spend this pass eating instead
       
       // If we can't cook (doesn't know create food), try buying food instead
-      if (this.policy.buyFood && this.purse() > this.policy.walkingMoney) {
-        this.note('cannot cook, buying food instead', {
-          why: 'does not know create food, has money to buy',
-          purse: this.purse(),
-          floor: this.policy.walkingMoney
+      if (this.policy.buyFood) {
+        let purse = this.purse();
+        const floor = this.policy.walkingMoney ?? 400;
+        
+        // If we don't have enough money, try withdrawing from the bank
+        if (purse < floor) {
+          this.note('not enough money, checking bank', {
+            purse, floor, why: 'need money to buy food'
+          });
+          await this.withdrawForFood().catch(() => {});
+          purse = this.purse();
+        }
+        
+        // If we still don't have money, we need to fight to get items to sell
+        if (purse < floor) {
+          this.note('no money for food, need to fight for loots', {
+            purse, floor, why: 'will fight and sell items to get money'
+          });
+          // Don't return - let the character continue farming and fighting
+          // The farming loop will generate money from kills
+          return false;
+        }
+        
+        // We have money, buy food
+        this.note('buying food with available funds', {
+          purse, floor
         });
         await this.buyFoodInTown().catch(() => {});
         // Check if we got food
