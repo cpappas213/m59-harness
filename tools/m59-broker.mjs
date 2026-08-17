@@ -3348,13 +3348,47 @@ class Session {
       // "did that work", and a predicted yes would report solid ground under a character
       // still standing off the floor — from which no route exists at all.
       const half = KOD_FINENESS >> 1;
-      const r = await this.stepFine(spot.col * KOD_FINENESS + half,
-                                    spot.row * KOD_FINENESS + half);
+      const targetX = spot.col * KOD_FINENESS + half, targetY = spot.row * KOD_FINENESS + half;
+      const r = await this.stepFine(targetX, targetY);
       if (isTerminalMovementReason(r.reason))
         return { arrived: false, ...r, position: r.position ?? { col: me0.col, row: me0.row } };
-      if (!r.moved) return { arrived: false, reason: 'could not step back onto solid ground',
-                             position: r.position,
-                             note: r.note ?? r.reason ?? 'local collision found no safe recovery path' };
+
+      // ONE STEP IS NOT ENOUGH TO GET OFF THE GRID, AND FINE MOVEMENT IS THE STRICTER
+      // TOOL RATHER THAN THE LOOSER ONE.
+      //
+      // Measured 2026-08-17: characters really do end up on squares the bake calls
+      // unwalkable — Bravo standing at 30,30 in room 587 and Charlie at 25,25 in 566,
+      // both `walkable: false`, both perfectly upright on the server, and from there
+      // `walkTo` cannot plan at all. `stepFine` asks for ONE clipped step at the nearest
+      // floor square, and when the pocket is deeper than one step, or that particular
+      // endpoint is refused, the walk ends here with `could not step back onto solid
+      // ground` — which is what the three broken boundaries on the Tos-Jasper corridor
+      // came down to.
+      //
+      // `walkFine` is the same collision rules applied up to 120 times with sliding, so
+      // it can work its way out where a single step cannot. It is NOT the coarse-grid
+      // escape hatch this repository considered and rejected: that one FELL BACK to the
+      // server's one-byte grid and relaxed collision, which is the mechanism that let
+      // bots climb cliffs. This clips every endpoint against the same BSP the stock
+      // client enforces — walls, step heights, slopes, ceilings and the 248-unit player
+      // radius — so it is strictly more conservative than the router it is rescuing, and
+      // cannot authorise a traversal a person could not make.
+      //
+      // Second, and only on failure, because it costs packets and the single step is
+      // usually enough.
+      if (!r.moved) {
+        if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
+        const fine = await this.walkFine(targetX, targetY,
+          { maxSteps: 40, movementGeneration, controlToken }).catch(() => null);
+        if (isTerminalMovementReason(fine?.reason))
+          return { arrived: false, ...fine, position: fine.position ?? { col: me0.col, row: me0.row } };
+        const now = c.self;
+        if (!now || !geo.walkable(now.row, now.col))
+          return { arrived: false, reason: 'could not step back onto solid ground',
+                   position: now ?? r.position,
+                   recovered_by: 'neither one clipped step nor fine walking reached floor',
+                   note: r.note ?? r.reason ?? 'local collision found no safe recovery path' };
+      }
     }
 
     let from = c.self ?? me0;

@@ -402,8 +402,14 @@ export async function relocate(names, roomNum, { row, col, verify = false } = {}
   const want = clampSquare(row ?? Math.round((geom.rows || 20) / 2),
                            col ?? Math.round((geom.cols || 20) / 2), geom.rows, geom.cols);
 
+  // SNAPPED TO FLOOR BEFORE THE PACKET GOES, never after. See walkableSquare: the server
+  // accepts a square inside a wall and answers 1, and a character standing in rock cannot
+  // be routed from at all.
+  const snapped = walkableSquare(roomNum, want.row, want.col);
+  const place = { row: snapped.row, col: snapped.col };
+
   const movable = list.filter(n => ids[n] != null);
-  const out = await dm(movable.map(n => relocateCmd(ids[n], roomObj, want.row, want.col)), opts);
+  const out = await dm(movable.map(n => relocateCmd(ids[n], roomObj, place.row, place.col)), opts);
 
   const moved = {};
   for (const n of list) moved[n] = ids[n] == null ? 'no such character' : 'sent';
@@ -416,7 +422,10 @@ export async function relocate(names, roomNum, { row, col, verify = false } = {}
       moved[n] = owner && Number(owner[1]) === roomObj ? 'in the room' : 'NOT in the room';
     });
   }
-  return { ok: true, room: roomNum, room_object: roomObj, square: want, moved,
+  return { ok: true, room: roomNum, room_object: roomObj, square: place, moved,
+           ...(snapped.moved ? { snapped_to_floor: { asked: snapped.from, placed: place,
+                                                     squares_away: Math.round(snapped.distance * 10) / 10 } } : {}),
+           ...(snapped.why ? { placement_warning: snapped.why } : {}),
            rejected: rejections(out) };
 }
 
@@ -431,6 +440,59 @@ export function roomGeometry(num) {
   const r = MAP[String(num)];
   return { rows: r?.rows ?? null, cols: r?.cols ?? null, name: r?.name ?? null };
 }
+
+// THE SERVER WILL PUT A CHARACTER INSIDE A WALL AND SAY 1.
+//
+// `UtilGoNearSquare` searches outward for somewhere STANDABLE by its own rules, which are
+// not the client's collision rules, and it returns 1 for "somebody was moved somewhere".
+// This file already warns that a reply of 1 is not evidence of arrival. What it did not
+// do is check the destination against the baked geometry first — so a caller who picks a
+// square by eye gets a character standing in solid rock, from which `walkTo` cannot plan
+// at all and every measurement taken there is rubbish.
+//
+// That is not hypothetical: four placements in a row in room 587 landed inside walls
+// (14,8 / 25,30 / 30,25 / 20,28, all `walkable: false`), the operator looked and said
+// "they're all stuck in the wall, as am I", and two earlier `start_has_no_floor` results
+// had been recorded as a routing fault before anybody checked the coordinates. Room 587
+// is 38% walkable, so a square chosen by eye is worse than a coin flip.
+//
+// SNAPS RATHER THAN REFUSES, because the caller's intent — "put it about here" — is
+// almost always satisfiable a square or two away, and a refusal in the middle of a batch
+// is worse than a small correction that says so. `null` geometry means no opinion and the
+// square is passed through untouched: a checkout with no baked map must place exactly as
+// it always did.
+let WALKABLE_CACHE = null;
+export function walkableSquare(num, row, col, { maxRadius = 8 } = {}) {
+  if (MAP === null) roomGeometry(num);
+  const room = MAP?.[String(num)];
+  if (!room?.roo) return { row, col, checked: false };
+  try {
+    WALKABLE_CACHE ??= new Map();
+    let geo = WALKABLE_CACHE.get(num);
+    if (!geo) {
+      const { RoomGeometry } = require_roo();
+      geo = RoomGeometry.fromJSON(room.roo);
+      WALKABLE_CACHE.set(num, geo);
+    }
+    if (geo.walkable(row, col)) return { row, col, checked: true, moved: false };
+    const near = geo.nearestWalkable(row, col, { maxRadius });
+    if (!near) return { row, col, checked: true, moved: false,
+                        why: `no walkable square within ${maxRadius} of ${row},${col}` };
+    return { row: near.row, col: near.col, checked: true, moved: true,
+             from: { row, col }, distance: near.distance };
+  } catch { return { row, col, checked: false }; }
+}
+
+// Loaded lazily and through a helper so this module keeps working in a checkout with no
+// baked map, and so importing m59-dm.mjs stays cheap for the callers that never place
+// anything.
+let ROO_MOD = null;
+function require_roo() {
+  if (!ROO_MOD) throw new Error('geometry not loaded');
+  return ROO_MOD;
+}
+export function attachRoo(mod) { ROO_MOD = mod; }
+try { ROO_MOD = await import('./m59-roo.mjs'); } catch { /* no geometry here */ }
 
 // ------------------------------------------------------------------ kit
 
