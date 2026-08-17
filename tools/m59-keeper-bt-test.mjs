@@ -226,5 +226,51 @@ console.log('\nSafety-first routing (Underworld / arm before the trees):');
   check('_btFarmSpawnFile returns the spawn file path', spawnFile === Autopilot.SPAWN_FILE);
 }
 
+// ---------------------------------------------------------------------------
+// Town business: the BT keeper must sell loot and bank the surplus, or a BT
+// character loots kills for ever and never converts them to money -- the bags
+// fill, the purse never moves, and "sustainably profitable" is never testable.
+// _townBusiness delegates to the legacy bankSurplus/bankRun.
+// ---------------------------------------------------------------------------
+console.log('\nTown business (sell + bank before farming):');
+{
+  // bankRun returns true -> the pass was spent on a bank run (no farming this pass)
+  let bankSurplusCalled = 0, bankRunResult = true;
+  const k = mockKeeper({
+    policy: { bankAbove: 500 },
+    bankSurplus: async () => { bankSurplusCalled++; },
+    bankRun: async () => bankRunResult,
+  });
+  const d = new BTKeeper(k);
+  const r = await d._townBusiness(k, k.s, k.s.client);
+  check('bank run done -> pass returned (no farming this pass)', r === true);
+  check('bankSurplus was called', bankSurplusCalled >= 1);
+}
+{
+  // bankRun returns false (nothing to sell / no bank) -> farming continues
+  let bankRunResult = false;
+  const k = mockKeeper({
+    policy: { bankAbove: 500 },
+    bankSurplus: async () => {},
+    bankRun: async () => bankRunResult,
+  });
+  const d = new BTKeeper(k);
+  const r = await d._townBusiness(k, k.s, k.s.client);
+  check('no bank run -> pass NOT consumed (farming continues)', r === false);
+}
+{
+  // No bankAbove set -> no bank run attempted at all
+  let bankRunCalled = 0;
+  const k = mockKeeper({
+    policy: {},
+    bankSurplus: async () => {},
+    bankRun: async () => { bankRunCalled++; return false; },
+  });
+  const d = new BTKeeper(k);
+  const r = await d._townBusiness(k, k.s, k.s.client);
+  check('no bankAbove -> bankRun not called', bankRunCalled === 0);
+  check('no bankAbove -> pass not consumed', r === false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

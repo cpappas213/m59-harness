@@ -114,6 +114,14 @@ export class BTKeeper {
     if (r === 'RUNNING') { await this._drain(bb, this._flee(), limit); }
     if (r === 'SUCCESS' || r === 'RUNNING') return;   // handled this pass
 
+    // 4. TOWN BUSINESS: sell loot and bank the surplus before farming spends the
+    //    pass. The legacy pass() does this (bankSurplus / bankRun) but the BT keeper
+    //    skipped it entirely, so a BT character looted kills for hours and never
+    //    converted the loot to money -- the bags filled, the purse never moved, and
+    //    "sustainably profitable" was never testable. Delegate to the same legacy
+    //    methods so the sell/bank/restock logic is not reimplemented here.
+    if (await this._townBusiness(k, s, c)) return;
+
     // 2. FARM. The hunting pass; provision is its first node, so "eat if
     //    hungry" runs before any swing.
     r = await this._farm().tickAsync(bb);
@@ -145,5 +153,25 @@ export class BTKeeper {
     }
     this.k.note?.('bt-keeper: pass limit hit; releasing a RUNNING tree');
     return 'RUNNING';
+  }
+
+  // Town business: sell loot, bank the surplus, restock. Delegates to the legacy
+  // methods (bankSurplus / bankRun) so the sell/bank logic is not reimplemented.
+  // Both are safe no-ops when not applicable (bankSurplus checks it is standing in a
+  // bank; bankRun checks the bankAbove threshold and bank reachability), so this can
+  // run every pass without a location pre-check.
+  // Returns true when the pass was spent on a bank run (no farming this pass).
+  async _townBusiness(k, s, c) {
+    if (k._btKeeperPass) return false;             // guard against re-entry via legacy pass
+    // Standing in a bank: put the takings away before anything can take them.
+    if (typeof k.bankSurplus === 'function') await k.bankSurplus().catch(() => {});
+    // Carrying enough that it is worth WALKING to a bank? Go sell + bank. This is the
+    // path that converts looted kills into shillings. bankRun() returns false (no-op)
+    // when there is nothing to sell or no reachable bank.
+    if (k.policy?.bankAbove && typeof k.bankRun === 'function') {
+      const did = await k.bankRun().catch(() => false);
+      if (did) return true;   // spent the pass travelling to / doing a bank run
+    }
+    return false;
   }
 }
