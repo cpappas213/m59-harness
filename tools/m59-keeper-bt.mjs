@@ -1,216 +1,117 @@
 #!/usr/bin/env node
-// m59-keeper-bt.mjs -- A dedicated behavior-tree keeper for Meridian 59.
+// m59-keeper-bt.mjs -- the behavior-tree keeper: a dedicated driver for a
+// Meridian 59 character, built on the decomposed BT trees.
 //
-// This is a clean, BT-only keeper that does not fall back to the legacy
-// sequential code. It ticks a behavior tree every second and uses the
-// result to decide what to do.
+// WHAT THIS IS AND IS NOT
 //
-// The keeper is composed of:
-// 1. A main loop that ticks every second
-// 2. A blackboard that holds the live state
-// 3. A root behavior tree that decides what to do
+// This is NOT a re-implementation of travel/fight/provision. Those live in the
+// legacy keeper (m59-autopilot.mjs) and are battle-tested against the server's
+// silent failures. Re-implementing them here would be the "wrapper" antipattern
+// the whole decomposition exists to avoid -- we would spend a month rebuilding
+// what 12,000 lines of field debugging already earned.
 //
-// The root tree is a selector that tries these in order:
-// 1. Flee (if in danger)
-// 2. Provision (if hungry or tired)
-// 3. Farm (if hunting)
-// 4. Roam (if nothing else to do)
+// What this file owns is the DECISION LADDER: given the state this pass, what is
+// the highest-priority thing the character should be doing? The legacy pass()
+// answers that with a long if/else chain, with the BT bolted in as opt-in
+// shortcuts that fall through to the sequential code. This driver inverts the
+// relationship: the tree is the primary path and the legacy methods are the
+// leaves it delegates to. A character driven here and one driven by pass()
+// perform identical actions for identical states; only the ORDER of evaluation
+// and the ability to re-order without a 12,000-line edit differ.
 //
-// This keeper is opt-in via policy.useBTKeeper === true.
+// The ladder, top to bottom (safety before work, work before idle):
+//   1. fleeAndRest  -- doomed / fleeing / sanctuary / wall / leave-room / rest
+//   2. farm         -- provision / retarget / room-invalid / bags / cap /
+//                      no-target / unarmed / hurt / tired / fight
+//
+// Each branch is a subtree already decomposed and tested in its own module.
+// A branch that finds nothing (FAILURE) yields to the next; if every branch
+// fails, the driver delegates to the legacy pass() so a not-yet-decomposed
+// behaviour still runs. That fallback is the "decompose, don't wrap" seam: as
+// more behaviour moves into the trees, the fallback shrinks until it is gone.
+//
+// CONTRACT
+//   const legacy = new Autopilot(session, policy);   // owns session/pacer/notes
+//   const driver = new BTKeeper(legacy);
+//   await driver.pass();                              // drop-in for legacy.pass()
 
-import { Selector, Sequence, Condition, Action, SUCCESS, FAILURE, RUNNING } from './m59-bt.mjs';
-import { getFarmTree } from './m59-bt-farm.mjs';
 import { getFleeTree } from './m59-bt-flee.mjs';
-import { provisionTree } from './m59-bt-provision.mjs';
+import { getFarmTree } from './m59-bt-farm.mjs';
 import { updateBlackboard } from './m59-bt-nodes.mjs';
 
-// ---------------------------------------------------------------------------
-// BT Keeper class
-// ---------------------------------------------------------------------------
+const PASS_LIMIT_MS = 30_000;   // a full pass may travel, but never forever
 
 export class BTKeeper {
-  constructor(session, policy = {}) {
-    this.s = session;
-    this.policy = policy;
-    this._blackboard = {};
-    this._farmTree = null;
+  constructor(keeper, opts = {}) {
+    if (!keeper) throw new Error('BTKeeper: no keeper supplied');
+    this.k = keeper;                       // the legacy keeper we drive
+    this._bb = opts.blackboard || {};      // persists across ticks (slot state)
     this._fleeTree = null;
-    this._provisionTree = null;
-    this._lastTick = 0;
-    this._running = false;
+    this._farmTree = null;
   }
 
-  // Get or create the farm tree
-  _getFarmTree() {
-    if (!this._farmTree) {
-      this._farmTree = getFarmTree({ session: { keeper: this } });
-    }
+  _flee() {
+    if (!this._fleeTree) this._fleeTree = getFleeTree({ session: { keeper: this.k } });
+    return this._fleeTree;
+  }
+  _farm() {
+    if (!this._farmTree) this._farmTree = getFarmTree({ session: { keeper: this.k } });
     return this._farmTree;
   }
 
-  // Get or create the flee tree
-  _getFleeTree() {
-    if (!this._fleeTree) {
-      this._fleeTree = getFleeTree({ session: { keeper: this } });
-    }
-    return this._fleeTree;
-  }
-
-  // Get or create the provision tree
-  _getProvisionTree() {
-    if (!this._provisionTree) {
-      this._provisionTree = provisionTree(this);
-    }
-    return this._provisionTree;
-  }
-
-  // Compose the root tree
-  _getRootTree() {
-    const keeper = this;
-    
-    return new Selector([
-      // 1. Flee if in danger
-      new Sequence([
-        new Condition((bb) => {
-          const hp = bb.client?.vitals?.()?.health;
-          return hp && hp.value < hp.max * 0.4;
-        }),
-        this._getFleeTree()
-      ]),
-      // 2. Provision if hungry or tired
-      new Sequence([
-        new Condition((bb) => {
-          const vigor = bb.client?.vitals?.()?.vigor;
-          return vigor && vigor.value < (keeper.policy.vigorCeiling || 200);
-        }),
-        this._getProvisionTree()
-      ]),
-      // 3. Farm if hunting
-      new Sequence([
-        new Condition((bb) => keeper.policy.hunt != null),
-        this._getFarmTree()
-      ])
-      // 4. Roam (placeholder - not yet implemented)
-    ]);
-  }
-
-  // Main tick - called every second
-  async tick() {
-    const now = Date.now();
-    if (now - this._lastTick < 1000) return; // Rate limit to 1Hz
-    this._lastTick = now;
-
-    const s = this.s;
+  // One pass of the driver. Drop-in replacement for keeper.pass().
+  async pass() {
+    const k = this.k;
+    const s = k.s;
+    if (!s?.live) { k.note?.('bt-keeper: not in game'); return; }
     const c = s.client;
-    
-    if (!s.live) {
-      this.note('not in game');
-      return;
-    }
 
-    // Update the blackboard
-    const bb = updateBlackboard(
-      this._blackboard,
-      { client: c, session: this, policy: this.policy, room: s.world?.room },
-    );
+    // Refresh the blackboard with the live world state. updateBlackboard
+    // preserves the strategic fields GOAP writes between ticks and re-points
+    // the live refs.
+    const bb = updateBlackboard(this._bb, {
+      client: c, session: k, policy: k.policy, room: s.world?.room,
+    });
     bb.room = s.world?.room;
 
-    // Get the root tree
-    const tree = this._getRootTree();
+    const started = Date.now();
+    const limit = () => Date.now() - started > PASS_LIMIT_MS;
 
-    // Tick the tree (synchronous) with a timeout to prevent infinite loops
-    const start = Date.now();
-    const MAX_TICK_MS = 5000; // 5 second timeout
-    
-    let result = tree.tick(bb);
-    
-    // If the tree is running, wait and tick again (with a timeout)
-    while (result === 'RUNNING' && (Date.now() - start) < MAX_TICK_MS) {
-      await new Promise(r => setTimeout(r, 100));
-      result = tree.tick(bb);
-    }
-    
-    // If we hit the timeout, force stop
-    if (result === 'RUNNING') {
-      this.note('BT tick timed out');
-      return;
-    }
+    // 1. FLEE AND REST. Safety always beats work.
+    let r = await this._flee().tickAsync(bb);
+    if (r === 'RUNNING') { await this._drain(bb, this._flee(), limit); }
+    if (r === 'SUCCESS' || r === 'RUNNING') return;   // handled this pass
 
-    // Log the result
-    this.note('BT tick complete', { result });
+    // 2. FARM. The hunting pass; provision is its first node, so "eat if
+    //    hungry" runs before any swing.
+    r = await this._farm().tickAsync(bb);
+    if (r === 'RUNNING') { await this._drain(bb, this._farm(), limit); }
+    if (r === 'SUCCESS' || r === 'RUNNING') return;   // handled this pass
 
-    // If the tree is still running, don't do anything else
-    if (result === 'RUNNING') return;
-
-    // If the tree succeeded, we're done
-    if (result === 'SUCCESS') return;
-
-    // If the tree failed, log it
-    this.note('BT tick failed', { result });
-  }
-
-  // Start the keeper loop
-  async start() {
-    if (this._running) return;
-    this._running = true;
-    this.note('BT keeper started');
-
-    while (this._running) {
-      try {
-        await this.tick();
-      } catch (err) {
-        this.note('BT tick error', { error: err.message });
-      }
-      // Wait 1 second
-      await new Promise(r => setTimeout(r, 1000));
+    // 3. NOTHING THE TREES HANDLE. Delegate to the legacy pass() so a
+    //    not-yet-decomposed behaviour still runs. This is the seam that
+    //    shrinks as the decomposition completes. The _btKeeperPass flag stops
+    //    the legacy pass() from re-entering this driver and recursing.
+    k.note?.('bt-keeper: trees found nothing; delegating to legacy pass');
+    const prev = k._btKeeperPass;
+    k._btKeeperPass = true;
+    try {
+      await k.pass();
+    } finally {
+      k._btKeeperPass = prev;
     }
   }
 
-  // Stop the keeper loop
-  stop() {
-    this._running = false;
-    this.note('BT keeper stopped');
-  }
-
-  // Log a note
-  note(msg, data = {}) {
-    console.log(`[bt-keeper] ${msg}`, data);
-    // TODO: Integrate with the broker's logging
-  }
-
-  // --- Methods that the BT nodes expect on the keeper ---
-
-  // Get the larder (food in the pack)
-  larder(client) {
-    // This is a stub - the real implementation is in the legacy keeper
-    // For now, return an empty array
-    return [];
-  }
-
-  // Get the purse (money)
-  purse() {
-    const c = this.s.client;
-    return c.inventory
-      ?.filter(o => /shilling/i.test(c.rsc.get(o.nameRsc) || ''))
-      .reduce((t, o) => t + (o.amount || 1), 0) ?? 0;
-  }
-
-  // Withdraw from bank
-  async withdrawForFood() {
-    // Stub - not yet implemented
-    this.note('withdrawForFood not implemented');
-  }
-
-  // Buy food in town
-  async buyFoodInTown() {
-    // Stub - not yet implemented
-    this.note('buyFoodInTown not implemented');
-  }
-
-  // Note a progress update
-  progress(msg) {
-    this.note('progress: ' + msg);
+  // A subtree reported RUNNING: it is mid-action (travelling, swinging,
+  // buying). Keep ticking it until it settles or the pass limit is hit, so a
+  // long async action is not abandoned mid-flight.
+  async _drain(bb, tree, limit) {
+    while (!limit()) {
+      await new Promise(res => setTimeout(res, 250));
+      const r = await tree.tickAsync(bb);
+      if (r !== 'RUNNING') return r;
+    }
+    this.k.note?.('bt-keeper: pass limit hit; releasing a RUNNING tree');
+    return 'RUNNING';
   }
 }
-
-

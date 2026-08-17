@@ -6732,6 +6732,24 @@ export class Autopilot {
     // loadout-driven policy fields) are live on the first pass after a restart.
     this.applyLoadoutPolicyOverlay();
     // ------------------------------------------------------------------
+    // DEDICATED BEHAVIOR-TREE KEEPER (opt-in via policy.useBTKeeper)
+    //
+    // When set, the whole decision ladder is handed to the BT driver instead of
+    // the sequential code below. The driver is a thin decision layer: it ticks the
+    // decomposed trees (flee, farm) in priority order and delegates each leaf
+    // action to the same methods this file already owns, so a BT-driven character
+    // and a sequential one perform identical actions for identical states.
+    //
+    // The driver's own fallback (nothing the trees handled) calls back into pass()
+    // to run the sequential ladder -- _btKeeperPass marks that re-entrant call so
+    // this gate does not bounce back into the driver and recurse.
+    // ------------------------------------------------------------------
+    if (this.policy?.useBTKeeper === true && !this._btKeeperPass) {
+      const { BTKeeper } = await import('./m59-keeper-bt.mjs');
+      const driver = this._btDriver || (this._btDriver = new BTKeeper(this));
+      return driver.pass();
+    }
+    // ------------------------------------------------------------------
     // BEHAVIOR-TREE GET-ARMED SUBTREE (opt-in via policy.useBT)
     //
     // When policy.useBT is true and the character is NOT yet wielding a weapon at

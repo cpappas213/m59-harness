@@ -1,5 +1,12 @@
 #!/usr/bin/env node
-// m59-keeper-bt-test.mjs -- tests for the BT keeper (simplified)
+// m59-keeper-bt-test.mjs -- tests for the BT keeper driver
+//
+//   node tools/m59-keeper-bt-test.mjs
+//
+// These are offline tests. No broker, no server. They verify the driver's
+// DECISION LADDER: that it ticks flee before farm, that a SUCCESS in either
+// ends the pass, that a full FAILURE delegates to the legacy pass(), and that
+// a RUNNING subtree is drained rather than abandoned.
 
 import { BTKeeper } from './m59-keeper-bt.mjs';
 import { SUCCESS, FAILURE, RUNNING } from './m59-bt.mjs';
@@ -10,91 +17,137 @@ function check(name, cond) {
   else { fail++; console.log(`  FAIL  ${name}`); }
 }
 
-console.log('\nBTKeeper:');
-{
-  const mockSession = {
-    live: true,
-    client: {
-      vitals: () => ({
-        health: { value: 100, max: 100 },
-        vigor: { value: 50, max: 200 }
-      }),
-      inventory: [],
-      rsc: { get: () => '' }
-    },
-    world: { room: { num: 123, name: 'Test Room' } }
+// A mock legacy keeper. Records the order in which things are touched so the
+// tests can assert on the ladder's decision order without a live session.
+function mockKeeper(overrides = {}) {
+  const calls = [];
+  return {
+    calls,
+    s: { live: true, client: {}, world: { room: { num: 1, name: 'Test' } } },
+    policy: {},
+    note(msg) { calls.push(['note', msg]); },
+    async pass() { calls.push(['legacy.pass']); },
+    _note(msg) { calls.push(['note', msg]); },
+    ...overrides,
   };
-  const policy = { hunt: 'giant rat', vigorCeiling: 200 };
-  const keeper = new BTKeeper(mockSession, policy);
-  
-  check('keeper is created', keeper !== null && keeper !== undefined);
-  check('keeper has a tick method', typeof keeper.tick === 'function');
-  check('keeper has a start method', typeof keeper.start === 'function');
-  check('keeper has a stop method', typeof keeper.stop === 'function');
-  check('keeper has a purse method', typeof keeper.purse === 'function');
-  check('keeper has a larder method', typeof keeper.larder === 'function');
 }
 
-console.log('\nBTKeeper.purse:');
-{
-  const mockSession = {
-    live: true,
-    client: {
-      vitals: () => ({
-        health: { value: 100, max: 100 },
-        vigor: { value: 150, max: 200 }
-      }),
-      inventory: [
-        { nameRsc: 1, amount: 100 },
-        { nameRsc: 2, amount: 50 }
-      ],
-      rsc: { get: (rsc) => rsc === 1 ? 'shilling' : '' }
+// A fake tree that returns a scripted sequence of results.
+function fakeTree(results) {
+  let i = 0;
+  return {
+    async tickAsync(bb) {
+      const r = results[Math.min(i, results.length - 1)];
+      i++;
+      return r;
     },
-    world: { room: { num: 123, name: 'Test Room' } }
   };
-  const policy = {};
-  const keeper = new BTKeeper(mockSession, policy);
-  
-  const purse = keeper.purse();
-  check('purse returns 100 (only counts shillings)', purse === 100);
 }
 
-console.log('\nBTKeeper.larder:');
+console.log('\nBTKeeper construction:');
 {
-  const mockSession = {
-    live: true,
-    client: {},
-    world: { room: { num: 123, name: 'Test Room' } }
-  };
-  const policy = {};
-  const keeper = new BTKeeper(mockSession, policy);
-  
-  const larder = keeper.larder(mockSession.client);
-  check('larder returns an array', Array.isArray(larder));
-  check('larder is empty by default', larder.length === 0);
+  const k = mockKeeper();
+  const d = new BTKeeper(k);
+  check('driver is created', d !== null);
+  check('driver holds the keeper', d.k === k);
+  check('driver has a pass method', typeof d.pass === 'function');
+}
+{
+  let threw = false;
+  try { new BTKeeper(null); } catch { threw = true; }
+  check('throws with no keeper', threw);
 }
 
-console.log('\nBTKeeper tree structure:');
+console.log('\nLadder ordering (flee before farm):');
 {
-  const mockSession = {
-    live: true,
-    client: {
-      vitals: () => ({
-        health: { value: 100, max: 100 },
-        vigor: { value: 150, max: 200 }
-      }),
-      inventory: [],
-      rsc: { get: () => '' }
-    },
-    world: { room: { num: 123, name: 'Test Room' } }
-  };
-  const policy = { hunt: 'giant rat', vigorCeiling: 200 };
-  const keeper = new BTKeeper(mockSession, policy);
-  
-  const tree = keeper._getRootTree();
-  check('root tree is created', tree !== null && tree !== undefined);
-  check('root tree has a tick method', typeof tree.tick === 'function');
-  check('root tree is a Selector', tree._name === 'Selector');
+  // Both trees return FAILURE -> legacy pass. But flee must be ticked first.
+  const order = [];
+  const k = mockKeeper({
+    pass: async () => { order.push('legacy.pass'); },
+  });
+  const d = new BTKeeper(k);
+  let fleeTicked = 0, farmTicked = 0;
+  d._flee = () => ({ tickAsync: async () => { fleeTicked++; return FAILURE; } });
+  d._farm = () => ({ tickAsync: async () => { farmTicked++; return FAILURE; } });
+
+  await d.pass();
+  check('flee tree was ticked', fleeTicked > 0);
+  check('farm tree was ticked', farmTicked > 0);
+  check('delegated to legacy pass when both fail', order.includes('legacy.pass'));
+}
+
+console.log('\nFlee SUCCESS ends the pass:');
+{
+  let farmTicked = 0, legacyTicked = 0;
+  const k = mockKeeper({ pass: async () => { legacyTicked++; } });
+  const d = new BTKeeper(k);
+  d._flee = () => ({ tickAsync: async () => SUCCESS });
+  d._farm = () => ({ tickAsync: async () => { farmTicked++; return FAILURE; } });
+
+  await d.pass();
+  check('farm not ticked when flee succeeded', farmTicked === 0);
+  check('legacy pass not called', legacyTicked === 0);
+}
+
+console.log('\nFarm SUCCESS ends the pass:');
+{
+  let farmTicked = 0, legacyTicked = 0;
+  const k = mockKeeper({ pass: async () => { legacyTicked++; } });
+  const d = new BTKeeper(k);
+  d._flee = () => ({ tickAsync: async () => FAILURE });
+  d._farm = () => ({ tickAsync: async () => { farmTicked++; return SUCCESS; } });
+
+  await d.pass();
+  check('farm was ticked', farmTicked > 0);
+  check('legacy pass not called when farm succeeded', legacyTicked === 0);
+}
+
+console.log('\nNot in game: no work done:');
+{
+  let legacyTicked = 0, fleeTicked = 0;
+  const k = mockKeeper({
+    s: { live: false, client: {}, world: { room: null } },
+    pass: async () => { legacyTicked++; },
+  });
+  const d = new BTKeeper(k);
+  d._flee = () => ({ tickAsync: async () => { fleeTicked++; return SUCCESS; } });
+
+  await d.pass();
+  check('flee not ticked when not in game', fleeTicked === 0);
+  check('legacy pass not called when not in game', legacyTicked === 0);
+}
+
+console.log('\nRUNNING subtree is drained, not abandoned:');
+{
+  // Flee returns RUNNING then SUCCESS on the second tick. The driver must
+  // keep ticking it (drain) until it settles.
+  let fleeTicked = 0;
+  const k = mockKeeper({ pass: async () => {} });
+  const d = new BTKeeper(k);
+  // Speed up the drain loop's 250ms wait for the test.
+  const seq = [RUNNING, SUCCESS];
+  d._flee = () => ({ tickAsync: async () => seq[Math.min(fleeTicked++, seq.length - 1)] });
+  d._farm = () => ({ tickAsync: async () => FAILURE });
+
+  await d.pass();
+  check('flee ticked more than once (drained)', fleeTicked >= 2);
+}
+
+console.log('\nFallback sets the re-entrancy guard:');
+{
+  // When both trees fail, the driver calls legacy pass() with _btKeeperPass
+  // set, so the legacy pass() gate does not bounce back into the driver.
+  let sawGuard = false;
+  const k = mockKeeper({
+    pass: async () => { sawGuard = k._btKeeperPass === true; },
+  });
+  const d = new BTKeeper(k);
+  d._flee = () => ({ tickAsync: async () => FAILURE });
+  d._farm = () => ({ tickAsync: async () => FAILURE });
+
+  await d.pass();
+  check('legacy pass saw _btKeeperPass=true', sawGuard);
+  check('guard cleared after fallback', k._btKeeperPass !== true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
