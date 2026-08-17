@@ -12297,6 +12297,93 @@ export class Autopilot {
     return preferAssignedRoom(rooms, mine === room?.num ? null : mine, 8);
   }
 
+  // ── Roam decomposition ─────────────────────────────────────────────
+  // These are the seam between roam() and its internal decisions.
+  // Each method is independently testable and can be reused elsewhere.
+
+  /**
+   * Check if we should go back to the hunting ground.
+   *
+   * @returns {boolean} true if we should go back
+   */
+  _roamShouldGoHome(room) {
+    return this.homeRoom != null && room?.num !== this.homeRoom;
+  }
+
+  /**
+   * Check if we've hit the roam limit.
+   *
+   * @returns {boolean} true if we should stop roaming
+   */
+  _roamHitLimit() {
+    return this.roamedRooms >= this.policy.roamLimit;
+  }
+
+  /**
+   * Check if an exit is escapable (can get back).
+   *
+   * @param {number} to the destination room number
+   * @param {number} from the current room number
+   * @returns {boolean}
+   */
+  _roamIsEscapable(to, from) {
+    const map = this.s.world?.map;
+    if (!map || from == null) return true;
+    if (to === from) return true;
+    if (!findPath(map, to, from).found) return false;
+
+    const goals = this.preyRooms().map(r => r.room);
+    if (!goals.length) return true;
+    return goals.includes(to) || goals.some(g => findPath(map, to, g).found);
+  }
+
+  /**
+   * Check if an exit is too dangerous.
+   *
+   * @param {number} to the destination room number
+   * @returns {object|null} the threat if too dangerous, null if ok
+   */
+  _roamIsTooDangerous(to) {
+    const spawns = loadSpawns(SPAWN_FILE);
+    const ceiling = this.threatCeiling();
+    if (!spawns || ceiling == null) return null;
+    const worst = (roomThreats(spawns, to) || [])[0];
+    return worst && (worst.level ?? 0) > ceiling ? worst : null;
+  }
+
+  /**
+   * Filter exits that are escapable and not too dangerous.
+   *
+   * @param {array} all the exits
+   * @returns {{exits: array, dangerous: array}}
+   */
+  _roamFilterExits(all) {
+    const room = this.s.world?.room;
+    const dangerous = [];
+    const exits = all.filter(e => {
+      const d = this._roamIsTooDangerous(e.to);
+      if (d) {
+        dangerous.push(`${e.to_name} (${e.to}): ${d.creature} is level ${d.level}`);
+        return false;
+      }
+      return this._roamIsEscapable(e.to, room?.num);
+    });
+    return { exits, dangerous };
+  }
+
+  /**
+   * Pick the best exit to roam to.
+   *
+   * @param {array} exits the filtered exits
+   * @returns {object|null} the pick
+   */
+  _roamPickExit(exits) {
+    const fresh = exits.filter(e => !this.visited.has(e.to));
+    const picks = (fresh.length ? fresh : exits);
+    if (!picks.length) return null;
+    return picks.sort((a, b) => (a.steps_away ?? 999) - (b.steps_away ?? 999))[0];
+  }
+
   async roam(room) {
     const s = this.s;
     // Getting out is its own move when there is a crowd standing on us. Doing it here
