@@ -299,5 +299,37 @@ console.log('\nprovisionTree:');
   check('tree has a tick method', typeof tree.tick === 'function');
 }
 
+// ---------------------------------------------------------------------------
+// provision() refill-low gate: a LOW larder (not just empty) in town should
+// trigger the cook/buy/withdraw refill path, not wait until the larder is empty.
+// The gate is the inTown + buyFood + foodNeededAboveCap>0 + larderVigor<threshold
+// conjunction inside provision(). We test it by calling provision() on a mock
+// keeper that is in a town, has a low larder, and a fight floor above the resting
+// cap -- and assert it attempts to refill (cook/buy) rather than just eating.
+// ---------------------------------------------------------------------------
+console.log('\nprovision() refill-low gate:');
+{
+  // Minimal mock: the parts of provision() the refill-low path touches.
+  const { Autopilot } = await import('./m59-autopilot.mjs');
+  let cookCalled = 0, buyCalled = 0, withdrawCalled = 0;
+  const k = Object.create(Autopilot.prototype);
+  k.policy = { buyFood: true, walkingMoney: 400, vigorCeiling: 200, restVigorCap: 0.4 };
+  k.s = { client: {}, world: { room: { name: 'Market square in the city of Tos' } } };
+  k.larder = () => [{ food: { filling: 5, nutrition: 5, vigor: 5 } }];  // 1 mushroom, low
+  k.fightFloor = () => 130;  // needs 130; resting cap 80 -> needs 50 above cap
+  k.purse = () => 1;  // poor
+  k.inTown = () => true;
+  k.cookSomething = async () => { cookCalled++; return false; };
+  k.buyFoodInTown = async () => { buyCalled++; return {}; };
+  k.withdrawForFood = async () => { withdrawCalled++ };
+  k.reagentCount = () => ({ elderberry: 1, herb: 1 });
+  k.warnedNoFood = false;
+  k.note = () => {};
+  // provision(plan, v) -- the refill-low path should call cookSomething (larder low in town)
+  const res = await k.provision({ vigorCeiling: 200 }, { vigor: { value: 80, max: 200 } });
+  check('low larder in town attempts a refill (cook)', cookCalled >= 1);
+  check('low larder in town with no money attempts a withdraw', withdrawCalled >= 1);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

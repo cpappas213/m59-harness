@@ -1666,7 +1666,34 @@ export class Autopilot {
     // cannot waste a big item -- it just stops one large loaf from vetoing the meal.
     const smallest = larder.reduce((m, x) => (!m || x.food.filling < m.filling ? x.food : m), null);
 
-    if (!best) {
+    // REFILL WHILE STILL IN TOWN, BEFORE THE LARDER GOES EMPTY.
+    //
+    // The `!best` branch below (cook / buy / withdraw) only fires when the larder is
+    // *completely* empty. A character who loots a trickle of edible mushrooms stays
+    // non-empty, so the refill path never runs and the larder silently runs down to
+    // nothing one mushroom at a time -- then the character is in the field with no food
+    // and no reagents, and the next `!best` finds nothing to cook or buy. The fix:
+    // when the larder is *low* (cannot cover the fight floor above the resting cap, the
+    // part that only food can supply) and we are standing in a town that can cook or
+    // sell, run the refill path now, in town, while a merchant and a bank are at hand.
+    // This is deliberately town-gated: in the field the ordinary `!best` path still
+    // applies (cook from carried reagents), and we do not want a character abandoning a
+    // good hunting room to top up a half-full larder.
+    const larderVigor = larder.reduce((t, x) => t + (x.food?.vigor ?? 0), 0);
+    const restingCap = Math.floor((v.vigor?.max ?? 200) * (p.restVigorCap ?? 0.4));
+    const foodNeededAboveCap = Math.max(0, (floor ?? 0) - restingCap);
+    // Room-name town check, the same heuristic the supervisor uses: a merchant and a
+    // bank are at hand in these. Deliberately NOT a method call -- this file has no
+    // inTown() and we do not want a character abandoning a hunting room to top up a
+    // half-full larder; the gate keeps the refill to town, where it is cheap.
+    const roomName = String(s.world?.room?.name || '');
+    const inTown = /Raza|Mausoleum|Museum|Marion|Tos|Barloque|Jasper|Cornoth|inn/i.test(roomName);
+    const refillLow = inTown
+      && this.policy.buyFood
+      && foodNeededAboveCap > 0
+      && larderVigor < foodNeededAboveCap;
+
+    if (!best || refillLow) {
       // MAKE SOME, IF WE CAN. Out of food used to be treated as purely a supply
       // problem, which was true of a fleet that could not cast -- and false of this
       // one, where every character knows `create food` and spends all day picking up
@@ -1715,7 +1742,9 @@ export class Autopilot {
       // Genuinely nothing to eat and nothing to make it from. Say it once and carry
       // on fighting at whatever vigor resting gives -- refusing to fight would idle
       // the character for ever. fightFloor() has already dropped to the starved floor.
-      if (!this.warnedNoFood) {
+      // (Only when the larder is actually EMPTY. With refillLow the larder has food --
+      // the refill just did not top it up this pass -- so no false "no food" alarm.)
+      if (!best && !this.warnedNoFood) {
         this.warnedNoFood = true;
         this.note('no food to raise vigor with', {
           vigor, floor, ceiling, reagents: this.reagentCount(),
