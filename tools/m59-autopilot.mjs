@@ -11638,6 +11638,150 @@ export class Autopilot {
   // Herbs, and a character stuck at 80 vigor for want of four items is losing far more
   // than the markup. Bounded by reagentTarget and by walkingMoney, so it can never eat
   // the money a character needs to get home.
+  // ── Restock reagents decomposition ─────────────────────────────────
+  // These are the seam between restockReagents() and its internal decisions.
+  // Each method is independently testable and can be reused elsewhere.
+
+  /**
+   * Calculate what this character needs to buy.
+   *
+   * @returns {{need: object, askedFor: object, wantsFood: boolean, hungryNow: boolean, emptyLarder: boolean}}
+   */
+  _restockCalculateNeeds() {
+    const c = this.s.need();
+    const mayBuyFood = purchaseEnabled(this.policy, 'food');
+    const mayBuyReagents = purchaseEnabled(this.policy, 'reagents');
+
+    const wantEb = reagentTargetFor('elderberry', this.policy.reagentTarget);
+    const wantHb = reagentTargetFor('herb', this.policy.reagentTarget);
+    const have = this.reagentCount();
+    const need = {
+      elderberry: Math.max(0, wantEb - have.elderberry),
+      herb: Math.max(0, wantHb - have.herbs),
+    };
+
+    // Fold in the loadout's own floors
+    const loadout = this.loadout();
+    const askedFor = {};
+    if (loadout) {
+      const pack = this.packAsItems();
+      for (const entry of loadout.carry) {
+        if (entry.min <= 0) continue;
+        const held = pack.filter(i => norm(i.name) === norm(entry.item))
+                         .reduce((t, i) => t + i.amount, 0);
+        const short = Math.max(0, entry.min - held);
+        const kind = skills.shareKind(entry.item);
+        if (kind) need[kind] = short; else askedFor[norm(entry.item)] = short;
+      }
+    }
+
+    const wantsFood = mayBuyFood && (!this.larder(c).length ||
+                      (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9));
+
+    const emptyLarder = mayBuyFood && !this.larder(c).length;
+    const hungryNow = emptyLarder ||
+                      (vigorPct(c.vitals?.()) ?? 1) < (this.policy.vigorWant ?? 0.9);
+
+    return { need, askedFor, wantsFood, hungryNow, emptyLarder, mayBuyFood, mayBuyReagents };
+  }
+
+  /**
+   * Check if the purse can cover the purchase.
+   *
+   * @param {number} purse the current purse
+   * @param {{hungryNow: boolean}} ctx context
+   * @returns {{canBuy: boolean, budget: number, floor: number}}
+   */
+  _restockCheckBudget(purse, ctx) {
+    const fullFloor = this.policy.walkingMoney ?? 400;
+    const floor = ctx.hungryNow ? Math.min(fullFloor, this.policy.hungryFloor ?? 100) : fullFloor;
+    const canBuy = purse > floor;
+    const budget = purse - floor;
+    return { canBuy, budget, floor };
+  }
+
+  /**
+   * Rank shop items for purchase.
+   *
+   * @param {object} shop the shop list
+   * @param {{need: object, askedFor: object, mayBuyReagents: boolean, mayBuyFood: boolean, hungryNow: boolean, budget: number}} ctx
+   * @returns {{reagents: array, food: array}}
+   */
+  _restockRankItems(shop, ctx) {
+    const { need, askedFor, mayBuyReagents, mayBuyFood, hungryNow, budget } = ctx;
+    const c = this.s.need();
+
+    const shortOf = (name) => {
+      if (!mayBuyReagents) return 0;
+      const k = skills.shareKind(name);
+      if (k && need[k] > 0) return need[k];
+      return askedFor[norm(name)] || 0;
+    };
+
+    let spend = 0;
+    const affordable = it => (it.cost ?? 0) > 0 && (it.cost ?? 0) <= budget - spend;
+
+    // Rank reagents
+    const reagents = mayBuyReagents
+      ? (shop.items || []).filter(it => shortOf(it.name) > 0 && affordable(it)) : [];
+    for (const it of reagents) spend += it.cost;
+
+    // Rank food by vigor per shilling
+    const carried = (c.inventory || []).reduce(
+      (t, i) => t + (foodValue(i.name)?.nutrition ?? 0) * (i.amount || 1), 0);
+    const vg = c.vitals?.()?.vigor;
+    const vigorNow = vg?.value ?? null;
+    const vigorMax = vg?.scale_max ?? 200;
+    const restCap = REST_VIGOR_CAP * vigorMax;
+    const reserve = ctx.emptyLarder
+      ? Math.max(0, (this.policy.fightAboveVigor ?? 140) - restCap - carried)
+      : 0;
+    let gap = Math.max(reserve, hungryNow && vigorNow !== null
+      ? Math.max(0, ((this.policy.vigorWant ?? 0.9) * vigorMax) - vigorNow - carried)
+      : 0);
+
+    const food = [];
+    if (mayBuyFood && gap > 0) {
+      const menu = (shop.items || []).filter(it => isFood(it.name) && (foodValue(it.name)?.nutrition ?? 0) > 0)
+        .map(it => ({ it, vigor: foodValue(it.name).nutrition }))
+        .sort((a, b) => (b.vigor / b.it.cost) - (a.vigor / a.it.cost) || b.vigor - a.vigor);
+      for (let pass = 0; pass < 20 && gap > 0; pass++) {
+        const pick = menu.find(m => affordable(m.it));
+        if (!pick) break;
+        food.push(pick.it); spend += pick.it.cost; gap -= pick.vigor;
+      }
+    }
+
+    return { reagents, food };
+  }
+
+  /**
+   * Buy the selected items.
+   *
+   * @param {object} shop the shop list
+   * @param {object} seller the seller
+   * @param {array} items the items to buy
+   * @returns {Promise<string[]>} the list of items bought
+   */
+  async _restockBuyItems(shop, seller, items) {
+    const s = this.s, c = s.need();
+    const got = [];
+    for (const it of items) {
+      await s.pacer.submit('buy', () => c.buyItems(shop.sellerId, [it.id]));
+      await new Promise(r => setTimeout(r, 700));
+      got.push(`${it.name} @${it.cost}`);
+      this.recordPurchase(it.name, it.cost, {
+        kind: skills.shareKind(it.name) || (isFood(it.name) ? 'food' : null),
+        from: seller?.nameRsc ? (c.rsc.get(seller.nameRsc) ?? null) : null,
+        why: isFood(it.name)
+          ? 'food bought at a counter we were already standing at -- the only way past the vigor-80 resting cap'
+          : 'reagent top-up at a counter we were already standing at, to keep create food castable',
+      });
+    }
+    await s.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+    return got;
+  }
+
   async restockReagents(seller) {
     const s = this.s, c = s.need();
     const mayBuyFood = purchaseEnabled(this.policy, 'food');
