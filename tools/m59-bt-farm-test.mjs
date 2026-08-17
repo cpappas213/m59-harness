@@ -297,6 +297,89 @@ t('tree: falls through to next node when provision is full', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Fight node: post-fight handling that the BT path used to skip
+//
+// The legacy fight path (m59-autopilot.mjs:9776) captures foe_id, sets swungAt,
+// handles stale_identity, and rests-or-retreats on disengage. The BT fight node
+// used to read only killed/died, so it never resumed a wounded prey, never
+// cleared a stale id, and sat in the open taking hits after a low-health break.
+// These assert each of those is now wired through.
+// ---------------------------------------------------------------------------
+
+t('fightNode captures foe_id so the next fight resumes the wounded prey', async () => {
+  const k = mockKeeper({ hibernation: false });
+  k.policy.hunt = 'giant rat';
+  k._btFarmFoundTargets = () => [{ id: 7, nameRsc: 'giant rat' }];
+  k.inReachOfUs = () => [];
+  k._btFarmFight = async () => ({ killed: false, died: false, rounds: 2, target: 'giant rat', foe_id: 7 });
+  const node = fightNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS, got ${r}`);
+  if (k.foeId !== 7) throw new Error(`expected foeId=7 (resume wounded prey), got ${k.foeId}`);
+});
+
+t('fightNode sets swungAt so the stall detector sees progress', async () => {
+  const k = mockKeeper({ hibernation: false });
+  k.policy.hunt = 'giant rat';
+  k._btFarmFoundTargets = () => [{ id: 1, nameRsc: 'giant rat' }];
+  k.inReachOfUs = () => [];
+  k._btFarmFight = async () => ({ killed: true, died: false, rounds: 3, target: 'giant rat' });
+  const node = fightNode(k);
+  await node.tickAsync(bb(k));
+  if (typeof k.swungAt !== 'number' || k.swungAt <= 0) throw new Error(`expected swungAt set, got ${k.swungAt}`);
+});
+
+t('fightNode rests (does not retreat) when breaking off behind a held spot', async () => {
+  const k = mockKeeper({ hibernation: false });
+  k.hold = { col: 1, row: 1, proven: true };
+  k.holdWorks = () => true;
+  k.policy.hunt = 'giant rat';
+  k._btFarmFoundTargets = () => [{ id: 1, nameRsc: 'giant rat' }];
+  k.inReachOfUs = () => [];
+  k._btFarmFight = async () => ({ killed: false, died: false, rounds: 4, target: 'giant rat',
+    disengaged: { at_health: '40%', mid_round: true } });
+  let rested = 0, retreated = 0;
+  // getSkills().restUntil would do real I/O; intercept the keeper-level path by
+  // asserting no retreat happened and the node returned SUCCESS.
+  k.retreatToSafety = async () => { retreated++; return { left: true }; };
+  const node = fightNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS, got ${r}`);
+  if (retreated !== 0) throw new Error(`holding a spot must NOT retreat, got ${retreated} retreats`);
+});
+
+t('fightNode retreats when breaking off in the open (not holding a spot)', async () => {
+  const k = mockKeeper({ hibernation: false });
+  k.hold = null; k.holdWorks = () => false;
+  k.policy.hunt = 'giant rat';
+  k._btFarmFoundTargets = () => [{ id: 1, nameRsc: 'giant rat' }];
+  k.inReachOfUs = () => [];
+  k._btFarmFight = async () => ({ killed: false, died: false, rounds: 2, target: 'giant rat',
+    disengaged: { at_health: '35%' } });
+  let retreated = 0;
+  k.retreatToSafety = async () => { retreated++; return { left: true }; };
+  const node = fightNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS, got ${r}`);
+  if (retreated !== 1) throw new Error(`expected a retreat in the open, got ${retreated}`);
+});
+
+t('fightNode reconnects on a stale object id instead of looping', async () => {
+  const k = mockKeeper({ hibernation: false });
+  k.policy.hunt = 'giant rat';
+  k._btFarmFoundTargets = () => [{ id: 1, nameRsc: 'giant rat' }];
+  k.inReachOfUs = () => [];
+  k._btFarmFight = async () => ({ fought: true, killed: false, died: false, rounds: 1,
+    stale_identity: true, note: 'id renumbered', target: 'giant rat' });
+  let reconnected = 0;
+  k.reconnect = async () => { reconnected++; return { ok: true }; };
+  const node = fightNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS, got ${r}`);
+  if (reconnected !== 1) throw new Error(`expected a reconnect on stale id, got ${reconnected}`);
+});
+
+// ---------------------------------------------------------------------------
 // Resting while waiting in a proven safe spot
 //
 // The fix for a character parked in a spot with nothing to hunt standing
@@ -355,17 +438,31 @@ t('wait-in-spot does not sit when a target is present (falls to fight)', async (
   if (rested !== 0) throw new Error(`expected no rest call, got ${rested}`);
 });
 
-t('wait-in-spot still waits (SUCCESS) when not holding a spot', async () => {
+t('not-holding empty room rests when below the ceiling (Lee\u2019s stall)', async () => {
+  // The real case: in a valid hunting room, NOT holding a spot, no prey present, vigor
+  // below the floor. The empty-room path must sit and regen -- the fix for Lee sitting
+  // at 60 vigor for ever with nothing to fight.
   const k = mockKeeper({ hold: null, holdWorks: () => false, sanctuary: () => false });
-  k.s.client.vitals = () => ({ health: { value: 36, max: 36 }, vigor: { value: 60, max: 200 } });
+  k.s.client.vitals = () => ({ health: { value: 29, max: 29 }, vigor: { value: 60, max: 200 } });
   k._btFarmFoundTargets = () => [];
   let rested = 0;
   k._btFarmRestWhileWaiting = async () => { rested++; return { rested: true }; };
   const node = noTargetFoundNode(k);
   const r = await node.tickAsync(bb(k));
-  // Not holding a spot -> the empty-room path, not the rest path.
-  if (rested !== 0) throw new Error(`expected no rest when not holding, got ${rested}`);
-  if (r !== SUCCESS && r !== RUNNING) throw new Error(`expected SUCCESS/RUNNING, got ${r}`);
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS (rested while waiting), got ${r}`);
+  if (rested !== 1) throw new Error(`expected a rest while waiting, got ${rested}`);
+});
+
+t('not-holding empty room does not rest when already whole', async () => {
+  const k = mockKeeper({ hold: null, holdWorks: () => false, sanctuary: () => false });
+  k.s.client.vitals = () => ({ health: { value: 36, max: 36 }, vigor: { value: 200, max: 200 } });
+  k._btFarmFoundTargets = () => [];
+  let rested = 0;
+  k._btFarmRestWhileWaiting = async () => { rested++; return { rested: true }; };
+  const node = noTargetFoundNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== SUCCESS) throw new Error(`expected SUCCESS, got ${r}`);
+  if (rested !== 0) throw new Error(`expected no rest when whole, got ${rested}`);
 });
 
 // ---------------------------------------------------------------------------

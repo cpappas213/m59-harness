@@ -356,10 +356,33 @@ export function noTargetFoundNode(keeper) {
     if (keeper.policy.roam && keeper.emptyPasses >= keeper.policy.roamAfterEmptyPasses) {
       await keeper.roam(room);
     } else {
-      keeper.note('nothing to hunt here', {
-        looking_for: keeper.policy.hunt, room: room?.name,
-        empty_passes: keeper.emptyPasses,
-      });
+      // In the right room, nothing to fight yet: wait for a spawn. Standing still
+      // regens nothing, so if we are below the regen ceiling we sit and recover
+      // vigor/health/mana while the room cycles. restUntil() aborts the moment a
+      // rat spawns in reach or anything hits us, so a spawn never delays the fight
+      // by more than one 3s tick. (Same call as the hold-a-spot branch above -- a
+      // character with no hold is the more common case: it is here, not holding.
+      //) Without this, a character parked in a valid room with no rat present idled
+      // at whatever vigor a fight left it at, for ever, doing nothing.
+      const v = vitals(bb);
+      const vigPct = v.vigor?.max ? v.vigor.value / v.vigor.max
+                                    : (v.vigor?.scale_max ? v.vigor.value / v.vigor.scale_max : null);
+      const hp = v.health?.max ? v.health.value / v.health.max : 1;
+      const whole = (vigPct ?? 1) >= 0.4 && (hp ?? 1) >= 0.98;
+      if (!whole) {
+        keeper.doing = 'waiting';
+        await keeper._btFarmRestWhileWaiting?.().catch(() => {});
+        keeper.tally.rests = (keeper.tally.rests || 0) + 1;
+        keeper.note('resting while we wait for a spawn', {
+          looking_for: keeper.policy.hunt, room: room?.name,
+          vigor: v.vigor?.value, health: v.health?.value,
+        });
+      } else {
+        keeper.note('nothing to hunt here', {
+          looking_for: keeper.policy.hunt, room: room?.name,
+          empty_passes: keeper.emptyPasses,
+        });
+      }
     }
     return SUCCESS;
   });
@@ -487,19 +510,65 @@ export function fightNode(keeper) {
     const safe = keeper.safety();
     const f = await keeper._btFarmFight(engageName, found, room, safe);
 
+    // The legacy fight path (m59-autopilot.mjs:9776) does four things after fight() that
+    // this node used to skip. Skipping them is why a BT character fights worse than a
+    // legacy one in the same room: it never resumes the rat it was already wounding
+    // (foe_id is thrown away, so the next fight re-picks a healed rat), it never sets
+    // swungAt (the stall detector reads that), it treats a stale object id as a lost
+    // fight, and when it breaks off at low health it just sits and waits to be hit
+    // again instead of resting behind the wall or retreating.
+    keeper.swungAt = Date.now();
+    keeper.foeId = f.foe_id ?? null;
+
     if (f.killed) {
       releaseQuarry?.(keeper.s.name);
       keeper.tally.kills++;
       keeper.progress('killed something');
+      keeper.note('killed', { target: f.target, rounds: f.rounds });
     } else if (f.died) {
       releaseQuarry?.(keeper.s.name);
       keeper.noProgress('died in a fight');
+      keeper.note('died', { target: f.target, rounds: f.rounds });
+    } else if (f.stale_identity) {
+      // fight() proved the character is alive; its object id just went stale (a save
+      // renumbered ids under a live session). Reconnect for a fresh id rather than
+      // looping forever on a fight that reads as lost.
+      keeper.note('stale object id during a fight -- reconnecting', { why: f.note });
+      await keeper.reconnect('clearing a stale object id mid-fight').catch(() => {});
+      keeper.noProgress('reconnected after a stale object id');
+    } else if (f.disengaged) {
+      // Broke off at low health mid-fight. The recovery move depends on where we stand.
+      // Behind a proven safe spot, sitting still IS the heal (nothing can hit us unless
+      // we swing first), so rest here. Otherwise the monster is still hostile and we
+      // must leave the room before resting, or it keeps hitting us.
+      const holding = !!keeper.hold && keeper.holdWorks?.();
+      if (holding) {
+        keeper.note('broke off behind the wall -- resting here rather than running', {
+          at_health: f.disengaged.at_health, mid_round: !!f.disengaged.mid_round });
+        const skills = getSkills();
+        await skills.restUntil(keeper.s, { health: 0.95, vigor: 0.4, maxSeconds: 120 }).catch(() => null);
+        keeper.progress('rested after breaking off a fight');
+      } else {
+        await keeper.retreatToSafety?.({
+          because: 'broke off a fight at ' + (f.disengaged.at_health ?? '?'),
+          mid_round: !!f.disengaged.mid_round,
+        }).catch(() => {});
+        keeper.progress('retreated after breaking off a fight');
+      }
     } else {
-      keeper.noProgress('broke off without a landed hit or a kill');
+      // A fight that ended with no kill, no death, no disengage, no stale id: it ran
+      // the rounds out or the target slipped out of reach. Name what actually happened
+      // instead of the generic line.
+      const why = f.drifted_out_of_reach
+        ? 'broke off -- the prey moved out of reach while holding position'
+        : (f.landed_hits > 0
+           ? 'broke off with hits landed but no kill (resuming the wounded prey)'
+           : 'broke off without a landed hit or a kill');
+      keeper.noProgress(why);
+      keeper.note(f.drifted_out_of_reach ? 'prey drifted out of reach' : 'broke off', {
+        target: f.target, rounds: f.rounds, landed_hits: f.landed_hits ?? 0,
+      });
     }
-    keeper.note(f.killed ? 'killed' : (f.died ? 'died' : 'broke off'), {
-      target: f.target, rounds: f.rounds,
-    });
     return SUCCESS;
   });
 }
