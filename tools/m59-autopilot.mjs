@@ -1633,6 +1633,23 @@ export class Autopilot {
       // asking another character, and available in the field where the alternative
       // is a walk back through the rooms that keep killing them.
       if (await this.cookSomething()) return 'ate';  // spend this pass eating instead
+      
+      // If we can't cook (doesn't know create food), try buying food instead
+      if (this.policy.buyFood && this.purse() > this.policy.walkingMoney) {
+        this.note('cannot cook, buying food instead', {
+          why: 'does not know create food, has money to buy',
+          purse: this.purse(),
+          floor: this.policy.walkingMoney
+        });
+        await this.buyFoodInTown().catch(() => {});
+        // Check if we got food
+        const newLarder = this.larder(s.client);
+        if (newLarder.length > 0) {
+          this.note('bought food in town', { bought: newLarder.length + ' item(s)' });
+          return 'ate';  // spend this pass eating
+        }
+      }
+      
       // Genuinely nothing to eat and nothing to make it from. Say it once and carry
       // on fighting at whatever vigor resting gives -- refusing to fight would idle
       // the character for ever. fightFloor() has already dropped to the starved floor.
