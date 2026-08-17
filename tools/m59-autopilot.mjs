@@ -583,6 +583,24 @@ const WANT_FIGHT_VIGOR = 140;     // what every pattern aims to set out at
 // resting alone can actually deliver. This is a SUPPLY failure and is counted as one.
 const STARVED_FIGHT_VIGOR = 70;
 
+// THE FLOOR MUST BE REACHABLE. Resting alone caps at REST_VIGOR_CAP (80 of a 200 bar);
+// every point of vigor above that comes only from eating. So the highest vigor a
+// character can actually get is the resting cap plus the nutrition already carried.
+// A configured floor above that is unreachable by any action the keeper can take, and
+// holding out for it idles the character for ever: it rests to the cap, still below the
+// floor, and loops "too tired to start a fight" forever.
+//
+// This is the root of the Lee deadlock: a baseline floor of 140 is above the 80 resting
+// cap, and a character carrying a single mushroom (+50 -> 130) has a NON-empty larder,
+// so the old empty-larder escape hatch never fired and the floor stayed at 140, yet 130
+// < 140. Cap the floor at what resting + the carried food can deliver, in every case: a
+// badly-stocked character fights at what it can actually reach, and a well-stocked one
+// still climbs to the full floor by eating. Pure and exported so the arithmetic is testable.
+export function reachableFightFloor(want, vigorMax, carriedVigor) {
+  const restCap = REST_VIGOR_CAP * (vigorMax || 200);   // 80 on a 200 bar
+  return Math.min(want, restCap + (carriedVigor || 0));
+}
+
 // WHERE THE MONEY GOES. Jasper and Tos share one banking system, so either counter
 // pays into the same balance and the only question is which is nearer -- which really
 // does flip across this fleet's rooms: Jasper is closer to the Merchant Way rooms,
@@ -743,10 +761,14 @@ export class Autopilot {
   // adapters below) under one stable name. Without this, those helpers destructure
   // `this.constructor._combatSkills` (undefined) and silently do nothing -- which
   // is how a character could log "resting" every pass while never once sitting,
-  // and never regen the vigor the fight floor demands. skills is the whole
-  // m59-skills.mjs namespace (healUp, restUntil, fight, findCreature, ...);
-  // OF is the flag bitfield from m59-parse.mjs.
-  static _combatSkills = { skills, OF };
+  // and never regen the vigor the fight floor demands.
+  //
+  // BOTH shapes are required: the adapters read `const { skills }` (the whole module
+  // as one object, then skills.restUntil / skills.healUp / ...) AND `const { fight }`
+  // and `const { findCreature }` (individual named exports at the top level). So the
+  // namespace is spread to the top level as well as kept under `skills`. OF is the
+  // flag bitfield from m59-parse.mjs.
+  static _combatSkills = { skills, OF, ...skills };
 
   constructor(session, { mode = 'survive', policy = {} } = {}) {
     this.s = session;
@@ -1255,15 +1277,14 @@ export class Autopilot {
     // fightAboveVigor was the old single knob; it still works, as the floor.
     const want = Math.max(MIN_FIGHT_VIGOR,
       p.vigorFloor ?? plan.vigorFloor ?? p.fightAboveVigor ?? plan.fightAboveVigor ?? 0);
-    // An empty larder puts the floor out of reach -- resting stops at 80 -- so holding
-    // out for it would idle the character for ever. Fall back to what resting can
-    // deliver, and COUNT it: this is the food supply failing, not a fighting decision,
-    // and it should show up as a supply number rather than as a quiet slowdown.
-    if (!this.larder(this.s.client).length) {
-      this.vigor.starved_passes++;
-      return Math.min(want, STARVED_FIGHT_VIGOR);
-    }
-    return want;
+    const c = this.s.client;
+    const vit = c?.vitals?.() ?? {};
+    const capMax = vit.vigor?.scale_max ?? vit.vigor?.max ?? 200;
+    const carriedVigor = this.larder(c).reduce((sum, item) =>
+      sum + (item?.food?.nutrition ?? 0), 0);
+    // An empty larder is the supply failure -- count it as such.
+    if (!this.larder(c).length) this.vigor.starved_passes++;
+    return reachableFightFloor(want, capMax, carriedVigor);
   }
 
   // TELL THE REST OF THE FLEET WHAT WE ARE SHORT OF AND WHAT WE CAN SPARE.
