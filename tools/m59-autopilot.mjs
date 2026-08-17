@@ -770,6 +770,16 @@ export class Autopilot {
   // flag bitfield from m59-parse.mjs.
   static _combatSkills = { skills, OF, ...skills };
 
+  // The strategy table and the spawn file, exposed to the BT helpers as class statics.
+  // The BT farm tree reads `this.constructor.STRATEGIES` / `SPAWN_FILE` (m59-bt-farm.mjs
+  // and _btFarmStrategy / _btFarmSpawnFile) rather than reaching into module scope, so
+  // they must hang off the class. These were left undefined after the bt-keeper branch
+  // merge -- _btFarmStrategy() referenced an undeclared `require_cache` AND read
+  // this.constructor.STRATEGIES (undefined), so every BT node that called it threw a
+  // ReferenceError that tickAsync swallowed, and provisioning never ran.
+  static STRATEGIES = STRATEGIES;
+  static SPAWN_FILE = SPAWN_FILE;
+
   constructor(session, { mode = 'survive', policy = {} } = {}) {
     this.s = session;
     this.mode = mode;
@@ -8523,7 +8533,6 @@ export class Autopilot {
   // with a mock keeper and keeps the keeper's internals private.
 
   _btFarmStrategy() {
-    const { STRATEGIES } = require_cache ?? {};  // not used, just a placeholder
     const STRATS = this.constructor.STRATEGIES;
     return STRATS?.[this.policy.strategy] || STRATS?.baseline || {};
   }

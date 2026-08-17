@@ -201,5 +201,30 @@ console.log('\nSafety-first routing (Underworld / arm before the trees):');
   check('no self for 3 passes does not throw (reconnect is optional)', !threw);
 }
 
+// THE ROOT CAUSE OF THE PROVISIONING DEADLOCK. _btFarmStrategy() is called by every
+// BT farm node that needs the strategy (provisionNode first). After the bt-keeper
+// branch merge it read an undeclared `require_cache` (ReferenceError) and
+// this.constructor.STRATEGIES (undefined), so every call threw, tickAsync swallowed
+// the throw as FAILURE, and provisioning silently never ran -- Lee looped "too tired
+// to start a fight" for ever while his larder sat full. These adapters must resolve
+// the real strategy table and spawn file, not throw.
+{
+  const { Autopilot } = await import('./m59-autopilot.mjs');
+  const k = { policy: { strategy: 'baseline' }, constructor: Autopilot };
+  let threw = false, plan = null;
+  try { plan = Autopilot.prototype._btFarmStrategy.call(k); } catch { threw = true; }
+  check('_btFarmStrategy does not throw (no undeclared require_cache)', !threw);
+  check('_btFarmStrategy resolves the baseline strategy table', plan && plan.vigorFloor === 140,
+        `vigorFloor=${plan?.vigorFloor}`);
+  check('STRATEGIES is exposed as a class static the BT tree can read',
+        Autopilot.STRATEGIES && Autopilot.STRATEGIES.baseline?.vigorFloor === 140);
+  check('SPAWN_FILE is exposed as a class static the BT tree can read',
+        typeof Autopilot.SPAWN_FILE === 'string' && Autopilot.SPAWN_FILE.length > 0);
+  let spawnThrew = false, spawnFile = null;
+  try { spawnFile = Autopilot.prototype._btFarmSpawnFile.call(k); } catch { spawnThrew = true; }
+  check('_btFarmSpawnFile does not throw', !spawnThrew);
+  check('_btFarmSpawnFile returns the spawn file path', spawnFile === Autopilot.SPAWN_FILE);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
