@@ -45,7 +45,7 @@ console.log('\ncastNode:');
     s: {
       client: {
         spells: [{ name: 'create food', level: 1, mana: 10 }],
-        cast: async () => ({ success: true })
+        cast: async (spellName, targetRsc) => ({ success: true, spellName, targetRsc })
       },
       pacer: { submit: async (tag, fn) => fn() }
     },
@@ -83,6 +83,64 @@ console.log('\ncastNode:');
   result = node.tick(bb);
   check('second tick returns FAILURE when spell is not known', result === FAILURE);
   check('sets bb.castResult.reason', bb.castResult?.reason === 'does not know spell');
+}
+console.log('\ncastNode with self target:');
+{
+  let castTarget = null;
+  const keeper = {
+    s: {
+      client: {
+        me: { rsc: 12345, name: 'TestChar' },
+        spells: [{ name: 'heal', level: 1, mana: 15 }],
+        cast: async (spellName, targetRsc) => {
+          castTarget = targetRsc;
+          return { success: true, spellName, targetRsc };
+        }
+      },
+      pacer: { submit: async (tag, fn) => fn() }
+    },
+    note: () => {}
+  };
+  const node = castNode(keeper, 'heal', 'self');
+  const bb = {};
+  // First tick starts the async operation
+  let result = node.tick(bb);
+  check('first tick returns RUNNING', result === 'RUNNING');
+  // Wait for the promise to resolve
+  await new Promise(r => setTimeout(r, 10));
+  result = node.tick(bb);
+  check('second tick returns SUCCESS when casting on self', result === SUCCESS);
+  check('sets bb.castResult.target to self', bb.castResult?.target === 'TestChar');
+  check('passes self RSC to cast', castTarget === 12345);
+}
+console.log('\ncastNode with entity target:');
+{
+  let castTarget = null;
+  const keeper = {
+    s: {
+      client: {
+        spells: [{ name: 'zap', level: 1, mana: 20 }],
+        cast: async (spellName, targetRsc) => {
+          castTarget = targetRsc;
+          return { success: true, spellName, targetRsc };
+        }
+      },
+      pacer: { submit: async (tag, fn) => fn() }
+    },
+    note: () => {}
+  };
+  const target = { rsc: 99999, name: 'TestMonster' };
+  const node = castNode(keeper, 'zap', target);
+  const bb = {};
+  // First tick starts the async operation
+  let result = node.tick(bb);
+  check('first tick returns RUNNING', result === 'RUNNING');
+  // Wait for the promise to resolve
+  await new Promise(r => setTimeout(r, 10));
+  result = node.tick(bb);
+  check('second tick returns SUCCESS when casting on entity', result === SUCCESS);
+  check('sets bb.castResult.target to entity name', bb.castResult?.target === 'TestMonster');
+  check('passes entity RSC to cast', castTarget === 99999);
 }
 
 console.log('\ncheckMoneyNode:');

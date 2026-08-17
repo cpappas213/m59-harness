@@ -61,6 +61,9 @@ export function checkLarderNode(keeper) {
 // Parameters:
 // - spellName: the name of the spell to cast (e.g., 'create food')
 // - target: optional target for the spell
+//   - null: no target (self-cast or no-target spell)
+//   - 'self': cast on yourself
+//   - { rsc: '...', name: '...' }: cast on a specific entity (player, monster, NPC)
 // Returns SUCCESS if the spell was cast, FAILURE if not.
 export function castNode(keeper, spellName, target = null) {
   return new AsyncAction(async (bb) => {
@@ -73,16 +76,30 @@ export function castNode(keeper, spellName, target = null) {
       return FAILURE;
     }
     
+    // Resolve the target
+    let targetRsc = null;
+    let targetName = null;
+    if (target === 'self') {
+      // Cast on yourself
+      targetRsc = keeper.s.client.me?.rsc;
+      targetName = keeper.s.client.me?.name;
+    } else if (target && typeof target === 'object') {
+      // Cast on a specific entity
+      targetRsc = target.rsc;
+      targetName = target.name;
+    }
+    // If target is null, the spell is self-cast or has no target
+    
     // Cast the spell
     try {
       const result = await s.pacer.submit('cast', () => 
-        keeper.s.client.cast(spellName, target)
+        keeper.s.client.cast(spellName, targetRsc)
       );
-      bb.castResult = { success: true, result };
-      keeper.note('cast spell', { spell: spellName, target: target });
+      bb.castResult = { success: true, result, spell: spellName, target: targetName };
+      keeper.note('cast spell', { spell: spellName, target: targetName, result });
       return SUCCESS;
     } catch (err) {
-      bb.castResult = { success: false, reason: err.message };
+      bb.castResult = { success: false, reason: err.message, spell: spellName, target: targetName };
       return FAILURE;
     }
   }, { name: `cast_${spellName}` });
