@@ -299,10 +299,91 @@ export function vigorWalkNode(keeper) {
 // Node: leave_room (health below retreat line, combat zone, no wall)
 // ---------------------------------------------------------------------------
 
-export function leaveRoomNode(keeper) {
+// ---------------------------------------------------------------------------
+// Node: tryLeave (try to leave via exit)
+// ---------------------------------------------------------------------------
+
+export function tryLeaveNode(keeper) {
   return asyncAction(async (bb) => {
     const s = bb.session.s;
-    const c = bb.client;
+    const cands = (s.world?.exits() || []).filter(e => e.to != null);
+    if (!cands.length) return FAILURE;
+
+    const r = await s.leaveViaAny(cands).catch(e => ({ left: false, reason: e.message }));
+    if (!r.left) return FAILURE;
+
+    keeper.tally.fled_rooms = (keeper.tally.fled_rooms || 0) + 1;
+    keeper.fledInARow = (keeper.fledInARow || 0) + 1;
+    await keeper._btFleeRestAndCook();
+    keeper.progress('left a room I could neither fight nor rest in');
+    await keeper.townTripIfCornered().catch(() => {});
+    return SUCCESS;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Node: breakOut (reconnect to shed aggro, then try to leave)
+// ---------------------------------------------------------------------------
+
+export function breakOutNode(keeper) {
+  return asyncAction(async (bb) => {
+    const s = bb.session.s;
+    const broke = await keeper.breakOut('cannot walk out of a room that is killing us')
+                           .catch(() => ({ did: false }));
+    if (!broke.did) return FAILURE;
+
+    keeper.note('got out after reconnecting', { crowd_before: broke.crowd });
+
+    const cands = (s.world?.exits() || []).filter(e => e.to != null);
+    if (!cands.length) return FAILURE;
+
+    const r = await s.leaveViaAny(cands).catch(e => ({ left: false, reason: e.message }));
+    if (!r.left) return FAILURE;
+
+    keeper.tally.fled_rooms = (keeper.tally.fled_rooms || 0) + 1;
+    keeper.fledInARow = (keeper.fledInARow || 0) + 1;
+    await keeper._btFleeRestAndCook();
+    await keeper.townTripIfCornered().catch(() => {});
+    return SUCCESS;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Node: eat (provision before declaring trapped)
+// ---------------------------------------------------------------------------
+
+export function eatNode(keeper) {
+  return asyncAction(async (bb) => {
+    const plan0 = keeper._btFleeStrategy();
+    if (await keeper.provision(plan0, vitals(bb)).catch(() => false) === 'ate') {
+      keeper.note('ate rather than reporting myself trapped', {
+        why: 'could not fight, rest or leave -- and "cannot fight" here is usually vigor ' +
+             'below the fight floor, which food fixes and a rescue does not',
+      });
+      return SUCCESS;
+    }
+    return FAILURE;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Node: declareTrapped (say what is actually needed)
+// ---------------------------------------------------------------------------
+
+export function declareTrappedNode(keeper) {
+  return asyncAction(async (bb) => {
+    keeper.declareInterest();
+    keeper.noProgress('trapped: cannot fight, cannot rest, cannot leave -- needs food or a rescue');
+    return SUCCESS;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Node: leaveRoom (composite: try to leave, break out, eat, declare trapped)
+// ---------------------------------------------------------------------------
+
+export function leaveRoomNode(keeper) {
+  return asyncAction(async (bb) => {
     const hostiles = keeper._btFleeHostiles();
     const hp = hpFrac(bb);
     const sheltered = keeper.holdWorks();
@@ -315,6 +396,7 @@ export function leaveRoomNode(keeper) {
     if (hp >= restBelow) return FAILURE;
 
     keeper.doing = 'travelling';
+    const s = bb.session.s;
     const ways = (s.world?.exits() || []).filter(e => e.to != null && e.reachable !== false);
     const out = ways.sort((a, b) => (a.steps_away ?? 999) - (b.steps_away ?? 999))[0];
     keeper.note('leaving the room to recover safely', {
@@ -327,52 +409,20 @@ export function leaveRoomNode(keeper) {
       then: 'recover health outside the monster room, then return',
     });
 
-    // Try to leave via any exit
-    const cands = ways.length ? ways : (s.world?.exits() || []).filter(e => e.to != null);
-    if (!cands.length) {
-      keeper.noProgress('trapped: no exit from this room at all');
-      return SUCCESS;
+    // Tick the sub-nodes using Fallback logic
+    const tryLeave = tryLeaveNode(keeper);
+    const breakOut = breakOutNode(keeper);
+    const eat = eatNode(keeper);
+    const declareTrapped = declareTrappedNode(keeper);
+
+    // Try in order: tryLeave, breakOut, eat, declareTrapped
+    for (const node of [tryLeave, breakOut, eat]) {
+      const r = await node.tickAsync(bb);
+      if (r === SUCCESS) return SUCCESS;
     }
 
-    let r = await s.leaveViaAny(cands).catch(e => ({ left: false, reason: e.message }));
-    if (r.left) {
-      keeper.tally.fled_rooms = (keeper.tally.fled_rooms || 0) + 1;
-      keeper.fledInARow = (keeper.fledInARow || 0) + 1;
-      await keeper._btFleeRestAndCook();
-      keeper.progress('left a room I could neither fight nor rest in');
-      await keeper.townTripIfCornered().catch(() => {});
-      return SUCCESS;
-    }
-
-    // Could not leave. Try breaking out (reconnect to shed aggro)
-    keeper.note('could not leave', { why: r.reason, tried: r.tried?.length ?? 1 });
-    const broke = await keeper.breakOut('cannot walk out of a room that is killing us')
-                           .catch(() => ({ did: false }));
-    if (broke.did) {
-      r = await s.leaveViaAny(cands).catch(e => ({ left: false, reason: e.message }));
-      if (r.left) {
-        keeper.note('got out after reconnecting', { crowd_before: broke.crowd });
-        keeper.tally.fled_rooms = (keeper.tally.fled_rooms || 0) + 1;
-        keeper.fledInARow = (keeper.fledInARow || 0) + 1;
-        await keeper._btFleeRestAndCook();
-        await keeper.townTripIfCornered().catch(() => {});
-        return SUCCESS;
-      }
-    }
-
-    // Eat before declaring trapped
-    const plan0 = keeper._btFleeStrategy();
-    if (await keeper.provision(plan0, vitals(bb)).catch(() => false) === 'ate') {
-      keeper.note('ate rather than reporting myself trapped', {
-        why: 'could not fight, rest or leave -- and "cannot fight" here is usually vigor ' +
-             'below the fight floor, which food fixes and a rescue does not',
-      });
-      return SUCCESS;
-    }
-
-    keeper.declareInterest();
-    keeper.noProgress('trapped: cannot fight, cannot rest, cannot leave -- needs food or a rescue');
-    return SUCCESS;
+    // Last resort: declare trapped
+    return await declareTrapped.tickAsync(bb);
   });
 }
 

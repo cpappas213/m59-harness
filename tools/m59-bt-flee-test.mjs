@@ -10,6 +10,7 @@ import {
   getFleeTree, doomedNode, fleeThresholdNode, sanctuarySettleNode,
   getAWallNode, vigorWalkNode, leaveRoomNode, restNode,
   armHealthNode, healNode, restUntilNode,
+  tryLeaveNode, breakOutNode, eatNode, declareTrappedNode,
 } from './m59-bt-flee.mjs';
 
 let passed = 0, failed = 0;
@@ -262,6 +263,70 @@ t('restUntilNode: SUCCESS', async () => {
     _btFleeRestUntil: async () => null,
   });
   const node = restUntilNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'SUCCESS') throw new Error(`expected SUCCESS, got ${r}`);
+});
+
+// --- Sub-nodes: tryLeave, breakOut, eat, declareTrapped ---
+
+t('tryLeaveNode: FAILURE when no exits', async () => {
+  const k = mockKeeper();
+  k.s.world.exits = () => [];
+  const node = tryLeaveNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'FAILURE') throw new Error(`expected FAILURE, got ${r}`);
+});
+
+t('tryLeaveNode: SUCCESS when leave succeeds', async () => {
+  const k = mockKeeper();
+  k.s.world.exits = () => [{ to: 200, to_name: 'Next Room' }];
+  k.s.leaveViaAny = async () => ({ left: true });
+  const node = tryLeaveNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'SUCCESS') throw new Error(`expected SUCCESS, got ${r}`);
+});
+
+t('breakOutNode: FAILURE when breakOut fails', async () => {
+  const k = mockKeeper({
+    breakOut: async () => ({ did: false }),
+  });
+  const node = breakOutNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'FAILURE') throw new Error(`expected FAILURE, got ${r}`);
+});
+
+t('breakOutNode: SUCCESS when breakOut and leave succeed', async () => {
+  const k = mockKeeper({
+    breakOut: async () => ({ did: true, crowd: 5 }),
+  });
+  k.s.world.exits = () => [{ to: 200, to_name: 'Next Room' }];
+  k.s.leaveViaAny = async () => ({ left: true });
+  const node = breakOutNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'SUCCESS') throw new Error(`expected SUCCESS, got ${r}`);
+});
+
+t('eatNode: FAILURE when provision does not eat', async () => {
+  const k = mockKeeper({
+    provision: async () => 'full',
+  });
+  const node = eatNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'FAILURE') throw new Error(`expected FAILURE, got ${r}`);
+});
+
+t('eatNode: SUCCESS when provision eats', async () => {
+  const k = mockKeeper({
+    provision: async () => 'ate',
+  });
+  const node = eatNode(k);
+  const r = await node.tickAsync(bb(k));
+  if (r !== 'SUCCESS') throw new Error(`expected SUCCESS, got ${r}`);
+});
+
+t('declareTrappedNode: SUCCESS', async () => {
+  const k = mockKeeper();
+  const node = declareTrappedNode(k);
   const r = await node.tickAsync(bb(k));
   if (r !== 'SUCCESS') throw new Error(`expected SUCCESS, got ${r}`);
 });
