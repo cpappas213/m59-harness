@@ -308,7 +308,20 @@ export class World {
     if (!me) return { reachable: null, why: 'own position unknown' };
     if (!geo) return { reachable: null, why: 'no geometry for this room' };
     if (me.col === toCol && me.row === toRow) return { reachable: true, steps: 0, path: [] };
-    const r = geo.path(me.row, me.col, toRow, toCol);
+    // NO CLEARANCE PREFERENCE HERE, AND THE SAFE-SPOT RANKING IS WHY.
+    //
+    // `path`'s clearance cost keeps LONG routes off the walls, which is right for crossing
+    // a room and wrong for this: `nearestSafeSpot` ranks candidates at -0.5 per step of
+    // whatever this returns, so a preference that lengthens the approach quietly becomes a
+    // penalty ON THE SPOT ITSELF. Measured against the recorded book: 36.7% of walks to a
+    // held safe wall came back longer, worst case +9 steps — 4.5 points against a proof
+    // bonus of 20 — and it fell hardest on the walls that are hardest to walk into, which
+    // are the best ones. A SAFE WALL IS A TIGHT SQUARE BY DEFINITION; the fleet must not
+    // be taught to shy away from the thing the game is balanced around.
+    //
+    // So this answers the tactical question — how far is that square, really — exactly as
+    // it did before clearance existed. Crossing the room is `walkTo`'s business.
+    const r = geo.path(me.row, me.col, toRow, toCol, { clearance: 0 });
     if (!r.found) return { reachable: false, why: r.reason };
     return { reachable: true, steps: r.steps.length, path: r.steps.map(s => ({ col: s.col, row: s.row, dir: s.dir })),
              ...(me.offGrid ? { from_nearest_floor: { col: me.col, row: me.row },
@@ -327,7 +340,10 @@ export class World {
       const r = toRow + dr, c = toCol + dc;
       if (!geo.walkable(r, c)) continue;
       if (me.row === r && me.col === c) return { col: c, row: r, steps: 0, path: [] };
-      const p = geo.path(me.row, me.col, r, c);
+      // Same as reach(): this is melee range, not a journey. The square next to a monster
+      // is frequently a tight one, and choosing between the eight of them on a preference
+      // meant for crossing rooms picks the roomy side rather than the near one.
+      const p = geo.path(me.row, me.col, r, c, { clearance: 0 });
       if (!p.found) continue;
       if (!best || p.steps.length < best.steps) best = { col: c, row: r, steps: p.steps.length, path: p.steps };
     }

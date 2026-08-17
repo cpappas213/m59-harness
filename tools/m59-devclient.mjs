@@ -1,0 +1,194 @@
+#!/usr/bin/env node
+// LAUNCH THE PATCHED CLIENT, POINTED AT THE RIGHT SERVER, WITH THE OVERLAY SWITCHED ON.
+//
+//   node tools/m59-devclient.mjs --fleet arena TESTER            write shortcuts/dev-TESTER.bat
+//   node tools/m59-devclient.mjs --fleet arena TESTER --launch   write it and start it
+//   node tools/m59-devclient.mjs --fleet arena --list            who is in this roster
+//   node tools/m59-devclient.mjs --fleet arena TESTER --proxy 5961
+//   node tools/m59-devclient.mjs --check                         is a patched client built
+//
+// THE PATCHED CLIENT IS A DIFFERENT BINARY FROM THE ONE THE SHORTCUTS LAUNCH, and that
+// is the trap this tool exists to close. `m59-shortcuts.mjs` finds a client by looking
+// for a Steam install, so on this machine every shortcut points at
+// `steamapps\common\Meridian 59\Meridian.exe` — a stock retail binary with none of
+// clientd3d/m59dbg.c in it. A patched client that nothing ever launches is the most
+// expensive possible outcome: it compiles, it passes, and the overlay simply never
+// appears, with no error anywhere to explain why.
+//
+// SO THIS NAMES THE BINARY EXPLICITLY and refuses to guess. `M59_CLIENT` overrides;
+// otherwise it is the local build tree's `run/localclient/meridian.exe`, which is where
+// the makefiles copy the client they just built.
+//
+// AND IT TAKES THE HOST AND PORT FROM THE ROSTER ENTRY, NOT FROM A DEFAULT. Every
+// credential in a named fleet carries its own `host`/`port`, and the two fleets on this
+// machine are on different ports — 15959 for the local test server, 5959 for prod. A
+// launcher that assumes one of them connects the wrong character to the wrong world and
+// says nothing at all about it, because a client at a login screen looks like a client
+// that is loading.
+//
+// A .BAT RATHER THAN A .LNK, deliberately: the environment variables the overlay reads
+// have to be set in the launching process, and a shortcut cannot set one. The file
+// carries a PLAINTEXT PASSWORD for the same reason every shortcut here does, so
+// `shortcuts/` is gitignored and this masks it on the terminal unless asked.
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { fleetName, stateFileFor } from './m59-fleetpath.mjs';
+import { OVERLAY_DIR } from './m59-overlay.mjs';
+import { SIGNAL_PORT } from './m59-signal.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = join(HERE, '..');
+
+// The build tree's own output directory. The client makefile copies meridian.exe here
+// as its last step, so this is the freshest patched binary by construction.
+export const DEV_CLIENT = () => process.env.M59_CLIENT ||
+  join(process.env.M59_SOURCE || 'C:\\code\\Meridian59', 'run', 'localclient', 'meridian.exe');
+
+export function rosterFor(fleet) {
+  const file = stateFileFor(fleet);
+  if (!existsSync(file)) return { file, entries: [] };
+  const j = JSON.parse(readFileSync(file, 'utf8'));
+  const entries = [];
+  for (const [agent, v] of Object.entries(j)) {
+    const cr = v?.credentials;
+    if (!cr?.account || !cr?.password) continue;
+    entries.push({ agent, account: cr.account, password: cr.password,
+                   character: cr.character || null,
+                   host: cr.host || '127.0.0.1', port: Number(cr.port || 5959) });
+  }
+  return { file, entries };
+}
+
+const matches = (e, want) => [e.agent, e.character, e.account]
+  .filter(Boolean).some(v => String(v).toLowerCase() === String(want).toLowerCase());
+
+/**
+ * The launcher's text.
+ *
+ * `start ""` with an empty title because the first quoted argument to `start` is taken
+ * as the WINDOW TITLE, so `start "C:\...\meridian.exe"` opens a console window called
+ * that and launches nothing — the single most common way a generated .bat silently does
+ * the wrong thing on Windows.
+ */
+export function launcherText(entry, {
+  client = DEV_CLIENT(), overlayDir = OVERLAY_DIR(), signalPort = SIGNAL_PORT,
+  host = null, port = null, title = true,
+} = {}) {
+  const h = host ?? entry.host;
+  const p = port ?? entry.port;
+  // THE WORKING DIRECTORY IS PART OF THE LAUNCH, NOT AN INCIDENTAL.
+  //
+  // `download.c:23` declares `run_dir = "."` and the resource and download paths are
+  // built from it, so the client resolves real files against whatever directory it was
+  // started in. A .lnk always carries one — that is what the Working Directory field
+  // IS — and a .bat inherits the caller's, which for a tool run out of this repository
+  // is the repository. The first version of this file omitted it, and the resulting
+  // client sat at the login screen looking exactly like a wrong password.
+  const dir = client.replace(/[\\/][^\\/]+$/, '');
+  return [
+    '@echo off',
+    `rem ${entry.character || entry.account} (${entry.agent}) on ${h}:${p}`,
+    'rem GENERATED by tools/m59-devclient.mjs. Contains a plaintext password;',
+    'rem shortcuts/ is gitignored and this must stay that way.',
+    '',
+    'rem The overlay and the signal channel are read from the environment by',
+    'rem clientd3d/m59dbg.c. Unset either one and that half goes quiet, which is what',
+    'rem makes the patched binary safe to hand to somebody who just wants to play.',
+    `set "M59_OVERLAY_DIR=${overlayDir}"`,
+    `set "M59_SIGNAL_PORT=${signalPort}"`,
+    `set "M59_DEBUG_TITLE=${title ? 1 : 0}"`,
+    '',
+    `cd /d "${dir}"`,
+    `start "" /D "${dir}" "${client}" /H:${h} /P:${p} /U:${entry.account} /W:${entry.password} /Q`,
+    '',
+  ].join('\r\n');
+}
+
+// --------------------------------------------------------------------------- cli
+if (process.argv[1]?.endsWith('m59-devclient.mjs')) {
+  const argv = process.argv.slice(2);
+  const has = n => argv.includes('--' + n);
+  const flag = (n, d = null) => {
+    const at = argv.indexOf('--' + n);
+    return at >= 0 && argv[at + 1] && !argv[at + 1].startsWith('--') ? argv[at + 1] : d;
+  };
+
+  const client = DEV_CLIENT();
+  const built = existsSync(client);
+
+  if (has('check') || !built) {
+    console.log(`patched client: ${client}`);
+    console.log(built ? '  present' : '  NOT BUILT — nothing to launch');
+    if (!built) {
+      console.log('\nbuild it with:');
+      console.log('  cd C:\\code\\Meridian59');
+      console.log('  "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools' +
+                  '\\VC\\Auxiliary\\Build\\vcvars32.bat" && nmake /nologo RELEASE=1 Bclient');
+      process.exit(2);
+    }
+    if (has('check')) process.exit(0);
+  }
+
+  const fleet = fleetName();
+  const { file, entries } = rosterFor(fleet);
+  if (!entries.length) {
+    console.error(`no roster with passwords at ${file} — is --fleet right?`);
+    process.exit(2);
+  }
+
+  if (has('list')) {
+    console.log(`fleet ${fleet || '(unnamed)'} — ${entries.length} slots in ${file}\n`);
+    console.log('agent      character     server');
+    for (const e of entries)
+      console.log(`${e.agent.padEnd(10)} ${String(e.character || '?').padEnd(13)} ${e.host}:${e.port}`);
+    process.exit(0);
+  }
+
+  const want = argv.find(a => !a.startsWith('--') &&
+                              argv[argv.indexOf(a) - 1] !== '--fleet' &&
+                              argv[argv.indexOf(a) - 1] !== '--proxy' &&
+                              argv[argv.indexOf(a) - 1] !== '--port');
+  if (!want) {
+    console.error('name a character, or --list. e.g. --fleet arena TESTER');
+    process.exit(2);
+  }
+  const entry = entries.find(e => matches(e, want));
+  if (!entry) {
+    console.error(`no "${want}" in fleet ${fleet || '(unnamed)'} — try --list`);
+    process.exit(2);
+  }
+
+  // THE PROXY IS A DIFFERENT PORT ON THE SAME HOST, and it is what lets a broker keep
+  // driving a character while a person watches it. Passing it explicitly rather than
+  // guessing: a client silently pointed at a proxy that is not running fails at the
+  // login screen and looks exactly like a wrong password.
+  const proxy = flag('proxy');
+  const text = launcherText(entry, {
+    client,
+    overlayDir: flag('overlay-dir', OVERLAY_DIR()),
+    signalPort: Number(flag('signal-port', SIGNAL_PORT)),
+    port: proxy ? Number(proxy) : null,
+    title: !has('no-title'),
+  });
+
+  const dir = join(REPO, 'shortcuts');
+  mkdirSync(dir, { recursive: true });
+  const out = join(dir, `dev-${(entry.character || entry.account).replace(/[^A-Za-z0-9._-]+/g, '-')}.bat`);
+  writeFileSync(out, text);
+  try { chmodSync(out, 0o700); } catch { /* not meaningful on Windows */ }
+
+  console.log(`wrote ${out}`);
+  console.log(text.replace(/\/W:\S+/, '/W:***').split('\r\n')
+                  .filter(l => l && !l.startsWith('rem')).map(l => '  ' + l).join('\n'));
+
+  if (has('launch')) {
+    console.log('\nlaunching...');
+    const child = spawn('cmd.exe', ['/c', out], { detached: true, stdio: 'ignore' });
+    child.unref();
+    console.log('  started. The caption names the account, the room and the square.');
+    console.log(`  overlay files: ${flag('overlay-dir', OVERLAY_DIR())}`);
+    console.log(`  listen for F5: node tools/m59-signal.mjs`);
+  }
+}

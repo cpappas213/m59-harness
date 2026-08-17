@@ -1479,9 +1479,65 @@ export class RoomGeometry {
     return (r, c) => pen.get((r - 1) * this.cols + (c - 1)) ?? 0;
   }
 
+  // DO NOT HUG THE WALL ON THE WAY PAST IT — the routing half of the safe-spot lesson.
+  //
+  // A safe spot is a square the geometry hems in, and that is exactly what makes it worth
+  // standing on. It is the last thing worth ROUTING THROUGH. A* with a plain step cost is
+  // indifferent between the middle of a corridor and the wall of it, so it threads
+  // characters along the tight side of every gap — where a step slides, the mover lands
+  // somewhere the plan did not expect, and the walker starts the bounce this whole file
+  // has been fighting. The clearance in a doorway is real and has to be spent; the
+  // clearance in the open is free and was being given away.
+  //
+  // Expressed as COST, never as a prohibition, for the same reason threats are: a route
+  // that only exists through a tight gap is still a route we have to take, and a bake must
+  // never be the reason a doorway disappears. A square with all eight neighbours open pays
+  // nothing; one wedged in a corner pays the most, and the router happily pays it when
+  // there is no other way through.
+  //
+  // Measured off the MOVER's own step relation when a mask is baked, because that is the
+  // thing that will be enforced — the coarse grid calls the tight side of a gap open, and
+  // agreeing with it here is how the plan and the walk come apart. With no mask this
+  // returns null and the router costs exactly as it did before any of this existed.
+  // Weight ZERO by default, the same as `path`'s: this is a preference a caller asks for,
+  // and the two defaults must agree or "the router's default" means one thing here and
+  // another there.
+  clearanceField({ weight = 0 } = {}) {
+    if (!weight || !this.hasStepMask) return null;
+    if (this._clearance?.weight !== weight) {
+      const pen = new Float32Array(this.rows * this.cols);
+      for (let r = 1; r <= this.rows; r++) {
+        for (let c = 1; c <= this.cols; c++) {
+          if (!this.walkable(r, c)) continue;
+          let open = 0;
+          for (const d of DIRS) {
+            const rr = r + d.dr, cc = c + d.dc;
+            if (this.inBounds(rr, cc) && this.walkable(rr, cc)
+                && this.moverStepLands(r, c, rr, cc)) open++;
+          }
+          pen[(r - 1) * this.cols + (c - 1)] = (DIRS.length - open) * weight;
+        }
+      }
+      this._clearance = { weight, pen };
+    }
+    const { pen } = this._clearance;
+    return (r, c) => pen[(r - 1) * this.cols + (c - 1)] ?? 0;
+  }
+
   path(fromRow, fromCol, toRow, toCol,
        { fine = true, maxNodes = 200000, avoid = null, threats = null, threatCost = null,
          blockedEdges = null,
+         // How hard to prefer the open side of a gap — see clearanceField.
+         //
+         // OFF BY DEFAULT, AND THAT IS THE SAFE DIRECTION. A preference that shapes a long
+         // route is a distortion in a short one: `world.reach` measures how far a SAFE
+         // WALL is and `nearestSafeSpot` ranks at -0.5 a step, so switching this on
+         // everywhere quietly became a penalty on the tight squares — which is what a safe
+         // wall IS. Measured against the recorded book before it was turned off: 36.7% of
+         // walks to a held wall came back longer, worst +9 steps, 4.5 points against a
+         // proof bonus of 20. So callers doing LARGE routing ask for it — `leaveVia` does
+         // — and everything tactical plans exactly as it did before any of this existed.
+         clearance = 0,
          // ON WHEN, AND ONLY WHEN, IT IS FREE.
          //
          // Turning this on fleet-wide once caused a rejoin storm: the trace is synchronous
@@ -1497,6 +1553,7 @@ export class RoomGeometry {
          // it did, which is the property that makes this safe to ship on.
          collision = this.hasStepMask } = {}) {
     threatCost = threatCost ?? this.threatField(threats);
+    const clearanceCost = this.clearanceField({ weight: clearance });
     if (!this.inBounds(fromRow, fromCol)) return { found: false, reason: 'start is outside the room grid' };
     if (!this.inBounds(toRow, toCol)) return { found: false, reason: 'goal is outside the room grid' };
     if (!this.walkable(toRow, toCol)) return { found: false, reason: 'goal square has no floor' };
@@ -1602,8 +1659,14 @@ export class RoomGeometry {
         // still want the route, because whatever is standing on it will move and the
         // caller would otherwise be told the square is unreachable for ever.
         if (avoid && !(n.row === toRow && n.col === toCol) && avoid.has(`${n.row},${n.col}`)) continue;
+        // THE GOAL IS EXEMPT FROM THE CLEARANCE COST, and only from that one. Walking to
+        // a wall corner is the point of a safe spot, and taxing the destination for being
+        // a tight square would price the fleet out of the one move that keeps it alive.
+        // It shapes which way we go, never where we may go.
+        const atGoal = n.row === toRow && n.col === toCol;
         const cost = (gScore.get(ck) ?? Infinity) + (n.diagonal ? 1.4142 : 1)
-                   + (threatCost ? threatCost(n.row, n.col) : 0);
+                   + (threatCost ? threatCost(n.row, n.col) : 0)
+                   + (clearanceCost && !atGoal ? clearanceCost(n.row, n.col) : 0);
         if (cost >= (gScore.get(nk) ?? Infinity)) continue;
         gScore.set(nk, cost);
         came.set(nk, { row: cur.r, col: cur.c, dir: n.dir });

@@ -254,6 +254,79 @@ if (!existsSync(mapFile)) {
     ok('an anchor it cannot reach is still OFFERED rather than deleted — a bake must ' +
        'never be the reason a doorway disappears',
        chosen.length === naive.length);
+
+    // ------------------------------------------------ clearance: do not hug the wall
+    //
+    // A safe spot is a square the geometry hems in, which is what makes it worth
+    // STANDING on and the last thing worth ROUTING THROUGH. With a flat step cost A* is
+    // indifferent between the middle of a gap and the tight side of it, and the tight
+    // side is where a step slides, the mover lands off plan, and the walker starts
+    // bouncing. The preference is COST, so it can shape a route and can never remove one.
+    const CLEARANCE = 0.6;                    // what leaveVia asks for
+    const masked = RoomGeometry.fromJSON(room.roo);
+    masked.attachStepMask(geo.buildStepMask());
+    const tightness = at => {
+      let open = 0;
+      for (const d of STEP_MASK_DIRS) {
+        const r = at.row + d.dr, c = at.col + d.dc;
+        if (masked.inBounds(r, c) && masked.walkable(r, c)
+            && masked.moverStepLands(at.row, at.col, r, c)) open++;
+      }
+      return STEP_MASK_DIRS.length - open;
+    };
+    const floor = [];
+    for (let r = 1; r <= masked.rows; r++) for (let c = 1; c <= masked.cols; c++)
+      if (masked.walkable(r, c)) floor.push({ row: r, col: c });
+    let seed = 7, routes = 0, hugged = 0, cleared = 0, lenFlat = 0, lenClear = 0;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    for (let i = 0; i < 400 && routes < 40; i++) {
+      const a = floor[(rnd() * floor.length) | 0], b = floor[(rnd() * floor.length) | 0];
+      const flat = masked.path(a.row, a.col, b.row, b.col, { clearance: 0 });
+      const clear = masked.path(a.row, a.col, b.row, b.col, { clearance: CLEARANCE });
+      if (!flat.found || !clear.found || flat.steps.length < 8) continue;
+      routes++;
+      const mean = p => p.steps.reduce((n, s) => n + tightness(s), 0) / p.steps.length;
+      hugged += mean(flat); cleared += mean(clear);
+      lenFlat += flat.steps.length; lenClear += clear.steps.length;
+    }
+    ok('the clearance preference routes further from the walls',
+       routes > 10 && cleared < hugged,
+       `${routes} routes, ${(hugged / routes).toFixed(2)} -> ${(cleared / routes).toFixed(2)} ` +
+       'blocked neighbours per step');
+    ok('and pays for it in a little length rather than in refusals',
+       lenClear >= lenFlat && lenClear < lenFlat * 1.25,
+       `${(lenFlat / routes).toFixed(1)} -> ${(lenClear / routes).toFixed(1)} steps`);
+    // IT MAY ONLY EVER PREFER. Same rule as the mask itself: being wrong about a wall
+    // costs a walk, refusing costs the errand, silently.
+    let bothFound = true;
+    for (let i = 0; i < 200 && bothFound; i++) {
+      const a = floor[(rnd() * floor.length) | 0], b = floor[(rnd() * floor.length) | 0];
+      if (masked.path(a.row, a.col, b.row, b.col, { clearance: 0 }).found
+          !== masked.path(a.row, a.col, b.row, b.col, { clearance: CLEARANCE }).found)
+        bothFound = false;
+    }
+    ok('a route that exists without the preference still exists with it', bothFound);
+    // THE DESTINATION IS EXEMPT, because walking to a wall corner is the whole point of
+    // a safe spot and taxing it would price the fleet out of the move that keeps it alive.
+    const corner = floor.filter(p => tightness(p) >= 5)
+      .find(p => masked.path(floor[0].row, floor[0].col, p.row, p.col,
+                             { clearance: CLEARANCE }).found);
+    ok('a tight corner is still routed to', !!corner,
+       corner ? `${corner.col},${corner.row}` : 'no reachable corner in this room');
+    ok('and with no mask there is nothing to measure clearance against',
+       RoomGeometry.fromJSON(room.roo).clearanceField({ weight: CLEARANCE }) === null);
+    ok('the field itself is off unless a weight is asked for, exactly as `path` is',
+       masked.clearanceField() === null && typeof masked.clearanceField({ weight: CLEARANCE }) === 'function');
+    // OFF UNLESS ASKED, which is the property that keeps a safe wall reachable on the
+    // terms the safe-spot ranking measured it on. `world.reach` and every tactical walk
+    // take this default; only leaveVia opts in.
+    {
+      const a = floor[0], b = floor[floor.length - 1];
+      const plain = masked.path(a.row, a.col, b.row, b.col);
+      const zero = masked.path(a.row, a.col, b.row, b.col, { clearance: 0 });
+      ok('the default really is the zero-weight route, step for step',
+         JSON.stringify(plain.steps) === JSON.stringify(zero.steps));
+    }
   }
 }
 

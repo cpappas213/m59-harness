@@ -1,10 +1,12 @@
 # NEXT STEPS — the safe-spot pocket trap
 
-**Status: diagnosed, not fixed. The prod fleet is deliberately stopped.** Bringing it up
-before this is fixed resumes losing a character roughly every five minutes.
+**Status 2026-08-16 (second pass): the escape is built and pinned offline. NOT YET RUN
+AGAINST A LIVE FLEET.** The prod fleet is still deliberately stopped. What has changed is
+that the fault now has a fix with a test behind it; what has not changed is that nobody
+has watched a character walk out of room 587.
 
-Written 2026-08-16. Everything below was established by measurement or by watching a
-character in the client; where something is inference it says so.
+Everything below was established by measurement or by watching a character in the client;
+where something is inference it says so.
 
 ---
 
@@ -56,66 +58,110 @@ pocket trap** — it was hiding it.
 `c6d2e7f` — a wall-clock bound on `confirmPosition`, whose per-reply timeout only fires if
 replies *stop*. Correct on its own merits; **explicitly not the fix**, and labelled so.
 
-## The plan
+---
 
-### 1. Breadcrumbs — the escape (do this first)
+## Done in this pass
 
-Keep the last N validated fine moves per character. On a route-out failure, **replay them
-in reverse**.
+### 1. Breadcrumbs — the escape — **BUILT, offline-tested, unproven live**
 
-This is safe for a reason that matters: every step being replayed was already accepted by
-the fine validator on the way in, so it **cannot invent an impossible traversal** — it can
-only undo one. If a character reached a pocket by a route that should not have been legal,
-the breadcrumbs walk it back out the same way and the trap closes without widening the hole.
+`queueValidatedMove` keeps the last 64 moves it sent — the one choke point every move in
+the broker passes through, and the only place that knows both the position the packet left
+from and the clipped endpoint it asked for. `Session.retreatAlongBreadcrumbs` replays them
+in reverse; `walkTo` calls it when the router finds no route, at the start of a walk and
+once more mid-walk, then re-plans from wherever that lands.
 
-### 2. A negative-assertion suite — `m59-impossible-test.mjs`
+It is safe for a reason that matters: every step replayed was already accepted by the fine
+validator on the way in, so it **cannot invent an impossible traversal** — it can only undo
+one. If a character reached a pocket by a route that should not have been legal, the
+breadcrumbs walk it back out the same way and the trap closes without widening the hole.
 
-**The existing 153 collision assertions are all positive** — the documented Brownestone,
-Limping Toad, Icky, Farol, Ukgoth, Cor Noth, Temple and Fey cases assert that legitimate
-moves *remain usable*. Almost nothing asserts the opposite polarity, so **the suite passes
-cleanly on the day the walls stop working**. That is the failure the collision bake exists
-to prevent, and it is the untested half.
+Four behaviours worth knowing before editing it: a broken trail is dropped whole rather
+than skipped; the retreat stops the moment the route reappears; a refused reverse step ends
+it honestly rather than being forced; and it runs once per walk, because undoing the trail
+twice unwinds the journey.
 
-Each case is a `traceFineMoveClient` against the baked geometry asserting **refusal**, no
-server needed:
+`node tools/m59-breadcrumb-test.mjs` (32) pins it, including the one-way ledge — the case
+that must stop rather than teleport.
 
-- King's Way -> Cragged Mountains -> Castle Brax
-- Icky Cave -> Island, without dispel magic
-- Upstairs Castle Victoria, far west -> far east without using the door
-- every sealed room in Castle Victoria, doors excluded
-- Under the Shadow of the Sentinel -> Ukgoth -> Twisted Woods (the cliff climb)
+### 2. A negative-assertion suite — **BUILT: `m59-impossible-test.mjs` (126)**
+
+**The 153 collision assertions are all positive** — the Brownestone, Limping Toad, Icky,
+Farol, Ukgoth, Cor Noth, Temple and Fey cases all assert that legitimate moves *remain
+usable*, so **the suite passes cleanly on the day the walls stop working**.
+
+The new suite is checked-in `traceFineMoveClient` fixtures across the King's Way, both
+Cragged Mountains, the Twisted Wood and its western border, Ukgoth, the Sentinel, the Icky
+Cave and the four floors of Castle Victoria — each asserting a refusal **and naming the wall
+index that refused it**, so "still refused, for a completely different reason" cannot pass
+as unchanged. It also asserts that the upstairs of Castle Victoria stays sealed west from
+east under `moverStepLands`, with the castle's other three floors as the control.
+
+Every room carries **controls out of the same bake**, because a suite that only asserts
+refusals passes perfectly when everything is refused, which is the fleet standing still.
 
 **Observation cannot be the oracle here.** Players legitimately appear to phase through
 walls from another client's view — lag compensation — so "I watched it happen" proves
 nothing about legality. Assert against our own validator.
 
-### 3. Promote the safe-spot book to a destination
+**One planned case was dropped after measuring, and the reason matters.** The intended
+assertion was that the Cragged Mountains cliff is one-way. It measures as one-way — and so
+does the south exit anchor of *every* room checked (576, 578, 597, 598), because those
+anchors sit on the room's outermost row, where the mover routinely steps off a square it
+cannot step back onto. That is a property of the room boundary, not of the cliff. Asserting
+it as the cliff would have pinned the wrong fact with a confident name on it.
 
-`substrate/m59-safespots.json` already holds **920 squares recorded as held**, with
-`free_shots` per square, and nothing uses it as a *target*. Make `flee` and `rest` ask it for
-the nearest held pocket instead of searching from scratch.
+### 3. Clearance — do not hug the wall on the way past it — **BUILT**
 
-The mechanism is real and is the strongest defensive move available: `Monster.CanReach`
-calls `Room.LineOfSight`; `Player.TargetWithinSightAndRange` **never does**. Wedging into
-unreachable geometry when hurt is correct play, not a bug. Once (1) exists, getting out is
-solved, so the pocket becomes a tactical asset rather than a trap.
+Not in the original plan; it came out of the same mechanism. A safe spot is a square the
+geometry hems in, which makes it the last thing worth routing *through* — and A* with a
+flat step cost is indifferent between the middle of a gap and the tight side of it, so it
+threads characters along the wall, where a step slides and the bounce begins.
+
+`RoomGeometry.clearanceField` costs a square by how much of its step ring the **mover**
+refuses, measured off the baked mask. Measured across random routes: mean blocked
+neighbours per step **1.35 -> 0.72 in room 587**, 1.28 -> 0.49 in 597, 0.23 -> 0.05 in 544,
+for 6–8% more steps. It is cost and never a prohibition, the destination is exempt so a
+wall corner is still routable, and with no mask the weight is zero.
+
+**It is OFF unless the caller asks, and the first version was not.** A safe wall is a tight
+square by definition — that is the mechanism — so a preference for open ground is, if it
+reaches the tactical questions, a preference against the best squares in the game. It did:
+`world.reach` measures how far a wall is and `nearestSafeSpot` ranks at -0.5 a step, and
+with the preference on **36.7% of walks to a recorded held wall came back longer, worst +9
+steps — 4.5 points against a proof bonus of 20**, biased against the walls that are hardest
+to walk into. `path` and `clearanceField` now default to weight zero; `leaveVia` opts in at
+0.6, because crossing a room to a boundary is the long routing where the wedge happens.
+
+### 4. A test that actually tests a safe wall — **BUILT: `m59-safewall-test.mjs` (15)**
+
+There was not one. The 141 safe-spot assertions are about the BOOK-KEEPING — proving a
+square, disproving one, the settle grace, the pull detector — and the mechanism itself was
+tested only on synthetic 15x15 grids in `m59-combat-test.mjs`. Nothing asserted that what
+the fleet stands on in the real world is a safe wall.
+
+This one reads the baked map and the recorded book: every one of the held squares is still
+nominated by `safeSpots`, the broken line of sight is real geometry rather than a score, and
+a held square offers **3.24 unanswerable shots against 1.49 for ordinary floor in the same
+rooms** and **3.46 back cover against 0.85**, across 37 rooms and 256 squares. Its last
+section is the regression guard for the paragraph above — flip the clearance default back on
+and it goes red on 302 of 395 walks.
 
 ### NOT this: a coarse-grid escape hatch
 
-Considered and **rejected**. Falling back to the server's walkable grid to escape a pocket
-would relax collision *precisely where the two grids disagree most* — which is the mechanism
-that let bots climb cliffs and cross map boundaries no client can. The concern was never
-that a bot slips a little too deep into a safe spot; it is that bots have done traversals a
-human player cannot. Do not reopen that.
+Considered and **rejected**, and still rejected. Falling back to the server's walkable grid
+to escape a pocket would relax collision *precisely where the two grids disagree most* —
+which is the mechanism that let bots climb cliffs and cross map boundaries no client can.
+The concern was never that a bot slips a little too deep into a safe spot; it is that bots
+have done traversals a human player cannot. Do not reopen that.
 
-### Out of scope for now
+---
 
-The jump in *"Ancient Place, its origin forgotten"* to reach the mana node. That is Z-axis
-ballistics with fall limits; what is baked is sector heights, slope and water depth for
-*stepping*. Teaching a jump while characters cannot reliably leave a corner is the wrong
-order of work.
+## Still to do
 
-## How to know it worked
+### Prove it live — the only step that matters now
+
+Nothing here has met a server. Room 587 reproduces the wedge on demand: travel a character
+from 60 to 544, on the arena fleet at `127.0.0.1:15959`. **Reproduce there, never on prod.**
 
 ```bash
 node tools/m59-trace.mjs --seconds 60 --interval 15
@@ -129,6 +175,31 @@ Read-only, no restart, ~1 minute. Success is precise:
 
 The control case all session was **Bunsen**: the one character *holding* a safe spot rather
 than trying to leave one, running 8 passes and killing while 17 others were stuck.
+
+### The safe-spot book as a destination — measured, and mostly already true
+
+The plan was to make `flee` and `rest` ask `substrate/m59-safespots.json` for the nearest
+held pocket instead of searching from scratch. On inspection they already do:
+`withdraw()` and every rest path go through `takeSafeSpot` -> `searchSafeSpot` ->
+`nearestSafeSpot`, which is handed the book, skips discredited squares, keeps a proven
+square eligible below the defensibility gate, and ranks proof at +20..+30 (a human-verified
+square at +60) over pure geometry.
+
+The one gap that would have justified new code was measured and **does not exist**: of the
+256 recorded held-and-never-failed squares, **0 are missing from what `safeSpots()`
+nominates**. There is no held pocket the model refuses to consider.
+
+What is left is genuinely open and needs (1) proven live first: a held pocket the ROUTER
+cannot reach is still rejected as unreachable-to-us, because `reach` is `world.reach`.
+Breadcrumbs solve the way *out*; the way *in* still needs the router, and relaxing that is
+the coarse-grid hatch under another name. Do not start it before the live trace is clean.
+
+### Out of scope for now
+
+The jump in *"Ancient Place, its origin forgotten"* to reach the mana node. That is Z-axis
+ballistics with fall limits; what is baked is sector heights, slope and water depth for
+*stepping*. Teaching a jump while characters cannot reliably leave a corner is the wrong
+order of work.
 
 ## State as of writing
 

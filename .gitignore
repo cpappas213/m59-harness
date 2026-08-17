@@ -261,3 +261,20 @@ __pycache__/
 /substrate/exit-gaps.json
 
 /substrate/traces/
+
+# ---- live state written by the debugging tools added 2026-08-17 ----
+# Each of these names a character and where it was standing, or is a book of
+# objects this machine created in its own world. Same class of thing as the
+# grudge book: per-machine, and an accusation or a position in every row.
+/substrate/client-signals.jsonl
+/substrate/safewalk.json
+/substrate/pings.json
+/substrate/tour-bookmark.json
+/substrate/swarm-leader.json
+/substrate/walks/
+
+# The per-room overlay files the patched client reads. Derived from the baked
+# map in about fifteen minutes, ~1.5 MB, and its absence is LOUD rather than
+# silent — the client's own caption says "no overlay" — so unlike the routing
+# table there is no argument for carrying it in git.
+/substrate/overlay/

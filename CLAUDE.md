@@ -413,6 +413,31 @@ Three things hold this up and each fails in the dangerous direction if inverted:
   reason a doorway disappears.** Being wrong about a wall costs a walk; refusing costs the
   errand, silently.
 
+**A SAFE SPOT IS THE LAST THING WORTH ROUTING THROUGH, AND A* DOES NOT KNOW THAT.** With a
+flat step cost the router is indifferent between the middle of a gap and the tight side of
+it, so it threads characters along the wall — where a step SLIDES, the mover lands somewhere
+the plan did not expect, and the walker starts the bounce above. `clearanceField` adds cost
+by how much of a square's step ring the MOVER refuses, measured off the baked mask because
+the coarse grid calls the tight side of a gap open and agreeing with it here is how the plan
+and the walk come apart. Measured on this bake: mean blocked neighbours per step across
+random routes goes **1.35 -> 0.72 in room 587**, 1.28 -> 0.49 in 597 and 0.23 -> 0.05 in 544,
+for 6-8% more steps.
+
+**AND IT IS OFF UNLESS THE CALLER ASKS, BECAUSE A SAFE WALL IS A TIGHT SQUARE BY
+DEFINITION.** This is the one setting in the router that can quietly teach the fleet out of
+the game's central defensive mechanic, and it did: `world.reach` measures how far a wall is
+and `nearestSafeSpot` ranks candidates at **-0.5 a step**, so with the preference on
+everywhere it became a penalty ON THE SPOT ITSELF. Measured against the recorded book,
+**36.7% of walks to a held safe wall came back longer, worst case +9 steps — 4.5 points
+against a proof bonus of 20** — and it fell hardest on the walls that are hardest to walk
+into, which are the best ones. So `path` and `clearanceField` both default to weight zero,
+`leaveVia` opts in at 0.6 because crossing a room to a boundary is the long routing where
+the wedge happens, and every tactical question — `world.reach`, `approachSquare`, a pull, a
+melee approach, a walk back to a held wall — plans exactly as it did before any of this
+existed. Three further properties: it is **cost, never a prohibition**, so a route that only
+exists through a tight gap is still taken; **the destination is exempt**, because walking to
+a wall corner is the whole point; and **no mask means no field at all**.
+
 **AND THE BAKE'S "REGIONS" ARE THE SAFE SPOTS.** They are strongly connected components
 now, not a flood fill, and a room coming out in ninety pieces is one body of floor plus a
 scatter of corners the BSP hems in — the same geometric fact the safe-spot book measures
@@ -456,7 +481,41 @@ not rooms**: a table baked before masks existed has all 264 rooms, matches the m
 leaves the broker on the coarse grid — counting rooms put a green tick over exactly the
 failure that line exists to catch.
 
-`node tools/m59-routing-test.mjs` (33) pins all of it, offline.
+`node tools/m59-routing-test.mjs` (38) pins all of it, offline.
+
+**AND THE SAME FACT THAT MAKES A SQUARE SAFE MAKES IT A TRAP: THE WAY OUT OF A POCKET IS
+THE WAY IN, WALKED BACKWARDS.** A safe wall IS the coarse grid and the BSP disagreeing —
+that is the mechanism, measured — and the fleet seeks those squares out. Since the router
+plans on the collision view, a character standing on one frequently **cannot plan a route
+to its own room's exits**: room 587 is 68 regions with both exits in region 0, and there
+are 17,402 such pockets world-wide. It tries, is refused, replans, tries again, forever;
+the keeper pass never returns, so the board reports `travelling` while the character
+twitches in a corner. Watched in the client 2026-08-16 — *"like a person pretending to get
+stuck trying to find their way out the door right next to it"*.
+
+`queueValidatedMove` therefore keeps the last 64 moves it sent, and `retreatAlongBreadcrumbs`
+replays them in reverse when `walkTo` finds no route. **Every step replayed was accepted by
+the fine validator on the way in, so it cannot invent an impossible traversal — it can only
+undo one.** That is the whole argument for breadcrumbs over the obvious alternative: a
+coarse-grid escape hatch was **considered and rejected**, because falling back to the
+server's grid relaxes collision precisely where the two views disagree most, which is the
+mechanism that let bots climb cliffs and cross boundaries no client can. The concern was
+never that a bot slips slightly too deep into a safe spot.
+
+Four things it does that read backwards:
+
+- **A broken trail is dropped whole, never skipped.** A crumb that does not START where the
+  character is standing means something else moved it — a teleport, a knockback, a room
+  change — and the crumbs below it are no better connected than that one.
+- **It stops the moment the route reappears.** The goal is to leave the pocket, not to undo
+  the journey, so `until` is asked after every crumb.
+- **A refused reverse step ends the retreat and says so.** It is the same validator, so a
+  step it will not authorise is not forced; the walk then fails honestly, carrying
+  `retreated`, rather than silently.
+- **It runs once per walk.** Undoing the trail twice unwinds the journey.
+
+`node tools/m59-breadcrumb-test.mjs` (32) pins all of it against a scripted validator —
+including the one-way ledge, which is the case that must stop rather than teleport.
 
 **THE BAKE IS LOCAL AND THE SERVER IS NOT.** The map is generated from a source tree here;
 `prod` is somebody else's machine and can be patched on a Tuesday without telling us. Two
@@ -505,6 +564,22 @@ Two things to know before editing that path:
 `node tools/m59-collision-test.mjs` (153) pins it, and **10 of those skip without the raw
 `.roo` files** — set `M59_ROO_DIR` (or `M59_ROOT`) to a tree containing `resource/rooms`
 or the suite quietly reports 137 and calls it a pass.
+
+**AND ALL 153 OF THOSE ASSERTIONS ARE POSITIVE, WHICH MEANS THE SUITE PASSES CLEANLY ON THE
+DAY THE WALLS STOP WORKING.** Brownestone's doorway, the Limping Toad's half-wall, Icky,
+Farol, Ukgoth, Cor Noth, the Temple, the Fey precision cases — every one of them asserts
+that a legitimate move REMAINS USABLE. That is the right thing to protect and it is half a
+contract: a bake exists to REFUSE, and nothing was testing the refusing.
+`node tools/m59-impossible-test.mjs` (126) is the other polarity — checked-in fine traces
+across the King's Way, both Cragged Mountains, the Twisted Wood and its western border,
+Ukgoth, the Sentinel, the Icky Cave and the four floors of Castle Victoria, each asserting
+a refusal AND naming the wall index that refused it, so "still refused, for a completely
+different reason" cannot pass as unchanged. It carries **controls in the same rooms out of
+the same bake**, because a suite that only asserts refusals passes perfectly when
+everything is refused, which is the fleet standing still. And **observation cannot be the
+oracle here**: players legitimately appear to phase through walls from another client's
+view — that is lag compensation — so "I watched it happen" proves nothing about legality.
+Assert against our own validator, which is the only thing this repository controls.
 
 ## Backing the fleet up, and putting it back
 
@@ -2213,14 +2288,37 @@ remarks and a value may collect both.
   cannot tunnel, stock endpoint-0 slope and water-depth rules are preserved, every
   emitted packet is revalidated, and the documented Brownestone, Limping Toad, Icky,
   Farol, Ukgoth, Cor Noth, Temple, and Fey precision cases remain usable) and
-  `node tools/m59-routing-test.mjs` (33 — **the contract test for planning on the map the
+  `node tools/m59-routing-test.mjs` (38 — **the contract test for planning on the map the
   mover enforces**: that `moverStepLands` and not `stepAllowedByCollision` is the question
   that decides anything, that the quantizer has one answer for the planning half and the
   sending half, that a mask round-trips bit for bit and one of the wrong size is refused
   rather than mis-indexed, that with no mask the router plans exactly as it did before any
   of this existed, that a refusal removes an EDGE and not a SQUARE, that the tiny pockets
   against the walls are kept because they are the safe-spot signal, and that an exit a bake
-  cannot reach is still OFFERED — a bake must never be the reason a doorway disappears) and
+  cannot reach is still OFFERED — a bake must never be the reason a doorway disappears, and
+  that the clearance preference routes further from the walls while never removing a route) and
+  `node tools/m59-impossible-test.mjs` (126 — **the polarity the 153 collision assertions do
+  not cover**: every one of those asserts a legitimate move REMAINS USABLE, so that suite
+  passes cleanly on the day the walls stop working. This one asserts refusals, by checked-in
+  fine traces that each name the wall index that refused them, with controls in the same
+  rooms out of the same bake — because a suite that only asserts refusals passes perfectly
+  when everything is refused, which is the fleet standing still. Observation cannot be the
+  oracle: another client's view of a player phasing through a wall is lag compensation) and
+  `node tools/m59-safewall-test.mjs` (15 — **the mechanism, on real geometry, against
+  squares characters actually held**. The other 141 safe-spot assertions are about the
+  BOOK-KEEPING and the mechanism itself is tested only on synthetic grids, so nothing
+  asserted that what the fleet stands on in the real world is a safe wall. It reads the
+  book and the baked map: every held square is still nominated, a held square offers
+  materially more unanswerable shots and more wall at its back than ordinary floor in the
+  SAME room (3.24 vs 1.49 and 3.46 vs 0.85 across 37 rooms), and the chooser still lands on
+  one. Its last section is the guard against the routing preference leaking back into the
+  tactical questions and teaching the fleet off the walls — flip `path`'s clearance default
+  back on and it goes red on 302 of 395 walks) and
+  `node tools/m59-breadcrumb-test.mjs` (32 — **the contract test for getting out of a safe
+  spot**: that a crumb is recorded at the one choke point every move passes through, that a
+  retreat cannot invent an impossible traversal because every step goes back through the
+  fine validator, that a broken trail is dropped whole rather than skipped, that it stops
+  the moment the route reappears, and that a genuine dead end still reports itself) and
   `node tools/m59-roo-test.mjs` (74, with raw-room checks skipping without a copy of the game's
   `resource/rooms`). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on

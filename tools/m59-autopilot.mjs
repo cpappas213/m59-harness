@@ -295,6 +295,31 @@ const WATCHDOG_BLOCKED_MS = Number(process.env.M59_WATCHDOG_BLOCKED_MS || 3_000)
 // should not disagree about what it is.
 const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
 
+// THE POSITION PULSE — "IS THE CHARACTER MOVING", ASKED OF THE CHARACTER.
+//
+// Every stall number this repository already has measures the KEEPER. `ms_since_moved` is
+// when the keeper last moved somebody, so it climbs while an errand walks the character
+// perfectly well — which is exactly how a post-mortem came to read `doing: "stalled", 8
+// minutes since it last moved` about a character the frames put in three different rooms.
+// Read naively it manufactures stalls that are not there, and it is silent about the one
+// that is: a character wedged in a pocket is *frantically busy*, replanning, and the
+// keeper is moving it constantly — at the same two squares, forever.
+//
+// So: sample the POSITION on a clock, independently of the pass. Two consecutive samples
+// a second apart at the same square, while the character is supposed to be going
+// somewhere, is a stall in the only sense that matters — the body is not moving. It costs
+// nothing: `client.self` is already maintained from pushed packets, so this reads memory
+// and writes nothing to the wire, and it is exactly what a person watching the screen sees.
+//
+// It DECIDES NOTHING and interrupts nothing. It is an instrument: it raises `!` on the
+// status, writes one frame, and counts. The debugging this exists for — "the board said
+// travelling and nobody moved" — needs a record, not another actor. The handbrake below
+// is the thing that acts, and it acts on health, which is a different question.
+const PULSE_MS = Number(process.env.M59_PULSE_MS || 1_000);
+// Two samples, one second apart, per the shape of the question: has it moved since last
+// time, and the time before that. A third would only delay the alert.
+const PULSE_SAMPLES = 3;
+
 // RESTING AT A WALL PART-WAY THROUGH A JOURNEY — 'ab' | 'observe' | 'off'.
 //
 //   ab       half the journeys hold, half walk on, decided per journey. The experiment.
@@ -5761,6 +5786,12 @@ export class Autopilot {
         longest_block_ms: this.watch.longest_block_ms,
         blocked_now_ms: this.passStartedAt ? Date.now() - this.passStartedAt : 0,
         last_frame_s_ago: this.lastFrameAt ? Math.round((Date.now() - this.lastFrameAt) / 1000) : null,
+        // AND WHETHER THE BODY IS MOVING, which is a different question from all of the
+        // above — those measure the keeper. `wedged` is non-null only while the character
+        // has somewhere to be and has not changed square for two pulses. See PULSE_MS.
+        wedges: this.watch.wedges ?? 0,
+        wedged: this.watch.wedged ? {
+          ...this.watch.wedged, for_ms: Date.now() - this.watch.wedged.since } : null,
       } : null,
       passes: this.passes,
       running_for_seconds: this.startedAt ? Math.round((Date.now() - this.startedAt) / 1000) : 0,
@@ -6567,11 +6598,104 @@ export class Autopilot {
   startWatchdog() {
     if (this.watchTimer) return;
     this.watch = { ticks: 0, frames: 0, interrupts: 0, longest_block_ms: 0,
-                   lastHealth: null, blockedSince: null, interruptedPass: null };
+                   lastHealth: null, blockedSince: null, interruptedPass: null,
+                   // The position pulse — see PULSE_MS. `pulses` is the ring, `wedged` is
+                   // the open episode (null when moving), `wedges` counts episodes rather
+                   // than ticks so a long one is one event and not six hundred.
+                   pulses: [], lastPulseAt: 0, wedged: null, wedges: 0 };
     this.watchTimer = setInterval(() => {
       try { this.watchdogTick(); } catch (e) { this.watch.lastError = e.message; }
     }, WATCHDOG_MS);
     this.watchTimer.unref?.();
+  }
+
+  // ONE SAMPLE OF WHERE THE BODY IS, AND THE ONE QUESTION THAT NEEDS ASKING OF IT.
+  //
+  // Called from the watchdog tick, at most once per PULSE_MS. Everything here is memory:
+  // `client.self` is maintained from pushed packets and from our own dead reckoning, so
+  // this sends nothing and blocks on nothing, which is what makes it safe to run on every
+  // keeper in a broker holding twenty-one sessions.
+  //
+  // WHAT COUNTS AS STANDING STILL ON PURPOSE, because if this cannot tell those apart it
+  // is a false-alarm generator and will be turned off, which is how instruments die:
+  //
+  //   * resting and recovering — sitting down IS the behaviour; `restUntil` polls its own
+  //     vitals and aborts on damage, and it is supposed to take a while.
+  //   * holding a safe spot — the entire point is to stand exactly still on one square.
+  //     A wall that works looks identical to a wedge from the outside and is the opposite.
+  //   * inert — an errand or a bot owns the character. This keeper stood down deliberately
+  //     and does not get to call the thing it stood down for a stall.
+  //   * fighting, trading, waiting — none of them are going anywhere.
+  //
+  // What is left is `travelling`, `pulling`, `converging` and `zoning`: the states whose
+  // whole content is "the character should be getting closer to somewhere". Not moving
+  // during one of those, twice in a row, is the symptom the pocket trap presents with —
+  // and it is the symptom nothing here could state, because every other stall number is
+  // about the keeper and the keeper is working hard.
+  pulsePosition(now, hp) {
+    const w = this.watch, c = this.s?.client, me = c?.self;
+    if (!w) return null;
+    const doing = this.doing ?? null;
+    const GOING = ['travelling', 'pulling', 'converging', 'zoning'];
+    const at = me ? { at: now, room: c.room?.id ?? null, col: me.col ?? null,
+                      row: me.row ?? null, x: me.x ?? null, y: me.y ?? null,
+                      health: hp?.value ?? null, doing } : null;
+    if (at) {
+      w.pulses.push(at);
+      if (w.pulses.length > PULSE_SAMPLES) w.pulses.shift();
+    }
+
+    // Standing still on purpose is not a stall, and each of these is a different reason.
+    // Named rather than folded together, because "why was it not flagged" is a question
+    // somebody will ask of this instrument.
+    const excused = !at ? 'no position'
+      : this.inert ? 'inert — something else is driving'
+      : this.hold ? 'holding a safe spot, which is standing still on purpose'
+      : !GOING.includes(doing) ? `not going anywhere — ${doing ?? 'idle'}`
+      : null;
+    if (excused) {
+      if (w.wedged) { w.wedged = null; }
+      return null;
+    }
+
+    const [prev, last] = [w.pulses[w.pulses.length - 2], w.pulses[w.pulses.length - 1]];
+    // TWO SAMPLES, A SECOND APART, AT THE SAME SQUARE. Compared on the SQUARE and not the
+    // fine coordinate: a character sliding along a wall is moving in fine units and going
+    // nowhere, which is precisely the bounce this is here to catch, so a fine comparison
+    // would report it as healthy movement.
+    const stillHere = prev && last && prev.room === last.room
+      && prev.col === last.col && prev.row === last.row;
+    if (!stillHere) { w.wedged = null; return null; }
+
+    // ONE EPISODE, NOT ONE PER TICK. The alert is raised once when it starts and carries
+    // its own duration afterwards, so a five-minute wedge is one thing that happened for
+    // five minutes rather than three hundred identical notes.
+    const takingHits = prev.health != null && last.health != null && last.health < prev.health;
+    if (w.wedged) {
+      w.wedged.for_ms = now - w.wedged.since;
+      if (takingHits) w.wedged.taking_hits = true;
+      return w.wedged;
+    }
+    w.wedges++;
+    w.wedged = { since: prev.at, for_ms: now - prev.at, doing,
+                 at: { col: last.col, row: last.row, room: last.room },
+                 taking_hits: takingHits };
+    this.tally.pulse_wedges = (this.tally.pulse_wedges || 0) + 1;
+    // A frame, because this is the moment a post-mortem will want and the ring is
+    // otherwise written on health changes — and a wedge is quiet until something finds you.
+    this.recordFrame('! not moving while ' + doing);
+    this.note('! NOT MOVING — ' + doing + ', same square two pulses apart', {
+      square: `${last.col},${last.row}`, room: last.room,
+      taking_hits: takingHits,
+      health: hp ? `${hp.value}/${hp.max}` : null,
+      why: 'the position pulse reads the CHARACTER on its own clock, not the keeper. Every ' +
+           'other stall number here measures when the keeper last moved somebody, which ' +
+           'climbs while an errand walks the character perfectly well and stays quiet ' +
+           'while a wedged character is replanning into the same wall forever',
+      note: 'not resting, not holding a wall, not inert — so this is standing still with ' +
+            'somewhere to be. Flagged for debugging; nothing was cancelled',
+    });
+    return w.wedged;
   }
 
   stopWatchdog() {
@@ -6602,6 +6726,9 @@ export class Autopilot {
       w.frames++;
     }
     w.lastHealth = hp?.value ?? null;
+
+    // 1b. THE POSITION PULSE. See PULSE_MS.
+    if (now - w.lastPulseAt >= PULSE_MS) { w.lastPulseAt = now; this.pulsePosition(now, hp); }
 
     // 2. THE HANDBRAKE.
     const blockedFor = this.passStartedAt ? now - this.passStartedAt : 0;
@@ -7078,6 +7205,15 @@ export class Autopilot {
               // death is one it was never allowed to act on. Recorded rather than
               // inferred from `during_keeper_outage`, which means something else.
               stood_down_for: this.inert ? (this.inert.why ?? 'inert') : null,
+              // Was the BODY moving in the seconds before this death, sampled on its own
+              // clock. `pass_blocked_ms` says the keeper stopped looking; this says
+              // whether the character was going anywhere while it did.
+              wedges: w.wedges ?? 0,
+              wedged_at_death: w.wedged ? { ...w.wedged,
+                for_ms: Date.now() - w.wedged.since } : null,
+              last_pulses: (w.pulses ?? []).map(p => ({
+                s_ago: Math.round((Date.now() - p.at) / 1000),
+                col: p.col, row: p.row, room: p.room, doing: p.doing })),
             };
           })(),
           // WHAT WAS ON THE FLOOR WHEN WE FELL, so something can decide whether the walk
