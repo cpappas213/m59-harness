@@ -4133,8 +4133,38 @@ class Session {
                  note: 'the room changed while approaching the boundary' };
       if (isTerminalMovementReason(walk.reason))
         return { left: false, stage: 'walk', ...walk };
-      if (!walk.arrived && !(c.self && c.self.col === exit.stand_on.col && c.self.row === exit.stand_on.row))
-        return { left: false, stage: 'walk', ...walk };
+      // ARRIVING ON *A* CROSSING SQUARE IS ARRIVING. THE EXACT ONE DOES NOT MATTER.
+      //
+      // This used to demand the walk finish on the one anchor `exits()` picked, and give
+      // up otherwise — without ever attempting the crossing. That produced the dance an
+      // operator watched and described exactly: a character walks to one opening, does
+      // not cross, walks all the way across the room to the other opening, does not
+      // cross, and comes back. `travel` re-plans after each refusal and picks a different
+      // candidate, so the two openings alternate for ever.
+      //
+      // It is also unnecessary, and `exits()` says so twenty lines away: "the boundary is
+      // one exit and any square on it crosses". Measured on the west wall of Main gate to
+      // the city of Tos, which has two separate openings at rows 20-23 and 43-48: a
+      // character teleported onto 20,1 and onto 47,1 crossed in ZERO seconds from both.
+      // The crossing was never the problem — landing on one exact square was.
+      //
+      // So when the walk ends somewhere else, look for where we ACTUALLY are among this
+      // boundary's crossing squares and use that one's own fine target. Only if we are on
+      // none of them is the walk a failure.
+      if (!walk.arrived) {
+        const me = c.self;
+        const crossings = [{ col: exit.stand_on.col, row: exit.stand_on.row,
+                             fine_stand_on: exit.fine_stand_on, edge_target: exit.edge_target,
+                             fine_path: exit.fine_path },
+                           ...(exit.alternates ?? [])];
+        const here = me && crossings.find(a => a.col === me.col && a.row === me.row
+                                            && a.fine_stand_on && a.edge_target);
+        if (!here) return { left: false, stage: 'walk', ...walk };
+        exit = { ...exit, stand_on: { col: here.col, row: here.row },
+                 fine_stand_on: here.fine_stand_on, edge_target: here.edge_target,
+                 fine_path: here.fine_path,
+                 crossed_from_alternate: true };
+      }
       const finePath = exit.fine_path?.length ? exit.fine_path : [exit.fine_stand_on];
       for (const point of finePath) {
         const fine = await this.walkFine(point.x, point.y, {

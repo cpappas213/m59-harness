@@ -991,7 +991,7 @@ export class RoomGeometry {
       alongValues.add(start);
       alongValues.add(end);
     }
-    return [...alongValues].sort((a, b) => a - b).map(along => {
+    const all = [...alongValues].sort((a, b) => a - b).map(along => {
       const fineStand = horizontal ? { x: along, y: fixedInside } : { x: fixedInside, y: along };
       const edgeTarget = horizontal ? { x: along, y: fixedOutside } : { x: fixedOutside, y: along };
       return {
@@ -1000,7 +1000,44 @@ export class RoomGeometry {
         col: Math.floor(fineStand.x / KOD_FINENESS),
         row: Math.floor(fineStand.y / KOD_FINENESS),
       };
-    });
+    })
+    // YOU CANNOT CROSS OFF A SQUARE THE SERVER WILL NOT LET YOU STAND ON.
+    //
+    // These candidates come from tracing the BSP, and the BSP is not the authority on
+    // where a player may BE — the server's one-byte movement grid is. The two disagree,
+    // and the disagreement publishes exits that do not exist.
+    //
+    // Measured on the west wall of Main gate to the city of Tos, whose real openings are
+    // at rows 20-23 and 43-48: a crossing was published at row 12, because the BSP does
+    // have floor at that fine point. Square 12,1 is `walkable: false`. Its staging square
+    // 12,3 is perfectly real — walkable, in the main body, three mover-neighbours — so
+    // the router walked to it happily and then could never finish, because `neighbors()`
+    // gates on the same grid that calls 12,1 unwalkable. From mid-room that phantom was
+    // the NEAREST candidate, so it was chosen first, every time. Watched in the client it
+    // is a character "trying to run north through a wall", which is exactly what it was.
+    //
+    // The operator's own knowledge of this wall — "48 to 46 is all the invisible wall
+    // exit" — agrees with the grid and not with the BSP.
+    //
+    // AND IT MAY ONLY EVER PREFER — A FILTER MUST NEVER BE THE REASON A DOORWAY
+    // DISAPPEARS. This is the same rule the step mask already lives under, and it is not
+    // theoretical here: applied as a hard filter world-wide, three of 237 declared edge
+    // directions lost every candidate, and one of them was **Cor Noth west**, which
+    // `m59-exitgap.mjs` documents as "a door that real players walk through every day"
+    // and which once left ten of twenty-one characters unable to reach a bank. Being
+    // wrong about a phantom costs a walk; deleting a real doorway costs the errand,
+    // silently, for ever.
+    //
+    // So the grid's opinion is applied only when it leaves something behind. The two
+    // outcomes are not symmetric and the fallback is the safe one.
+    //
+    // Deliberately narrow in the other direction too: this is about EDGE crossings, where
+    // leaving requires first standing on a boundary square. `go` exits are untouched —
+    // their door tile is routinely unwalkable by design (the Royal Bank of Jasper) and
+    // they are reached by fine positioning rather than by occupying the square.
+    ;
+    const grounded = all.filter(c => this.walkable(c.row, c.col));
+    return grounded.length ? grounded : all;
   }
 
   // A boundary opening is useful only when the character can approach it from a
@@ -1023,8 +1060,29 @@ export class RoomGeometry {
         stages: Object.freeze(entry[4].map(([col, row]) => Object.freeze({ col, row }))),
         graph_routable: entry[5] !== 0,
       }));
-      this._edgeApproachCache.set(name, Object.freeze(restored));
-      return restored;
+      // THE SAME GROUNDING RULE THE LIVE PATH USES, APPLIED ON READ.
+      //
+      // The bake carries crossings the SERVER'S MOVEMENT GRID says cannot be stood on,
+      // because it was computed from BSP traces alone. Main gate to the city of Tos bakes
+      // west approaches staging for rows 8,9,10,11,12,13,20,23,46,47,48 — and only 20, 23
+      // and 46-48 are grid-walkable. The row-12 phantom is nearer to the middle of the
+      // room than either real opening, so `exits()` chose it first, every time, and a
+      // character walked to a staging square that is perfectly real, next to a crossing
+      // that is not, and hugged that wall for ever.
+      //
+      // Filtered HERE rather than only in edgeCrossingCandidates because `exits()` reads
+      // the baked list and never calls that function — which is why fixing it there
+      // changed nothing on screen, and is worth writing down: the live derivation and the
+      // baked table are two code paths for one question, and a rule added to one of them
+      // is not a rule.
+      //
+      // Applied as a PREFERENCE, exactly as it is there: if grounding leaves an edge with
+      // nothing, the unfiltered list stands. Cor Noth west is the case that forces it — a
+      // door real players use daily whose crossings are all ungrounded in this model.
+      const groundedBake = restored.filter(a => this.walkable(a.row, a.col));
+      const keep = Object.freeze(groundedBake.length ? groundedBake : restored);
+      this._edgeApproachCache.set(name, keep);
+      return keep;
     }
 
     const approaches = [];
