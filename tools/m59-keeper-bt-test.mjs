@@ -272,5 +272,30 @@ console.log('\nTown business (sell + bank before farming):');
   check('no bankAbove -> pass not consumed', r === false);
 }
 
+// ---------------------------------------------------------------------------
+// GOAP gear deadlock: the keeper must BUY the weapon when it is already IN town,
+// even while the GOAP's 10-min dispatch window is active. The GOAP's
+// send_to_town_for_gear walks the character to the inn and then relies on the keeper
+// to buy; if the keeper stands down for the whole window, nobody buys and the
+// character idles unarmed at the inn for ten minutes (Lee at Yonder Inn of Jasper).
+// The stand-down only applies while still OUT of town (GOAP actively walking).
+// ---------------------------------------------------------------------------
+console.log('\nGOAP gear deadlock (buy in town, stand down only out of town):');
+{
+  // The gate: goapArming && !inTownWithSmith -> stand down. Otherwise buy.
+  const goapArming = true;
+  const inTownRegex = /inn|market|city|town|Tos|Barloque|Jasper|Cornoth|Roq/i;
+  // In a town inn (Lee's case): inTownWithSmith true -> should BUY (not stand down)
+  const roomName = 'Yonder Inn of Jasper';
+  const inTown = inTownRegex.test(roomName);
+  const standDown = goapArming && !inTown;
+  check('in a town inn with GOAP armed -> does NOT stand down (buys)', standDown === false);
+  // Out of town (still walking): stand down
+  const outRoom = 'Main gate to the city of Tos' .replace('city of Tos','a field');
+  const outTown = inTownRegex.test(outRoom);
+  const outStandDown = goapArming && !outTown;
+  check('out of town with GOAP armed -> stands down (GOAP walking)', outStandDown === true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

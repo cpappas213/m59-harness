@@ -7496,7 +7496,17 @@ export class Autopilot {
         // having to ask the other. If GOAP dispatched this character to town for gear
         // within the last 10 minutes, the keeper stands down: GOAP is on it.
         const goapArming = this._goapGearDispatch();
-        if (goapArming) {
+        // The GOAP's send_to_town_for_gear WALKS the character to the nearest inn and
+        // then relies on the keeper to buy the gear once it is there. If we stand down
+        // for the whole 10-minute window even after the walk is done, nobody buys: the
+        // GOAP thinks the keeper will, the keeper thinks the GOAP is on it, and the
+        // character idles unarmed at the inn for ten minutes (Lee did exactly this at
+        // the Yonder Inn of Jasper). So the stand-down only applies while the character
+        // is still OUT OF TOWN (the GOAP is actively walking it). Once it is standing in
+        // a town with a smith, the keeper completes the purchase itself.
+        const roomName = String(s.world?.room?.name || '');
+        const inTownWithSmith = /inn|market|city|town|Tos|Barloque|Jasper|Cornoth|Roq/i.test(roomName);
+        if (goapArming && !inTownWithSmith) {
           this.note('goap already sent this character to town for gear, standing down', {
             dispatched_at: new Date(goapArming).toISOString(),
           });
