@@ -521,7 +521,7 @@ function edgeConditionAllows(condition, candidate) {
 // (NO_OTHER_CONDITIONS) is remembered but does not stop the scan; a later matching
 // condition or unconditional entry wins. Simulate that selection so a crossing
 // grounded for Fey's default south exit cannot actually send the character east.
-function selectedEdgeAt(room, direction, candidate) {
+export function selectedEdgeAt(room, direction, candidate) {
   let selected = null;
   for (const edge of edgeExitsOf(room)) {
     if ((edge.leaveName ?? LEAVE_NAME[edge.leave]) !== direction || edge.synthetic) continue;

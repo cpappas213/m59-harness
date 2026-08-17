@@ -71,6 +71,20 @@ export function routesFor(mapManifest) {
  * means "plan on the grid, exactly as this repository did before any of this existed" —
  * so a fresh clone that has never run the bake behaves precisely as it always has.
  */
+// THE TABLE THIS PROCESS IS ACTUALLY PLANNING ON, or null.
+//
+// Set by `attachStepMasks` and by nothing else, so it is the table that passed the
+// manifest check rather than whatever happens to be on disk. `null` is the ordinary answer
+// in any tool that never attached masks, and every reader must treat it as "work it out
+// live" — the table only ever held the common case, and a checkout that has never run the
+// bake has to behave exactly as it did before the bake existed.
+// AND IT IS AN ACCESSOR RATHER THAN A FIELD ON THE SUMMARY, which is not a style choice.
+// `attachStepMasks` returns a small object that half a dozen tools print verbatim; putting
+// the table on it turned `step masks: {...}` into a 1.5 MB dump of base64 masks in every
+// one of them at once. A summary is something people look at.
+let attachedTable = null;
+export const activeRoutes = () => attachedTable;
+
 export function attachStepMasks(map, { geometryOf } = {}) {
   const table = routesFor(map?.geometryManifestSha256 ?? null);
   if (!table) return { attached: 0, rooms: 0, ok: false,
@@ -80,6 +94,7 @@ export function attachStepMasks(map, { geometryOf } = {}) {
   // Two counters rather than one, because "the table is empty" and "the table predates
   // step masks" are different problems with different fixes, and a single counter told
   // the second story with the first one's words.
+  attachedTable = table;
   let attached = 0, refused = 0, masked = 0;
   const rooms = Object.keys(table.rooms).length;
   for (const [num, baked] of Object.entries(table.rooms)) {
@@ -127,6 +142,80 @@ export function bakedPath(table, roomNum, from, to) {
   const p = r.routes?.[`${from.row},${from.col}>${to.row},${to.col}`];
   if (typeof p !== 'string') return null;
   return replay(from.row, from.col, p);
+}
+
+/**
+ * The baked square to stand on to leave `roomNum` for `toRoom`, or null.
+ *
+ * ASK BY DESTINATION, NOT BY DIRECTION — that distinction is the whole point of this
+ * accessor. A wall can carry two exits to two different rooms, split by a row or column
+ * condition (Western border of the Twisted Wood sends `row<19` to Main gate to the city of
+ * Tos and `row>20` to The Twisted Wood, both eastward). A caller that asks "where do I
+ * cross going east" gets a square that is right for one destination and silently wrong for
+ * the other: the walk succeeds, every leg reports success, and the character is in the
+ * wrong room. `exitAnchors` bakes one anchor per declared exit for exactly this reason, so
+ * reading it back by direction would throw the distinction away again at the last step.
+ *
+ * `from_body` is not filtered here. An anchor the room's main body cannot reach is still
+ * the right place to leave from — it is reported so a caller can prefer another exit, and
+ * a bake must never be the reason a doorway disappears.
+ */
+export function anchorFor(table, roomNum, toRoom) {
+  const r = table?.rooms?.[roomNum] ?? table?.rooms?.[String(roomNum)];
+  if (!r?.anchors) return null;
+  const want = Number(toRoom);
+  const hit = r.anchors.filter(a => Number(a.to) === want);
+  if (!hit.length) return null;
+  // Two declared exits to the SAME room is ordinary (The King's Way reaches 575 twice).
+  // Prefer one the body can walk to; otherwise the first, which is still a real crossing.
+  return hit.find(a => a.from_body) ?? hit[0];
+}
+
+/**
+ * A baked route as PIVOTS — the corners a walker actually has to aim at — or null.
+ *
+ * Same contract as `bakedPath`: null means "the table does not cover this", never "there
+ * is no route". The difference is what the caller then does with it. A route handed over
+ * as 73 grid squares is 73 chances to end up somewhere the plan did not expect, because a
+ * step that SLIDES lands off-plan and the walker replans from a square it never chose;
+ * measured in the Western border of the Twisted Wood, 218 of 311 grid steps failed and 200
+ * of those did not move the character at all. The same route as 21 pivots is 21 aimed
+ * moves, each already checked offline to ARRIVE rather than slide.
+ *
+ * `unverified` counts the legs the string pull could not prove. They are still emitted —
+ * the underlying grid route is real — but a caller that cares can fall back rather than
+ * trust a long leg through geometry nobody confirmed.
+ */
+export function bakedPivots(table, roomNum, from, to) {
+  const r = table?.rooms?.[roomNum] ?? table?.rooms?.[String(roomNum)];
+  const p = r?.pivots?.[`${from.row},${from.col}>${to.row},${to.col}`];
+  if (!p?.squares?.length) return null;
+  return { squares: p.squares.map(([row, col]) => ({ row, col })),
+           unverified: p.unverified ?? 0 };
+}
+
+// A CLIENT REPORTS ITS POSITION ABOUT ONCE A SECOND, so what a room crossing COSTS is
+// packets, not squares. Measured in Western border of the Twisted Wood, a six-route sample
+// is 311 grid squares and 66 pivots; charging the squares overstates the trip by 4.7x and,
+// worse, overstates it UNEVENLY — a long straight hall costs one pivot and a short
+// switchback costs eight, so ranking candidate routes on square count prefers exactly the
+// rooms that are slowest to walk.
+const SECONDS_PER_PIVOT = 1.0;
+
+/**
+ * What crossing this room between these two exits should cost, in seconds, or null.
+ *
+ * Null means the table does not cover this pair, and a caller must read it as "no
+ * estimate" rather than "free" — a zero here would make an unbaked room the most
+ * attractive one on every route. This is an estimate of WALKING and nothing else: it
+ * cannot know about a monster standing in a doorway, and it is not a promise.
+ */
+export function transitCost(table, roomNum, from, to) {
+  const p = bakedPivots(table, roomNum, from, to);
+  if (!p) return null;
+  // The first pivot is where we already are, so the moves are the gaps between them.
+  return { seconds: Math.max(0, p.squares.length - 1) * SECONDS_PER_PIVOT,
+           pivots: p.squares.length, unverified: p.unverified };
 }
 
 /** Can walking join these two exits at all? `null` when the table cannot say. */

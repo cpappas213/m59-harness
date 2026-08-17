@@ -24,6 +24,7 @@ import { inRegion } from './m59-codeexits.mjs';
 import { affordances, OF, isTeleporter, KOD_FINENESS } from './m59-parse.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { observedCrossings } from './m59-crossings.mjs';
+import { activeRoutes, anchorFor } from './m59-routes.mjs';
 
 // Marks used on the minimap. Chosen so the picture stays readable in a terminal and
 // so the important things are the ones that stand out: you, then players, then
@@ -468,7 +469,27 @@ export class World {
       // effect at all while appearing to work.
       const witness = c => seenAt.get(Math.floor(c.fine_stand_on.y / KOD_FINENESS) + ',' +
                                       Math.floor(c.fine_stand_on.x / KOD_FINENESS)) ?? 0;
+      // THE BAKED ANCHOR IS THE THIRD OPINION, AND IT RANKS BELOW AN OBSERVATION ON
+      // PURPOSE. The bake is a flood over the room's own body, so an anchor is a crossing
+      // square this room was PROVEN able to walk to offline — which is the question
+      // `steps` only guesses at, since a nearer square hemmed in by geometry is a worse
+      // answer than a further one on open floor. But it is still derived from the same
+      // .roo the candidates came from, while the crossing book is a record of a real
+      // client actually arriving somewhere, so a witness keeps the last word.
+      //
+      // ASKED BY DESTINATION. Both of Western border of the Twisted Wood's east exits sit
+      // on one wall, split `row<19` / `row>20`; asking the table by direction would hand
+      // the same square to both and send a character to the wrong room while every leg
+      // reported success. `anchorFor` is the accessor that cannot express that mistake.
+      //
+      // NO TABLE, OR A ROOM IT DOES NOT COVER, MEANS THE ORDER THAT WAS ALWAYS USED.
+      const anchor = anchorFor(activeRoutes(), Number(room?.num ?? 0), Number(e.to));
+      const anchored = c => anchor
+        && ((c.row === anchor.row && c.col === anchor.col)
+            || (Math.floor(c.fine_stand_on.y / KOD_FINENESS) === anchor.row
+                && Math.floor(c.fine_stand_on.x / KOD_FINENESS) === anchor.col)) ? 1 : 0;
       precise.sort((a, b) => (witness(b) - witness(a))
+                          || (anchored(b) - anchored(a))
                           || (!!a.grid_only - !!b.grid_only)
                           || (a.steps - b.steps));
       approach = precise[0];

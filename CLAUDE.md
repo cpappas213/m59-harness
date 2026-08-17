@@ -413,6 +413,46 @@ Three things hold this up and each fails in the dangerous direction if inverted:
   reason a doorway disappears.** Being wrong about a wall costs a walk; refusing costs the
   errand, silently.
 
+**AN ANCHOR BELONGS TO A DESTINATION, NOT TO A DIRECTION — AND GETTING THAT WRONG DOES NOT
+FAIL, IT ARRIVES SOMEWHERE ELSE.** One wall can carry two exits to two different rooms,
+split by a row or column condition. Western border of the Twisted Wood declares
+`east -> 586 row<19` **and** `east -> 597 row>20`: the same boundary, and which room you
+reach depends on where along it you step off. `exitAnchors` asked
+`edgeApproachCandidates(dir)` — the per-DIRECTION question — took the first square offered
+and gave **both** exits the anchor `9,67`, which satisfies `row<19`. So a character asked
+to walk to The Twisted Wood was routed to a square that puts it in Main gate to the city of
+Tos. Every leg reported success. Nothing downstream compares where a walk MEANT to go with
+where it went, so this is invisible from the trail, from the board and from the logs — it
+shows up only as a character that is somehow in the wrong town, and then as a journey that
+re-routes from there for ever.
+
+The per-exit question already existed and the bake was reaching past it. `edgeCandidatesOf(room, e)`
+runs `selectedEdgeAt`, which simulates `StandardLeaveDir`'s own ordered scan of
+`plEdge_Exits` — and that scan is why testing the one condition in isolation is not enough:
+a default entry is remembered but does **not** stop the scan, so a square can satisfy a
+condition and still lose to a later unconditional edge. The world model had always used it.
+
+Two things pin it, and the second is the one that is not derived from the same `.roo` the
+anchors came from. `m59-routing-test.mjs` asserts that crossing AT an anchor fires the exit
+it was baked FOR — **273 on-boundary anchors, and the assertion is about the destination
+rather than about arriving**, because arriving was never the symptom. And
+`substrate/m59-crossings.json` records where a real client actually crossed and what room it
+turned up in: **25 recorded crossings, 25 agreements, 0 disagreements**. Ranking in
+`exits()` is observation first, baked anchor second, derivation last, for that reason.
+
+**AND THE BAKE IS NOT ABOUT PLANNING COST — MEASURE BEFORE BUILDING A TABLE TO AVOID ONE.**
+The natural reading of "why should getting from one exit to another take any real-time
+planning" is that planning is expensive. It is not: measured on this map with masks
+attached, `path()` costs **0.28 ms in room 587, 0.46 ms in 545 and 1.06 ms in The King's
+Way** — and that was while a full bake was saturating the CPU. A flow field per anchor
+would have bought about a millisecond a room for several megabytes. What the table is
+actually worth is **correctness** (the anchor above), **proof** (which exits the room's body
+can genuinely reach, which `steps` only guesses at) and **a cost that can be compared** —
+`transitCost` prices a room crossing in PIVOTS rather than squares, because a client reports
+position about once a second, so pivots are packets are seconds. The same six routes in 587
+are 311 squares and 66 pivots: charging squares overstates a trip 4.7x and does it
+*unevenly*, so ranking routes on square count prefers exactly the rooms that walk slowest.
+
 **A SAFE SPOT IS THE LAST THING WORTH ROUTING THROUGH, AND A* DOES NOT KNOW THAT.** With a
 flat step cost the router is indifferent between the middle of a gap and the tight side of
 it, so it threads characters along the wall — where a step SLIDES, the mover lands somewhere

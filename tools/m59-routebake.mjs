@@ -62,9 +62,9 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadMap } from './m59-map.mjs';
+import { loadMap, edgeCandidatesOf } from './m59-map.mjs';
 import { movementMapFile } from './m59-map-path.mjs';
-import { sharedRoomGeometry } from './m59-roo.mjs';
+import { sharedRoomGeometry, CLIENT_FINENESS } from './m59-roo.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -110,9 +110,24 @@ export function exitAnchors(room, geometry, { reachable = null } = {}) {
     // of them — the first square on the list happened to be one the mover cannot get to,
     // and the other ten were never considered. `reachable` is the room's own body, so a
     // square it can walk to always beats a square merely printed first.
+    // ASK PER EXIT, NOT PER DIRECTION — A WALL CAN LEAD TO TWO DIFFERENT ROOMS.
+    //
+    // `edgeApproachCandidates(dir)` answers "where can I cross this boundary", and a
+    // boundary is frequently more than one exit. Western border of the Twisted Wood
+    // declares east->586 `row < 19` AND east->597 `row > 20`: the same wall, split. Taking
+    // the direction's first candidate gave BOTH exits the anchor 9,67, which satisfies
+    // `row < 19` — so a character asked to walk to The Twisted Wood was sent to a square
+    // that puts it in Main gate to Tos instead. Not a failure to arrive; arriving in the
+    // WRONG ROOM, which nothing downstream would have reported as an error.
+    //
+    // `edgeCandidatesOf(room, e)` is the per-exit question and already exists: it runs
+    // `selectedEdgeAt`, which simulates StandardLeaveDir's own ordered scan of
+    // plEdge_Exits, so a candidate is kept only if crossing THERE actually fires THIS
+    // exit. The world model has always used it; the bake reached past it to the raw list.
+    // The operator's recorded crossings agree — 587 -> 597 is walked from row 47.
     let best = null, fallback = null;
     try {
-      for (const a of geometry.edgeApproachCandidates(dir)) {
+      for (const a of edgeCandidatesOf(room, e)) {
         for (const stage of a.stages ?? []) {
           fallback ??= stage;
           if (!reachable || reachable.has(`${stage.row},${stage.col}`)) { best = stage; break; }
@@ -128,14 +143,29 @@ export function exitAnchors(room, geometry, { reachable = null } = {}) {
     if (!Number.isInteger(g.row) || !Number.isInteger(g.col)) continue;
     out.push({ kind: 'go', to: g.to, row: g.row, col: g.col, locked: !!g.locked });
   }
-  // One anchor per square: two exits sharing a square are one place to walk to.
-  const seen = new Set();
-  return out.filter(a => {
+  // TWO EXITS SHARING A SQUARE ARE ONE PLACE TO WALK TO AND STILL TWO EXITS.
+  //
+  // This used to drop the later one, which is right about the ROUTING — the pair share a
+  // square so they share a path — and wrong about everything else, because the discarded
+  // entry takes its `to` with it. Western border of the Twisted Wood declares east->586
+  // AND east->597, both staging at 9,67; the table therefore had no anchor for 597 at all,
+  // and a caller asking "where do I stand to reach The Twisted Wood" got nothing and fell
+  // back to deriving one live — which is how a character ended up walking at a phantom.
+  //
+  // So every declared exit is kept, and the deduplication moves to where the cost actually
+  // is: one BFS per DISTINCT SQUARE rather than per exit. Nothing is recomputed and
+  // nothing is lost.
+  return out;
+}
+
+/** The distinct squares among a set of anchors — one BFS each is all the work there is. */
+export function anchorSquares(anchors) {
+  const seen = new Map();
+  for (const a of anchors) {
     const k = `${a.row},${a.col}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+    if (!seen.has(k)) seen.set(k, { row: a.row, col: a.col });
+  }
+  return [...seen.values()];
 }
 
 // WHICH VIEW OF "CAN I STEP THERE" THE BAKE USES — AND THE CORRECTION THAT MADE THE
@@ -341,16 +371,46 @@ export function bakeRoom(room, { collision = true } = {}) {
   //
   // The BFS already answers the only question that matters — is there a way from here to
   // there — so it is simply asked, and a pair with no path silently produces no entry.
+  // ONE BFS PER DISTINCT SQUARE, not per exit — see anchorSquares. Two exits on one
+  // square asked the same question twice.
+  const squares = anchorSquares(tagged.filter(a => a.region >= 0));
   const routes = {};
-  for (const from of tagged) {
-    if (from.region < 0) continue;
-    const targets = tagged.filter(t => t !== from);
+  const pivots = {};
+  for (const from of squares) {
+    const targets = squares.filter(t => t.row !== from.row || t.col !== from.col);
     if (!targets.length) continue;
     const { came, key } = bfs(geometry, from.row, from.col, { collision });
     for (const to of targets) {
       const p = pathString(came, key, from.row, from.col, to.row, to.col);
       if (p == null) continue;
-      routes[`${from.row},${from.col}>${to.row},${to.col}`] = p;
+      const pair = `${from.row},${from.col}>${to.row},${to.col}`;
+      routes[pair] = p;
+
+      // AND THE PIVOTS, WHICH ARE WHAT A WALKER SHOULD ACTUALLY BE GIVEN.
+      //
+      // A square-by-square route reproduces the failure the whole bake exists to avoid:
+      // stepping between square CENTRES runs an axis-aligned move into wall faces that
+      // are 54.9% non-axis-aligned in these rooms, and measured on 587 that refuses 218
+      // of 311 steps — 200 of them without moving the character at all.
+      //
+      // `stringPull` reaches as far along the route as the straight line still ARRIVES
+      // with `slide:false`, which is stricter than the ordinary mover. Doing it HERE
+      // rather than at walk time is the point of a bake: every leg is proved before any
+      // character walks it, once, offline, instead of being rediscovered per journey.
+      // `unverified` counts the legs it could not prove — a route that is mostly those is
+      // one the walker will still struggle with, and the table should say so rather than
+      // let it be inferred.
+      try {
+        const steps = replay(from.row, from.col, p);
+        const pts = [{ row: from.row, col: from.col }, ...steps]
+          .map(s => ({ x: (s.col - 0.5) * CLIENT_FINENESS, y: (s.row - 0.5) * CLIENT_FINENESS }));
+        const pulled = geometry.stringPull(pts);
+        pivots[pair] = {
+          squares: pulled.points.map(pt => [Math.round(pt.y / CLIENT_FINENESS - 0.5) + 1,
+                                            Math.round(pt.x / CLIENT_FINENESS - 0.5) + 1]),
+          unverified: pulled.unverified,
+        };
+      } catch { /* a route we cannot pull is still a route; the step string stands */ }
     }
   }
   return {
@@ -378,6 +438,9 @@ export function bakeRoom(room, { collision = true } = {}) {
                                 row: a.row, col: a.col, region: a.region,
                                 from_body: !!a.from_body })),
     routes,
+    // The same routes as verified PIVOTS. See where these are built: a walker given
+    // squares re-discovers the off-plan problem; a walker given pivots does not.
+    pivots,
   };
 }
 

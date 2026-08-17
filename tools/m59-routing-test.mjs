@@ -45,9 +45,11 @@
 // nothing is worse than one that says it did.
 
 import { existsSync } from 'node:fs';
-import { RoomGeometry, protocolToward, STEP_MASK_DIRS, KOD_FINENESS, CLIENT_FINENESS }
-  from './m59-roo.mjs';
+import { RoomGeometry, protocolToward, STEP_MASK_DIRS, KOD_FINENESS, CLIENT_FINENESS,
+         sharedRoomGeometry } from './m59-roo.mjs';
 import { components, exitAnchors } from './m59-routebake.mjs';
+import { loadMap, selectedEdgeAt } from './m59-map.mjs';
+import { crossingBook } from './m59-crossings.mjs';
 
 let passed = 0, failed = 0, skipped = 0;
 function ok(what, cond, detail = '') {
@@ -248,9 +250,20 @@ if (!existsSync(mapFile)) {
     ok('choosing anchors with the body in hand reaches at least as many exits',
        reach(chosen) >= reach(naive),
        `first-offered ${reach(naive)}/${naive.length}, body-aware ${reach(chosen)}/${chosen.length}`);
-    ok('and on the Cragged Mountains it strictly improves on taking the first offered',
-       reach(chosen) > reach(naive),
-       `first-offered ${reach(naive)}, body-aware ${reach(chosen)}`);
+    // THIS USED TO ASSERT A STRICT IMPROVEMENT AND NOW ASSERTS THE PROPERTY, because the
+    // gap it measured was closed from the other end. Anchors are now chosen per EXIT
+    // (`edgeCandidatesOf`, which runs `selectedEdgeAt`) rather than per DIRECTION, so the
+    // candidate list no longer contains squares that would fire a different exit — and on
+    // this room that alone puts a reachable square first, leaving the body-aware pass
+    // nothing to rescue. A delta is only a contract while the baseline stays bad; what
+    // actually has to hold is that the body can reach these exits, so assert THAT.
+    //
+    // Three of four, and the fourth is not a defect: entering the Cragged Mountains by the
+    // north-west makes the south-west and south-east exits a one-way trip unless you blink
+    // up the cliff. It is the one place in the world genuinely joined only by blink.
+    ok('and on the Cragged Mountains the body reaches every exit that is not blink-only',
+       reach(chosen) === 3,
+       `first-offered ${reach(naive)}, body-aware ${reach(chosen)} of ${chosen.length}`);
     ok('an anchor it cannot reach is still OFFERED rather than deleted — a bake must ' +
        'never be the reason a doorway disappears',
        chosen.length === naive.length);
@@ -328,6 +341,114 @@ if (!existsSync(mapFile)) {
          JSON.stringify(plain.steps) === JSON.stringify(zero.steps));
     }
   }
+}
+
+// ------------------------------------------------- one wall, two rooms, two anchors
+// A BOUNDARY IS NOT AN EXIT, AND THE FAILURE IS ARRIVING SOMEWHERE ELSE RATHER THAN NOT
+// ARRIVING. Western border of the Twisted Wood declares BOTH `east -> 586 row<19` and
+// `east -> 597 row>20` — one wall, split by row. The bake asked
+// `edgeApproachCandidates(dir)`, which is the per-DIRECTION question, took the first
+// square it offered, and gave both exits the anchor 9,67. That satisfies `row<19`, so a
+// character asked to walk to The Twisted Wood was routed to a square that puts it in Main
+// gate to the city of Tos. Every leg reports success; the character is simply in the wrong
+// room, and nothing downstream compares where it meant to go with where it went.
+//
+// So the property is not "an anchor exists" and not "the walk arrives" — it is that
+// crossing AT the anchor fires the exit the anchor was baked FOR. `selectedEdgeAt` is the
+// authority, because it simulates StandardLeaveDir's own ordered scan of plEdge_Exits
+// rather than testing the one condition in isolation: a default entry is remembered but
+// does not stop the scan, so a square can satisfy a condition and still lose to a later
+// unconditional edge.
+console.log('\nexit anchors — a shared wall gives each DESTINATION its own square');
+if (!existsSync(movementMapFile())) {
+  skip('per-destination exit anchors', 'no baked map');
+} else {
+  const map = loadMap();
+
+  // The worked example, named, because it is the one the fleet walks and the one the
+  // operator watched fail.
+  const wbottw = map.rooms['587'];
+  const geo = wbottw?.roo ? sharedRoomGeometry(wbottw) : null;
+  if (!geo?.collisionReady) {
+    skip('Western border of the Twisted Wood splits its east wall', 'no geometry for 587');
+  } else {
+    const anchors = exitAnchors(wbottw, geo);
+    const toTos = anchors.find(a => a.to === 586), toWood = anchors.find(a => a.to === 597);
+    ok('both east exits get an anchor at all', !!toTos && !!toWood,
+       anchors.map(a => `${a.to}@${a.row},${a.col}`).join(' '));
+    if (toTos && toWood) {
+      ok('and they are DIFFERENT squares', toTos.row !== toWood.row || toTos.col !== toWood.col,
+         `${toTos.row},${toTos.col} vs ${toWood.row},${toWood.col}`);
+      // The conditions, asserted as the game states them rather than as the anchors
+      // happen to have come out: a fix that moved both anchors to the same wrong side
+      // would still satisfy "different" above if the two rooms swapped.
+      ok('Main gate to the city of Tos is reached from row < 19', toTos.row < 19, `row ${toTos.row}`);
+      ok('The Twisted Wood is reached from row > 20', toWood.row > 20, `row ${toWood.row}`);
+    }
+  }
+
+  // The general property, over every room that has geometry. This is the one that would
+  // have caught it without anybody knowing which wall to look at.
+  let checked = 0, wrongRoom = 0, offBoundary = 0;
+  const offenders = [];
+  for (const room of Object.values(map.rooms)) {
+    if (!room?.roo || room.rooDimensionMismatch) continue;
+    let g = null;
+    try { g = sharedRoomGeometry(room); } catch { continue; }
+    if (!g?.collisionReady) continue;
+    let anchors = [];
+    try { anchors = exitAnchors(room, g); } catch { continue; }
+    for (const a of anchors) {
+      if (a.kind !== 'edge') continue;
+      // A staging square inland of the wall is legitimate — the condition is evaluated
+      // where you LEAVE from, so only a square actually on that boundary can be asked.
+      const onBoundary = (a.dir === 'west' && a.col === 1) || (a.dir === 'east' && a.col === room.cols)
+                      || (a.dir === 'north' && a.row === 1) || (a.dir === 'south' && a.row === room.rows);
+      if (!onBoundary) { offBoundary++; continue; }
+      const sel = selectedEdgeAt(room, a.dir, a);
+      if (!sel) continue;
+      checked++;
+      if (Number(sel.to) !== Number(a.to)) {
+        wrongRoom++;
+        if (offenders.length < 6)
+          offenders.push(`${room.num} ${a.dir} ${a.row},${a.col} baked->${a.to} fires->${sel.to}`);
+      }
+    }
+  }
+  ok(`crossing at an anchor fires the exit it was baked for (${checked} anchors)`,
+     checked > 0 && wrongRoom === 0, offenders.join(' | ') || `${wrongRoom} wrong`);
+  ok('and the check had real coverage rather than passing by finding nothing',
+     checked >= 200, `${checked} on-boundary anchors, ${offBoundary} staged inland`);
+
+  // CROSS-VALIDATION AGAINST REALITY, which is the only thing here that is not derived
+  // from the same .roo the anchors came from. A walk log records the square a real client
+  // last stood on and the room it turned up in; the model has to agree with both.
+  const book = crossingBook();
+  let agree = 0, disagree = 0;
+  const contradictions = [];
+  for (const key of Object.keys(book)) {
+    const [from, to] = key.split('>').map(Number);
+    const room = map.rooms[String(from)];
+    if (!room?.roo) continue;
+    for (const obs of book[key]) {
+      for (const d of ['west', 'east', 'north', 'south']) {
+        const on = (d === 'west' && obs.col === 1) || (d === 'east' && obs.col === room.cols)
+                || (d === 'north' && obs.row === 1) || (d === 'south' && obs.row === room.rows);
+        if (!on) continue;
+        const sel = selectedEdgeAt(room, d, obs);
+        if (!sel) continue;
+        if (Number(sel.to) === to) agree++;
+        else {
+          disagree++;
+          if (contradictions.length < 4)
+            contradictions.push(`${from} ${d} ${obs.row},${obs.col} model->${sel.to} walked->${to}`);
+        }
+      }
+    }
+  }
+  if (!agree && !disagree) skip('the condition model against recorded crossings', 'no crossing book');
+  else ok(`the condition model reproduces every recorded crossing (${agree})`,
+          disagree === 0, contradictions.join(' | '));
 }
 
 console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);

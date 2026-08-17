@@ -46,14 +46,15 @@
 // **zero traps**: 0 traps, 65 detours, 23 isolated. Drawing them apart is why the layers
 // are separate, and quoting the pocket count as a hazard figure is wrong by 3.6x and
 // wrong in kind.
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { RoomGeometry } from './m59-roo.mjs';
+import { RoomGeometry, protocolToClient } from './m59-roo.mjs';
 import { attachStepMasks } from './m59-routes.mjs';
 import { wedgesIn } from './m59-wedges.mjs';
 import { safeSpots, safeSpotBook, exposureAt } from './m59-safespots.mjs';
 import { movementMapFile } from './m59-map-path.mjs';
+import { WALKS_DIR } from './m59-crossings.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const OVERLAY_DIR = () => join(HERE, '..', 'substrate', 'overlay');
@@ -81,6 +82,14 @@ export const LAYERS = [
   { key: 'detour',    ch: 'd', color: 'C0C000', style: 'diag',  label: 'detour — cannot enter, can leave' },
   { key: 'refused',   ch: 'r', color: '0070FF', style: 'cross', label: 'the ROUTER cannot step off here' },
   { key: 'disagree',  ch: 'x', color: '004080', style: 'hatch', label: 'BSP hems this square in — the safe-wall signal' },
+  // THE ONLY LAYER HERE THAT IS NOT DERIVED FROM THE SAME .roo AS THE REST, and the only
+  // one that is SUPPOSED TO BE EMPTY. Every other layer is our model arguing with itself;
+  // this one is our model against a person. It paints a square when a real client was
+  // recorded standing in it and `floorBaseAtClient` says there is no floor there at all.
+  // Measured over every walk log on this machine, that is 0 of 2092 positions — so a
+  // painted square is a REGRESSION, not a picture, and the layer earns its place by
+  // staying blank. See walkedVoid for the off-by-one that made it look otherwise.
+  { key: 'walked',    ch: 'W', color: '00FFFF', style: 'solid', label: 'A PERSON STOOD HERE AND WE MODEL IT AS VOID — should never appear' },
   { key: 'floor',     ch: '-', color: '303030', style: 'hatch', label: 'walkable floor' },
   { key: 'route',     ch: 'R', color: '00FF80', style: 'solid', label: 'the planned route' },
 ];
@@ -89,7 +98,7 @@ export const LAYERS = [
 // trap and a proven safe wall is drawn as the safe wall, because that is the more
 // surprising fact and it is the one a person is standing there to check.
 const PAINT_ORDER = ['floor', 'disagree', 'refused', 'detour', 'isolated', 'trap',
-                     'nominated', 'burned', 'lucky', 'safe', 'fortress', 'route'];
+                     'nominated', 'burned', 'lucky', 'safe', 'walked', 'fortress', 'route'];
 
 export const DEFAULT_LAYERS = ['fortress', 'safe', 'lucky', 'burned', 'nominated',
                                'trap', 'isolated', 'refused', 'disagree'];
@@ -141,6 +150,67 @@ export function disagreements(geometry, { which = 'tight' } = {}) {
  * Pure, and it takes the geometry rather than a room number so a test can hand it a
  * fixture — the same reason `wedgesIn` does.
  */
+/**
+ * Squares in this room a real client was recorded standing in and we model as void.
+ *
+ * Returns a Map of "row,col" -> how many recorded positions, empty when there are no walk
+ * logs — which is the ordinary state of a fresh clone and must read as "nothing observed"
+ * rather than "nothing wrong". Room is matched by the SERVER's object id, because that is
+ * what a client reports; the harness room number is our word for it and the two are
+ * different namespaces.
+ *
+ * OVER EVERY WALK LOG ON THIS MACHINE THIS RETURNS NOTHING, 0 OF 2092 POSITIONS, AND THAT
+ * IS THE POINT OF IT. It is a regression guard rather than a picture.
+ *
+ * IT ONCE RETURNED 478, AND EVERY ONE OF THOSE WAS THE CONVERSION BELOW DONE BY HAND.
+ * A recorded position is in KOD units (64 to the square) and `floorBaseAtClient` wants
+ * client units (1024), so the obvious conversion is `x * 16`. It is wrong by exactly one
+ * square: `protocolToClient` is `(x - 64) * 16`, because the wire is 1-based and the
+ * leaves are 0-based. Done by hand, 23% of the positions a person had demonstrably walked
+ * through came back as void — and it is convincing, because the missing squares cluster in
+ * the corridors where the fleet really does get stuck, half of them land more than half a
+ * square from any leaf polygon (so it does not look like an epsilon bug), and NONE of them
+ * land exactly on a polygon edge. It survived a distance histogram and a per-room coverage
+ * count before an offset sweep put dx=dy=-1024 at exactly zero.
+ *
+ * Two lessons worth more than the layer. **A whole-map coordinate error looks like a local
+ * geometry defect**, because it fails hardest exactly where the geometry is tightest — a
+ * one-square error in open ground still lands on floor. And **there is a converter for
+ * this**; use it. Every measurement in this repository that reads a recorded position must
+ * go through `protocolToClient`, never through a scale factor written at the call site.
+ */
+export function walkedVoid(geometry, roomNum) {
+  const out = new Map();
+  if (!geometry?.collisionReady || !roomNum) return out;
+  let map, dir;
+  try {
+    map = JSON.parse(readFileSync(movementMapFile(), 'utf8'));
+    dir = WALKS_DIR;
+    if (!existsSync(dir)) return out;
+  } catch { return out; }
+  const objId = map.rooms?.[String(roomNum)]?.objId;
+  if (!objId) return out;
+  const rows = geometry.rows, cols = geometry.cols;
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith('.jsonl')) continue;
+    let lines;
+    try { lines = readFileSync(join(dir, f), 'utf8').split('\n'); } catch { continue; }
+    for (const line of lines) {
+      if (!line) continue;
+      let p;
+      try { p = JSON.parse(line); } catch { continue; }
+      if (p.room !== objId || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      // The outward step past the boundary is off the map by design — that IS the trigger
+      // for leaving — so it has no floor legitimately and is not evidence about anything.
+      if (p.row < 1 || p.col < 1 || p.row > rows || p.col > cols) continue;
+      if (geometry.floorBaseAtClient(protocolToClient(p.x), protocolToClient(p.y)) != null) continue;
+      const k = `${p.row},${p.col}`;
+      out.set(k, (out.get(k) ?? 0) + 1);
+    }
+  }
+  return out;
+}
+
 export function layersFor(geometry, {
   room = 0,
   wedges = null,
@@ -172,6 +242,14 @@ export function layersFor(geometry, {
     for (const at of disagreements(geometry, { which: 'refused' }).keys()) {
       const [row, col] = at.split(',').map(Number);
       put(row, col, 'refused');
+    }
+
+  // ASKED AT THE POSITION THE CLIENT ACTUALLY REPORTED, never at the square centre, and
+  // converted with `protocolToClient` rather than by hand. See walkedVoid.
+  if (wanted.has('walked'))
+    for (const at of walkedVoid(geometry, room).keys()) {
+      const [row, col] = at.split(',').map(Number);
+      put(row, col, 'walked');
     }
 
   // THE SQUARE NOTHING CAN REACH — and this is the criterion, stated by an operator
