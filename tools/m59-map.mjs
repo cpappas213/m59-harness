@@ -682,12 +682,24 @@ export function oneWayBlocks() {
     const j = JSON.parse(fs.readFileSync(ONE_WAY_FILE, 'utf8'));
     for (const e of j.blocked ?? [])
       if (Number.isFinite(e?.from) && Number.isFinite(e?.to))
-        out.set(e.from + '->' + e.to, e.why ?? 'recorded as one-way');
+        // KEYED ON THE EXIT, NOT THE ROOM PAIR, when the record says which exit. Two rooms
+        // are frequently joined by more than one thing — Cor Noth reaches Main gate to Cor
+        // Noth by a dead west EDGE and by a working DOOR — and a block that cannot tell
+        // them apart removes both. That is not hypothetical: it routed 150 -> 574 eight
+        // hops round the Merchant Ways instead of through the door beside it.
+        out.set(e.from + '->' + e.to + (e.leave ? '|' + e.leave : ''),
+                e.why ?? 'recorded as unusable');
   } catch { /* no file is "nothing is known", which routes exactly as it used to */ }
   oneWayCache = out;
   return out;
 }
-export const isOneWayBlocked = (from, to) => oneWayBlocks().has(from + '->' + to);
+// An exit is blocked when the record names the whole pair, or names this exit exactly.
+export function isOneWayBlocked(from, to, ex = null) {
+  const book = oneWayBlocks();
+  if (book.has(from + '->' + to)) return true;                     // whole-pair block
+  const dir = ex?.leaveName ?? ex?.leave_name ?? null;
+  return dir ? book.has(from + '->' + to + '|' + dir) : false;
+}
 
 // The one place both searches ask "where can I go from here", so a rule added here cannot
 // be honoured by one of them and not the other — which is how the two would come to
@@ -696,7 +708,7 @@ export function passableExits(map, at) {
   const room = map.rooms[at];
   if (!room) return [];
   return [...exitsOf(room), ...inferredExits(map, at), ...codeExits(at)]
-    .filter(ex => ex.to != null && !isOneWayBlocked(Number(at), Number(ex.to)));
+    .filter(ex => ex.to != null && !isOneWayBlocked(Number(at), Number(ex.to), ex));
 }
 
 export function inferredExits(map, roomNum) {

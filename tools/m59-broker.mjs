@@ -4165,6 +4165,7 @@ class Session {
                  fine_path: here.fine_path,
                  crossed_from_alternate: true };
       }
+      let pressedInWithoutExactFit = null;
       const finePath = exit.fine_path?.length ? exit.fine_path : [exit.fine_stand_on];
       for (const point of finePath) {
         const fine = await this.walkFine(point.x, point.y, {
@@ -4176,9 +4177,29 @@ class Session {
                    note: 'crossed the boundary while fine-positioning at its opening' };
         if (isTerminalMovementReason(fine.reason))
           return { left: false, stage: 'walk', ...fine };
-        if (!fine.arrived)
-          return { left: false, stage: 'walk', ...fine,
-                   note: fine.note ?? 'could not reach the exact BSP-valid edge opening' };
+        // NOT ARRIVING EXACTLY IS NOT A REASON NOT TO TRY THE EDGE.
+        //
+        // `arriveWithin: 1` above asks to land within ONE fine unit — a 64th of a square
+        // — and returning here when it does not is the machinery refusing to press into
+        // the wall. The operator's rule, and it is simply how the game works: for every
+        // exit that is not a door or a portal, leaving ALWAYS requires one more step
+        // toward the edge, and that edge is an invisible wall you run into. There is no
+        // version of it where precision at the opening matters, because the thing that
+        // triggers `Room.StandardLeaveDir` is the outward step, not where you stood.
+        //
+        // Proved by teleport: a character placed on 20,1 and on 47,1 of Main gate to the
+        // city of Tos — different openings, neither the blessed anchor — both crossed in
+        // ZERO seconds. What has been failing is never the crossing; it is everything
+        // this function does before allowing itself to attempt one.
+        //
+        // So a fine-positioning miss now falls through to the outward step instead of
+        // returning. If we are somewhere the edge step cannot fire from, that step fails
+        // on its own and reports it — one wasted packet against an errand abandoned at
+        // the door.
+        if (!fine.arrived) {
+          pressedInWithoutExactFit = fine.note ?? 'did not reach the exact opening; pressing into the edge anyway';
+          break;
+        }
       }
       // One more step OUTWARD, past the grid. Nothing else triggers
       // Room.StandardLeaveDir, and `offMap` is what stops our own collision view

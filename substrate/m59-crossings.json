@@ -1,0 +1,167 @@
+{
+ "note": "Squares a REAL CLIENT was observed crossing a room boundary from, harvested from proxy walk logs by m59-crossings.mjs. Observation, not derivation: the BSP-derived candidates invent crossings the movement grid forbids and miss real ones. The recorded position is off the map — that outward step IS the trigger — so these are pulled back one square to where a character stands.",
+ "builtAt": "2026-08-17T21:28:54.173Z",
+ "pairs": {
+  "587>597": [
+   {
+    "row": 47,
+    "col": 67,
+    "seen": 2
+   }
+  ],
+  "597>587": [
+   {
+    "row": 5,
+    "col": 1,
+    "seen": 2
+   }
+  ],
+  "587>576": [
+   {
+    "row": 6,
+    "col": 1,
+    "seen": 18
+   },
+   {
+    "row": 5,
+    "col": 1,
+    "seen": 17
+   }
+  ],
+  "576>587": [
+   {
+    "row": 115,
+    "col": 88,
+    "seen": 27
+   },
+   {
+    "row": 114,
+    "col": 88,
+    "seen": 8
+   }
+  ],
+  "535>200": [
+   {
+    "row": 1,
+    "col": 24,
+    "seen": 1
+   }
+  ],
+  "534>544": [
+   {
+    "row": 6,
+    "col": 56,
+    "seen": 1
+   }
+  ],
+  "575>576": [
+   {
+    "row": 48,
+    "col": 46,
+    "seen": 1
+   }
+  ],
+  "576>575": [
+   {
+    "row": 1,
+    "col": 68,
+    "seen": 1
+   }
+  ],
+  "27>587": [
+   {
+    "row": 58,
+    "col": 46,
+    "seen": 1
+   }
+  ],
+  "574>564": [
+   {
+    "row": 29,
+    "col": 1,
+    "seen": 1
+   }
+  ],
+  "564>563": [
+   {
+    "row": 1,
+    "col": 18,
+    "seen": 1
+   },
+   {
+    "row": 1,
+    "col": 17,
+    "seen": 1
+   }
+  ],
+  "563>564": [
+   {
+    "row": 34,
+    "col": 66,
+    "seen": 1
+   }
+  ],
+  "554>544": [
+   {
+    "row": 6,
+    "col": 1,
+    "seen": 4
+   }
+  ],
+  "544>554": [
+   {
+    "row": 66,
+    "col": 80,
+    "seen": 2
+   },
+   {
+    "row": 65,
+    "col": 80,
+    "seen": 2
+   }
+  ],
+  "586>587": [
+   {
+    "row": 47,
+    "col": 1,
+    "seen": 5
+   },
+   {
+    "row": 46,
+    "col": 1,
+    "seen": 3
+   }
+  ],
+  "587>586": [
+   {
+    "row": 9,
+    "col": 67,
+    "seen": 3
+   },
+   {
+    "row": 12,
+    "col": 67,
+    "seen": 2
+   },
+   {
+    "row": 11,
+    "col": 67,
+    "seen": 1
+   }
+  ],
+  "579>578": [
+   {
+    "row": 1,
+    "col": 17,
+    "seen": 1
+   }
+  ],
+  "578>576": [
+   {
+    "row": 1,
+    "col": 13,
+    "seen": 1
+   }
+  ]
+ }
+}

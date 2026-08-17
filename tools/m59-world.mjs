@@ -23,6 +23,7 @@ import { exitsOf, findPath, inferredExits, codeExits, edgeExitsOf, edgeCandidate
 import { inRegion } from './m59-codeexits.mjs';
 import { affordances, OF, isTeleporter, KOD_FINENESS } from './m59-parse.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
+import { observedCrossings } from './m59-crossings.mjs';
 
 // Marks used on the minimap. Chosen so the picture stays readable in a terminal and
 // so the important things are the ones that stand out: you, then players, then
@@ -439,7 +440,30 @@ export class World {
       // decides between equals. Sorting on steps alone put the whole fleet at the nearest
       // opening on the wall whether or not it could be walked to, and that nearest opening
       // is exactly where the bounce happened.
-      precise.sort((a, b) => (!!a.grid_only - !!b.grid_only) || (a.steps - b.steps));
+      // AND A SQUARE A REAL PLAYER HAS ACTUALLY CROSSED FROM BEATS BOTH.
+      //
+      // The two keys above are both about the MODEL — is the mover happy, is it near —
+      // and the model is what has been wrong. Measured across 18 boundary pairs in
+      // recorded operator walks, the observed crossing square is almost always somewhere
+      // in this list already; it simply is not the one distance picks. So the failure was
+      // never coverage, it was CHOICE, and the cheapest correction is to let an
+      // observation outrank a derivation.
+      //
+      // The evidence costs the operator nothing but playing: `m59-proxy.mjs` logs every
+      // move packet, so a room change in that log brackets the crossing exactly — which
+      // matters because it cannot be reported by hand. In the operator's words: "the
+      // moment I touch it, I'm teleported, far before I'd be able to react". The recorded
+      // square is OFF THE MAP, because that outward step is the trigger, so the book
+      // stores it pulled back one square to where a character stands.
+      //
+      // NO BOOK MEANS THE ORDER THAT WAS ALWAYS USED. A fresh clone has never watched
+      // anybody play and must behave exactly as it did.
+      const observed = observedCrossings(Number(room?.num ?? 0), Number(e.to));
+      const seenAt = new Map(observed.map(o => [o.row + ',' + o.col, o.seen]));
+      const witness = c => seenAt.get(c.row + ',' + c.col) ?? 0;
+      precise.sort((a, b) => (witness(b) - witness(a))
+                          || (!!a.grid_only - !!b.grid_only)
+                          || (a.steps - b.steps));
       approach = precise[0];
       const MIN_FINE_APART = 4 * KOD_FINENESS, MAX_FINE_CANDIDATES = 8;
       const fineAlong = candidate => (e.leave === LEAVE.NORTH || e.leave === LEAVE.SOUTH)
