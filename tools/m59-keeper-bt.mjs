@@ -77,7 +77,39 @@ export class BTKeeper {
     const started = Date.now();
     const limit = () => Date.now() - started > PASS_LIMIT_MS;
 
-    // 1. FLEE AND REST. Safety always beats work.
+    // 0. SAFETY FIRST, and not optional. The legacy pass() runs these before any work
+    //    because they are the only things that matter when a character is dead or has
+    //    lost its grip on the world: a character in the Underworld cannot path-travel
+    //    out (no graph exits), so if the trees run first the farm node sees "this room
+    //    has no prey", tries to travel, fails, and loops there forever. A dead Lee did
+    //    exactly that: "this room cannot produce our prey -- leaving now" from The
+    //    Underworld, on and on. Delegate to the same legacy methods the classic pass()
+    //    uses -- they are the battle-tested logic; the trees only take over the parts
+    //    (flee/rest and farm) that are actually decomposed. Everything below these is
+    //    moot if we are dead.
+    if (!c.self) {
+      k.selfMissingPasses = (k.selfMissingPasses || 0) + 1;
+      if (k.selfMissingPasses >= 3) {
+        k.note?.('bt-keeper: lost our own object id -- reconnecting');
+        const again = typeof k.reconnect === 'function'
+          ? await k.reconnect('recovering a renumbered object id').catch(() => ({ ok: false }))
+          : { ok: false };
+        k.selfMissingPasses = 0;
+        k.note?.(again.ok ? 'reconnected' : 'reconnect failed');
+        k.noProgress?.('reconnecting after losing our object id');
+        return;
+      }
+    } else k.selfMissingPasses = 0;
+
+    // 1. UNDERWORLD. Dead -> escape via a portal. Must run before the trees, or a
+    //    dead character farms in a room it cannot leave. passUnderworld returns true
+    //    when it handled the pass (we are in the Underworld).
+    if (await k.passUnderworld?.(s, c, s.world?.room)) return;
+
+    // 2. ARM. A character with no weapon must be armed before it does anything else.
+    if (await k.passArm?.(s, c)) return;
+
+    // 3. FLEE AND REST. Safety always beats work.
     let r = await this._flee().tickAsync(bb);
     if (r === 'RUNNING') { await this._drain(bb, this._flee(), limit); }
     if (r === 'SUCCESS' || r === 'RUNNING') return;   // handled this pass

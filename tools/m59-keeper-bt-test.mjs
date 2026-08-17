@@ -150,5 +150,56 @@ console.log('\nFallback sets the re-entrancy guard:');
   check('guard cleared after fallback', k._btKeeperPass !== true);
 }
 
+console.log('\nSafety-first routing (Underworld / arm before the trees):');
+{
+  // A character in the Underworld must be escaped BEFORE any tree ticks. The
+  // regression for Lee: dead in The Underworld, the farm node looped on "this room
+  // cannot produce our prey -- leaving now" forever because it tried to path-travel
+  // out of a room with no graph exits. passUnderworld returns true -> the pass ends.
+  const order = [];
+  const k = mockKeeper({
+    s: { live: true, client: { self: {} }, world: { room: { num: 999, name: 'The Underworld' } } },
+    passUnderworld: async (s, c, room) => { order.push('underworld'); return true; },
+  });
+  const d = new BTKeeper(k);
+  let fleeTicked = 0, farmTicked = 0;
+  d._flee = () => ({ tickAsync: async () => { fleeTicked++; return FAILURE; } });
+  d._farm = () => ({ tickAsync: async () => { farmTicked++; return FAILURE; } });
+
+  await d.pass();
+  check('underworld handled before the trees', order[0] === 'underworld');
+  check('flee not ticked when dead in the underworld', fleeTicked === 0);
+  check('farm not ticked when dead in the underworld', farmTicked === 0);
+}
+{
+  // Not in the Underworld (passUnderworld returns false) AND unarmed (passArm true):
+  // arm first, then the trees. The trees must still run after the safety checks.
+  const order = [];
+  const k = mockKeeper({
+    s: { live: true, client: { self: {} }, world: { room: { num: 1, name: 'Test' } } },
+    passUnderworld: async () => { order.push('underworld'); return false; },
+    passArm: async () => { order.push('arm'); return true; },
+  });
+  const d = new BTKeeper(k);
+  d._flee = () => ({ tickAsync: async () => { order.push('flee'); return FAILURE; } });
+  d._farm = () => ({ tickAsync: async () => { order.push('farm'); return FAILURE; } });
+
+  await d.pass();
+  check('underworld checked first', order[0] === 'underworld');
+  check('arm checked second (and ends the pass)', order[1] === 'arm');
+  check('trees not ticked when unarmed and arm was handled', !order.includes('flee') && !order.includes('farm'));
+}
+{
+  // Self-id lost: after 3 passes with no self, reconnect and stop. Defensive: a
+  // keeper without reconnect (a partial mock) must not throw.
+  const k = mockKeeper({ s: { live: true, client: {}, world: { room: { num: 1, name: 'Test' } } } });
+  const d = new BTKeeper(k);
+  d._flee = () => ({ tickAsync: async () => FAILURE });
+  d._farm = () => ({ tickAsync: async () => FAILURE });
+  let threw = false;
+  try { for (let i = 0; i < 3; i++) await d.pass(); } catch { threw = true; }
+  check('no self for 3 passes does not throw (reconnect is optional)', !threw);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
