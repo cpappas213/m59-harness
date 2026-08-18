@@ -116,6 +116,39 @@ export class GOAPKeeper {
   }
 
   /**
+   * Check if any shop is reachable from the character's current room.
+   * Returns true if at least one shop has a valid path. Used by the
+   * goal stack to decide whether the has_money goal is actionable:
+   * if no shop is reachable, selling is impossible and the goal
+   * falls through to the next one.
+   */
+  _shopReachable() {
+    const c = this.client;
+    const hereRaw = c?.room?.num ?? c?.room?.id;
+    if (hereRaw == null) return false;
+    // Dynamic import to avoid circular dependency at module load time.
+    let objIdToNum, loadMap, findPath;
+    try {
+      ({ objIdToNum } = require_esm('./m59-hunt-room.mjs'));
+      ({ loadMap, findPath } = require_esm('./m59-map.mjs'));
+    } catch { return false; }
+    const here = objIdToNum(hereRaw) ?? hereRaw;
+    // If we're already at a shop, it's reachable.
+    if (this._shopDest === here) return true;
+    // Check if the cached shop dest is still reachable.
+    if (this._shopDest) {
+      try {
+        const { loadMap, findPath } = require('./m59-map.mjs');
+        const map = loadMap();
+        const p = findPath(map, here, this._shopDest);
+        return p?.found === true;
+      } catch { return false; }
+    }
+    // No cached dest: check if any shop is reachable.
+    return nearestShop(here) != null;
+  }
+
+  /**
    * Take one hop toward a destination room. Uses the legacy router to
    * find the next exit and the session to walk it. This is the travel
    * primitive the planner uses: one room at a time, re-planning after
@@ -407,10 +440,11 @@ export class GOAPKeeper {
       { goal: 'has_food',      when: ws.has_food === false && (ws.has_reagents === true || ws.has_money === true) },
       // has_money: earn or sell. The character needs money whether
       // it has loot to sell or not. But only trigger when the
-      // character CAN make money: it has loot to sell, or it's
-      // armed (can scavenge for gold). An unarmed, loot-less
-      // character can't earn money and the goal is unreachable.
-      { goal: 'has_money',     when: ws.has_money === false && (ws.has_loot === true || ws.armed === true) },
+      // character CAN make money: it has loot to sell and a shop
+      // is reachable, or it's armed (can scavenge for gold).
+      // When the shop is unreachable (blocked by a hazard), selling
+      // is impossible, so the goal falls through to the next one.
+      { goal: 'has_money',     when: ws.has_money === false && (ws.has_loot === true && this._shopReachable() || ws.armed === true) },
       { goal: 'can_rest_higher', when: ws.can_rest_higher === true },
       { goal: this.goal,       when: ws[this.goal] !== true },
     ];
@@ -438,9 +472,12 @@ export class GOAPKeeper {
       extra.push(escapeUnderworldAtomic);
     } else {
       // Inject combat atomics. The character needs these whenever
-      // there's a hostile in the room (has_target) OR when the
-      // goal is healthy (flee/rest to recover).
-      if (ws.has_target === true || ws.hurt === true) {
+      // there's a hostile in the room (has_target), OR when the
+      // goal is healthy (flee/rest to recover), OR when the
+      // character is armed and the goal is has_money/has_loot
+      // (scavenge to earn gold).
+      const combatGoal = effectiveGoal === 'has_money' || effectiveGoal === 'has_loot';
+      if (ws.has_target === true || ws.hurt === true || (ws.armed === true && combatGoal)) {
         const { attackOf } = await import('./m59-act/attack.mjs');
         const { scavenge } = await import('./m59-act/scavenge.mjs');
         const { takeSafeSpot } = await import('./m59-act/take-safe-spot.mjs');

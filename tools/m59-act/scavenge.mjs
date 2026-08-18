@@ -120,7 +120,7 @@ scavenge.pre = ['has_target'];
 
 // Effect: optimistically, the fight produced loot. The next pass
 // re-evaluates has_loot from the actual inventory.
-scavenge.effects = ['has_loot'];
+scavenge.effects = ['has_loot', 'has_money'];  // fighting drops gold AND items
 
 scavenge.atomic = 'scavenge';
 scavenge.mutates = true;  // sends combat packets; the room and inventory change
