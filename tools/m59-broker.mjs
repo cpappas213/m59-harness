@@ -44,7 +44,7 @@ import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath }
   from './m59-map.mjs';
-import { CLIENT_FINENESS, elideLoops, protocolToClient } from './m59-roo.mjs';
+import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo } from './m59-roo.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -424,6 +424,14 @@ const resources = loadResources();      // one table, shared by every character
 // The room graph and collision-capable geometry, decoded and semantically verified
 // once for every session. A broker that can chat but cannot move is not healthy: fail
 // startup clearly instead of serving a fleet whose every action later stalls closed.
+// Room-name -> .roo-file lookup for unmapped rooms.
+import { readFileSync as _rfs2 } from 'fs';
+let roomRooLookup;
+try {
+  roomRooLookup = new Map(JSON.parse(_rfs2(new URL('../substrate/room-roo-lookup.json', import.meta.url), 'utf8')));
+} catch { roomRooLookup = new Map(); }
+const _walkableCache = new Map(); // roomName -> walkable array
+
 let worldMap;
 try { worldMap = loadMap(); }
 catch (error) {
@@ -14196,7 +14204,35 @@ function heroSnapshot(name) {
               if (buf.length === rows * cols)
                 return Array.from(buf).map(b => (b & 0x01));
             }
-            // Unmapped room: all walkable (no wall data available)
+            // Unmapped room: try to parse the .roo file by room name
+            const roomName = c.rsc?.get?.(c.roomNameRsc);
+            if (roomName && roomRooLookup.size) {
+              const cacheKey = roomName + ':' + c.room.id;
+              if (_walkableCache.has(cacheKey)) return _walkableCache.get(cacheKey);
+              const rooFile = roomRooLookup.get(roomName);
+              if (rooFile) {
+                try {
+                  const m59Root = process.env.M59_ROOT || '/Users/costas/Documents/Projects/Meridian59';
+                  const geo = loadRoo(rooFile, [m59Root + '/resource/rooms']);
+                  if (geo?.flags instanceof Buffer) {
+                    const g = Array.from(geo.flags).map(b => (b & 0x01));
+                    // Resize to match the live room dimensions
+                    if (g.length !== rows * cols) {
+                      // Crop or pad to match
+                      const out = new Array(rows * cols).fill(1);
+                      for (let r = 0; r < Math.min(rows, geo.rows); r++)
+                        for (let col = 0; col < Math.min(cols, geo.cols); col++)
+                          out[r * cols + col] = g[r * geo.cols + col];
+                      _walkableCache.set(cacheKey, out);
+                      return out;
+                    }
+                    _walkableCache.set(cacheKey, g);
+                    return g;
+                  }
+                } catch {}
+              }
+            }
+            // No wall data: all walkable
             return new Array(rows * cols).fill(1);
           } catch { return []; }
         })(),
