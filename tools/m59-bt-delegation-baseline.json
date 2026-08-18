@@ -1,0 +1,9 @@
+{
+  "note": "Delegation debt per BT module: calls into the legacy keeper that are not journal services. This file may only ever go DOWN. See m59-bt-delegation-test.mjs for why.",
+  "generated": "2026-08-18",
+  "total": 4,
+  "files": {
+    "m59-bt-nodes.mjs": 4,
+    "m59-goap.mjs": 0
+  }
+}
