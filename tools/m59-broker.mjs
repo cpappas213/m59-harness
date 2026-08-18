@@ -3754,6 +3754,19 @@ class Session {
     // this is incremented; past a handful it means the square-by-square plan is not the
     // thing being walked, and continuing to replan it is how a room takes three minutes.
     let offPlan = 0, wentFine = false;
+    // HOW FAR ONE MOVE MAY REACH, WHICH IS NOT A CONSTANT ONCE A LONG ONE HAS FAILED.
+    //
+    // Coalescing turns a walk into a few long moves, which is the whole point of proving a
+    // route once. It also means a move that fails costs its whole length: measured in
+    // Outskirts of Tos, a character sat on one square for 106 counted steps — about fifteen
+    // identical seven-square attempts — because a failed hop is retried as the SAME hop,
+    // and every retry billed seven. Single steps from that square worked in all four
+    // directions the entire time.
+    //
+    // So the reach collapses to one after a long move fails and climbs back on success. A
+    // walk can still be long-legged where the ground allows it and always has the single
+    // step to fall back on, which is the move the geometry was actually asked about.
+    let hopLimit = MOVE_HOP_MAX_SQUARES;
     // The current plan's pulled proof, or null when it has none. `undefined` means "not
     // computed for this queue yet"; every place that REPLACES the queue resets it.
     let pulled;
@@ -3841,7 +3854,7 @@ class Session {
         // bigger than it ever was — this changes WHICH squares may be skipped, not how
         // many.
         const reach = [];
-        for (let i = 0; i < queue.length && reach.length < MOVE_HOP_MAX_SQUARES - 1; i++) {
+        for (let i = 0; i < queue.length && reach.length < Math.max(1, hopLimit) - 1; i++) {
           const s = queue[i];
           if (occupied.has(`${s.row},${s.col}`)) break;
           reach.push(s);
@@ -3890,7 +3903,15 @@ class Session {
           return { arrived: false, reason: 'own_position_unknown',
                    note: 'lost authoritative own-position state while walking',
                    steps: taken, replans };
-      if (now.col === next.col && now.row === next.row) { stalledOn = null; stalledTimes = 0; continue; }
+      if (now.col === next.col && now.row === next.row) {
+        // It landed where it was aimed, so the reach it used is one the ground supports.
+        hopLimit = MOVE_HOP_MAX_SQUARES;
+        stalledOn = null; stalledTimes = 0; continue;
+      }
+      // A LONG MOVE THAT MISSED SAYS NOTHING ABOUT A SHORT ONE. Shorten before blaming the
+      // route, the edge or the body in the way: those verdicts are all about a step, and
+      // what just failed was several.
+      if (hop > 1) { hopLimit = 1; queue.unshift(next); taken -= hop - 1; continue; }
 
       // LANDED SOMEWHERE ELSE — counted, because the RATE is the diagnosis.
       //
