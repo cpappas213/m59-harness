@@ -549,7 +549,14 @@ export const STEP_MASK_DIRS = DIRS;
 //      from 1403 squares to 1612. v3 also requires a sector with an INTERIOR rather than
 //      merely a floor height — see `_occupiable`, which is what stops the room compiler's
 //      solid filler being read as ground (2,582 slabs of it in The King's Way alone).
-export const STEP_MASK_VERSION = 3;
+//   4  and refuses a CLIMB of more than MAX_STEP_HEIGHT, measured against the body's
+//      carried height rather than the floor beneath it — so a drop-jump, where you run off
+//      a ledge and keep steering while airborne over lower ground, reads as a fall and not
+//      as a climb out of the place you flew over. Paired with a landing-height check in
+//      `_traceMoverStep`, without which the rule is inert: a square can straddle a cliff
+//      face, and the mover was landing on the low half while `walkTo` counted the square
+//      as reached. See `enforceStepHeight`.
+export const STEP_MASK_VERSION = 4;
 const STEP_MASK_BIT = new Map(DIRS.map((d, i) => [`${d.dr},${d.dc}`, 1 << i]));
 
 // Where the .roo files live. The server tree and the client tree are separate copies
@@ -925,8 +932,8 @@ export class RoomGeometry {
     roomFlags = 0,
     overrideDepths = null,
     motionZ = null,
-    // OFF, AND THE REASON IS WRITTEN DOWN RATHER THAN LOST. See the refusal it controls.
-    enforceStepHeight = false,
+    // ON. See the refusal it controls, and STEP_MASK_VERSION 4.
+    enforceStepHeight = true,
   } = {}) {
     if (!this.collisionReady) return {
       available: false, moved: false, blocked: true, x: x0, y: y0,
@@ -1001,9 +1008,28 @@ export class RoomGeometry {
       // of them in 578. A rule that severed real staircases would show up here as a large
       // number; it does not.
       //
-      // Against the FLOOR WE CAME FROM, not against `carriedMotionZ.max`: that field only
-      // ever rises, so measuring from it would let a body that had walked over a high
-      // ledge climb anything for the rest of the command.
+      // AGAINST THE BODY'S CARRIED HEIGHT, NOT THE FLOOR IT IS OVER — because you keep
+      // moving horizontally while you fall.
+      //
+      // This comment used to say the opposite, and give a reason: measuring from
+      // `carriedMotionZ.max` would let a body that had walked over a high ledge climb
+      // anything for the rest of the command. That is not an abuse, it is the game's
+      // DROP-JUMP, and the operator had already described it twice before I understood
+      // it: you run off a ledge, you keep steering while airborne, you pass OVER a lower
+      // place without ever standing in it, you catch the far side, and you take a ramp
+      // back up.
+      //
+      // Measured floor-to-floor, that reads as a climb out of the gully you flew over. In
+      // Ukgoth a 3-square gully with ledges at 5280 either side and 4576 between them came
+      // out as a 704-unit ascent and was refused — while the operator crosses it. Measured
+      // against the carried height, the body leaves 5280 and lands on 5280: no climb at
+      // all, and the traversal stays legal.
+      //
+      // The cliff is unaffected, which is the point: standing in the Cragged Mountains
+      // basin the carried height IS 3200, so the step to 4800 is still +1600 and still
+      // refused. `carriedMotionZ` only ever rises within one step, so this cannot lower
+      // the bar for a genuine climb from level ground — it only stops a fall being
+      // mistaken for one.
       //
       // WHY IT IS OFF. Switched on it gets room 578 exactly right — the north exit can no
       // longer reach the southern ones, the southern ones still walk to it in 54 steps,
@@ -1024,10 +1050,8 @@ export class RoomGeometry {
       // consequence is known and bounded: the router will offer a walking route out of the
       // Cragged Mountains basin that only a character holding blink can take.
       if (enforceStepHeight && Number.isFinite(floor)) {
-        const fromFloor = this.floorBaseAtClient(stepFrom.x, stepFrom.y,
-          this.leafAtClient(stepFrom.x, stepFrom.y, { preferSectorNum: stepFrom.sectorNum }),
-          { roomFlags, overrideDepths });
-        if (Number.isFinite(fromFloor) && floor - fromFloor > MAX_STEP_HEIGHT) {
+        const carried = carriedMotionZ?.max;
+        if (Number.isFinite(carried) && floor - carried > MAX_STEP_HEIGHT) {
           at = stepFrom;                       // the climb never happened
           blocked = true;
           reason = 'step_too_high';
@@ -1777,7 +1801,20 @@ export class RoomGeometry {
         qx = nx; qy = ny;
       }
       if (!arrived) return false;
-      return Math.floor(qx / KOD_FINENESS) === toCol && Math.floor(qy / KOD_FINENESS) === toRow;
+      if (Math.floor(qx / KOD_FINENESS) !== toCol || Math.floor(qy / KOD_FINENESS) !== toRow)
+        return false;
+      // AND AT A HEIGHT CONSISTENT WITH THE SQUARE WE ARE RECORDING IT AS. A square is
+      // 1024 units and a cliff face does not respect the lattice, so a square can straddle
+      // one — 12,12 in the Cragged Mountains does. The mover slides up to the face and
+      // stops on the square's LOW half, `walkTo` compares squares, and that counted as
+      // arriving; the next step was then planned from the square's stand point 1600 units
+      // higher than the character actually stood. Without this the climb rule above never
+      // bites, because the step "succeeds" without ever going up.
+      const landedFloor = this.floorBaseAtClient(protocolToClient(qx), protocolToClient(qy));
+      const aimFloor = this.floorBaseAtClient(toX, toY);
+      if (Number.isFinite(landedFloor) && Number.isFinite(aimFloor)
+          && Math.abs(landedFloor - aimFloor) > MAX_STEP_HEIGHT) return false;
+      return true;
     } catch { return true; }        // a trace that throws is not evidence of a wall
   }
 

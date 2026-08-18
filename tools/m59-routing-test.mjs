@@ -218,8 +218,18 @@ if (!existsSync(mapFile)) {
     const comp = components(geo, { collision: true });
     const biggest = Math.max(...comp.sizes);
     const walkable = comp.sizes.reduce((n, s) => n + s, 0);
-    ok('most of the room is one body of floor under the mover view',
-       biggest / walkable > 0.6, `${biggest}/${walkable} in ${comp.count} region(s)`);
+    // A TERRACED MOUNTAIN IS NOT ONE BODY OF FLOOR, AND THIS USED TO INSIST IT WAS.
+  // The threshold was 0.6 and room 578 now comes out at 745/2450 in 139 regions, because
+  // the climb rule finally refuses its 1600-unit terrace faces. That is the room the
+  // operator walked on 2026-08-17: arriving from The King's Way you are in the basin and
+  // cannot reach any other exit on foot; blink puts you on top and then they are all
+  // reachable. A room that models as one body is a room where that is not true.
+  //
+  // So the property is the FLOOR, not the fraction: the largest region must still be a
+  // usable body rather than a scatter of ledges, and the room must not have dissolved.
+  ok('the mover view still leaves a usable body of floor rather than a scatter',
+     biggest >= 500 && comp.count < walkable / 10,
+     `${biggest}/${walkable} in ${comp.count} region(s)`);
     ok('and the pockets against the walls are KEPT, because they are the safe spots',
        comp.count > 1 && comp.sizes.filter(s => s === 1).length > 0,
        `${comp.sizes.filter(s => s === 1).length} single-square pocket(s)`);
@@ -295,9 +305,20 @@ if (!existsSync(mapFile)) {
     // all along. `m59-impossible-test` still refuses every checked-in trace in both
     // Cragged Mountains rooms, so whatever it is, it is not the traversals anybody has
     // written down. Worth an hour in the client; not worth a test that lies either way.
-    ok('and on the Cragged Mountains the body reaches every exit the room publishes',
-       reach(chosen) === chosen.length && chosen.length >= 4,
-       `first-offered ${reach(naive)}, body-aware ${reach(chosen)} of ${chosen.length}`);
+    // AND ON THE CRAGGED MOUNTAINS THE BODY REACHES EXACTLY ONE EXIT, WHICH IS THE FINDING.
+  // This assertion has now been wrong twice in opposite directions. It first demanded a
+  // strict improvement over first-offered; then, when the anchor work closed that gap, it
+  // demanded that the body reach EVERY exit — which the model happily satisfied because it
+  // believed a character could climb a 1600-unit cliff face. It cannot. The operator
+  // walked it: from the basin you reach the north exit to The King's Way and nothing else,
+  // and blink is what puts you on top.
+  //
+  // One exit from the basin is therefore the correct answer, and it is asserted as an
+  // EXACT count rather than a floor, because "reaches at least one" would pass again the
+  // day the cliff reopens.
+  ok('and on the Cragged Mountains the basin reaches exactly one exit — the rest need blink',
+     reach(chosen) === 1 && chosen.length >= 4,
+     `first-offered ${reach(naive)}, body-aware ${reach(chosen)} of ${chosen.length}`);
     ok('an anchor it cannot reach is still OFFERED rather than deleted — a bake must ' +
        'never be the reason a doorway disappears',
        chosen.length === naive.length);

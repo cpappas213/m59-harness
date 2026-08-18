@@ -99,7 +99,26 @@ const CASES = [
     refuse: [{ from: [27, 5], to: [48, 24], wall: 237 },
              { from: [52, 40], to: [30, 19], wall: 389 },
              { from: [53, 34], to: [38, 25], wall: 381 }],
-    allow:  [{ from: [53, 39], to: [50, 47] }, { from: [24, 7], to: [39, 13] }] },
+    // 53,39 -> 50,47 IS A QUEST DOOR, NOT FLOOR, AND IT WAS A CONTROL FOR A YEAR.
+    // It crosses a 704-unit rise (floor 4576 -> 5280, profiled at 8-unit resolution: one
+    // clean transition, no crack to alias). `enforceStepHeight` refuses it, and refusing
+    // it is right — the passage is not ordinary ground at all.
+    //
+    // `i9.kod` (the Ukgoth room) `SomeoneSaid`: say the phrase `i9_qor` while carrying a
+    // `&Scepter` and the room runs
+    //     SetSector(#sector=SECTOR_DOOR, #animation=ANIMATE_FLOOR_LIFT, #height=340, ...)
+    // dropping the floor from its resting 440, then `DoorCloseTimer` raises it back. The
+    // operator named it from memory before I found the code — "the sometimes-there-wall in
+    // Ukgoth... hold a relic of Qor and say Qor the vile".
+    //
+    // A STATIC BAKE MUST MODEL THE RESTING STATE. The open state exists only while a timer
+    // runs, and the harness already treats a live `BP_SECTOR_MOVE` as invalidating
+    // collision for exactly this reason. Baking the passage as walkable would have the
+    // router plan through a door that is shut, for a character holding no scepter.
+    //
+    // So it moves to `refuse`, and the second control stands on its own.
+    refuse: [{ from: [53, 39], to: [50, 47] }],
+    allow:  [{ from: [24, 7], to: [39, 13] }] },
   { room: 27, name: 'A Deep, Dark, Spooky, Icky Cave',
     refuse: [{ from: [38, 24], to: [25, 40], wall: 747 },
              { from: [21, 34], to: [23, 45], wall: 414 },
@@ -144,7 +163,17 @@ for (const kase of CASES) {
     // endpoint is what `validateFineTarget` would put in a movement packet.
     ok(`${kase.name} (${kase.room}) refuses ${c.from} -> ${c.to}`,
        t.arrived !== true, JSON.stringify(t));
-    ok(`  and it is wall ${c.wall} that refuses it`, t.wallIndex === c.wall,
+    // NAMING THE WALL IS THE POINT — "still refused, for a completely different reason"
+    // must not pass as unchanged. But there is now a second legitimate way to refuse a
+    // traversal that has nothing to do with a wall: `step_too_high`, the per-microstep
+    // climb limit. A cliff face is frequently a bare discontinuity between two sectors
+    // with no wall spanning it at all (see `enforceStepHeight`), so for three of these
+    // traces the honest answer is a height refusal and there is no wall to blame.
+    //
+    // Accepted only for that ONE reason, and the reason is asserted: anything else still
+    // has to name the wall it was pinned to.
+    ok(`  and it is wall ${c.wall} that refuses it`,
+       t.wallIndex === c.wall || t.reason === 'step_too_high',
        `blamed ${t.wallIndex} for ${t.reason}`);
   }
 
@@ -157,8 +186,26 @@ for (const kase of CASES) {
        t.arrived === true, JSON.stringify(t));
   }
 }
-ok('every case carries both polarities', refusals === CASES.length * 3
-   && controls === CASES.length * 2, `${refusals} refusals, ${controls} controls`);
+// EVERY CASE CARRIES BOTH POLARITIES — PER CASE, NOT AS A GRAND TOTAL.
+//
+// The point of this line is that no room is asserted refusals-only: a suite that only
+// pins refusals passes perfectly on the day everything is refused, which is the fleet
+// standing still. A fixed 3-and-2 per case counted that correctly and also froze the
+// case list, so a trace that turns out to have been misclassified could not be moved
+// without the arithmetic failing for an unrelated reason. Ukgoth's 53,39 -> 50,47 is
+// exactly that: a quest door that spent a year as a control.
+//
+// Asserted per case, so the protection survives the list changing.
+{
+  const barren = CASES.filter(c => !(c.refuse?.length) || !(c.allow?.length))
+                      .map(c => `${c.name} (${c.room})`);
+  ok('every case carries both polarities',
+     barren.length === 0 && refusals > 0 && controls > 0,
+     barren.length ? `refusals-only or controls-only: ${barren.join(', ')}`
+                   : `${refusals} refusals, ${controls} controls`);
+  ok('and the suite is still mostly about refusing',
+     refusals > controls, `${refusals} refusals, ${controls} controls`);
+}
 
 // ---------------------------------------------------------------------------
 // A SEALED HALF OF A FLOOR IS A STRONGER CLAIM THAN A BLOCKED LINE, and the upstairs of
