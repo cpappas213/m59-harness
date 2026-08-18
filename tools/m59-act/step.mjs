@@ -12,24 +12,28 @@
 // case 909. A route executed one bounded step at a time has an interruption point
 // after every square, and needs no watchdog reaching into paced loops to cancel it.
 //
-// SPEED IS A REAL CHOICE AND IT IS NOT FREE. USER_WALKING_SPEED is 18
-// (user.kod:46); anything above it is RUNNING, and the server charges exertion as
-// EXERTION_PER_MOVE * (speed * 5/6)^2 -- QUADRATIC. Running at 24 costs 1.8x the
-// vigor of walking, at 30 it costs 2.8x. Worth it crossing a field of groundworms,
-// pure loss in a safe town, because vigor sets the health regeneration rate.
-//
-// AND RUNNING HAS A HARD FLOOR: below VIGOR_RUN_THRESHOLD (10) the server does not
-// slow you down, it SNAPS YOU BACK to where you were and logs you as a speedhacker.
-// So a run below the floor is not a slower step, it is no step and a black mark.
-// This atomic refuses it rather than sending it.
 
 import { isTerminalMovementReason } from '../m59-movement.mjs';
 
+// KEPT FOR CITATION, NOT PLUMBED — AND THAT IS THE HONEST STATE OF IT.
+//
+// USER_WALKING_SPEED is 18 (user.kod:46); above it is running, exertion is
+// EXERTION_PER_MOVE * (speed*5/6)^2 (quadratic: 1.8x at 24, 2.8x at 30), and below
+// VIGOR_RUN_THRESHOLD the server does not slow you down, it SNAPS YOU BACK and logs
+// you as a speedhacker.
+//
+// All true, and none of it reachable from here: the broker's mover is
+// `step(col, row, { confirm, beforeMutation })` and takes NO speed. This atomic used
+// to accept a `speed` argument and gate it on vigor, which meant an option that
+// looked functional, was silently dropped by the mover, and whose guard could
+// therefore never fire — the same shape as `typeof c.armed === 'function'` gating a
+// branch that has never executed. A lever connected to nothing is worse than no
+// lever, so the argument is gone and the knowledge stays here for whoever plumbs it.
 export const WALK_SPEED          = 18;   // USER_WALKING_SPEED, user.kod:46
 export const VIGOR_RUN_THRESHOLD = 10;   // below this, running is snapped back
 
 /**
- * step(client, session, { col, row, speed, waitMs })
+ * step(client, session, { col, row, waitMs })
  *
  * Sends one move to the centre of square (col,row) and confirms arrival by
  * reading our own position back. Returns:
@@ -44,7 +48,7 @@ export const VIGOR_RUN_THRESHOLD = 10;   // below this, running is snapped back
  * (upstream's TERMINAL_MOVEMENT_REASONS). A caller must propagate those rather
  * than re-planning into the same wall.
  */
-export async function step(client, session, { col, row, speed = WALK_SPEED, waitMs = 600 } = {}) {
+export async function step(client, session, { col, row, waitMs = 600 } = {}) {
   if (!client || !session) return { sent: false, reason: 'no client or session' };
   if (!Number.isInteger(col) || !Number.isInteger(row))
     return { sent: false, reason: 'invalid_move_target', terminal: true };
@@ -56,14 +60,6 @@ export async function step(client, session, { col, row, speed = WALK_SPEED, wait
   const from = { col: me.col, row: me.row };
   if (from.col === col && from.row === row)
     return { sent: false, reason: 'already there', arrived: true, from, to: { col, row }, at: from };
-
-  // The run floor, checked before the packet. See the header: this is not a
-  // degraded step, it is a snap-back and a speedhacker log entry.
-  if (speed > WALK_SPEED) {
-    const vigor = client.vitals?.()?.vigor?.value;
-    if (vigor != null && vigor < VIGOR_RUN_THRESHOLD)
-      return { sent: false, reason: 'too little vigor to run', from, to: { col, row } };
-  }
 
   // THE VALIDATED MOVER IS REQUIRED, AND THERE IS NO FALLBACK ANY MORE.
   //
@@ -91,7 +87,7 @@ export async function step(client, session, { col, row, speed = WALK_SPEED, wait
     return { sent: false, reason: 'no validated mover', terminal: true, from, to: { col, row } };
 
   const since = client.evSeq ?? 0;
-  const result = await session.step(col, row, { speed })
+  const result = await session.step(col, row, {})
                               .catch(e => ({ moved: false, reason: e?.message }));
 
   await client.waitFor({ since, kinds: ['player', 'room-contents'], timeoutMs: waitMs }).catch(() => {});

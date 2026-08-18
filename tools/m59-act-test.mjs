@@ -218,21 +218,21 @@ console.log('\nstep propagates TERMINAL failures rather than inviting a retry');
      r2.terminal === undefined);
 }
 
-console.log('\nstep refuses a run below the vigor floor — a snap-back, not a slow walk');
+console.log('\nstep offers no speed, because the mover accepts none');
 {
-  // Below VIGOR_RUN_THRESHOLD the server does not slow you down: it puts you back
-  // where you were and logs you as a speedhacker.
+  // The run floor is real (below vigor 10 the server snaps you back and logs you as
+  // a speedhacker) but UNREACHABLE: the broker's mover is step(col,row,{confirm,
+  // beforeMutation}) and takes no speed. An argument the mover drops is a lever
+  // connected to nothing, and a guard on it can never fire -- the same shape as the
+  // `typeof c.armed === 'function'` branch that has never executed.
   const { c, s } = walker({ vigor: 4 });
-  const r = await step(c, s, { col: 6, row: 5, speed: 30, waitMs: 1 });
-  ok('it refuses rather than sending', r.sent === false && /vigor/.test(r.reason));
-  ok('and nothing went to the wire', c.sent.filter(x => x[0] === 'step').length === 0);
-
-  const walk = walker({ vigor: 4 });
-  const r2 = await step(walk.c, walk.s, { col: 6, row: 5, speed: WALK_SPEED, waitMs: 1 });
-  ok('but WALKING at 4 vigor is fine — the floor is only about running',
-     r2.sent === true && r2.arrived === true);
-  ok('the constants are the server\'s own',
+  const r = await step(c, s, { col: 6, row: 5, waitMs: 1 });
+  ok('a character at 4 vigor still steps — walking has no floor',
+     r.sent === true && r.arrived === true);
+  ok('the constants stay for citation even though nothing consumes them',
      WALK_SPEED === 18 && VIGOR_RUN_THRESHOLD === 10);
+  ok('and no speed is passed to the mover',
+     c.sent.filter(x => x[0] === 'step').length === 1);
 }
 
 console.log('\nstep requires the validated mover — the grid is for planning, not stepping');

@@ -90,12 +90,22 @@ export function fakeClient(spec = {}) {
     room: { num: spec.room?.num ?? 1, name: spec.room?.name ?? 'Room', objects },
     // The resource table. A real one answers by nameRsc; tests mostly set `name`
     // directly, so this falls through rather than inventing a string.
-    rsc: { get: (k) => spec.rsc?.[k] ?? null },
+    rsc: { get: (k) => {
+      if (spec.rsc && k in spec.rsc) return spec.rsc[k];
+      const i = (spec.spells ?? []).findIndex((x, n) =>
+        typeof x === 'string' && 5000 + n === k);
+      return i >= 0 ? spec.spells[i] : null;
+    } },
     evSeq: 0,
     // plSpells, our copy. A character can only cast what is IN here; a spell
     // absent from it cannot be cast at any amount of mana.
+    // A REAL SPELL ENTRY CARRIES nameRsc, NOT name -- the client resolves it with
+    // rsc.get(entry.nameRsc) (m59-client.mjs:533). A fake that only ever supplies
+    // `name` never exercises the path the live client actually takes, which is how
+    // the equipment() and armed() bugs survived. So a string spec produces the REAL
+    // shape (nameRsc + a resolvable rsc entry); pass an object to override.
     spells: (spec.spells ?? []).map((x, i) =>
-      (typeof x === 'string' ? { id: 900 + i, name: x } : x)),
+      (typeof x === 'string' ? { id: 900 + i, nameRsc: 5000 + i } : x)),
 
     equipment: () => equipmentOf({ equipped: spec.equipped ?? [], known: spec.known ?? true }),
     vitals:    () => vitalsOf(spec),
