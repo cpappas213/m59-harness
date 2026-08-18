@@ -433,6 +433,88 @@ console.log('\ncast refuses by returning, like every other atomic');
   ok('no spell named does not throw either', r2.sent === false && /no spell/.test(r2.reason));
 }
 
+// ---------------------------------------------------------------------------
+// Behaviour: eat — the stomach is the constraint, and it is invisible
+// ---------------------------------------------------------------------------
+const { eat } = await import('./m59-act/eat.mjs');
+const { Stomach, STOMACH_CAP } = await import('./m59-skills.mjs');
+
+const eater = (vigor = 40, extra = {}) => {
+  const c = fakeClient({ vigor, inventory: [{ id: 4, name: 'bread' }], ...extra });
+  return { c, s: fakeSession(c) };
+};
+
+console.log('\neat: applies the food to ourselves, and reads the gain back');
+{
+  const { c, s } = eater(40);
+  // the server accepts and vigor rises
+  let v = 40;
+  c.vitals = () => ({ health: { value: 20, max: 20 }, mana: { value: 20, max: 20 },
+                      vigor: { value: v, max: 200, scale_max: 200 } });
+  s.pacer = { submit: async (_k, fn) => { fn(); v = 95; } };
+  const r = await eat(c, s, { itemId: 4, waitMs: 1 });
+  ok('it sent an apply of the food onto ourselves',
+     c.sent.some(x => x[0] === 'apply' && x[1] === 4 && x[2] === c.selfId), JSON.stringify(c.sent));
+  ok('and reports the gain from vitals rather than assuming one',
+     r.vigor_before === 40 && r.vigor_after === 95 && r.gained === 55);
+}
+
+console.log('\neat will not eat what is not in the pack');
+{
+  const { c, s } = eater();
+  const r = await eat(c, s, { itemId: 999, waitMs: 1 });
+  ok('refused, and nothing sent',
+     r.sent === false && /not in the pack/.test(r.reason) && c.sent.length === 0);
+}
+
+console.log('\neat refuses a mouthful the stomach cannot take — before the packet');
+{
+  // ReqEatSomething refuses when piStomach + filling > 100 (player.kod:5703) and
+  // says so only to the room. A refusal we can predict is one we can plan around.
+  const { c, s } = eater();
+  const full = new Stomach(STOMACH_CAP);
+  const r = await eat(c, s, { itemId: 4, filling: 25, stomach: full, waitMs: 1 });
+  ok('it refuses', r.sent === false && /too full/.test(r.reason));
+  ok('and says how long until it would fit — the stomach drains 0.12 a second',
+     typeof r.seconds_until_room === 'number' && r.seconds_until_room > 0,
+     String(r.seconds_until_room));
+  ok('and no packet went out', c.sent.filter(x => x[0] === 'apply').length === 0);
+}
+
+console.log('\nthe stomach model is charged on EVIDENCE, and a refusal is a measurement');
+{
+  // Charging optimistically lets the model drift permanently high; it must move only
+  // on what actually happened.
+  const gained = new Stomach(0);
+  const { c, s } = eater(40);
+  let v = 40;
+  c.vitals = () => ({ health: { value: 20, max: 20 }, mana: { value: 20, max: 20 },
+                      vigor: { value: v, max: 200, scale_max: 200 } });
+  s.pacer = { submit: async (_k, fn) => { fn(); v = 90; } };
+  await eat(c, s, { itemId: 4, filling: 25, stomach: gained, waitMs: 1 });
+  ok('a meal that landed is charged to the model', gained.level >= 25, String(gained.level));
+
+  // Now the server declines: the packet goes, nothing moves.
+  const declined = new Stomach(0);
+  const { c: c2, s: s2 } = eater(40);
+  await eat(c2, s2, { itemId: 4, filling: 25, stomach: declined, waitMs: 1 });
+  ok('a meal that did NOT land pins the model from below instead',
+     declined.level > 0, String(declined.level));
+  ok('and that reading is the only stomach evidence the wire ever gives',
+     declined.level >= STOMACH_CAP - 25);
+}
+
+console.log('\neat closes the supply chain, in the vocabulary');
+{
+  ok('it needs food', eat.pre.includes('has_food'));
+  ok('it produces vigor and consumes the food',
+     eat.effects.includes('vigor_ok') && eat.effects.includes('!has_food'));
+  // The reason the chain has to exist at all: resting stops at 80 of 200, so
+  // everything above the cap must be eaten.
+  ok('and resting alone could never get there — the cap is 80 of 200',
+     evaluateFor({ vigor: 80 }).can_rest_higher === false);
+}
+
 console.log('\nattack declares a plan-able contract');
 {
   ok('pre includes being armed and in reach',
