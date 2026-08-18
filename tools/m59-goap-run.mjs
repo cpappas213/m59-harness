@@ -41,10 +41,10 @@
 // the same way the DM tools do.
 
 import { readFileSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { M59Client } from './m59-client.mjs';
 import { planFor, stepPlan } from './m59-plan.mjs';
 import { evaluate, unknowns, SYMBOL_NAMES } from './m59-worldstate.mjs';
+import { fleetName, stateFileFor } from './m59-fleetpath.mjs';
 
 const argv = process.argv.slice(2);
 const arg = (name, def = null) => {
@@ -53,22 +53,31 @@ const arg = (name, def = null) => {
 };
 const flag = (name) => argv.includes('--' + name);
 
-const FLEET   = arg('fleet', 'local');
+// WHICH FLEET, RESOLVED THE WAY EVERY OTHER TOOL HERE RESOLVES IT.
+//
+// This used to be `arg('fleet', 'local')` -- its own argv reading with a literal
+// default -- and on a machine with no substrate/fleets/local.json it fell through to
+// substrate/fleet-state.json and drove THE DEFAULT FLEET while printing "fleet local".
+// That is the failure CLAUDE.md opens on ("passing the wrong one operates on the wrong
+// fleet quietly. Nothing errors"), and it is the same bug the tithe book had, from the
+// same cause. fleetName() honours --fleet, then M59_FLEET, then substrate/fleet-default,
+// then the unnamed fleet, and stateFileFor() maps the unnamed one to fleet-state.json.
+const FLEET   = fleetName(argv) || null;
 const AGENT   = arg('agent', 't1');
 const GOALSYM = arg('goal', 'vigor_ok');
 const APPLY   = flag('apply');
 const FORCE   = flag('i-mean-it');
 const MAXSTEP = Number(arg('max-steps', 4));
 
-const url = (p) => fileURLToPath(new URL(p, import.meta.url));
-const ROSTERS = [
-  url(`../substrate/fleets/${FLEET}.json`),
-  url('../substrate/fleet-state.json'),
-];
-
+// A NAMED FLEET WHOSE ROSTER IS MISSING IS AN ERROR, NEVER A FALLBACK. Falling back is
+// what made the label a lie: the run reported one fleet and drove another.
 function loadRoster() {
-  for (const p of ROSTERS) if (existsSync(p)) return { path: p, data: JSON.parse(readFileSync(p, 'utf8')) };
-  throw new Error(`no roster for fleet "${FLEET}" (looked in ${ROSTERS.join(', ')})`);
+  const p = stateFileFor(FLEET);
+  if (!existsSync(p))
+    throw new Error(FLEET
+      ? `no roster for fleet "${FLEET}" at ${p}. \`node tools/m59-fleets.mjs\` lists what this machine has.`
+      : `no roster at ${p}.`);
+  return { path: p, data: JSON.parse(readFileSync(p, 'utf8')) };
 }
 
 const LOOPBACK = /^(127\.0\.0\.1|::1|localhost)$/i;
@@ -90,7 +99,8 @@ async function main() {
       '  driven -- the subject walks away mid-experiment. Use --fleet local, or pass\n' +
       '  --i-mean-it if you have genuinely decided otherwise.');
 
-  console.log(`fleet ${FLEET}  agent ${AGENT}  character ${cred.character}  ` +
+  console.log(`fleet ${FLEET ?? '(unnamed)'}  roster ${path}\n` +
+              `agent ${AGENT}  character ${cred.character}  ` +
               `host ${cred.host}:${cred.port}  ${APPLY ? 'APPLY' : 'plan only'}`);
 
   const c = new M59Client({ host: cred.host, port: Number(cred.port), verbose: false });
