@@ -75,10 +75,21 @@ const BASELINE = join(HERE, 'm59-bt-delegation-baseline.json');
 // claim and should be argued with directly rather than grown by convenience.
 const ALLOWED = new Set(['note', 'progress', 'noProgress']);
 
-// The keeper arrives under both spellings: `keeper` in the farm/flee nodes,
-// aliased to `k` in the town/recover ones. Counting only the first is how the
-// town module was reported as having zero callbacks when it has twenty-seven.
-const RECEIVERS = ['keeper', 'k'];
+// The keeper arrives under both spellings: `keeper` in the farm/flee nodes, and
+// aliased to `k` in the town/recover ones (`const k = keeper;`). Counting only the
+// first is how the town module was once reported as having zero callbacks when it
+// has twenty-seven.
+//
+// BUT `k` IS ALSO THE COMMONEST LOOP VARIABLE IN THE LANGUAGE, and counting it
+// unconditionally is a false positive with a straight face: m59-goap-planner.mjs
+// was flagged as having "gained delegation" purely on `k.startsWith('!')` and
+// `k.slice(1)`, where k is a world-state KEY and there is no keeper in the file at
+// all. That matters more than the miscount — A RATCHET THAT CRIES WOLF GETS BLESSED
+// AWAY, and then it is a comment rather than a check.
+//
+// So `k` is counted only in a file that actually binds it to the keeper.
+const keeperAliased = (src) => /\bk\s*=\s*(keeper|this\.k)\b/.test(src);
+const receiversFor  = (src) => (keeperAliased(src) ? ['keeper', 'k'] : ['keeper']);
 
 // ---------------------------------------------------------------------------
 // Comment stripping. These files carry more prose than code and the prose NAMES
@@ -86,10 +97,20 @@ const RECEIVERS = ['keeper', 'k'];
 // documentation as delegation would make the ratchet unfixable by writing about
 // it, so comments come out before anything is counted.
 // ---------------------------------------------------------------------------
+// ORDER MATTERS, AND GETTING IT WRONG ATE HALF A FILE. Blocks were stripped first,
+// which meant a LINE comment containing "/*" opened a block comment that ran to the
+// next "*/" -- swallowing every line between. m59-plan.mjs says "m59-act/*" in its
+// header, so its imports vanished and the orphan check reported m59-goap-planner as
+// imported by nothing while m59-plan.mjs was importing it three lines down.
+//
+// Line comments therefore come out FIRST, which removes the fake opener with the
+// line it sits on. The residual risk is the mirror case -- a "//" inside a real
+// block comment truncating that one line -- which cannot hide code, because there is
+// no code inside a block comment to hide.
 function stripComments(src) {
   return src
-    .replace(/\/\*[\s\S]*?\*\//g, '')      // block comments
-    .replace(/(^|[^:])\/\/.*$/gm, '$1');   // line comments, sparing http://
+    .replace(/(^|[^:])\/\/.*$/gm, '$1')    // line comments FIRST, sparing http://
+    .replace(/\/\*[\s\S]*?\*\//g, '');     // then real block comments
 }
 
 function btModules(dir) {
@@ -107,7 +128,7 @@ function btModules(dir) {
 function delegations(src) {
   const clean = stripComments(src);
   const out = [];
-  for (const recv of RECEIVERS) {
+  for (const recv of receiversFor(clean)) {
     // keeper.foo(   keeper.foo?.(   k.foo(   k.foo?.(
     const re = new RegExp(`\\b${recv}\\.([a-zA-Z_][a-zA-Z_0-9]*)(?:\\?\\.)?\\(`, 'g');
     for (const m of clean.matchAll(re)) {
