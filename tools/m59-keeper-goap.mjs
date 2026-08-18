@@ -136,10 +136,8 @@ export class GOAPKeeper {
     // Use the broker's travel() directly. The broker handles
     // routing internally (BFS, hazard avoidance, etc.). We just
     // tell it the destination room number.
-    console.error(`[goap] _travelOneHop: here=${here} (raw=${hereRaw}) to=${to}`);
     try {
       const r = await this.session.travel(to, { maxHops: 3 });
-      console.error(`[goap] _travelOneHop result: arrived=${r?.arrived} reason=${r?.reason} hops=${r?.hops}`);
       if (r?.arrived)
         return { sent: true, reason: null };
       return { sent: false, reason: r?.reason ?? 'travel refused' };

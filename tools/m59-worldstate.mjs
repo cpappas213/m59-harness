@@ -285,18 +285,23 @@ export const SYMBOLS = {
   },
 
   at_shop: {
-    describe: 'a merchant with a buy list is in the current room',
+    describe: 'a merchant with a buy list is in the current room, or the room is a known shop type',
     whenUnknown: false,
     why_unknown: 'no merchant visible, no buy; a wrong true just wastes a turn',
     produce: ({ client }) => {
+      // First: check for a merchant with a buy list in the room objects.
       const objects = client?.room?.objects;
-      if (!objects) return null;
-      // objects can be a Map (fake client) or an array (live client)
-      const list = objects instanceof Map ? [...objects.values()] : Array.isArray(objects) ? objects : [];
-      return list.some(o => {
-        const can = o.can ?? [];
-        return can.includes('buy');
-      });
+      if (objects) {
+        const list = objects instanceof Map ? [...objects.values()] : Array.isArray(objects) ? objects : [];
+        if (list.some(o => (o.can ?? []).includes('buy')))
+          return true;
+      }
+      // Fallback: the room name matches a shop type. This covers
+      // the case where the merchant hasn't been published yet (timing)
+      // or the room has a vendor that doesn't advertise 'buy'.
+      const roomName = client?.room?.name ?? '';
+      const SHOP_ROOM_RE = /inn|tavern|shop|store|market|apothecary|smith|armourer|jeweller|bank|pawn|general/i;
+      return SHOP_ROOM_RE.test(roomName);
     },
   },
 
