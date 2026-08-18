@@ -925,6 +925,8 @@ export class RoomGeometry {
     roomFlags = 0,
     overrideDepths = null,
     motionZ = null,
+    // OFF, AND THE REASON IS WRITTEN DOWN RATHER THAN LOST. See the refusal it controls.
+    enforceStepHeight = false,
   } = {}) {
     if (!this.collisionReady) return {
       available: false, moved: false, blocked: true, x: x0, y: y0,
@@ -970,9 +972,68 @@ export class RoomGeometry {
       reason = resolved.reason ?? reason;
       wallIndex = resolved.wallIndex ?? wallIndex;
       if (!resolved.moved) break;
+      const stepFrom = at;
       at = { x: resolved.x, y: resolved.y, sectorNum: resolved.sectorNum };
       const leaf = this.leafAtClient(at.x, at.y, { preferSectorNum: at.sectorNum });
       const floor = this.floorBaseAtClient(at.x, at.y, leaf, { roomFlags, overrideDepths });
+      // A CLIFF IS NOT A WALL, AND ONLY WALLS CAN REFUSE A CLIMB. OFF BY DEFAULT — THIS IS
+      // A DIAGNOSIS WITH A SWITCH ON IT, NOT A FIX. Read the whole note before enabling it.
+      //
+      // `MAX_STEP_HEIGHT` had exactly one enforcement site in this file — `canCrossWallAt`
+      // — and that returns TRUE immediately for a null sidedef. In the Cragged Mountains
+      // the terrace edge has no sidedef at all: the wall there starts at z 4800, the TOP
+      // of the drop, and runs up to the ceiling, so nothing spans the 1600 units between
+      // the 3200 floor and the 4800 one. The face is a bare discontinuity between two
+      // sectors, no wall crosses the step, and so nothing was ever asked.
+      //
+      // The result was a router that plans a 48-step walk out of a basin a player cannot
+      // climb out of: 578's north exit sits at floor 3200 with 1503 squares around it, and
+      // every other exit is at 4800 or above. The operator's account is that you arrive
+      // there from The King's Way, cannot reach any other exit on foot, and blink is what
+      // puts you on top of the cliff — which is what "joined only by blink" meant.
+      //
+      // PER MICROSTEP, WHICH IS WHAT SEPARATES A CLIFF FROM A RAMP. The Underworld climbs
+      // hundreds of units over a square and is entirely legitimate, because it does it in
+      // many small steps — profiled, 2176 -> 2560 and 3360 -> 3680, each inside the limit.
+      // The Cragged Mountains face profiles flat at 3200 for seven eighths of the step and
+      // then 1600 in one. Measured over 235,701 legal steps in ten rooms, 98.34% rise no
+      // more than MAX_STEP_HEIGHT in any microstep and 1.66% would be refused, almost all
+      // of them in 578. A rule that severed real staircases would show up here as a large
+      // number; it does not.
+      //
+      // Against the FLOOR WE CAME FROM, not against `carriedMotionZ.max`: that field only
+      // ever rises, so measuring from it would let a body that had walked over a high
+      // ledge climb anything for the rest of the command.
+      //
+      // WHY IT IS OFF. Switched on it gets room 578 exactly right — the north exit can no
+      // longer reach the southern ones, the southern ones still walk to it in 54 steps,
+      // and the room splits into 13 regions, which is the operator's own account of the
+      // place. It also costs more than that buys: 3 controls in m59-collision-test and 1
+      // in m59-impossible-test break, all of them LEGITIMATE moves it now refuses —
+      // Ukgoth's boundary crossings and the checked-in sloped-step case — and room 578's
+      // routing view fragments to 146 pieces. Those are slopes, and a slope is a
+      // continuous legal climb that this blanket per-microstep test cannot tell from a
+      // face.
+      //
+      // WHAT A REAL FIX NEEDS. The stock client checks height when you cross BETWEEN
+      // SECTORS, and a slope lies inside one sector, so the distinction is already the
+      // right one — but narrowing this to `resolved.sectorNum !== stepFrom.sectorNum` was
+      // tried and never fires, because the microstep resolver does not report a sector
+      // transition at this face. Finding the crossing properly — the line between the two
+      // leaves, and its floor heights on each side — is the work. Until then the
+      // consequence is known and bounded: the router will offer a walking route out of the
+      // Cragged Mountains basin that only a character holding blink can take.
+      if (enforceStepHeight && Number.isFinite(floor)) {
+        const fromFloor = this.floorBaseAtClient(stepFrom.x, stepFrom.y,
+          this.leafAtClient(stepFrom.x, stepFrom.y, { preferSectorNum: stepFrom.sectorNum }),
+          { roomFlags, overrideDepths });
+        if (Number.isFinite(fromFloor) && floor - fromFloor > MAX_STEP_HEIGHT) {
+          at = stepFrom;                       // the climb never happened
+          blocked = true;
+          reason = 'step_too_high';
+          break;
+        }
+      }
       if (Number.isFinite(floor)) carriedMotionZ = {
         min: Math.min(carriedMotionZ.min, floor),
         max: Math.max(carriedMotionZ.max, floor),

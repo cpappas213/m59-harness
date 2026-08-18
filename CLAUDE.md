@@ -489,12 +489,49 @@ is not "cannot be walked to"** — a doorway is a pocket by design, which is why
 anchor is chosen from a staging square the body can REACH rather than the first one the
 boundary publishes, and why the report says "go and look before believing it".
 
-**CORRECTION, 2026-08-17: this used to say the Cragged Mountains cliff was "the one place in
-the world genuinely joined only by blink", and that entering by the north-west made the
-south-west and south-east exits a one-way trip. BOTH HALVES ARE WRONG.** Walked by the
-operator: from the southern exits you CAN walk north; it is **north to south that does not
-go**. And it is not the only one — the operator names Ukgoth, Under the shadow of the
-Sentinel, the Cragged Mountains/Ukgoth border and the Underworld as further one-way trips.
+**THE CRAGGED MOUNTAINS CLIFF, STATED AS THE MECHANIC RATHER THAN AS A DIRECTION.** Enter
+578 from The King's Way and you are at the BOTTOM: the other exits cannot be walked to at
+all. Casting **blink** inside the room puts you on TOP of the cliff, and from up there every
+exit is freely reachable. So the one-way is **north to south**, and it is one-way only for a
+character that cannot blink — which is what "joined only by blink" always meant.
+
+Walked by the operator 2026-08-17, in both directions: from the southern exits you CAN walk
+north; from the north exit you cannot walk south.
+
+**CORRECTION, same day, to a correction: an earlier version of this paragraph said the blink
+note was wrong. It was not** — blink up the cliff is exactly the mechanic. What was wrong
+was the claim that this is **"the one place in the world"**: the operator also names Ukgoth,
+Under the shadow of the Sentinel, the Cragged Mountains/Ukgoth border and the Underworld.
+
+**AND IT IS A CAPABILITY, NOT ONLY A GEOMETRY.** A route through this room from the north
+is passable for a character holding blink and impassable for one that is not, so "can this
+fleet walk King's Way -> Cragged -> An ancient place" is a question about the CHARACTER.
+Nothing in the router asks that today.
+
+**WHY THE MODEL LETS A BOT CLIMB IT: `MAX_STEP_HEIGHT` HAS EXACTLY ONE ENFORCEMENT SITE AND
+IT IS INSIDE THE WALL TEST.** `canCrossWallAt` returns TRUE immediately for a null sidedef,
+and at this face there is no sidedef — the wall there begins at z 4800, the TOP of the drop,
+and runs up to the ceiling, so nothing at all spans the 1600 units between the 3200 floor
+and the 4800 one. It is a bare discontinuity between two sectors. No wall is crossed, so no
+height is ever checked, and `moverStepLands` says yes to a 1600-unit climb against a limit
+of 384.
+
+`traceFineMoveClient` takes `enforceStepHeight`, **off by default**, which adds the missing
+check per microstep. Switched on it gets 578 exactly right — north exit reaches nothing,
+southern exits still walk to it, 13 regions. It is off because it also refuses SLOPES, which
+are continuous legal climbs: 3 controls in `m59-collision-test` and 1 in
+`m59-impossible-test` break, all of them legitimate moves, and 578's routing view fragments
+to 146 pieces. Narrowing it to a sector CHANGE is the right idea and does not fire, because
+the microstep resolver reports no transition at that face. **The consequence of leaving it
+off is known and bounded**: the router offers a walking route out of the basin that only a
+character with blink can take.
+
+Measured, so a fix can be judged: across 235,701 legal steps in ten rooms, 98.34% rise no
+more than `MAX_STEP_HEIGHT` in any microstep, 1.66% would be refused, and almost all of
+those are in 578. And the Underworld — which climbs hundreds of units and is entirely
+legitimate — profiles as many small steps (2176 -> 2560, 3360 -> 3680), while the Cragged
+Mountains face profiles flat at 3200 for seven eighths of a step and then 1600 in one. That
+contrast is the signal any real fix has to key on.
 
 **ONE-WAY COMES IN TWO KINDS AND ONLY ONE OF THEM HAS A HOME.** A link between two ROOMS
 is recorded in `substrate/m59-oneway.json` and honoured by `passableExits` in
