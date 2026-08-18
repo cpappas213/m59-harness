@@ -122,9 +122,15 @@ export class GOAPKeeper {
    */
   async _travelOneHop(to) {
     const c = this.client;
-    const here = c?.room?.num;
-    if (here == null || here === to)
-      return { sent: false, reason: 'already there or unknown room' };
+    const hereRaw = c?.room?.num ?? c?.room?.id;
+    if (hereRaw == null)
+      return { sent: false, reason: 'unknown room' };
+
+    // Convert objId to map num.
+    const { objIdToNum } = await import('./m59-hunt-room.mjs');
+    const here = objIdToNum(hereRaw) ?? hereRaw;
+    if (here === to)
+      return { sent: false, reason: 'already there' };
 
     try {
       const map = loadMap();
@@ -132,10 +138,9 @@ export class GOAPKeeper {
       if (!p?.found || !p.hops?.length)
         return { sent: false, reason: `no route from ${here} to ${to}` };
 
-      // The first hop is the next room.
+      // The first hop is the next room (map num). The broker's
+      // travel() expects a map num.
       const next = p.hops[0];
-      // Use the legacy travel method for one hop. maxHops:1 ensures
-      // we only take one step.
       const r = await this.session.travel(next, { maxHops: 1 });
       if (r?.arrived)
         return { sent: true, reason: null };
