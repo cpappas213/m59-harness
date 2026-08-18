@@ -1885,14 +1885,6 @@ export class Autopilot {
   // cannot answer is treated as ARMED, because refusing to fight on a failed read would
   // idle the whole fleet the first time an inventory request timed out — the guard is
   // meant to catch the empty hand, not to become a new way to stop.
-  armed() {
-    const c = this.s.client;
-    const eq = c?.equipment?.();
-    if (!eq || eq.known === false) return true;
-    return (eq.equipped || []).some(o =>
-      skills.weaponScore(o.name ?? c.rsc?.get?.(o.nameRsc) ?? '') > 0);
-  }
-
   // THE SAME QUESTION, FAILING THE OTHER WAY.
   //
   // armed() treats "cannot answer" as armed, and that is right where it is used: a
@@ -7426,9 +7418,9 @@ export class Autopilot {
     //
     // Ahead of the danger and rest branches on purpose: being unarmed is WHY the fight
     // is going badly, and the shortest way out is to be holding something.
-    if (!this.armed()) {
+    if (!skills.isArmed(this.s.client)) {
       const ok = await this.armSelf().catch(() => false);
-      if (ok && this.armed()) { this.progress('armed itself'); return HANDLED; }
+      if (ok && skills.isArmed(this.s.client)) { this.progress('armed itself'); return HANDLED; }
       // makeWeapon refreshes the spell list before reporting failure when mana is
       // sufficient. Below 15 mana it cannot do that, so refresh once in sanctuary
       // before deciding whether mana recovery can ever produce a weapon.
@@ -7984,7 +7976,7 @@ export class Autopilot {
     // and 15 mana, against a character that otherwise farms nothing until someone
     // notices. See armed() for why the server's own use list is the only acceptable
     // evidence here.
-    const unarmed = !this.armed();
+    const unarmed = !skills.isArmed(this.s.client);
     const wantsToFight = this.mode === 'farm' && !!this.policy.hunt && !recovering && !unarmed;
     const restAt = Math.max(
       this.policy.restBelow,

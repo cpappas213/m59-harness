@@ -25,7 +25,7 @@ import {
   brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit, signetRings, returnSignetRings,
   signetPayout, signetOwnerOf, SIGNET_OWNERS,
   parseDeathBroadcast, deathBroadcastFor,
-  landedHitSummary,
+  landedHitSummary, isArmed,
 } from './m59-skills.mjs';
 import { Autopilot, bearingIn, DEBUG_STATES, belowRoomRetreatHealth,
          rankQuarries, claimQuarry, releaseQuarry,
@@ -1437,20 +1437,20 @@ console.log('\nrefusing to hunt with nothing in hand');
     k.s = { client: { equipment: () => ({ known, equipped }), rsc: { get: () => '' } } };
     return k;
   };
-  ok('a wielded mace counts as armed', keeper([{ name: 'mace' }]).armed() === true);
-  ok('an empty use list is NOT armed', keeper([]).armed() === false);
+  ok('a wielded mace counts as armed', isArmed({ equipment: () => ({ known: true, equipped: [{ name: 'mace' }] }), rsc: { get: () => '' } }) === true);
+  ok('an empty use list is NOT armed', isArmed({ equipment: () => ({ known: true, equipped: [] }), rsc: { get: () => '' } }) === false);
   ok('armour alone is not a weapon',
-     keeper([{ name: 'leather armor' }, { name: 'shield' }]).armed() === false);
+     isArmed({ equipment: () => ({ known: true, equipped: [{ name: 'leather armor' }, { name: 'shield' }] }), rsc: { get: () => '' } }) === false);
   ok('a weapon among the armour still counts',
-     keeper([{ name: 'leather armor' }, { name: 'short sword' }]).armed() === true);
+     isArmed({ equipment: () => ({ known: true, equipped: [{ name: 'leather armor' }, { name: 'short sword' }] }), rsc: { get: () => '' } }) === true);
   // Junk that merely looks like a weapon must not satisfy the check -- "broken mace" is
   // a real junk item, and weaponScore already excludes it.
   ok('a junk "broken mace" does not count as armed',
-     keeper([{ name: 'broken mace' }]).armed() === false);
+     isArmed({ equipment: () => ({ known: true, equipped: [{ name: 'broken mace' }] }), rsc: { get: () => '' } }) === false);
   // A read we could not make must not idle the fleet: unknown is treated as armed, so
   // the guard catches empty hands rather than becoming a new way to stop.
   ok('an unreadable use list is treated as armed, not as unarmed',
-     keeper([], false).armed() === true);
+     isArmed({ equipment: () => ({ known: false, equipped: [] }), rsc: { get: () => '' } }) === true);
 }
 
 

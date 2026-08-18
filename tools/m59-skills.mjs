@@ -374,6 +374,33 @@ export function weaponRanking(c, { priority = null } = {}) {
 // instead. See M59Client.equipment().
 export const equippedNow = (c) => (c?.using instanceof Set ? c.using : null);
 
+// IS THERE A WEAPON IN OUR HAND — asked of the server, never of our own intentions.
+//
+// plUsing is the only authority (see M59Client.equipment()): "the last use we sent was
+// not refused" has been wrong every time it mattered, because a weapon that shatters
+// mid-fight leaves the use list without anything being sent at all. A character that
+// cannot answer is treated as ARMED, because refusing to fight on a failed read would
+// idle the whole fleet the first time an inventory request timed out — the guard is
+// meant to catch the empty hand, not to become a new way to stop. Autopilot.armedForSure()
+// is the same question failing the other way, for deciding whether to leave an inn.
+//
+// THIS TAKES A CLIENT, NOT A KEEPER, and that is the whole reason it lives here. It was
+// Autopilot.armed(), so anything that wanted the answer had to hold a keeper to ask —
+// and the code that tried to ask the client instead got it wrong in a way nothing
+// caught: `m59-bt-nodes.mjs` guards its wielding_weapon condition on `client.armed()`,
+// and `m59-autopilot.mjs`'s useBT branch on `typeof c.armed === 'function'`. A client
+// has never had an armed(). So that condition answers false for every character and
+// that branch has never executed at all. A predicate over the equipment list belongs
+// with the equipment list, where there is one of it.
+//
+// Behaviour is byte-for-byte what Autopilot.armed() did — this is a move, not a fix.
+export const isArmed = (c) => {
+  const eq = c?.equipment?.();
+  if (!eq || eq.known === false) return true;
+  return (eq.equipped || []).some(o =>
+    weaponScore(o.name ?? c.rsc?.get?.(o.nameRsc) ?? '') > 0);
+};
+
 // The refusal you get for wielding something you are already wielding. Re-`use` is not
 // a toggle and not a no-op: TryUseItem runs CheckPosition, which counts the item
 // against its own slot (player.kod:3235), finds no room, and answers this
