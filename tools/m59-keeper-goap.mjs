@@ -199,7 +199,7 @@ export class GOAPKeeper {
     }
 
     const effectiveGoal = active.goal;
-    console.error(`[goap] ${who} pass ${this._passCount} room=${c.room?.name ?? '?"}(${c.room?.num ?? "?"}) goal=${effectiveGoal} ${wsSummary}`);
+    console.error(`[goap] ${who} pass ${this._passCount} room=${c.room?.name ?? '?'}(${c.room?.num ?? '?'}) goal=${effectiveGoal} ${wsSummary}`);
 
     // 3. Plan.
     // 3a. Inject travel_to when the goal requires at_shop but we're not
