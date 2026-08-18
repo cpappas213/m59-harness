@@ -71,8 +71,15 @@ console.log('\nunknown fails SAFE, and safe is per symbol');
      blind.in_reach === false);
   ok('hurt unknown reads HURT — costs a rest, the other way costs a death',
      blind.hurt === true);
-  ok('vigor_ok unknown reads OK — same reason as armed',
-     blind.vigor_ok === true);
+  // CORRECTED BY THE FIRST LIVE RUN. A real character's vitals() carried health and
+  // mana and no vigor at all -- it arrives as a BP_STAT and had not yet -- so this
+  // read true on no evidence, the goal was already satisfied, the plan came back
+  // EMPTY and a hungry character would never have eaten. Wrong `false` costs a meal;
+  // wrong `true` costs a character, at six times the death rate below 85 vigor.
+  ok('vigor_ok unknown reads NO — an absent vigor must not satisfy a provisioning goal',
+     blind.vigor_ok === false);
+  ok('and it fails the OPPOSITE way to armed, which stops a fight already happening',
+     blind.armed === true && blind.vigor_ok === false);
   ok('pack_room unknown reads ROOM — refusing to loot on an unread pack is a silent no',
      blind.pack_room === true);
   ok('has_reagents unknown reads NO — do not plan a cast we cannot pay for',

@@ -115,8 +115,28 @@ export const SYMBOLS = {
 
   vigor_ok: {
     describe: 'vigor is high enough to start a fight',
-    whenUnknown: true,
-    why_unknown: 'same as armed: a failed read must not park a healthy character',
+    // CORRECTED BY THE FIRST LIVE RUN, AND THE ONLY SYMBOL A LIVE RUN HAS MOVED.
+    //
+    // This was `true`, on the reasoning that it was "same as armed: a failed read
+    // must not park a healthy character". That reasoning is wrong, and the first
+    // character ever pointed at showed why: vitals() carried health and mana and NO
+    // VIGOR AT ALL — vigor arrives as a BP_STAT and simply had not, which is an
+    // ordinary condition and not a fault. So `vigor_ok` read true on no evidence,
+    // the goal { vigor_ok: true } was already satisfied, the plan came back EMPTY,
+    // and a hungry character would never have eaten.
+    //
+    // The asymmetry is the opposite of armed's. Wrong in the `true` direction: the
+    // character never provisions and fights tired, and deaths per thousand
+    // observations run 75.7 below 85 vigor against 12.4 above 160 — six-fold. Wrong
+    // in the `false` direction: it eats when it did not need to, costing one cast,
+    // two elderberry and two herbs.
+    //
+    // Being wrong about ARMED stops a fight already happening. Being wrong about
+    // VIGOR only prevents a meal. Those are not the same kind of consequence, and
+    // reasoning by analogy from one to the other is what put this the wrong way up.
+    whenUnknown: false,
+    why_unknown: 'unreadable vigor must not satisfy a provisioning goal by default: ' +
+                 'a wrong `false` costs a meal, a wrong `true` costs a character',
     produce: ({ client, policy }) => {
       const v = client?.vitals?.()?.vigor?.value;
       if (v == null) return null;
