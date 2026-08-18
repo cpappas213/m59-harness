@@ -274,7 +274,10 @@ export const SYMBOLS = {
     why_unknown: 'a wrong false just delays a buy; a wrong true spends money the character needs to survive the walk home',
     produce: ({ client, policy }) => {
       const purse = (client?.inventory ?? [])
-        .filter(o => /shilling/i.test(client?.rsc?.get?.(o.nameRsc) ?? ''))
+        .filter(o => {
+          const name = client?.rsc?.get?.(o.nameRsc) ?? o.name ?? o.nameRsc ?? '';
+          return /shilling/i.test(name);
+        })
         .reduce((t, o) => t + (o.amount || 1), 0);
       if (!client?.inventory?.length) return null;
       return purse >= (policy?.walkingMoney ?? 100);
@@ -287,8 +290,10 @@ export const SYMBOLS = {
     why_unknown: 'no merchant visible, no buy; a wrong true just wastes a turn',
     produce: ({ client }) => {
       const objects = client?.room?.objects;
-      if (!Array.isArray(objects)) return null;
-      return objects.some(o => {
+      if (!objects) return null;
+      // objects can be a Map (fake client) or an array (live client)
+      const list = objects instanceof Map ? [...objects.values()] : Array.isArray(objects) ? objects : [];
+      return list.some(o => {
         const can = o.can ?? [];
         return can.includes('buy');
       });

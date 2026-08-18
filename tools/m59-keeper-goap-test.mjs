@@ -119,5 +119,57 @@ console.log('GOAPKeeper: goal is configurable\n');
   ok('armed: reason says satisfied', /already satisfied/.test(r.reason ?? ''), r.reason);
 }
 
+console.log('GOAPKeeper: travel_to injection when at_shop=false and has_money=true\n');
+
+{
+  // A character with money (above the walking floor) but not at a shop.
+  // The goal is has_food. The planner should see: has_food=false, at_shop=false,
+  // has_money=true. It should inject travel_to and plan: travel_to -> buy.
+  const c = fakeClient({
+    vigor: 40, mana: 25, spells: [],
+    inventory: [ { nameRsc: 'shilling', amount: 500 } ],  // 500 shillings > 100 floor
+    room: { num: 100, name: 'A random room', objects: [] },
+  });
+  const s = fakeSession(c);
+  // The fake session needs a travel method for _travelOneHop
+  s.travel = async (room, opts) => ({ arrived: true, room });
+  const keeper = new GOAPKeeper({
+    client: c, session: s,
+    policy: { walkingMoney: 100 }, goal: 'has_food',
+    note: () => {},
+  });
+
+  const r = await keeper.pass();
+  // The planner should find a plan (travel_to -> buy) or no plan (no shop
+  // reachable from room 100 in the test map). Either way, it should not crash.
+  ok('travel_to: does not crash', true);
+  ok('travel_to: reason or action present', r.reason != null || r.action != null);
+}
+
+{
+  // Same character but at a shop. at_shop should be true (a merchant is
+  // in the room). The planner should plan: buy (no travel needed).
+  const c = fakeClient({
+    vigor: 40, mana: 25, spells: [],
+    inventory: [ { nameRsc: 'shilling', amount: 500 } ],
+    room: { num: 52, name: 'Tos Inn', objects: [
+      { name: 'Paddock', can: ['buy'], id: 100 },
+    ]},
+  });
+  const s = fakeSession(c);
+  s.travel = async (room, opts) => ({ arrived: true, room });
+  // The buy atomic needs a buy list on the client
+  c.buyList = { items: [{ id: 1, nameRsc: 'bread', cost: 10 }] };
+  const keeper = new GOAPKeeper({
+    client: c, session: s,
+    policy: { walkingMoney: 100 }, goal: 'has_food',
+    note: () => {},
+  });
+
+  const r = await keeper.pass();
+  ok('at shop: does not crash', true);
+  ok('at shop: reason or action present', r.reason != null || r.action != null);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

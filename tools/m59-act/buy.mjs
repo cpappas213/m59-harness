@@ -96,9 +96,12 @@ buy.pre     = ['has_money', 'at_shop'];  // the planner only plans a buy when
                     // in the room. The per-item cost check still runs inside
                     // the atomic; has_money is a coarse gate (walking floor),
                     // not an exact affordability test.
-buy.effects = [];   // the item goes into the pack and the purse drops. Neither
-                    // is a vocabulary symbol: pack_room is about capacity, not
-                    // contents, and the purse is not a symbol at all.
+buy.effects = ['has_food'];  // buying the cheapest item is usually food;
+                     // the planner chains has_food=false -> buy -> has_food=true.
+                     // This is optimistic (the item might not be food), but
+                     // the next pass re-evaluates has_food from the actual
+                     // inventory, and if the item wasn't food, the planner
+                     // re-plans.
 buy.atomic  = 'buy';
 buy.mutates = true;  // sends a mutation packet (BP_REQ_BUY); effects are
                      // item-level, not vocabulary-level

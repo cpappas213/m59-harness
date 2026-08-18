@@ -36,6 +36,53 @@
 
 import { evaluate, unknowns, SYMBOL_NAMES } from './m59-worldstate.mjs';
 import { planFor, stepPlan } from './m59-plan.mjs';
+import { loadMap, findPath } from './m59-map.mjs';
+
+// ROOMS THAT HAVE SHOPS. A shop is any room where a merchant with a buy
+// list can be found. We use room names as a proxy: inns, taverns, shops,
+// banks, smithies, and apothecaries all have merchants.
+const SHOP_RE = /inn|tavern|shop|store|market|apothecary|smith|armourer|jeweller|bank|pawn|general|merchant/i;
+
+let _shopRooms = null;
+function shopRooms() {
+  if (_shopRooms) return _shopRooms;
+  try {
+    const map = loadMap();
+    const rooms = map?.rooms ?? {};
+    _shopRooms = [];
+    for (const [num, r] of Object.entries(rooms)) {
+      if (SHOP_RE.test(r?.name ?? '')) {
+        _shopRooms.push(Number(num));
+      }
+    }
+  } catch {
+    _shopRooms = [];
+  }
+  return _shopRooms;
+}
+
+// Find the nearest shop from a given room.
+// Returns { to, hops } or null if no shop is reachable.
+function nearestShop(fromNum, { avoid } = {}) {
+  const shops = shopRooms();
+  if (!shops.length) return null;
+  try {
+    const map = loadMap();
+    let best = null;
+    for (const to of shops) {
+      if (to === fromNum) continue;
+      const p = findPath(map, fromNum, to, { avoid });
+      if (p?.found && p.hops?.length) {
+        if (!best || p.hops.length < best.hops.length) {
+          best = { to, hops: p.hops };
+        }
+      }
+    }
+    return best;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The GOAP keeper. One instance per character, created by the autopilot
@@ -65,6 +112,37 @@ export class GOAPKeeper {
     this.note = note;
     this._lastPlan = null;
     this._passCount = 0;
+  }
+
+  /**
+   * Take one hop toward a destination room. Uses the legacy router to
+   * find the next exit and the session to walk it. This is the travel
+   * primitive the planner uses: one room at a time, re-planning after
+   * each hop.
+   */
+  async _travelOneHop(to) {
+    const c = this.client;
+    const here = c?.room?.num;
+    if (here == null || here === to)
+      return { sent: false, reason: 'already there or unknown room' };
+
+    try {
+      const map = loadMap();
+      const p = findPath(map, here, to);
+      if (!p?.found || !p.hops?.length)
+        return { sent: false, reason: `no route from ${here} to ${to}` };
+
+      // The first hop is the next room.
+      const next = p.hops[0];
+      // Use the legacy travel method for one hop. maxHops:1 ensures
+      // we only take one step.
+      const r = await this.session.travel(next, { maxHops: 1 });
+      if (r?.arrived)
+        return { sent: true, reason: null };
+      return { sent: false, reason: r?.reason ?? 'hop refused' };
+    } catch (e) {
+      return { sent: false, reason: e.message };
+    }
   }
 
   /**
@@ -103,7 +181,32 @@ export class GOAPKeeper {
     }
 
     // 3. Plan.
-    const p = planFor(c, { [this.goal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent });
+    // 3. Plan. When the goal requires at_shop but we're not at a shop,
+    //    find the nearest shop and inject a travel_to action with the
+    //    destination pre-set. The planner chains travel_to -> buy.
+    let extra = [];
+    if (ws.at_shop === false && ws.has_money === true) {
+      const here = c.room?.num;
+      if (here != null) {
+        const shop = nearestShop(here);
+        if (shop) {
+          // Create a parameterized travel_to that knows the destination.
+          // The planner sees it as an action with effects: ['at_shop'].
+          const travelToShop = (client, session) => {
+            // One hop toward the shop. Uses the legacy router to find the
+            // next exit and the session to walk it.
+            return this._travelOneHop(shop.to);
+          };
+          travelToShop.atomic = 'travel_to';
+          travelToShop.pre = [];
+          travelToShop.effects = ['at_shop'];
+          travelToShop.cost = 1;  // one hop, cheap
+          extra = [travelToShop];
+        }
+      }
+    }
+
+    const p = planFor(c, { [this.goal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent, extra });
 
     if (p.problems?.length) {
       this.note('goap plan problems', { problems: p.problems });
