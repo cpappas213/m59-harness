@@ -338,6 +338,18 @@ export const SYMBOLS = {
       });
     },
   },
+
+  at_inn: {
+    describe: 'the character is in an inn or tavern room (safe to rest)',
+    whenUnknown: false,
+    why_unknown: 'a wrong false just means the character rests in place instead of at an inn; a wrong true wastes a trip',
+    produce: ({ client }) => {
+      const roomName = client?.roomNameRsc
+        ? (client.rsc?.get?.(client.roomNameRsc) ?? '')
+        : (client?.room?.name ?? '');
+      return /inn|tavern/i.test(roomName);
+    },
+  },
 };
 
 export const SYMBOL_NAMES = Object.freeze(Object.keys(SYMBOLS));

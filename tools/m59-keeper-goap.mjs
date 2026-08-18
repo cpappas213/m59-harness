@@ -493,31 +493,117 @@ export class GOAPKeeper {
         const { flee } = await import('./m59-act/flee.mjs');
         extra.push(attackOf(ws), scavenge, takeSafeSpot, flee);
 
-        // When the goal is 'healthy' and there's a hostile in the
-        // room, inject a composite 'recover' atomic that flees
-        // first, takes a safe spot, then rests.
-        if (effectiveGoal === 'healthy' && ws.has_target === true) {
+        // When the goal is 'healthy', inject a composite 'recover'
+        // atomic. The strategy depends on the threat:
+        //   1. Under attack by a PLAYER: flee, then rest. Do not
+        //      engage — a player can one-shot.
+        //   2. Under attack by a MOB: take a safe spot (wall/corner),
+        //      then rest there. A proven wall holds under attack.
+        //   3. NOT under attack: travel to the nearest inn and rest
+        //      there. Resting in the open is how characters die.
+        if (effectiveGoal === 'healthy') {
           const { rest } = await import('./m59-act/rest.mjs');
-          const { takeSafeSpot } = await import('./m59-act/take-safe-spot.mjs');
-          const recover = async (client, session) => {
-            const fleeResult = await flee(client, session);
-            if (!fleeResult?.sent && fleeResult?.reason !== 'no target') {
-              return { acted: false, reason: 'flee failed: ' + (fleeResult?.reason ?? 'unknown') };
-            }
-            // Take a safe spot before resting. Resting in the open
-            // with a hostile still in the room is how characters die.
-            await takeSafeSpot(client, session).catch(() => {});
-            const restResult = await rest(client, session);
-            return {
-              acted: restResult?.sent === true || fleeResult?.sent === true,
-              reason: restResult?.reason ?? null,
+
+          if (ws.has_target === true && ws._targetIsPlayer) {
+            // Case 1: under attack by a player. Flee, then rest.
+            const recover = async (client, session) => {
+              const fleeResult = await flee(client, session);
+              if (!fleeResult?.sent && fleeResult?.reason !== 'no target') {
+                return { acted: false, reason: 'flee failed: ' + (fleeResult?.reason ?? 'unknown') };
+              }
+              await takeSafeSpot(client, session).catch(() => {});
+              const restResult = await rest(client, session);
+              return { acted: restResult?.sent === true || fleeResult?.sent === true, reason: restResult?.reason ?? null };
             };
-          };
-          recover.atomic = 'recover';
-          recover.pre = [];
-          recover.effects = ['healthy'];
-          recover.cost = 2;
-          extra.push(recover);
+            recover.atomic = 'recover';
+            recover.pre = [];
+            recover.effects = ['healthy'];
+            recover.cost = 2;
+            extra.push(recover);
+          } else if (ws.has_target === true) {
+            // Case 2: under attack by a mob. Take a safe spot, then rest.
+            const recover = async (client, session) => {
+              const spotResult = await takeSafeSpot(client, session).catch(() => (null));
+              const restResult = await rest(client, session);
+              return { acted: restResult?.sent === true, reason: restResult?.reason ?? (spotResult?.reason ?? null) };
+            };
+            recover.atomic = 'recover';
+            recover.pre = [];
+            recover.effects = ['healthy'];
+            recover.cost = 2;
+            extra.push(recover);
+          } else {
+            // Case 3: not under attack. Travel to nearest inn and rest.
+            const here = c.room?.num ?? c.room?.id;
+            let alreadyInn = false;
+            if (here != null) {
+              const { objIdToNum } = await import('./m59-hunt-room.mjs');
+              const mapNum = objIdToNum(here) ?? here;
+              const { loadMap } = await import('./m59-map.mjs');
+              const map = loadMap();
+              const room = map.rooms?.[mapNum];
+              if (room && /inn|tavern/i.test(room.name ?? '')) {
+                alreadyInn = true;
+              } else {
+                // Find the nearest reachable inn.
+                const { findPath } = await import('./m59-map.mjs');
+                let bestInn = null;
+                for (const [num, r] of Object.entries(map.rooms ?? {})) {
+                  if (!/inn|tavern/i.test(r.name ?? '')) continue;
+                  if (num === String(mapNum)) continue;
+                  const p = findPath(map, mapNum, Number(num));
+                  if (!p.found) continue;
+                  if (!bestInn || p.hops.length < bestInn.hops.length) {
+                    bestInn = { num: Number(num), name: r.name, hops: p.hops };
+                  }
+                }
+                if (bestInn) {
+                  this._innDest = bestInn.num;
+                  console.error(`[goap] ${who} recovering to inn: ${mapNum} -> ${bestInn.num} (${bestInn.name}) hops=${bestInn.hops.length}`);
+                  const travelToInn = (client, session) => {
+                    return this._travelOneHop(bestInn.hops[0] ?? bestInn.num);
+                  };
+                  travelToInn.atomic = 'travel_to';
+                  travelToInn.pre = [];
+                  travelToInn.effects = ['at_inn'];
+                  travelToInn.cost = 1;
+                  extra.push(travelToInn);
+
+                  const restAtInn = async (client, session) => {
+                    const restResult = await rest(client, session);
+                    return { acted: restResult?.sent === true, reason: restResult?.reason ?? null };
+                  };
+                  restAtInn.atomic = 'rest_at_inn';
+                  restAtInn.pre = ['at_inn'];
+                  restAtInn.effects = ['healthy'];
+                  restAtInn.cost = 1;
+                  extra.push(restAtInn);
+                } else {
+                  // No reachable inn. Rest in place.
+                  const recover = async (client, session) => {
+                    const restResult = await rest(client, session);
+                    return { acted: restResult?.sent === true, reason: restResult?.reason ?? null };
+                  };
+                  recover.atomic = 'recover';
+                  recover.pre = [];
+                  recover.effects = ['healthy'];
+                  recover.cost = 1;
+                  extra.push(recover);
+                }
+              }
+            }
+            if (alreadyInn) {
+              const recover = async (client, session) => {
+                const restResult = await rest(client, session);
+                return { acted: restResult?.sent === true, reason: restResult?.reason ?? null };
+              };
+              recover.atomic = 'recover';
+              recover.pre = [];
+              recover.effects = ['healthy'];
+              recover.cost = 1;
+              extra.push(recover);
+            }
+          }
         }
       }
       // Rest is already in ALWAYS (the standard action set), so
