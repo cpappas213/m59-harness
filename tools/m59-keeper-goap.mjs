@@ -226,26 +226,25 @@ export class GOAPKeeper {
       // generate money/loot. Find the nearest room with huntable mobs
       // at or below the character's level.
       if (ws.armed === true && ws.has_target === false) {
-        const here = c.room?.num;
-        const level = c.self?.level ?? this.policy.level ?? 20;
+        const here = c.room?.num ?? c.room?.id;
+        const level = this.policy.huntLevel ?? 30;
         if (here != null) {
           const { nearestHuntRoom } = await import('./m59-hunt-room.mjs');
           const hunt = nearestHuntRoom(here, level);
           if (hunt && hunt.hops > 0) {
+            // Travel to a hunt room with mobs.
             const travelToHunt = (client, session) => {
               return this._travelOneHop(hunt.path[0] ?? hunt.room);
             };
             travelToHunt.atomic = 'travel_to';
             travelToHunt.pre = [];
-            travelToHunt.effects = ['has_target'];  // optimistic: the room has mobs
+            travelToHunt.effects = ['has_target'];
             travelToHunt.cost = 1;
             extra.push(travelToHunt);
             console.error(`[goap] ${who} hunting: room=${here} -> hunt=${hunt.room} (${hunt.creature} lv${hunt.level}) hops=${hunt.hops}`);
-          } else if (hunt && hunt.hops === 0) {
-            // Already in a hunt room. Inject scavenge/attack.
-            const { scavenge } = await import('./m59-act/scavenge.mjs');
-            extra.push(scavenge);
           }
+          // If hunt.hops === 0, we're already in a hunt room but
+          // there are no mobs. Wait for respawn.
         }
       }
       // Inject travel_to when we need to get to a shop. This covers

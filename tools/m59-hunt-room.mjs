@@ -16,6 +16,7 @@ import { findPath, loadMap as _loadMap } from './m59-map.mjs';
 
 let _spawns = null;
 let _map = null;
+let _objIdToNum = null;
 
 function loadSpawns() {
   if (_spawns) return _spawns;
@@ -29,6 +30,24 @@ function loadMap() {
   if (_map) return _map;
   try { _map = _loadMap(); } catch { _map = null; }
   return _map;
+}
+
+/**
+ * Convert a client room object (which has .num = objId) to the
+ * map's room number. The client's room.num is the objId, not the
+ * map's num. The map's rooms are keyed by num.
+ */
+function objIdToNum(objId) {
+  if (!_objIdToNum) {
+    const map = loadMap();
+    _objIdToNum = new Map();
+    if (map) {
+      for (const [num, room] of Object.entries(map.rooms)) {
+        if (room.objId != null) _objIdToNum.set(room.objId, parseInt(num));
+      }
+    }
+  }
+  return _objIdToNum.get(objId) ?? null;
 }
 
 /**
@@ -60,6 +79,8 @@ export function huntRoomsAtOrBelow(level) {
  * @returns {{room: number, creature: string, level: number, hops: number, path: number[]}|null}
  */
 export function nearestHuntRoom(fromRoom, level) {
+  // Convert objId to map num if needed.
+  const mapNum = objIdToNum(fromRoom) ?? fromRoom;
   const candidates = huntRoomsAtOrBelow(level);
   if (!candidates.length) return null;
 
@@ -68,11 +89,11 @@ export function nearestHuntRoom(fromRoom, level) {
 
   let best = null;
   for (const c of candidates) {
-    if (c.room === fromRoom) {
+    if (c.room === mapNum) {
       // Already there.
       return { ...c, hops: 0, path: [] };
     }
-    const r = findPath(map, fromRoom, c.room, { danger: false });
+    const r = findPath(map, mapNum, c.room, { danger: false });
     if (!r.found) continue;
     const hops = r.hops.length;
     if (!best || hops < best.hops) {
