@@ -261,7 +261,9 @@ export class GOAPKeeper {
       return { acted: false, action: null, reason: 'plan is empty' };
     }
 
+    console.error(`[goap] ${who} pass ${this._passCount} EXEC step=${p.steps[0]?.atomic ?? '?'}`);
     const result = await stepPlan(c, this.session, p, { index: 0 });
+    console.error(`[goap] ${who} pass ${this._passCount} EXEC done acted=${result.acted} reason=${result.reason ?? 'none'}`);
 
     const actionName = result.action ?? p.names?.[0] ?? 'unknown';
     this.note('goap step', {
