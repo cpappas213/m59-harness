@@ -112,6 +112,7 @@ export class GOAPKeeper {
     this.note = note;
     this._lastPlan = null;
     this._passCount = 0;
+    this._shopDest = null; // cached shop destination room num
   }
 
   /**
@@ -258,10 +259,18 @@ export class GOAPKeeper {
         if (here != null) {
           const { objIdToNum } = await import('./m59-hunt-room.mjs');
           const mapNum = objIdToNum(here) ?? here;
-          const shop = nearestShop(mapNum);
-          if (shop) {
+          // Use cached shop destination if we have one, otherwise
+          // pick the nearest shop and cache it. This prevents
+          // oscillation where the character bounces between rooms
+          // because the nearest shop changes direction each pass.
+          if (!this._shopDest || this._shopDest === mapNum) {
+            const shop = nearestShop(mapNum);
+            if (shop) this._shopDest = shop.to;
+          }
+          if (this._shopDest && this._shopDest !== mapNum) {
+            const dest = this._shopDest;
             const travelToShop = (client, session) => {
-              return this._travelOneHop(shop.to);
+              return this._travelOneHop(dest);
             };
             travelToShop.atomic = 'travel_to';
             travelToShop.pre = [];
@@ -269,6 +278,8 @@ export class GOAPKeeper {
             travelToShop.cost = 1;
             extra.push(travelToShop);
           }
+          // Clear the cache when we arrive at the shop.
+          if (ws.at_shop === true) this._shopDest = null;
         }
       }
     }
