@@ -299,6 +299,16 @@ export const SYMBOLS = {
       });
     },
   },
+
+  in_underworld: {
+    describe: 'the character is in the Underworld (dead, needs to escape)',
+    whenUnknown: false,
+    why_unknown: 'a wrong false in the Underworld means the character tries to farm in a room with no exits',
+    produce: ({ client }) => {
+      const name = client?.room?.name ?? '';
+      return /underworld/i.test(name);
+    },
+  },
 };
 
 export const SYMBOL_NAMES = Object.freeze(Object.keys(SYMBOLS));

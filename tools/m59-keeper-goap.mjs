@@ -171,42 +171,53 @@ export class GOAPKeeper {
     const wsSummary = Object.entries(ws).filter(([,v]) => v !== null)
       .map(([k,v]) => `${k}=${v}`).join(' ');
     const who = this.policy.agent ?? this.session?.s?.name ?? this.session?.name ?? '?';
-    console.error(`[goap] ${who} pass ${this._passCount} goal=${this.goal} ${wsSummary}`);
 
     // 2. Is the goal already satisfied? If so, do nothing (or pick a
     //    secondary goal). For now: idle.
-    if (ws[this.goal] === true) {
+    if (ws[this.goal] === true && ws.in_underworld !== true) {
       this.note('goap idle', { goal: this.goal, reason: 'goal already satisfied', pass: this._passCount });
+      console.error(`[goap] ${who} pass ${this._passCount} goal=${this.goal} ${wsSummary} [idle: goal satisfied]`);
       return { acted: false, action: null, reason: `goal ${this.goal} already satisfied` };
     }
 
+    // 2b. If in the Underworld, the goal is to escape. Override the
+    //     normal goal with !in_underworld and inject the escape atomic.
+    let effectiveGoal = this.goal;
+    if (ws.in_underworld === true) {
+      effectiveGoal = '!in_underworld';
+    }
+
+    // Visible log: every GOAP pass is logged to the broker console so the
+    // journal (in-memory, lost on restart) is not the only record.
+    console.error(`[goap] ${who} pass ${this._passCount} goal=${effectiveGoal} ${wsSummary}`);
+
     // 3. Plan.
-    // 3. Plan. When the goal requires at_shop but we're not at a shop,
-    //    find the nearest shop and inject a travel_to action with the
-    //    destination pre-set. The planner chains travel_to -> buy.
+    // 3a. Inject travel_to when the goal requires at_shop but we're not
+    //     at a shop. Find the nearest shop and create a parameterized
+    //     travel_to action with the destination pre-set.
     let extra = [];
-    if (ws.at_shop === false && ws.has_money === true) {
+    if (ws.in_underworld === true) {
+      // Inject the escape_underworld atomic.
+      const { escapeUnderworldAtomic } = await import('./m59-act/escape-underworld.mjs');
+      extra.push(escapeUnderworldAtomic);
+    } else if (ws.at_shop === false && ws.has_money === true) {
       const here = c.room?.num;
       if (here != null) {
         const shop = nearestShop(here);
         if (shop) {
-          // Create a parameterized travel_to that knows the destination.
-          // The planner sees it as an action with effects: ['at_shop'].
           const travelToShop = (client, session) => {
-            // One hop toward the shop. Uses the legacy router to find the
-            // next exit and the session to walk it.
             return this._travelOneHop(shop.to);
           };
           travelToShop.atomic = 'travel_to';
           travelToShop.pre = [];
           travelToShop.effects = ['at_shop'];
-          travelToShop.cost = 1;  // one hop, cheap
+          travelToShop.cost = 1;
           extra = [travelToShop];
         }
       }
     }
 
-    const p = planFor(c, { [this.goal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent, extra });
+    const p = planFor(c, { [effectiveGoal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent, extra });
 
     if (p.problems?.length) {
       this.note('goap plan problems', { problems: p.problems });

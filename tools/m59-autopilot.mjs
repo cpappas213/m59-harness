@@ -6872,11 +6872,10 @@ export class Autopilot {
       // weapon, because those are preconditions, not goals. Call the
       // existing safety shells; they return true when they handled the
       // situation, in which case the planner does not run.
-      const room = s.world?.room;
-      if (room && /underworld/i.test(room.name ?? '')) {
-        const r = await this.passUnderworld({ s, c, room, v: c.vitals?.() ?? {} });
-        if (r) return;
-      }
+      const room = s.world?.room ?? c?.room;
+      // Underworld: the GOAP keeper handles it internally (in_underworld
+      // symbol + escape_underworld atomic). No need to call passUnderworld
+      // separately. The GOAP keeper's pass() will plan the escape.
       if (c && typeof c.armed === 'function' && !c.armed()) {
         const r = await this.passArm({ s, c, room, v: c.vitals?.() ?? {} });
         if (r) return;
