@@ -20,10 +20,14 @@
 
 import {
   brokerDriver, keeperDriver, runAtomic, relocateThenRevive, innDest, armOwnership,
-  ATOMIC_NAMES,
+  ATOMIC_NAMES, errandAction, errandActions,
 } from './m59-atomics.mjs';
 import { RUNNING, SUCCESS, FAILURE } from './m59-bt.mjs';
-import { travelToAction, reviveKeeperAction } from './m59-bt-nodes.mjs';
+// The two BT wrapper tests that lived here tested travelToAction/reviveKeeperAction
+// from this checkout's m59-bt-nodes.mjs. The merge took origin/main's version of that
+// file, which exports neither -- the wrappers were part of the BT keeper that was
+// stood down. The tests below cover m59-atomics.mjs itself, which survived unchanged
+// and is shared by both designs, so the import is gone and those two cases with it.
 
 // Tiny test harness.
 let _passed = 0;
@@ -365,29 +369,64 @@ test('atomic_names_include_the_arm_errand_atoms', () => {
     assert(ATOMIC_NAMES.includes(n), `atomic ${n} should exist`);
 });
 
-test('bt_travelToAction_wraps_atomic_into_running_slot', async () => {
-  // A BT Action node built on the travel_to atomic must follow the RUNNING/slot
-  // protocol: tick 0 kicks off and returns RUNNING, a later tick reports SUCCESS.
-  const { k, calls } = makeKeeper();
-  const bb = { client: null, session: k, _bt: {} };
-  const action = travelToAction(k, 52);
-  assertEq(action.tick(bb), RUNNING, 'first tick kicks off and returns RUNNING');
-  // The travel call is fire-and-forget; it resolves on a macrotask, not a microtask,
-  // so a single Promise.resolve() is not enough for the slot to settle.
-  await new Promise(r => setTimeout(r, 10));
-  assertEq(action.tick(bb), SUCCESS, 'second tick reports SUCCESS');
-  assertEq(calls[0][0], 'travel', 'travel method called');
-  assertEq(calls[0][1], 52, 'travel to=52');
+// ---------------------------------------------------------------------------
+// THE COARSE LAYER IS PLANNABLE NOW -- pre/effects in the ERRAND vocabulary.
+// Until this, every verb declared `effect` as prose ('room=to, health readable'),
+// which reads like a contract and is worth nothing to a planner.
+// ---------------------------------------------------------------------------
+
+test('every coarse verb declares pre/effects, and only ERRAND symbols', async () => {
+  const { validateErrands } = await import('./m59-errandstate.mjs');
+  const acts = errandActions();
+  assertEq(acts.length, ATOMIC_NAMES.length, 'one action per atomic');
+  const problems = validateErrands(acts);
+  assertEq(problems.length, 0, `validation problems: ${problems.join(' | ')}`);
 });
 
-test('bt_reviveKeeperAction_reports_success', async () => {
-  const { k, calls } = makeKeeper();
-  const bb = { client: null, session: k, _bt: {} };
-  const action = reviveKeeperAction(k);
-  assertEq(action.tick(bb), RUNNING, 'kick off');
-  await new Promise(r => setTimeout(r, 10));
-  assertEq(action.tick(bb), SUCCESS, 'revive succeeded');
-  assertEq(calls[0][0], 'revive', 'revive method called');
+test('an ACT symbol is a scope error here, not a gap to fill', async () => {
+  const { validateErrand } = await import('./m59-errandstate.mjs');
+  // equip_best and conjure_weapon move `armed`, which is read off a LIVE client on a
+  // one-second clock. A fleet row is minutes old. Naming it here would chain the two.
+  for (const n of ['equip_best', 'conjure_weapon', 'buy_weapon'])
+    assertEq(errandAction(n).effects.length, 0, `${n} must not claim an act symbol`);
+  assert(validateErrand({ name: 'x', effects: ['armed'] }).length === 1,
+         'naming armed in the errand vocabulary is rejected');
+});
+
+test('travel_to promises nothing statically, because `to` decides where you land', () => {
+  assertEq(errandAction('travel_to').effects.length, 0, 'unbound: no claim');
+  assertEq(JSON.stringify(errandAction('travel_to', { to: 52, assignedRoom: 52 }).effects),
+           JSON.stringify(['at_assigned_room', 'out_of_raza']));
+  assertEq(JSON.stringify(errandAction('travel_to', { to: 52, assignedRoom: 370 }).effects),
+           JSON.stringify(['out_of_raza']), 'somewhere else is not the assigned room');
+  // Travelling INTO Raza must never satisfy out_of_raza -- the direction matters.
+  assertEq(errandAction('travel_to', { to: 1013 }).effects.length, 0,
+           'a destination on the island leaves you on the island');
+});
+
+test('set_policy writes the TARGET, and can never satisfy arriving at it', () => {
+  assertEq(JSON.stringify(errandAction('set_policy', { fields: { hunt: 'giant rat' } }).effects),
+           JSON.stringify(['has_prey']));
+  // The trap: assigned_room is a number in a policy, not a character in a room. If this
+  // claimed at_assigned_room the planner could "arrive" anywhere by writing a field.
+  assertEq(errandAction('set_policy', { fields: { assigned_room: 52 } }).effects.length, 0,
+           'setting a destination is not going there');
+});
+
+test('buy_item does not establish `stocked` -- min of a pair, not a sum', () => {
+  assertEq(errandAction('buy_item', { want: /elderberry/i }).effects.length, 0);
+  assert(errandAction('buy_item').pre.includes('funded'), 'but it does need money');
+});
+
+test('stop_keeper is the one verb with a real precondition and its negation', () => {
+  assertEq(JSON.stringify(errandAction('stop_keeper').pre), JSON.stringify(['keeper_running']));
+  assertEq(JSON.stringify(errandAction('stop_keeper').effects), JSON.stringify(['!keeper_running']));
+});
+
+test('errandAction refuses an unknown verb rather than returning an empty one', () => {
+  let threw = false;
+  try { errandAction('nope'); } catch { threw = true; }
+  assert(threw, 'an unknown atomic must throw, not no-op');
 });
 
 runTests();

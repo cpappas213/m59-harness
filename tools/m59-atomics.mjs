@@ -217,6 +217,8 @@ export async function armOwnership(ctx, { agent, by, kind = 'arm', label = 'armi
   }
 }
 
+import { RAZA_ROOMS } from './m59-errandstate.mjs';
+
 // ---------------------------------------------------------------------------
 // The atomic registry
 // ---------------------------------------------------------------------------
@@ -229,58 +231,80 @@ const ATOMICS = {
   // revive_keeper: un-inert the keeper. effect: inert=false.
   revive_keeper: {
     effect: 'inert=false',
+    pre: [], effects: ['keeper_running'],
     run: (ctx, { agent, why }) => ctx.revive(agent, why),
   },
   // stop_keeper: soft-stop (goInert). effect: inert=true. An intermediate of
   // the relocate composite, not a standalone plan step.
   stop_keeper: {
     effect: 'inert=true',
+    pre: ['keeper_running'], effects: ['!keeper_running'],
     run: (ctx, { agent, why }) => ctx.stop(agent, why),
   },
   // travel_to: move to a room. effect: room=to, health non-null once readable.
   travel_to: {
     effect: 'room=to, health readable',
+    // PARAMETERISED -- see errandAction(). Statically it promises NOTHING, because
+    // where this verb leaves you is entirely in `to`.
+    pre: [], effects: [],
     run: (ctx, { agent, to }) => ctx.travel(agent, to),
   },
   // set_policy: write hunt/assigned_room/purpose/goals. effect: those fields.
   set_policy: {
     effect: 'hunt/assigned_room/purpose/goals set',
+    // PARAMETERISED -- see errandAction(). And note what it does NOT establish:
+    // writing assigned_room moves the TARGET, never the character, so it can never
+    // satisfy at_assigned_room. Declaring that it did would let the planner 'arrive'
+    // anywhere by writing a number.
+    pre: [], effects: [],
     run: (ctx, { agent, fields }) => ctx.setPolicy(agent, fields),
   },
   // pick_prey: read prey candidates (respecting karma). effect: none (query).
   pick_prey: {
     effect: 'none (query)',
+    pre: [], effects: [],
     run: (ctx, { agent, goals, karma, under }) => ctx.pickPrey(agent, { goals, karma, under }),
   },
   // claim_inn: park at an inn to rest. effect: parked_at_inn=true.
   claim_inn: {
     effect: 'parked_at_inn=true',
+    // No errand symbol says 'parked'. Rather than invent one for a single verb, this
+    // declares nothing: an unplannable verb is honest, an invented symbol is not.
+    pre: [], effects: [],
     run: (ctx, { agent, character }) => ctx.claimInn(agent, character),
   },
   // buy_skills: queue next planned skill purchase. effect: nextSkillCost
   // advances, totalFunds drops.
   buy_skills: {
     effect: 'nextSkillCost advances, totalFunds drops',
+    pre: ['funded', 'out_of_raza'], effects: [],
     run: (ctx, { agents }) => ctx.buySkills(agents),
   },
   // leave_raza: walk out of the newbie zone. effect: room outside 1011-1018.
   leave_raza: {
     effect: 'room outside 1011-1018',
+    pre: [], effects: ['out_of_raza'],
     run: (ctx, { agent }) => ctx.leaveRaza(agent),
   },
   // who_in_room: read the room's occupants. effect: none (query).
   who_in_room: {
     effect: 'none (query)',
+    pre: [], effects: [],
     run: (ctx, { agent }) => ctx.who(agent),
   },
   // equip_best: wear the best weapon in the pack. effect: hasWeapon=true.
   equip_best: {
     effect: 'hasWeapon=true',
+    // `armed` IS AN ACT SYMBOL AND MAY NOT BE NAMED HERE. That is not a gap to fill:
+    // being armed is read off a live client on a one-second clock, and a fleet row is
+    // minutes old. validateErrand() rejects it by name if anyone tries.
+    pre: [], effects: [],
     run: (ctx, { agent, why }) => ctx.equipBest(agent, why),
   },
   // conjure_weapon: cast create weapon. effect: hasWeapon=true.
   conjure_weapon: {
     effect: 'hasWeapon=true',
+    pre: [], effects: [],   // `armed` is an act symbol -- see equip_best
     run: (ctx, { agent, why }) => ctx.conjureWeapon(agent, why),
   },
   // buy_weapon: walk to a smith and buy one. effect: hasWeapon=true.
@@ -289,6 +313,7 @@ const ATOMICS = {
   // keeper still call it, and deleting it would break the proven field path.
   buy_weapon: {
     effect: 'hasWeapon=true',
+    pre: ['funded', 'out_of_raza'], effects: [],   // `armed` is an act symbol
     run: (ctx, { agent, why }) => ctx.buyWeapon(agent, why),
   },
 
@@ -307,6 +332,10 @@ const ATOMICS = {
   // thrown, because carrying on with what you have is the right call.
   ensure_funded: {
     effect: 'purse>=need (best effort)',
+    // BEST EFFORT IS STILL AN EFFECT, and `funded` is checked against the row after
+    // the fact rather than assumed -- the atomic itself returns { funded } from a
+    // re-read purse, never from the amount it asked for.
+    pre: [], effects: ['funded'],
     async run(ctx, { agent, need, withdraw = 1000, keep = [] } = {}) {
       const count = (inv) => (inv?.items || []).reduce((t, i) => t + (i.amount || 0), 0);
       let inv = await _bounded(() => ctx.purse(agent));
@@ -337,6 +366,12 @@ const ATOMICS = {
   // never a throw, so the caller can try the next candidate shop.
   buy_item: {
     effect: 'item in pack, purse debited',
+    // IT DOES NOT ESTABLISH `stocked`, and that is not an oversight. `stocked` is one
+    // casting of create food -- 2 elderberry AND 2 herbs, the min of a pair -- and this
+    // buys ONE item. Claiming it would let the planner satisfy a pair with a single
+    // purchase, which is the same min-not-sum error that left twenty of twenty-one
+    // characters unable to cast while the fleet total looked healthy.
+    pre: ['funded'], effects: [],
     async run(ctx, { agent, seller, want, fallback } = {}) {
       const stock = (await _bounded(() => ctx.shop(agent, seller)))?.items || [];
       const nameOf = (i) => i?.name || i?.label || '';
@@ -361,3 +396,56 @@ export async function runAtomic(name, ctx, params = {}) {
 }
 
 export const ATOMIC_NAMES = Object.keys(ATOMICS);
+
+// ---------------------------------------------------------------------------
+// The plannable face of the coarse layer
+// ---------------------------------------------------------------------------
+//
+// Until now every verb here declared `effect` as PROSE -- 'room=to, health readable'
+// -- which reads like a contract and is worth nothing to a planner. So the errand
+// layer could not be planned over at all, and "two libraries, two vocabularies" was
+// asserted rather than true.
+//
+// These declare `pre`/`effects` in the ERRAND vocabulary (m59-errandstate.mjs), which
+// reads a `fleet` row that may be MINUTES OLD. Naming an act symbol here is a scope
+// error and validateErrand() rejects it by name -- see equip_best, where the honest
+// answer is to declare nothing rather than to reach for `armed`.
+//
+// TWO VERBS CANNOT BE DECLARED STATICALLY, because what they establish is decided by
+// their parameters rather than by the verb. A static declaration for those would be a
+// lever connected to nothing: travel_to would claim to arrive somewhere in particular
+// however it was called. So they are SPECIALISED against the params, the same way
+// m59-act/cast.mjs specialises a cast against its target.
+export function errandAction(name, params = {}) {
+  const a = ATOMICS[name];
+  if (!a) throw new Error(`unknown atomic: ${name}`);
+  const base = { name, pre: [...(a.pre ?? [])], effects: [...(a.effects ?? [])],
+                 run: (ctx, p = params) => a.run(ctx, p) };
+
+  if (name === 'travel_to') {
+    const to = params.to;
+    const assigned = params.assignedRoom ?? params.assigned_room ?? null;
+    // Arriving at the assigned room is a claim only when that is where we are going.
+    if (to != null && assigned != null && Number(to) === Number(assigned))
+      base.effects.push('at_assigned_room');
+    // And a destination outside the island is the only way this verb leaves Raza. An
+    // UNKNOWN destination promises neither -- silence, not a guess.
+    if (to != null && !RAZA_ROOMS.includes(Number(to)))
+      base.effects.push('out_of_raza');
+  }
+
+  if (name === 'set_policy') {
+    // `hunt` is the only field of the four that any errand symbol reads. Naming a prey
+    // is what makes has_prey true; it is also the field whose absence sends a keeper
+    // roaming somewhere it has no business being.
+    if (params.fields && params.fields.hunt) base.effects.push('has_prey');
+  }
+
+  return base;
+}
+
+// Every coarse verb as a plannable action, with the params bound. Callers hand this
+// to validateErrands() and to a planner over the errand vocabulary.
+export function errandActions(paramsByName = {}) {
+  return ATOMIC_NAMES.map(n => errandAction(n, paramsByName[n] ?? {}));
+}

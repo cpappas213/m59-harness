@@ -898,6 +898,63 @@ console.log('\nthe file wins when the file changes');
   L.forgetLoadouts();
 }
 
+console.log('\nbuying into a school this character does not cast');
+{
+  const CF = { name: 'create food',   kind: 'spell', school: 'Kraanan', level: 1 };
+  const CW = { name: 'create weapon', kind: 'spell', school: 'Kraanan', level: 1 };
+  const HEAL = { name: 'heal', kind: 'spell', school: "Shal'ille", level: 1 };
+  const FENCE = { name: 'fencing', kind: 'skill', level: 1 };
+  const catalogue = [CF, CW, HEAL, FENCE];
+  const queueFor = (name) => ({ learning_queue: [{ name }] });
+
+  // create food is the case this exists for: the planner's only route to vigor_ok is
+  // `cast create food -> eat`, so a character that lacks the spell has no plan at all,
+  // and buying it the spell is the obvious-looking next move. It is refused.
+  const none = L.plannedAbilities(queueFor('create food'), catalogue, []);
+  ok('A CHARACTER THAT CASTS NOTHING MAY NOT BUY ITS WAY INTO A SCHOOL',
+     none.length === 0);
+  ok('...and the refusal says which school and what to do about it',
+     none.refusals.length === 1 &&
+     /Kraanan spell/.test(none.refusals[0].why) &&
+     /plan\.schools/.test(none.refusals[0].why));
+
+  // The distinction is the school, not "has any magic at all" -- a healer is still not
+  // a Kraanan caster, and this is the case a looser rule would let through.
+  ok('A CASTER OF ANOTHER SCHOOL IS STILL NOT A CASTER OF THIS ONE',
+     L.plannedAbilities(queueFor('create food'), catalogue,
+                        [{ kind: 'spell', school: "Shal'ille", name: 'heal' }]).length === 0);
+
+  ok('an existing Kraanan caster may of course learn more Kraanan',
+     L.plannedAbilities(queueFor('create food'), catalogue,
+                        [{ kind: 'spell', school: 'Kraanan', name: 'blink' }])
+       .map(r => r.name).join() === 'create food');
+
+  // THE EXPLICIT PLAN IS THE OPT-IN, and it must stay one: refusing here too would make
+  // it impossible to start a school deliberately, which is not what the rule is for.
+  ok('naming the school in plan.schools is an operator deciding on purpose, and is honoured',
+     L.plannedAbilities({ schools: { Kraanan: 1 } }, catalogue, [])
+       .map(r => r.name).sort().join() === 'create food,create weapon');
+
+  ok('A SKILL HAS NO SCHOOL AND IS NEVER REFUSED FOR ONE',
+     L.plannedAbilities(queueFor('fencing'), catalogue, [])
+       .map(r => r.name).join() === 'fencing');
+
+  // Unknown school is not the same fact as a school this character lacks, and guessing
+  // either way is worse than leaving a row alone.
+  ok('a spell whose school nothing recorded is left alone rather than guessed at',
+     L.plannedAbilities(queueFor('mystery'),
+                        [{ name: 'mystery', kind: 'spell', school: null, level: 1 }], [])
+       .map(r => r.name).join() === 'mystery');
+
+  ok('crossSchoolRefusals reports the same decision without building a queue',
+     L.crossSchoolRefusals({}, [CF], []).length === 1 &&
+     L.crossSchoolRefusals({}, [CF], [{ kind: 'spell', school: 'Kraanan', name: 'x' }]).length === 0);
+
+  ok('knowsSchool is the one definition both of them run on',
+     L.knowsSchool([{ kind: 'spell', school: 'Kraanan', name: 'blink' }], 'kraanan') === true &&
+     L.knowsSchool([{ kind: 'skill', name: 'fencing' }], 'Kraanan') === false);
+}
+
 rmSync(root, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
