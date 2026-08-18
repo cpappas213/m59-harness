@@ -37,9 +37,10 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validate, SYMBOL_NAMES } from './m59-worldstate.mjs';
+import { validate, SYMBOL_NAMES, evaluate } from './m59-worldstate.mjs';
 import { fakeClient, fakeSession } from './m59-fake-client.mjs';
 
+const evaluateFor = (spec) => evaluate({ client: fakeClient(spec), policy: {} });
 const ACTDIR = join(dirname(fileURLToPath(import.meta.url)), 'm59-act');
 
 let pass = 0, fail = 0;
@@ -253,6 +254,95 @@ console.log('\nstep refuses what cannot be a step at all');
   let threw = false;
   try { await step(null, null, { col: 1, row: 1 }); } catch { threw = true; }
   ok('and none of these throw', !threw);
+}
+
+// ---------------------------------------------------------------------------
+// Behaviour: equip / rest / stand
+// ---------------------------------------------------------------------------
+const { equip } = await import('./m59-act/equip.mjs');
+const { rest, stand } = await import('./m59-act/rest.mjs');
+
+console.log('\nequip: the USE LIST is the answer, never what the send asked for');
+{
+  // A `use` that the server declines says so OUT LOUD to the room and sends
+  // nothing on the wire -- "your hands are too full", player.kod:131. So a caller
+  // that trusts the send goes on believing it is armed. Nineteen of twenty-five
+  // characters were once found fighting in their shirts.
+  const c = fakeClient({ inventory: [{ id: 3, name: 'mace' }], equipped: [] });
+  const s = fakeSession(c);
+  const r = await equip(c, s, { itemId: 3, waitMs: 1 });
+  ok('the packet went', r.sent === true);
+  ok('but nothing changed, because the use list did not move',
+     r.changed === false && r.equipped_after === false);
+  ok('and it says so rather than reporting success',
+     /did not move/.test(r.reason), r.reason);
+}
+
+console.log('\nequip reports a real change when the use list actually moves');
+{
+  const c = fakeClient({ inventory: [{ id: 3, name: 'mace' }], equipped: [] });
+  const s = fakeSession(c);
+  // the server accepts: the use list gains the item
+  s.pacer = { submit: async (_k, fn) => { fn(); c.equipment = () =>
+    ({ known: true, equipped: [{ id: 3, name: 'mace' }], count: 1 }); } };
+  const r = await equip(c, s, { itemId: 3, waitMs: 1 });
+  ok('changed is true only when the SERVER moved it',
+     r.changed === true && r.equipped_before === false && r.equipped_after === true);
+}
+
+console.log('\nequip refuses the two no-ops, because re-using is REFUSED not idempotent');
+{
+  const armedC = fakeClient({ equipped: [{ id: 3, name: 'mace' }] });
+  const r = await equip(armedC, fakeSession(armedC), { itemId: 3, waitMs: 1 });
+  ok('wielding what we already wield sends nothing',
+     r.sent === false && /already in use/.test(r.reason) && armedC.sent.length === 0);
+
+  const bareC = fakeClient({ equipped: [] });
+  const r2 = await equip(bareC, fakeSession(bareC), { itemId: 3, off: true, waitMs: 1 });
+  ok('taking off what is not on sends nothing either',
+     r2.sent === false && /not in use/.test(r2.reason));
+}
+
+console.log('\nequip will not claim a change from an unread use list');
+{
+  // known:false means NOBODY HAS ASKED, which is the opposite fact from "nothing
+  // is equipped" and must never render the same.
+  const c = fakeClient({ equipped: [], known: false });
+  const r = await equip(c, fakeSession(c), { itemId: 3, waitMs: 1 });
+  ok('it still sends — an unread list is not a refusal', r.sent === true);
+  ok('but claims no change, because there is no evidence either way',
+     r.changed === false && r.equipped_before === null);
+}
+
+console.log('\nrest / stand: one posture change, and no confirmation is invented');
+{
+  const c = fakeClient({ vigor: 20 });
+  const s = fakeSession(c);
+  const r = await rest(c, s, { waitMs: 1 });
+  ok('rest sends exactly one', r.sent === true && c.sent.filter(x => x[0] === 'rest').length === 1);
+  // Posture is reported by no packet this client parses. Claiming to have
+  // confirmed it would be the UC_LOOK_PLAYER mistake: inventing an answer for a
+  // question nothing on the wire asks.
+  ok('and does NOT pretend to have confirmed the posture', r.posture_confirmed === false);
+
+  const r2 = await stand(c, s, { waitMs: 1 });
+  ok('stand sends exactly one', r2.sent === true && c.sent.filter(x => x[0] === 'stand').length === 1);
+
+  let threw = false;
+  try { await rest(null, null); await stand(null, null); } catch { threw = true; }
+  ok('neither throws without a session', !threw);
+}
+
+console.log('\nresting cannot pass the cap, and the vocabulary is what says so');
+{
+  // REST_VIGOR_CAP is 80 of 200: everything above it has to be EATEN, and a fleet
+  // holding out for a vigor no rest can deliver looks exactly like a working one.
+  const low  = evaluateFor({ vigor: 40 });
+  const atCap = evaluateFor({ vigor: 80 });
+  ok('under the cap, sitting down can still pay', low.can_rest_higher === true);
+  ok('AT the cap it cannot, however long you sit', atCap.can_rest_higher === false);
+  ok('rest declares that as its effect, so a planner cannot loop on it',
+     rest.effects.includes('can_rest_higher'));
 }
 
 console.log('\nattack declares a plan-able contract');

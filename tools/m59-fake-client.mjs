@@ -97,6 +97,13 @@ export function fakeClient(spec = {}) {
     vitals:    () => vitalsOf(spec),
 
     attack: (id, info = 1) => { sent.push(['attack', id, info]); },
+    // BP_REQ_USE / BP_REQ_UNUSE. The server answers a refusal OUT LOUD to the room
+    // ("your hands are too full", player.kod:131) and sends nothing on the wire, so
+    // these record the request and change nothing: a test that wants the use list
+    // to move must say so, exactly as the server would have to.
+    use:    (id) => { sent.push(['use', id]); },
+    unuse:  (id) => { sent.push(['unuse', id]); },
+    moveToSquare: (col, row, speed = 18) => { sent.push(['moveToSquare', col, row, speed]); },
     cast:   (spellId, targets = []) => { sent.push(['cast', spellId, targets]); },
     apply:  (what, onWhat) => { sent.push(['apply', what, onWhat]); },
     rest:   () => { sent.push(['rest']); },

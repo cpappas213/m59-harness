@@ -45,8 +45,15 @@ console.log('\nthe fake carries the real client\'s surface');
   const c = fakeClient();
   // Methods the trees and atomics actually reach for. Each must exist on BOTH,
   // or the fake is modelling a client that does not exist.
+  // EVERY METHOD ANY ATOMIC CALLS BELONGS HERE, and a gap is not cosmetic.
+  // m59-act/equip calls client.use(); the fake did not have one; the call threw
+  // inside a `.catch(() => {})`, so the atomic reported "the use list did not move"
+  // -- which is ALSO exactly what a genuine server refusal looks like. A missing
+  // fake method impersonates a real refusal, and that is the most expensive kind of
+  // wrong available here, because the test agrees with the bug.
   for (const m of ['equipment', 'vitals', 'attack', 'cast', 'apply', 'rest',
-                   'stand', 'requestInventory', 'roomContents', 'waitFor']) {
+                   'stand', 'requestInventory', 'roomContents', 'waitFor',
+                   'use', 'unuse', 'moveToSquare']) {
     ok(`fake has ${m}()`, typeof c[m] === 'function');
     ok(`real client has ${m}() too`, typeof realProto[m] === 'function',
        'the fake is modelling a method the client does not have');
