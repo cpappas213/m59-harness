@@ -153,7 +153,7 @@ function renderRoomView(rv) {
     <span class="room-cell npc" style="display:inline-block;vertical-align:middle"></span> ${count('npc')} npc ·
     <span class="room-cell player" style="display:inline-block;vertical-align:middle"></span> ${count('player')} player ·
     ${cols}×${rows} grid</div>`;
-  return `<h2>Room</h2>${grid}${legend}`;
+  return `<h2>Room <a href="/room3d/${esc(h.name)}" style="font-size:.7rem;font-weight:normal";>3D view</a></h2>${grid}${legend}`;
 }
 
 export function renderHero(h, { localhost = false } = {}) {

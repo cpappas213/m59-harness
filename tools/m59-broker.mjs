@@ -14185,6 +14185,17 @@ function heroSnapshot(name) {
         cols: c.room.cols ?? 50,
         rows: c.room.rows ?? 48,
         self: me ? { col: me.col, row: me.row } : null,
+        walkable: (() => {
+          try {
+            const raw = c.room.flags;
+            if (typeof raw !== 'string' || !raw.length) return [];
+            const buf = Buffer.from(raw, 'base64');
+            const cols = c.room.cols ?? 50;
+            const rows = c.room.rows ?? 48;
+            if (buf.length !== rows * cols) return [];
+            return Array.from(buf).map(b => (b & 0x01));
+          } catch { return []; }
+        })(),
         objects: [...c.room.objects.values()].map(o => ({
           id: o.id,
           name: c.rsc?.get?.(o.nameRsc) ?? 'unknown',
@@ -14365,6 +14376,13 @@ function serveDashboard(port) {
       return res.end(JSON.stringify({ uptime_ms: Date.now() - Pacer.startedAt, buckets: rows }, null, 1));
     }
     // /hero/<name> and /hero/<name>/start.ps1
+    if (url.pathname.startsWith('/room3d/')) {
+      const who = decodeURIComponent(url.pathname.slice('/room3d/'.length).split('/')[0] || '');
+      const h = heroSnapshot(who);
+      const { renderRoom3D } = await import('./m59-room3d.mjs');
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      return res.end(renderRoom3D(who, h?.room_view ?? null));
+    }
     if (url.pathname.startsWith('/hero/')) {
       const parts = url.pathname.slice('/hero/'.length).split('/');
       const who = decodeURIComponent(parts[0] || '');
