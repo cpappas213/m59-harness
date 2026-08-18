@@ -325,8 +325,22 @@ export class World {
     // So this answers the tactical question — how far is that square, really — exactly as
     // it did before clearance existed. Crossing the room is `walkTo`'s business.
     const r = geo.path(me.row, me.col, toRow, toCol, { clearance: 0 });
-    if (!r.found) return { reachable: false, why: r.reason };
-    return { reachable: true, steps: r.steps.length, path: r.steps.map(s => ({ col: s.col, row: s.row, dir: s.dir })),
+    if (!r.found) return { reachable: false, verified: false, why: r.reason };
+    // REACHABLE, AND SEPARATELY, WALKABLE ALL THE WAY.
+    //
+    // `path` will plan a final step into the goal that the MOVER refuses rather than delete
+    // a doorway the model dislikes — 346 of the exit anchors this bake cannot reach are
+    // `go` exits whose square IS the door tile — and it flags such a route `goal_exempt`.
+    // That flag has to survive to here, because "there is a route" and "the mover will walk
+    // every step of it" are different answers and only the second predicts arrival.
+    //
+    // REPORTED BESIDE `reachable`, NEVER INSTEAD OF IT. Every tactical consumer should go on
+    // treating the doorway as offered and attempt it — being wrong about one step costs a
+    // packet and a fine correction, which `leaveVia` already does. What this lets a caller
+    // do is stop PLANNING A JOURNEY through a door whose last step is a known disagreement,
+    // which is the difference between a longer route and eighty seconds of failing at a wall.
+    return { reachable: true, verified: r.goal_exempt !== true,
+             steps: r.steps.length, path: r.steps.map(s => ({ col: s.col, row: s.row, dir: s.dir })),
              ...(me.offGrid ? { from_nearest_floor: { col: me.col, row: me.row },
                                 note: 'you are standing off the movement grid; steps are counted from the nearest floor square' }
                             : {}) };
@@ -552,6 +566,10 @@ export class World {
           : `walk ${e.leaveName} past the room edge`,
         condition: e.condition ? `${e.condition.name}${e.condition.threshold}` : null,
         reachable: true,
+        // THE MOVER'S FLOOD ALREADY ANSWERED THIS. `grid_only` means no staging square for
+        // this crossing was reachable under collision and the coarse grid was used instead
+        // — which is exactly "offered, but do not build a journey on it".
+        verified: !approach.grid_only,
         // Flagged so leaveVia can tell a declared boundary from a guessed one, and
         // retire the guess when the server refuses it.
         ...(e.inferred ? { inferred: true } : {}),
@@ -573,7 +591,8 @@ export class World {
             if (!inRegion(ce.when, r, c) || !geo.walkable(r, c)) continue;
             const p = this.reach(c, r);
             if (p.reachable) {
-              direct.push({ col: c, row: r, steps: p.steps, reachable: true });
+              direct.push({ col: c, row: r, steps: p.steps, reachable: true,
+                            verified: p.verified !== false });
               continue;
             }
 
@@ -589,6 +608,7 @@ export class World {
             const approach = this.approachSquare(c, r);
             if (approach)
               staged.push({ col: c, row: r, steps: approach.steps + 1, reachable: false,
+                            verified: false,
                             approach_on: { col: approach.col, row: approach.row } });
           }
         }
@@ -616,6 +636,7 @@ export class World {
         stand_on: best ? { col: best.col, row: best.row } : null,
         steps_away: best ? best.steps : null,
         reachable: best ? best.reachable : (geo && me ? false : null),
+        verified: best ? best.verified === true : (geo && me ? false : null),
         ...(best?.approach_on ? { approach_on: best.approach_on } : {}),
         ...(targets.length ? { trigger_targets: targets.map(target => ({
           stand_on: { col: target.col, row: target.row },
@@ -639,6 +660,10 @@ export class World {
         stand_on: { col: g.col, row: g.row },
         steps_away: rr.steps ?? null,
         reachable: rr.reachable,
+        // A `go` exit's square IS the door tile, which is a pocket by design and exactly
+        // the case `path`'s goal exemption exists for — so this is very often `false` here
+        // and that is correct. It must never be read as "do not offer this door".
+        verified: rr.verified ?? null,
         how: g.locked
           ? `locked door at (${g.col},${g.row})`
           : `walk_to EXACTLY (${g.col},${g.row}) then act go — the match is on that one square`,
@@ -662,6 +687,7 @@ export class World {
         stand_on: { col: o.col, row: o.row },
         steps_away: rr.steps ?? null,
         reachable: rr.reachable,
+        verified: rr.verified ?? null,
         // The flag is certain; where it goes is not. Some portals are fixed and some
         // change their destination on a timer, and the only way to find out is to
         // look at it — the description names the place in prose.
@@ -952,11 +978,25 @@ export class World {
     // of 535/536/537 is perfectly walkable, and that is the route we want back.
     const blockedHops = new Set();
     try {
+      // ANY usable door to that room clears the hop. A room publishing four crossings of
+      // which one works is a room we can leave, so this collapses per DESTINATION and only
+      // blocks when nothing to it is usable.
+      //
+      // AND `verified` IS THE TEST, NOT `reachable`. `reachable` says a route exists;
+      // `verified` says the mover will walk every step of it. The gap between them is
+      // precisely this failure: standing in West Merchant Way, the door to Deep Forest of
+      // Farol reports reachable — `path` found a route by exempting a last step across a
+      // 1664-unit face — and the walk then failed four squares at a time, seven times, for
+      // eighty seconds. A `go` exit is routinely unverified and that is fine; what matters
+      // is that a JOURNEY is not planned through one when another way round exists.
+      //
+      // NULL IS NOT FALSE. No geometry, no position, a locked door: all answer null, and
+      // null must clear the hop, or a checkout with no baked geometry would block the world.
       const byDest = new Map();
       for (const e of this.exits()) {
         if (e.to == null) continue;
-        const seen = byDest.get(e.to);
-        byDest.set(e.to, seen === true ? true : e.reachable !== false);
+        const usable = e.reachable !== false && e.verified !== false;
+        byDest.set(e.to, byDest.get(e.to) === true ? true : usable);
       }
       for (const [to, ok] of byDest) if (!ok) blockedHops.add(`${room.num}>${Number(to)}`);
     } catch { /* exits() needs a live room; without one this simply blocks nothing */ }
