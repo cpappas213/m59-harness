@@ -845,5 +845,95 @@ console.log('\ncrossing a room — planning over doors rather than over rooms');
   }
 }
 
+// ---------------------------------------------- a one-way room, and a jump across a gap
+// THE QUESTION A ROUTER ASKS IS DIRECTED, AND `sameRegion` ANSWERS A STRICTER ONE.
+//
+// Regions are strongly connected components — each door reaching the OTHER. Where a room
+// contains a one-way drop the two answers come apart, and the mutual one is wrong in the
+// direction the fleet actually travels: measured in Ukgoth, the Castle Victoria door
+// reaches the Sentinel door in 136 steps while the reverse has no route at all. Asked the
+// mutual question the transit was refused and every Castle Victoria route fell back to an
+// unverified plan; asked the directed one, the real asymmetric route appears — out through
+// the Cragged Mountains, home by the Sentinel.
+//
+// AND A JUMP IS A TRAVERSAL THE WALK CANNOT DECOMPOSE. HIGH -> LOW -> MEDIUM is a drop and
+// then an impossible climb, square by square, and a body in the air never stands on the low
+// ground. `fallTargets` offers those landings; `enforceStepHeight` still refuses the climb.
+console.log('\none-way transits, and the jumps the square walk cannot express');
+{
+  const realMap = existsSync(join('substrate', 'm59-map.json')) ? await loadMap() : null;
+  const { routesFor: rf, anchorFor: aFor, sameRegion: sameReg, bakedPath: bPath } =
+    await import('./m59-routes.mjs');
+  const table = realMap ? rf(realMap.geometryManifestSha256) : null;
+  if (!table) {
+    skip('a one-way transit is offered in the direction that works', 'no routing table on disk');
+  } else {
+    const { findPath: fp } = await import('./m59-map.mjs');
+    const directed = (room, from, to) => {
+      const x = aFor(table, room, from), y = aFor(table, room, to);
+      if (!x || !y) return null;
+      if (bPath(table, room, x, y)) return true;
+      return sameReg(table, room, x, y);
+    };
+    // Ukgoth: the two doors are NOT mutually reachable, and that must not refuse the
+    // direction that is.
+    const cv = aFor(table, 599, 2), sentinel = aFor(table, 599, 589);
+    ok('Ukgoth’s Castle Victoria and Sentinel doors are in different components',
+       cv && sentinel && sameReg(table, 599, cv, sentinel) === false,
+       JSON.stringify({ cv: cv && cv.region, sentinel: sentinel && sentinel.region }));
+    ok('but the directed answer still offers the way that works',
+       directed(599, 2, 589) === true);
+
+    // The whole journey, both ways, with every crossing checked rather than fallen back on.
+    const out = fp(realMap, 50, 39, { transitOk: directed });
+    const home = fp(realMap, 39, 50, { transitOk: directed });
+    ok('Tos reaches Upstairs in Castle Victoria with every crossing checked',
+       out.found && out.transit_checked === true, JSON.stringify({ found: out.found }));
+    ok('and Castle Victoria gets home with every crossing checked',
+       home.found && home.transit_checked === true, JSON.stringify({ found: home.found }));
+    // THE TWO ROUTES ARE NOT THE SAME, and that is the point rather than a curiosity.
+    const rooms = p => [...p.hops.map(h => h.to)].join(',');
+    ok('and the way home is a DIFFERENT route from the way out',
+       rooms(out) !== rooms(home), rooms(out) + '  vs  ' + rooms(home));
+    ok('out goes by the Cragged Mountains', rooms(out).includes('598'), rooms(out));
+    ok('home goes by Under the shadow of the Sentinel', rooms(home).includes('589'), rooms(home));
+  }
+}
+
+// A jump is downhill, over a real gap, and only where the walk cannot go.
+{
+  const realMap = existsSync(join('substrate', 'm59-map.json')) ? await loadMap() : null;
+  const raw = realMap?.rooms?.['578'] ?? realMap?.rooms?.[578];
+  const g = raw ? RoomGeometry.fromJSON(raw.roo ?? raw) : null;
+  if (!g?.collisionReady) {
+    skip('a fall is offered only downhill, over a gap, where the walk cannot go', 'no geometry');
+  } else {
+    const fl = (r, c) => { const p = g.standPoint(r, c);
+      return p ? g.floorBaseAtClient(p.x, p.y, g.leafAtClient(p.x, p.y)) : null; };
+    let edges = 0, uphill = 0, alreadyWalkable = 0;
+    for (let r = 1; r <= g.rows; r++) for (let c = 1; c <= g.cols; c++) {
+      if (!g.standable(r, c)) continue;
+      for (const f of g.fallTargets(r, c)) {
+        edges++;
+        if (fl(f.row, f.col) > fl(r, c)) uphill++;
+        // one square at a time along the same line must NOT already work
+        let at = { r, c }, walk = true;
+        const dr = Math.sign(f.row - r), dc = Math.sign(f.col - c);
+        for (let k = 1; k <= f.distance && walk; k++) {
+          const nr = r + dr * k, nc = c + dc * k;
+          if (!g.moverStepLands(at.r, at.c, nr, nc)) walk = false;
+          at = { r: nr, c: nc };
+        }
+        if (walk) alreadyWalkable++;
+      }
+    }
+    ok(`the Cragged Mountains offer falls at all (${edges})`, edges > 0);
+    ok('and not one of them is uphill — gravity is the whole mechanism', uphill === 0,
+       `${uphill} uphill`);
+    ok('and not one of them is ground the walk could already cover', alreadyWalkable === 0,
+       `${alreadyWalkable} already walkable`);
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
 process.exit(failed ? 1 : 0);

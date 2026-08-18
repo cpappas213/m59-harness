@@ -25,7 +25,7 @@ import { inRegion } from './m59-codeexits.mjs';
 import { affordances, OF, isTeleporter, KOD_FINENESS } from './m59-parse.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { observedCrossings } from './m59-crossings.mjs';
-import { activeRoutes, anchorFor, sameRegion } from './m59-routes.mjs';
+import { activeRoutes, anchorFor, sameRegion, bakedPath } from './m59-routes.mjs';
 
 // Marks used on the minimap. Chosen so the picture stays readable in a terminal and
 // so the important things are the ones that stand out: you, then players, then
@@ -933,6 +933,20 @@ export class World {
       const inA = anchorFor(table, room, cameFrom);
       const outA = anchorFor(table, room, goingTo);
       if (!inA || !outA) return null;
+      // DIRECTED, BECAUSE THE QUESTION IS. `sameRegion` asks whether two doors are in the
+      // same strongly connected component — whether each can reach the OTHER — and that is
+      // a stricter thing than "can I get from the door I came in by to the one I want".
+      // Where a room contains a one-way drop the two answers differ, and the mutual one is
+      // wrong in the direction that matters: measured in Ukgoth, the Castle Victoria door
+      // reaches the Sentinel door in 136 steps while the reverse has no route at all, so
+      // the components differ and `sameRegion` refused a transit the fleet makes.
+      //
+      // The bake already holds the directed answer. `bakedPath` is one BFS per anchor
+      // square, written per ORDERED pair, so a route in the table is a route in that
+      // direction. Absent, fall through to the component test rather than to nothing: for
+      // a pair the bake never covered, mutual reachability is still evidence, and `null`
+      // still means carry on.
+      if (bakedPath(table, room, inA, outA)) return true;
       return sameRegion(table, room, inA, outA);
     };
   }

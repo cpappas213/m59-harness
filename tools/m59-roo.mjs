@@ -98,6 +98,9 @@ export const heightClientToKod = h => h >> (LOG_CLIENT_FINENESS - LOG_KOD_FINENE
 // for us it does not exist, and we will walk up cliffs.
 export const MAX_STEP_HEIGHT_KOD = 24;
 export const MAX_STEP_HEIGHT = heightKodToClient(MAX_STEP_HEIGHT_KOD);   // 384 client units
+// How far a body may carry across a gap. Three squares is the operator's Cragged Mountains
+// crossing with room to spare; more would start inventing traversals nobody has walked.
+export const FALL_MAX_SQUARES = Number(process.env.M59_FALL_MAX_SQUARES || 3);
 
 // clientd3d/draw3d.c:80 — how far a wading sector sinks you, indexed by the sector's
 // two depth bits. This matters to movement and not just to drawing: standing in water
@@ -934,6 +937,23 @@ export class RoomGeometry {
     motionZ = null,
     // ON. See the refusal it controls, and STEP_MASK_VERSION 4.
     enforceStepHeight = true,
+    // A BODY IN THE AIR, WHICH IS A DIFFERENT TRAVERSAL FROM A WALK.
+    //
+    // OFF BY DEFAULT AND IT MUST STAY THAT WAY. Everything about walking is pinned by 182
+    // collision assertions and 122 refusals, several of them specifically about the body
+    // keeping its physical z downhill and being blocked by a low overhang. Making this the
+    // default was tried and it moved which WALL refuses a checked-in trace, which is the
+    // one thing m59-impossible-test exists to catch. So a fall is asked for explicitly, by
+    // the only thing that has any business asking: `fallTargets`.
+    //
+    // What it changes is one line of bookkeeping. Walking, the carried z follows the floor
+    // in BOTH directions, so crossing a gully tests the walls at the bottom of it. Falling,
+    // the body keeps the height it left with — that is what being in the air means — so the
+    // walls it sails over are tested against a body above them. The operator's account of
+    // the Cragged Mountains: the ground goes HIGH, LOW, MEDIUM, and a player runs off the
+    // high side and lands on the medium side without ever standing on the low one. "The
+    // player isn't walking from below, it's falling from above."
+    fall = false,
   } = {}) {
     if (!this.collisionReady) return {
       available: false, moved: false, blocked: true, x: x0, y: y0,
@@ -1058,10 +1078,13 @@ export class RoomGeometry {
           break;
         }
       }
-      if (Number.isFinite(floor)) carriedMotionZ = {
-        min: Math.min(carriedMotionZ.min, floor),
-        max: Math.max(carriedMotionZ.max, floor),
-      };
+      if (Number.isFinite(floor)) carriedMotionZ = fall
+        // Airborne: the height only ever RISES to meet higher ground. Ground below the
+        // body is passed over, not stood on, so it may not pull the tested z down with it.
+        ? { min: Math.max(carriedMotionZ.min, Math.min(floor, carriedMotionZ.max)),
+            max: Math.max(carriedMotionZ.max, floor) }
+        : { min: Math.min(carriedMotionZ.min, floor),
+            max: Math.max(carriedMotionZ.max, floor) };
       if (resolved.stop) break;
     }
     const moved = Math.hypot(at.x - x0, at.y - y0) > GEOMETRY_EPSILON;
@@ -1759,6 +1782,90 @@ export class RoomGeometry {
   // character. Prefer the baked mask (`attachStepMask`) where there is one — the cold cost
   // of filling this cache for a whole big room is seconds, which is exactly what stopped
   // the event loop the first time collision-aware routing shipped.
+  /**
+   * Squares this one can be JUMPED to — reached by running off an edge and landing
+   * further on, over ground too low to walk out of.
+   *
+   * THE ROUTER PLANS IN SINGLE SQUARES AND A JUMP IS NOT ONE. Walked square by square the
+   * Cragged Mountains crossing decomposes into HIGH -> LOW (a drop, allowed) and then
+   * LOW -> MEDIUM (a climb of well over `MAX_STEP_HEIGHT`, refused), so the router
+   * concludes the crossing is impossible. It is not: the player never stands on the LOW
+   * square. In the operator's words, "the player isn't walking from below, it's falling
+   * from above". Measured in room 598, 156 such triples exist and the walk refuses every
+   * one of them; that room is the only way in and out of Castle Victoria, and a fleet sent
+   * there stopped at The Twisted Wood and tried the same refused boundary seven times.
+   *
+   * FOUR CONDITIONS, AND EACH ONE IS LOAD-BEARING:
+   *
+   *   * DOWNHILL ONLY. The landing floor may not be above the take-off floor. This is the
+   *     line between a fall, which gravity gives you, and a climb, which it does not — and
+   *     without it this would re-open every cliff `enforceStepHeight` exists to close.
+   *   * OVER A REAL GAP. Some square between the two must be lower than BOTH ends by more
+   *     than `MAX_STEP_HEIGHT`. That is what makes it a jump rather than a slope, and it is
+   *     why this cannot quietly become a way to skip along ordinary ground.
+   *   * NOT ALREADY WALKABLE. If the square-by-square route exists, the walker should take
+   *     it; a jump is strictly a last resort and never a shortcut.
+   *   * AND THE BODY HAS TO ARRIVE. The fall trace has to land IN the target square, which
+   *     is the same question `moverStepLands` asks of a step.
+   *
+   * DIRECTED, and deliberately: falling off a ledge does not give you a way back up. The
+   * regions in the bake are strongly connected components, so a one-way fall shows up as
+   * exactly that — which is what keeps `transitOk` honest about a return leg that does not
+   * exist.
+   */
+  fallTargets(row, col, { maxDistance = FALL_MAX_SQUARES } = {}) {
+    if (!this.collisionReady || !this.standable(row, col)) return [];
+    const cache = (this._fallCache ??= new Map());
+    const ck = `${row},${col}`;
+    const hit = cache.get(ck);
+    if (hit) return hit;
+    const floorAt = (r, c) => {
+      const p = this.standPoint(r, c);
+      if (!p) return null;
+      const f = this.floorBaseAtClient(p.x, p.y, this.leafAtClient(p.x, p.y));
+      return Number.isFinite(f) ? f : null;
+    };
+    const from = this.standPoint(row, col);
+    const startFloor = floorAt(row, col);
+    const out = [];
+    if (from && startFloor != null) {
+      for (const d of DIRS) {
+        for (let dist = 2; dist <= maxDistance; dist++) {
+          const tr = row + d.dr * dist, tc = col + d.dc * dist;
+          if (!this.inBounds(tr, tc) || !this.standable(tr, tc)) continue;
+          const landFloor = floorAt(tr, tc);
+          if (landFloor == null || landFloor > startFloor) continue;      // downhill only
+          // a real gap under the flight path
+          let gap = false;
+          for (let k = 1; k < dist; k++) {
+            const gr = row + d.dr * k, gc = col + d.dc * k;
+            const gf = this.inBounds(gr, gc) ? floorAt(gr, gc) : null;
+            if (gf == null) { gap = true; break; }                        // no floor at all
+            if (startFloor - gf > MAX_STEP_HEIGHT && landFloor - gf > MAX_STEP_HEIGHT) gap = true;
+          }
+          if (!gap) continue;
+          // already walkable, square by square? then this is not a jump.
+          let walkable = true, at = { r: row, c: col };
+          for (let k = 1; k <= dist && walkable; k++) {
+            const nr = row + d.dr * k, nc = col + d.dc * k;
+            if (!this.moverStepLands(at.r, at.c, nr, nc)) walkable = false;
+            at = { r: nr, c: nc };
+          }
+          if (walkable) continue;
+          const to = this.standPoint(tr, tc);
+          if (!to) continue;
+          const t = this.traceFineMoveClient(from.x, from.y, to.x, to.y, { slide: false, fall: true });
+          if (!t?.available || !t.arrived) continue;
+          out.push({ row: tr, col: tc, dir: d.name, distance: dist,
+                     drop: startFloor - landFloor, fall: true });
+          break;                        // the nearest landing in this direction is enough
+        }
+      }
+    }
+    cache.set(ck, out);
+    return out;
+  }
+
   moverStepLands(fromRow, fromCol, toRow, toCol) {
     if (!this.collisionReady || typeof this.traceFineMoveClient !== 'function') return true;
     // `standable`, not `walkable` — see standable(). The coarse grid is a SERVER artifact
@@ -1937,6 +2044,23 @@ export class RoomGeometry {
       // The mover's own answer, last because it is the expensive one.
       if (collision && !isGoal && !this.moverStepLands(row, col, r, c)) continue;
       out.push({ row: r, col: c, dir: d.name, diagonal: d.dr !== 0 && d.dc !== 0 });
+    }
+    // AND THE JUMPS. See fallTargets: a crossing the walk decomposes into a drop and then
+    // an impossible climb is one a body makes in the air, in one move, without ever
+    // standing on the low ground between. Offered only in the COLLISION view, because that
+    // is the only view that knows how high anything is — on the coarse grid a fall is
+    // indistinguishable from a walk and needs no help.
+    //
+    // A refused EDGE still refuses. `blockedEdges` is a step we asked for and were told no
+    // about, and that answer is about the two squares, not about how we meant to travel
+    // between them.
+    if (collision && this.collisionReady) {
+      for (const f of this.fallTargets(row, col)) {
+        if (blockedEdges?.size && blockedEdges.has(`${row},${col}>${f.row},${f.col}`)) continue;
+        if (out.some(o => o.row === f.row && o.col === f.col)) continue;
+        out.push({ row: f.row, col: f.col, dir: f.dir, diagonal: false,
+                   fall: true, distance: f.distance });
+      }
     }
     return out;
   }
@@ -2250,7 +2374,12 @@ export class RoomGeometry {
         // a tight square would price the fleet out of the one move that keeps it alive.
         // It shapes which way we go, never where we may go.
         const atGoal = n.row === toRow && n.col === toCol;
-        const cost = (gScore.get(ck) ?? Infinity) + (n.diagonal ? 1.4142 : 1)
+        // A JUMP COVERS SEVERAL SQUARES AND MUST BE PRICED FOR THEM. Charged as one step it
+        // would be the cheapest move on the board and the router would look for cliffs to
+        // throw itself off; charged by its distance it competes with the walk on honest
+        // terms and wins only where the walk cannot go at all.
+        const cost = (gScore.get(ck) ?? Infinity)
+                   + (n.fall ? (n.distance ?? 2) : n.diagonal ? 1.4142 : 1)
                    + (threatCost ? threatCost(n.row, n.col) : 0)
                    + (clearanceCost && !atGoal ? clearanceCost(n.row, n.col) : 0);
         if (cost >= (gScore.get(nk) ?? Infinity)) continue;
