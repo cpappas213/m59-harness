@@ -59,7 +59,7 @@
 // checked map with its own manifest; this is derived from it and regenerable, and mixing
 // the two would mean rebaking geometry to change a routing decision.
 
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadMap, edgeCandidatesOf } from './m59-map.mjs';
@@ -447,6 +447,104 @@ export function bakeRoom(room, { collision = true } = {}) {
   };
 }
 
+
+/**
+ * The order to bake rooms in: the ones the fleet actually stands in, first.
+ *
+ * A PARTIAL TABLE IS USEFUL IN PROPORTION TO WHICH ROOMS ARE IN IT, and until now the
+ * order was `Object.values(map.rooms)`, i.e. whatever the map happened to list. That makes
+ * the first twenty minutes of a bake worth almost nothing to a running fleet, because the
+ * rooms it walks are scattered through the file. Rooms without a mask degrade individually
+ * to the coarse grid, so an interrupted bake in this order is a table that already covers
+ * the routes anybody is on.
+ *
+ * Three tiers, and the third is why islands sort last:
+ *
+ *   1. VISITED, by how often. `substrate/history/` records a room NAME on every sample and
+ *      event — 110 distinct rooms across this machine's records, from 22,722 samples in
+ *      Upstairs in Castle Victoria down to single figures. Walk logs add the operator's own
+ *      rooms by object id.
+ *   2. NEAR something visited, by hop distance over the room graph. A room one door from
+ *      the fleet's ground is a room the fleet is one decision away from entering.
+ *   3. Everything else, in map order.
+ *
+ * A NAME IS NOT A ROOM AND TWO ROOMS SHARE A NAME. "The King's Way" is 575 and 576; "The
+ * Cragged Mountains" is 578 and 598. Both get the credit, which is right for an ordering —
+ * the cost of baking one room early is nothing, and resolving the ambiguity would need
+ * per-sample coordinates the history does not carry.
+ *
+ * Ordering only. It never drops a room, so the finished table is identical either way.
+ */
+export function bakeOrder(map, { historyDir = null, walksDir = null } = {}) {
+  const byName = new Map();
+  for (const r of Object.values(map.rooms)) {
+    const k = String(r?.name ?? '').trim().toLowerCase();
+    if (!k) continue;
+    if (!byName.has(k)) byName.set(k, []);
+    byName.get(k).push(Number(r.num));
+  }
+  const visits = new Map();
+  const bump = (num, n) => visits.set(num, (visits.get(num) ?? 0) + n);
+
+  const hist = historyDir ?? join(REPO, 'substrate', 'history');
+  const walk = (dir, depth = 0) => {
+    let entries = [];
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) { if (depth < 2) walk(full, depth + 1); continue; }
+      if (!e.name.endsWith('.jsonl')) continue;
+      let text = '';
+      try { text = readFileSync(full, 'utf8'); } catch { continue; }
+      for (const m of text.matchAll(/"room":"([^"]*)"/g))
+        for (const num of byName.get(m[1].trim().toLowerCase()) ?? []) bump(num, 1);
+    }
+  };
+  walk(hist);
+
+  // The operator's own recorded walks, which name rooms by the SERVER's object id.
+  const byObj = new Map();
+  for (const r of Object.values(map.rooms)) if (r?.objId) byObj.set(r.objId, Number(r.num));
+  const wdir = walksDir ?? join(REPO, 'substrate', 'walks');
+  try {
+    for (const f of readdirSync(wdir)) {
+      if (!f.endsWith('.jsonl')) continue;
+      for (const m of readFileSync(join(wdir, f), 'utf8').matchAll(/"room":(\d+)/g)) {
+        const num = byObj.get(Number(m[1]));
+        if (num != null) bump(num, 1);
+      }
+    }
+  } catch { /* no walk logs is not an error */ }
+
+  // Hop distance from the visited set, over whatever exits the map declares.
+  const neighbours = num => {
+    const r = map.rooms[String(num)];
+    const out = new Set();
+    for (const e of r?.edgeExits ?? []) if (e?.to != null) out.add(Number(e.to));
+    for (const e of r?.goExits ?? []) if (e?.to != null && Number(e.to) > 0) out.add(Number(e.to));
+    return [...out];
+  };
+  const dist = new Map();
+  let frontier = [...visits.keys()];
+  for (const n of frontier) dist.set(n, 0);
+  for (let d = 1; frontier.length && d <= 12; d++) {
+    const next = [];
+    for (const n of frontier)
+      for (const m of neighbours(n))
+        if (!dist.has(m)) { dist.set(m, d); next.push(m); }
+    frontier = next;
+  }
+
+  return { visits, dist,
+    compare: (a, b) => {
+      const va = visits.get(Number(a.num)) ?? 0, vb = visits.get(Number(b.num)) ?? 0;
+      if (va !== vb) return vb - va;                       // most-visited first
+      const da = dist.get(Number(a.num)) ?? 99, db = dist.get(Number(b.num)) ?? 99;
+      if (da !== db) return da - db;                       // then nearest to somewhere visited
+      return Number(a.num) - Number(b.num);                // then stable
+    } };
+}
+
 // ---------------------------------------------------------------------------- CLI
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   const argv = process.argv.slice(2);
@@ -461,6 +559,10 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   const manifest = map.geometryManifestSha256 ?? null;
   const rooms = Object.values(map.rooms)
     .filter(r => r?.roo && (!only || only.includes(Number(r.num))));
+  // MOST-WALKED FIRST — see bakeOrder. A bake that is interrupted, or read while still
+  // running, then covers the rooms the fleet is actually in rather than a scatter.
+  const order = bakeOrder(map);
+  rooms.sort(order.compare);
 
   // THIRTEEN MINUTES THAT USED TO BE ALL-OR-NOTHING. The whole table was one write after
   // the loop, so a Ctrl-C, a reboot or an OOM at room 250 of 264 produced nothing at all

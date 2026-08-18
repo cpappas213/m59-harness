@@ -1347,6 +1347,29 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
   setAnimation({ kind: 'BP_SECTOR_MOVE', at: Date.now() });
   ok('a record with no expiry still blocks, because unknown is not finished',
      tryMove().reason === 'collision_geometry_changed');
+
+  // AND IT BLOCKS THE SECTOR THAT MOVED, NOT THE ROOM. Bounding the refusal in TIME only
+  // helps while animations are rare. The Temple of Qor door in room 598 cycles faster than
+  // the 8s window, so every packet re-armed the block and the bound never expired — the
+  // fleet's own name for that room is THE exception to "the geometry does not change".
+  // One sector moved; the walls are still where the bake says, which this file already
+  // says out loud. So a move that neither starts nor ends in that sector may proceed.
+  const liveSector = animating.session.world.geometry.leafAtClient(3072, 2048)?.sectorNum;
+  ok('the fixture has a sector to name', Number.isInteger(liveSector), String(liveSector));
+  setAnimation({ kind: 'BP_SECTOR_MOVE', sector: liveSector,
+                 at: Date.now(), until: Date.now() + 10_000 });
+  ok('a move INTO the animating sector is still refused',
+     tryMove().reason === 'collision_geometry_changed');
+  setAnimation({ kind: 'BP_SECTOR_MOVE', sector: (liveSector ?? 0) + 1000,
+                 at: Date.now(), until: Date.now() + 10_000 });
+  ok('a move that never touches the animating sector is ALLOWED — the room is not a cage',
+     tryMove().reason !== 'collision_geometry_changed', JSON.stringify(tryMove()));
+  // Unknown which sector is unknown, and unknown fails closed exactly as a missing expiry
+  // does. A short packet must not quietly widen what may move.
+  setAnimation({ kind: 'BP_SECTOR_MOVE', sector: null,
+                 at: Date.now(), until: Date.now() + 10_000 });
+  ok('a record that cannot name its sector still blocks the whole room',
+     tryMove().reason === 'collision_geometry_changed');
   setAnimation(null);
 
   const mismatch = fakeBrokerSession(twoSides(), { roomSecurity: TEST_SECURITY ^ 1 });

@@ -2730,13 +2730,45 @@ class Session {
     //
     // Pure on purpose: m59-collision-test lifts this method out by text, so this may use
     // nothing but `this`, the injected dependencies and built-ins.
+    // AND SCOPED TO THE SECTOR THAT MOVED, WHICH IS THE SECOND HALF OF THE SAME FIX.
+    //
+    // Bounding the refusal in TIME stopped a room being a permanent cage only while the
+    // animation is rare. The Temple of Qor door in room 598 cycles faster than the 8s
+    // window, so every packet re-armed the block and the bound never expired: reproduced
+    // with the character claimed so nothing else could steer it, six attempts across
+    // seventy seconds, never moved one square. The operator had already named that room as
+    // THE exception to "the geometry does not change day to day".
+    //
+    // The refusal was always wider than its own justification. This file's note says it:
+    // after the animation "the walls are still where the bake says — only sector HEIGHTS
+    // can have shifted". One sector moved; the rest of the room is exactly as baked. So
+    // refuse a move that STARTS OR ENDS in that sector, and let the rest of the room walk.
+    //
+    // `sector` absent means we could not tell which — a short packet, or a wall program
+    // rather than a sector one — and that reads as "we do not know", so the whole room is
+    // still refused. Same safe reading `until == null` already gets.
     const invalidated = c.room.collisionInvalidated;
-    if (invalidated && (invalidated.until == null || Date.now() < invalidated.until)) return {
-      available: false, moved: false, blocked: true,
-      reason: 'collision_geometry_changed',
-      note: `${invalidated.kind} changed live room geometry; movement is fail-closed ` +
-            'until that animation finishes or the room is re-entered',
-    };
+    if (invalidated && (invalidated.until == null || Date.now() < invalidated.until)) {
+      let touches = true;
+      if (Number.isInteger(invalidated.sector) && typeof geo.leafAtClient === 'function') {
+        const scale0 = CLIENT_FINENESS / KOD_FINENESS;
+        const wx = Number.isFinite(me.x) ? me.x : me.col * KOD_FINENESS + (KOD_FINENESS >> 1);
+        const wy = Number.isFinite(me.y) ? me.y : me.row * KOD_FINENESS + (KOD_FINENESS >> 1);
+        const inSector = (cx, cy) => {
+          const leaf = geo.leafAtClient(cx, cy);
+          return leaf != null && leaf.sectorNum === invalidated.sector;
+        };
+        touches = inSector((wx - KOD_FINENESS) * scale0, (wy - KOD_FINENESS) * scale0)
+               || inSector((x - KOD_FINENESS) * scale0, (y - KOD_FINENESS) * scale0);
+      }
+      if (touches) return {
+        available: false, moved: false, blocked: true,
+        reason: 'collision_geometry_changed',
+        note: `${invalidated.kind} changed live room geometry` +
+              (Number.isInteger(invalidated.sector) ? ` in sector ${invalidated.sector}` : '') +
+              '; movement is fail-closed until that animation finishes or the room is re-entered',
+      };
+    }
     const roomSecurity = c.room.security;
     if (!Number.isInteger(roomSecurity) || !Number.isInteger(geo.security)) return {
       available: false, moved: false, blocked: true, reason: 'room_security_unknown',
