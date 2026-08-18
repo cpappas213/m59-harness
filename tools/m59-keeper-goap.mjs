@@ -148,7 +148,20 @@ export class GOAPKeeper {
     // moveToSquare commands toward and PAST the room boundary.
     // The server clips movement to the wall and triggers the
     // room change when the character crosses an edge opening.
-    const bruteResult = await this._bruteForceExit(to);
+    //
+    // The brute force exit needs the NEXT room (first hop), not
+    // the final destination. The broker's travel() routes multi-hop
+    // and fails on the first hop, so we need to find what that
+    // first hop is.
+    let nextHop = to;
+    try {
+      const { loadMap, findPath } = await import('./m59-map.mjs');
+      const map = loadMap();
+      const p = findPath(map, here, to);
+      if (p?.found && p.hops?.length > 1)
+        nextHop = p.hops[0].to;
+    } catch {}
+    const bruteResult = await this._bruteForceExit(nextHop);
     if (bruteResult?.sent)
       return bruteResult;
 
