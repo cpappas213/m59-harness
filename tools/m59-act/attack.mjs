@@ -89,3 +89,26 @@ export async function attack(client, session, { targetId, waitMs = SWING_MS } = 
 attack.pre     = ['armed', 'has_target', 'in_reach', 'target_in_band'];
 attack.effects = ['!has_target'];
 attack.atomic  = 'attack';
+
+// ---------------------------------------------------------------------------
+// BINDING -- which target. See m59-act/equip.mjs for why this is not plan-time.
+// ---------------------------------------------------------------------------
+//
+// THE TARGET COMES FROM THE WORLD STATE, NOT FROM A SECOND SEARCH. `has_target`,
+// `in_reach` and `target_in_band` are all produced from `ws._targetId`. Choosing a
+// different creature here would let the planner check the engagement ceiling against
+// one and swing at another -- the ceiling failing open, which is the one this
+// repository says kills somebody. So the id is taken from the same ws the
+// preconditions were evaluated against, and if there is none this refuses rather
+// than picking something.
+export function attackOf(ws = {}) {
+  const run = (client, session, args = {}) => {
+    const id = ws?._targetId;
+    if (id == null) return { sent: false, reason: 'no target in the world state' };
+    return attack(client, session, { ...args, targetId: id });
+  };
+  run.pre     = attack.pre;
+  run.effects = attack.effects;
+  run.atomic  = 'attack';
+  return run;
+}

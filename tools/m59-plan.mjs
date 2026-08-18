@@ -31,13 +31,13 @@ import { evaluate, unknowns, validateAll } from './m59-worldstate.mjs';
 import { plan as astar } from './m59-goap-planner.mjs';
 import { costOf } from './m59-cost.mjs';
 
-import { attack }        from './m59-act/attack.mjs';
+import { attack, attackOf }       from './m59-act/attack.mjs';
 import { step }          from './m59-act/step.mjs';
-import { equip }         from './m59-act/equip.mjs';
+import { equipBest }              from './m59-act/equip.mjs';
 import { rest, stand }   from './m59-act/rest.mjs';
-import { eat }           from './m59-act/eat.mjs';
+import { eatSomething }           from './m59-act/eat.mjs';
 import { buy }           from './m59-act/buy.mjs';
-import { sell }          from './m59-act/sell.mjs';
+import { sellOf }                 from './m59-act/sell.mjs';
 import { pickUp as pickup } from './m59-act/pickup.mjs';
 import { drop }          from './m59-act/drop.mjs';
 import { deposit, withdraw } from './m59-act/bank.mjs';
@@ -54,7 +54,19 @@ import { groundedCasts } from './m59-act/cast.mjs';
 // (has_money, at_shop) that let the planner reason about WHEN to use them.
 // The per-item specifics (which item, which merchant) are handled inside the
 // atomic; the planner only decides that buying is the right KIND of action.
-const ALWAYS = [attack, equip, rest, stand, eat, buy, sell];
+// EVERY ACTION IN THE SET BINDS ITS OWN TARGET. `stepPlan` calls a step with no args
+// -- a plan is a sequence of symbols, not of object ids -- so an atomic that requires
+// an id refused `{sent:false, reason:'no item'}` on every call while remaining a
+// perfectly attractive step to the planner. Live: 1,105 consecutive passes, all
+// ACTION=equip, on a character holding a mace it never put in its hand.
+//
+// The bound forms resolve their target AT EXECUTION TIME, against the pack and room as
+// they are by then -- never at plan time, because the object a step needs is often made
+// by an earlier step (`cast create food -> eat` is the canonical one) and an action that
+// vanishes when the pack is empty cannot be sequenced after the thing that fills it.
+// What makes an impossible action impossible is its PRECONDITION; that is what `pre`
+// is for.
+const ALWAYS = [rest, stand, buy, equipBest, eatSomething];
 
 /**
  * actionsFor(client) -> [action]
@@ -63,8 +75,16 @@ const ALWAYS = [attack, equip, rest, stand, eat, buy, sell];
  * `pre`, `effects`, `atomic`, and `node` (the callable), which is the shape
  * m59-goap-planner expects.
  */
-export function actionsFor(client, { extra = [], costCtx = {} } = {}) {
-  const all = [...ALWAYS, ...groundedCasts(client), ...extra];
+export function actionsFor(client, { extra = [], costCtx = {}, ws = {}, isTrusted = null } = {}) {
+  const all = [
+    ...ALWAYS,
+    // attack takes its id from the SAME ws the ceiling was checked against, and sell
+    // needs the caller's trusted-buyer test -- neither has a safe default.
+    attackOf(ws),
+    sellOf({ isTrusted }),
+    ...groundedCasts(client),
+    ...extra,
+  ];
   return all.map(fn => ({
     name: fn.atomic,
     pre: fn.pre ?? [],
@@ -91,14 +111,19 @@ export function actionsFor(client, { extra = [], costCtx = {} } = {}) {
  * is invisible: it looks exactly like a confident one. Callers should surface it.
  */
 export function planFor(client, goal, { session = null, policy = {}, agent = null,
-                                        ws: wsIn = null, extra = [], costCtx = {} } = {}) {
-  const actions  = actionsFor(client, { extra, costCtx });
+                                        ws: wsIn = null, extra = [], costCtx = {},
+                                        isTrusted = null } = {}) {
+  // WORLD STATE IS READ BEFORE THE ACTION SET IS BUILT, and the order matters: the
+  // target `attack` grounds on is `ws._targetId`, the same one `in_reach` and
+  // `target_in_band` are produced from. Building actions first meant grounding against
+  // a target the ceiling had not been checked against.
+  const ctx = { client, session, policy, agent, ws: wsIn ?? {} };
+  const ws  = { ...evaluate(ctx), ...(wsIn ?? {}) };
+
+  const actions  = actionsFor(client, { extra, costCtx, ws, isTrusted });
   const problems = validateAll(actions);
   if (problems.length)
     return { found: false, problems, reason: 'the action set names symbols nothing produces' };
-
-  const ctx = { client, session, policy, agent, ws: wsIn ?? {} };
-  const ws  = { ...evaluate(ctx), ...(wsIn ?? {}) };
 
   const out = astar(actions, ws, goal);
   // astar returns `steps` as the collected `node`s; map back to names so a caller
@@ -124,9 +149,36 @@ export function planFor(client, goal, { session = null, policy = {}, agent = nul
  * unbounded await the atomics were built to avoid, and 82% of deaths in this fleet
  * happened while the keeper was blind inside one.
  */
+/**
+ * DID THE WORLD ACTUALLY MOVE? One definition, here, because the caller that had its
+ * own got it exactly backwards.
+ *
+ * m59-keeper-goap.mjs read `result.sent` off the WRAPPER stepPlan returns, where the
+ * atomic's own answer is nested under `.result`. `undefined !== false` is true, so
+ * every refusal in the world read as a success -- and the keeper then called
+ * `progress()` on it, which satisfied the stall detector. That is how a character
+ * repeated one impossible step 1,105 times while every instrument reported it healthy.
+ *
+ * The atomics are honest and say so in four different words depending on what they do:
+ * `sent:false` is "I did not even send it", `changed:false` is "I sent it and the
+ * server declined out loud" (equip's use list not moving), and buy/sell report
+ * `bought`/`sold`. ANY of them being explicitly false is a refusal. Nothing here
+ * guesses: a field that is absent is not evidence of anything and is ignored.
+ */
+export function didAct(result) {
+  if (!result || typeof result !== 'object') return false;
+  for (const k of ['sent', 'changed', 'bought', 'sold'])
+    if (result[k] === false) return false;
+  return true;
+}
+
 export async function stepPlan(client, session, planned, { index = 0, args = {} } = {}) {
   const node = planned?.steps?.[index];
-  if (!node) return { done: true, index };
+  if (!node) return { done: true, index, acted: false, result: null, reason: 'plan exhausted' };
   const result = await node(client, session, args);
-  return { done: false, index: index + 1, action: node.atomic ?? null, result };
+  // `acted` and `reason` are hoisted onto the wrapper deliberately. The nesting is
+  // what the caller got wrong, and a caller that has to reach two levels down to find
+  // out whether anything happened is a caller that will one day forget to.
+  return { done: false, index: index + 1, action: node.atomic ?? null, result,
+           acted: didAct(result), reason: result?.reason ?? null };
 }

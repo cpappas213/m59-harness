@@ -97,3 +97,43 @@ sell.pre     = ['at_shop'];  // need a merchant in the room to sell to
 sell.effects = ['has_money'];  // selling produces money (coarse gate)
 sell.atomic  = 'sell';
 sell.mutates = true;  // sends mutation packets (BP_REQ_OFFER + BP_ACCEPT_OFFER);
+
+// ---------------------------------------------------------------------------
+// BINDING -- which merchant, and which item. See m59-act/equip.mjs.
+// ---------------------------------------------------------------------------
+//
+// SELLING IS AN ALLOWLIST, NOT A CHECK, and that rule outranks anything visible on the
+// wire: `buys_anything` is true for the bankers, and Skivlat takes what you hand him,
+// says thank you and gives nothing back. Nothing in a room object distinguishes a
+// market from that. So an `isTrusted` predicate is REQUIRED to sell to anybody, there
+// is deliberately no permissive default, and with none supplied this refuses --
+// being wrong about a buyer costs the whole pack, being wrong about a walk costs a walk.
+export function pickSale(client, isTrusted) {
+  const objects = client?.room?.objects;
+  const list = objects instanceof Map ? [...objects.values()]
+             : Array.isArray(objects) ? objects : [];
+  const nameOf = (o) => String(o?.name ?? client?.rsc?.get?.(o?.nameRsc) ?? '');
+  if (typeof isTrusted !== 'function') return { why: 'no trusted-buyer test supplied' };
+
+  const merchant = list.find(o => (o.can ?? []).includes('buy') && isTrusted(nameOf(o), o));
+  if (!merchant?.id) return { why: 'no trusted buyer in this room' };
+
+  const inv = client?.inventory;
+  const item = (Array.isArray(inv) ? inv : [])
+    .find(o => o?.id != null && !/shilling|gold|silver|copper/i.test(nameOf(o)));
+  if (!item) return { why: 'nothing in the pack worth offering' };
+  return { merchant, item };
+}
+
+export function sellOf({ isTrusted = null } = {}) {
+  const run = (client, session, args = {}) => {
+    const { merchant, item, why } = pickSale(client, isTrusted);
+    if (!merchant) return { sent: false, sold: null, price: null, reason: why };
+    return sell(client, session, { ...args, merchantId: merchant.id, itemId: item.id });
+  };
+  run.pre     = sell.pre;
+  run.effects = sell.effects;
+  run.mutates = sell.mutates;
+  run.atomic  = 'sell';
+  return run;
+}

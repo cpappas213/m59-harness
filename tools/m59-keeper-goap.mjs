@@ -254,25 +254,25 @@ export class GOAPKeeper {
     }
 
     // 4. Execute one step.
-    const step = p.steps[0];
-    if (!step) {
+    if (!p.steps?.length) {
       return { acted: false, action: null, reason: 'plan is empty' };
     }
 
     const result = await stepPlan(c, this.session, p, { index: 0 });
 
-    const actionName = step.action ?? p.names?.[0] ?? 'unknown';
+    const actionName = result.action ?? p.names?.[0] ?? 'unknown';
     this.note('goap step', {
       action: actionName,
-      result: result,
+      result: result.result,
+      acted: result.acted,
       pass: this._passCount,
       plan: p.names ?? [],
     });
-    console.error(`[goap] ${this.policy.agent ?? this.session?.s?.name ?? '?'} pass ${this._passCount} ACTION=${actionName} plan=[${(p.names ?? []).join(' -> ')}] result=${result?.sent !== false ? 'sent' : 'refused: ' + (result?.reason ?? '?')}`);
+    console.error(`[goap] ${this.policy.agent ?? this.session?.s?.name ?? '?'} pass ${this._passCount} ACTION=${actionName} plan=[${(p.names ?? []).join(' -> ')}] ${result.acted ? 'acted' : 'refused: ' + (result.reason ?? '?')}`);
 
     return {
-      acted: result.sent !== false,
-      action: step.action ?? p.names?.[0] ?? 'unknown',
+      acted: result.acted === true,
+      action: actionName,
       reason: result.reason ?? null,
     };
   }

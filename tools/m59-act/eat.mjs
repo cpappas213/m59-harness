@@ -28,6 +28,8 @@
 // vigor boost from food." Cramming is not merely wasteful, it is how you end up
 // full and still tired.
 
+import { FOOD_RE } from '../m59-worldstate.mjs';
+
 /**
  * eat(client, session, { itemId, filling, stomach, waitMs })
  *
@@ -92,3 +94,31 @@ export async function eat(client, session, { itemId, filling = null, stomach = n
 eat.pre     = ['has_food'];
 eat.effects = ['vigor_ok', '!has_food'];
 eat.atomic  = 'eat';
+
+// ---------------------------------------------------------------------------
+// BINDING -- which item, resolved AT EXECUTION TIME. See m59-act/equip.mjs.
+// ---------------------------------------------------------------------------
+//
+// THIS IS THE ONE THAT PROVES THE RULE. The canonical plan is
+// `cast create food -> eat`, and the food does not exist when the plan is made. Bind
+// at plan time and there is no eat action to sequence, so the fleet's whole supply
+// chain becomes unplannable. `eat.pre = ['has_food']` is what keeps it honest.
+//
+// FOOD_RE has ONE home, in m59-worldstate.mjs, where `has_food` is produced from it.
+// A second regex here would let the planner believe it has food by one definition and
+// find none by another.
+export function pickFood(client) {
+  const inv = client?.inventory;
+  if (!Array.isArray(inv) || !inv.length) return null;
+  const nameOf = (o) => String(o?.name ?? client?.rsc?.get?.(o?.nameRsc) ?? '');
+  return inv.find(o => o?.id != null && FOOD_RE.test(nameOf(o))) ?? null;
+}
+
+export const eatSomething = (client, session, args = {}) => {
+  const item = pickFood(client);
+  if (!item) return { sent: false, reason: 'nothing edible in the pack' };
+  return eat(client, session, { ...args, itemId: item.id });
+};
+eatSomething.pre     = eat.pre;
+eatSomething.effects = eat.effects;
+eatSomething.atomic  = 'eat';

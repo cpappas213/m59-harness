@@ -23,6 +23,8 @@
 // a character that intends to be hit zero times. An atomic that picked would be a
 // policy with a socket attached.
 
+import { weaponScore } from '../m59-skills.mjs';
+
 /**
  * equip(client, session, { itemId, off, waitMs })
  *
@@ -74,3 +76,41 @@ export async function equip(client, session, { itemId, off = false, waitMs = 700
 equip.pre     = [];
 equip.effects = ['armed'];
 equip.atomic  = 'equip';
+
+// ---------------------------------------------------------------------------
+// BINDING -- which item, resolved AT EXECUTION TIME.
+// ---------------------------------------------------------------------------
+//
+// THE PLANNER PLANS OVER SYMBOLS AND NOTHING BOUND THE OBJECTS. `equip` sat in the
+// always-available set unbound, stepPlan calls a step with no args, so it correctly
+// refused `{sent:false, reason:'no item'}` on every single call while remaining a
+// perfectly attractive step to the planner. Observed live: 1,105 consecutive passes,
+// every one ACTION=equip, on a character holding a mace it never put in its hand.
+//
+// BINDING AT PLAN TIME IS THE WRONG FIX, and it was tried first: an action that is only
+// in the set when the item is ALREADY in the pack cannot appear after a step that
+// creates it, which breaks `cast create weapon -> equip` and, for eat, breaks the
+// canonical `cast create food -> eat` outright. The precondition is what makes an
+// impossible action absent -- that is what `pre` is FOR -- so binding belongs at the
+// moment the step runs, against the pack as it is by then.
+export function pickWeapon(client, { score = weaponScore } = {}) {
+  const inv = client?.inventory;
+  if (!Array.isArray(inv) || !inv.length) return null;
+  const nameOf = (o) => String(o?.name ?? client?.rsc?.get?.(o?.nameRsc) ?? '');
+  // Already in the server's own use list? Re-`use` is refused with "your hands are too
+  // full" (player.kod:131) -- a refusal, not a step, so it is not a candidate.
+  const eq = client.equipment?.();
+  const held = new Set((eq && eq.known !== false ? eq.equipped || [] : []).map(o => o.id));
+  return inv
+    .filter(o => o?.id != null && !held.has(o.id) && score(nameOf(o)) > 0)
+    .sort((a, b) => score(nameOf(b)) - score(nameOf(a)))[0] ?? null;
+}
+
+export const equipBest = (client, session, args = {}) => {
+  const item = pickWeapon(client);
+  if (!item) return { sent: false, reason: 'no weapon in the pack to equip' };
+  return equip(client, session, { ...args, itemId: item.id });
+};
+equipBest.pre     = equip.pre;
+equipBest.effects = equip.effects;
+equipBest.atomic  = 'equip';
