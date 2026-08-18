@@ -96,12 +96,56 @@ async function call(name, args = {}, timeoutMs = 120000) {
 
 // ---------------------------------------------------------------- the clock
 const HOUR = 3600;
-/** The server's own arithmetic, from system.kod. Seconds in, game hour 0-23 out. */
-export function gameHour(atMs = Date.now()) {
+// THE ARITHMETIC IS RIGHT AND THE EPOCH IS NOT, WHICH IS WHY THIS DEFERS TO AN ANCHOR.
+//
+// `system.kod` really does derive the hour from real time, and the transcription below is
+// faithful — but it is anchored to the Unix epoch, and the SERVER's phase is whatever its
+// own clock was doing when it started. Those agree only by luck.
+//
+// Measured 2026-08-18, and it is not a small drift: this function returned **game hour 10**
+// — "day, the graveyard is empty, opens in 57 minutes" — while `m59-dayclock.mjs`, which is
+// anchored to a shift an operator watched begin, said NIGHT with 30 minutes left. The
+// server settled it: `send object 0 GetHour` answered **23**. A ~54 minute error, in the
+// direction that tells a fleet to stand down during the one window it exists for.
+//
+// So the anchored answer wins when there is one. `m59-dayclock.mjs` owns the anchor and
+// re-anchors whenever the world disagrees with it; this module is a consumer, not a second
+// opinion. The derived form stays as `gameHourDerived` because it is the transcription of
+// the kod and worth keeping honest — and because with no anchor file on a fresh clone it
+// is still the best available guess.
+export function gameHourDerived(atMs = Date.now()) {
   const iTime = Math.floor(atMs / 1000) - 5 * HOUR;
   const iMinutes = Math.floor(((iTime % (2 * HOUR)) + 2 * HOUR) % (2 * HOUR) / 60);
   return Math.floor(iMinutes / 5);
 }
+
+export function gameHour(atMs = Date.now()) {
+  // A game hour is 5 real minutes and the undead window is hours 22-4, i.e. the last 35
+  // minutes of every 120. The anchor names the moment a window OPENED, so the hour is
+  // where `atMs` sits in that cycle — not where the epoch says it sits.
+  const anchor = anchorMs();
+  if (anchor == null) return gameHourDerived(atMs);
+  const CYCLE = 120 * 60_000;
+  const since = ((atMs - anchor) % CYCLE + CYCLE) % CYCLE;
+  // Minute 0 of the cycle is game hour 22 (the window opening); each game hour is 5 min.
+  return (22 + Math.floor(since / (5 * 60_000))) % 24;
+}
+
+/** The observed anchor, or null when nobody has recorded one. */
+function anchorMs() {
+  try {
+    const { readAnchor } = anchorModule ?? {};
+    const a = typeof readAnchor === 'function' ? readAnchor() : null;
+    // The record's field is `night_starts_at`, an ISO string — NOT `at`, and not a number.
+    // Reading the wrong field returns null, which falls silently back to the derived clock
+    // and looks exactly like having no anchor at all. That is how the first version of
+    // this fix shipped inert.
+    const ms = a?.night_starts_at ? Date.parse(a.night_starts_at) : NaN;
+    return Number.isFinite(ms) ? ms : null;
+  } catch { return null; }
+}
+let anchorModule = null;
+try { anchorModule = await import('./m59-dayclock.mjs'); } catch { anchorModule = null; }
 /** tosgrave.kod: spawns when the hour is under 5 or over 21. */
 export const undeadAbroad = (h) => h < 5 || h > 21;
 

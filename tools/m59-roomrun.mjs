@@ -111,6 +111,30 @@ async function board() {
   return m;
 }
 
+// TAKE THE CHARACTER OFF ITS KEEPER FIRST, OR THE KEEPER IS WHAT IS BEING MEASURED.
+//
+// `autopilot action=stop` does not do this: the keeper comes back reporting
+// `running: true` and goes on issuing its own movement, which both steers the runner
+// somewhere else and bumps the movement generation so the test's own travel returns
+// "movement cancelled by a newer command". The first version of this tool left it out and
+// its opening run recorded seven minutes of nothing while the character was quietly walked
+// into a different room entirely.
+//
+// The documented way is a CLAIM on the directional faculties plus a BUSY declaration:
+// the claim says this run owns work and movement for its duration, and busy says an
+// operation is in flight so the unstick round and everything else steps over it. Both are
+// leased and fail back to the keeper, so a crashed test leaves nothing owned.
+async function takeControl(agent, ms) {
+  await rpc('autopilot', { agent, action: 'claim', faculties: ['work', 'movement'],
+                           by: 'roomrun', lease_ms: ms });
+  await rpc('autopilot', { agent, action: 'busy', by: 'roomrun', kind: 'roomrun',
+                           label: 'room crossing test', lease_ms: ms });
+}
+async function releaseControl(agent) {
+  await rpc('autopilot', { agent, action: 'free', by: 'roomrun' }).catch(() => {});
+  await rpc('autopilot', { agent, action: 'yield', by: 'roomrun' }).catch(() => {});
+}
+
 // THE SPEC, ASSERTED RATHER THAN ASSUMED. A runner that quietly kept its armour would make
 // every number here a measurement of the armour.
 async function strip(agent, character) {
@@ -144,12 +168,18 @@ async function main() {
   console.log(`\n${label}`);
   if (c) console.log(`  ${c.why}`);
   console.log(`  runner ${agent} (${character}) — stripping to 50hp / 50 dodge / 100 vigor, naked\n`);
+  // One lease for the whole run, padded: a crossing of these rooms is minutes, and a lease
+  // that expires mid-test hands the character back to its keeper without saying so.
+  await takeControl(agent, Math.max(600000, (RUNS + 1) * LEG_TIMEOUT_MS));
   const spec = await strip(agent, character);
   if (spec.equipped) console.log(`  WARNING: ${spec.equipped} item(s) still equipped — the numbers include them\n`);
 
   const results = [];
   for (let i = 0; i < RUNS; i++) {
     const leg = legs[i % legs.length];
+    // Re-declared every run rather than once: `busy` is a WINDOW the holder estimates, and
+    // re-declaring with what is left is how the harness says it is still working.
+    await takeControl(agent, LEG_TIMEOUT_MS + 120000);
     // Start on the far side of the boundary, so the run is a real crossing rather than a
     // walk from wherever the character happened to be.
     const placed = await dm('relocate', character, String(leg.from), '--at', '30,30');
@@ -207,6 +237,7 @@ async function main() {
     e.n++; if (r.outcome === 'arrived') e.ok++; if (r.outcome === 'died') e.died++; e.dmg += r.damage;
     byLeg.set(r.leg, e);
   }
+  await releaseControl(agent);
   console.log(`  by leg:`);
   for (const [k, e] of byLeg)
     console.log(`     ${k.padEnd(12)} ${e.ok}/${e.n} arrived, ${e.died} died, ${e.dmg} damage total`);

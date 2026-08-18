@@ -1192,11 +1192,15 @@ export class RoomGeometry {
     // AND IT MAY ONLY EVER PREFER — A FILTER MUST NEVER BE THE REASON A DOORWAY
     // DISAPPEARS. This is the same rule the step mask already lives under, and it is not
     // theoretical here: applied as a hard filter world-wide, three of 237 declared edge
-    // directions lost every candidate, and one of them was **Cor Noth west**, which
-    // `m59-exitgap.mjs` documents as "a door that real players walk through every day"
-    // and which once left ten of twenty-one characters unable to reach a bank. Being
-    // wrong about a phantom costs a walk; deleting a real doorway costs the errand,
-    // silently, for ever.
+    // directions lost every candidate. Being wrong about a phantom costs a walk; deleting
+    // a real doorway costs the errand, silently, for ever.
+    //
+    // CORRECTION, 2026-08-18: the example named here used to be **Cor Noth west**, called
+    // "a door that real players walk through every day". **There is no west exit from Cor
+    // Noth** — the operator confirms it and the model was right. So that case argues the
+    // OPPOSITE of what it was cited for, and this fallback is justified by the other two
+    // directions rather than by it. The rule stands on the asymmetry alone, which is the
+    // only part of the argument that was ever load-bearing.
     //
     // So the grid's opinion is applied only when it leaves something behind. The two
     // outcomes are not symmetric and the fallback is the safe one.
@@ -1247,8 +1251,12 @@ export class RoomGeometry {
       // is not a rule.
       //
       // Applied as a PREFERENCE, exactly as it is there: if grounding leaves an edge with
-      // nothing, the unfiltered list stands. Cor Noth west is the case that forces it — a
-      // door real players use daily whose crossings are all ungrounded in this model.
+      // nothing, the unfiltered list stands.
+      //
+      // CORRECTION, 2026-08-18: this used to cite Cor Noth west as the case forcing that
+      // fallback, "a door real players use daily whose crossings are all ungrounded".
+      // There is no west exit from Cor Noth. The fallback is still right — it is the
+      // asymmetry that justifies it, not that example.
       const groundedBake = restored.filter(a => this.walkable(a.row, a.col));
       const keep = Object.freeze(groundedBake.length ? groundedBake : restored);
       this._edgeApproachCache.set(name, keep);

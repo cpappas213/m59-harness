@@ -1394,6 +1394,59 @@ console.log('\nterminal movement propagation and edge packet authority');
        result.reason === 'collision_geometry_unavailable' && attempts === 1,
        JSON.stringify({ result, attempts }));
   }
+
+  // A ONE-SQUARE DOORWAY GETS PATIENCE, NOT BREADTH.
+  //
+  // 13 of the world's 280 declared exits publish two or fewer distinct staging squares.
+  // At one of those, the candidate budget buys nothing — every "other candidate" is the
+  // same square — so a body standing in the door made the walker ask three times in a
+  // row, instantly, and report the wall shut. These pin the two halves that must not be
+  // confused: a body is worth waiting for, and being HIT while waiting is not.
+  if (typeof leaveViaAny !== 'function') {
+    skip('a one-square doorway held by a body is waited for, not re-asked', 'did not extract');
+    skip('a one-square doorway does not wait while we are being hit in it', 'ditto');
+  } else {
+    process.env.M59_NARROW_WAIT_MS = '1';
+    const oneSquare = [{ kind: 'edge', stand_on: { col: 5, row: 2 }, fine_stand_on: { x: 96, y: 335 } },
+                       { kind: 'edge', stand_on: { col: 5, row: 2 }, fine_stand_on: { x: 96, y: 352 } }];
+    {
+      let attempts = 0;
+      const session = {
+        movementGeneration: 0,
+        movementWasCancelled() { return false; },
+        async leaveVia() {
+          attempts++;
+          // clears on the fourth ask, which the old budget of 3 could never reach
+          if (attempts >= 4) return { left: true };
+          return { left: false, reason: 'object_blocked', monster_blocked: 1 };
+        },
+      };
+      const result = await leaveViaAny.call(session, oneSquare, {});
+      ok('a one-square doorway held by a body is waited for, not re-asked',
+         result.left === true && attempts === 4,
+         JSON.stringify({ left: result.left, attempts }));
+    }
+    {
+      let attempts = 0;
+      const session = {
+        movementGeneration: 0,
+        movementWasCancelled() { return false; },
+        async leaveVia() {
+          attempts++;
+          return { left: false, reason: 'object_blocked', monster_blocked: 1, damage_while_blocked: 3 };
+        },
+        // The last-resort forcing path is reached once every candidate is spent; it is not
+        // what is under test here, and a doorway with something hitting us in it is
+        // exactly where forcing would be wrong anyway.
+        async leaveViaUnvalidated() { return { left: false }; },
+      };
+      const result = await leaveViaAny.call(session, oneSquare, {});
+      ok('a one-square doorway does not wait while we are being hit in it',
+         result.left !== true && attempts <= 3,
+         JSON.stringify({ left: result.left, attempts }));
+    }
+    delete process.env.M59_NARROW_WAIT_MS;
+  }
 }
 
 console.log('\nreal broker seam validates before emitting coordinates');

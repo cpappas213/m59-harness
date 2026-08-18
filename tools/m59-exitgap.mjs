@@ -9,9 +9,17 @@
 // THE PROBLEM THIS INSTRUMENTS. The baked collision model refuses any move it cannot
 // prove legal, which is right — the server accepts whatever coordinates you send and the
 // stock client is what enforces collision. But the model is incomplete at some doorways:
-// Cor Noth room 150 west publishes SIX boundary crossings and ZERO grounded approaches,
-// so the model believes there is nowhere to stand to use a door that real players walk
-// through every day. Ten of twenty-one characters could not reach a bank because of it.
+// A room can publish boundary crossings and offer ZERO grounded approaches, so the model
+// believes there is nowhere to stand to use a door.
+//
+// CORRECTION, 2026-08-18: this paragraph used to give Cor Noth room 150 west as that
+// example — "a door that real players walk through every day", blamed for ten of
+// twenty-one characters being unable to reach a bank. **THERE IS NO WEST EXIT FROM COR
+// NOTH.** The operator confirms it, and the model was right all along: six boundary
+// crossings, zero reachable stages, and nothing on the other side. The declared edge is
+// spurious, `exitsOf` already drops an edge with no validated approach, so it costs
+// nothing today. What it cost was the ARGUMENT — a phantom door became the standing
+// example of the model being too strict, in four files, and was reasoned from.
 //
 // A refusal on its own is not a bug report. What makes one is the PAIR:
 //

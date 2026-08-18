@@ -4836,10 +4836,41 @@ class Session {
     // ordering still puts the best first, and the unvalidated fallback below still runs.
     const budget = Number(process.env.M59_EXIT_CANDIDATES || 3);
     let spent = 0;
+    // A NEEDLE WANTS PATIENCE, NOT BREADTH — AND SPENDING BREADTH ON ONE IS HOW A FLEET
+    // QUEUES AT A DOOR AND CALLS IT A WALL.
+    //
+    // The budget above buys tries at DIFFERENT squares on the same wall, and its whole
+    // argument is that a refusal is usually local: something is standing there, so ask
+    // somewhere else. That argument needs somewhere else to exist. Measured across the
+    // world, 13 of 280 declared exits offer two or fewer distinct staging squares, and
+    // Western border of the Twisted Wood's west door is one of them: three published
+    // crossings, all staging on 5,2, spread over 32 fine units — half a square, one body
+    // wide. Watched live, five runners sent through it took 35-124 seconds each, one never
+    // made it, and every retry in the log reads `stand_on: {col:2,row:5}` because there is
+    // no other square to name.
+    //
+    // Re-asking the same square three times is not three tries, it is one try repeated
+    // instantly. So when the candidates collapse to a single staging square AND the
+    // refusal was a BODY rather than geometry, wait and ask again — the same distinction
+    // `walkTo` already makes about `object_blocked`: a monster moves and a wall does not.
+    // Bounded, because a door held by something that never moves must still end the walk
+    // and let `travel` route round.
+    const narrowWaits = Number(process.env.M59_NARROW_WAITS || 3);
+    const narrowWaitMs = Number(process.env.M59_NARROW_WAIT_MS || 1200);
+    const spread = spreadEdges(candidates);
+    const stagingSquares = new Set(spread.map(e => `${e.stand_on?.col},${e.stand_on?.row}`));
+    const isNeedle = stagingSquares.size <= 1 && spread.length > 0;
+    let waited = 0;
     // spreadEdges turns each declared edge into one candidate per square that crosses
     // that boundary — see m59-world.mjs. Without it this tried the nearest square and
     // called the whole wall refused.
-    for (const exit of orderExits(spreadEdges(candidates))) {
+    // Indexed rather than for-of, so the needle wait below can ask the SAME candidate
+    // again. `continue` in a for-of advances to the next one, which is not a retry — and
+    // on a needle publishing a single square there is no next one, so the wait would have
+    // been a no-op in exactly the case it exists for.
+    const ordered = orderExits(spread);
+    for (let index = 0; index < ordered.length; index++) {
+      const exit = ordered[index];
       if (++spent > budget) {
         tried.push({ stand_on: exit.stand_on,
                      why: `not tried — this boundary had already cost ${budget} walks across the room` });
@@ -4851,6 +4882,31 @@ class Session {
                            ...(tried.length ? { tried } : {}) };
       if (isTerminalMovementReason(r.reason))
         return { ...r, left: false, used_exit: exit, ...(tried.length ? { tried } : {}) };
+      // BLOCKED BY A BODY AT A ONE-SQUARE DOOR: the next candidate is this candidate, so
+      // waiting is the only thing that can change the answer. It does not consume the
+      // budget, because it is not another square — it is the same square, later.
+      const bodyBlocked = (r.monster_blocked ?? 0) > 0
+        || (Array.isArray(r.blocked_by_bodies_at) && r.blocked_by_bodies_at.length > 0)
+        || r.reason === 'object_blocked';
+      if (isNeedle && bodyBlocked && waited < narrowWaits) {
+        waited++; spent--;
+        tried.push({ stand_on: exit.stand_on, why: r.reason || r.note || 'no reason reported',
+                     waited_for_the_doorway_ms: narrowWaitMs,
+                     note: `one-square doorway held by a body — waiting rather than asking the same square again (${waited}/${narrowWaits})`,
+                     ...(r.monster_blocked ? { monster_blocked: r.monster_blocked } : {}),
+                     ...(r.damage_while_blocked ? { damage_while_blocked: r.damage_while_blocked } : {}) });
+        // A CHARACTER BEING HIT IN A DOORWAY DOES NOT STAND THERE COUNTING. The whole
+        // reason to wait is that the blocker is expected to wander off; taking damage says
+        // it has noticed us instead, and this repository has already paid for confusing
+        // those two — see the note on `object_blocked` in walkTo.
+        if (r.damage_while_blocked) {
+          tried[tried.length - 1].note = 'one-square doorway, and we are being hit in it — not waiting';
+        } else {
+          await new Promise(resolve => setTimeout(resolve, narrowWaitMs));
+          index--;                      // the same square, later — that is the whole point
+          continue;
+        }
+      }
       tried.push({ stand_on: exit.stand_on, why: r.reason || r.note || 'no reason reported' });
     }
     // EVERY SQUARE REFUSED — so before reporting a wall where players walk, take the one
@@ -4859,7 +4915,7 @@ class Session {
     // (a terminal reason returned above; it means the contract itself is broken, and
     // walking anyway would be walking on geometry we know is wrong).
     if (tried.length && process.env.M59_EXIT_FALLBACK !== '0') {
-      const best = orderExits(spreadEdges(candidates))[0] ?? null;
+      const best = ordered[0] ?? null;
       if (best) {
         const forced = await this.leaveViaUnvalidated(best, { movementGeneration });
         if (forced.left) return { ...forced, used_exit: best, fallback: true, tried };
@@ -4870,7 +4926,7 @@ class Session {
     // refusal actionable is not that it happened but WHAT THE MODEL BELIEVED — the best
     // square it could offer — so that it can be set against the square a character is
     // standing on when the same door works. See m59-exitgap.mjs.
-    const offered = orderExits(spreadEdges(candidates))[0] ?? null;
+    const offered = ordered[0] ?? null;
     return { left: false, tried,
              gap: { believed: offered?.stand_on
                       ? { col: offered.stand_on.col, row: offered.stand_on.row } : null,
