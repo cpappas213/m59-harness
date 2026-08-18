@@ -2089,7 +2089,42 @@ export class RoomGeometry {
          // aware if this room has a mask, coarse grid exactly as before if it does not" —
          // and a checkout that has never run tools/m59-routebake.mjs behaves precisely as
          // it did, which is the property that makes this safe to ship on.
-         collision = this.hasStepMask } = {}) {
+         collision = this.hasStepMask,
+         // WHETHER THE LAST STEP INTO THE GOAL MAY BE ONE THE MOVER REFUSES.
+         //
+         // `null` means "try without it, and only then with it", which is the default and
+         // the whole point. See the two-pass below.
+         goalExempt = null } = {}) {
+    // TWO PASSES, STRICT FIRST — because the exemption is a FALLBACK, not a preference.
+    //
+    // `neighbors` lets the final step into the goal skip `moverStepLands`, so that a
+    // doorway the model dislikes is never simply deleted from the map. That is right, and
+    // on its own it is also how a walker gets a plan whose LAST step it can never take:
+    // A* sees all eight approaches as equal, takes the cheapest, and hands back a route
+    // ending in a step the mover refuses. `walkTo` then re-sends that step, lands
+    // somewhere else, replans into the same corner, and reports "kept ending up somewhere
+    // other than the planned square" — measured in Deep Forest of Farol, where the goal
+    // 2,30 is reachable from FIVE of its eight neighbours and the planner chose the one
+    // refused diagonal, stalling the character 21 steps from a door it could see.
+    //
+    // Asking strictly first costs nothing when a legal approach exists — same room, same
+    // 12 steps, approached from 3,30 instead of 3,29 — and changes nothing when one does
+    // not, because the second pass is exactly the old behaviour. So this can only ever
+    // turn an unwalkable plan into a walkable one of the same length, never remove a
+    // route: the property that makes it safe to ship against a live fleet.
+    if (goalExempt === null) {
+      const strict = this.path(fromRow, fromCol, toRow, toCol,
+        { fine, maxNodes, avoid, threats, threatCost, blockedEdges, clearance, collision,
+          goalExempt: false });
+      if (strict.found) return strict;
+      const relaxed = this.path(fromRow, fromCol, toRow, toCol,
+        { fine, maxNodes, avoid, threats, threatCost, blockedEdges, clearance, collision,
+          goalExempt: true });
+      // Saying WHICH pass answered is what lets a caller — and a post-mortem — tell "the
+      // mover will walk every step of this" from "the last step is a model disagreement
+      // and may need a fine-positioned correction", which `leaveVia` already does.
+      return relaxed.found ? { ...relaxed, goal_exempt: true } : relaxed;
+    }
     threatCost = threatCost ?? this.threatField(threats);
     const clearanceCost = this.clearanceField({ weight: clearance });
     if (!this.inBounds(fromRow, fromCol)) return { found: false, reason: 'start is outside the room grid' };
@@ -2194,7 +2229,8 @@ export class RoomGeometry {
                  ...(lead ? { recovered_from: { row: start.row, col: start.col } } : {}) };
       }
       for (const n of this.neighbors(cur.r, cur.c,
-             { fine, collision, blockedEdges, allowInto: { row: toRow, col: toCol } })) {
+             { fine, collision, blockedEdges,
+               allowInto: goalExempt ? { row: toRow, col: toCol } : null })) {
         const nk = key(n.row, n.col);
         if (closed.has(nk)) continue;
         // Never the GOAL, only the way there: if the destination itself is occupied we

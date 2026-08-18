@@ -51,7 +51,7 @@ import { RoomGeometry, protocolToward, STEP_MASK_DIRS, KOD_FINENESS, CLIENT_FINE
 import { components, exitAnchors } from './m59-routebake.mjs';
 import { loadMap, selectedEdgeAt } from './m59-map.mjs';
 import { crossingBook, WALKS_DIR } from './m59-crossings.mjs';
-import { stepMaskCurrent } from './m59-routes.mjs';
+import { stepMaskCurrent, attachStepMasks } from './m59-routes.mjs';
 
 let passed = 0, failed = 0, skipped = 0;
 function ok(what, cond, detail = '') {
@@ -681,6 +681,97 @@ console.log('\nelideLoops — remove the round trips, never invent a step');
        joins, 'a broken chain is dropped whole by the retreat, so this must hold');
     ok('a trail with no repeated landing point is untouched',
        elideLoops([crumb(0, 0, 10, 0), crumb(10, 0, 20, 0)], key).length === 2);
+  }
+}
+
+
+// ---------------------------------------------- the last step into the goal
+// A PLAN WHOSE FINAL STEP THE MOVER REFUSES IS NOT A ROUTE, IT IS A LOOP.
+//
+// `neighbors` exempts the goal square from `moverStepLands` so that a doorway the model
+// dislikes is never deleted from the map — 346 of the exit anchors this bake cannot reach
+// are `go` exits whose square IS the door tile. That is right, and on its own it is also
+// how a walker is handed a route it can never finish: A* sees all eight approaches to the
+// goal as equal, takes the cheapest, and ends on a step the mover will not make. `walkTo`
+// re-sends it, lands elsewhere, replans into the same corner, and reports "kept ending up
+// somewhere other than the planned square".
+//
+// Measured live in Deep Forest of Farol: the exit square 2,30 is reachable from FIVE of
+// its eight neighbours, the planner chose the one refused diagonal (3,29), and Delta stood
+// 21 steps short of a door it could see. Asking strictly first found the same 12-step
+// route approached from 3,30, every step walkable. Across the world: 21,348 anchor pairs,
+// 2,323 unwalkable plans repaired, and ZERO routes lost.
+//
+// Both halves are pinned, because each fails in a different dangerous direction — dropping
+// the strict pass brings the loop back, and dropping the fallback deletes doorways.
+console.log('\nthe last step into the goal — strict first, exemption as a fallback');
+{
+  const mk = (refuse) => {
+    const g = RoomGeometry.fromJSON({
+      rows: 4, cols: 4,
+      flags: new Array(16).fill(1),
+      grid: new Array(16).fill(0xff),
+      moveGrid: new Array(16).fill(0xff),
+    });
+    g.standable = (r, c) => r >= 1 && r <= 4 && c >= 1 && c <= 4;
+    g.moverStepLands = (fr, fc, tr, tc) => !refuse.has(`${fr},${fc}>${tr},${tc}`);
+    return g;
+  };
+  const GOAL = '1,2';
+  // Every approach to the goal is refused EXCEPT straight north from 2,2.
+  const onlyNorth = new Set();
+  for (let r = 1; r <= 4; r++) for (let c = 1; c <= 4; c++)
+    if (`${r},${c}` !== '2,2') onlyNorth.add(`${r},${c}>${GOAL}`);
+
+  const g1 = mk(onlyNorth);
+  const p1 = g1.path(4, 4, 1, 2, { collision: true });
+  const lastFrom1 = p1.steps && p1.steps.length > 1
+    ? p1.steps[p1.steps.length - 2] : { row: 4, col: 4 };
+  ok('it plans a route to the goal', p1.found === true);
+  ok('and approaches it from the one square the mover accepts',
+     lastFrom1.row === 2 && lastFrom1.col === 2,
+     `approached from ${lastFrom1.row},${lastFrom1.col}`);
+  ok('so no planned step is one the mover refuses',
+     (p1.steps || []).every((st, i) => {
+       const prev = i ? p1.steps[i - 1] : { row: 4, col: 4 };
+       return g1.moverStepLands(prev.row, prev.col, st.row, st.col);
+     }));
+  ok('and it does not report itself as having used the exemption',
+     p1.goal_exempt === undefined);
+
+  // NOW THE FALLBACK: refuse EVERY approach. The doorway must not disappear.
+  const all = new Set();
+  for (let r = 1; r <= 4; r++) for (let c = 1; c <= 4; c++) all.add(`${r},${c}>${GOAL}`);
+  const g2 = mk(all);
+  const p2 = g2.path(4, 4, 1, 2, { collision: true });
+  ok('a goal no approach can reach is STILL routed to — a bake never deletes a doorway',
+     p2.found === true, 'this is the half that keeps `go` exits usable');
+  ok('and it says so, so a caller can make a fine-positioned correction',
+     p2.goal_exempt === true);
+  ok('an ordinary goal is unaffected by either pass',
+     g2.path(4, 4, 3, 3, { collision: true }).found === true);
+}
+
+// The measured case, on the real bake — skipped rather than silently passed without one.
+{
+  const realMap = existsSync(join('substrate', 'm59-map.json')) ? await loadMap() : null;
+  // The masks are what `path` plans on; without attaching them this asserts nothing.
+  if (realMap) attachStepMasks(realMap, {});
+  const raw556 = realMap?.rooms?.['556'] ?? realMap?.rooms?.[556];
+  const g556 = raw556 ? sharedRoomGeometry(raw556) : null;
+  if (!g556?.hasStepMask) {
+    skip('Deep Forest of Farol plans a walkable last step into its 545 exit',
+         'no baked step mask on disk — run tools/m59-routebake.mjs');
+  } else {
+    const p = g556.path(12, 35, 2, 30);
+    let refused = 0, prev = { row: 12, col: 35 };
+    for (const st of (p.steps || [])) {
+      if (!st.recovered && !g556.moverStepLands(prev.row, prev.col, st.row, st.col)) refused++;
+      prev = st;
+    }
+    ok('Deep Forest of Farol still reaches its 545 exit square', p.found === true);
+    ok('and every step of that plan is one the mover will actually make', refused === 0,
+       `${refused} refused — this is the walk that stalled Delta 21 steps from the door`);
   }
 }
 
