@@ -857,7 +857,7 @@ export function roomsWithin(map, fromNum, radius = 2, { avoid = AVOID_IN_TRANSIT
 // The search itself. Unchanged except that it can be told to pretend some rooms are not
 // there — `avoid` is consulted for rooms we would PASS THROUGH, never for where we are or
 // where we are going.
-function bfsPath(map, fromNum, toNum, avoid, transitOk = null) {
+function bfsPath(map, fromNum, toNum, avoid, transitOk = null, blockedHops = null) {
   // WITH A TRANSIT PREDICATE THE STATE IS (ROOM, DOOR YOU CAME IN BY), NOT THE ROOM.
   //
   // Whether you can cross a room depends on which side you entered it from, so keying
@@ -873,6 +873,7 @@ function bfsPath(map, fromNum, toNum, avoid, transitOk = null) {
     if (!room) continue;
     for (const ex of passableExits(map, at)) {
       if (ex.to == null) continue;
+      if (blockedHops?.has(`${at}>${ex.to}`)) continue;
       // Can this room be walked from the door we arrived by to the one we want? Only
       // an explicit FALSE refuses: no table, no anchors, no answer all mean "carry on".
       if (transitOk && cameFrom != null && transitOk(at, cameFrom, ex.to) === false) continue;
@@ -954,7 +955,7 @@ const DETOUR_SLACK = 2;
  * rooms that the spawn table cannot express: 534 is deadly in transit because of how many
  * things gang up in it, not because its worst single generator is remarkable.
  */
-function safestPath(map, fromNum, toNum, avoid, danger, budget, transitOk = null) {
+function safestPath(map, fromNum, toNum, avoid, danger, budget, transitOk = null, blockedHops = null) {
   // Dijkstra on (worst room so far, hops). The frontier is small enough — the whole world
   // is a few hundred rooms — that a sorted insert beats a heap in both speed and reading.
   // Same keying argument as bfsPath: with a transit predicate the state carries the door
@@ -975,6 +976,7 @@ function safestPath(map, fromNum, toNum, avoid, danger, budget, transitOk = null
     if (!room) continue;
     for (const ex of passableExits(map, cur.at)) {
       if (ex.to == null) continue;
+      if (blockedHops?.has(`${cur.at}>${ex.to}`)) continue;
       // Only an explicit FALSE refuses — see bfsPath.
       if (transitOk && cur.cameFrom != null
           && transitOk(cur.at, cur.cameFrom, ex.to) === false) continue;
@@ -1034,6 +1036,12 @@ export function findPath(map, fromNum, toNum,
                            // walk a character into a hole. The regions this needs are
                            // already baked per anchor in substrate/m59-routes.json.
                            transitOk = null,
+                           // ONE DIRECTED EDGE, NOT A ROOM. `avoid` cannot say "not from
+                           // here to there": it excludes rooms, and it deliberately never
+                           // excludes the destination — so a caller standing in a room
+                           // whose door to the TARGET cannot be walked to had no way to ask
+                           // for the long way round. Strings of the form `from>to`.
+                           blockedHops = null,
                            // internal: the strict half of the two-pass below
                            strictTransit = false } = {}) {
   if (fromNum === toNum) return { found: true, hops: [] };
@@ -1046,15 +1054,16 @@ export function findPath(map, fromNum, toNum,
   // exists through a transit the table dislikes is still returned, flagged
   // `transit_unverified`, rather than refused. Being wrong about a crossing costs a walk;
   // refusing costs the errand, silently.
-  if (transitOk && !strictTransit) {
+  if ((transitOk || blockedHops?.size) && !strictTransit) {
     const strict = findPath(map, fromNum, toNum,
-      { avoid, danger, allowHazardDestination, transitOk, strictTransit: true });
+      { avoid, danger, allowHazardDestination, transitOk, blockedHops, strictTransit: true });
     if (strict.found) return { ...strict, transit_checked: true };
     const loose = findPath(map, fromNum, toNum,
-      { avoid, danger, allowHazardDestination, transitOk: null });
+      { avoid, danger, allowHazardDestination, transitOk: null, blockedHops: null });
     return loose.found ? { ...loose, transit_unverified: true } : loose;
   }
   const crossing = strictTransit ? transitOk : null;
+  const blocked = strictTransit ? blockedHops : null;
 
   // THE HARD BLOCK, APPLIED BEFORE ANYTHING ELSE AND NEVER RELAXED. See NEVER_ENTER: the
   // permissive fallback at the bottom of this function is what makes `avoid` a preference,
@@ -1083,10 +1092,10 @@ export function findPath(map, fromNum, toNum,
   if (danger !== false) {
     const table = danger instanceof Map ? danger : roomDanger();
     if (table.size) {
-      const shortest = bfsPath(map, fromNum, toNum, skip?.size ? skip : null, crossing);
+      const shortest = bfsPath(map, fromNum, toNum, skip?.size ? skip : null, crossing, blocked);
       if (shortest.found) {
         const budget = shortest.hops.length * DETOUR_FACTOR + DETOUR_SLACK;
-        const safest = safestPath(map, fromNum, toNum, skip, table, budget, crossing);
+        const safest = safestPath(map, fromNum, toNum, skip, table, budget, crossing, blocked);
         // Only worth reporting as a different route when it actually is one.
         if (safest.found) return { ...safest,
           shortest_hops: shortest.hops.length,
@@ -1097,14 +1106,14 @@ export function findPath(map, fromNum, toNum,
   }
 
   if (skip?.size) {
-    const safer = bfsPath(map, fromNum, toNum, skip, crossing);
+    const safer = bfsPath(map, fromNum, toNum, skip, crossing, blocked);
     if (safer.found) return safer;
   }
   // THE LAST RESORT STILL HONOURS THE HARD BLOCK. This line used to pass `null`, which is
   // what made every avoid a preference — and it is the line Statler's route came down.
   // A soft hazard is dropped here; a NEVER_ENTER room is not, so a journey that needs one
   // comes back `found: false` and names the room rather than walking a character into it.
-  const last = bfsPath(map, fromNum, toNum, forbidden.size ? forbidden : null, crossing);
+  const last = bfsPath(map, fromNum, toNum, forbidden.size ? forbidden : null, crossing, blocked);
   if (!last.found && forbidden.size)
     return { ...last, blocked_by_hazard: [...forbidden],
              reason: `${last.reason} without crossing ${[...forbidden]

@@ -925,8 +925,44 @@ export class World {
     const merged = avoid?.size
       ? new Set([...AVOID_IN_TRANSIT, ...avoid])
       : AVOID_IN_TRANSIT;
+
+    // AND THE FIRST HOP, WHICH `transitOk` CANNOT SEE.
+    //
+    // The transit predicate asks "can this room be crossed from the door I came in by",
+    // and the room we are STANDING IN has no such door — so leaving it was the one hop
+    // planned with no idea whether its exit can be walked to. That is not a corner case:
+    // a character already inside West Merchant Way, asked to go anywhere through Deep
+    // Forest of Farol, planned straight at a doorway on the far side of a 1664-unit face
+    // and failed with "every square for that exit refused" every single time. Measured on
+    // the arena fleet, that one shape was four of nine torture-run failures.
+    //
+    // For the first hop the question is not about anchors at all — it is where this
+    // character is standing right now, which `exits()` already answers per exit. A
+    // destination whose every published exit reports unreachable is not somewhere we can
+    // set off for.
+    //
+    // A PREFERENCE, LIKE EVERY OTHER ENTRY IN THIS SET. `findPath` falls back through it,
+    // so if that really is the only way out the route is still returned and the walk still
+    // gets its attempt — `exits()` is a model and it is stricter than the world.
+    // BLOCKED AS AN EDGE, NOT AS A ROOM, and that distinction is the whole of it. The
+    // destination is frequently the very room whose door we cannot reach — Delta standing
+    // in West Merchant Way, sent to Deep Forest of Farol next door — and `avoid` refuses to
+    // exclude a destination, correctly, because a character sent somewhere has to be able
+    // to arrive. What is unusable is the single hop FROM HERE to it; the same room by way
+    // of 535/536/537 is perfectly walkable, and that is the route we want back.
+    const blockedHops = new Set();
+    try {
+      const byDest = new Map();
+      for (const e of this.exits()) {
+        if (e.to == null) continue;
+        const seen = byDest.get(e.to);
+        byDest.set(e.to, seen === true ? true : e.reachable !== false);
+      }
+      for (const [to, ok] of byDest) if (!ok) blockedHops.add(`${room.num}>${Number(to)}`);
+    } catch { /* exits() needs a live room; without one this simply blocks nothing */ }
     const r = findPath(this.map, room.num, toRoomNum,
-                       { avoid: merged, transitOk: this.transitOk() });
+                       { avoid: merged, transitOk: this.transitOk(),
+                         blockedHops: blockedHops.size ? blockedHops : null });
     if (!r.found) return r;
     return {
       found: true,
