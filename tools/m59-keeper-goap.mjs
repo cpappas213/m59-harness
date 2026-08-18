@@ -239,8 +239,10 @@ export class GOAPKeeper {
     }
 
     const p = planFor(c, { [effectiveGoal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent, extra });
+    console.error(`[goap] ${who} pass ${this._passCount} PLAN found=${p.found} names=[${(p.names ?? []).join(', ')}] steps=${p.steps?.length ?? 0} problems=${(p.problems ?? []).length}`);
 
     if (p.problems?.length) {
+      console.error(`[goap] ${who} pass ${this._passCount} PROBLEMS: ${p.problems.join('; ')}`);
       this.note('goap plan problems', { problems: p.problems });
       return { acted: false, action: null, reason: p.problems.join('; ') };
     }
@@ -255,6 +257,7 @@ export class GOAPKeeper {
 
     // 4. Execute one step.
     if (!p.steps?.length) {
+      console.error(`[goap] ${who} pass ${this._passCount} PLAN EMPTY: found=${p.found} names=[${(p.names ?? []).join(', ')}]`);
       return { acted: false, action: null, reason: 'plan is empty' };
     }
 
