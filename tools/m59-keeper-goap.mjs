@@ -132,19 +132,14 @@ export class GOAPKeeper {
     if (here === to)
       return { sent: false, reason: 'already there' };
 
+    // Use the broker's travel() directly. The broker handles
+    // routing internally (BFS, hazard avoidance, etc.). We just
+    // tell it the destination room number.
     try {
-      const map = loadMap();
-      const p = findPath(map, here, to);
-      if (!p?.found || !p.hops?.length)
-        return { sent: false, reason: `no route from ${here} to ${to}` };
-
-      // The first hop is the next room (map num). The broker's
-      // travel() expects a map num.
-      const next = p.hops[0];
-      const r = await this.session.travel(next, { maxHops: 1 });
+      const r = await this.session.travel(to, { maxHops: 3 });
       if (r?.arrived)
         return { sent: true, reason: null };
-      return { sent: false, reason: r?.reason ?? 'hop refused' };
+      return { sent: false, reason: r?.reason ?? 'travel refused' };
     } catch (e) {
       return { sent: false, reason: e.message };
     }
