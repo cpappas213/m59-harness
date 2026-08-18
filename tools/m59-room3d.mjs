@@ -5,7 +5,7 @@
 //   Three.js Y is UP (height). Floor is at Y=0.
 //   Camera looks down from above.
 
-export function renderRoom3D(name, rv) {
+export function renderRoom3D(name, rv, hero) {
   if (!rv) return `<!doctype html><html><body style="background:#111;color:#ccc;font:14px system-ui;padding:20px">
     <a href="/hero/${name}" style="color:#4a9">&larr; ${name}</a>
     <p>No room data available.</p></body></html>`;
@@ -13,6 +13,11 @@ export function renderRoom3D(name, rv) {
   const { cols, rows, objects, self } = rv;
   const walkable = rv.walkable ?? [];
   const hasWalls = walkable.length === cols * rows && walkable.some(v => v === 0);
+  const roomName = hero?.room?.name ?? '';
+  const hp = hero?.vitals?.health ?? {};
+  const mana = hero?.vitals?.mana ?? {};
+  const vigor = hero?.vitals?.vigor ?? {};
+  const vigMax = vigor.current_max ?? vigor.max ?? 100;
 
   const wallData = hasWalls ? JSON.stringify(walkable) : 'null';
   const wallSegs = (rv.walls ?? []).map(w => [w[0], w[1], w[2], w[3]]);
@@ -43,6 +48,15 @@ export function renderRoom3D(name, rv) {
     padding:8px 14px; border-radius:8px; z-index:10; pointer-events:none; }
   #hud a { color:#4a9; text-decoration:none; pointer-events:auto; }
   #hud .dim { color:#666; font-size:11px; }
+  #hud .bars { display:flex; gap:4px; margin-top:6px; height:6px; }
+  #hud .bar { border-radius:3px; transition:width .5s; }
+  #hud .bar.hp { background:#e44; }
+  #hud .bar.mana { background:#48e; }
+  #hud .bar.vigor { background:#4a4; }
+  #hud .stats { display:flex; gap:10px; margin-top:4px; font-size:11px; }
+  #hud .stats .hp { color:#e66; }
+  #hud .stats .mana { color:#68e; }
+  #hud .stats .vigor { color:#6a6; }
   #err { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
     color:#f88; font:13px system-ui; text-align:center; max-width:85vw; white-space:pre-wrap; z-index:20; }
 </style>
@@ -50,7 +64,17 @@ export function renderRoom3D(name, rv) {
 <body>
 <div id="hud">
   <a href="/hero/${name}">&larr; ${name}</a>
-  <span class="dim"> &middot; ${cols}\\u00d7${rows}${hasWalls ? '' : ' &middot; unmapped'}</span>
+  <span class="dim"> &middot; ${roomName || 'unknown room'} &middot; ${cols}\\u00d7${rows}${hasWalls ? '' : ' &middot; unmapped'}</span>
+  <div class="bars">
+    <span class="bar hp" style="width:${Math.round((hp.value/hp.max)*100)}%" title="HP ${hp.value}/${hp.max}"></span>
+    <span class="bar mana" style="width:${Math.round((mana.value/mana.max)*100)}%" title="Mana ${mana.value}/${mana.max}"></span>
+    <span class="bar vigor" style="width:${Math.round((vigor.value/vigMax)*100)}%" title="Vigor ${vigor.value}/${vigMax}"></span>
+  </div>
+  <div class="stats">
+    <span class="hp">HP ${hp.value}/${hp.max}</span>
+    <span class="mana">MP ${mana.value}/${mana.max}</span>
+    <span class="vigor">VIG ${vigor.value}/${vigMax}</span>
+  </div>
 </div>
 <div id="err"></div>
 <canvas id="c"></canvas>

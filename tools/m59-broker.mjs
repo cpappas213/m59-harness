@@ -14467,7 +14467,7 @@ function serveDashboard(port) {
       const h = heroSnapshot(who);
       const { renderRoom3D } = await import('./m59-room3d.mjs');
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-      return res.end(renderRoom3D(who, h?.room_view ?? null));
+      return res.end(renderRoom3D(who, h?.room_view ?? null, h));
     }
     if (url.pathname.startsWith('/hero/')) {
       const parts = url.pathname.slice('/hero/'.length).split('/');
