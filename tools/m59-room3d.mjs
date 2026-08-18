@@ -52,6 +52,9 @@ export function renderRoom3D(name, rv) {
 </div>
 <div id="err"></div>
 <canvas id="c"></canvas>
+<script type="importmap">
+{ "imports": { "three": "/vendor/three.module.js" } }
+</script>
 <script type="module">
 try {
 const THREE = await import('/vendor/three.module.js');
