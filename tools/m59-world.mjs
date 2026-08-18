@@ -25,7 +25,7 @@ import { inRegion } from './m59-codeexits.mjs';
 import { affordances, OF, isTeleporter, KOD_FINENESS } from './m59-parse.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { observedCrossings } from './m59-crossings.mjs';
-import { activeRoutes, anchorFor } from './m59-routes.mjs';
+import { activeRoutes, anchorFor, sameRegion } from './m59-routes.mjs';
 
 // Marks used on the minimap. Chosen so the picture stays readable in a terminal and
 // so the important things are the ones that stand out: you, then players, then
@@ -881,6 +881,36 @@ export class World {
 
   // ------------------------------------------------------------------ travel
 
+  /**
+   * Can `room` be WALKED from the door you came in by to the door you want? `null` when
+   * the table cannot say, and every caller must read that as "carry on".
+   *
+   * The router has always planned over rooms, which assumes any two doors of a room are
+   * joined by floor. Often they are not. The Cragged Mountains basin reaches exactly one
+   * of its five exits on foot. West Merchant Way is the same shape inverted — the operator
+   * walked it: you come in from Marion at the TOP, walk down, and cannot climb back, and
+   * blink does not help either. A route planned in ignorance of that is not a long route,
+   * it is a plan that puts a character in a hole it cannot leave.
+   *
+   * The answer is already baked: every anchor in substrate/m59-routes.json carries the
+   * strongly-connected region of the room's floor it stands in.
+   *
+   * IT ONLY EVER REFUSES ON EVIDENCE. No table, no masks, an unbaked room, an anchor that
+   * is not there, or a region of -1 all return null rather than false — the same rule the
+   * step mask follows, and for the same reason: a bake must never be the thing that makes
+   * a doorway disappear.
+   */
+  transitOk() {
+    const table = activeRoutes();
+    if (!table) return null;
+    return (room, cameFrom, goingTo) => {
+      const inA = anchorFor(table, room, cameFrom);
+      const outA = anchorFor(table, room, goingTo);
+      if (!inA || !outA) return null;
+      return sameRegion(table, room, inA, outA);
+    };
+  }
+
   // A route to another room, expressed as things to do rather than rooms to be in.
   // Each leg says which square to stand on and which mechanism to use, because the
   // two mechanisms are not interchangeable and getting it wrong produces silence.
@@ -895,7 +925,8 @@ export class World {
     const merged = avoid?.size
       ? new Set([...AVOID_IN_TRANSIT, ...avoid])
       : AVOID_IN_TRANSIT;
-    const r = findPath(this.map, room.num, toRoomNum, { avoid: merged });
+    const r = findPath(this.map, room.num, toRoomNum,
+                       { avoid: merged, transitOk: this.transitOk() });
     if (!r.found) return r;
     return {
       found: true,

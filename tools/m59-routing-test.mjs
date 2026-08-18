@@ -775,5 +775,75 @@ console.log('\nthe last step into the goal — strict first, exemption as a fall
   }
 }
 
+// ---------------------------------------------- crossing a room, not merely entering it
+// THE ROUTER PLANNED OVER ROOMS, WHICH ASSUMES ANY TWO DOORS OF A ROOM ARE JOINED BY FLOOR.
+//
+// Often they are not. The Cragged Mountains basin reaches exactly one of its five exits on
+// foot. West Merchant Way is the same shape inverted, and the operator walked it: you enter
+// from Marion at the TOP, walk down, and cannot climb back — and unlike the Cragged
+// Mountains, blink does not help. Their words: "some exits aren't reachable from others".
+//
+// A route planned in ignorance of that is not a long route. It is a plan that walks a
+// character into a hole. The regions needed to see it were already baked per anchor.
+//
+// Measured across fourteen town-to-town journeys with the predicate supplied: TWO change —
+// Jasper<->Barloque stops threading the impossible 545/556 crossing and goes round for two
+// extra hops — and ZERO are lost.
+console.log('\ncrossing a room — planning over doors rather than over rooms');
+{
+  const realMap = existsSync(join('substrate', 'm59-map.json')) ? await loadMap() : null;
+  const table = realMap ? (await import('./m59-routes.mjs')).routesFor(realMap.geometryManifestSha256) : null;
+  const { anchorFor: aFor, sameRegion: sameReg } = await import('./m59-routes.mjs');
+  const { findPath: fp } = await import('./m59-map.mjs');
+  if (!table) {
+    skip('a transit the room cannot walk is routed around', 'no usable routing table on disk');
+  } else {
+    const transitOk = (room, cameFrom, goingTo) => {
+      const a = aFor(table, room, cameFrom), b = aFor(table, room, goingTo);
+      if (!a || !b) return null;
+      return sameReg(table, room, a, b);
+    };
+    // The measured pair. 545 cannot be crossed from its Marion side to its 556 door.
+    const before = fp(realMap, 382, 101);
+    const after = fp(realMap, 382, 101, { transitOk });
+    const rooms = p => [382, ...p.hops.map(h => h.to)];
+    ok('the old plan threaded West Merchant Way straight into Deep Forest of Farol',
+       (() => { const r = rooms(before); const i = r.indexOf(556);
+                return i >= 0 && r[i + 1] === 545; })(), JSON.stringify(rooms(before)));
+    ok('the transit-aware plan does not', after.found &&
+       (() => { const r = rooms(after); const i = r.indexOf(556);
+                return i < 0 || r[i + 1] !== 545; })(), JSON.stringify(rooms(after)));
+    ok('and it still gets there', after.found === true);
+    ok('and says the crossings were checked', after.transit_checked === true);
+
+    // NOTHING IS LOST. A bake must never be the reason a journey becomes impossible — the
+    // same rule the step mask follows, and the one that matters most here because this
+    // constraint is applied to EVERY route the fleet plans.
+    const TOWNS = [50, 382, 350, 101, 102, 150, 200];
+    let lost = 0, checked = 0;
+    for (const a of TOWNS) for (const b of TOWNS) {
+      if (a === b) continue;
+      checked++;
+      if (fp(realMap, a, b).found && !fp(realMap, a, b, { transitOk }).found) lost++;
+    }
+    ok(`no town-to-town journey is lost to the constraint (${checked} pairs)`, lost === 0,
+       `${lost} lost — a bake must never make a journey impossible`);
+
+    // AND AN UNKNOWN NEVER REFUSES. A predicate that answers null for everything has to
+    // leave the route exactly as it was, or an unbaked room silently severs the world.
+    const blind = fp(realMap, 382, 101, { transitOk: () => null });
+    ok('a predicate that knows nothing changes no route',
+       blind.found && JSON.stringify(rooms(blind)) === JSON.stringify(rooms(before)),
+       JSON.stringify({ blind: rooms(blind), before: rooms(before) }));
+
+    // AND IT FALLS BACK RATHER THAN REFUSING. With every crossing denied there is no legal
+    // route at all, and the answer must still be the old one, flagged.
+    const denied = fp(realMap, 382, 101, { transitOk: () => false });
+    ok('with every crossing denied it falls back instead of refusing',
+       denied.found === true && denied.transit_unverified === true,
+       JSON.stringify({ found: denied.found, flag: denied.transit_unverified }));
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
 process.exit(failed ? 1 : 0);

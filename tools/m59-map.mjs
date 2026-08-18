@@ -857,22 +857,34 @@ export function roomsWithin(map, fromNum, radius = 2, { avoid = AVOID_IN_TRANSIT
 // The search itself. Unchanged except that it can be told to pretend some rooms are not
 // there — `avoid` is consulted for rooms we would PASS THROUGH, never for where we are or
 // where we are going.
-function bfsPath(map, fromNum, toNum, avoid) {
-  const seen = new Set([fromNum]);
-  const q = [[fromNum, []]];
+function bfsPath(map, fromNum, toNum, avoid, transitOk = null) {
+  // WITH A TRANSIT PREDICATE THE STATE IS (ROOM, DOOR YOU CAME IN BY), NOT THE ROOM.
+  //
+  // Whether you can cross a room depends on which side you entered it from, so keying
+  // `seen` on the room alone would let the first arrival at R close it off for every other
+  // approach — including the one that could have crossed. That turns a constraint meant to
+  // remove impossible routes into one that removes possible ones.
+  const key = transitOk ? (from, at) => `${from}>${at}` : (_from, at) => String(at);
+  const seen = new Set([key(null, fromNum)]);
+  const q = [[fromNum, [], null]];
   while (q.length) {
-    const [at, sofar] = q.shift();
+    const [at, sofar, cameFrom] = q.shift();
     const room = map.rooms[at];
     if (!room) continue;
     for (const ex of passableExits(map, at)) {
-      if (ex.to == null || seen.has(ex.to)) continue;
+      if (ex.to == null) continue;
+      // Can this room be walked from the door we arrived by to the one we want? Only
+      // an explicit FALSE refuses: no table, no anchors, no answer all mean "carry on".
+      if (transitOk && cameFrom != null && transitOk(at, cameFrom, ex.to) === false) continue;
+      const k = key(at, ex.to);
+      if (seen.has(k)) continue;
       const hop = { from: at, fromName: room.name, to: ex.to,
                     toName: map.rooms[ex.to]?.name || `room ${ex.to}`, ...ex };
       const next = [...sofar, hop];
       if (ex.to === toNum) return { found: true, hops: next };
-      seen.add(ex.to);
+      seen.add(k);
       if (avoid?.has(ex.to)) continue;         // reachable, just not walked THROUGH
-      q.push([ex.to, next]);
+      q.push([ex.to, next, at]);
     }
   }
   return { found: false, hops: [], reason: `no route from ${fromNum} to ${toNum} in the graph` };
@@ -942,11 +954,14 @@ const DETOUR_SLACK = 2;
  * rooms that the spawn table cannot express: 534 is deadly in transit because of how many
  * things gang up in it, not because its worst single generator is remarkable.
  */
-function safestPath(map, fromNum, toNum, avoid, danger, budget) {
+function safestPath(map, fromNum, toNum, avoid, danger, budget, transitOk = null) {
   // Dijkstra on (worst room so far, hops). The frontier is small enough — the whole world
   // is a few hundred rooms — that a sorted insert beats a heap in both speed and reading.
-  const best = new Map([[fromNum, { worst: 0, hops: 0 }]]);
-  const queue = [{ at: fromNum, worst: 0, hops: 0, path: [] }];
+  // Same keying argument as bfsPath: with a transit predicate the state carries the door
+  // we came in by, because that is what decides whether the room can be crossed at all.
+  const key = transitOk ? (from, at) => `${from}>${at}` : (_from, at) => String(at);
+  const best = new Map([[key(null, fromNum), { worst: 0, hops: 0 }]]);
+  const queue = [{ at: fromNum, worst: 0, hops: 0, path: [], cameFrom: null }];
   let answer = null;
   while (queue.length) {
     queue.sort((a, b) => a.worst - b.worst || a.hops - b.hops);
@@ -960,6 +975,9 @@ function safestPath(map, fromNum, toNum, avoid, danger, budget) {
     if (!room) continue;
     for (const ex of passableExits(map, cur.at)) {
       if (ex.to == null) continue;
+      // Only an explicit FALSE refuses — see bfsPath.
+      if (transitOk && cur.cameFrom != null
+          && transitOk(cur.at, cur.cameFrom, ex.to) === false) continue;
       const hop = { from: cur.at, fromName: room.name, to: ex.to,
                     toName: map.rooms[ex.to]?.name || `room ${ex.to}`, ...ex };
       const path = [...cur.path, hop];
@@ -978,11 +996,12 @@ function safestPath(map, fromNum, toNum, avoid, danger, budget) {
       }
       if (avoid?.has(ex.to)) continue;
       const worst = Math.max(cur.worst, dangerOf(danger, ex.to));
-      const seen = best.get(ex.to);
+      const k = key(cur.at, ex.to);
+      const seen = best.get(k);
       if (seen && (seen.worst < worst || (seen.worst === worst && seen.hops <= path.length)))
         continue;
-      best.set(ex.to, { worst, hops: path.length });
-      queue.push({ at: ex.to, worst, hops: path.length, path });
+      best.set(k, { worst, hops: path.length });
+      queue.push({ at: ex.to, worst, hops: path.length, path, cameFrom: cur.at });
     }
   }
   return answer
@@ -999,8 +1018,43 @@ function safestPath(map, fromNum, toNum, avoid, danger, budget) {
 // worth having in the most load-bearing function in the repository.
 export function findPath(map, fromNum, toNum,
                          { avoid = AVOID_IN_TRANSIT, danger = true,
-                           allowHazardDestination = false } = {}) {
+                           allowHazardDestination = false,
+                           // CAN THIS ROOM BE WALKED FROM THE DOOR I CAME IN BY TO THE ONE
+                           // I WANT? `(room, cameFrom, goingTo) => boolean|null`.
+                           //
+                           // This function has always planned over ROOMS, which assumes a
+                           // room can be crossed between any two of its doors. Frequently it
+                           // cannot: the Cragged Mountains basin reaches exactly one of its
+                           // five exits on foot, and West Merchant Way is the same shape
+                           // inverted — you enter from Marion at the TOP, walk down, and
+                           // cannot climb back, with no blink route out either. The
+                           // operator's words: "some exits aren't reachable from others".
+                           //
+                           // A route that ignores that is not merely long, it is a plan to
+                           // walk a character into a hole. The regions this needs are
+                           // already baked per anchor in substrate/m59-routes.json.
+                           transitOk = null,
+                           // internal: the strict half of the two-pass below
+                           strictTransit = false } = {}) {
   if (fromNum === toNum) return { found: true, hops: [] };
+
+  // TWO PASSES, AND THE SECOND IS EXACTLY WHAT THIS FUNCTION DID BEFORE.
+  //
+  // The transit view is a MODEL of somebody else's server and it is stricter than the
+  // world — the same argument the step mask carries, and the same failure if inverted: a
+  // bake must never be the reason a journey becomes impossible. So a route that only
+  // exists through a transit the table dislikes is still returned, flagged
+  // `transit_unverified`, rather than refused. Being wrong about a crossing costs a walk;
+  // refusing costs the errand, silently.
+  if (transitOk && !strictTransit) {
+    const strict = findPath(map, fromNum, toNum,
+      { avoid, danger, allowHazardDestination, transitOk, strictTransit: true });
+    if (strict.found) return { ...strict, transit_checked: true };
+    const loose = findPath(map, fromNum, toNum,
+      { avoid, danger, allowHazardDestination, transitOk: null });
+    return loose.found ? { ...loose, transit_unverified: true } : loose;
+  }
+  const crossing = strictTransit ? transitOk : null;
 
   // THE HARD BLOCK, APPLIED BEFORE ANYTHING ELSE AND NEVER RELAXED. See NEVER_ENTER: the
   // permissive fallback at the bottom of this function is what makes `avoid` a preference,
@@ -1029,10 +1083,10 @@ export function findPath(map, fromNum, toNum,
   if (danger !== false) {
     const table = danger instanceof Map ? danger : roomDanger();
     if (table.size) {
-      const shortest = bfsPath(map, fromNum, toNum, skip?.size ? skip : null);
+      const shortest = bfsPath(map, fromNum, toNum, skip?.size ? skip : null, crossing);
       if (shortest.found) {
         const budget = shortest.hops.length * DETOUR_FACTOR + DETOUR_SLACK;
-        const safest = safestPath(map, fromNum, toNum, skip, table, budget);
+        const safest = safestPath(map, fromNum, toNum, skip, table, budget, crossing);
         // Only worth reporting as a different route when it actually is one.
         if (safest.found) return { ...safest,
           shortest_hops: shortest.hops.length,
@@ -1043,14 +1097,14 @@ export function findPath(map, fromNum, toNum,
   }
 
   if (skip?.size) {
-    const safer = bfsPath(map, fromNum, toNum, skip);
+    const safer = bfsPath(map, fromNum, toNum, skip, crossing);
     if (safer.found) return safer;
   }
   // THE LAST RESORT STILL HONOURS THE HARD BLOCK. This line used to pass `null`, which is
   // what made every avoid a preference — and it is the line Statler's route came down.
   // A soft hazard is dropped here; a NEVER_ENTER room is not, so a journey that needs one
   // comes back `found: false` and names the room rather than walking a character into it.
-  const last = bfsPath(map, fromNum, toNum, forbidden.size ? forbidden : null);
+  const last = bfsPath(map, fromNum, toNum, forbidden.size ? forbidden : null, crossing);
   if (!last.found && forbidden.size)
     return { ...last, blocked_by_hazard: [...forbidden],
              reason: `${last.reason} without crossing ${[...forbidden]
