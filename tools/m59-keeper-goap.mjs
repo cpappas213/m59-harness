@@ -88,9 +88,16 @@ export class GOAPKeeper {
     // 1. Read the world state.
     const ws = evaluate({ client: c, policy: this.policy, agent: this.policy.agent });
 
+    // Visible log: every GOAP pass is logged to the broker console so the
+    // journal (in-memory, lost on restart) is not the only record.
+    const wsSummary = Object.entries(ws).filter(([,v]) => v !== null)
+      .map(([k,v]) => `${k}=${v}`).join(' ');
+    console.error(`[goap] ${this.policy.agent ?? this.session?.name ?? '?'} pass ${this._passCount} goal=${this.goal} ${wsSummary}`);
+
     // 2. Is the goal already satisfied? If so, do nothing (or pick a
     //    secondary goal). For now: idle.
     if (ws[this.goal] === true) {
+      this.note('goap idle', { goal: this.goal, reason: 'goal already satisfied', pass: this._passCount });
       return { acted: false, action: null, reason: `goal ${this.goal} already satisfied` };
     }
 
@@ -105,6 +112,8 @@ export class GOAPKeeper {
     if (!p.found) {
       // No plan. This is an answer, not a failure: something the plan needs
       // is absent. The character idles until the world changes.
+      this.note('goap no plan', { goal: this.goal, reason: p.reason ?? 'goal not reachable', pass: this._passCount });
+      console.error(`[goap] ${this.policy.agent ?? this.session?.name ?? '?'} pass ${this._passCount} NO PLAN: ${p.reason ?? 'goal not reachable'}`);
       return { acted: false, action: null, reason: `no plan: ${p.reason ?? 'goal not reachable'}` };
     }
 
@@ -116,12 +125,14 @@ export class GOAPKeeper {
 
     const result = await stepPlan(c, this.session, p, { index: 0 });
 
+    const actionName = step.action ?? p.names?.[0] ?? 'unknown';
     this.note('goap step', {
-      action: step.action ?? p.names?.[0] ?? 'unknown',
+      action: actionName,
       result: result,
       pass: this._passCount,
       plan: p.names ?? [],
     });
+    console.error(`[goap] ${this.policy.agent ?? this.session?.name ?? '?'} pass ${this._passCount} ACTION=${actionName} plan=[${(p.names ?? []).join(' -> ')}] result=${result?.sent !== false ? 'sent' : 'refused: ' + (result?.reason ?? '?')}`);
 
     return {
       acted: result.sent !== false,
