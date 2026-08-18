@@ -1967,6 +1967,19 @@ const arrivalReport = (s) => {
 
 const orderExits = (candidates) => candidates.slice().sort((a, b) =>
   (a.reachable === false) - (b.reachable === false) ||
+  // A CROSSING THE MOVER WILL WALK EVERY STEP OF BEATS ONE IT ONLY MIGHT.
+  //
+  // `verified` is false when the only route to that square needs a last step the mover
+  // refuses — `path` plans it rather than delete a doorway, and says so. Trying such a
+  // square is not free: each attempt is a FULL WALK ACROSS THE ROOM, and The King's Way is
+  // 129x88. Measured over three hours, 178 of 1,445 successful hops carried 29,471 seconds
+  // between them while the other 1,267 carried 58 seconds in total, and the expensive ones
+  // are exactly the ones with `tried` of 5, 6, 7, 13, 14. One hop spent 16.7 minutes trying
+  // fourteen squares. Ordering the ones that will work to the front is most of that back.
+  //
+  // Only a tie-break, never a filter: an unverified square is still offered, still tried,
+  // and still crosses — see leaveViaAny, and the whole argument in m59-world's `reach`.
+  (a.verified === false) - (b.verified === false) ||
   // AN EXIT WITH NO SQUARE TO STAND ON GOES LAST. Without a stand_on, leaveVia falls
   // back to scanning the whole boundary line for somewhere walkable — and when that
   // line has no floor it fails outright, which is the "no floor anywhere on the west
@@ -4780,10 +4793,30 @@ class Session {
   // report what each said.
   async leaveViaAny(candidates, { movementGeneration = this.movementGeneration, controlToken } = {}) {
     const tried = [];
+    // HOW MANY FULL ROOM-WALKS ONE DOORWAY IS WORTH.
+    //
+    // Every candidate after the first is another walk across the room to another square on
+    // the same wall, and in the big outdoor rooms that is minutes each. Measured over three
+    // hours: the hops that cost 5-16 MINUTES are precisely the ones that worked through 5,
+    // 6, 7, 13 and 14 squares, while a hop that takes its first or second square costs
+    // seconds. Fourteen attempts never once found a square the first two did not.
+    //
+    // So a boundary gets a bounded number of tries and the journey then REPLANS — which is
+    // the cheaper answer by a wide margin, because `travel`'s stumble already re-reads the
+    // room and can pick a different way round entirely. This is a budget on how long to
+    // insist, not a claim that the wall is shut: `spreadEdges` still offers every square,
+    // ordering still puts the best first, and the unvalidated fallback below still runs.
+    const budget = Number(process.env.M59_EXIT_CANDIDATES || 3);
+    let spent = 0;
     // spreadEdges turns each declared edge into one candidate per square that crosses
     // that boundary — see m59-world.mjs. Without it this tried the nearest square and
     // called the whole wall refused.
     for (const exit of orderExits(spreadEdges(candidates))) {
+      if (++spent > budget) {
+        tried.push({ stand_on: exit.stand_on,
+                     why: `not tried — this boundary had already cost ${budget} walks across the room` });
+        break;
+      }
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement({ tried });
       const r = await this.leaveVia(exit, { movementGeneration, controlToken });
       if (r.left) return { ...r, used_exit: exit, stood_on: this.lastExitStand ?? null,
