@@ -181,8 +181,12 @@ export class GOAPKeeper {
     const goalStack = [
       { goal: '!in_underworld', when: ws.in_underworld === true },
       { goal: 'armed',         when: ws.armed === false },
-      { goal: 'has_food',      when: ws.has_food === false },
+      // has_food: only try when the character CAN get food (has
+      // reagents to cast create food, or has money to buy).
+      // Otherwise, skip to the next goal: rest to the cap (80).
+      { goal: 'has_food',      when: ws.has_food === false && (ws.has_reagents === true || ws.has_money === true) },
       { goal: 'has_money',     when: ws.has_money === false && ws.has_loot === true },
+      { goal: 'can_rest_higher', when: ws.can_rest_higher === true },
       { goal: this.goal,       when: ws[this.goal] !== true },
     ];
     const active = goalStack.find(g => g.when);
