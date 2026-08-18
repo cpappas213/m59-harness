@@ -388,7 +388,8 @@ console.log('\nstanding where the grid says there is no floor');
 // Everything above runs anywhere. This part needs the game's own room files, so it
 // SKIPS rather than fails when they are absent — a clone without M59_ROOT is not a
 // broken checkout.
-const roomsDir = DEFAULT_ROO_DIRS.find(d => { try { return fs.statSync(d).isDirectory(); } catch { return false; } });
+const roomsDir = DEFAULT_ROO_DIRS.find(d => { try { return fs.statSync(d).isDirectory(); } catch { return false; } })
+  || (process.env.M59_ROOT ? process.env.M59_ROOT + '/resource/rooms' : null);
 console.log('\nagainst the real rooms');
 if (!roomsDir) {
   skip('every room parses', 'no resource/rooms directory on this machine');
@@ -483,6 +484,47 @@ if (!roomsDir) {
       for (const nb of g.neighbors(r, c)) { const k = `${nb.row},${nb.col}`; if (!seen.has(k)) { seen.add(k); q.push([nb.row, nb.col]); } } }
     ok('the coarse grid still strands part of the room', walkable.length - seen.size > 0,
        `${walkable.length - seen.size} of ${walkable.length} walkable squares unreachable from (8,8)`);
+  }
+}
+
+console.log('\nheight map from BSP leaves');
+if (!roomsDir) {
+  skip('floorHeightAtCell / heightMap / heightStepOk', 'no resource/rooms directory');
+} else {
+  // Flat room: every resolved cell has the same height, all steps legal.
+  const flat = parseRoo(fs.readFileSync(path.join(roomsDir, 'c4.roo')), 'c4.roo');
+  const fhm = flat.heightMap();
+  const fvals = [...new Set(fhm)].filter(v => v >= 0);
+  ok('flat room has a single floor height', fvals.length === 1, `${fvals.length} unique`);
+  // Pick two adjacent resolved cells; a step between them must be legal.
+  let flatPair = null;
+  outer: for (let r = 1; r < flat.rows; r++) for (let c = 1; c < flat.cols; c++) {
+    if (fhm[(r-1)*flat.cols + (c-1)] >= 0 && fhm[(r-1)*flat.cols + c] >= 0) { flatPair = [r, c]; break outer; }
+  }
+  if (flatPair) {
+    const [r, c] = flatPair;
+    ok('flat adjacent step is legal', flat.heightStepOk(r, c, r, c + 1) === true);
+    ok('same-cell step is legal', flat.heightStepOk(r, c, r, c) === true);
+  }
+  // Multi-level room: more than one height, and some adjacent steps are ledges (illegal).
+  const multi = parseRoo(fs.readFileSync(path.join(roomsDir, 'KA1.roo')), 'KA1.roo');
+  const mhm = multi.heightMap();
+  const mvals = [...new Set(mhm)].filter(v => v >= 0);
+  ok('multi-level room has several floor heights', mvals.length > 3, `${mvals.length} unique`);
+  let legal = 0, ledge = 0, voidPair = 0;
+  for (let r = 1; r < multi.rows; r++) for (let c = 1; c < multi.cols; c++) {
+    const a = mhm[(r-1)*multi.cols + (c-1)];
+    const b = mhm[(r-1)*multi.cols + c];
+    if (a >= 0 && b >= 0) {
+      if (multi.heightStepOk(r, c, r, c + 1)) legal++; else ledge++;
+    } else if (a >= 0 || b >= 0) voidPair++;
+  }
+  ok('multi-level room has at least one ledge between resolved neighbours', ledge > 0, `${ledge} ledges, ${legal} steps`);
+  // A void neighbour is never a legal step.
+  let voidChecked = false;
+  for (let r = 1; r < multi.rows && !voidChecked; r++) for (let c = 1; c < multi.cols; c++) {
+    const a = mhm[(r-1)*multi.cols + (c-1)], b = mhm[(r-1)*multi.cols + c];
+    if (a >= 0 && b < 0) { ok('step into a void is illegal', multi.heightStepOk(r, c, r, c + 1) === false); voidChecked = true; break; }
   }
 }
 

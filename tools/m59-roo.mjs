@@ -1479,6 +1479,59 @@ export class RoomGeometry {
   }
 
   /**
+   * Floor height (fine units) at the CENTER of a square, from the BSP sector under it.
+   * kod-style 1-based. Returns null if no sector covers the square center (rare — a
+   * square whose center falls in a zero-area gap between polygons, or outside the room).
+   *
+   * This is the source of truth for height: the sector a leaf occupies has a floorHeight
+   * (and possibly a slope). Two adjacent squares with a floor-height difference greater
+   * than one step (~1024) are a ledge — you can't walk across it, and a drop is a fall.
+   * Flat rooms (most outdoor hunting) have one height everywhere and this is a no-op.
+   */
+  floorHeightAtCell(row, col) {
+    if (!this.inBounds(row, col)) return null;
+    const x = ((col - 1) + 0.5) * 1024;   // cell center, fine units
+    const y = ((row - 1) + 0.5) * 1024;
+    const leaf = this.leafAtClient(x, y);
+    if (!leaf?.sector) return null;
+    const h = floorHeightAt(x, y, leaf.sector);
+    return Number.isFinite(h) ? h : null;
+  }
+
+  /**
+   * Per-square floor-height map, 0-indexed [row][col] flattened to length rows*cols.
+   * Values are fine units; -1 marks a square with no BSP floor (treat as a void/cliff edge).
+   * Cached on the instance.
+   */
+  heightMap() {
+    if (this._heightMap) return this._heightMap;
+    const out = new Int32Array(this.rows * this.cols).fill(-1);
+    for (let row = 1; row <= this.rows; row++) {
+      for (let col = 1; col <= this.cols; col++) {
+        const h = this.floorHeightAtCell(row, col);
+        if (h != null) out[(row - 1) * this.cols + (col - 1)] = h;
+      }
+    }
+    this._heightMap = out;
+    return out;
+  }
+
+  /**
+   * Is stepping from (r0,c0) to (r1,c1) a legal height change?
+   * Legal if both have a floor and the difference is at most one step (STEP_UNITS).
+   * A missing floor on either side is treated as blocked (void/cliff).
+   */
+  heightStepOk(r0, c0, r1, c1, STEP_UNITS = MAX_STEP_HEIGHT) {
+    const h0 = this.floorHeightAtCell(r0, c0);
+    const h1 = this.floorHeightAtCell(r1, c1);
+    if (h0 == null || h1 == null) return false;
+    // The game's client enforces a 384-unit climb (move.c). A full cell is 1024,
+    // so any adjacent cells at different BSP floor heights are, by a wide margin,
+    // a ledge either up or down. Same-height cells (flat floor) always pass.
+    return Math.abs(h0 - h1) <= STEP_UNITS;
+  }
+
+  /**
    * Could a player be at this exact point? Floor under it, and a sector with an INTERIOR.
    *
    * "HAS A FLOOR HEIGHT" IS NOT "IS A PLACE", AND THE DIFFERENCE IS 33.8% OF THE WORLD.

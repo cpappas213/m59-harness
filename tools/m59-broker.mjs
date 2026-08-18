@@ -14193,6 +14193,37 @@ function heroSnapshot(name) {
         cols: c.room.cols ?? 50,
         rows: c.room.rows ?? 48,
         self: me ? { col: me.col, row: me.row } : null,
+        // Resolve this room's .roo geometry ONCE. Live server room ids are unstable
+        // (1386) and do not match the movement-map ids (544), so a direct
+        // worldMap.rooms[liveId] lookup misses. Try the live id first, then the room
+        // name against both the movement map and the roo-by-name lookup. This is the
+        // same resolution the GOAP keeper does for pathfinding, without which the
+        // walkability grid, walls, and height map all fall back to "no data".
+        _geo: (() => {
+          try {
+            const roomName = c.rsc?.get?.(c.roomNameRsc);
+            // 1. live id directly in the movement map
+            let roo = worldMap.rooms?.[c.room.id]?.roo;
+            if (roo?.flags) return roo;
+            // 2. name -> movement-map room
+            if (roomName) {
+              const byName = Object.values(worldMap.rooms ?? {}).find(r => r.name === roomName);
+              if (byName?.roo?.flags) return byName.roo;
+            }
+            // 3. name -> .roo file on disk (load + cache the parsed geometry)
+            if (roomName && roomRooLookup.size) {
+              const rooFile = roomRooLookup.get(roomName);
+              if (rooFile) {
+                const cacheKey = 'geo:' + roomName;
+                if (_walkableCache.has(cacheKey)) return _walkableCache.get(cacheKey);
+                const m59Root = process.env.M59_ROOT || '/Users/costas/Documents/Projects/Meridian59';
+                const geo = loadRoo(rooFile, [m59Root + '/resource/rooms']);
+                if (geo) { _walkableCache.set(cacheKey, geo); return geo; }
+              }
+            }
+            return null;
+          } catch { return null; }
+        })(),
         walkable: (() => {
           try {
             const roomNum = c.room.id;
@@ -14260,6 +14291,45 @@ function heroSnapshot(name) {
             }
             return [];
           } catch { return []; }
+        })(),
+        heights: (() => {
+          try {
+            const cols = c.room.cols ?? 50;
+            const rows = c.room.rows ?? 48;
+            const roomName = c.rsc?.get?.(c.roomNameRsc);
+            // Height data needs the full BSP parse (leaves -> sectors -> floorHeight),
+            // which only loadRoo produces. Resolve the .roo file by the live id or the
+            // room name (live ids do not match map ids).
+            let rooFile = null;
+            // name in the roo-by-name lookup
+            if (roomName && roomRooLookup.size) rooFile = roomRooLookup.get(roomName);
+            // name in the movement map -> its roo filename
+            if (!rooFile && roomName) {
+              const byName = Object.values(worldMap.rooms ?? {}).find(r => r.name === roomName);
+              if (byName?.roo?.file) rooFile = byName.roo.file;
+            }
+            if (!rooFile) return { heights: [], min: 0, max: 0, step: 1024 };
+            const cacheKey = 'h:' + rooFile + ':' + rows + 'x' + cols;
+            if (_walkableCache.has(cacheKey)) return _walkableCache.get(cacheKey);
+            const m59Root = process.env.M59_ROOT || '/Users/costas/Documents/Projects/Meridian59';
+            const geo = loadRoo(rooFile, [m59Root + '/resource/rooms']);
+            if (!geo?.heightMap) return { heights: [], min: 0, max: 0, step: 1024 };
+            const hm = Array.from(geo.heightMap());
+            // Crop/pad to live room dims
+            const out = new Array(rows * cols).fill(-1);
+            for (let r = 0; r < Math.min(rows, geo.rows); r++)
+              for (let col = 0; col < Math.min(cols, geo.cols); col++)
+                out[r * cols + col] = hm[r * geo.cols + col];
+            const vals = out.filter(v => v >= 0);
+            const min = vals.length ? Math.min(...vals) : 0;
+            const max = vals.length ? Math.max(...vals) : 0;
+            // Compact: store height in CELLS (units of 1024), one decimal. -1 = void.
+            // The 3D view multiplies by 1 world unit per cell.
+            const packed = out.map(v => v < 0 ? -1 : Math.round((v / 1024) * 10) / 10);
+            const res = { heights: packed, min: min / 1024, max: max / 1024, step: 1024 };
+            _walkableCache.set(cacheKey, res);
+            return res;
+          } catch { return { heights: [], min: 0, max: 0, step: 1024 }; }
         })(),
         objects: [...c.room.objects.values()].map(o => ({
           id: o.id,
