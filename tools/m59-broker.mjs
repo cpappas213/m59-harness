@@ -3743,6 +3743,61 @@ class Session {
 
     let queue = plan.steps.slice();
     let taken = 0, replans = 0;
+    // A STEP A MONSTER REFUSED IS NOT A STEP THE ROUTE SPENT.
+    //
+    // `maxSteps` exists to stop a walk that is going nowhere. A body in the way is going
+    // nowhere for a completely different reason, and the walk's own reply already says so
+    // — "N monster collision(s) during travel ate the budget; the route itself was not
+    // refused" — while nothing acted on it. So a busy doorway exhausted the budget before
+    // the geometry ever got a fair try, and the walker reported a wall.
+    //
+    // Traced live crossing the Western border of the Twisted Wood, a room whose west door
+    // is one body wide: 14 and then 19 monster collisions inside a 40-step budget, seven
+    // stumbles, five minutes, and 6-17 health lost per attempt. That is the room's 19 prod
+    // deaths in eight hours, and the geometry was never the thing that ran out.
+    //
+    // Refunded, not waived — and the refund is bounded by the budget itself, so a walk can
+    // be pushed through traffic at most twice over and a corridor that is permanently
+    // plugged still ends. The damage checks above are untouched: a character being HIT
+    // still gives up early, because bleeding out in a doorway is the failure this is meant
+    // to prevent, not one to be patient about.
+    let refunded = 0;
+    // AND A REPLAN THAT GOT US CLOSER IS NOT A WASTED REPLAN.
+    //
+    // `replanBudget` is 8 plus a tenth of the plan, so a 65-step crossing gets about 14.
+    // That is a fine allowance for "the route was stale" and far too small for what these
+    // rooms actually do: the mover SLIDES, so a walk lands off its planned square
+    // constantly, replans from where it really is, and carries on — measured offline
+    // against the real geometry, Western border of the Twisted Wood arrives at 5.35x the
+    // planned step count and The Cragged Mountains at 6.58x. A budget of 14 cannot reach
+    // the end of either, so the walk was guaranteed to report "kept ending up somewhere
+    // other than the planned square" no matter how well it was going.
+    //
+    // Traced live on 587 after the monster refund above: two collisions, three health, and
+    // still no arrival — the budget ran out while the character was making ground.
+    //
+    // So the budget is spent on replans that get us NO CLOSER, which is the thing it was
+    // always meant to catch. Distance is Chebyshev to the target square, the same metric
+    // the router's heuristic uses. A walk that keeps closing the gap keeps its allowance;
+    // one that is genuinely going nowhere still ends after the same fourteen tries.
+    let closest = Infinity;
+    // AND ROUTING ROUND A LIVE OBSTACLE COSTS REPLANS THAT THE ROUTE DID NOT.
+    //
+    // The budget is an allowance for the MAP being wrong. A monster in the way is not the
+    // map being wrong — it is the map being briefly occupied, and getting round it is
+    // exactly the work we want the walker to do. Charging that to the same purse means a
+    // busy corridor spends the allowance meant for genuine dead ends, and the walk reports
+    // a route failure for what was traffic.
+    //
+    // Worth knowing what this refund is trusting. `object_blocked` is OUR pass, in
+    // m59-roo.mjs, and the RULE is not a guess: it reproduces the server's own
+    // MoveObjectAllowed — obstacle as a square, one coordinate pushed to its edge, the
+    // modified point taken only if walls allow it. What it cannot be sure of is WHERE the
+    // obstacle is, because positions arrive on the server's push and a moving monster's
+    // can be a second stale. So the refund is bounded rather than open: a real wall
+    // misreported as a body would otherwise buy itself unlimited retries.
+    let collisionReplans = 0;
+    const collisionReplanMax = Number(process.env.M59_COLLISION_REPLANS || 12);
     // SQUARES SOMETHING IS STANDING ON. The geometry models walls and knows nothing
     // about occupancy, and these rooms cap at seven to twelve monsters — so the common
     // reason a step does not happen is that something is in the way.
@@ -3959,6 +4014,7 @@ class Session {
       // local collision pass; every other refusal is geometry. Waiting 700ms for a wall to
       // wander off was pure cost, and it was paid on every lap of the bounce above.
       const hitSomething = r.reason === 'object_blocked';
+      if (hitSomething && refunded < maxSteps) { taken -= hop; refunded++; }
 
       // THE EDGE THAT REFUSED IS THE ONE WE ASKED FOR, AND IT IS NAMED FROM WHERE WE
       // ASKED IT — not from where we ended up. That distinction is the whole of this fix.
@@ -4107,7 +4163,13 @@ class Session {
       // whole walk at 400 steps, so this cannot run away — the cap that actually stops a
       // runaway is the step count, not this.
       const replanBudget = 8 + Math.floor((plan.steps?.length ?? 0) / 10);
-      if (!learned && ++replans > replanBudget)
+      const gap = Math.max(Math.abs(now.row - row), Math.abs(now.col - col));
+      const gainedGround = gap < closest;
+      if (gainedGround) closest = gap;
+      // A body in the way buys its own replan, up to a bound.
+      const bodyPaid = hitSomething && collisionReplans < collisionReplanMax
+        ? (collisionReplans++, true) : false;
+      if (!learned && !gainedGround && !bodyPaid && ++replans > replanBudget)
         return { arrived: false, blocked_at: { col: now.col, row: now.row }, steps: taken,
                  routed_around: [...occupied], refused_edges: blockedEdges.size,
                  ...(monsterBlocks ? { monster_blocked: monsterBlocks,
@@ -4226,7 +4288,22 @@ class Session {
     // are up to 80x80, so a boundary square can be well over a hundred steps away —
     // and a cap turns a perfectly good exit into a hop that "fails" for no stated
     // reason, which is exactly the silent failure this broker exists to remove.
-    const budget = e => Math.max(40, (e.steps_away ?? 0) + 20);
+    // THE BUDGET HAS TO PAY FOR THE WALK, NOT FOR THE PLAN.
+    //
+    // `steps_away` counts PLANNED squares, and a plan is not what a walk costs here: the
+    // mover slides, so the walker lands off its planned square, replans from where it
+    // really is, and carries on. Measured offline against the real geometry, an arriving
+    // walk costs 0.87-1.04x its plan in the easy rooms and 2.40x in the Badlands, 5.35x in
+    // the Western border of the Twisted Wood and 6.58x in the Cragged Mountains — which
+    // are precisely the rooms where the fleet dies. `plan + 20` therefore ran out before
+    // arrival by construction in the only rooms that needed it, and the walk reported
+    // `stopped after 40 steps` about a route that was working.
+    //
+    // Doubled, with a floor that covers a short approach that goes badly. This is a
+    // ceiling on effort, not a promise to spend it: a walk that arrives spends what it
+    // needs, and the monster refund and the progress rule above already stop a walk that
+    // is going nowhere from reaching this number at all.
+    const budget = e => Math.max(60, (e.steps_away ?? 0) * 2 + 20);
 
     if (exit.kind === 'go') {
       // CLEARANCE ON, because this is the long routing: crossing a whole room to a
@@ -4857,6 +4934,9 @@ class Session {
     // and let `travel` route round.
     const narrowWaits = Number(process.env.M59_NARROW_WAITS || 3);
     const narrowWaitMs = Number(process.env.M59_NARROW_WAIT_MS || 1200);
+    // Far enough that a chasing monster has to come out of the gap to follow, short enough
+    // that the re-approach is a few seconds rather than a second crossing of the room.
+    const narrowBackoffCrumbs = Number(process.env.M59_NARROW_BACKOFF_CRUMBS || 4);
     const spread = spreadEdges(candidates);
     const stagingSquares = new Set(spread.map(e => `${e.stand_on?.col},${e.stand_on?.row}`));
     const isNeedle = stagingSquares.size <= 1 && spread.length > 0;
@@ -4899,9 +4979,33 @@ class Session {
         // reason to wait is that the blocker is expected to wander off; taking damage says
         // it has noticed us instead, and this repository has already paid for confusing
         // those two — see the note on `object_blocked` in walkTo.
+        // BACK UP, SO THE THING IN THE WAY FOLLOWS AND LEAVES THE DOORWAY.
+        //
+        // Standing at a one-body door waiting for a monster to wander off is the wrong
+        // model of a monster: it is not wandering, it is coming for us, and coming for us
+        // is exactly what makes it useful. A monster that chases vacates the choke point,
+        // and the door we could not squeeze past is then open. That is the ordinary way a
+        // person plays this — pull the blocker off the gap and go round it — and it is
+        // strictly better than the wait, which asks the same question with the same body
+        // in the same square.
+        //
+        // Retreat along BREADCRUMBS rather than picking a direction. Every crumb was
+        // authorised by the fine validator on the way in, so backing up cannot invent a
+        // traversal — it can only undo one — which matters here more than anywhere else,
+        // because the squares behind a needle are the tight ones. See the breadcrumb note
+        // in walkTo for why a coarse-grid escape hatch was rejected for this job.
+        //
+        // Still bounded, and still NOT done while we are being hit: a blocker that is
+        // already swinging is not going to be pulled anywhere, and the character needs to
+        // leave rather than to keep dancing at the gap. That is the one case where giving
+        // up quickly is the survival answer, and it is the case that kills characters in
+        // the Western border of the Twisted Wood.
         if (r.damage_while_blocked) {
           tried[tried.length - 1].note = 'one-square doorway, and we are being hit in it — not waiting';
         } else {
+          const backed = await this.retreatAlongBreadcrumbs(
+            { maxCrumbs: narrowBackoffCrumbs, movementGeneration, controlToken }).catch(() => null);
+          tried[tried.length - 1].backed_off = backed?.steps ?? 0;
           await new Promise(resolve => setTimeout(resolve, narrowWaitMs));
           index--;                      // the same square, later — that is the whole point
           continue;

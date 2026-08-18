@@ -1395,6 +1395,36 @@ console.log('\nterminal movement propagation and edge packet authority');
        JSON.stringify({ result, attempts }));
   }
 
+  // A STEP A MONSTER REFUSED IS NOT A STEP THE ROUTE SPENT.
+  //
+  // The budget exists to stop a walk going nowhere; a body in the way is going nowhere for
+  // a different reason, and burning the budget on it reports a wall where there is traffic.
+  // Bounded, so a permanently plugged corridor still ends.
+  if (typeof walkTo !== 'function') {
+    skip('a monster-blocked step does not consume the walk budget', 'walkTo did not extract');
+  } else {
+    let asks = 0;
+    const client = { self: { col: 3, row: 3, x: 3 * 1024, y: 3 * 1024 }, room: { id: 1 } };
+    const geometry = {
+      walkable: () => true, standable: () => true, collisionReady: false,
+      path: (r, c, tr, tc) => ({ found: true, steps: [{ col: c + 1, row: r }] }),
+    };
+    const session = {
+      client, world: { geometry }, movementGeneration: 0,
+      need() { return this.client; },
+      movementWasCancelled() { return false; },
+      threatsHere() { return []; },
+      sidestepAround() { return null; },
+      async step() { asks++; return { moved: false, left_room: false, reason: 'object_blocked' }; },
+    };
+    const out = await walkTo.call(session, 12, 12, { maxSteps: 6 });
+    // Without the refund the walk stops after 6 asks; with it, it keeps asking until the
+    // refund allowance is spent too, so the count must exceed the bare budget.
+    ok('a monster-blocked step does not consume the walk budget',
+       out.arrived === false && asks > 6,
+       JSON.stringify({ asks, steps: out.steps, monster_blocked: out.monster_blocked }));
+  }
+
   // A ONE-SQUARE DOORWAY GETS PATIENCE, NOT BREADTH.
   //
   // 13 of the world's 280 declared exits publish two or fewer distinct staging squares.
@@ -1403,14 +1433,14 @@ console.log('\nterminal movement propagation and edge packet authority');
   // row, instantly, and report the wall shut. These pin the two halves that must not be
   // confused: a body is worth waiting for, and being HIT while waiting is not.
   if (typeof leaveViaAny !== 'function') {
-    skip('a one-square doorway held by a body is waited for, not re-asked', 'did not extract');
-    skip('a one-square doorway does not wait while we are being hit in it', 'ditto');
+    skip('a one-square doorway held by a body is backed away from, then re-asked', 'did not extract');
+    skip('a one-square doorway does not wait or back off while we are being hit in it', 'ditto');
   } else {
     process.env.M59_NARROW_WAIT_MS = '1';
     const oneSquare = [{ kind: 'edge', stand_on: { col: 5, row: 2 }, fine_stand_on: { x: 96, y: 335 } },
                        { kind: 'edge', stand_on: { col: 5, row: 2 }, fine_stand_on: { x: 96, y: 352 } }];
     {
-      let attempts = 0;
+      let attempts = 0, backedOff = 0;
       const session = {
         movementGeneration: 0,
         movementWasCancelled() { return false; },
@@ -1420,14 +1450,17 @@ console.log('\nterminal movement propagation and edge packet authority');
           if (attempts >= 4) return { left: true };
           return { left: false, reason: 'object_blocked', monster_blocked: 1 };
         },
+        // Backing off is what makes the retry a different question: the blocker follows
+        // and comes out of the gap. Counted, so the assertion can see it happened.
+        async retreatAlongBreadcrumbs() { backedOff++; return { steps: 4 }; },
       };
       const result = await leaveViaAny.call(session, oneSquare, {});
-      ok('a one-square doorway held by a body is waited for, not re-asked',
-         result.left === true && attempts === 4,
-         JSON.stringify({ left: result.left, attempts }));
+      ok('a one-square doorway held by a body is backed away from, then re-asked',
+         result.left === true && attempts === 4 && backedOff === 3,
+         JSON.stringify({ left: result.left, attempts, backedOff }));
     }
     {
-      let attempts = 0;
+      let attempts = 0, retreats = 0;
       const session = {
         movementGeneration: 0,
         movementWasCancelled() { return false; },
@@ -1439,11 +1472,12 @@ console.log('\nterminal movement propagation and edge packet authority');
         // what is under test here, and a doorway with something hitting us in it is
         // exactly where forcing would be wrong anyway.
         async leaveViaUnvalidated() { return { left: false }; },
+        async retreatAlongBreadcrumbs() { retreats++; return { steps: 4 }; },
       };
       const result = await leaveViaAny.call(session, oneSquare, {});
-      ok('a one-square doorway does not wait while we are being hit in it',
-         result.left !== true && attempts <= 3,
-         JSON.stringify({ left: result.left, attempts }));
+      ok('a one-square doorway does not wait or back off while we are being hit in it',
+         result.left !== true && attempts <= 3 && retreats === 0,
+         JSON.stringify({ left: result.left, attempts, retreats }));
     }
     delete process.env.M59_NARROW_WAIT_MS;
   }
