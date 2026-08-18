@@ -246,6 +246,11 @@ const MOVE_INTERVAL_MS = Number(process.env.M59_MOVE_INTERVAL_MS || 250);
 // the reading that makes a working exit look like a phantom, and the one that would have
 // had us delete a real edge from the map.
 const EDGE_CROSSING_WAIT_MS = Number(process.env.M59_EDGE_CROSSING_WAIT_MS || 10000);
+// AND HOW LONG TO GO ON LOOKING AFTER THAT WAIT EXPIRES. Cheap insurance against a
+// crossing that lands a moment late: the alternative to waiting three more seconds is
+// walking the whole room again to try another square. See the confirmation poll in
+// leaveVia's edge branch.
+const EDGE_CONFIRM_MS = Number(process.env.M59_EDGE_CONFIRM_MS || 3000);
 
 // The server may silently discard UserGo when it follows the final movement packet
 // too closely. Preserve normal 250ms walking, but leave half a second between the
@@ -4558,6 +4563,29 @@ class Session {
       // ASK THE WORLD, NOT ONLY THE EVENT RING. The event can be missed — evicted, or
       // arriving on a rejoined client — while the character is demonstrably somewhere
       // else. Having crossed is a fact about where we are standing.
+      //
+      // AND ASK IT MORE THAN ONCE, BECAUSE THE ALTERNATIVE IS ANOTHER WALK ACROSS THE ROOM.
+      //
+      // A single look the instant the event wait expires makes the whole crossing a race
+      // against one deadline: land at 10.5s and it reads as "stepping past the edge did
+      // nothing", `leaveViaAny` moves to the next square, and confirming that costs a full
+      // crossing of the room — which in The King's Way is a minute and a half. The exit-gap
+      // record says plainly that this is what has been happening: the dominant row is a
+      // delta of (0,0) with 72 sightings across rooms 150, 586, 574, 587 and 382. The model
+      // named the RIGHT square, the character was standing on it, and the crossing was
+      // recorded as refused anyway — 342 times on 587's west boundary alone.
+      //
+      // So the confirmation is a short poll rather than a single glance. It costs at most a
+      // couple of seconds on a genuinely dead edge and saves a room crossing on every late
+      // one, and the two are not close.
+      if (!entered && c.room.id === edgeStartRoom) {
+        const until = Date.now() + EDGE_CONFIRM_MS;
+        while (Date.now() < until && c.room.id === edgeStartRoom) {
+          if (this.movementWasCancelled(movementGeneration, controlToken))
+            return this.cancelledMovement();
+          await new Promise(r => setTimeout(r, 400));
+        }
+      }
       if (!entered && c.room.id !== edgeStartRoom)
         return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
                  note: 'the room changed but no room-entered event was seen' };

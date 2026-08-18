@@ -1048,6 +1048,9 @@ const leaveVia = compileSessionMethod(brokerSource,
     // never-crossing case. What the constant is FOR is live lag, which is not
     // reproducible in a sandbox.
     EDGE_CROSSING_WAIT_MS: 0,
+    // Zero for the same reason EDGE_CROSSING_WAIT_MS is: the fake client answers at once or
+    // not at all, so a real confirmation poll would only add seconds per never-crossing case.
+    EDGE_CONFIRM_MS: 0,
     // The boundary nudge before the outward step — see the wiggle-at-the-door note in
     // m59-broker.mjs. Real values, because what they bound is how many packets the
     // approach spends, which is exactly what these tests count.
