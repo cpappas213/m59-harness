@@ -126,7 +126,7 @@ function renderGoap(g) {
 // Render a top-down room view: a grid of cells with colored markers.
 // Green = self, orange = NPC, red = player. Shows where the character
 // is standing relative to everything else in the room.
-function renderRoomView(rv) {
+function renderRoomView(rv, name) {
   if (!rv || !rv.objects || !rv.objects.length) return '';
   const { cols, rows, self, objects } = rv;
   if (!cols || !rows) return '';
@@ -153,7 +153,7 @@ function renderRoomView(rv) {
     <span class="room-cell npc" style="display:inline-block;vertical-align:middle"></span> ${count('npc')} npc ·
     <span class="room-cell player" style="display:inline-block;vertical-align:middle"></span> ${count('player')} player ·
     ${cols}×${rows} grid</div>`;
-  return `<h2>Room <a href="/room3d/${esc(h.name)}" style="font-size:.7rem;font-weight:normal";>3D view</a></h2>${grid}${legend}`;
+  return `<h2>Room <a href="/room3d/${esc(name ?? 'character')}" style="font-size:.7rem;font-weight:normal">3D view</a></h2>${grid}${legend}`;
 }
 
 export function renderHero(h, { localhost = false } = {}) {
@@ -308,7 +308,7 @@ export function renderHero(h, { localhost = false } = {}) {
       <div class="sm">${h.ceiling != null ? `lifetime cap ${h.ceiling} health` : ''}</div></div>
   </div>
 
-  ${h.room_view ? renderRoomView(h.room_view) : ''}
+  ${h.room_view ? renderRoomView(h.room_view, h.name) : ''}
 
   <h2>GOAP plan</h2>
   ${h.goap ? renderGoap(h.goap) : '<p class="dim">Not running the GOAP keeper.</p>'}
