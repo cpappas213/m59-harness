@@ -92,6 +92,10 @@ export function fakeClient(spec = {}) {
     // directly, so this falls through rather than inventing a string.
     rsc: { get: (k) => spec.rsc?.[k] ?? null },
     evSeq: 0,
+    // plSpells, our copy. A character can only cast what is IN here; a spell
+    // absent from it cannot be cast at any amount of mana.
+    spells: (spec.spells ?? []).map((x, i) =>
+      (typeof x === 'string' ? { id: 900 + i, name: x } : x)),
 
     equipment: () => equipmentOf({ equipped: spec.equipped ?? [], known: spec.known ?? true }),
     vitals:    () => vitalsOf(spec),

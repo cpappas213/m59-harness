@@ -52,6 +52,12 @@ import { REST_VIGOR_CAP, MIN_FIGHT_VIGOR } from './m59-localpolicy.mjs';
 // monster.kod:2189), so there is nothing finer than a square to stand on.
 export const MELEE_REACH = 3;
 
+// `create food`, the spell this fleet lives on. The wire carries no per-spell cost,
+// so this is a floor for "could cast something ordinary" rather than a price.
+export const MIN_CAST_MANA = 10;
+
+export const FOOD_RE = /\bsnack\b|\bfood\b|\bpastry\b|\bpie\b|\bbread\b|\bmeat\b|\bmushroom\b|\bapple\b/i;
+
 const frac = (v) => (v?.max ? v.value / v.max : null);
 
 // `create food` costs 2 elderberry AND 2 herbs, so what a character can actually
@@ -137,6 +143,37 @@ export const SYMBOLS = {
     whenUnknown: false,
     why_unknown: 'planning a cast we cannot pay for wastes the pass and the walk',
     produce: ({ client }) => (client?.inventory ? reagentPairs(client) >= 2 : null),
+  },
+
+  has_mana: {
+    describe: 'mana enough for an ordinary spell',
+    whenUnknown: false,
+    why_unknown: 'planning a cast we cannot pay for wastes the pass and the walk',
+    produce: ({ client, policy }) => {
+      const m = client?.vitals?.()?.mana?.value;
+      if (m == null) return null;
+      // THE WIRE DOES NOT CARRY A PER-SPELL COST, so this is a floor rather than a
+      // price. 10 is `create food`, the spell this fleet actually lives on. A
+      // planner wanting a specific spell grounds its own cost (see groundedCast).
+      //
+      // And note the ceiling is not stored either: piMax_Mana is declared at 20 and
+      // ComputeMaxMana (player.kod:6116) THROWS IT AWAY and rebuilds it from
+      // 15 + mysticism/5 plus nodes, worn items and enchantments, on login and on
+      // every equipment change. So a character set to 200 reads 200 until it relogs
+      // and comes back at 25 -- never cache a max mana.
+      return m >= (policy?.minCastMana ?? MIN_CAST_MANA);
+    },
+  },
+
+  has_food: {
+    describe: 'something edible in the pack',
+    whenUnknown: false,
+    why_unknown: 'believing in food we cannot see sends a character to fight hungry',
+    produce: ({ client }) => {
+      if (!client?.inventory) return null;
+      return client.inventory.some(o =>
+        FOOD_RE.test(String(o.name ?? client.rsc?.get?.(o.nameRsc) ?? '')));
+    },
   },
 
   pack_room: {

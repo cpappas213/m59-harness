@@ -78,6 +78,11 @@ console.log('\nunknown fails SAFE, and safe is per symbol');
   ok('has_reagents unknown reads NO — do not plan a cast we cannot pay for',
      blind.has_reagents === false);
 
+  ok('has_mana unknown reads NO — do not plan a cast we cannot pay for',
+     blind.has_mana === false);
+  ok('has_food unknown reads NO — believing in food we cannot see sends a character out hungry',
+     blind.has_food === false);
+
   // The two that must be opposites. If a refactor ever makes these agree, one of
   // them is wrong and it is not obvious which.
   ok('armed and target_in_band fail in OPPOSITE directions, deliberately',

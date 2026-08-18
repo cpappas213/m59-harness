@@ -345,6 +345,94 @@ console.log('\nresting cannot pass the cap, and the vocabulary is what says so')
      rest.effects.includes('can_rest_higher'));
 }
 
+// ---------------------------------------------------------------------------
+// Behaviour: cast — A CHARACTER CAN ONLY CAST WHAT IT KNOWS
+// ---------------------------------------------------------------------------
+const { cast, knownSpells, spellNamed, groundedCasts, SPELL_EFFECTS }
+  = await import('./m59-act/cast.mjs');
+
+const caster = (spells, spec = {}) => {
+  const c = fakeClient({ spells, mana: 30, ...spec });
+  return { c, s: fakeSession(c) };
+};
+
+console.log('\ncast: a spell the character does not know is refused, not attempted');
+{
+  const { c, s } = caster(['create food']);
+  const r = await cast(c, s, { spell: 'shatter lock', waitMs: 1 });
+  ok('it refuses', r.sent === false && r.known === false);
+  ok('and says why in the character\'s own terms',
+     /does not know that spell/.test(r.reason), r.reason);
+  ok('and NOTHING went to the wire — asking spends the round for silence',
+     c.sent.filter(x => x[0] === 'cast').length === 0);
+
+  const r2 = await cast(c, s, { spell: 'create food', waitMs: 1 });
+  ok('a spell it DOES know goes out', r2.sent === true && r2.known === true);
+  ok('and it went out by the id from the LIVE list, not a cached one',
+     c.sent.find(x => x[0] === 'cast')[1] === spellNamed(c, 'create food').id);
+}
+
+console.log('\ncast resolves BY NAME, because ids are renumbered and lists go stale');
+{
+  // Object ids are renumbered on every save (every 15 minutes) and a group-3 stat
+  // packet is POSITIONAL against plSpells -- against a stale list every number is
+  // mislabelled silently. So a name is the only durable handle.
+  const { c } = caster([{ id: 4242, name: 'create food' }]);
+  ok('it finds the spell whatever its id is', spellNamed(c, 'create food').id === 4242);
+  ok('matching is case-insensitive', spellNamed(c, 'CREATE FOOD') !== null);
+  ok('and an unknown name is null rather than a guess', spellNamed(c, 'fireball') === null);
+  ok('knownSpells lists what the character actually holds',
+     knownSpells(c).length === 1 && knownSpells(c)[0].name === 'create food');
+}
+
+console.log('\ncast refuses on mana rather than sending a spell that cannot land');
+{
+  const { c, s } = caster(['create food'], { mana: 3 });
+  const r = await cast(c, s, { spell: 'create food', waitMs: 1 });
+  ok('it refuses', r.sent === false && /not enough mana/.test(r.reason));
+  ok('and reports what it had', r.mana_before === 3);
+  ok('and sent nothing', c.sent.filter(x => x[0] === 'cast').length === 0);
+}
+
+console.log('\ngroundedCasts: an unknown spell is ABSENT from the plan space, not refused in it');
+{
+  // The same guarantee attack.pre gives against the engagement ceiling: not
+  // discouraged, IMPOSSIBLE, because the action does not exist. This is also how
+  // the game itself behaves -- a skill you cannot learn is missing from the
+  // merchant's offer list (monster.kod:4855) rather than refused.
+  const { c } = caster(['create food']);
+  const acts = groundedCasts(c);
+  ok('a character who knows create food gets exactly that action',
+     acts.length === 1 && acts[0].atomic === 'cast create food');
+  ok('it carries the SPELL\'s own preconditions, not a generic one',
+     acts[0].pre.includes('has_reagents') && acts[0].pre.includes('has_mana'));
+  ok('and the spell\'s own effects',
+     acts[0].effects.includes('has_food') && acts[0].effects.includes('!has_reagents'));
+
+  const none = groundedCasts(fakeClient({ spells: [] }));
+  ok('a character who knows NOTHING gets no cast actions at all — no plan can contain one',
+     none.length === 0);
+
+  const other = groundedCasts(fakeClient({ spells: ['blink'] }));
+  ok('and a spell with no modelled effect is not invented into the plan space',
+     other.length === 0);
+
+  // The chain the fleet actually lives on, expressed in the vocabulary.
+  ok('create food is 2 elderberry AND 2 herbs -> a meal',
+     SPELL_EFFECTS['create food'].pre.includes('has_reagents') &&
+     SPELL_EFFECTS['create food'].effects.includes('has_food'));
+}
+
+console.log('\ncast refuses by returning, like every other atomic');
+{
+  let threw = false; let r;
+  try { r = await cast(null, null, { spell: 'create food' }); } catch { threw = true; }
+  ok('no client does not throw', !threw && r.sent === false);
+  const { c, s } = caster(['create food']);
+  const r2 = await cast(c, s, {});
+  ok('no spell named does not throw either', r2.sent === false && /no spell/.test(r2.reason));
+}
+
 console.log('\nattack declares a plan-able contract');
 {
   ok('pre includes being armed and in reach',
