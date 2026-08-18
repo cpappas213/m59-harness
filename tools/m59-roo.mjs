@@ -1348,6 +1348,13 @@ export class RoomGeometry {
       return !!t && Math.hypot(t.x - b.x, t.y - b.y) <= arriveWithin;
     };
     const out = [points[0]];
+    // WHICH legs it proved, not just how many it could not. A caller that walks these
+    // pivots has to know: a PROVED leg is a straight line the mover was shown to arrive
+    // along, so every point on it is safe to aim at without asking again — which is the
+    // whole reason to pull a route offline. An UNPROVED leg is the ordinary single step
+    // that the pull fell back to, and it carries no such promise. Reported as a parallel
+    // array so the existing `points`/`unverified` contract is untouched.
+    const proved = [];
     let at = 0, unverified = 0;
     while (at < points.length - 1) {
       // FURTHEST FIRST, so the common case — a long clear run — costs one trace rather
@@ -1358,11 +1365,12 @@ export class RoomGeometry {
       let next = -1;
       for (let j = limit; j > at; j--)
         if (clear(points[at], points[j])) { next = j; break; }
-      if (next < 0) { next = at + 1; unverified++; }
+      if (next < 0) { next = at + 1; unverified++; proved.push(false); }
+      else proved.push(true);
       out.push(points[next]);
       at = next;
     }
-    return { points: out, unverified, legs: out.length - 1 };
+    return { points: out, unverified, legs: out.length - 1, proved };
   }
 
   // A bounded local A* for sub-square approaches that need to round a corner. This

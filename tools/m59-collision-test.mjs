@@ -974,6 +974,31 @@ function compileSessionMethod(source, signature, name, dependencies = {}) {
 }
 
 const brokerSource = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+
+// A PLAIN FUNCTION, LIFTED THE SAME WAY THE METHODS ARE. `provedSquares` is what turns a
+// route into the legs the pull has proved, and stubbing it would leave `walkTo` tested on
+// only the path it takes when there is no proof — which is the path this change exists to
+// stop taking. Extracted by brace matching, exactly like the methods above.
+function liftFunction(source, signature, deps = {}) {
+  const start = source.indexOf(signature);
+  if (start < 0) return null;
+  let depth = 0, end = -1;
+  for (let i = source.indexOf('{', start); i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
+  }
+  if (end < 0) return null;
+  try {
+    return new Function(...Object.keys(deps),
+      source.slice(start, end) + `; return ${signature.replace(/^function\s+/, '').split('(')[0]};`
+    )(...Object.values(deps));
+  } catch { return null; }
+}
+const provedSquares = liftFunction(brokerSource, 'function provedSquares(geo, from, steps)',
+  { KOD_FINENESS, protocolToClient });
+ok('the extracted provedSquares compiled', typeof provedSquares === 'function');
+ok('and with no collision model it declines to prove anything',
+   provedSquares?.({ collisionReady: false }, { row: 1, col: 1 }, [{ row: 1, col: 2 }]) === null);
 for (const n of moduleScopeNames(brokerSource)) BROKER_SCOPE.add(n);
 const validateFineTarget = compileSessionMethod(brokerSource,
   'validateFineTarget(x, y, {', 'validateFineTarget',
@@ -1000,6 +1025,7 @@ const walkFine = compileSessionMethod(brokerSource,
   'async walkFine(destX, destY, {', 'walkFine', { isTerminalMovementReason });
 const walkTo = compileSessionMethod(brokerSource,
   'async walkTo(col, row, {', 'walkTo', {
+    provedSquares,
     isTerminalMovementReason, KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8,
     // The coalescer's two, which were free identifiers here for as long as the coalescer
     // existed. No fixture reached that branch — they all have falsy `collisionReady` —

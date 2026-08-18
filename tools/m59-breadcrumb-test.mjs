@@ -55,8 +55,13 @@ const queueValidatedMove = lift('async queueValidatedMove(x, y, {', 'queueValida
 // before replaying it, and a hand-written imitation here would be testing the imitation.
 const retreatAlongBreadcrumbs = lift('async retreatAlongBreadcrumbs({', 'retreatAlongBreadcrumbs',
   { KOD_FINENESS, elideLoops });
+// `provedSquares` turns a plan into the legs the string pull proved, so the coalescer can
+// skip along them without tracing. These fixtures have no collision model at all, which is
+// exactly the case where it must decline — so null here is the real answer, not a stub of
+// one, and it keeps this suite testing the retreat rather than the pull.
 const walkTo = lift('async walkTo(col, row, {', 'walkTo',
-  { KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8, isTerminalMovementReason: () => false });
+  { KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8, isTerminalMovementReason: () => false,
+    provedSquares: () => null });
 
 // ---------------------------------------------------------------------------
 // The smallest thing that can stand in for a Session. Movement is on square centres;

@@ -352,6 +352,56 @@ const PIVOT_ARRIVE_WITHIN = Number(process.env.M59_PIVOT_ARRIVE_WITHIN || 64);
 // reproduce them. `player_no_enter` (player.kod) is a GuildHall turning away anyone
 // without PFLAG_PKILL_ENABLE. Matched on the server's own words because there is no code
 // on the wire: it arrives as ordinary prose, exactly like a merchant's refusal.
+// PROVE THE ROUTE ONCE, NOT ONCE PER STEP.
+//
+// `stringPull` reaches as far along a route as the straight line still ARRIVES with
+// `slide:false`, and the bake has used it for exactly this since routes were first baked —
+// "doing it HERE rather than at walk time is the point of a bake". Nothing at runtime ever
+// called it. Instead `walkTo` rediscovered the same thing per step, tracing up to seven
+// fine BSP lines every single move, on the one event loop every session in the broker
+// shares. Measured across the twenty rooms of the Tos/Castle Victoria/Barloque circuit,
+// the same routes are 97,113 grid squares and 16,810 pivots: 5.8x more moves than needed,
+// each one paying for its own proof.
+//
+// So the plan is pulled ONCE, and the walker is told which squares sit on a leg the pull
+// PROVED. On a proved leg every intermediate point is safe to aim at — a prefix of a
+// straight line that arrives also arrives — so the coalescer can take the furthest square
+// its hop cap allows without asking the geometry anything.
+//
+// AIMED AT THE STAND POINT, NOT THE CENTRE, because that is what `step` sends. The bake
+// pulls between centres, which is the older aim; matching the sender here is the same
+// "the second aim has to match the first" rule the coalescer below is built on.
+//
+// A room with no collision model, a pull that throws, or a route of one step all return
+// null, and null means "walk exactly as before".
+function provedSquares(geo, from, steps) {
+  if (!geo?.collisionReady || typeof geo.stringPull !== 'function') return null;
+  if (!Array.isArray(steps) || steps.length < 2 || !from) return null;
+  const half = KOD_FINENESS >> 1;
+  const pointOf = s => geo.standPoint?.(s.row, s.col)
+    ?? { x: protocolToClient(s.col * KOD_FINENESS + half),
+         y: protocolToClient(s.row * KOD_FINENESS + half) };
+  try {
+    const line = [from, ...steps];
+    const pulled = geo.stringPull(line.map(pointOf));
+    if (!pulled?.points?.length || !pulled.proved) return null;
+    // Walk the pulled points back onto the plan, so a square can be asked "is the leg you
+    // are on one the pull proved". Matching by POSITION rather than by index, because the
+    // pull returns a subsequence and the caller holds the full route.
+    const key = pt => Math.round(pt.x) + ',' + Math.round(pt.y);
+    const pivotAt = new Map(pulled.points.map((pt, i) => [key(pt), i]));
+    const ok = new Set();
+    let leg = -1;
+    for (const st of line) {
+      const hit = pivotAt.get(key(pointOf(st)));
+      if (hit !== undefined) leg = hit;               // we are standing on a pivot
+      // `proved[leg]` is the leg LEAVING pivot `leg`; the final pivot has no leg after it.
+      if (leg >= 0 && pulled.proved[leg]) ok.add(st.row + ',' + st.col);
+    }
+    return { squares: ok, pivots: pulled.points.length, unverified: pulled.unverified };
+  } catch { return null; }
+}
+
 const BARRED_ON_ENTRY = /guardian angel holds you back/i;
 // A DOORWAY THIS SIDE OF THE ROOM CANNOT REACH. Not a refusal by the server — the walk
 // never got there. `leaveViaAny` has already tried every square the room publishes for
@@ -3704,6 +3754,9 @@ class Session {
     // this is incremented; past a handful it means the square-by-square plan is not the
     // thing being walked, and continuing to replan it is how a room takes three minutes.
     let offPlan = 0, wentFine = false;
+    // The current plan's pulled proof, or null when it has none. `undefined` means "not
+    // computed for this queue yet"; every place that REPLACES the queue resets it.
+    let pulled;
     // Health across the walk, so a body in the way can be told from a body that is EATING
     // us. See the under-fire note in the blocked branch below.
     let hpAtLastBlock = c.vitals?.()?.health?.value, damageWhileBlocked = 0, underFire = false;
@@ -3755,6 +3808,16 @@ class Session {
         const t = geo.traceFineMoveClient?.(a.x, a.y, b.x, b.y, { slide: false });
         return !!t && Math.hypot(t.x - b.x, t.y - b.y) <= PIVOT_ARRIVE_WITHIN;
       };
+      // THE PULL, IF THE CURRENT PLAN HAS ONE. Recomputed only when the queue was
+      // replaced (a new plan), never per step — that is the entire point.
+      // OVER THE WHOLE PLAN, INCLUDING THE SQUARE ALREADY SHIFTED OFF. `next` came out of
+      // the queue a few lines above, so pulling `queue` alone proves a line that starts one
+      // square further on — and then the very first thing asked, "is `next` on a proved
+      // leg", is false about a square the pull never saw. Measured: the proof was perfect
+      // offline (30 steps -> 2 pivots, one proved leg, 30 of 31 squares) and did nothing at
+      // all live, 26 steps before and 26 after.
+      if (pulled === undefined)
+        pulled = provedSquares(geo, from0 ?? me0, next ? [next, ...queue] : queue);
       if (from0 && geo.collisionReady) {
         // FROM WHERE THE CHARACTER ACTUALLY IS, NOT FROM THE MIDDLE OF ITS SQUARE.
         //
@@ -3783,12 +3846,24 @@ class Session {
           if (occupied.has(`${s.row},${s.col}`)) break;
           reach.push(s);
         }
-        for (let i = reach.length - 1; i >= 0; i--) {
-          if (arrives(here, fineOf(reach[i]))) {
-            for (let k = 0; k <= i; k++) { next = queue.shift(); hop++; }
-            hop--;                       // `next` was already counted by the shift above
-            break;
-          }
+        // A SQUARE ON A PROVED LEG NEEDS NO TRACE. The pull already showed the straight
+        // line arrives, and a prefix of a line that arrives also arrives — so the furthest
+        // square inside the hop cap is takeable for free. This is the 5.8x, and it is also
+        // what stops the walker burning the shared event loop on proofs it already has.
+        let took = -1;
+        if (pulled && next && pulled.squares.has(`${next.row},${next.col}`)) {
+          for (let i = reach.length - 1; i >= 0; i--)
+            if (pulled.squares.has(`${reach[i].row},${reach[i].col}`)) { took = i; break; }
+        }
+        // Otherwise, or on a leg the pull could NOT prove, ask the geometry exactly as
+        // before. An unproved leg carries no promise and must not be jumped along.
+        if (took < 0) {
+          for (let i = reach.length - 1; i >= 0; i--)
+            if (arrives(here, fineOf(reach[i]))) { took = i; break; }
+        }
+        if (took >= 0) {
+          for (let k = 0; k <= took; k++) { next = queue.shift(); hop++; }
+          hop--;                         // `next` was already counted by the shift above
         }
       } else {
         // NO COLLISION MODEL MEANS THE OLD RULE, EXACTLY. A checkout with no baked
@@ -3932,6 +4007,10 @@ class Session {
             queue.unshift(next);
             queue.unshift(side.through);
             if (side.back) queue.unshift(side.back);
+            // A SIDESTEP IS OFF THE PULLED LINE. Its squares were never proved, and the
+            // one behind us is deliberately backwards, so drop the proof rather than let
+            // the coalescer jump along a leg nobody traced.
+            pulled = null;
             stalledOn = null; stalledTimes = 0;
             continue;
           }
@@ -4059,9 +4138,11 @@ class Session {
                    refused_edges: blockedEdges.size, reason: open.reason,
                    ...(escaped ? { retreated: escaped } : {}) };
         queue = open.steps.slice();
+        pulled = undefined;      // a new plan needs its own proof
         continue;
       }
       queue = re.steps.slice();
+      pulled = undefined;          // a new plan needs its own proof
     }
     const me = c.self;
     const arrived = !!me && me.col === col && me.row === row;
