@@ -66,6 +66,17 @@ export async function scavenge(client, session) {
     return { sent: false, killed: false,
       reason: `weakest hostile (${targetName} hp=${targetHp}) is still above the band (my level=${myLevel})` };
 
+  // TAKE A SAFE SPOT BEFORE FIGHTING. A wall or corner reduces the
+  // number of directions enemies can attack from. This is a tactic
+  // (how to fight), not a strategy (what to do), so it belongs here
+  // in the atomic, not in the planner. The BT system did this in the
+  // fight node; GOAP does it here in scavenge.
+  if (session.s?.takeSafeSpot && typeof session.s.takeSafeSpot === 'function') {
+    await session.s.takeSafeSpot({ maxSteps: 10 }).catch(() => {});
+  } else if (session.takeSafeSpot && typeof session.takeSafeSpot === 'function') {
+    await session.takeSafeSpot({ maxSteps: 10 }).catch(() => {});
+  }
+
   // Delegate to the legacy fight method. The session (autopilot)
   // has a fight() that handles the full combat loop.
   if (session.fight && typeof session.fight === 'function') {

@@ -394,14 +394,18 @@ export class GOAPKeeper {
 
         // When the goal is 'healthy' and there's a hostile in the
         // room, inject a composite 'recover' atomic that flees
-        // first, then rests.
+        // first, takes a safe spot, then rests.
         if (effectiveGoal === 'healthy' && ws.has_target === true) {
           const { rest } = await import('./m59-act/rest.mjs');
+          const { takeSafeSpot } = await import('./m59-act/take-safe-spot.mjs');
           const recover = async (client, session) => {
             const fleeResult = await flee(client, session);
             if (!fleeResult?.sent && fleeResult?.reason !== 'no target') {
               return { acted: false, reason: 'flee failed: ' + (fleeResult?.reason ?? 'unknown') };
             }
+            // Take a safe spot before resting. Resting in the open
+            // with a hostile still in the room is how characters die.
+            await takeSafeSpot(client, session).catch(() => {});
             const restResult = await rest(client, session);
             return {
               acted: restResult?.sent === true || fleeResult?.sent === true,
