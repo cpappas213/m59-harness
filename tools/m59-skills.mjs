@@ -2062,6 +2062,57 @@ async function stepOnto(s, o) {
              : `never got onto its square (${walk.reason || walk.note || 'the walk did not arrive'})` };
 }
 
+// THE RIP IS THE ONE DOOR THAT IS NEVER UNLIT, SO IT IS THE ONE TO FALL BACK ON.
+//
+// `ResetPuzzle` (uworld.kod:460) lights all five pentagram portals and then turns one or
+// two off at random. The rip is not in that rotation at all — it is a sixth teleporter
+// that re-rolls its DESTINATION every 5-10s (hellport.kod:57,70) and is always open. So
+// when every fixed portal has been tried and the character is still down here, the rip is
+// not one more thing to try: it is the thing that works.
+//
+// ANY DESTINATION WILL DO, and that is the whole point of this path. Reading the rip
+// matters only when a particular city was asked for; when the alternative is another
+// spell in the Underworld, all five inns are the same answer — out. So this never looks,
+// it steps.
+//
+// AND IT RETRIES, because a single step is not evidence. The rip re-rolls every 5-10
+// seconds and a step that lands mid-roll does nothing at all — which the fallback loop
+// below reports as "probably unlit; its brazier needs activating", a diagnosis that is
+// simply never true of this object and sends the caller hunting for a brazier that does
+// not exist.
+async function ripOut(s, rip, { maxSeconds = 60 } = {}) {
+  const c = s.need();
+  // Stand next to it first. Stepping onto it IS the teleport, so the approach has to be
+  // its own walk or a failure to arrive reads as a portal that did not fire.
+  const spot = s.world.approachSquare(rip.col, rip.row);
+  if (spot && spot.steps > 0) {
+    const walk = await s.walkTo(spot.col, spot.row, { maxSteps: Math.max(30, spot.steps + 10) });
+    if (isTerminalMovementReason(walk.reason))
+      return { left: false, terminal: true, reason: walk.reason, note: walk.note };
+    if (!walk.arrived)
+      return { left: false, why: 'could not get next to the rip in space (' +
+                                 (walk.reason || walk.note || 'the walk did not arrive') + ')' };
+  }
+  const t0 = Date.now();
+  let attempts = 0;
+  while (Date.now() - t0 < maxSeconds * 1000) {
+    attempts++;
+    const before = c.evSeq;
+    const wasIn = c.room.id;
+    const move = await s.stepFine(rip.x, rip.y);
+    if (isTerminalMovementReason(move.reason))
+      return { left: false, terminal: true, reason: move.reason, note: move.note, attempts };
+    const arr = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 3000 });
+    const entered = arr.events.find(e => e.kind === 'room-entered');
+    const now = { id: c.room.id, name: c.roomNameRsc ? c.rsc.get(c.roomNameRsc) : null };
+    if (entered || now.id !== wasIn)
+      return { left: true, arrived_in: entered?.roomName ?? now.name, room: now.id, attempts };
+    await sleep(1200);
+  }
+  return { left: false, attempts,
+           why: `stepped onto the rip ${attempts} time(s) over ${maxSeconds}s and stayed put` };
+}
+
 export async function escapeUnderworld(s, { city = null, nearestTo = null,
                                             maxSeconds = 180, allowRip = true } = {}) {
   const c = s.need();
@@ -2226,6 +2277,37 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
       ? 'stood on it and nothing happened — probably unlit; its brazier needs activating'
       : `never got onto its square (${walk.reason || walk.note || 'the walk did not arrive'})` });
   }
+  // NOT OUT YET — TAKE THE RIP, WHEREVER IT HAPPENS TO GO.
+  //
+  // Everything above either wanted a particular city or trusted the pentagram, and the
+  // pentagram is exactly what is unreliable: one or two are unlit at random and an unlit
+  // one is silent. Measured on the arena fleet, a character sat in the Underworld
+  // reporting "none of the teleporters here worked" while the rip stood open the whole
+  // time, because the rip is only polled when a city was ASKED for.
+  //
+  // A city nobody chose beats another hour down here, and the caller is told plainly
+  // which one it got so the walk back is not a surprise. This runs LAST so it can never
+  // take a character somewhere arbitrary while a portal to the right place was available.
+  if (rip && allowRip) {
+    const out = await ripOut(s, rip, { maxSeconds: Math.max(20, Math.min(60, maxSeconds)) });
+    if (out.left) {
+      const landed = Object.entries(UW.CITY_INNS)
+        .find(([, v]) => v.inn === out.room || (out.arrived_in && v.innName === out.arrived_in))?.[0] ?? null;
+      return { left: true, stood_up: true, arrived_in: out.arrived_in, room: out.room,
+               via: 'the rip in space', attempts: out.attempts, tried,
+               ...(landed ? { city: landed } : {}),
+               ...(wanted ? { wanted, chosen_because: chosenBecause,
+                              got_what_was_wanted: landed === wanted,
+                              ...(cityAttempts.length ? { could_not_use: cityAttempts } : {}) } : {}),
+               note: 'the pentagram would not answer, so this took the shifting portal to ' +
+                     (landed ?? 'whichever inn it was pointing at') + '. Out is out; the corpse ' +
+                     'and everything it was carrying is still where it died.' };
+    }
+    if (out.terminal)
+      return { left: false, stood_up: true, reason: out.reason, note: out.note, tried };
+    tried.push({ name: 'the rip in space', why: out.why });
+  }
+
   return { left: false, stood_up: true, reason: 'none of the teleporters here worked', tried,
            ...(wanted ? { wanted, could_not_use: cityAttempts } : {}),
            note: tried.some(t => /never got onto/.test(t.why))

@@ -348,6 +348,11 @@ const OFFPLAN_BEFORE_FINE = Number(process.env.M59_OFFPLAN_BEFORE_FINE || 3);
 // quietly readmit the sliding this is meant to avoid. Loosening it does not make walks
 // succeed, it makes them skip ground nothing checked.
 const PIVOT_ARRIVE_WITHIN = Number(process.env.M59_PIVOT_ARRIVE_WITHIN || 64);
+// Fine-positioning at a boundary opening before the outward step that actually crosses.
+// Both are deliberately small: this is a nudge onto the opening, and the crossing does
+// not depend on hitting it exactly. See leaveVia's edge branch.
+const EDGE_NUDGE_WITHIN = Number(process.env.M59_EDGE_NUDGE_WITHIN || 16);
+const EDGE_NUDGE_MAX_STEPS = Number(process.env.M59_EDGE_NUDGE_MAX_STEPS || 6);
 
 // ---------------------------------------------------------------- pacing
 
@@ -3737,7 +3742,23 @@ class Session {
         return !!t && Math.hypot(t.x - b.x, t.y - b.y) <= PIVOT_ARRIVE_WITHIN;
       };
       if (from0 && geo.collisionReady) {
-        const here = fineOf(from0);
+        // FROM WHERE THE CHARACTER ACTUALLY IS, NOT FROM THE MIDDLE OF ITS SQUARE.
+        //
+        // This trace decides which squares may be SKIPPED, so the line it proves clear has
+        // to be the line that gets walked — the same "second aim has to match the first"
+        // argument as the comment above, applied to its other end. `fineOf(from0)` is the
+        // stand point of the square we are IN, and after the first slide the walker is not
+        // standing there: `offPlan` below exists precisely because "after the first slide
+        // the walker is never at a centre again". So the coalescer was clearing a run from
+        // a point the character had already left, then sending a multi-square hop along it
+        // — which slides, lands off-plan, and costs a replan that re-plans the same route.
+        //
+        // The server pushes our fine position and `walkFine` already steers by it, so this
+        // is the authoritative answer rather than a better guess. Falling back to the stand
+        // point keeps a client that has not reported one behaving exactly as before.
+        const here = Number.isFinite(c.self?.x) && Number.isFinite(c.self?.y)
+          ? { x: c.self.x, y: c.self.y }
+          : fineOf(from0);
         // FURTHEST FIRST, so a long clear run costs one trace rather than one per square.
         // Bounded by the same hop ceiling as before, so the packet a walk sends is no
         // bigger than it ever was — this changes WHICH squares may be skipped, not how
@@ -4278,8 +4299,28 @@ class Session {
       let pressedInWithoutExactFit = null;
       const finePath = exit.fine_path?.length ? exit.fine_path : [exit.fine_stand_on];
       for (const point of finePath) {
+        // A SHORT NUDGE, NOT A SEARCH — AND THIS IS THE WIGGLE AT THE DOOR.
+        //
+        // `arriveWithin: 1` asks to land within ONE fine unit, a 64th of a square, and
+        // `walkFine` pursues that by fanning nine headings and re-stepping until its
+        // budget runs out. On a boundary square that budget was the whole ROUTE length —
+        // forty-plus packets — so a character that was already standing at the opening
+        // spent half a minute shuffling a few units back and forth in front of the exit
+        // before the outward step it actually needed. Watched from the client that is
+        // exactly what it looks like: stopping in front of the door and wiggling.
+        //
+        // The precision was never load-bearing, and the comment below already says so:
+        // the crossing is triggered by the OUTWARD step, not by where you stood, and two
+        // characters teleported onto different openings crossed in zero seconds from
+        // both. Nor can loosening it change WHICH exit fires — an edge condition is on
+        // the row/col, and every point here is inside the same square we already walked
+        // to, so this only moves us within that one square.
+        //
+        // So: land near the opening if a few steps get us there, and otherwise press. A
+        // miss still falls through to the edge step exactly as before, which is the half
+        // that does the work.
         const fine = await this.walkFine(point.x, point.y, {
-          maxSteps: Math.max(20, budget(exit)), stride: 32, arriveWithin: 1,
+          maxSteps: EDGE_NUDGE_MAX_STEPS, stride: 32, arriveWithin: EDGE_NUDGE_WITHIN,
           movementGeneration, controlToken,
         });
         if (fine.left_room || c.room.id !== edgeStartRoom)
