@@ -36,6 +36,12 @@ import { step }          from './m59-act/step.mjs';
 import { equip }         from './m59-act/equip.mjs';
 import { rest, stand }   from './m59-act/rest.mjs';
 import { eat }           from './m59-act/eat.mjs';
+import { buy }           from './m59-act/buy.mjs';
+import { sell }          from './m59-act/sell.mjs';
+import { pickUp as pickup } from './m59-act/pickup.mjs';
+import { drop }          from './m59-act/drop.mjs';
+import { deposit, withdraw } from './m59-act/bank.mjs';
+import travelTo      from './m59-act/travel-to.mjs';
 import { groundedCasts } from './m59-act/cast.mjs';
 
 // The atomics that are always available -- they need no per-character grounding.
@@ -43,7 +49,12 @@ import { groundedCasts } from './m59-act/cast.mjs';
 // exit-to-exit paths, planned on the map the mover enforces) and executed a hop at a
 // time. Putting a bare `step` in the action set would invite the planner to
 // rediscover pathfinding one square at a time, badly.
-const ALWAYS = [attack, equip, rest, stand, eat];
+//
+// buy, sell, travel_to are included because they have vocabulary preconditions
+// (has_money, at_shop) that let the planner reason about WHEN to use them.
+// The per-item specifics (which item, which merchant) are handled inside the
+// atomic; the planner only decides that buying is the right KIND of action.
+const ALWAYS = [attack, equip, rest, stand, eat, buy, sell];
 
 /**
  * actionsFor(client) -> [action]

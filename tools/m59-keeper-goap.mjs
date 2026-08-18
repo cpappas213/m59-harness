@@ -92,7 +92,8 @@ export class GOAPKeeper {
     // journal (in-memory, lost on restart) is not the only record.
     const wsSummary = Object.entries(ws).filter(([,v]) => v !== null)
       .map(([k,v]) => `${k}=${v}`).join(' ');
-    console.error(`[goap] ${this.policy.agent ?? this.session?.name ?? '?'} pass ${this._passCount} goal=${this.goal} ${wsSummary}`);
+    const who = this.policy.agent ?? this.session?.s?.name ?? this.session?.name ?? '?';
+    console.error(`[goap] ${who} pass ${this._passCount} goal=${this.goal} ${wsSummary}`);
 
     // 2. Is the goal already satisfied? If so, do nothing (or pick a
     //    secondary goal). For now: idle.
@@ -113,7 +114,7 @@ export class GOAPKeeper {
       // No plan. This is an answer, not a failure: something the plan needs
       // is absent. The character idles until the world changes.
       this.note('goap no plan', { goal: this.goal, reason: p.reason ?? 'goal not reachable', pass: this._passCount });
-      console.error(`[goap] ${this.policy.agent ?? this.session?.name ?? '?'} pass ${this._passCount} NO PLAN: ${p.reason ?? 'goal not reachable'}`);
+      console.error(`[goap] ${this.policy.agent ?? this.session?.s?.name ?? '?'} pass ${this._passCount} NO PLAN: ${p.reason ?? 'goal not reachable'}`);
       return { acted: false, action: null, reason: `no plan: ${p.reason ?? 'goal not reachable'}` };
     }
 
@@ -132,7 +133,7 @@ export class GOAPKeeper {
       pass: this._passCount,
       plan: p.names ?? [],
     });
-    console.error(`[goap] ${this.policy.agent ?? this.session?.name ?? '?'} pass ${this._passCount} ACTION=${actionName} plan=[${(p.names ?? []).join(' -> ')}] result=${result?.sent !== false ? 'sent' : 'refused: ' + (result?.reason ?? '?')}`);
+    console.error(`[goap] ${this.policy.agent ?? this.session?.s?.name ?? '?'} pass ${this._passCount} ACTION=${actionName} plan=[${(p.names ?? []).join(' -> ')}] result=${result?.sent !== false ? 'sent' : 'refused: ' + (result?.reason ?? '?')}`);
 
     return {
       acted: result.sent !== false,

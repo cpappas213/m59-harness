@@ -307,3 +307,5 @@ m59-nav-learned.json
 /substrate/hoptests.json
 /substrate/hoptest-*.log
 /substrate/walktrials.json
+.DS_Store
+.pi/

@@ -267,6 +267,33 @@ export const SYMBOLS = {
       return (m.health / m.max_health) < (policy?.partyHealBelow ?? 0.5);
     },
   },
+
+  has_money: {
+    describe: 'the purse holds at least the walking-money floor',
+    whenUnknown: false,
+    why_unknown: 'a wrong false just delays a buy; a wrong true spends money the character needs to survive the walk home',
+    produce: ({ client, policy }) => {
+      const purse = (client?.inventory ?? [])
+        .filter(o => /shilling/i.test(client?.rsc?.get?.(o.nameRsc) ?? ''))
+        .reduce((t, o) => t + (o.amount || 1), 0);
+      if (!client?.inventory?.length) return null;
+      return purse >= (policy?.walkingMoney ?? 100);
+    },
+  },
+
+  at_shop: {
+    describe: 'a merchant with a buy list is in the current room',
+    whenUnknown: false,
+    why_unknown: 'no merchant visible, no buy; a wrong true just wastes a turn',
+    produce: ({ client }) => {
+      const objects = client?.room?.objects;
+      if (!Array.isArray(objects)) return null;
+      return objects.some(o => {
+        const can = o.can ?? [];
+        return can.includes('buy');
+      });
+    },
+  },
 };
 
 export const SYMBOL_NAMES = Object.freeze(Object.keys(SYMBOLS));
