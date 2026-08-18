@@ -631,8 +631,17 @@ export class GOAPKeeper {
             extra.push(travelToHunt);
             console.error(`[goap] ${who} hunting: room=${here} -> hunt=${hunt.room} (${hunt.creature} lv${hunt.level}) hops=${hunt.hops}`);
           }
-          // If hunt.hops === 0, we're already in a hunt room but
-          // there are no mobs. Wait for respawn.
+          // If hunt.hops === 0, we're already in a hunt room.
+          // Mobs may be respawning; inject scavenge so the planner
+          // can plan scavenge -> has_money. When mobs respawn, scavenge
+          // finds a target and fights. When there are none, it returns
+          // { acted: false, reason: 'no target' } and the character
+          // waits for the next pass.
+          if (hunt && hunt.hops === 0) {
+            const { scavenge } = await import('./m59-act/scavenge.mjs');
+            extra.push(scavenge);
+            console.error(`[goap] ${who} in hunt room ${hunt.room} (${hunt.creature} lv${hunt.level}), waiting for mobs`);
+          }
         }
       }
       // Inject travel_to a shop ONLY when the character is not
