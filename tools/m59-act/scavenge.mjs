@@ -23,6 +23,13 @@
  * @param {object} client  - the M59Client
  * @param {object} session - the broker session (has .fight, .step, etc.)
  */
+
+// Health fraction: 0..1, or null if unreadable.
+function frac(v) {
+  const val = v?.value, max = v?.max;
+  if (val == null || max == null || max === 0) return null;
+  return val / max;
+}
 export async function scavenge(client, session) {
   if (!client || !session)
     return { sent: false, killed: false, reason: 'no client or session' };
@@ -38,9 +45,9 @@ export async function scavenge(client, session) {
 
   const hostiles = list.filter(o => {
     const can = o.can ?? [];
-    return (o.is_player === false || !o.is_player)
-      && can.includes('attack')
-      && !/friendly|pet|tame/i.test(o.name ?? '');
+    if (!can.includes('attack')) return false;
+    if (/friendly|pet|tame/i.test(o.name ?? '')) return false;
+    return true; // include both NPCs and players
   });
 
   if (!hostiles.length)
@@ -48,6 +55,7 @@ export async function scavenge(client, session) {
 
   // Pick the weakest (lowest max HP, or lowest HP as a fallback).
   const myLevel = client?.vitals?.()?.health?.max ?? 20;
+  const hpFrac = frac(client?.vitals?.()?.health);
   const weak = hostiles
     .filter(h => {
       const hp = h.max_health ?? h.health ?? null;
@@ -65,6 +73,19 @@ export async function scavenge(client, session) {
   if (tooStrong)
     return { sent: false, killed: false,
       reason: `weakest hostile (${targetName} hp=${targetHp}) is still above the band (my level=${myLevel})` };
+
+  // PVP GATE: if the target is a player, only fight if we can take
+  // them on. The character runs from players unless it is armed,
+  // healthy, and the player is in its level band. This is the
+  // "run unless you can win" policy for farming characters.
+  if (target.is_player === true) {
+    const armed = client?.equipment?.()?.equipped?.length > 0;
+    const healthy = hpFrac != null && hpFrac >= 0.7;
+    const inBand = typeof targetHp === 'number' && targetHp <= myLevel * 1.5;
+    if (!armed || !healthy || !inBand)
+      return { sent: false, killed: false,
+        reason: `player target (${targetName}) — not engaging (armed=${armed}, healthy=${healthy}, inBand=${inBand}); flee instead` };
+  }
 
   // TAKE A SAFE SPOT BEFORE FIGHTING. A wall or corner reduces the
   // number of directions enemies can attack from. This is a tactic

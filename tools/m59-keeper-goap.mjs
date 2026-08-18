@@ -326,6 +326,61 @@ export class GOAPKeeper {
     //    room tracking is authoritative).
     const ws = { ...evaluate({ client: c, policy: this.policy, agent: this.policy.agent }), ...(wsOverride ?? {}) };
 
+    // 1b. TARGET DETECTION. The GOAP keeper must set _targetId so
+    //     that has_target, in_reach, and target_in_band are produced
+    //     from the actual room contents. The BT system did this in
+    //     m59-bt-combat.mjs; the GOAP keeper needs its own.
+    //
+    //     We look for the weakest hostile in the room (NPCs and
+    //     players alike) and set _targetId, _targetLevel, and
+    //     _threatCeiling. The planner and the goal stack then
+    //     decide whether to fight (scavenge/attack) or flee.
+    //
+    //     The threat ceiling comes from policy: the character fights
+    //     targets at or below its own level (conservative) or up to
+    //     10 levels above (aggressive). Default: same level.
+    {
+      const room = c.room;
+      if (room?.objects) {
+        const list = room.objects instanceof Map
+          ? [...room.objects.values()]
+          : Array.isArray(room.objects) ? room.objects : [];
+        const myLevel = c.vitals?.()?.health?.max ?? 20;
+        const band = this.policy?.threatBand ?? 0; // 0 = same level only
+        const ceiling = myLevel + band;
+
+        const hostiles = list.filter(o => {
+          const can = o.can ?? [];
+          return can.includes('attack')
+            && !/friendly|pet|tame/i.test(o.name ?? '');
+        });
+
+        if (hostiles.length && !ws._targetId) {
+          // Pick the weakest target (lowest max HP).
+          const target = hostiles.sort((a, b) =>
+            (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0];
+          const targetLevel = target.max_health ?? target.health ?? null;
+          const targetName = c.rsc?.get?.(target.nameRsc) ?? target.name ?? 'creature';
+          const isPlayer = target.is_player === true;
+
+          ws._targetId = target.id ?? target.obj_id;
+          ws._targetLevel = targetLevel;
+          ws._threatCeiling = ceiling;
+          // Mark whether the target is a player, so the goal stack
+          // and atomics can make PVP-specific decisions.
+          ws._targetIsPlayer = isPlayer;
+
+          console.error(`[goap] ${who} target detected: ${targetName} (lv${targetLevel ?? '?'}, ${isPlayer ? 'PLAYER' : 'npc'}, my lv${myLevel}, ceiling ${ceiling})`);
+        } else if (!hostiles.length && ws._targetId) {
+          // Target is gone. Clear it.
+          delete ws._targetId;
+          delete ws._targetLevel;
+          delete ws._threatCeiling;
+          delete ws._targetIsPlayer;
+        }
+      }
+    }
+
     // Visible log: every GOAP pass is logged to the broker console so the
     // journal (in-memory, lost on restart) is not the only record.
     const wsSummary = Object.entries(ws).filter(([,v]) => v !== null)
