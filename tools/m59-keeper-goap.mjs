@@ -540,18 +540,12 @@ export class GOAPKeeper {
           // there are no mobs. Wait for respawn.
         }
       }
-      // Inject travel_to when the active goal is has_money and we
-      // are not at a shop. The planner's only path to has_money is
-      // sell (pre: at_shop, effects: has_money). If we're not at a
-      // shop, the character must travel there first, so we inject
-      // travel_to (effects: at_shop) and the planner chains
-      // travel_to -> sell -> has_money. If we're already at a shop,
-      // sell is directly available and no travel is needed.
-      //
-      // This also covers the case where the character has loot to
-      // sell (has_loot=true) but no money: the has_money goal
-      // triggers, the character travels to a shop, and sells.
-      if (effectiveGoal === 'has_money' && ws.at_shop === false) {
+      // Inject travel_to a shop ONLY when the character is not
+      // armed. An armed character earns money by scavenging
+      // (fighting), not by walking to a shop to sell loot. The
+      // shop travel is the fallback for unarmed characters who
+      // have loot but can't fight.
+      if (effectiveGoal === 'has_money' && ws.at_shop === false && ws.armed === false) {
         const here = c.room?.num ?? c.room?.id;
         if (here != null) {
           const { objIdToNum } = await import('./m59-hunt-room.mjs');
