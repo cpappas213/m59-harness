@@ -265,7 +265,17 @@ export class GOAPKeeper {
           // because the nearest shop changes direction each pass.
           if (!this._shopDest || this._shopDest === mapNum) {
             const shop = nearestShop(mapNum);
-            if (shop) this._shopDest = shop.to;
+            if (shop) {
+              this._shopDest = shop.to;
+              console.error(`[goap] ${who} shop dest cached: room=${mapNum} -> shop=${shop.to} hops=${shop.hops.length}`);
+            } else {
+              // No reachable shop. Clear any stale cache so the
+              // character can fall through to other goals.
+              if (this._shopDest) {
+                console.error(`[goap] ${who} no reachable shop from ${mapNum}, clearing shop cache`);
+                this._shopDest = null;
+              }
+            }
           }
           if (this._shopDest && this._shopDest !== mapNum) {
             const dest = this._shopDest;
