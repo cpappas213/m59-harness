@@ -6873,13 +6873,13 @@ export class Autopilot {
     // ------------------------------------------------------------------
     if (this.policy && this.policy.useGOAP === true) {
       const room = s.world?.room ?? c?.room;
-      // Underworld: check both the broker's room tracking and the
-      // client's room. The broker's room is a map object (nameRsc,
-      // objId); the client's room is a wire object (roomNameRsc, id).
+      // Underworld: check the CLIENT's room first. The broker's s.world.room
+      // can be stale (it lags behind room changes), so the client's wire
+      // object is the source of truth. The client reports id: 6 for the
+      // Underworld, and roomNameRsc resolves to "The Underworld".
       const clientRoomName = c?.roomNameRsc ? (c.rsc?.get?.(c.roomNameRsc) ?? '') : '';
-      const roomName = room?.name ?? clientRoomName;
-      const roomNum  = room?.objId ?? c?.room?.id;
-      const isUnderworld = /underworld/i.test(roomName) || roomNum === 6;
+      const clientRoomId = c?.room?.id;
+      const isUnderworld = /underworld/i.test(clientRoomName) || clientRoomId === 6;
 
       if (c && typeof c.armed === 'function' && !c.armed() && !isUnderworld) {
         const r = await this.passArm({ s, c, room, v: c.vitals?.() ?? {} });
