@@ -78,3 +78,27 @@ any direction) can stand there, but a monster (NSEW on the coarse grid) cannot s
 - Don't need live Z from the client (move packet has no Z) — height is a pure
   function of (room, col, row).
 - Keep coarse grid as the primary walkability; height is an ADDITIONAL gate on top.
+
+## Follow-up 2: fine-fallback routing for unbaked rooms (DONE)
+
+The coarse grid held a silent veto over fine-open cells in rooms WITHOUT a baked step
+mask. With a mask, `moverStepLands` (a real BSP trace, precomputed) is the authority and
+all eight directions are considered. Without one, `neighbors()` fell back to
+`openDirections` (the coarse grid), which vetoes fine-open cells — the "bots behave like
+monsters" problem, arriving at the planning stage.
+
+  m59-roo.mjs neighbors()
+    Added `fineFallback`: when the room has wall data but no step mask, consider all
+    eight directions (like the mask path) and reconsider any step the coarse grid vetoes
+    against `fineWalkable`. A step the coarse grid already allows is kept without
+    re-checking, so rooms whose grid and walls agree are unchanged. Cheaper than a full
+    BSP trace (a point-segment test, not a raycast) — affordable in a keeper pass.
+
+  Verified: routes plan into and out of hidden (coarse-wall/fine-open) cells; normal
+  routes unchanged.
+
+Tests: roo 824 (fine-fallback routes in/out of a hidden cell + normal-route regression).
+
+## Known pre-existing broken suites (NOT from this work, fail on baseline too):
+keeper-bt 6, bt-provision 3, takesafespot 8, roam 11 — all reference methods from
+refactors that did not land (`_takeSafeSpotCheckNoWall`, `_roamShouldGoHome`, etc.).

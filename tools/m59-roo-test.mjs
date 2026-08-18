@@ -555,6 +555,32 @@ if (!roomsDir) {
   ok('d4 has at least one hidden safe cell', hidden.length > 0, `${hidden.length}`);
   // A coarse-walkable cell must never be in the hidden list.
   ok('no coarse-walkable cell is hidden', hidden.every(([c, r]) => d4.walkable(r, c) === false));
+
+  // FINE-GRID FALLBACK ROUTING: when the room has wall data but no baked step mask, the
+  // coarse grid (openDirections) used to hold a silent veto over fine-open cells. With the
+  // fallback, a step the coarse grid vetoes is reconsidered against the fine grid and kept
+  // if the destination is open. Verify a route can now be planned INTO a hidden cell from
+  // a coarse-walkable neighbour (the goal-exempt path would find it anyway, but the
+  // neighbour->hidden step must be offered by the fine fallback, not the coarse grid).
+  const [hc, hr] = hidden[0];
+  // find a coarse-walkable neighbour of the hidden cell
+  let nb = null;
+  for (const [dr, dc] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]) {
+    const nr = hr + dr, nc = hc + dc;
+    if (d4.walkable(nr, nc) && d4.standable(nr, nc)) { nb = [nc, nr]; break; }
+  }
+  if (nb) {
+    const [bc, br] = nb;
+    // The neighbour must itself be offered a step toward the hidden cell by the fine grid.
+    const p = d4.path(br, bc, hr, hc, { collision: true });
+    ok(`fine-fallback routes into hidden cell (${hc},${hr})`, p.found === true, p.reason ?? 'found');
+    // And back out (we can get in AND out — not a trap).
+    const p2 = d4.path(hr, hc, br, bc, { collision: true });
+    ok(`fine-fallback routes out of hidden cell (${hc},${hr})`, p2.found === true, p2.reason ?? 'found');
+  }
+  // Regression: a normal route through the room body still works.
+  const pnorm = d4.path(10, 10, 20, 20, { collision: true });
+  ok('normal route still works with fine fallback', pnorm.found === true, pnorm.reason ?? 'found');
 }
 
 console.log(`\n${pass} passed, ${fail} failed${skipped ? `, ${skipped} skipped` : ''}`);

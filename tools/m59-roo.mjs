@@ -2021,11 +2021,31 @@ export class RoomGeometry {
     // as permissive as it likes; if `neighbors` never OFFERS the square, the router never
     // asks. Measured: converting only the mover moved room 587's region count not at all.
     const authoritative = collision && this.hasStepMask;
-    const dirs = authoritative ? DIRS : this.openDirections(row, col, { fine });
+    // FINE-GRID FALLBACK: when the room has wall data but no baked step mask, the coarse
+    // grid (openDirections) holds a silent veto over fine-open cells. The player moves on
+    // the fine grid (any direction, through gaps the grid calls wall), so for unbaked
+    // rooms we consider all eight directions and let fineWalkable(via wall-segment test)
+    // decide per-destination. This is much cheaper than the full BSP trace in
+    // moverStepLands (it is a point-near-segment test, not a raycast), so it is affordable
+    // in a keeper pass even without a precomputed mask.
+    //
+    // It is a PERMISSIVE widening: a step the coarse grid already allows is kept (we do
+    // not re-veto it); a step the coarse grid vetoes is reconsidered against the fine grid
+    // and kept only if the destination is actually open in the wall segments. This means
+    // a room whose coarse grid and walls agree behaves exactly as before.
+    const fineFallback = !authoritative && collision && (this.walls?.length > 0);
+    const coarseDirs = fineFallback ? new Set(this.openDirections(row, col, { fine }).map(d => `${d.dr},${d.dc}`)) : null;
+    const dirs = authoritative || fineFallback ? DIRS : this.openDirections(row, col, { fine });
     for (const d of dirs) {
       const r = row + d.dr, c = col + d.dc;
       if (!this.inBounds(r, c)) continue;          // leaving the room is a separate act
       if (!this.standable(r, c)) continue;
+      // FINE-GRID FALLBACK gate: when the coarse grid vetoed this direction (i.e. it is not
+      // in openDirections), only allow it if the fine grid says the destination cell is
+      // open. If the coarse grid already allowed it, we keep it without re-checking (the
+      // coarse grid is the server's own map and is not wrong in a way that hurts us — the
+      // dangerous case is the inverse, coarse-wall/fine-open, which this branch fixes).
+      if (fineFallback && !coarseDirs.has(`${d.dr},${d.dc}`) && this.fineWalkable(r, c) !== true) continue;
       // AN OBSERVATION OUTRANKS A MODEL, AND THE GOAL IS EXEMPT FROM ONLY ONE OF THEM.
       // `blockedEdges` is a step we actually asked for and were actually refused, so it
       // applies everywhere including the last one — exempting the goal there is how a
