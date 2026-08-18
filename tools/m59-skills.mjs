@@ -2041,6 +2041,19 @@ async function identifyPortals(s, found, { want = null, maxLooks = 6 } = {}) {
 // bookkeeping wrong here is what produced the two oldest wrong diagnoses in this file:
 // a portal that fires on the LAST STEP of the walk reports arrived:false, and a cursor
 // taken after the walk looks past the very event it is waiting for.
+// WHAT AN ESCAPE WALK MAY SPEND, AND WHY IT IS SO MUCH MORE THAN THE ROUTE.
+//
+// Everywhere else in this repository a walk budget is "the route plus a little", because
+// overspending costs an errand. Here the alternative is a character parked for ever in the
+// one room with no graph exits, so the trade runs the other way entirely.
+//
+// And the route length is not the step count. The Underworld climbs hundreds of units over
+// broken ground, every off-plan landing costs a replan and the replan walks again from
+// somewhere else — measured, a 43-step route spent 83 steps and still had not arrived.
+// Three times the route plus sixty is generous on purpose; it is bounded, and the walk
+// still stops the moment it gets there.
+const escapeBudget = steps => Math.max(150, (steps ?? 0) * 3 + 60);
+
 // WHEN COARSE PATHING CANNOT PUT US ON A PORTAL, TRY FINE BEFORE BELIEVING IT.
 //
 // `leaveVia` has made this argument for `go` exits since the Marion crypt trapped six
@@ -2067,7 +2080,7 @@ async function walkOntoSquare(s, col, row, { maxSteps = 80 } = {}) {
   if (typeof s.walkFine !== 'function') return walk;
   const half = KOD_FINENESS >> 1;
   const fine = await s.walkFine(col * KOD_FINENESS + half, row * KOD_FINENESS + half,
-                                { maxSteps: Math.max(40, maxSteps) }).catch(() => null);
+                                { maxSteps }).catch(() => null);
   if (fine?.arrived) return { ...fine, via: 'fine movement after coarse pathing failed' };
   return walk;
 }
@@ -2076,7 +2089,8 @@ async function stepOnto(s, o) {
   const c = s.need();
   const before = c.evSeq;
   const wasIn = c.room.id;
-  const walk = await walkOntoSquare(s, o.col, o.row, { maxSteps: 80 });
+  const walk = await walkOntoSquare(s, o.col, o.row,
+                                    { maxSteps: escapeBudget(s.world?.reach?.(o.col, o.row)?.steps) });
   const arr = await c.waitFor({ since: before, kinds: ['room-entered'],
                                 timeoutMs: walk.arrived ? 3000 : 500 });
   const entered = arr.events.find(e => e.kind === 'room-entered');
@@ -2117,7 +2131,7 @@ async function ripOut(s, rip, { maxSeconds = 60 } = {}) {
   // its own walk or a failure to arrive reads as a portal that did not fire.
   const spot = s.world.approachSquare(rip.col, rip.row);
   if (spot && spot.steps > 0) {
-    const walk = await s.walkTo(spot.col, spot.row, { maxSteps: Math.max(30, spot.steps + 10) });
+    const walk = await walkOntoSquare(s, spot.col, spot.row, { maxSteps: escapeBudget(spot.steps) });
     if (isTerminalMovementReason(walk.reason))
       return { left: false, terminal: true, reason: walk.reason, note: walk.note };
     if (!walk.arrived)
@@ -2219,7 +2233,7 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
     const spot = s.world.approachSquare(rip.col, rip.row);
     if (spot && spot.steps > 0) {
       const walk = await walkOntoSquare(s, spot.col, spot.row,
-                                        { maxSteps: Math.max(60, spot.steps + 40) });
+                                        { maxSteps: escapeBudget(spot.steps) });
       if (isTerminalMovementReason(walk.reason))
         return { left: false, stood_up: true, reason: walk.reason, note: walk.note };
       // ONE PORTAL WE CANNOT WALK TO IS NOT A ROOM WE CANNOT LEAVE.
@@ -2242,10 +2256,18 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
         ripUnreachable = true;
       }
     }
-    if (!ripUnreachable) {
+    // DECLARED OUTSIDE THE BLOCK BECAUSE THE FALL-THROUGH BELOW REPORTS IT. Scoping it to
+    // the polling block made `seen` a ReferenceError on the path where the rip could not be
+    // reached — which is the exact path this change exists to open, so every escape attempt
+    // died with "pass failed: seen is not defined" instead of trying the fixed portals.
     const seen = [];
     const t0 = Date.now();
-    while (Date.now() - t0 < maxSeconds * 1000) {
+    // The condition lives on the loop rather than in a wrapper block, so that everything
+    // below stays in one scope: `seen` is reported by the fall-through after it, and
+    // scoping it into a block made it a ReferenceError on exactly the path this change
+    // exists to open — every escape attempt died "pass failed: seen is not defined"
+    // instead of going on to try the fixed portals.
+    while (!ripUnreachable && Date.now() - t0 < maxSeconds * 1000) {
       const b = c.evSeq;
       await s.pacer.submit('look', () => c.look(rip.id));
       const ev = await c.waitFor({ since: b, kinds: ['look'], timeoutMs: 3000 });
@@ -2271,7 +2293,6 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
               saw: seen, note: 'try again; the window is 5-10 seconds and unknown which' };
       }
       await sleep(1200);
-    }
     }
     // Out of patience on the rip. Do NOT stop here — the caller wanted OUT, and a city
     // it did not ask for is enormously better than another spell in the Underworld.
@@ -2303,7 +2324,7 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
     // Measured: with the cap, every attempt failed that way while the router had a clean
     // route to two of them.
     const walk = await walkOntoSquare(s, o.col, o.row,
-                                      { maxSteps: Math.max(80, (reach?.steps ?? 0) + 40) });
+                                      { maxSteps: escapeBudget(reach?.steps) });
     const arr = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: walk.arrived ? 3000 : 500 });
     const entered = arr.events.find(e => e.kind === 'room-entered');
     const now = whereAmI();
