@@ -14331,6 +14331,29 @@ function heroSnapshot(name) {
             return res;
           } catch { return { heights: [], min: 0, max: 0, step: 1024 }; }
         })(),
+        // Asymmetric safe cells: coarse-grid WALL but fine-grid open. The player can
+        // stand here (fine-grid, any direction); a monster (NSEW on the coarse grid)
+        // cannot step in. Rendered as a distinct marker in the 3D view so a farming
+        // spot can be spotted at a glance. Uses the same resolved geometry as heights.
+        hidden: (() => {
+          try {
+            const roomName = c.rsc?.get?.(c.roomNameRsc);
+            let rooFile = null;
+            if (roomName && roomRooLookup.size) rooFile = roomRooLookup.get(roomName);
+            if (!rooFile && roomName) {
+              const byName = Object.values(worldMap.rooms ?? {}).find(r => r.name === roomName);
+              if (byName?.roo?.file) rooFile = byName.roo.file;
+            }
+            if (!rooFile) return [];
+            const cacheKey = 'hc:' + rooFile;
+            if (_walkableCache.has(cacheKey)) return _walkableCache.get(cacheKey);
+            const m59Root = process.env.M59_ROOT || '/Users/costas/Documents/Projects/Meridian59';
+            const geo = loadRoo(rooFile, [m59Root + '/resource/rooms']);
+            const cells = geo?.hiddenCells?.() ?? [];
+            _walkableCache.set(cacheKey, cells);
+            return cells;
+          } catch { return []; }
+        })(),
         objects: [...c.room.objects.values()].map(o => ({
           id: o.id,
           name: c.rsc?.get?.(o.nameRsc) ?? 'unknown',

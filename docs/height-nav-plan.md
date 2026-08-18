@@ -47,9 +47,30 @@ build time ~30ms. Heights in units of 1024 (1.0 = one step).
 - tools/m59-wander.mjs        — height-gated wander (scavenge calls it)
 - tools/m59-roo-test.mjs      — height map + step tests
 
-## Status: DONE. All touched suites green (roo 79, safespot 141, act 270, atomics 25,
-goap 18, nav 19). Pre-existing broken tests (keeper-bt 6, bt-provision 3, takesafespot
-8) confirmed failing on baseline too — unrelated to this work.
+## Status: DONE. All touched suites green (roo 821, safespot 141, act 270, goap 18).
+Pre-existing broken tests (keeper-bt 6, bt-provision 3, takesafespot 8) confirmed
+failing on baseline too — unrelated to this work.
+
+## Follow-up: fine-grid vs coarse-grid mismatch = asymmetric safe spots
+
+The coarse grid is a coarser approximation of the wall segments. A cell the coarse grid
+calls WALL but the fine grid is open in is a one-way safe spot: the player (fine-grid,
+any direction) can stand there, but a monster (NSEW on the coarse grid) cannot step in.
+
+  m59-roo.mjs
+    RoomGeometry.fineWalkable(r, c) — point-in-wall-segment test (the ground-truth
+    collision), returns true/false/null.
+    RoomGeometry.hiddenCells() — interior cells where walkable=false but
+    fineWalkable=true, height-checked reachable from a coarse-walkable neighbour.
+    Valley of Ileria (d4.roo) has 246 such cells; flat Deep Woods (c4) has 0.
+
+  m59-broker.mjs
+    room_view.hidden = [[c, r], ...] — the asymmetric safe cells, resolved + cached
+    the same way as heights.
+
+  m59-room3d.mjs
+    Renders hidden cells as gold floor tiles + a "N hidden" count in the HUD so a
+    farming spot is visible at a glance. Live-verified: Kage's room shows 25.
 
 ## Notes
 - Height only matters for multi-level rooms. Flat rooms (Deep Woods) are all one

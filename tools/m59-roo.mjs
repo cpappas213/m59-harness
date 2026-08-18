@@ -1531,6 +1531,65 @@ export class RoomGeometry {
     return Math.abs(h0 - h1) <= STEP_UNITS;
   }
 
+  // Fine-grid collision: is the centre of cell (r, c) inside an impassable wall
+  // segment? This is the ground truth the game's collision actually uses (the wall
+  // segments), NOT the coarse grid (this.walkable), which is a coarser approximation
+  // that can mark open space as wall or vice versa.
+  //
+  // Why it matters: a player character moves on the fine grid (any direction, through
+  // gaps the coarse grid calls wall), but monsters path NSEW on the coarse grid and
+  // cannot enter a cell the grid marks as wall. So a cell that is coarse-WALL but
+  // fine-open is a one-way safe spot: we can stand in it, a monster cannot step into it.
+  //
+  // Returns: true if walkable on the fine grid, false if inside a wall, null if the
+  // geometry has no wall data (can't decide).
+  fineWalkable(r, c) {
+    const walls = this.walls;
+    if (!walls || !walls.length) return null;
+    const blocked = walls.filter(w => w.passable === false);
+    if (!blocked.length) return true;
+    const fx = (c + 0.5) * CLIENT_FINENESS, fy = (r + 0.5) * CLIENT_FINENESS;
+    // A cell centre is blocked if it is within a quarter cell (256 fine units) of an
+    // impassable segment. 256 is the player radius in fine units (the client collides
+    // the character circle, not a point).
+    const R = 256;
+    for (const w of blocked) {
+      const dx = w.x1 - w.x0, dy = w.y1 - w.y0;
+      const L2 = dx * dx + dy * dy;
+      let t = 0;
+      if (L2 > 0) t = Math.max(0, Math.min(1, ((fx - w.x0) * dx + (fy - w.y0) * dy) / L2));
+      const cx = w.x0 + t * dx, cy = w.y0 + t * dy;
+      if (Math.hypot(fx - cx, fy - cy) < R) return false;
+    }
+    return true;
+  }
+
+  // Cells the coarse grid calls WALL but the fine grid is open in: asymmetric safe
+  // spots. The character (fine-grid, any direction) can stand here; a monster (NSEW on
+  // the coarse grid) cannot step in. Returns [[c, r], ...] interior cells only (the
+  // 1-cell border is always wall in the coarse grid and never farmable).
+  //
+  // Each result is also height-checked: we only keep cells reachable from at least one
+  // adjacent coarse-walkable cell at a step-ok height (i.e. we can get in and, if we
+  // want, step back out). A hidden cell on a clifftop we could fall off is not safe.
+  hiddenCells() {
+    const out = [];
+    for (let r = 1; r < this.rows - 1; r++) {
+      for (let c = 1; c < this.cols - 1; c++) {
+        if (this.walkable(r, c)) continue;        // coarse says walkable: not hidden
+        if (this.fineWalkable(r, c) !== true) continue;  // fine says wall/unknown: skip
+        // Reachable from a coarse-walkable neighbour at a step-ok height?
+        let reachable = false;
+        for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nr = r + dr, nc = c + dc;
+          if (this.walkable(nr, nc) && this.heightStepOk(r, c, nr, nc)) { reachable = true; break; }
+        }
+        if (reachable) out.push([c, r]);
+      }
+    }
+    return out;
+  }
+
   /**
    * Could a player be at this exact point? Floor under it, and a sector with an INTERIOR.
    *

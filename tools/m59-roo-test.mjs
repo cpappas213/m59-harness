@@ -528,5 +528,34 @@ if (!roomsDir) {
   }
 }
 
+// FINE-GRID WALKABILITY + HIDDEN CELLS.
+// The coarse grid is a coarser approximation of the wall segments. A cell the coarse
+// grid calls WALL but the fine grid is open in is an asymmetric safe spot: the player
+// (fine-grid, any direction) can stand there, a monster (NSEW on the coarse grid)
+// cannot step in. hiddenCells() must return exactly those interior, reachable cells.
+{
+  const { loadRoo } = await import('./m59-roo.mjs');
+  const m59Root = process.env.M59_ROOT || '/Users/costas/Documents/Projects/Meridian59';
+  const dir = m59Root + '/resource/rooms';
+  // Valley of Ileria (d4.roo) is a multi-level room whose coarse grid is coarser than
+  // the wall segments, so it has hidden cells. Deep Woods (c4.roo) is flat and aligned.
+  const d4 = loadRoo('d4.roo', [dir]);
+  ok('fineWalkable is a function', typeof d4.fineWalkable === 'function');
+  ok('hiddenCells is a function', typeof d4.hiddenCells === 'function');
+  // A coarse-wall cell that is fine-open must be reported fineWalkable=true.
+  let foundHidden = false, foundCoarseOpen = false;
+  const hidden = d4.hiddenCells();
+  for (const [c, r] of hidden) {
+    ok(`hidden cell (${c},${r}) is coarse-wall`, d4.walkable(r, c) === false);
+    ok(`hidden cell (${c},${r}) is fine-open`, d4.fineWalkable(r, c) === true);
+    ok(`hidden cell (${c},${r}) is interior`, r > 0 && c > 0 && r < d4.rows - 1 && c < d4.cols - 1);
+    foundHidden = true;
+  }
+  // There must be at least one hidden cell in d4 (the coarse/fine mismatch is real).
+  ok('d4 has at least one hidden safe cell', hidden.length > 0, `${hidden.length}`);
+  // A coarse-walkable cell must never be in the hidden list.
+  ok('no coarse-walkable cell is hidden', hidden.every(([c, r]) => d4.walkable(r, c) === false));
+}
+
 console.log(`\n${pass} passed, ${fail} failed${skipped ? `, ${skipped} skipped` : ''}`);
 process.exit(fail ? 1 : 0);

@@ -40,6 +40,8 @@ export function renderRoom3D(name, rv, hero) {
   const heightsJson = heights ? JSON.stringify(heights) : 'null';
   const hMin = heights ? (hObj.min ?? 0) : 0;
   const hMax = heights ? (hObj.max ?? 0) : 0;
+  const hiddenJson = JSON.stringify(rv.hidden ?? []);
+  const hiddenCount = (rv.hidden ?? []).length;
 
   return `<!doctype html>
 <html><head>
@@ -82,6 +84,7 @@ export function renderRoom3D(name, rv, hero) {
     <span class="hp">HP ${hp.value}/${hp.max}</span>
     <span class="mana">MP ${mana.value}/${mana.max}</span>
     <span class="vigor">VIG ${vigor.value}/${vigMax}</span>
+    ${hiddenCount ? `<span style="color:#ffcc33" title="Asymmetric safe cells: we can stand here, monsters (NSEW grid) cannot">&#9670; ${hiddenCount} hidden</span>` : ''}
   </div>
 </div>
 <div id="err"></div>
@@ -105,6 +108,9 @@ const SELF = ${selfJson};
 const FCX = COLS / 2, FCZ = ROWS / 2;
 const HEIGHTS = ${heightsJson};
 const HMIN = ${hMin}, HMAX = ${hMax};
+// Asymmetric safe cells: coarse-grid WALL but fine-grid open. The player can stand
+// here (fine-grid, any direction); a monster (NSEW on the coarse grid) cannot step in.
+const HIDDEN = ${hiddenJson};
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -185,6 +191,22 @@ for (let r = 0; r < ROWS; r++) {
   }
 }
 scene.add(floorGroup);
+
+// Asymmetric safe cells: gold floor tiles. These are coarse-WALL / fine-open cells the
+// player can stand in but a monster (NSEW grid) cannot enter.
+if (Array.isArray(HIDDEN) && HIDDEN.length) {
+  for (const [c, r] of HIDDEN) {
+    if (c < 0 || r < 0 || c >= COLS || r >= ROWS) continue;
+    const h = hAt(c, r);
+    const y = (h != null ? h - HMIN : 0) * 1 + 0.06;   // just above the floor slab
+    const g = new THREE.PlaneGeometry(0.92, 0.92);
+    const m = new THREE.MeshLambertMaterial({ color: 0xffcc33, emissive: 0x443300, side: THREE.DoubleSide });
+    const tile = new THREE.Mesh(g, m);
+    tile.rotation.x = -Math.PI / 2;
+    tile.position.set(c + 0.5, y, r + 0.5);
+    scene.add(tile);
+  }
+}
 
 // Keep a thin reference plane at y=0 for rooms with no height data.
 if (!HEIGHTS) {
