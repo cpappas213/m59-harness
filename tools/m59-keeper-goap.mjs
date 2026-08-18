@@ -160,6 +160,28 @@ export class GOAPKeeper {
 
     this._passCount++;
 
+    // TRAVEL IN PROGRESS: if the last action was a travel_to that
+    // hasn't completed yet (the character is still moving between
+    // rooms), don't re-plan. Each new travel_to cancels the previous
+    // one, so re-planning every pass causes the character to cancel
+    // its own movement and never complete a room transition.
+    // Let the movement finish, then re-plan on the next pass.
+    if (this._travelInFlight) {
+      // Check if the character is still moving (room hasn't changed
+      // since we started the travel, or the broker reports movement
+      // in progress).
+      const c = this.client;
+      const curRoom = c?.room?.num ?? c?.room?.id;
+      if (curRoom === this._travelFromRoom) {
+        // Still in the same room — movement hasn't completed.
+        // Wait for it.
+        return { acted: false, action: 'travel_in_progress', reason: 'waiting for movement to complete' };
+      }
+      // Room changed — travel completed.
+      this._travelInFlight = false;
+      this._travelFromRoom = null;
+    }
+
     // 1. Read the world state. The caller can override symbols that
     //    the client cannot see yet (e.g. in_underworld after a
     //    reconnect, when the client's room is stale but the broker's
@@ -320,6 +342,14 @@ export class GOAPKeeper {
     console.error(`[goap] ${who} pass ${this._passCount} EXEC step=${p.steps[0]?.atomic ?? '?'}`);
     const result = await stepPlan(c, this.session, p, { index: 0 });
     console.error(`[goap] ${who} pass ${this._passCount} EXEC done acted=${result.acted} reason=${result.reason ?? 'none'}`);
+
+    // Track travel in progress: if this step was a travel_to that
+    // was sent (movement started), mark it so the next pass doesn't
+    // cancel it with a new travel command.
+    if (result.acted && (result.action === 'travel_to' || p.names?.[0] === 'travel_to')) {
+      this._travelInFlight = true;
+      this._travelFromRoom = c?.room?.num ?? c?.room?.id;
+    }
 
     const actionName = result.action ?? p.names?.[0] ?? 'unknown';
     this.note('goap step', {
