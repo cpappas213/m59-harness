@@ -305,13 +305,14 @@ export const SYMBOLS = {
     whenUnknown: false,
     why_unknown: 'a wrong false in the Underworld means the character tries to farm in a room with no exits',
     produce: ({ client }) => {
-      const name = client?.room?.name ?? '';
-      const num  = client?.room?.num;
-      // Check both the room name and the room number. The name
-      // may not be loaded yet after a reconnect; the number is
-      // set as soon as the room packet arrives. Room 6 is the
-      // Underworld (verified from the broker's room mapping).
-      return /underworld/i.test(name) || num === 6;
+      // The client's room name comes from roomNameRsc -> rsc.get(),
+      // not from room.name (which doesn't exist). The room id is
+      // room.id. Room 6 is the Underworld.
+      const name = client?.roomNameRsc
+        ? (client.rsc?.get?.(client.roomNameRsc) ?? '')
+        : '';
+      const id = client?.room?.id;
+      return /underworld/i.test(name) || id === 6;
     },
   },
 

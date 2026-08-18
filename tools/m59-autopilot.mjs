@@ -6868,13 +6868,12 @@ export class Autopilot {
     // ------------------------------------------------------------------
     if (this.policy && this.policy.useGOAP === true) {
       const room = s.world?.room ?? c?.room;
-      // Underworld: the GOAP keeper handles it internally (in_underworld
-      // symbol + escape_underworld atomic). BUT the client's room may be
-      // stale after a reconnect, so the autopilot also checks the broker's
-      // room tracking. If the broker says Underworld but the client doesn't,
-      // the legacy passUnderworld handles it.
-      const roomName = room?.name ?? '';
-      const isUnderworld = /underworld/i.test(roomName) || room?.id === 6;
+      // Underworld: check both the broker's room tracking and the
+      // client's room. The broker's room is a map object (nameRsc,
+      // objId); the client's room is a wire object (name, num).
+      const roomName = room?.name ?? c?.room?.name ?? '';
+      const roomNum  = room?.num  ?? c?.room?.num  ?? room?.objId;
+      const isUnderworld = /underworld/i.test(roomName) || roomNum === 6;
       if (isUnderworld) {
         const r = await this.passUnderworld({ s, c, room, v: c.vitals?.() ?? {} });
         if (r) return;
@@ -7161,7 +7160,10 @@ export class Autopilot {
     const { s, c, room, v } = ctx;
     // 1. Dead. The Underworld has no graph exits, so a character left there stays
     //    there forever unless something walks it onto a portal.
-    if (room && /underworld/i.test(room.name)) {
+    // Check both the map room (nameRsc) and the client room (name, num).
+    const roomName = room?.name ?? c?.room?.name ?? '';
+    const roomNum  = room?.num  ?? c?.room?.num  ?? room?.objId;
+    if (/underworld/i.test(roomName) || roomNum === 6) {
       this.tally.deaths++;
       this.deathsThisRun = (this.deathsThisRun || 0) + 1;
       // WHAT THE PURSE WAS WORTH WHEN IT HIT THE FLOOR. Recorded from the last frame
