@@ -46,7 +46,7 @@ export async function rest(client, session, { waitMs = 400 } = {}) {
 }
 
 rest.pre     = [];
-rest.effects = ['can_rest_higher'];
+rest.effects = ['healthy', 'can_rest_higher'];  // resting heals and restores vigor
 rest.atomic  = 'rest';
 
 export async function stand(client, session, { waitMs = 400 } = {}) {

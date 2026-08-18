@@ -341,11 +341,21 @@ export class GOAPKeeper {
     const goalStack = [
       { goal: '!in_underworld', when: ws.in_underworld === true },
       { goal: 'armed',         when: ws.armed === false },
+      // HEALTHY: if the character is hurt, stop what it's doing,
+      // flee from combat if there's a target, and rest to recover.
+      // This is priority 3 because a hurt character that keeps
+      // travelling or fighting will die.
+      { goal: 'healthy',       when: ws.hurt === true },
       // has_food: only try when the character CAN get food (has
       // reagents to cast create food, or has money to buy).
       // Otherwise, skip to the next goal: rest to the cap (80).
       { goal: 'has_food',      when: ws.has_food === false && (ws.has_reagents === true || ws.has_money === true) },
-      { goal: 'has_money',     when: ws.has_money === false && ws.has_loot === true },
+      // has_money: earn or sell. The character needs money whether
+      // it has loot to sell or not. But only trigger when the
+      // character CAN make money: it has loot to sell, or it's
+      // armed (can scavenge for gold). An unarmed, loot-less
+      // character can't earn money and the goal is unreachable.
+      { goal: 'has_money',     when: ws.has_money === false && (ws.has_loot === true || ws.armed === true) },
       { goal: 'can_rest_higher', when: ws.can_rest_higher === true },
       { goal: this.goal,       when: ws[this.goal] !== true },
     ];
@@ -372,16 +382,42 @@ export class GOAPKeeper {
       const { escapeUnderworldAtomic } = await import('./m59-act/escape-underworld.mjs');
       extra.push(escapeUnderworldAtomic);
     } else {
-      // Inject combat atomics when the character is armed and there
-      // are hostiles in the room. The planner can chain:
-      //   take_safe_spot -> attack (loop) -> flee (if hurt)
-      if (ws.has_target === true) {
+      // Inject combat atomics. The character needs these whenever
+      // there's a hostile in the room (has_target) OR when the
+      // goal is healthy (flee/rest to recover).
+      if (ws.has_target === true || ws.hurt === true) {
         const { attackOf } = await import('./m59-act/attack.mjs');
         const { scavenge } = await import('./m59-act/scavenge.mjs');
         const { takeSafeSpot } = await import('./m59-act/take-safe-spot.mjs');
         const { flee } = await import('./m59-act/flee.mjs');
         extra.push(attackOf(ws), scavenge, takeSafeSpot, flee);
+
+        // When the goal is 'healthy' and there's a hostile in the
+        // room, inject a composite 'recover' atomic that flees
+        // first, then rests.
+        if (effectiveGoal === 'healthy' && ws.has_target === true) {
+          const { rest } = await import('./m59-act/rest.mjs');
+          const recover = async (client, session) => {
+            const fleeResult = await flee(client, session);
+            if (!fleeResult?.sent && fleeResult?.reason !== 'no target') {
+              return { acted: false, reason: 'flee failed: ' + (fleeResult?.reason ?? 'unknown') };
+            }
+            const restResult = await rest(client, session);
+            return {
+              acted: restResult?.sent === true || fleeResult?.sent === true,
+              reason: restResult?.reason ?? null,
+            };
+          };
+          recover.atomic = 'recover';
+          recover.pre = [];
+          recover.effects = ['healthy'];
+          recover.cost = 2;
+          extra.push(recover);
+        }
       }
+      // Rest is already in ALWAYS (the standard action set), so
+      // no need to inject it here. The can_rest_higher goal
+      // already has rest available.
       // Inject travel_to a hunt room when the character is armed but
       // has no target. The character needs to go fight something to
       // generate money/loot. Find the nearest room with huntable mobs
@@ -408,13 +444,18 @@ export class GOAPKeeper {
           // there are no mobs. Wait for respawn.
         }
       }
-      // Inject travel_to when we need to get to a shop. This covers
-      // two cases: (1) we need money (has_money=false, has_loot=true)
-      // to sell, and (2) we need food (has_food=false, has_money=true)
-      // to buy.
-      const needsShop = (ws.at_shop === false && ws.has_money === true)
-                      || (ws.at_shop === false && ws.has_loot === true && ws.has_money === false);
-      if (needsShop) {
+      // Inject travel_to when the active goal is has_money and we
+      // are not at a shop. The planner's only path to has_money is
+      // sell (pre: at_shop, effects: has_money). If we're not at a
+      // shop, the character must travel there first, so we inject
+      // travel_to (effects: at_shop) and the planner chains
+      // travel_to -> sell -> has_money. If we're already at a shop,
+      // sell is directly available and no travel is needed.
+      //
+      // This also covers the case where the character has loot to
+      // sell (has_loot=true) but no money: the has_money goal
+      // triggers, the character travels to a shop, and sells.
+      if (effectiveGoal === 'has_money' && ws.at_shop === false) {
         const here = c.room?.num ?? c.room?.id;
         if (here != null) {
           const { objIdToNum } = await import('./m59-hunt-room.mjs');

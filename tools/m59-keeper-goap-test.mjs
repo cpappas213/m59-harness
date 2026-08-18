@@ -69,11 +69,12 @@ console.log('GOAPKeeper: pass() reads world state and plans\n');
 }
 
 {
-  // A character at vigor 120 (above the 100 threshold). Armed, has food.
-  // Goal stack: in_underworld (no), armed (yes), has_food (yes), vigor_ok (yes).
-  // All goals satisfied. Idle.
+  // A character at vigor 120 (above the 100 threshold). Armed, has food,
+  // has money. Goal stack: in_underworld (no), armed (yes), healthy (yes),
+  // has_food (yes), has_money (yes), can_rest_higher (no, vigor>=80),
+  // vigor_ok (yes). All goals satisfied. Idle.
   const c = fakeClient({ vigor: 120, mana: 25, spells: [],
-    inventory: [{ name: 'bread', amount: 1 }],  // has food
+    inventory: [{ name: 'bread', amount: 1 }, { nameRsc: 'shilling', amount: 200 }],
     equipped: [{ id: 1, name: 'mace' }] });  // armed
   const s = fakeSession(c);
   const keeper = new GOAPKeeper({
@@ -90,11 +91,10 @@ console.log('GOAPKeeper: pass() reads world state and plans\n');
 console.log('GOAPKeeper: at the cap, rest is still planned (the planner cannot know the cap)\n');
 
 {
-  // A character at vigor 120 (above the 100 threshold). Armed, has food.
-  // Goal stack: in_underworld (no), armed (yes), has_food (yes), vigor_ok (yes).
-  // All goals satisfied. Idle.
+  // A character at vigor 120 (above the 100 threshold). Armed, has food,
+  // has money. All goals satisfied. Idle.
   const c = fakeClient({ vigor: 120, mana: 25, spells: [],
-    inventory: [{ name: 'bread', amount: 1 }],
+    inventory: [{ name: 'bread', amount: 1 }, { nameRsc: 'shilling', amount: 200 }],
     equipped: [{ id: 1, name: 'mace' }] });
   const s = fakeSession(c);
   const keeper = new GOAPKeeper({
@@ -129,9 +129,9 @@ console.log('GOAPKeeper: unarmed character gets the armed goal\n');
 }
 
 {
-  // An armed character with food and enough vigor: all goals met, idle.
+  // An armed character with food, money, and enough vigor: all goals met, idle.
   const c = fakeClient({ vigor: 120, mana: 25, spells: [],
-    inventory: [{ name: 'bread', amount: 1 }],
+    inventory: [{ name: 'bread', amount: 1 }, { nameRsc: 'shilling', amount: 200 }],
     equipped: [{ id: 1, name: 'mace' }] });
   const s = fakeSession(c);
   const keeper = new GOAPKeeper({
