@@ -5967,6 +5967,11 @@ export class Autopilot {
       // disagree with a specific one. Discards are here too and are the interesting
       // half: a window wrongly thrown away is how this would be quietly broken.
       trials: this.trials.slice(-12),
+      // THE GOAP PLAN, if this character is running the GOAP keeper.
+      // A visible plan is the only plan you can argue with: what goal
+      // it's chasing, the chain of actions it found, and the world
+      // state it saw when it planned. Null when not on GOAP.
+      goap: this._goapKeeper?.state() ?? null,
       ...(full ? { journal: this.journal, all_trials: this.trials } : {}),
     };
   }

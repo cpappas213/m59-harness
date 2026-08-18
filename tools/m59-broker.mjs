@@ -14229,6 +14229,10 @@ function heroSnapshot(name) {
       activity: ap ? ap.activity() : 'no keeper',
       strategy: st?.policy?.strategy ?? null,
       safe_spot: st?.safe_spot ?? false,
+      // The GOAP plan: what goal the planner is chasing and the chain
+      // of actions it found. A visible plan is the only plan you can
+      // argue with. Null when the character is not on GOAP.
+      goap: st?.goap ?? null,
       threat: st?.threat ?? null,
       trials: st?.all_trials ?? st?.trials ?? [],
       journal: st?.journal ?? st?.recent ?? [],

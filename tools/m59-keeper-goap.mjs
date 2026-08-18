@@ -116,6 +116,15 @@ export class GOAPKeeper {
   }
 
   /**
+   * Current plan and goal, for the dashboard / hero page. A visible
+   * plan is the only plan you can argue with. Returns null when no
+   * pass has run yet.
+   */
+  state() {
+    return this._lastPlan ?? null;
+  }
+
+  /**
    * Check if any shop is reachable from the character's current room.
    * Returns true if at least one shop has a valid path. Used by the
    * goal stack to decide whether the has_money goal is actionable:
@@ -586,6 +595,17 @@ export class GOAPKeeper {
     }
 
     const p = planFor(c, { [effectiveGoal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent, extra });
+    // Record the plan for the dashboard / hero page. A visible plan is
+    // the only plan you can argue with.
+    this._lastPlan = {
+      goal: effectiveGoal,
+      found: p.found,
+      names: p.names ?? [],
+      reason: p.reason ?? null,
+      ws: wsSummary,
+      pass: this._passCount,
+      at: Date.now(),
+    };
     console.error(`[goap] ${who} pass ${this._passCount} PLAN found=${p.found} names=[${(p.names ?? []).join(', ')}] steps=${p.steps?.length ?? 0} problems=${(p.problems ?? []).length}`);
 
     if (p.problems?.length) {
