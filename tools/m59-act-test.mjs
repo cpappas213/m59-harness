@@ -167,6 +167,94 @@ console.log('\nattack will not swing at something that is not there');
   ok('and nothing was sent', c.sent.filter(x => x[0] === 'attack').length === 0);
 }
 
+// ---------------------------------------------------------------------------
+// Behaviour: step
+// ---------------------------------------------------------------------------
+const { step, WALK_SPEED, VIGOR_RUN_THRESHOLD } = await import('./m59-act/step.mjs');
+
+const walker = (spec = {}) => {
+  const c = fakeClient({ selfId: 1, col: 5, row: 5, vigor: 100, room: { num: 7 }, ...spec });
+  return { c, s: fakeSession(c) };
+};
+
+console.log('\nstep: one square, and arrival is READ BACK not assumed');
+{
+  const { c, s } = walker();
+  const r = await step(c, s, { col: 6, row: 5, waitMs: 1 });
+  ok('it moved', r.sent === true && r.arrived === true);
+  ok('it reports where it came from and where it landed',
+     r.from.col === 5 && r.at.col === 6, JSON.stringify(r));
+  ok('exactly one movement went out — an atomic is one step',
+     c.sent.filter(x => x[0] === 'step').length === 1, JSON.stringify(c.sent));
+}
+
+console.log('\nstep is honest: a move the world refuses is NOT an arrival');
+{
+  // The packet goes out and nothing happens -- which is what a collision refusal
+  // looks like on this wire. A caller that trusted the send walks a route it never
+  // actually started.
+  const { c, s } = walker();
+  s.step = async () => ({ moved: false, reason: 'blocked' });   // world does not budge
+  const r = await step(c, s, { col: 9, row: 9, waitMs: 1 });
+  ok('it does not claim to have arrived', r.arrived === false);
+  ok('and it says where it actually is', r.at.col === 5 && r.at.row === 5);
+  ok('and carries the reason through', r.reason === 'blocked');
+}
+
+console.log('\nstep propagates TERMINAL failures rather than inviting a retry');
+{
+  const { c, s } = walker();
+  s.step = async () => ({ moved: false, reason: 'collision_geometry_unavailable' });
+  const r = await step(c, s, { col: 6, row: 5, waitMs: 1 });
+  ok('a terminal reason is marked as such', r.terminal === true);
+  ok('retrying one of these just re-sends a move the geometry already refused',
+     r.arrived === false);
+
+  const { c: c2, s: s2 } = walker();
+  s2.step = async () => ({ moved: false, reason: 'blocked' });
+  const r2 = await step(c2, s2, { col: 6, row: 5, waitMs: 1 });
+  ok('an ordinary refusal is NOT terminal — that one is worth retrying',
+     r2.terminal === undefined);
+}
+
+console.log('\nstep refuses a run below the vigor floor — a snap-back, not a slow walk');
+{
+  // Below VIGOR_RUN_THRESHOLD the server does not slow you down: it puts you back
+  // where you were and logs you as a speedhacker.
+  const { c, s } = walker({ vigor: 4 });
+  const r = await step(c, s, { col: 6, row: 5, speed: 30, waitMs: 1 });
+  ok('it refuses rather than sending', r.sent === false && /vigor/.test(r.reason));
+  ok('and nothing went to the wire', c.sent.filter(x => x[0] === 'step').length === 0);
+
+  const walk = walker({ vigor: 4 });
+  const r2 = await step(walk.c, walk.s, { col: 6, row: 5, speed: WALK_SPEED, waitMs: 1 });
+  ok('but WALKING at 4 vigor is fine — the floor is only about running',
+     r2.sent === true && r2.arrived === true);
+  ok('the constants are the server\'s own',
+     WALK_SPEED === 18 && VIGOR_RUN_THRESHOLD === 10);
+}
+
+console.log('\nstep refuses what cannot be a step at all');
+{
+  const { c, s } = walker();
+  const same = await step(c, s, { col: 5, row: 5, waitMs: 1 });
+  ok('a step to where we already stand sends nothing and is already arrived',
+     same.sent === false && same.arrived === true && c.sent.length === 0);
+
+  const bad = await step(c, s, { col: 1.5, row: 'x', waitMs: 1 });
+  ok('a non-integer target is invalid_move_target and terminal',
+     bad.sent === false && bad.reason === 'invalid_move_target' && bad.terminal === true);
+
+  const lost = walker({ overrides: { self: null } });
+  const r = await step(lost.c, lost.s, { col: 6, row: 5, waitMs: 1 });
+  ok('not knowing where we are is terminal, not a guess',
+     r.sent === false && r.reason === 'own_position_unknown' && r.terminal === true);
+
+  let threw = false;
+  try { await step(null, null, { col: 1, row: 1 }); } catch { threw = true; }
+  ok('and none of these throw', !threw);
+}
+
 console.log('\nattack declares a plan-able contract');
 {
   ok('pre includes being armed and in reach',
