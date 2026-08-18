@@ -172,14 +172,16 @@ export class GOAPKeeper {
       // in progress).
       const c = this.client;
       const curRoom = c?.room?.num ?? c?.room?.id;
-      if (curRoom === this._travelFromRoom) {
-        // Still in the same room — movement hasn't completed.
-        // Wait for it.
+      const elapsed = Date.now() - (this._travelStartedAt ?? 0);
+      if (curRoom === this._travelFromRoom && elapsed < 60000) {
+        // Still in the same room and less than 60s elapsed —
+        // movement might still be in progress. Wait.
         return { acted: false, action: 'travel_in_progress', reason: 'waiting for movement to complete' };
       }
-      // Room changed — travel completed.
+      // Room changed (travel completed) or 60s elapsed (timeout).
       this._travelInFlight = false;
       this._travelFromRoom = null;
+      this._travelStartedAt = null;
     }
 
     // 1. Read the world state. The caller can override symbols that
@@ -343,12 +345,17 @@ export class GOAPKeeper {
     const result = await stepPlan(c, this.session, p, { index: 0 });
     console.error(`[goap] ${who} pass ${this._passCount} EXEC done acted=${result.acted} reason=${result.reason ?? 'none'}`);
 
-    // Track travel in progress: if this step was a travel_to that
-    // was sent (movement started), mark it so the next pass doesn't
-    // cancel it with a new travel command.
-    if (result.acted && (result.action === 'travel_to' || p.names?.[0] === 'travel_to')) {
+    // Track travel in progress: if this step WAS a travel_to
+    // (regardless of whether it completed), mark it so the next
+    // pass doesn't cancel it with a new travel command. The
+    // broker's travel() can take many seconds, and a new travel
+    // issued during that time cancels the old one.
+    const stepName = p.names?.[0] ?? result.action ?? '';
+    if (stepName === 'travel_to') {
       this._travelInFlight = true;
       this._travelFromRoom = c?.room?.num ?? c?.room?.id;
+      this._travelStartedAt = Date.now();
+      console.error(`[goap] ${who} travel in flight from room=${this._travelFromRoom}`);
     }
 
     const actionName = result.action ?? p.names?.[0] ?? 'unknown';
