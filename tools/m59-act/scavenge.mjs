@@ -114,9 +114,11 @@ export async function scavenge(client, session) {
   return { sent: false, killed: false, reason: 'no fight method on session (broker required)' };
 }
 
-// Precondition: there is a target in the room. The planner only plans
-// scavenge when has_target is true.
-scavenge.pre = ['has_target'];
+// No precondition: scavenge is always available. When there is no
+// target, it waits for the next pass (mobs may be respawning).
+// The planner can always plan scavenge to satisfy has_money/has_loot,
+// and the execution either fights or idles.
+scavenge.pre = [];
 
 // Effect: optimistically, the fight produced loot. The next pass
 // re-evaluates has_loot from the actual inventory.

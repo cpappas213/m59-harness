@@ -63,15 +63,49 @@ function shopRooms() {
 
 // Find the nearest shop from a given room.
 // Returns { to, hops } or null if no shop is reachable.
-function nearestShop(fromNum, { avoid } = {}) {
+//
+// Room IDs in the live server can differ from the movement map (the
+// server reassigns IDs on each startup). This helper resolves the
+// live room ID to a map room ID by name before calling findPath.
+let _roomNameToMapNum = null;
+function roomNameToMapNum() {
+  if (_roomNameToMapNum) return _roomNameToMapNum;
+  _roomNameToMapNum = new Map();
+  try {
+    const map = loadMap();
+    for (const [num, r] of Object.entries(map?.rooms ?? {})) {
+      if (r?.name) _roomNameToMapNum.set(r.name, Number(num));
+    }
+  } catch { _roomNameToMapNum = new Map(); }
+  return _roomNameToMapNum;
+}
+
+// Resolve a live room ID to a movement-map room ID.
+// If the live ID is already in the map, return it as-is.
+// Otherwise, look up by room name.
+function resolveMapRoom(liveNum, roomName) {
+  try {
+    const map = loadMap();
+    if (map?.rooms?.[liveNum]) return liveNum;
+  } catch {}
+  if (roomName) {
+    const nameMap = roomNameToMapNum();
+    const mapNum = nameMap.get(roomName);
+    if (mapNum != null) return mapNum;
+  }
+  return liveNum;
+}
+
+function nearestShop(fromNum, roomName, { avoid } = {}) {
   const shops = shopRooms();
   if (!shops.length) return null;
   try {
     const map = loadMap();
     let best = null;
+    const mapFrom = resolveMapRoom(fromNum, roomName);
     for (const to of shops) {
-      if (to === fromNum) continue;
-      const p = findPath(map, fromNum, to, { avoid });
+      if (to === mapFrom) continue;
+      const p = findPath(map, mapFrom, to, { avoid });
       if (p?.found && p.hops?.length) {
         if (!best || p.hops.length < best.hops.length) {
           best = { to, hops: p.hops };
@@ -102,6 +136,11 @@ export class GOAPKeeper {
    * @param {string} [opts.goal='vigor_ok'] - the world-state symbol to plan toward
    * @param {function} [opts.note] - logging function (keeper.note)
    */
+  _roomName() {
+    try { return this.client?.rsc?.get?.(this.client?.roomNameRsc) ?? null; }
+    catch { return null; }
+  }
+
   constructor({ client, session, policy, goal = 'vigor_ok', note = () => {} }) {
     if (!client) throw new Error('GOAPKeeper: no client');
     if (!session) throw new Error('GOAPKeeper: no session');
@@ -149,12 +188,12 @@ export class GOAPKeeper {
       try {
         const { loadMap, findPath } = require('./m59-map.mjs');
         const map = loadMap();
-        const p = findPath(map, here, this._shopDest);
+        const p = findPath(map, resolveMapRoom(here, this._roomName()), this._shopDest);
         return p?.found === true;
       } catch { return false; }
     }
     // No cached dest: check if any shop is reachable.
-    return nearestShop(here) != null;
+    return nearestShop(here, this._roomName()) != null;
   }
 
   /**
@@ -199,7 +238,7 @@ export class GOAPKeeper {
     try {
       const { loadMap, findPath } = await import('./m59-map.mjs');
       const map = loadMap();
-      const p = findPath(map, here, to);
+      const p = findPath(map, resolveMapRoom(here, this._roomName()), to);
       if (p?.found && p.hops?.length > 1)
         nextHop = p.hops[0].to;
     } catch {}
@@ -551,7 +590,8 @@ export class GOAPKeeper {
                 for (const [num, r] of Object.entries(map.rooms ?? {})) {
                   if (!/inn|tavern/i.test(r.name ?? '')) continue;
                   if (num === String(mapNum)) continue;
-                  const p = findPath(map, mapNum, Number(num));
+                  const resolvedFrom = resolveMapRoom(mapNum, this._roomName());
+                  const p = findPath(map, resolvedFrom, Number(num));
                   if (!p.found) continue;
                   if (!bestInn || p.hops.length < bestInn.hops.length) {
                     bestInn = { num: Number(num), name: r.name, hops: p.hops };
@@ -618,7 +658,8 @@ export class GOAPKeeper {
         const level = this.policy.huntLevel ?? 30;
         if (here != null) {
           const { nearestHuntRoom } = await import('./m59-hunt-room.mjs');
-          const hunt = nearestHuntRoom(here, level);
+          const resolvedHere = resolveMapRoom(here, this._roomName());
+          const hunt = nearestHuntRoom(resolvedHere, level);
           if (hunt && hunt.hops > 0) {
             // Travel to a hunt room with mobs.
             const travelToHunt = (client, session) => {
@@ -659,7 +700,7 @@ export class GOAPKeeper {
           // oscillation where the character bounces between rooms
           // because the nearest shop changes direction each pass.
           if (!this._shopDest || this._shopDest === mapNum) {
-            const shop = nearestShop(mapNum);
+            const shop = nearestShop(mapNum, this._roomName());
             if (shop) {
               this._shopDest = shop.to;
               console.error(`[goap] ${who} shop dest cached: room=${mapNum} -> shop=${shop.to} hops=${shop.hops.length}`);
