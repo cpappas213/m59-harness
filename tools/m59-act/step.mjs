@@ -65,17 +65,34 @@ export async function step(client, session, { col, row, speed = WALK_SPEED, wait
       return { sent: false, reason: 'too little vigor to run', from, to: { col, row } };
   }
 
+  // THE VALIDATED MOVER IS REQUIRED, AND THERE IS NO FALLBACK ANY MORE.
+  //
+  // This used to fall back to client.moveToSquare -- a centre-to-centre step on the
+  // grid -- and that is measured to be the wrong primitive. Stepping centre to
+  // centre along a grid route in room 587:
+  //
+  //     218 of 311 steps FAIL
+  //     200 of those 218 (92%) DO NOT MOVE THE CHARACTER AT ALL
+  //
+  // because 54.9% of that room's wall length is not axis-aligned (575 and 576 are
+  // ~42%). An axis-aligned step between two square centres runs square into a wall
+  // face at 45 degrees and the trace refuses it outright. The failure mode is the
+  // nasty one: the character does not slide into a neighbouring square, it does not
+  // move, so a caller replans from an unchanged position, gets the identical route,
+  // and asks for the same refused step again -- "barely wiggling" against a wall,
+  // for ever. Three separate diagnoses of that were wrong before it was measured.
+  //
+  // The grid is still the right thing to PLAN on; it is the wrong thing to STEP on.
+  // session.step owns the fine-coordinate movement that actually crosses those
+  // faces. So a session without it gets a refusal rather than a primitive known to
+  // wiggle: no packet is better than a packet that cannot work and cannot be
+  // detected failing.
+  if (typeof session.step !== 'function')
+    return { sent: false, reason: 'no validated mover', terminal: true, from, to: { col, row } };
+
   const since = client.evSeq ?? 0;
-  // session.step is the broker's collision-validated mover when there is one; the
-  // raw client.moveToSquare is the fallback. Prefer the validated path -- upstream
-  // added it because the broker could otherwise ask for moves the client's own
-  // geometry would refuse, and every one of those is a silent no-op.
-  let result = null;
-  if (typeof session.step === 'function') {
-    result = await session.step(col, row, { speed }).catch(e => ({ moved: false, reason: e?.message }));
-  } else {
-    await session.pacer.submit('move', () => client.moveToSquare(col, row, speed), waitMs).catch(() => {});
-  }
+  const result = await session.step(col, row, { speed })
+                              .catch(e => ({ moved: false, reason: e?.message }));
 
   await client.waitFor({ since, kinds: ['player', 'room-contents'], timeoutMs: waitMs }).catch(() => {});
 

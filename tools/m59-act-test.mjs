@@ -235,6 +235,21 @@ console.log('\nstep refuses a run below the vigor floor — a snap-back, not a s
      WALK_SPEED === 18 && VIGOR_RUN_THRESHOLD === 10);
 }
 
+console.log('\nstep requires the validated mover — the grid is for planning, not stepping');
+{
+  // Centre-to-centre grid steps are measured to fail 218 of 311 in room 587, and
+  // 92% of those failures DO NOT MOVE THE CHARACTER -- so a caller replans from an
+  // unchanged position and asks for the identical refused step for ever.
+  const c = fakeClient({ selfId: 1, col: 5, row: 5, room: { num: 587 } });
+  const s = fakeSession(c);
+  delete s.step;                       // a session with no fine-coordinate mover
+  const r = await step(c, s, { col: 6, row: 5, waitMs: 1 });
+  ok('it refuses rather than sending a step that cannot work',
+     r.sent === false && /no validated mover/.test(r.reason));
+  ok('and marks it terminal — retrying cannot make it legal', r.terminal === true);
+  ok('and NOTHING went to the wire', c.sent.length === 0);
+}
+
 console.log('\nstep refuses what cannot be a step at all');
 {
   const { c, s } = walker();
