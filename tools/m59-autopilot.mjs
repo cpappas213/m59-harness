@@ -6856,6 +6856,47 @@ export class Autopilot {
     // loadout-driven policy fields) are live on the first pass after a restart.
     this.applyLoadoutPolicyOverlay();
     // ------------------------------------------------------------------
+    // GOAP KEEPER (opt-in via policy.useGOAP)
+    //
+    // When policy.useGOAP is true, hand control to the GOAP planner for this
+    // pass. The planner reads the world state, plans toward the goal, and
+    // executes one step. The next pass() re-plans from the new world state.
+    //
+    // The safety ladder (Underworld, arming) still runs first: the GOAP
+    // planner cannot plan a character out of the Underworld or into a
+    // weapon, because those are preconditions, not goals.
+    // ------------------------------------------------------------------
+    if (this.policy && this.policy.useGOAP === true) {
+      // Safety first: Underworld and arming are not plan-able. The GOAP
+      // planner cannot plan a character out of the Underworld or into a
+      // weapon, because those are preconditions, not goals. Call the
+      // existing safety shells; they return true when they handled the
+      // situation, in which case the planner does not run.
+      const room = s.world?.room;
+      if (room && /underworld/i.test(room.name ?? '')) {
+        const r = await this.passUnderworld({ s, c, room, v: c.vitals?.() ?? {} });
+        if (r) return;
+      }
+      if (c && typeof c.armed === 'function' && !c.armed()) {
+        const r = await this.passArm({ s, c, room, v: c.vitals?.() ?? {} });
+        if (r) return;
+      }
+
+      if (!this._goapKeeper) {
+        const { GOAPKeeper } = await import('./m59-keeper-goap.mjs');
+        this._goapKeeper = new GOAPKeeper({
+          client: c,
+          session: this,
+          policy: this.policy,
+          goal: this.policy.goapGoal ?? 'vigor_ok',
+          note: (msg, data) => this.note(msg, data),
+        });
+      }
+      const r = await this._goapKeeper.pass();
+      if (r.acted) this.progress('goap: ' + r.action);
+      return;
+    }
+    // ------------------------------------------------------------------
     // BEHAVIOR-TREE GET-ARMED SUBTREE (opt-in via policy.useBT)
     //
     // When policy.useBT is true and the character is NOT yet wielding a weapon at
