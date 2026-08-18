@@ -6893,8 +6893,12 @@ export class Autopilot {
         });
       }
       const r = await this._goapKeeper.pass();
-      if (r.acted) this.progress('goap: ' + r.action);
-      return;
+      if (r.acted) { this.progress('goap: ' + r.action); return; }
+      // No plan: the GOAP planner could not find a way to reach the goal.
+      // This is an answer, not a failure: something the plan needs is
+      // absent (no food, no reagents, no merchant in the room). The
+      // character falls through to the legacy path, which handles
+      // farming, provisioning, and the rest of the lifecycle.
     }
     // ------------------------------------------------------------------
     // BEHAVIOR-TREE GET-ARMED SUBTREE (opt-in via policy.useBT)
