@@ -151,20 +151,19 @@ export class GOAPKeeper {
    * Returns { acted: boolean, action: string|null, reason: string|null }
    * so the autopilot can log what happened.
    */
-  async pass() {
+  async pass(wsOverride = null) {
     const c = this.client;
     if (!c) {
       return { acted: false, action: null, reason: 'no client' };
     }
-    // Note: the autopilot checks s.live before calling pass(). The GOAP keeper
-    // does not re-check state because the fake client used in tests does not
-    // set it, and the autopilot is the one that knows whether the session is
-    // alive.
 
     this._passCount++;
 
-    // 1. Read the world state.
-    const ws = evaluate({ client: c, policy: this.policy, agent: this.policy.agent });
+    // 1. Read the world state. The caller can override symbols that
+    //    the client cannot see yet (e.g. in_underworld after a
+    //    reconnect, when the client's room is stale but the broker's
+    //    room tracking is authoritative).
+    const ws = { ...evaluate({ client: c, policy: this.policy, agent: this.policy.agent }), ...(wsOverride ?? {}) };
 
     // Visible log: every GOAP pass is logged to the broker console so the
     // journal (in-memory, lost on restart) is not the only record.

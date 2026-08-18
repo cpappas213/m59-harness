@@ -6875,17 +6875,8 @@ export class Autopilot {
       const roomName = room?.name ?? clientRoomName;
       const roomNum  = room?.objId ?? c?.room?.id;
       const isUnderworld = /underworld/i.test(roomName) || roomNum === 6;
-      if (isUnderworld) {
-        console.error(`[autopilot] ${this.policy?.agent ?? '?'} Underworld detected: roomName=${roomName} roomNum=${roomNum}`);
-      }
-      if (isUnderworld) {
-        // Always return: the GOAP keeper should not plan in the
-        // Underworld. passUnderworld handles the escape; if it
-        // can't, the character stays and tries again next pass.
-        await this.passUnderworld({ s, c, room, v: c.vitals?.() ?? {} });
-        return;
-      }
-      if (c && typeof c.armed === 'function' && !c.armed()) {
+
+      if (c && typeof c.armed === 'function' && !c.armed() && !isUnderworld) {
         const r = await this.passArm({ s, c, room, v: c.vitals?.() ?? {} });
         if (r) return;
       }
@@ -6900,7 +6891,12 @@ export class Autopilot {
           note: (msg, data) => this.note(msg, data),
         });
       }
-      const r = await this._goapKeeper.pass();
+      // Override in_underworld when the broker's room tracking says
+      // Underworld but the client's room is stale (e.g. right after
+      // a reconnect). The GOAP keeper's goal stack picks !in_underworld
+      // and plans the escape_underworld atomic.
+      const wsOverride = isUnderworld ? { in_underworld: true } : null;
+      const r = await this._goapKeeper.pass(wsOverride);
       if (r.acted) { this.progress('goap: ' + r.action); return; }
       // No plan: the GOAP planner could not find a way to reach the goal.
       // This is an answer, not a failure: something the plan needs is
