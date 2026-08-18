@@ -211,12 +211,42 @@ export class GOAPKeeper {
       const { escapeUnderworldAtomic } = await import('./m59-act/escape-underworld.mjs');
       extra.push(escapeUnderworldAtomic);
     } else {
-      // Inject scavenge when the character is unarmed and there are
-      // hostiles in the room. This is the "punch rats" fallback:
-      // fight a weak creature to loot money.
-      if (ws.armed === false && ws.has_target === true) {
+      // Inject combat atomics when the character is armed and there
+      // are hostiles in the room. The planner can chain:
+      //   take_safe_spot -> attack (loop) -> flee (if hurt)
+      if (ws.has_target === true) {
+        const { attackOf } = await import('./m59-act/attack.mjs');
         const { scavenge } = await import('./m59-act/scavenge.mjs');
-        extra.push(scavenge);
+        const { takeSafeSpot } = await import('./m59-act/take-safe-spot.mjs');
+        const { flee } = await import('./m59-act/flee.mjs');
+        extra.push(attackOf(ws), scavenge, takeSafeSpot, flee);
+      }
+      // Inject travel_to a hunt room when the character is armed but
+      // has no target. The character needs to go fight something to
+      // generate money/loot. Find the nearest room with huntable mobs
+      // at or below the character's level.
+      if (ws.armed === true && ws.has_target === false) {
+        const here = c.room?.num;
+        const level = c.self?.level ?? this.policy.level ?? 20;
+        if (here != null) {
+          const { nearestHuntRoom } = await import('./m59-hunt-room.mjs');
+          const hunt = nearestHuntRoom(here, level);
+          if (hunt && hunt.hops > 0) {
+            const travelToHunt = (client, session) => {
+              return this._travelOneHop(hunt.path[0] ?? hunt.room);
+            };
+            travelToHunt.atomic = 'travel_to';
+            travelToHunt.pre = [];
+            travelToHunt.effects = ['has_target'];  // optimistic: the room has mobs
+            travelToHunt.cost = 1;
+            extra.push(travelToHunt);
+            console.error(`[goap] ${who} hunting: room=${here} -> hunt=${hunt.room} (${hunt.creature} lv${hunt.level}) hops=${hunt.hops}`);
+          } else if (hunt && hunt.hops === 0) {
+            // Already in a hunt room. Inject scavenge/attack.
+            const { scavenge } = await import('./m59-act/scavenge.mjs');
+            extra.push(scavenge);
+          }
+        }
       }
       // Inject travel_to when we need to get to a shop. This covers
       // two cases: (1) we need money (has_money=false, has_loot=true)

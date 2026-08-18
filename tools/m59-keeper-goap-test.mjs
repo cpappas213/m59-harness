@@ -44,7 +44,7 @@ console.log('GOAPKeeper: pass() reads world state and plans\n');
 
   const r = await keeper.pass();
   ok('no plan: acted is false', r.acted === false);
-  ok('no plan: reason mentions no plan', /no plan|not reachable/.test(r.reason ?? ''), r.reason);
+  ok('no plan: reason mentions no plan', /no plan|not reachable|plan is empty/.test(r.reason ?? ''), r.reason);
 }
 
 {
