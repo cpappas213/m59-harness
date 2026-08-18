@@ -6885,7 +6885,7 @@ export class Autopilot {
         const { GOAPKeeper } = await import('./m59-keeper-goap.mjs');
         this._goapKeeper = new GOAPKeeper({
           client: c,
-          session: this,
+          session: s,  // the broker session (has the pacer), not the autopilot
           policy: this.policy,
           goal: this.policy.goapGoal ?? 'vigor_ok',
           note: (msg, data) => this.note(msg, data),
