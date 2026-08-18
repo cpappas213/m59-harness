@@ -3,80 +3,55 @@
 A plan to replace `m59-autopilot.mjs` as the decision-maker, in a way that can be
 verified at every step and abandoned at any step without losing a fleet.
 
-This supersedes `docs/bt-goap-handoff.md`, which documents `m59-bt-farming.mjs`
-as the path forward. That module is orphaned and has a live bug; see §0.
+**Decision, 2026-08-17: GOAP plans everything, and survival lives in
+PRECONDITIONS — never in goals, never in costs.** An earlier revision of this
+document split the work between a reactive ladder at one second and a planner
+above it. That was two decision systems for one question, which is the shape this
+repository keeps paying for. §2 is the argument and the invariant; it is the part
+to read before changing anything else.
 
 ---
 
-## 0. Where we actually are
+## 0. Where we are
 
-Measured, not estimated:
+**On `trunk-upstream`, based on `upstream/main`.** The fork was abandoned as a
+trunk on 2026-08-17: it and upstream had run apart for three days and collided in
+102 conflict hunks over twelve files, and the loadout conflict was both sides
+having independently built the same feature. Upstream is the healthier line — its
+tree passes `travel`, `routing`, `collision` and `testbed`, all of which fail on
+the fork; it has routing work this plan originally proposed writing from scratch;
+and its BT surface delegates back to the keeper 4 times against the fork's 141.
+
+The fork's work is preserved at tag `fork-before-upstream-trunk`, on branches
+`bt-extraction` and `reconcile-upstream`, and in
+`/Users/costas/workspace/m59-fork-reference/`.
+
+**Why the fork could not simply be merged forward, which is also the lesson this
+plan is built on.** Of the 71 legacy methods the fork's BT modules called, 49
+existed upstream and 25 did not — 17 of them `_bt*` shims written to feed the
+trees. The modules were welded to one fork's private surface and could not run
+anywhere else. Had they composed atomics over the client, they would have dropped
+onto this trunk unchanged, because `m59-client.mjs` is identical on both sides.
+**The wrapper debt and the fork were the same bill.**
+
+Done so far on this trunk:
 
 | | |
 |---|---|
-| `m59-autopilot.mjs` before the BT effort (`ae350a2`) | 11,909 lines |
-| `m59-autopilot.mjs` now | **13,353** |
-| BT/GOAP modules added | 12,941 lines |
-| calls from BT modules back into the keeper | **141** (`m59-bt-delegation-test.mjs`) |
-| distinct legacy methods those calls reach | 71, of which 56 have exactly one caller |
-| `_bt*` shim methods added *to the monolith* to feed the trees | 17 |
-| BT/GOAP test assertions passing | 613 |
+| `skills.isArmed(client)` | `Autopilot.armed()` extracted verbatim — a move, not a fix |
+| `m59-fake-client` + test | 45 assertions; one client-shaped fake, compared against `M59Client` itself |
+| `m59-bt-delegation-test` | the delegation ratchet + orphan report; baseline 4 |
+| `m59-worldstate` + test | 97 assertions; the closed vocabulary |
+| `m59-act/attack` + `m59-act-test` | 29 assertions; the first atomic and the conformance sweep |
 
-The decomposition moved **control flow** into trees and left **behaviour** in the
-monolith. `provisionNode` is the shape of nearly all of it:
+Still true of the trunk, and not yet addressed:
 
-```javascript
-export function provisionNode(keeper) {
-  return asyncAction(async (bb) => {
-    const plan   = keeper._btFarmStrategy();
-    const result = await keeper.provision(plan, vitals(bb));
-    if (result === 'ate' || result === 'waiting') return SUCCESS;
-    return FAILURE;
-  });
-}
-```
-
-Three lines translating a legacy return value into a BT status. Delete
-`Autopilot.provision()` and the node stops working — the delegation *is* the
-dependency, which is why the monolith grew while being "decomposed".
-
-### Two live bugs, same root cause
-
-Both are BT code calling a **keeper** method on the **client** object. Both fail
-silently in the always-false direction, and both passed their tests because the
-fixtures faked the method the real code never calls.
-
-1. **`m59-bt-farming.mjs:78` and `m59-bt-combat.mjs:393`** —
-   `new Set([...(c.equipment?.keys?.() ?? [])])`. `equipment()` is a *method
-   returning an object* (`m59-client.mjs:380`), not a Map. `c.equipment.keys` is
-   `undefined`, so the set is **always empty**. `GearBrokenCondition` therefore
-   always reports broken gear, and `CombatTree`'s `canFight` is always false — a
-   fully-armed character would always flee. Proven against a real-shaped client.
-2. **`m59-bt-nodes.mjs:100` and `m59-autopilot.mjs:6928`** — `client.armed()`,
-   which has never existed. The `wielding_weapon` condition has answered false for
-   every character since it shipped, and the `useBT` get-armed branch, guarded on
-   `typeof c.armed === 'function'`, **has never executed at all**. Partially fixed
-   in `f4b7c9e` (the predicate is now `skills.isArmed(client)`); the dead branch is
-   deliberately left dead pending a decision to activate it deliberately.
-
-### The orphans
-
-`m59-bt-atomics.mjs` — 10 reusable leaf nodes, 479 lines, 56 passing tests — is
-imported by exactly one module (`m59-bt-shop.mjs`). None of the five trees wired
-into the live keeper import it. There is an atomic library and it is not used.
-
-`m59-bt-farming.mjs` (`FarmingLoopTree`) is imported by nothing but its own test.
-It also has a memoryless-Sequence livelock: `killLoop` deletes its slot on
-SUCCESS and resets `killCount`, so after clearing a room the farm branch fails
-forever and never reaches eat-or-sell.
-
-### And a fork problem
-
-`origin/main` and `upstream/main` diverged at `ae350a2` (2026-08-14): 60 commits
-ours, 37 theirs, **16 `tools/` files we do not have**, including four test suites
-CLAUDE.md documents as load-bearing — `m59-localpolicy-test.mjs` (71),
-`m59-handoff-test.mjs` (112), `m59-travel-test.mjs` (24),
-`m59-testbed-test.mjs` (104). We are running without those guards.
+- **`m59-bt-nodes.mjs:100` guards `wielding_weapon` on `client.armed()`**, and a
+  client has never had one — so that condition answers false for every character.
+  `m59-autopilot.mjs`'s `useBT` branch is guarded on
+  `typeof c.armed === 'function'` and has therefore **never executed**. Left dead
+  deliberately: activating it is a decision to take against one character and
+  watch, not a side effect of a refactor.
 
 ---
 
@@ -155,299 +130,216 @@ forward will re-earn them. Port each with its citation.
 
 ---
 
-## 2. Target architecture
+## 2. Target architecture: GOAP for all
 
-Three layers, separated by **clock**, which is the split CLAUDE.md already
-documents and the one F.E.A.R. used (squad behaviours issued goals; agents
-planned; damage reactions ran outside the planner entirely).
+**One decision system, not two.** A reactive ladder beside a planner is two homes
+for "what should this character do now", and a quantity with two homes in this
+repository has always ended up with two answers — the engagement ceiling had four
+copies, and the second answer to that one is a dead character.
 
-| clock | layer | owns | mechanism |
-|---|---|---|---|
-| **~1s** | **reflexes** | doomed, flee, watchdog interrupt, Underworld, death | fixed reactive ladder. **Not planned.** Small and auditable. |
-| **seconds** | **GOAP over atomics** | fight, move, provision, restock, bank, loot, role execution | continuous replanning, A\* over ~20 atomics and a closed world-state vocabulary |
-| **minutes** | **squad / intent** | role assignment, per-character goals, fleet concert | declarative end states + claims. Not a planner. |
+So: GOAP plans everything, over atomics, replanning continuously. There is no
+second ladder to disagree with it.
 
-### Why GOAP can own the seconds layer
+### THE INVARIANT: survival lives in PRECONDITIONS
 
-Planning cost is not the obstacle — F.E.A.R. replanned continuously over a couple
-dozen actions in microseconds, and this domain is smaller. The obstacle is that
-**the state you would plan over is currently stale and the actions lie**: 82% of
-deaths had the keeper blind (median 18s, p90 219s), and `travel` can run 900
-seconds inside one `await`. Plan over that and you get fast, confident plans about
-a world from three minutes ago.
+**Never in goals. Never in costs. This is the rule the whole design rests on, and
+it is the one that will be "optimised" away by somebody who sees a precondition
+making plans fail and relaxes it into a weight.**
 
-So GOAP's viability is a *consequence* of the atomic layer being bounded,
-interruptible and honest. That is why §4 comes before §6.
+The two natural ways to put survival in a planner are both wrong:
 
-### Why the reflex layer is not planned
+- **As a goal** — `stay_alive` at highest priority. Then the planner is always
+  planning to stay alive and never hunts; or it is ranked, and ranked means it can
+  lose.
+- **As a cost** — danger adds +1000. **A cost can be outbid.** A large enough
+  reward beats it, and you learn which fights were worth dying for by reading the
+  death log.
 
-Same reason F.E.A.R. kept flinches and deaths out of the planner. A plan is a
-claim that the world will hold still; being at 4 health with something adjacent is
-exactly when it will not. This layer is deliberately small, fixed, and reads only
-pushed state (`client.vitals()` is live whatever the call stack is blocked on).
+Every survival rule this repository has paid for is a **refusal**, not a
+preference. `threatCeiling()` returns null on unknown max health and *every caller
+reads null as refuse*. `leaveHold` refuses a discretionary departure below the
+rest threshold. Selling is an allowlist rather than a check. None of those survive
+translation into a weight.
 
-### Why concert is not GOAP either
-
-Twenty-one agents planning independently toward their own goals is what produced
-the documented failure where the herb-rich stood next to the elderberry-rich and
-20 of 21 characters could cast zero times. Concert comes from **declarative shared
-end states**, the pattern this repo already proved with guild wants:
-
-> A guild want is an END STATE, NOT AN ERRAND, and that is what makes it safe to
-> give to twenty-one characters… the shortfall shrinks as others contribute,
-> nobody owns the errand, it cannot double-count, and a satisfied plan produces no
-> work and no walk.
-
-Generalise that, don't invent a multi-agent planner.
-
----
-
-## 3. The world-state vocabulary
-
-GOAP is fast **because** the state is small. F.E.A.R. packed its world state into
-a fixed struct of about a dozen symbols. Today `ws` keys are invented ad hoc per
-module — `vigor_ok`, `loot_sold`, `gear_ok`, `armed`, `safe_spot_taken`,
-`at_mausoleum` — with no registry, so nothing can verify a plan is connectable.
-
-**Deliverable: `tools/m59-worldstate.mjs`** — one closed vocabulary, validated.
+A precondition is a refusal with a planner's face on:
 
 ```javascript
-export const SYMBOLS = {
-  // body
-  armed:            'a weapon is in the use list (skills.isArmed)',
-  healthy:          'hp >= safety().engageAt',
-  hurt:             'hp <  restBelow',
-  doomed:           'hp <  doomedInSpotBelow with something in reach',
-  vigor_ok:         'vigor >= fightFloor()',
-  // position
-  in_prey_room:     'current room is the assigned/valid prey room',
-  on_safe_square:   'holding a square whose hold is proven',
-  in_reach:         'selected target within threatCeiling-adjusted reach',
-  // target
-  has_target:       'a target is selected and still in room contents',
-  target_in_band:   'refuseEngagement() says yes',
-  // pack + money
-  pack_room:        'inventory below maxCarry AND under the binding ceiling',
-  has_reagents:     'min(elderberry, herbs) >= 2',
-  has_food:         'something edible in the pack',
-  funded:           'purse >= the current errand cost',
-  // party
-  mate_present:     'partner in this room',
-  mate_hurt:        'partner below partyHealBelow',
-  // role (assigned by the squad layer, never inferred)
-  role:             'melee | ranged | healer | cc',
-};
+attack.pre = ['armed', 'has_target', 'in_reach', 'target_in_band'];
 ```
 
-Rules, each enforced by test:
+`target_in_band` as a precondition means the planner **cannot generate** a plan
+that swings at a faction soldier. Not discouraged — impossible, because no valid
+plan exists. That is strictly better than the four hand-written copies of the
+ceiling it replaces, because a planner cannot forget to check one.
 
-- **Closed set.** An atomic declaring a `pre` or `effect` outside `SYMBOLS` is a
-  test failure, not a runtime surprise. This is the `purpose`-not-in-schema bug —
-  a setting that silently does nothing — made impossible.
-- **Every symbol has exactly one producer**, a pure function over client/party
-  state. A symbol with two definitions is the "quantity with two homes" failure
-  this repo keeps rediscovering.
-- **Unknown fails closed.** A symbol that cannot be evaluated is `false` for
-  preconditions that permit danger and `true` for those that prevent it — the same
-  asymmetry as `threatCeiling()` returning null.
+Combined with §3's per-symbol `whenUnknown`, a planner running on half-known state
+— the normal case here, 82% of deaths had the keeper blind — plans conservatively
+by construction rather than optimistically.
 
----
+**Corollary, and it is an API boundary rather than a detail:** whoever supplies
+goals must be unable to remove a precondition. A bot may say what to want; it may
+not say what is safe. That is the same carve-out `PROTECTED_FACULTIES` and
+`may_yield` already express, and `m59-unattended-test.mjs` is its guard.
 
-## 4. The atomic layer
+### Two action sets, two granularities, both legitimate
 
-**Deliverable: `tools/m59-act/*.mjs`** — a new namespace, so the rebuild does not
-inherit `m59-bt-atomics.mjs`'s assumptions (it was written by the same effort that
-produced both always-false conditions and has never run against a real client).
+Conflating these is what made the earlier design confusing.
 
-### The contract
+| | granularity | examples | clock | driven from |
+|---|---|---|---|---|
+| **errands** | coarse MCP verbs | `travel_to`, `buy_item`, `pick_prey`, `ensure_funded` | minutes | outside, over MCP |
+| **acts** | wire-level atomics | `attack`, `step`, `cast`, `rest`, `equip` | seconds | inside the keeper |
 
-Every atomic satisfies all five, and a conformance test checks each mechanically:
+`m59-atomics.mjs` (on the fork, 14 `ATOMIC_NAMES`) is already the errand set.
+`tools/m59-act/` is the act set. Both carry `pre`/`effects` from the vocabulary,
+so the same planner serves both — it is one engine over two libraries, not two
+engines.
 
-1. **Signature `(client, session, args)`.** Never the keeper. Enforced by the
-   delegation ratchet.
-2. **Bounded.** No unbounded await. One atomic does one thing with a hard step or
-   time cap. Looping is the caller's job.
-3. **Interruptible.** Returns `RUNNING`; may be abandoned between ticks with no
-   cleanup debt.
-4. **Honest.** Reports what *happened*, verified against re-read state (purse
-   delta, use-list re-read, room contents), never what was requested. A trade that
-   handshakes and moves nothing reports moving nothing.
-5. **Declares `pre` and `effects`** drawn from `SYMBOLS`.
+### What upstream's `m59-goap.mjs` is, and why it stays
 
-### The set
+It is the **goal interface for the bot repositories**, driving from outside over
+MCP, and its own source says being unreferenced is the expected state rather than
+an oversight. That remains correct and is unaffected: it supplies goals. This plan
+changes what happens *underneath* a goal — a planner over atomics instead of a
+sequential ladder — not who is entitled to set one.
 
-| group | atomics |
-|---|---|
-| move | `StepHop(hop)` · `MoveWithin(target, range)` · `TakeSquare(col,row)` · `LeaveVia(exit)` |
-| fight | `Attack(id)` · `Cast(spell, target)` · `Equip(id)` · `Unequip(id)` |
-| body | `Rest()` · `Stand()` |
-| goods | `PickUp` · `Drop` · `Give` · `Buy` · `Sell` · `Deposit` · `Withdraw` |
+### Roles, and why they need no second system
 
-Conditions are pure reads of §3 symbols and cost nothing at runtime — health,
-stats and the use list are **pushed**, so a condition is a cache read.
+Healer / ranged / melee / crowd-control split cleanly across the two clocks:
 
-### The test harness that would have caught both live bugs
+- *"you are the healer"* — assignment, minutes, a goal from outside.
+- *"my partner is at 30%, heal now"* — execution, seconds, in-process.
 
-**`tools/m59-act/fake-client.mjs`** — one fake, shaped from `m59-client.mjs`, used
-by every atomic test. It must expose `equipment()` as a *method returning
-`{known, equipped[]}`* and must **not** have an `armed()`. A conformance test
-asserts the fake's surface matches the real client's:
+`m59-party.mjs` already carries the second: `declareTarget`/`agreedTarget` is
+focus fire with 20-second staleness, in shared memory across every keeper in one
+broker. No round trip, the same principle as the playbooks — **the keeper asks, it
+does not call.** Role variance that touches survival (a crowd-controller
+deliberately takes hits; a healer must not flee while its partner dies) goes
+through `may_yield` on the roster, never by forking the ladder or by weakening a
+precondition.
 
-```javascript
-for (const m of ['equipment','vitals','inventory','room','rsc','waitFor'])
-  ok(`fake client has ${m} with the real shape`, sameShape(real, fake, m));
-ok('the fake has no armed() — that is skills.isArmed', !('armed' in fake));
-```
+## 3. The world-state vocabulary — **done**
 
-Both live bugs are fixture bugs. Fix the fixture once, centrally, or they recur.
+`tools/m59-worldstate.mjs`, 97 assertions. Twelve symbols, one producer each, and
+an unknown answer that fails in the safe direction **per symbol** — `armed`
+unknown reads true (a timed-out inventory read must not idle the fleet mid-fight),
+`target_in_band` unknown reads false (a ceiling that defaults open is the one that
+kills somebody). The test pins that those two fail in *opposite* directions,
+because a refactor making them agree would be wrong in a way nothing else catches.
 
----
+`validate()` enforces the closed set: an action naming a symbol nobody produces is
+reported by name. Without it a plan is unsatisfiable for the dullest possible
+reason — a typo — and the planner can only say "no plan".
 
-## 5. First vertical slice: navigation
+**Open question, to be decided deliberately:** the errand set derives symbols from
+fleet rows over MCP, the act set from a live client. Same names, two sources. That
+is two producers for one symbol, which §3's own rule forbids. Either two
+vocabularies, or one vocabulary with an explicitly polymorphic context. Do not let
+it happen by accident.
 
-Chosen because it is the **largest killer in the record** (203 deaths while
-travelling, mean 183s blind, worst 909s), it is self-contained, and it is the
-clearest demonstration of the pure/impure split.
+## 4. The atomic layer — contract done, one atomic written
 
-Today `travel(room, {maxHops:14})` is one call, up to 25 hops, one `await`, no
-observation inside. `Autopilot.travel` brackets it with 'setting off' and
-'arrived' frames — which tells you when the blindness *started*, not what happened
-in it. Camilla's last frame reads `why: "setting off"` 17.8s before she died.
+`tools/m59-act/` with `m59-act-test.mjs` sweeping every file in it. Four rules,
+enforced mechanically, each a failure already paid for:
 
-Rebuilt as three pieces:
+1. **Takes `(client, session)`, never the keeper.** Checked in the source, since a
+   signature cannot say it. This is the rule that makes an atomic portable — see §0.
+2. **Declares `pre`/`effects` from the closed vocabulary.**
+3. **No loop around an await.** Looping is the caller's job, so it can be
+   interrupted between iterations.
+4. **Refuses by returning, never by throwing.** A refusal that throws must be
+   caught by every caller and the ones that forget read it as success — which is
+   how "no error" came to mean "the merchant sold it".
 
-```
-route(map, from, to) -> [hop]     PURE. no I/O. offline-testable. all the hard part.
-StepHop(hop)                      ONE edge. re-observes on arrival. bounded.
-NavigateTree(dest)                Sequence: AtDest? -> route -> StepHop -> loop
-```
+Verified to bite: a planted atomic violating all four fails all four
+independently, exit 1.
 
-Three properties that the current design cannot have:
+Written: `attack` (one swing, reports what the room says afterwards rather than
+what the send returned). Remaining: `step`, `move_within`, `take_square`, `cast`,
+`equip`, `unequip`, `rest`, `stand`, `pick_up`, `drop`, `give`, `buy`, `sell`,
+`deposit`, `withdraw`.
 
-- **Every hop is an interruption point.** Health crosses the flee line at hop 6 of
-  14 and hop 7 simply is not ticked. No `cancelMovement()` reaching into twelve
-  places inside paced step loops.
-- **"Exits are not 1:1" stops being a trap.** Each hop re-observes and re-routes
-  from where it actually landed, so a far-from-the-edge arrival is the normal case
-  rather than the bug every routing session rediscovers.
-- **Most of it is testable with no server** — `route()` is a graph function.
+## 5. Navigation — **superseded by upstream**
 
-The travel doctrine is preserved exactly: only the reflex layer may cancel a
-journey; an errand may not. That is a rule about *authority*, and it survives the
-restructure untouched.
+This section originally proposed building `route()` + `StepHop` + `NavigateTree`.
+Upstream has done it: exit-to-exit paths baked offline (`m59-routebake`,
+`m59-routes`), planning on the map the mover actually enforces, the two grids
+disagreeing recognised *as* the safe wall, and `TERMINAL_MOVEMENT_REASONS` for
+failures that cannot become legal by retrying. Adopt it; do not write a third router.
 
-**Done when:** `route()` has offline graph tests including the return-leg
-asymmetry; one character runs on `NavigateTree` for a day with kills/minute from
-the ledger no worse than the fleet median; `Autopilot.travel` is **deleted**.
-
----
+The act-set atomics wrap it (`step`, `move_within`) rather than pathfinding again.
 
 ## 6. Phases
 
-Each phase has a **gate** — a measurable condition, not a judgement — and each
-must leave `m59-autopilot.mjs` shorter than it found it.
+Each phase has a measurable gate, and — the rule that keeps this from becoming the
+last effort — **any phase that does not leave `m59-autopilot.mjs` shorter than it
+found it is not that phase.**
 
-### Phase 0 — Stop the bleeding *(days)*
-- Fix or delete `m59-bt-farming.mjs` and `m59-bt-combat.mjs`. Recommend **delete**:
-  `bt-farm` is the wired one, `bt-farming` is superseded, orphaned and livelocked.
-- Decide the dead `useBT` get-armed branch: activate against one character and
-  watch, or remove it. Not both, not neither.
-- Wire `m59-bt-delegation-test.mjs` into whatever runs tests. **No new shims.**
-- Reconcile the fork, or consciously accept running without four guard suites.
-- **Gate:** ratchet green; zero modules with a known always-false condition.
+**Phase 1 — vocabulary and harness. DONE.** Fake client, ratchet, world state,
+atomic contract.
 
-### Phase 1 — Vocabulary and harness *(1 week)*
-- `m59-worldstate.mjs` (§3), closed set, one producer per symbol.
-- `m59-act/fake-client.mjs` (§4) + the shape-conformance test.
-- Atomic conformance test: bounded, interruptible, honest, declared, no keeper.
-- **Gate:** conformance test exists and fails loudly for a deliberately bad atomic.
+**Phase 2 — the act set.** The remaining atomics above, each through the sweep,
+each wrapping upstream's movement layer where movement is involved.
+*Gate:* every atomic conforms; `m59-act-test` covers each one's refusals.
 
-### Phase 2 — Navigation *(1–2 weeks)*
-- `route()`, `StepHop`, `NavigateTree` per §5.
-- **Gate:** `Autopilot.travel` deleted; monolith net −N hundred lines; one
-  character on the new path for 24h at or above fleet-median kills/minute.
+**Phase 3 — the planner.** Port `m59-goap-planner.mjs` (188 lines, pure
+`plan(actions, ws, goal)`, zero keeper reaches) onto the trunk and wire it to the
+vocabulary, so `validate()` rejects an unconnectable action set *before* the search.
+Add a cost model — uniform cost makes a walk across the world and a swing
+interchangeable.
+*Gate:* a plan over the act set is produced, validated and executed offline against
+the fake client.
 
-### Phase 3 — Combat atomics + the melee role *(2 weeks)*
-- `Attack`, `MoveWithin`, `TakeSquare`, `Rest`, `Stand`, with §1 facts ported.
-- Melee role tree over them. Safe-spot logic moves as a **unit**, not re-expressed.
-- **Gate:** `passFightRounds` and `_btFarmFight` deleted; `m59-combat-test.mjs`
-  (472) still green; one character farming for 24h.
+**Phase 4 — drive the directional layer first.** Let the planner drive errands,
+where being wrong costs a wasted trip rather than a character. Merge the fork's
+`deriveWorldState`/`buildActionLibrary`/`selectGoal` into upstream's supervisor.
+*Gate:* a character completes a gear trip under the planner, per-character opt-in.
 
-### Phase 4 — GOAP over the atomics *(2 weeks)*
-- Planner reads `SYMBOLS`, plans over `m59-act/*`, replans continuously.
-- Retire the 17 `_bt*` shims — they exist only to feed trees.
-- Replace `substrate/goap-gear-dispatch.json` + its 10-minute window with a
-  `busy` lease (`m59-commitment.mjs`, 71 assertions, already tested, fails back to
-  the keeper when the holder dies).
-- **Gate:** delegation ratchet ≤ 40; no two drivers claiming one character.
+**Phase 5 — plan survival.** Only once the act set covers the ladder's ground.
+Survival enters as **preconditions on atomics**, never as goals or costs (§2).
+*Gate:* `m59-unattended-test.mjs` (55) and `m59-combat-test.mjs` (480) pass,
+unchanged wherever possible. A rule that had to become a cost to make a plan work
+is a **failed** gate, not a tuning exercise.
 
-### Phase 5 — Roles *(2–3 weeks)*
-- Widen `m59-party.mjs` from two roles to four. It already has `pair`, `mateOf`,
-  `together`, `declareTarget`/`agreedTarget` (focus fire, 20s staleness),
-  `mayShareSpot`, `mateNeeds`, `roleFor` — this is the most honest module here and
-  should be extended, not replaced.
-- Role trees over one leaf set: healer, ranged, melee, CC.
-- **Survival variance goes through `may_yield` on the roster, never by forking the
-  ladder.** A CC deliberately takes hits; a healer must not flee while its partner
-  dies. A character whose bot dies falls back to plain self-preservation, which for
-  a CC is the correct failure mode.
-- **Gate:** `m59-unattended-test.mjs` still green; a four-role party clears a room
-  no worse than four solo characters.
+**Phase 6 — roles.** Widen `m59-party.mjs` from two roles to four. Survival
+variance through `may_yield`, never by weakening a precondition.
+*Gate:* a four-role party clears a room no worse than four solo characters.
 
-### Phase 6 — Concert *(2 weeks)*
-- Generalise the guild-wants end-state pattern to fleet intent: "this room should
-  have 3 farmers", "the fleet needs 6 more castings".
-- Assignment via claims so two characters cannot take one job.
-- **Gate:** the per-character reagent minimum stops going to zero while the fleet
-  total looks healthy — the exact documented failure.
-
-### Phase 7 — Delete the ladder *(1 week)*
-- `BTKeeper`'s fallback to `pass()` is the definition of done. Instrument
-  `_delegatedThisPass` as a **rate on status** from Phase 1 onward.
-- **Gate:** fallback rate 0 across the fleet for a week → delete the sequential
-  ladder, `passFarm`, `passFleeAndRest`, `passErrand`.
-
----
+**Phase 7 — delete the ladder.** The sequential `pass()` goes when the planner
+covers every case. Instrument the fallback rate from Phase 4 onward; it is the
+definition of done.
+*Gate:* fallback rate 0 across the fleet for a week.
 
 ## 7. Migration safety
 
-- **Per-character opt-in**, the existing strangler seam. One character on the new
-  path beside twenty on the old.
+- **Per-character opt-in**, the existing strangler seam.
 - **The ledger is the referee.** Kills/minute from `countKills`, never a keeper's
-  own tally. Deaths from `m59-postmortems.mjs`. A rebuild that reads better and
-  kills less has failed.
-- **Nothing merges while the monolith is longer than it was at phase start.**
-- **`m59-service.mjs` restart logs out the fleet** — batch cutovers, don't drip.
+  own tally — that field is emptied in the constructor and keepers restart about
+  once a minute. Deaths from `m59-postmortems.mjs`.
 - **Back up the rosters before each phase.** `node tools/m59-backup.mjs
-  --credentials-only` takes seconds and the rosters are the only record of the
+  --credentials-only` takes seconds, and the rosters are the only record of the
   account passwords.
-
----
+- **Keep the shared-file footprint at one commit.** Everything else is new files,
+  so an incoming upstream push can only collide in one place.
 
 ## 8. Risks
 
 | risk | how it shows up | detection |
 |---|---|---|
-| Rebuilt atomics repeat the fixture bug | tests green, fleet idle | one shared fake, shape-conformance test (§4) |
-| Survival facts lost in the port | deaths rise, no error anywhere | `m59-combat-test` (472) + `m59-safespot-test` (141) run against new code unchanged |
-| GOAP thrashes on stale state | plans churn, nothing completes | plan-changes-per-minute on status; alert above a threshold |
-| Roles deadlock (healer waits, CC holds, nobody kills) | party alive, zero kills | kills/minute per party vs four solos |
-| Two drivers claim one character | silent double-drive | `busy` lease replaces the dispatch file (Phase 4) |
-| The rebuild stalls half-done | two systems forever | the ratchet + fallback rate; **any phase that does not shrink the monolith is not that phase** |
-
----
+| a survival refusal becomes a cost | plans succeed, deaths rise, nothing errors | §2 invariant; Phase 5 gate is the test suites unchanged |
+| rebuilt atomics repeat the fixture bug | tests green, fleet idle | one shared fake, shape-conformance against `M59Client` |
+| planner thrashes on stale state | plans churn, nothing completes | plan-changes-per-minute on status |
+| goals can remove a precondition | a bot makes a character suicidal | the goal API cannot express preconditions at all |
+| the rebuild stalls half-done | two systems for ever | the ratchet + fallback rate |
 
 ## 9. Definition of done
 
 ```
-m59-autopilot.mjs        < 3,000 lines   (session/socket/pacer/journal host only)
+m59-autopilot.mjs        < 3,000 lines   (session/socket/pacer/journal host)
 delegation ratchet       0
-BTKeeper fallback rate   0
-_bt* shims               0
+planner fallback rate    0
 world-state symbols      one registry, one producer each
+survival expressed as    preconditions only — no goal, no cost term
 kills/minute             >= pre-rebuild fleet median
 deaths/1000 obs          <= pre-rebuild
 ```
-
-The first and last lines together are the whole point: the monolith stops being
-the decision-maker, and the fleet plays at least as well as it did.
