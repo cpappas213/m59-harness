@@ -254,9 +254,11 @@ export class GOAPKeeper {
       const needsShop = (ws.at_shop === false && ws.has_money === true)
                       || (ws.at_shop === false && ws.has_loot === true && ws.has_money === false);
       if (needsShop) {
-        const here = c.room?.num;
+        const here = c.room?.num ?? c.room?.id;
         if (here != null) {
-          const shop = nearestShop(here);
+          const { objIdToNum } = await import('./m59-hunt-room.mjs');
+          const mapNum = objIdToNum(here) ?? here;
+          const shop = nearestShop(mapNum);
           if (shop) {
             const travelToShop = (client, session) => {
               return this._travelOneHop(shop.to);

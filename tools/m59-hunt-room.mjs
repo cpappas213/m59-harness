@@ -37,7 +37,7 @@ function loadMap() {
  * map's room number. The client's room.num is the objId, not the
  * map's num. The map's rooms are keyed by num.
  */
-function objIdToNum(objId) {
+export function objIdToNum(objId) {
   if (!_objIdToNum) {
     const map = loadMap();
     _objIdToNum = new Map();
