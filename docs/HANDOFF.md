@@ -13,6 +13,32 @@ orphaned module with a live bug as "the path forward", and was deleted for it.
 
 ---
 
+## 0. START HERE — how to actually run it
+
+```bash
+# plan only. Sends nothing.
+node tools/m59-goap-run.mjs --fleet local --agent fleet01 --goal vigor_ok
+
+# the same, executing the plan one step at a time
+node tools/m59-goap-run.mjs --fleet local --agent fleet01 --goal vigor_ok --apply
+```
+
+`tools/m59-goap-run.mjs` is **the entry point and the only thing here that runs a
+character.** Everything else is a library. If you are looking for "the GOAP keeper"
+as a daemon you will not find one, because there is not one yet: this logs in, reads
+the vocabulary, plans, steps, reports, and exits.
+
+It is **not** a keeper (no loop, no supervision, no watchdog — `m59-autopilot.mjs`
+is still the real one and this does not touch it), **not** a broker client (it opens
+its own connection, so it will bump a broker off that character), and **cannot
+move** (`m59-act/step` requires the broker's fine-coordinate mover; the minimal
+session here has none, so `step` refuses by design — see §5).
+
+Agent names differ per fleet: the `local` roster has `fleet01..fleet04`, not
+`t1..t5`. `node tools/m59-fleets.mjs` lists them.
+
+---
+
 ## 1. What is being built, in one paragraph
 
 `tools/m59-autopilot.mjs` is a ~13,000-line keeper: one sequential ladder of
@@ -61,6 +87,7 @@ yourself adding a danger weight to make a plan come out right, stop.
 
 | file | what it is |
 |---|---|
+| `tools/m59-goap-run.mjs` | **the entry point** — runs one character under the planner |
 | `tools/m59-act/*.mjs` | the atomics: `attack`, `step`, `equip`, `rest`/`stand`, `cast`, `eat` |
 | `tools/m59-act-test.mjs` | **the conformance sweep** — runs over every file in `m59-act/` |
 | `tools/m59-worldstate.mjs` | the ACT vocabulary (live client, ~1s clock), 14 symbols |
@@ -78,7 +105,7 @@ Everything runs offline. No broker, no server, no fleet:
 node tools/m59-act-test.mjs          # 142
 node tools/m59-plan-test.mjs         #  25
 node tools/m59-cost-test.mjs         #  23
-node tools/m59-worldstate-test.mjs   # 107
+node tools/m59-worldstate-test.mjs   # 108
 node tools/m59-errandstate-test.mjs  #  37
 node tools/m59-fake-client-test.mjs  #  51
 node tools/m59-bt-delegation-test.mjs
@@ -140,6 +167,13 @@ unknown reads **false** (a ceiling that defaults open kills somebody). They are
 deliberately opposite and a test pins that. If a refactor ever makes them agree,
 one of them is wrong and it is not obvious which.
 
+AND DO NOT SET A DIRECTION BY ANALOGY — that is how the only live-corrected symbol
+got it wrong. `vigor_ok` was `true` because "same as armed: a failed read must not
+park a healthy character". But being wrong about ARMED stops a fight already
+happening, while being wrong about VIGOR only prevents a meal, and the asymmetry
+runs the other way: a wrong `false` costs one cast, a wrong `true` sends a character
+out tired at six times the death rate. Ask what each direction COSTS, per symbol.
+
 **THE GRID IS FOR PLANNING, NOT FOR STEPPING.** Upstream measured 218 of 311
 centre-to-centre grid steps failing in room 587, and **92% of the failures did not
 move the character at all** — so a caller replans from an unchanged position and
@@ -171,8 +205,22 @@ And the refusals, which matter more:
 | no mana | **no plan** |
 | target above the ceiling | **no plan at any price** |
 
-**NOTHING HAS EVER BEEN TESTED AGAINST A LIVE SERVER.** Not one packet. Every
-assertion is against the fake. Specifically unverified:
+**ONE LIVE RUN HAS HAPPENED — PLAN-ONLY, AND IT CORRECTED A SYMBOL.**
+`m59-goap-run.mjs` logged a character in on the local server and read the
+vocabulary. It found three things the offline suite could not, and they are the
+model for what live running is FOR:
+
+1. `requestInventory()` / `requestSpells()` are SENDS, not promises — they return
+   `undefined`, so `.catch()` on them throws. It died on that line straight after
+   login. No offline test had ever chained onto them.
+2. A real character's `vitals()` carried health and mana and **no vigor at all** —
+   vigor arrives as a `BP_STAT` and simply had not. Ordinary, not a fault.
+3. So `vigor_ok` read `true` on no evidence, `{ vigor_ok: true }` was already
+   satisfied, **the plan came back EMPTY**, and a hungry character would never have
+   eaten. `vigor_ok` now fails CLOSED, and the same character plans `eat`.
+
+**NOTHING HAS BEEN EXECUTED AGAINST A SERVER YET.** No `--apply` run has happened,
+so still unverified:
 
 - every `waitMs` is a guess
 - whether `create food` produces something matching `FOOD_RE` (an invented regex)
@@ -180,8 +228,8 @@ assertion is against the fake. Specifically unverified:
 - whether `apply(food, selfId)` is actually how eating works
 - whether the plan feeds a character at all
 
-Treat "the design is coherent" and "the design works" as different claims. Only the
-first is currently supported.
+Treat "the design is coherent" and "the design works" as different claims. The first
+is supported; the second is supported only for reading state, not for acting.
 
 ---
 
@@ -210,10 +258,11 @@ to ask the server.
 
 ## 8. Next steps, in order
 
-1. **The live pass.** One character on `--fleet local`: `planFor(client, {vigor_ok:
-   true})`, `stepPlan` twice, then compare vigor/pack/purse against what the atomics
-   *claimed* happened. This is the highest-value thing available and the only way to
-   move from claim (6) to fact.
+1. **The live `--apply` pass.** Plan-only is done (§6). The remaining half is
+   `node tools/m59-goap-run.mjs --fleet local --agent fleet01 --goal vigor_ok
+   --apply`, then compare the vigor/pack/mana it reports against what the atomics
+   *claimed*. A disagreement is the finding. This is still the highest-value thing
+   available, and every `waitMs` in the atomics is a guess until it runs.
 2. **Give `m59-atomics.mjs` real `pre`/`effects`** from `m59-errandstate`. Its 14
    verbs currently declare `effect` as prose (`'room=to, health readable'`), so the
    coarse layer cannot be planned over at all. This is what makes the two-library
