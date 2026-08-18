@@ -14380,6 +14380,27 @@ function serveDashboard(port) {
       return res.end(JSON.stringify({ uptime_ms: Date.now() - Pacer.startedAt, buckets: rows }, null, 1));
     }
     // /hero/<name> and /hero/<name>/start.ps1
+    // /vendor/<file> — serve local JS modules (Three.js, OrbitControls)
+    // so the 3D room view works without CDN access.
+    if (url.pathname.startsWith('/vendor/')) {
+      const file = url.pathname.slice('/vendor/'.length);
+      const allowed = new Set(['three.module.js', 'OrbitControls.js']);
+      if (!allowed.has(file)) {
+        res.writeHead(404); return res.end('not found');
+      }
+      try {
+        const { readFileSync } = await import('fs');
+        const { join, dirname } = await import('path');
+        const { fileURLToPath } = await import('url');
+        const here = dirname(fileURLToPath(import.meta.url));
+        const data = readFileSync(join(here, 'vendor', file));
+        const mime = file.endsWith('.js') ? 'application/javascript' : 'application/octet-stream';
+        res.writeHead(200, { 'content-type': mime, 'cache-control': 'max-age=86400' });
+        return res.end(data);
+      } catch {
+        res.writeHead(500); return res.end('vendor file not found');
+      }
+    }
     if (url.pathname.startsWith('/room3d/')) {
       const who = decodeURIComponent(url.pathname.slice('/room3d/'.length).split('/')[0] || '');
       const h = heroSnapshot(who);

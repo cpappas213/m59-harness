@@ -49,8 +49,8 @@ export function renderRoom3D(name, rv) {
 
 <script type="module">
 try {
-const THREE = await import('https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js');
-const { OrbitControls } = await import('https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/controls/OrbitControls.js');
+const THREE = await import('/vendor/three.module.js');
+const { OrbitControls } = await import('/vendor/OrbitControls.js');
 
 const COLS = ${cols}, ROWS = ${rows};
 const WALLS = ${wallData};
