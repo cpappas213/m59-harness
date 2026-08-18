@@ -96,6 +96,29 @@ console.log('\nsaying which population the numbers describe');
      /every character/.test(S.scopeLine({ characters: null, filtered: false, from: 'no roster' })));
 }
 
+console.log('\nwhere it is willing to look');
+{
+  // AN EXPLICIT PORT IS THE WHOLE LIST, asserted here directly rather than only through
+  // its consequences, because the consequence is what was broken and the cause is what
+  // has to stay fixed.
+  //
+  // It used to APPEND the default and the pid-file ports after the one you named, so
+  // naming a dead port meant "look here first, then look everywhere" — and fleetScope
+  // duly found the live broker on 8901 and returned it. Three assertions below depend on
+  // `port: 1` genuinely meaning nothing-is-there, and they failed on any machine with a
+  // fleet up, which is every machine anyone would run this on.
+  const named = S.candidateBrokerPorts({ port: 1 });
+  ok('naming a port asks that port and no other', named.length === 1 && named[0] === 1);
+  ok('and it does not quietly add the default alongside it', !named.includes(8901));
+  const discovered = S.candidateBrokerPorts();
+  ok('naming none still discovers the default', discovered.includes(8901));
+  ok('a nonsense port is ignored rather than probed',
+     !S.candidateBrokerPorts({ port: 0 }).includes(0) &&
+     !S.candidateBrokerPorts({ port: 99999 }).includes(99999));
+  ok('and falls back to discovery, rather than to an empty list nothing can answer',
+     S.candidateBrokerPorts({ port: 0 }).includes(8901));
+}
+
 console.log('\nchoosing a broker');
 {
   // A fixture broker that answers /health exactly as the real one does, naming the roster
@@ -127,6 +150,41 @@ console.log('\nchoosing a broker');
   ok('A DIFFERENT CHECKOUT\'S "prod" IS A DIFFERENT FLEET — matched on the roster path it ' +
      'reports, never on the label, so this scopes to Bramwell and not to Kermit',
      s2.filtered && s2.characters.has('Bramwell') && !s2.characters.has('Kermit'));
+
+  // A NAMED FLEET OUTRANKS A RUNNING BROKER — the regression for a wrong number that a
+  // check-in read as fact. `m59-postmortems.mjs` reported 3 deaths for prod when the real
+  // figure was 323: prod's broker was down, an unrelated broker was the only one answering,
+  // and the lone-broker shortcut adopted it. The tool named the substitution on its second
+  // line while its FIRST line — the one `| head -1` reads — was confidently about the wrong
+  // fleet. Both halves are asserted here, because either alone would have let it through.
+  const stranger = await serve(join(root, 'somebody-elses.json'), 'boscontrol');
+  writeFileSync(join(root, 'somebody-elses.json'),
+                JSON.stringify({ t1: { credentials: { character: 'Aldric' } } }));
+  {
+    // Asked for by name, and the only broker running holds something else.
+    const named = await S.fleetScope({ argv: ['--fleet', 'prod'],
+                                       env: { M59_STATE_FILE: rosterPath } });
+    ok('a fleet named on the command line is NOT replaced by the only broker that answers',
+       !named.characters?.has('Aldric'),
+       named.from);
+    ok('and it scopes to the roster belonging to the named fleet instead',
+       named.filtered && named.characters.has('Kermit'));
+    ok('while saying plainly that no broker is holding it',
+       /no broker answering/.test(named.from), named.from);
+
+    const viaEnv = await S.fleetScope({ argv: [],
+                                        env: { M59_STATE_FILE: rosterPath, M59_FLEET: 'prod' } });
+    ok('M59_FLEET is honoured the same way', !viaEnv.characters?.has('Aldric'), viaEnv.from);
+  }
+  {
+    // AND THE SHORTCUT STILL WORKS WHEN NOBODY SAID WHICH, which is what it is for: one
+    // broker up, no fleet named anywhere, is unambiguous and adopting it is right.
+    const unasked = await S.fleetScope({ argv: [], env: { M59_STATE_FILE: join(root, 'nope.json') },
+                                         port: stranger.port });
+    ok('with no fleet named, a single answering broker is still adopted',
+       unasked.broker != null && /broker on [0-9]+/.test(unasked.from), unasked.from);
+  }
+  stranger.srv.close();
 
   mine.srv.close(); theirs.srv.close();
 }

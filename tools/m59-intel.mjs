@@ -1,31 +1,44 @@
 #!/usr/bin/env node
-// m59-intel.mjs -- player sighting tracker, target manager, and conflict coordinator.
+// m59-intel.mjs — player sighting tracker, target manager, and conflict coordinator.
+//
+// THIS MODULE IS EVIDENCE, NEVER AUTHORITY. Nothing here decides that a character may
+// swing at a person. `m59-grudge.mjs:mayReturnFire` is the only place all three
+// conditions are checked together — the grudge, the live PF flag, and the fleetmate
+// test — and a target listed here can only NARROW that answer, never widen it. See
+// `engagePlayerTarget` in m59-autopilot.mjs, where the two are composed with `&&`.
+//
+// IT ALSO HAS NO OPINION ABOUT WHO IS OURS. It used to answer that itself, off
+// substrate/fleet-state.json, which is the UNNAMED fleet's roster — so on a machine
+// whose broker holds `prod` it excluded thirty-four characters nobody plays and not one
+// of the twenty-one that were live. Every entry point that could name a fleetmate now
+// takes an `isFleetmate` predicate from its caller, and the caller passes
+// `m59-party.mjs:isFleetmate`, which the broker backs with the live sessions unioned
+// with the roster it actually loaded.
 //
 // Storage layout:
-//   substrate/players-seen.json          -- index: one entry per player, last-seen summary
-//   substrate/player-history/<name>.jsonl -- full append-only sighting trail per player
-//   substrate/targets.json               -- auto-attack target list
-//   substrate/active-conflicts.json      -- live fleet conflicts (TTL-based)
+//   substrate/players-seen.json          — index: one entry per player, last-seen summary
+//   substrate/player-history/<name>.jsonl — full append-only sighting trail per player
+//   substrate/targets.json               — auto-attack target list
+//   substrate/active-conflicts.json      — live fleet conflicts (TTL-based)
 //
 // CLI:
-//   node tools/m59-intel.mjs                     -- sightings summary
-//   node tools/m59-intel.mjs --player <name>     -- full history for one player
-//   node tools/m59-intel.mjs --targets           -- target list
+//   node tools/m59-intel.mjs                     — sightings summary
+//   node tools/m59-intel.mjs --player <name>     — full history for one player
+//   node tools/m59-intel.mjs --targets           — target list
 //   node tools/m59-intel.mjs --add <name> [--auto-attack]
 //   node tools/m59-intel.mjs --remove <name>
-//   node tools/m59-intel.mjs --heatmap <name>    -- room frequency for one player
+//   node tools/m59-intel.mjs --heatmap <name>    — room frequency for one player
 
-import { readFileSync, writeFileSync, existsSync, statSync,
+import { readFileSync, writeFileSync, existsSync,
          mkdirSync, appendFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE      = dirname(fileURLToPath(import.meta.url));
 const SUBSTRATE = join(HERE, '..', 'substrate');
 
 const SEEN_PATH       = join(SUBSTRATE, 'players-seen.json');
 const TARGETS_PATH    = join(SUBSTRATE, 'targets.json');
-const STATE_PATH      = join(SUBSTRATE, 'fleet-state.json');
 const CONFLICTS_PATH  = join(SUBSTRATE, 'active-conflicts.json');
 const HISTORY_DIR     = join(SUBSTRATE, 'player-history');
 const MAP_PATH        = join(SUBSTRATE, 'm59-map.json');
@@ -45,27 +58,6 @@ function roomName(num) {
     try { _map = JSON.parse(readFileSync(MAP_PATH, 'utf8')); } catch { _map = {}; }
   }
   return (_map.rooms?.[num] ?? _map[num])?.name ?? null;
-}
-
-// ------------------------------------------------------------------ fleet name cache
-
-let _fleetNamesCache = null;
-let _fleetNamesMtime = 0;
-
-function knownFleetNames() {
-  try {
-    const mtime = statSync(STATE_PATH).mtimeMs;
-    if (mtime !== _fleetNamesMtime) {
-      _fleetNamesMtime = mtime;
-      const state = JSON.parse(readFileSync(STATE_PATH, 'utf8'));
-      _fleetNamesCache = new Set(
-        Object.values(state)
-          .map(e => e?.credentials?.character ?? e?.name ?? null)
-          .filter(Boolean)
-      );
-    }
-  } catch { /* broker may not have written state yet */ }
-  return _fleetNamesCache ?? new Set();
 }
 
 // ------------------------------------------------------------------ file I/O
@@ -127,15 +119,20 @@ export function roomHeatmap(name) {
 
 // ------------------------------------------------------------------ sighting API
 
-export function recordSightings(observer, players, room, fleetNames) {
+// WHO WAS STANDING THERE. `isFleetmate` is REQUIRED and is the caller's to supply —
+// there is deliberately no default, because the default this function used to have was
+// wrong on this machine and silently so. A caller that cannot answer should pass
+// `() => false` on purpose and know that it is filing its own fleet as strangers.
+export function recordSightings(observer, players, room, isFleetmate) {
   if (!players || players.length === 0) return;
+  if (typeof isFleetmate !== 'function')
+    throw new TypeError('recordSightings needs an isFleetmate predicate — see m59-party.mjs');
   const now     = Date.now();
   const seen    = readSeen();
-  const exclude = fleetNames ?? knownFleetNames();
   const rname   = roomName(room);
 
   for (const p of players) {
-    if (!p.name || exclude.has(p.name) || p.name === observer) continue;
+    if (!p.name || p.name === observer || isFleetmate(p.name)) continue;
 
     // --- update the index entry ---
     const entry = seen[p.name] ?? {
@@ -184,7 +181,12 @@ export function recordSightings(observer, players, room, fleetNames) {
 
 // ------------------------------------------------------------------ target API
 
-export function addTarget(name, { auto_attack = true, reason = null, assigned_to = null } = {}) {
+// AUTO-ATTACK IS OFF UNLESS SOMEBODY ASKS FOR IT, and it is an operator's word rather
+// than something the fleet writes about itself. It used to default TRUE and be called by
+// the keeper the moment anything hit it, which made a permanent, fleet-wide kill order
+// out of one contact — where `m59-grudge.mjs` records the same event as evidence that
+// expires in an hour. Even set, it cannot authorise a swing on its own; see the header.
+export function addTarget(name, { auto_attack = false, reason = null, assigned_to = null } = {}) {
   if (!name) return;
   const targets = readTargets();
   const seen    = readSeen();
@@ -339,8 +341,26 @@ export function playerStats(name) {
   };
 }
 
-// Static room-to-zone grouping. Curated from the known world layout.
-// Rooms not in the map fall through to "Other".
+// All known player names from the history directory.
+export function knownPlayers() {
+  if (!existsSync(HISTORY_DIR)) return [];
+  return readdirSync(HISTORY_DIR)
+    .filter(f => f.endsWith('.jsonl'))
+    .map(f => f.slice(0, -6).replace(/_/g, ' '));  // rough reverse of sanitisation
+}
+
+// ------------------------------------------------------------------ CLI
+
+// `pathToFileURL`, not a hand-built `file://` string — see m59-path-test.mjs: a manual
+// URL leaves spaces percent-encoded and needs drive-letter repair on Windows, so the tool
+// silently stops being a CLI on any path with a space in it.
+
+// ---------------------------------------------------------------------------
+// READ-ONLY ANALYTICS over the sighting trail, carried across from the other
+// checkout's /players page. Every one of these reads readHistory() and nothing
+// else — none of them touches the fleetmate question, which is why they could
+// be lifted onto this file's corrected recordSightings without adjustment.
+// ---------------------------------------------------------------------------
 export const ZONE_MAP = {
   // Ileria (barrows/clearing)
   534: 'Ileria', 535: 'Ileria', 536: 'Ileria', 544: 'Ileria',
@@ -444,16 +464,8 @@ export function followingDetection(name, fleetHistory) {
 }
 
 // All known player names from the history directory.
-export function knownPlayers() {
-  if (!existsSync(HISTORY_DIR)) return [];
-  return readdirSync(HISTORY_DIR)
-    .filter(f => f.endsWith('.jsonl'))
-    .map(f => f.slice(0, -6).replace(/_/g, ' '));  // rough reverse of sanitisation
-}
 
-// ------------------------------------------------------------------ CLI
-
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
 
   const fmtAgo = (t) => {
@@ -544,3 +556,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
   }
 }
+

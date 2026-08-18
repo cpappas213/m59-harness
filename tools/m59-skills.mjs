@@ -26,6 +26,24 @@ import { weighPack, isWeaponName, itemNameKey } from './m59-items.mjs';
 // predicates only — this file does not go looking for the file, because the caller knows
 // which character it is and this one does not.
 import { keepTest as keepTestFor, sellTest as sellTestFor } from './m59-loadout.mjs';
+import * as buyers from './m59-buyers.mjs';
+import { readFileSync } from 'node:fs';
+import { isTerminalMovementReason } from './m59-movement.mjs';
+
+// The merchant index resolves a live object id to the class whose buying rule applies.
+// Read once and kept: it is a built artefact that changes when somebody rebuilds it, and
+// `sellAll` is on a town trip rather than a hot loop. A missing file is not an error —
+// `classOf` falls back to the name, and an unresolved merchant means "offer everything",
+// which is what this code did before the index existed.
+let MERCHANT_INDEX;
+function merchantIndex() {
+  if (MERCHANT_INDEX !== undefined) return MERCHANT_INDEX;
+  try {
+    MERCHANT_INDEX = JSON.parse(readFileSync(
+      new URL('../substrate/m59-merchants.json', import.meta.url), 'utf8'));
+  } catch { MERCHANT_INDEX = null; }
+  return MERCHANT_INDEX;
+}
 
 // Health fractions. Chosen from what the game does rather than taste: a monster that
 // can take you from half to nothing in one exchange is common, and the server's
@@ -85,6 +103,31 @@ const WEAPON_WORDS = [
   [/short ?sword|falchion/i, 4], [/sword/i, 4], [/dagger|knife/i, 2],
   [/staff|club|cudgel/i, 2], [/bow|crossbow|sling/i, 3],
 ];
+// A CURSED WEAPON CANNOT BE PUT DOWN, AND WIELDING ONE IS THE ONLY IRREVERSIBLE MISTAKE
+// IN THIS FILE.
+//
+// `WeapAttCursed.ItemReqUnuse` (wacursed.kod:97) does not test anything — it returns FALSE
+// unconditionally and says "%s%s seems to cling to your hand!". `ItemReqLeaveOwner` refuses
+// the drop as well, for as long as the thing is in `getplayerusing`. So the moment a
+// character wields one it is stuck with it: it cannot swap to a mace, cannot sell it,
+// cannot hand it to a fleetmate, and cannot drop it. For the life of the character.
+//
+// AND IT IS A PENALTY WEAPON, NOT A PRIZE. Both `ModifyDamage` and `ModifyHitRoll` return
+// `x - 2*power` — it is strictly worse than the bare hand it replaced, at hitting AND at
+// hurting. A character that picks one up does not get a trade-off; it gets a downgrade it
+// can never undo.
+//
+// This is not hypothetical. `AddToItemAttTreasureTable(#percent=10)` puts it at a tenth of
+// the item-attribute treasure table, and this fleet loots weapons from every kill — Floyd
+// was carrying fifteen swords it had picked up. Nothing else in the harness knows the
+// attribute exists: the name is "cursed %s", so a cursed long sword matches /long ?sword/
+// and scored SEVEN here, ahead of every mace in the pack.
+//
+// The guard is on WIELDING only, deliberately. One that is merely carried is harmless and
+// still sellable — `ItemReqLeaveOwner` refuses only while it is in the use list — so this
+// keeps it out of the candidate list and lets the ordinary sell rules shed it.
+export const isCursed = (name) => /\bcursed\b/i.test(String(name || ''));
+
 export const weaponScore = name => {
   if (isJunk(name)) return 0;
   for (const [re, n] of WEAPON_WORDS) if (re.test(name)) return n;
@@ -304,7 +347,11 @@ export function weaponRanking(c, { priority = null } = {}) {
   const broken = brokenSet(c);
   const rows = (c.inventory || [])
     .map(o => ({ o, name: c.rsc.get(o.nameRsc) || '' }))
-    .filter(x => !isJunk(x.name) && weaponScore(x.name) > 0 && !broken.has(x.o.id))
+    // isCursed is checked here rather than in weaponScore, because scoring it zero would
+    // also tell `sellable` and the equipment plan it is not a weapon — and selling it is
+    // exactly what we want to happen to it. It must be unwieldable, not invisible.
+    .filter(x => !isJunk(x.name) && !isCursed(x.name) &&
+                 weaponScore(x.name) > 0 && !broken.has(x.o.id))
     .map(x => {
       const skill = proficiencyFor(x.name);
       return { ...x, skill, ability: abilityOf(c, skill), base: weaponScore(x.name) };
@@ -326,6 +373,33 @@ export function weaponRanking(c, { priority = null } = {}) {
 // Nothing below is allowed to infer the answer when this returns null — it says so
 // instead. See M59Client.equipment().
 export const equippedNow = (c) => (c?.using instanceof Set ? c.using : null);
+
+// IS THERE A WEAPON IN OUR HAND — asked of the server, never of our own intentions.
+//
+// plUsing is the only authority (see M59Client.equipment()): "the last use we sent was
+// not refused" has been wrong every time it mattered, because a weapon that shatters
+// mid-fight leaves the use list without anything being sent at all. A character that
+// cannot answer is treated as ARMED, because refusing to fight on a failed read would
+// idle the whole fleet the first time an inventory request timed out — the guard is
+// meant to catch the empty hand, not to become a new way to stop. Autopilot.armedForSure()
+// is the same question failing the other way, for deciding whether to leave an inn.
+//
+// THIS TAKES A CLIENT, NOT A KEEPER, and that is the whole reason it lives here. It was
+// Autopilot.armed(), so anything that wanted the answer had to hold a keeper to ask —
+// and the code that tried to ask the client instead got it wrong in a way nothing
+// caught: `m59-bt-nodes.mjs` guards its wielding_weapon condition on `client.armed()`,
+// and `m59-autopilot.mjs`'s useBT branch on `typeof c.armed === 'function'`. A client
+// has never had an armed(). So that condition answers false for every character and
+// that branch has never executed at all. A predicate over the equipment list belongs
+// with the equipment list, where there is one of it.
+//
+// Behaviour is byte-for-byte what Autopilot.armed() did — this is a move, not a fix.
+export const isArmed = (c) => {
+  const eq = c?.equipment?.();
+  if (!eq || eq.known === false) return true;
+  return (eq.equipped || []).some(o =>
+    weaponScore(o.name ?? c.rsc?.get?.(o.nameRsc) ?? '') > 0);
+};
 
 // The refusal you get for wielding something you are already wielding. Re-`use` is not
 // a toggle and not a no-op: TryUseItem runs CheckPosition, which counts the item
@@ -1347,7 +1421,10 @@ export async function nudge(s) {
   const c = s.need();
   const me = c.self;
   if (!me) return { moved: false, why: 'position unknown' };
+  const before = { col: me.col, row: me.row };
   const geo = s.world?.geometry;
+  if (!geo?.collisionReady) return { moved: false, reason: 'collision_geometry_unavailable',
+                                      why: 'collision_geometry_unavailable' };
   const deltas = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
   // TRY THE EMPTY SIDES FIRST. In a crowded inn the neighbouring squares are other
   // characters, and a step into one is refused — so a nudge that walks the ring in a
@@ -1357,16 +1434,18 @@ export async function nudge(s) {
   const c2 = c.room?.objects;
   const taken = new Set(c2 ? [...c2.values()].filter(o => o.id !== c.selfId)
                               .map(o => `${o.col},${o.row}`) : []);
-  deltas.sort((a, b) => (taken.has(`${me.col + a[0]},${me.row + a[1]}`) ? 1 : 0) -
-                        (taken.has(`${me.col + b[0]},${me.row + b[1]}`) ? 1 : 0));
+  deltas.sort((a, b) => (taken.has(`${before.col + a[0]},${before.row + a[1]}`) ? 1 : 0) -
+                        (taken.has(`${before.col + b[0]},${before.row + b[1]}`) ? 1 : 0));
   for (const [dc, dr] of deltas) {
-    const col = me.col + dc, row = me.row + dr;
-    if (geo && !geo.walkable(row, col)) continue;
-    await s.pacer.submit('move', () => c.moveToSquare(col, row), 1050);
-    await sleep(250);
+    const col = before.col + dc, row = before.row + dr;
+    if (!geo.walkable(row, col) || !geo.canMove(before.row, before.col, row, col)) continue;
+    const step = await s.step(col, row, { confirm: true });
+    if (isTerminalMovementReason(step.reason))
+      return { moved: false, reason: step.reason, why: step.note ?? step.reason, note: step.note };
     const now = c.self;
-    if (now && (now.col !== me.col || now.row !== me.row))
-      return { moved: true, from: { col: me.col, row: me.row }, to: { col: now.col, row: now.row },
+    if (step.moved || (now && (now.col !== before.col || now.row !== before.row)))
+      return { moved: true, from: before,
+               to: now ? { col: now.col, row: now.row } : { col, row },
                why: 'health regeneration is gated on having moved since entering the room' };
   }
   return { moved: false, why: 'every neighbouring square refused' };
@@ -1618,14 +1697,23 @@ export async function standUp(s) {
 //
 // Excluding players by default is right for every caller here — you hunt creatures —
 // and PvP, if it is ever wanted, should have to say so out loud.
-export function findCreature(s, needle, { attackableOnly = true, includePlayers = false } = {}) {
+//
+// THE SUBSTRING IS THE DEFAULT BECAUSE A PERSON TYPED IT, AND `match` IS HOW A KEEPER
+// SAYS OTHERWISE. An agent asking for "spider" wants whatever spider is here, and that
+// is the right answer for a one-shot tool call. A keeper acting on `policy.hunt` is not
+// typing: its order came from the spawn catalogue, and answering it with a different
+// creature whose name happens to contain the letters is how an `ant` keeper spent its
+// day on giant rats. Callers with a catalogue pass `huntMatcher(spawns, want)` in.
+export function findCreature(s, needle, { attackableOnly = true, includePlayers = false,
+                                          match = null } = {}) {
   const c = s.need();
   const me = c.self;
   const low = String(needle ?? '').toLowerCase();
   let list = [...c.room.objects.values()].filter(o => o.id !== c.selfId);
   if (!includePlayers) list = list.filter(o => !(o.flags & OF.PLAYER));
   if (attackableOnly) list = list.filter(o => o.flags & OF.ATTACKABLE);
-  if (low) list = list.filter(o => c.rsc.get(o.nameRsc).toLowerCase().includes(low));
+  if (match) list = list.filter(o => match(c.rsc.get(o.nameRsc) || ''));
+  else if (low) list = list.filter(o => c.rsc.get(o.nameRsc).toLowerCase().includes(low));
   if (me) {
     const d = o => Math.hypot(o.col - me.col, o.row - me.row);
     list.sort((a, b) => d(a) - d(b));
@@ -1991,6 +2079,9 @@ async function stepOnto(s, o) {
   const now = { id: c.room.id, name: c.roomNameRsc ? c.rsc.get(c.roomNameRsc) : null };
   if (entered || now.id !== wasIn)
     return { left: true, arrived_in: entered?.roomName ?? now.name, room: now.id };
+  if (isTerminalMovementReason(walk.reason))
+    return { left: false, terminal: true, reason: walk.reason, note: walk.note,
+             why: walk.note ?? walk.reason };
   return { left: false, walked: walk.arrived,
            why: walk.arrived
              ? 'stood on it and nothing happened — it is unlit; one or two of the five ' +
@@ -2047,6 +2138,8 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
                  via: `the fixed ${wanted} portal`,
                  ...(near ? { died_in_room: nearestTo, hops_from_death: near.hops } : {}),
                  note: 'a fixed portal, so this is repeatable — no waiting and no luck involved' };
+      if (step.terminal)
+        return { left: false, stood_up: true, reason: step.reason, note: step.note };
       cityAttempts.push({ portal: `fixed ${wanted}`, why: step.why });
     } else {
       cityAttempts.push({
@@ -2070,6 +2163,8 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
     const spot = s.world.approachSquare(rip.col, rip.row);
     if (spot && spot.steps > 0) {
       const walk = await s.walkTo(spot.col, spot.row, { maxSteps: Math.max(30, spot.steps + 10) });
+      if (isTerminalMovementReason(walk.reason))
+        return { left: false, stood_up: true, reason: walk.reason, note: walk.note };
       if (!walk.arrived)
         return { left: false, stood_up: true, reason: 'could not get next to the shifting portal', walk,
                  note: 'we stood up first, so this is not resting — something is in the way' };
@@ -2086,7 +2181,9 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
       if (dest && dest.toLowerCase().includes(String(wanted).toLowerCase())) {
         const before = c.evSeq;
         const wasIn = c.room.id;
-        await s.pacer.submit('move', () => c.moveToSquare(rip.col, rip.row), 1050);
+        const move = await s.stepFine(rip.x, rip.y);
+        if (isTerminalMovementReason(move.reason))
+          return { left: false, stood_up: true, reason: move.reason, note: move.note };
         const arr = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 5000 });
         const entered = arr.events.find(e => e.kind === 'room-entered');
         const now = whereAmI();
@@ -2147,6 +2244,8 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
                  } : {}),
                } : {}) };
     }
+    if (isTerminalMovementReason(walk.reason))
+      return { left: false, stood_up: true, reason: walk.reason, note: walk.note, tried };
     // Only blame the brazier if we actually got onto the square. Not arriving is a
     // different fault with a different fix, and reporting it as an unlit portal sends
     // the caller hunting for something to activate that was never the problem.
@@ -2356,9 +2455,31 @@ export async function sellAll(s, { merchant, keep = [], protect = [], minPrice =
     return false;
   });
 
+  // DO NOT OFFER A SMITH A MUSHROOM. Every merchant class declares what it deals in
+  // (`ObjectDesired`), a refusal is a sentence spoken to the room rather than an error,
+  // and each wasted offer costs a full offer/cancel round trip plus 900ms of pacing —
+  // so a trip to a smith carrying reagents used to collect a column of silences with the
+  // one real sale buried in it. `m59-buyers.mjs` holds the table and its citations.
+  //
+  // IT ONLY EVER HOLDS THINGS BACK. An unknown merchant class, or an item missing from
+  // the index, answers "cannot say" and is offered exactly as before — silence means the
+  // behaviour that was already there, never a seller that has stopped selling.
+  const merchantId = typeof merchant === 'object' && merchant !== null ? merchant.id : merchant;
+  const merchantObj = c.room?.objects?.get?.(Number(merchantId)) ?? null;
+  const merchantName = (typeof merchant === 'object' && merchant?.name) ||
+    (merchantObj ? c.rsc.get(merchantObj.nameRsc) : null);
+  const plan = buyers.partition(items.map(x => ({ ...x, name: x.name })),
+    { id: Number(merchantId), name: merchantName, index: merchantIndex() });
+  const notOffered = plan.not_offered;
+  items = plan.offer;
+
   if (!items.length) return { sold: [], kept_for_the_fleet: held,
+    ...(notOffered.length ? { not_offered: notOffered, merchant: plan.merchant } : {}),
     ...(loadout ? { loadout: loadout.character } : {}),
-    note: held.length
+    note: notOffered.length
+      ? `nothing here that ${plan.merchant.class || 'this merchant'} deals in — it buys ` +
+        `${plan.merchant.buys?.join(', ') || 'nothing known'}; ask who_buys for a counter that takes these`
+      : held.length
       ? 'nothing left to sell — what is in the pack is either yours to keep or wanted by another character'
       : 'nothing to sell that is not money, equipment you are wearing, or a weapon you are carrying' };
 
@@ -2377,7 +2498,16 @@ export async function sellAll(s, { merchant, keep = [], protect = [], minPrice =
     await sleep(900);
   }
   return { sold, refused, total_received: total, kept_for_the_fleet: held,
-           note: refused.length ? 'refusals are usually "this merchant does not deal in that" — check merchants for who does' : undefined };
+           merchant: plan.merchant,
+           // WHAT WAS NEVER OFFERED, AND WHY. Distinct from `refused`, which is what the
+           // merchant turned down after we asked: these were held back before the walk to
+           // the counter, so a bot reading this knows the goods are still in the pack and
+           // still saleable — somewhere else. `whoBuys` names where.
+           ...(notOffered.length ? { not_offered: notOffered } : {}),
+           note: refused.length
+             ? 'these were offered and refused anyway — a merchant with a real inventory ' +
+               'can be full, and condition or stack size can also draw a no'
+             : undefined };
 }
 
 // Deposit matching inventory into a VAULTMAN in one server transaction. Success is

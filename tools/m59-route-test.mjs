@@ -12,7 +12,7 @@
 //   - and the fallback is exactly the old behaviour, so the worst case is unchanged
 
 import assert from 'node:assert/strict';
-import { findPath, roomDanger } from './m59-map.mjs';
+import { findPath, roomDanger, hazardReason, loadMap } from './m59-map.mjs';
 
 // A diamond: 1 -> (2 | 3) -> 4, where 2 is quiet and 3 is lethal. Plus a long quiet
 // detour 1 -> 5 -> 6 -> 7 -> 8 -> 4 for the budget tests.
@@ -147,6 +147,36 @@ assert.deepEqual(findPath(map, 90004, 90004, { avoid: null, danger: new Map() })
     assert.equal(Number.isInteger(room), true, 'keyed by room number');
     assert.ok(rating > 0, 'a room in the table has a positive rating');
   }
+}
+
+// --- THE HARD BLOCK, WHICH IS A DIFFERENT THING FROM THE SOFT ONE ----------------
+//
+// The distinction is the whole point and it is easy to collapse by accident: `avoid` is a
+// preference that the permissive fallback drops when there is no other way, and NEVER_ENTER
+// is not. A room that kills by arithmetic rather than by a fight has no "no other way"
+// worth taking — "no route" is the correct answer, and it must survive every fallback in
+// findPath, including the last one that used to be called with `null`.
+{
+  const real = loadMap();
+  const HAZARD = 555;
+  assert.ok(hazardReason(HAZARD), 'the hazard is declared with a reason, not a bare number');
+  assert.equal(hazardReason(38), null, 'an ordinary room is not a hazard');
+
+  // A keeper asking to go there is refused, and told why rather than getting a bare false.
+  const refused = findPath(real, 534, HAZARD);
+  assert.equal(refused.found, false, 'routing TO a hazard is refused by default');
+  assert.equal(refused.hazard, HAZARD, 'the refusal names the room');
+  assert.match(refused.reason, /acid/i, 'and says what is wrong with it');
+
+  // A person may still send somebody deliberately — the "are you sure?" that defaults to no.
+  assert.equal(findPath(real, 534, HAZARD, { allowHazardDestination: true }).found, true,
+    'an explicit request is still honoured');
+
+  // THE ORIGIN IS NEVER BLOCKED, or a character that ends up in one is stuck there for ever.
+  assert.equal(findPath(real, HAZARD, 534).found, true, 'a character can always walk OUT');
+
+  // And the block must not have quietly cut the world in half.
+  assert.equal(findPath(real, 38, 374).found, true, 'ordinary routes are unaffected');
 }
 
 console.log(`routing: danger-avoidant path assertions passed (${roomDanger().size} rooms rated)`);

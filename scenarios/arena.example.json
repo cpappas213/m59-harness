@@ -1,0 +1,67 @@
+{
+  "_": [
+    "A worked tools/m59-testbed.mjs scenario: one kitted-out test character and five",
+    "opponents, all standing in The Arena of Kraanan (room 60).",
+    "",
+    "  node tools/m59-testbed.mjs plan  scenarios/arena.example.json",
+    "  node tools/m59-testbed.mjs up    scenarios/arena.json",
+    "  node tools/m59-testbed.mjs reset scenarios/arena.json",
+    "",
+    "COPY THIS TO scenarios/arena.json AND PUT REAL PASSWORDS IN THAT COPY. The ones",
+    "here are placeholders and match no account anywhere; a real scenario is a",
+    "credential store and is gitignored for the same reason a roster is.",
+    "",
+    "The arena is a deliberate choice of room and it has a rule worth knowing: the",
+    "Watcher pushes NON-COMBATANTS back out of the 6..20 playing field, so characters",
+    "placed inside it drift to the stands until somebody says CHAMPION and the rest",
+    "say CHALLENGE. On a server running on this machine the chatter will say the",
+    "second of those by itself when you call a bot by name — see arenaCall in",
+    "tools/m59-chatter.mjs."
+  ],
+
+  "fleet": "arena",
+  "server": { "host": "127.0.0.1", "port": 15959, "admin": 19998 },
+  "broker": { "http": 8931, "dashboard": 8932 },
+
+  "characters": [
+    {
+      "agent": "t0",
+      "account": "t0",
+      "password": "REPLACE-ME",
+      "name": "TESTER",
+      "roll": "balanced",
+      "kit": {
+        "stats": 50,
+        "health": 151,
+        "mana": 200,
+        "vigor": 200,
+        "karma": -60,
+        "skills": 99,
+        "spells": 99,
+        "money": 1000000,
+        "reagents": 50
+      },
+      "place": { "room": 60, "at": [13, 8] }
+    }
+  ],
+
+  "squads": [
+    {
+      "count": 5,
+      "agent": "arena{n}",
+      "account": "arena{n}",
+      "password": "REPLACE-ME-{n}",
+      "name": "{word}",
+      "roll": "melee",
+      "kit": { "stats": 50, "health": 50, "skills": 50 },
+      "place": { "room": 60, "at": [13, 16] },
+      "keeper": {
+        "mode": "survive",
+        "roam": false,
+        "use_safe_spots": false,
+        "assigned_room": 60,
+        "break_out_via_logoff": false
+      }
+    }
+  ]
+}

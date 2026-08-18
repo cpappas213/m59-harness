@@ -1,0 +1,310 @@
+#!/usr/bin/env node
+// m59-worldstate.mjs -- THE CLOSED VOCABULARY A PLAN IS WRITTEN IN.
+//
+// GOAP is fast because the state is small. F.E.A.R. planned over a couple dozen
+// symbols packed into a fixed struct and replanned continuously in microseconds;
+// the search is cheap exactly as long as the vocabulary is finite and shared.
+//
+// Ours was neither. Symbols were invented per module as they were needed --
+// `vigor_ok`, `loot_sold`, `gear_ok`, `armed`, `safe_spot_taken`, `at_mausoleum`,
+// `at_room_<n>` -- with no registry, so nothing could check that an action's
+// precondition was a fact any other action produced. A plan could be unsatisfiable
+// for the dullest possible reason, a typo, and the planner would report only that
+// it found no plan.
+//
+// That failure has a precedent here worth naming: `policy.purpose` was absent from
+// the autopilot tool's schema for a year, so every keeper ran with `purpose: null`
+// and the yield audit -- the check that says a character is killing things worth
+// nothing -- silently never ran. A name nothing validates is a name that can be
+// wrong for ever.
+//
+// So: one registry, one producer per symbol, and an unknown answer that fails in
+// the safe direction rather than the convenient one.
+//
+// ── THE THREE RULES ─────────────────────────────────────────────────────────
+//
+//   1. CLOSED SET. An atomic declaring a `pre` or `effect` outside SYMBOLS is a
+//      test failure (see validate()). Not a runtime surprise, not a silent no-op.
+//
+//   2. ONE PRODUCER EACH. Every symbol is computed in exactly one place, here,
+//      from client/party/policy state. A quantity with two homes in this
+//      repository has always ended up with two answers -- the engagement ceiling
+//      had four copies, and the second answer to that one is a dead character.
+//
+//   3. UNKNOWN FAILS SAFE, PER SYMBOL. There is no single safe default, because
+//      the safe direction depends on the question. `armed` unknown must read TRUE
+//      (a failed inventory read must not stop the fleet fighting); `target_in_band`
+//      unknown must read FALSE (a ceiling that defaults open is the one that kills
+//      somebody). Each symbol states its own, with the reason.
+//
+// Offline, pure, no I/O: every producer reads state the server has already PUSHED
+// (health, stats and the use list all arrive unasked), so evaluating the whole
+// vocabulary is a handful of cache reads and can happen every tick.
+
+import * as skills from './m59-skills.mjs';
+import * as party  from './m59-party.mjs';
+import { REST_VIGOR_CAP, MIN_FIGHT_VIGOR } from './m59-localpolicy.mjs';
+
+// Melee reach is a disc on SQUARE coordinates -- both sides run
+// `SquaredDistanceTo <= GetAttackRange^2` where range is Bound(2 + difficulty/6, 2, 3)
+// for a monster (monster.kod:1682) and 2-3 by weapon type for us (weapon.kod:52).
+// Fine coordinates are read by nothing but the drawing code (MonsterOrient,
+// monster.kod:2189), so there is nothing finer than a square to stand on.
+export const MELEE_REACH = 3;
+
+// `create food`, the spell this fleet lives on. The wire carries no per-spell cost,
+// so this is a floor for "could cast something ordinary" rather than a price.
+export const MIN_CAST_MANA = 10;
+
+export const FOOD_RE = /\bsnack\b|\bfood\b|\bpastry\b|\bpie\b|\bbread\b|\bmeat\b|\bmushroom\b|\bapple\b/i;
+
+const frac = (v) => (v?.max ? v.value / v.max : null);
+
+// `create food` costs 2 elderberry AND 2 herbs, so what a character can actually
+// cast is min(elder, herb)/2 and the FLEET TOTAL cannot say so: measured once at
+// 61 elderberry and 160 herbs across twenty-one characters, of whom twenty could
+// cast zero times, because the herb-rich were standing next to the elderberry-rich.
+// Always the per-character minimum, never the sum.
+function reagentPairs(c) {
+  let elder = 0, herbs = 0;
+  for (const o of c?.inventory ?? []) {
+    const n = String(o.name ?? c.rsc?.get?.(o.nameRsc) ?? '').toLowerCase();
+    const amt = o.amount ?? 1;
+    if (/\belderberry\b/.test(n)) elder += amt;
+    if (/\bherbs?\b/.test(n))     herbs += amt;
+  }
+  return Math.min(elder, herbs);
+}
+
+/**
+ * ctx: { client, session, policy, agent }
+ * Every producer returns true | false | null, where null means "cannot tell" and
+ * is resolved by that symbol's own `whenUnknown`.
+ */
+export const SYMBOLS = {
+  // ── body ──────────────────────────────────────────────────────────────────
+  armed: {
+    describe: 'a weapon is in the server\'s use list',
+    whenUnknown: true,
+    why_unknown: 'a failed read must not idle the fleet; the guard catches the empty ' +
+                 'hand, it is not a new way to stop',
+    produce: ({ client }) => (client ? skills.isArmed(client) : null),
+  },
+
+  healthy: {
+    describe: 'at or above the health we would START a fight at',
+    whenUnknown: false,
+    why_unknown: 'opening a fight on an unreadable health bar is the one that kills',
+    produce: ({ client, policy }) => {
+      const f = frac(client?.vitals?.()?.health);
+      if (f == null) return null;
+      return f >= (policy?.engageAt ?? policy?.restBelow ?? 0.75);
+    },
+  },
+
+  hurt: {
+    describe: 'below restBelow — should be recovering rather than working',
+    whenUnknown: true,
+    why_unknown: 'treating an unreadable bar as hurt costs a rest; the other way costs a death',
+    produce: ({ client, policy }) => {
+      const f = frac(client?.vitals?.()?.health);
+      if (f == null) return null;
+      return f < (policy?.restBelow ?? 0.7);
+    },
+  },
+
+  vigor_ok: {
+    describe: 'vigor is high enough to start a fight',
+    whenUnknown: true,
+    why_unknown: 'same as armed: a failed read must not park a healthy character',
+    produce: ({ client, policy }) => {
+      const v = client?.vitals?.()?.vigor?.value;
+      if (v == null) return null;
+      // MIN_FIGHT_VIGOR (100) sits ABOVE REST_VIGOR_CAP (80) on purpose: resting
+      // stops awarding vigor at 80 of 200, so everything above it has to be EATEN.
+      // The two are not the ends of a quiet middle band and no setting clears both.
+      return v >= (policy?.fightAboveVigor ?? MIN_FIGHT_VIGOR);
+    },
+  },
+
+  can_rest_higher: {
+    describe: 'resting could still raise vigor — i.e. we are under the resting cap',
+    whenUnknown: false,
+    why_unknown: 'if we cannot tell, do not sit down expecting a gain that cannot come',
+    produce: ({ client }) => {
+      const v = client?.vitals?.()?.vigor?.value;
+      return v == null ? null : v < REST_VIGOR_CAP;
+    },
+  },
+
+  // ── pack and supply ───────────────────────────────────────────────────────
+  has_reagents: {
+    describe: 'at least one casting of create food (2 elderberry AND 2 herbs)',
+    whenUnknown: false,
+    why_unknown: 'planning a cast we cannot pay for wastes the pass and the walk',
+    produce: ({ client }) => (client?.inventory ? reagentPairs(client) >= 2 : null),
+  },
+
+  has_mana: {
+    describe: 'mana enough for an ordinary spell',
+    whenUnknown: false,
+    why_unknown: 'planning a cast we cannot pay for wastes the pass and the walk',
+    produce: ({ client, policy }) => {
+      const m = client?.vitals?.()?.mana?.value;
+      if (m == null) return null;
+      // THE WIRE DOES NOT CARRY A PER-SPELL COST, so this is a floor rather than a
+      // price. 10 is `create food`, the spell this fleet actually lives on. A
+      // planner wanting a specific spell grounds its own cost (see groundedCast).
+      //
+      // And note the ceiling is not stored either: piMax_Mana is declared at 20 and
+      // ComputeMaxMana (player.kod:6116) THROWS IT AWAY and rebuilds it from
+      // 15 + mysticism/5 plus nodes, worn items and enchantments, on login and on
+      // every equipment change. So a character set to 200 reads 200 until it relogs
+      // and comes back at 25 -- never cache a max mana.
+      return m >= (policy?.minCastMana ?? MIN_CAST_MANA);
+    },
+  },
+
+  has_food: {
+    describe: 'something edible in the pack',
+    whenUnknown: false,
+    why_unknown: 'believing in food we cannot see sends a character to fight hungry',
+    produce: ({ client }) => {
+      if (!client?.inventory) return null;
+      return client.inventory.some(o =>
+        FOOD_RE.test(String(o.name ?? client.rsc?.get?.(o.nameRsc) ?? '')));
+    },
+  },
+
+  pack_room: {
+    describe: 'room for one more ordinary item',
+    whenUnknown: true,
+    why_unknown: 'refusing to loot on an unread pack is a silent, permanent no',
+    produce: ({ client }) => {
+      if (!client?.inventory) return null;
+      // A pack is limited by weight AND bulk and is full when EITHER is reached
+      // (holder.kod:259 -> :281), so fullness is the WORSE of the two fractions.
+      // There is no stack-count limit; a character that cannot receive is nearly
+      // always simply full, and the fix is shedding the heaviest stacks.
+      try { return skills.wouldFit(client, 1, 1); } catch { return null; }
+    },
+  },
+
+  // ── target ────────────────────────────────────────────────────────────────
+  has_target: {
+    describe: 'a target is selected and still present in room contents',
+    whenUnknown: false,
+    why_unknown: 'no evidence of a target is not a target',
+    produce: ({ client, ws }) => {
+      const id = ws?._targetId;
+      if (id == null) return false;
+      return !!client?.room?.objects?.has?.(id);
+    },
+  },
+
+  in_reach: {
+    describe: 'the selected target is inside melee reach',
+    whenUnknown: false,
+    why_unknown: 'swinging at nothing is free for the server and costs us the round',
+    produce: ({ client, ws }) => {
+      const id = ws?._targetId;
+      const me = client?.self;
+      const t  = id == null ? null : client?.room?.objects?.get?.(id);
+      if (!me || !t || t.col == null || me.col == null) return null;
+      // SQUARED distance on square coordinates -- the server's own test.
+      const d2 = (t.col - me.col) ** 2 + (t.row - me.row) ** 2;
+      return d2 <= MELEE_REACH ** 2;
+    },
+  },
+
+  target_in_band: {
+    describe: 'the target is at or under the engagement ceiling',
+    whenUnknown: false,
+    why_unknown: 'A CEILING THAT DEFAULTS OPEN IS THE ONE THAT KILLS SOMEBODY. ' +
+                 'threatCeiling() returns null on unknown max health and every caller ' +
+                 'reads null as refuse; this is that rule, in the vocabulary',
+    produce: ({ ws }) => (ws?._targetLevel == null || ws?._threatCeiling == null
+      ? null : ws._targetLevel <= ws._threatCeiling),
+  },
+
+  // ── party ─────────────────────────────────────────────────────────────────
+  mate_present: {
+    describe: 'our partner is in this room',
+    whenUnknown: false,
+    why_unknown: 'two characters in different rooms are not a party, they are two solo ones',
+    produce: ({ agent, client }) => (agent
+      ? party.together(agent, client?.room?.num ?? null) : null),
+  },
+
+  mate_hurt: {
+    describe: 'our partner is below the heal threshold',
+    whenUnknown: false,
+    why_unknown: 'healing on no evidence spends reagents and a round for nothing',
+    produce: ({ agent, policy }) => {
+      if (!agent) return null;
+      const m = party.mateOf(agent);
+      if (!m || m.health == null || m.max_health == null) return null;
+      return (m.health / m.max_health) < (policy?.partyHealBelow ?? 0.5);
+    },
+  },
+};
+
+export const SYMBOL_NAMES = Object.freeze(Object.keys(SYMBOLS));
+
+// ---------------------------------------------------------------------------
+// evaluate(ctx) -> { symbol: boolean }
+//
+// Every symbol, resolved. A producer that throws is treated exactly as "cannot
+// tell" -- a broken producer must not be able to take a keeper down, and it must
+// not be able to quietly flip a symbol to the convenient answer either.
+// ---------------------------------------------------------------------------
+export function evaluate(ctx = {}) {
+  const out = {};
+  for (const [name, sym] of Object.entries(SYMBOLS)) {
+    let v = null;
+    try { v = sym.produce(ctx); } catch { v = null; }
+    out[name] = v == null ? sym.whenUnknown : !!v;
+  }
+  return out;
+}
+
+// Which symbols could not be answered from this context, and what each fell back
+// to. The board should be able to show this: a plan built entirely on fallbacks is
+// a plan built on no evidence, and it currently looks identical to a confident one.
+export function unknowns(ctx = {}) {
+  const out = [];
+  for (const [name, sym] of Object.entries(SYMBOLS)) {
+    let v = null;
+    try { v = sym.produce(ctx); } catch { v = null; }
+    if (v == null) out.push({ symbol: name, assumed: sym.whenUnknown, why: sym.why_unknown });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// validate(action) -> string[]
+//
+// The closed-set rule, enforced. `pre` and `effects` may name a symbol or its
+// negation (`!armed`). Anything else is reported by name -- an unrecognised key is
+// never applied and never dropped, because a setting that silently does nothing is
+// how `purpose` stayed out of a schema for a year.
+// ---------------------------------------------------------------------------
+export function validate(action) {
+  const problems = [];
+  const check = (list, where) => {
+    for (const raw of list ?? []) {
+      const name = String(raw).replace(/^!/, '');
+      if (!SYMBOLS[name])
+        problems.push(`${action?.name ?? 'action'}.${where} names "${raw}", which is not a ` +
+                      `world-state symbol (known: ${SYMBOL_NAMES.join(', ')})`);
+    }
+  };
+  check(action?.pre, 'pre');
+  check(action?.effects, 'effects');
+  return problems;
+}
+
+// Every action in a set, checked at once -- what a conformance test calls.
+export function validateAll(actions = []) {
+  return actions.flatMap(a => validate(a));
+}

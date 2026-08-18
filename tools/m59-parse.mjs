@@ -61,6 +61,50 @@ export const OF = {
   GUILDMATE:     0x08000000,
 };
 
+// WHAT THE RED NAME IS, AND WHY IT IS NOT A BITMASK.
+//
+// The client colours a player's name from nothing but its object flags —
+// `GetPlayerNameColor(obj->flags)` (clientd3d/color.c:619), red for a killer and orange
+// for an outlaw. So "that one is a murderer" is already on the wire in every room
+// description we receive; this repository simply never read it.
+//
+// THESE ARE AN ENUMERATED FIELD INSIDE `PLAYER_MASK`, NOT INDEPENDENT BITS, and the
+// difference is not academic: PF.DM is 0xC000, which is exactly `KILLER | OUTLAW`. So
+// `flags & PF.KILLER` is TRUE for every Dungeon Master on the server, and a fleet that
+// tested it that way would open fire on staff. The client does not make that mistake —
+// it `switch`es on the masked value — and neither does `playerClass` below.
+//
+// The server enforces the same distinction it draws here, which is what makes any of
+// this safe: see `Player.CheckStatusAndSafety` (player.kod:3767), whose own docstring is
+// "PFLAG_SAFETY prevents accidental attacks. You can always successfully hit a murderer
+// or outlaw, though."
+export const PF = {
+  NORMAL:    0x00000000,
+  KILLER:    0x00004000,   // red name — has murdered someone
+  OUTLAW:    0x00008000,   // orange name — attacked an innocent
+  DM:        0x0000C000,   // NOT killer|outlaw, however much it looks like it
+  CREATOR:   0x00010000,
+  SUPER:     0x00014000,
+  EVENTCHAR: 0x0001C000,
+};
+
+const PF_NAME = Object.fromEntries(Object.entries(PF).map(([k, v]) => [v, k.toLowerCase()]));
+
+// The masked field, as the client reads it. Equality, never a bit test.
+export const playerClass = flags => (flags & OF.PLAYER_MASK) >>> 0;
+export const playerClassName = flags => PF_NAME[playerClass(flags)] ?? 'unknown';
+export const isKiller = flags => playerClass(flags) === PF.KILLER;
+export const isOutlaw = flags => playerClass(flags) === PF.OUTLAW;
+
+// THE ONE PREDICATE ANYTHING DEFENSIVE SHOULD ASK. Killer or outlaw and nothing else —
+// a DM, a creator, an event character and an ordinary player are all "not a valid target
+// for self-defence", and they must not be reachable by widening this by one bit.
+//
+// It takes the WHOLE flags word rather than a class so that the OF.PLAYER test cannot be
+// forgotten by a caller: a monster's flags can carry anything in these bits.
+export const flaggedAggressor = flags =>
+  !!(flags & OF.PLAYER) && (isKiller(flags) || isOutlaw(flags));
+
 // The low two bits of the flags say what happens when you walk ONTO the object
 // (include/proto.h:415). TELEPORTER is the one that matters: it is how the game
 // marks a portal, and it is the only signal a client gets — a portal's name is just
@@ -389,7 +433,8 @@ export function parseChangeResource(body) {
 
 // BP_PLAYER (130) — HandlePlayer. Our own object, and the room we are in.
 // From kod's ToCliPlayer (user.kod:2466): self, icon, name, room, room resource,
-// room name, security, then light bytes and background.
+// room name, security, then light/background and the runtime room-geometry controls
+// consumed by HandlePlayer. Depth overrides are KOD heights on the wire.
 export function parsePlayer(body) {
   const r = new Reader(body);
   const id = objId(r.u32());
@@ -402,9 +447,12 @@ export function parsePlayer(body) {
   const roomLight = r.left ? r.u8() : 0;
   const playerLight = r.left ? r.u8() : 0;
   const backgroundRsc = r.left >= 4 ? r.u32() : 0;
-  // The rest is @SendExtraRoomInfo, which is room geometry detail we do not need.
+  const wadingSoundRsc = r.u32();
+  const roomFlags = r.u32();
+  const overrideDepths = [0, r.i32() << 4, r.i32() << 4, r.i32() << 4];
   return { id, iconRsc, nameRsc, roomId, roomRsc, roomNameRsc, security,
-           roomLight, playerLight, backgroundRsc, leftover: r.left, exact: true };
+           roomLight, playerLight, backgroundRsc, wadingSoundRsc, roomFlags,
+           overrideDepths, leftover: r.left, exact: r.left === 0 };
 }
 
 // BP_BUY_LIST (216) — HandleBuyList, server.c:770. A seller, then a

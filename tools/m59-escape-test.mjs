@@ -32,7 +32,8 @@ function underworld({ resting = false, deaf = false, portals = [], unwalkable = 
   portals.forEach((p, i) => {
     const id = i + 1;
     names.set(id, p.name);
-    objects.set(id, { id, flags: MOVEON.TELEPORTER, col: p.col, row: p.row, nameRsc: id });
+    objects.set(id, { id, flags: MOVEON.TELEPORTER, col: p.col, row: p.row,
+      x: p.x ?? p.col * 64 + 32, y: p.y ?? p.row * 64 + 32, nameRsc: id });
   });
   // Each portal may carry its own sign and its own destination, which is what makes the
   // five fixed ones tellable apart at all. The defaults keep the older cases below
@@ -95,11 +96,22 @@ function underworld({ resting = false, deaf = false, portals = [], unwalkable = 
       if (c.self.col === col && c.self.row === row) return { arrived: true, position: { col, row } };
       return { arrived: false, reason: 'blocked — every heading refused, at every reach tried' };
     },
+    async step(col, row) {
+      const wasIn = c.room.id, before = c.self && { col: c.self.col, row: c.self.row };
+      step(col, row);
+      const moved = c.room.id !== wasIn || !!(c.self && before &&
+        (c.self.col !== before.col || c.self.row !== before.row));
+      return { moved, left_room: c.room.id !== wasIn,
+               position: c.self && { col: c.self.col, row: c.self.row } };
+    },
+    async stepFine(x, y) {
+      return this.step(Math.floor(x / 64), Math.floor(y / 64));
+    },
   };
   return { s, log };
 }
 
-import { boundedSilentGo, retrySilentGo, spreadEdges } from './m59-world.mjs';
+import { boundedSilentGo, doorSettleMs, remainingDoorSettle, retrySilentGo, spreadEdges } from './m59-world.mjs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -390,6 +402,13 @@ function safeSpot({ resting = false, deaf = false, hits = 3 } = {}) {
 
 console.log('\na silent go request gets one bounded retry');
 {
+  ok('door requests settle for half a second by default', doorSettleMs() === 500);
+  ok('the door settle delay can be configured', doorSettleMs('650') === 650);
+  ok('invalid door settle configuration keeps the safe default', doorSettleMs('nope') === 500);
+  ok('only the unelapsed part of the movement-to-door gap is waited',
+     remainingDoorSettle({ lastMovementAt: 1000, now: 1300, settleMs: 500 }) === 200);
+  ok('an already elapsed movement-to-door gap adds no delay',
+     remainingDoorSettle({ lastMovementAt: 1000, now: 1700, settleMs: 500 }) === 0);
   ok('the first silent request is retried',
      retrySilentGo({ attempt: 1, entered: false, messages: [] }) === true);
   ok('silence after the second request is final',

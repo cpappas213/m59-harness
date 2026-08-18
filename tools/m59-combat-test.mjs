@@ -20,11 +20,12 @@
 
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import {
-  isJunk, JUNK_NAMES, proficiencyFor, weaponRanking, equipBest, junkAndBroken,
+  isJunk, JUNK_NAMES, isCursed, proficiencyFor, weaponRanking, equipBest, junkAndBroken,
+  weaponScore,
   brokenSet, brokenWeaponText, abilityOf, equippedNow, inspectForBroken, carryCapacity, freeRoomFor, wouldFit, signetRings, returnSignetRings,
   signetPayout, signetOwnerOf, SIGNET_OWNERS,
   parseDeathBroadcast, deathBroadcastFor,
-  landedHitSummary,
+  landedHitSummary, isArmed,
 } from './m59-skills.mjs';
 import { Autopilot, bearingIn, DEBUG_STATES, belowRoomRetreatHealth,
          rankQuarries, claimQuarry, releaseQuarry,
@@ -59,6 +60,26 @@ console.log('\nprovisioning without long post-floor stalls');
      shouldWaitForProvision({ vigor: 131, floor: 100, wait: 45, hurt: false }));
   ok('waits above the floor when digestion time also heals damage',
      shouldWaitForProvision({ vigor: 131, floor: 100, wait: 127, hurt: true }));
+}
+
+console.log('\nterminal local-collision state is not ordinary keeper retry work');
+{
+  const keeper = Object.assign(Object.create(Autopilot.prototype), {
+    stalledSince: null, stalledWhy: null, journal: [], passes: 7,
+  });
+  const ordinary = keeper.terminalMovement({ reason: 'geometry_blocked' }, 'test movement');
+  const terminal = keeper.terminalMovement({
+    reason: 'collision_geometry_changed', note: 'a live wall changed',
+  }, 'test movement', { room: 'fixture' });
+  ok('keeper leaves ordinary geometry blocks to route tactics',
+     ordinary === null && keeper.journal.length === 1);
+  ok('keeper surfaces terminal collision state without consuming route retries',
+     terminal?.terminal === true && terminal.reason === 'collision_geometry_changed' &&
+     keeper.stalledSince != null && keeper.stalledWhy ===
+       'test movement stopped: collision_geometry_changed' &&
+     keeper.journal[0]?.reason === 'collision_geometry_changed' &&
+     keeper.journal[0]?.room === 'fixture',
+     JSON.stringify({ terminal, stalledWhy: keeper.stalledWhy, journal: keeper.journal }));
 }
 
 console.log('\nimpossible self-arm recovery');
@@ -1416,20 +1437,20 @@ console.log('\nrefusing to hunt with nothing in hand');
     k.s = { client: { equipment: () => ({ known, equipped }), rsc: { get: () => '' } } };
     return k;
   };
-  ok('a wielded mace counts as armed', keeper([{ name: 'mace' }]).armed() === true);
-  ok('an empty use list is NOT armed', keeper([]).armed() === false);
+  ok('a wielded mace counts as armed', isArmed({ equipment: () => ({ known: true, equipped: [{ name: 'mace' }] }), rsc: { get: () => '' } }) === true);
+  ok('an empty use list is NOT armed', isArmed({ equipment: () => ({ known: true, equipped: [] }), rsc: { get: () => '' } }) === false);
   ok('armour alone is not a weapon',
-     keeper([{ name: 'leather armor' }, { name: 'shield' }]).armed() === false);
+     isArmed({ equipment: () => ({ known: true, equipped: [{ name: 'leather armor' }, { name: 'shield' }] }), rsc: { get: () => '' } }) === false);
   ok('a weapon among the armour still counts',
-     keeper([{ name: 'leather armor' }, { name: 'short sword' }]).armed() === true);
+     isArmed({ equipment: () => ({ known: true, equipped: [{ name: 'leather armor' }, { name: 'short sword' }] }), rsc: { get: () => '' } }) === true);
   // Junk that merely looks like a weapon must not satisfy the check -- "broken mace" is
   // a real junk item, and weaponScore already excludes it.
   ok('a junk "broken mace" does not count as armed',
-     keeper([{ name: 'broken mace' }]).armed() === false);
+     isArmed({ equipment: () => ({ known: true, equipped: [{ name: 'broken mace' }] }), rsc: { get: () => '' } }) === false);
   // A read we could not make must not idle the fleet: unknown is treated as armed, so
   // the guard catches empty hands rather than becoming a new way to stop.
   ok('an unreadable use list is treated as armed, not as unarmed',
-     keeper([], false).armed() === true);
+     isArmed({ equipment: () => ({ known: false, equipped: [] }), rsc: { get: () => '' } }) === true);
 }
 
 
@@ -2122,6 +2143,42 @@ console.log('\nan unreachable vigor floor stops applying');
   const noGoals = mk({ purpose: 'advance', goals: [] }).yieldCheck();
   ok('advance with no goals still reports itself uncheckable',
      noGoals?.paying === false && /no goals are set/.test(noGoals?.why ?? ''), noGoals?.why);
+}
+
+// --- A CURSED WEAPON MUST NEVER BE WIELDED -----------------------------------------
+//
+// The only irreversible mistake available to this code. `WeapAttCursed.ItemReqUnuse`
+// (wacursed.kod:97) returns FALSE unconditionally — "seems to cling to your hand!" — and
+// ItemReqLeaveOwner refuses the drop while it is in the use list. So wielding one is
+// permanent: no swap, no sale, no handover, for the life of the character. And it is a
+// downgrade, not a trade-off: ModifyDamage and ModifyHitRoll both return `x - 2*power`.
+//
+// It is 10% of the item-attribute treasure table and this fleet loots weapons from every
+// kill, so this is a live hazard rather than a curiosity.
+{
+  ok('a cursed weapon is recognised by name', isCursed('cursed long sword'));
+  ok('an ordinary one is not', !isCursed('long sword'));
+  ok('"cursed" as a substring of nothing else', !isCursed('mace'));
+
+  // IT STILL SCORES AS A WEAPON, and that is deliberate rather than an oversight: scoring
+  // it zero would tell `sellable` and the equipment plan it is not a weapon at all, and
+  // SELLING it is exactly what should happen to it. Unwieldable, not invisible.
+  ok('still scores as a weapon so the sell rules can shed it',
+     weaponScore('cursed long sword') > 0);
+
+  const rsc = { 1: 'cursed long sword', 2: 'mace' };
+  const c = { inventory: [{ id: 1, nameRsc: 1 }, { id: 2, nameRsc: 2 }],
+              rsc: { get: (k) => rsc[k] }, statsById: new Map(), abilityOf: () => null };
+  const ranked = weaponRanking(c, { priority: ['mace'] }).map(x => x.name);
+  ok('it is not offered as something to wield', !ranked.includes('cursed long sword'));
+  ok('and the clean weapon still is', ranked.includes('mace'));
+
+  // The dangerous direction: a pack holding ONLY a cursed weapon must come back empty
+  // rather than falling back to it. Fighting bare-handed is recoverable; this is not.
+  const only = { inventory: [{ id: 1, nameRsc: 1 }], rsc: { get: (k) => rsc[k] },
+                 statsById: new Map(), abilityOf: () => null };
+  ok('a pack of nothing but cursed weapons ranks nothing at all',
+     weaponRanking(only, {}).length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

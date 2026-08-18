@@ -8,6 +8,8 @@
 //   node tools/setup.mjs fleet 10      create ten characters
 //   node tools/setup.mjs rsc           copy the resource table out of the container
 //   node tools/setup.mjs shortcuts     one click-to-play shortcut per character
+//   node tools/setup.mjs routes        bake the routing table the mover agrees with (~13 min)
+//   node tools/setup.mjs webui         install the browser command surface (its own repo)
 //   node tools/setup.mjs all 10        all of the above, in order
 //   node tools/setup.mjs shutdown      checkpoint the world, then stop everything
 //
@@ -26,7 +28,7 @@
 // tools/m59-client.mjs; no Meridian.exe is involved. You need the Steam client
 // to *watch* the fleet with your own eyes, and for the compendium's sprites.
 
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,11 +37,15 @@ import net from 'node:net';
 // `doctor` and the shortcut writer can never disagree about where the client is.
 import { findClient, findClientExe, roster, writeShortcuts, report, SHORTCUT_DIR }
   from './m59-shortcuts.mjs';
+import * as webui from './m59-webui.mjs';
 import { loadResources } from './m59-rsc.mjs';
+import { loadMap, movementMapReadiness } from './m59-map.mjs';
+import { LOCAL_MAP_FILE, movementMapFile } from './m59-map-path.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
 const WIN = process.platform === 'win32';
+const LOCAL_MAP = LOCAL_MAP_FILE;
 
 // Upstream is the default because it is the plainest thing that works. The Deck
 // fork (github.com/tpeppers/Meridian59-deck) builds and runs here too and adds
@@ -75,6 +81,33 @@ function run(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, { stdio: 'inherit', ...opts });
   if (r.error) { console.error(`  cannot run ${cmd}: ${r.error.message}`); return false; }
   return r.status === 0;
+}
+
+function ensureLocalGeometry(src, { force = false } = {}) {
+  if (!src) return false;
+  if (!force && movementMapStatus(LOCAL_MAP)?.ok) return true;
+  console.log('\nbaking collision geometry from the exact server room resources...');
+  const roomDir = join(src, 'resource', 'rooms');
+  const ok = run(process.execPath, [join(HERE, 'm59-map.mjs'), 'refresh-geometry'], {
+    cwd: REPO,
+    // An explicit room directory is exclusive during refresh. Never fill a missing
+    // server room from an unrelated Steam/client install and mislabel the result.
+    env: { ...process.env, M59_ROOT: src, M59_ROO_DIR: roomDir, M59_MAP: LOCAL_MAP },
+  });
+  if (!ok) console.error(c.bad('could not build a server-matched collision map; broker movement will not start'));
+  if (!ok) return false;
+  const ready = movementMapStatus(LOCAL_MAP);
+  if (!ready?.ok) {
+    console.error(c.bad(`the generated collision map validated only ${ready?.ready ?? 0}/` +
+      `${ready?.total ?? 0} rooms; broker movement will not start`));
+    return false;
+  }
+  return true;
+}
+
+function movementMapStatus(file = movementMapFile()) {
+  try { return movementMapReadiness(loadMap(file)); }
+  catch { return null; }
 }
 
 // Is the daemon actually up? `docker info` talks to it; `docker --version` does not.
@@ -180,6 +213,13 @@ async function doctor() {
   const src = findServerSrc();
   add('server source', src, `node tools/setup.mjs server  (clones one)`);
 
+  const mapFile = movementMapFile();
+  const mapStatus = movementMapStatus(mapFile);
+  add('collision map', mapStatus?.ok
+    ? `${mapStatus.ready}/${mapStatus.total} rooms (${mapFile === LOCAL_MAP ? 'server-local' : 'reference'})`
+    : null,
+  'node tools/setup.mjs server  (or set M59_MAP to an exact, validated map)');
+
   const client = findClient();
   add('steam client', client, `node tools/setup.mjs client  (finds or explains)`);
 
@@ -202,6 +242,34 @@ async function doctor() {
     catch { /* never written */ }
     add('client shortcuts', made ? `${made} of ${chars}` : null, 'node tools/setup.mjs shortcuts');
   }
+
+  // REPORTED BECAUSE ITS ABSENCE IS SILENT AND EXPENSIVE. Without a routing table the
+  // broker plans on the server's coarse grid while the mover enforces the client's BSP,
+  // and the fleet walks into walls — not with an error, but by sliding along one,
+  // replanning into it, and giving up. `attachStepMasks` says the same thing at broker
+  // start; this says it before anybody has started one.
+  let routes = null;
+  try {
+    const { readFileSync } = await import('node:fs');
+    const { movementMapFile } = await import('./m59-map-path.mjs');
+    const { loadMap } = await import('./m59-map.mjs');
+    const { ROUTES_FILE } = await import('./m59-routebake.mjs');
+    const table = JSON.parse(readFileSync(ROUTES_FILE(), 'utf8'));
+    const rooms = Object.values(table.rooms ?? {});
+    // COUNT THE MASKS, NOT THE ROOMS. The payload is the step mask; the routes and region
+    // labels beside it are useful and change nothing. A table baked before masks existed
+    // has all 264 rooms in it, matches the manifest, and leaves the broker planning on the
+    // coarse grid — so counting rooms reported a green tick over exactly the failure this
+    // line exists to catch.
+    const masked = rooms.filter(r => typeof r?.stepMask === 'string').length;
+    const manifest = loadMap(movementMapFile()).geometryManifestSha256 ?? null;
+    const current = table.geometryManifestSha256 && manifest
+      && table.geometryManifestSha256 === manifest;
+    routes = current && masked
+      ? `${masked} rooms` + (table.complete === false ? ', INCOMPLETE' : '')
+      : null;
+  } catch { routes = null; }
+  add('routing table', routes, 'node tools/setup.mjs routes');
 
   const game = await portOpen(5959);
   add('server :5959', game ? 'listening' : null, 'node tools/setup.mjs server');
@@ -254,6 +322,11 @@ async function server() {
     return 1;
   }
   console.log(`server source: ${src}`);
+
+  // The broker must collide against the same .roo revisions the server announces.
+  // A checked snapshot inevitably drifts as upstream source changes, so generate a
+  // local, gitignored artifact before building this source tree.
+  if (!ensureLocalGeometry(src, { force: true })) return 1;
 
   if (!dockerReady()) {
     if (have('docker')) {
@@ -339,24 +412,27 @@ async function broker() {
     console.error(c.bad('no server on 5959 — start it first: node tools/setup.mjs server'));
     return 1;
   }
-  console.log('starting the broker (detached)...');
-  const out = join(REPO, 'substrate');
-  mkdirSync(out, { recursive: true });
-  const child = spawn(process.execPath,
-    [join(HERE, 'm59-broker.mjs'), '--http', '8901', '--dashboard', '8902'],
-    { detached: true, stdio: 'ignore', cwd: REPO });
-  child.unref();
-  for (let i = 0; i < 30; i++) {
-    if (await portOpen(8901)) {
-      console.log(c.ok('broker up: rpc 8901, dashboard http://127.0.0.1:8902/fleet'));
-      return 0;
-    }
-    await new Promise(r => setTimeout(r, 1000));
+  let movementMap = process.env.M59_MAP ? movementMapFile() : null;
+  if (!movementMap) {
+    const src = findServerSrc();
+    if (src) {
+      if (!ensureLocalGeometry(src)) return 1;
+      movementMap = LOCAL_MAP;
+    } else movementMap = movementMapFile();
   }
-  console.error(c.bad('the broker did not come up on 8901.'));
-  console.error('  run it in the foreground to see why:');
-  console.error('    node tools/m59-broker.mjs --http 8901 --dashboard 8902');
-  return 1;
+  const mapStatus = existsSync(movementMap) ? movementMapStatus(movementMap) : null;
+  if (!mapStatus?.ok) {
+    console.error(c.bad('no server-matched collision map is available.'));
+    console.error('  set M59_ROOT to the source tree used by this server, or M59_MAP to a map');
+    console.error('  baked from its exact room resources; unchecked movement is intentionally disabled.');
+    if (mapStatus) console.error(`  validation: ${mapStatus.ready}/${mapStatus.total} rooms; ` +
+      `manifest ${mapStatus.manifest_matches ? 'matches' : 'does not match'}`);
+    return 1;
+  }
+  console.log('starting the supervised broker...');
+  return run(process.execPath, [join(HERE, 'm59-service.mjs'), 'start'], {
+    cwd: REPO, env: { ...process.env, M59_MAP: movementMap },
+  }) ? 0 : 1;
 }
 
 // ------------------------------------------------------------------ fleet
@@ -433,14 +509,47 @@ const commands = {
   broker,
   fleet: () => fleet(n),
   rsc: async () => rsc(),
+  // THE ROUTER'S HALF OF THE COLLISION CONTRACT. About thirteen minutes, all CPU, no
+  // network and no server — it reads the baked map and writes a table of the steps the
+  // MOVER will actually make, so the router stops planning routes that end with a
+  // character sliding along a wall. `--resume` because a killed bake should cost a minute
+  // rather than the lot, and because rerunning it after `server` refreshes the map is then
+  // nearly free for the rooms that did not change.
+  //
+  // NEVER FATAL. Without the table the broker plans on the coarse grid exactly as it did
+  // before any of this existed, which is worse and is not a reason to fail a setup that
+  // has otherwise produced a working fleet.
+  routes: async () => {
+    const ok = run(process.execPath, [join(HERE, 'm59-routebake.mjs'), '--resume'], { cwd: REPO });
+    if (!ok) console.error(c.warn('the routing table did not bake; the broker will plan on ' +
+      'the coarse grid. Rerun with node tools/setup.mjs routes when you can.'));
+    return 0;
+  },
   shortcuts: async () => shortcuts({ desktop: process.argv.includes('--desktop') }),
+  // THE BROWSER COMMAND SURFACE, WHICH IS ITS OWN REPOSITORY AND MAY NOT BE HERE.
+  // `npm install` in maps/m59-strategy-game, once, so that m59-service.mjs can start it
+  // with the broker from then on. Absent is reported and is NOT a failure — the harness
+  // has to keep working for somebody who cloned it on its own.
+  webui: async () => {
+    const s = webui.state();
+    if (s.absent) { console.log(s.why); return 0; }
+    if (s.installed) { console.log(`field command already installed at ${s.dir}`); return 0; }
+    return webui.install().ok ? 0 : 1;
+  },
   all: async () => {
     let rc = await server(); if (rc) return rc;
     client();
     // Before the broker, so the first session it opens can already read names.
     rsc();
+    // Also before the broker, because the table is read once at startup: bake it after and
+    // the fleet spends its first session planning on the wrong map.
+    await commands.routes();
     rc = await broker(); if (rc) return rc;
     rc = await fleet(n); if (rc) return rc;
+    // After the fleet exists, so the first page it serves has characters on it. Never
+    // fatal: `all` has produced a working fleet by this point and a web page failing to
+    // install is not a reason to report that it did not.
+    await commands.webui();
     console.log('');
     return shortcuts();
   },
@@ -453,7 +562,7 @@ const commands = {
 if (!commands[cmd]) {
   console.error(`unknown command: ${cmd}`);
   console.error('usage: node tools/setup.mjs ' +
-                '[doctor|server|client|broker|fleet N|rsc|shortcuts|all N|shutdown]');
+                '[doctor|server|client|broker|fleet N|rsc|routes|shortcuts|webui|all N|shutdown]');
   process.exit(2);
 }
 process.exit(await commands[cmd]());

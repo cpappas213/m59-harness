@@ -35,8 +35,14 @@ function satisfies(ws, goal) {
   return true;
 }
 
+// A NEGATED PRECONDITION IS A REAL ONE. `!has_food` means "only when there is none",
+// and this used to look up ws['!has_food'] -- a key nothing ever sets, so it read
+// undefined, so any action guarded that way was permanently unplannable. It was
+// silent because relevantKeySet() already strips the "!" when collecting keys: the
+// state space was right and only the gate was wrong, so the planner explored
+// correctly and then refused every negated action it met, reporting "no plan".
 function preconditionsMet(ws, pre) {
-  return pre.every(k => !!ws[k]);
+  return pre.every(k => (k.startsWith('!') ? !ws[k.slice(1)] : !!ws[k]));
 }
 
 function relevantKeySet(actions, goal) {

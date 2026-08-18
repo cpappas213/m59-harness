@@ -7,7 +7,7 @@ Windows client, no admin socket, no GUI. Verified end to end: `LOGINOK` →
 This matters because it is the difference between a puppet and a player. A body
 driven over the admin socket has no session, bypasses the game's own rules, and
 can only be driven from loopback. A protocol client holds a genuine session: the
-server validates its movement, it perceives exactly what a player perceives, and
+the broker validates its movement like the official client, it perceives exactly what a player perceives, and
 it can connect from anywhere.
 
 ```bash

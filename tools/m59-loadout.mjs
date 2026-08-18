@@ -15,7 +15,7 @@
 // `keep` regex in makeRoom, REAGENT_TARGET in the keeper. Twenty-one characters, one
 // answer each. So a caster that needs forty herbs and a fighter that needs none are told
 // the same number, and the only way to change it for one character is to edit a tool and
-// restart the broker -- which logs out the fleet.
+// restart the broker — which logs out the fleet.
 //
 // A loadout is that answer per character, in a file, edited in the compendium's planner
 // and read by the keeper. It is the same shape whichever end wrote it.
@@ -25,7 +25,7 @@
 // elderberry" must not cause a character to start selling its armour, because everything
 // that used to protect the armour is still there and this only adds to it. Every helper
 // below is written so that an EMPTY loadout produces exactly the behaviour that existed
-// before loadouts did -- which is also why `null` is a real answer everywhere and not a
+// before loadouts did — which is also why `null` is a real answer everywhere and not a
 // reason to substitute a default.
 //
 // NAMES ARE EXACT BY DEFAULT, AND THAT IS DELIBERATE. This repository has already paid
@@ -33,7 +33,7 @@
 // "broken mace" so every character hauled its shattered weapons around for ever, and a
 // junk list containing "mushroom" would have sold the edible ones, which are food. So an
 // entry matches the display name the server sends, exactly, unless it asks for something
-// looser -- and asking is a decision somebody makes on purpose.
+// looser — and asking is a decision somebody makes on purpose.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -57,7 +57,7 @@ export const norm = (s) => String(s ?? '').toLowerCase().replace(/\s+/g, ' ').tr
 // The planner posts a character name over a socket, and the socket is on loopback but the
 // name still lands on the filesystem. Everything outside the allowed set is dropped
 // rather than escaped, so there is no encoding to get wrong and no `..` to normalise
-// away -- a name that does not survive this is refused by the caller instead of being
+// away — a name that does not survive this is refused by the caller instead of being
 // quietly written somewhere else. Meridian character names are letters, and the fleet's
 // agent handles are letters and digits.
 export function slugOf(character) {
@@ -89,8 +89,8 @@ function loadPlannerData() {
 }
 export function catalogue() { loadPlannerData(); return CATALOGUE; }
 // WHICH SCHOOL AND WHICH LEVEL A SPELL IS. Not on the wire and not in a character sheet:
-// BP_SPELLS gives a name, a target count and a school, and the LEVEL -- the number the
-// whole learning cost is computed from -- is declared in kod and never sent.
+// BP_SPELLS gives a name, a target count and a school, and the LEVEL — the number the
+// whole learning cost is computed from — is declared in kod and never sent.
 export function spellbook() { loadPlannerData(); return SPELLBOOK; }
 export function learningConstants() { loadPlannerData(); return LEARNING; }
 
@@ -113,14 +113,34 @@ export function blank(character, agent = null) {
     sell: [],
     keep: [],
     purse: { float: null, bank_above: null },
-    // Keeper policy overlay. The file is the source of truth for per-character settings
-    // the operator would otherwise have to re-apply after every broker restart: karma,
-    // buy_reagents, hunt, assigned_room, pulls_before_barren. Absent means "carry on
-    // exactly as before" -- a field the file does not name must not touch the live
-    // policy, only fields it actually sets win on every pass.
-    policy: null,
+    // WHAT THIS CHARACTER'S KEEPER SHOULD BE SET TO, so that it survives a broker restart.
+    // Empty by default and empty means "whatever the keeper already had" — see
+    // POLICY_KEYS and applyLoadoutPolicyOverlay for why an absent block must never read
+    // as a block full of defaults.
+    policy: {},
   };
 }
+
+// THE ONLY POLICY FIELDS A LOADOUT MAY SET, and their types.
+//
+// A closed set, for the same reason the playbook's verbs are: a typo in a hand-edited file
+// must disable its own line rather than becoming a setting nobody can find. Everything
+// here is a STANDING preference about one character — what it hunts, where it stands, what
+// it is allowed to spend — and deliberately not a survival threshold. `flee_below`,
+// `rest_below` and the threat ceiling stay out: they are the protected faculties, they are
+// argued about in policy.local.json where they can be reviewed as a block, and a per-
+// character file that could quietly raise one is exactly the file nobody would think to
+// check after a death.
+export const POLICY_KEYS = {
+  hunt:                    { type: 'string',  as: 'hunt' },
+  assigned_room:           { type: 'number',  as: 'assignedRoom' },
+  karma:                   { type: 'number',  as: 'karma' },
+  buy_reagents:            { type: 'boolean', as: 'buyReagents' },
+  pulls_before_barren:     { type: 'number',  as: 'pullsBeforeBarren' },
+  fight_rounds:            { type: 'number',  as: 'fightRounds' },
+  use_bt:                  { type: 'boolean', as: 'useBT' },
+  conflict_response_hops:  { type: 'number',  as: 'conflict_response_hops' },
+};
 
 // Turn both halves of the planner into the ORDERED STAGES a learning errand can buy.
 // A queue row names either one ability or one exact level of a track. Exact levels are
@@ -205,7 +225,7 @@ function normaliseLearningQueue(raw, problems) {
 }
 
 // The slots the keeper's wearBest knows about, plus the hand. Anything else in `slots` is
-// carried through untouched and reported -- a slot this file has not heard of is a fact
+// carried through untouched and reported — a slot this file has not heard of is a fact
 // about the loadout, not an error to swallow.
 export const GEAR_SLOTS = ['body', 'shield', 'head', 'hands', 'feet', 'neck', 'finger', 'cloak'];
 
@@ -222,7 +242,7 @@ export function normalise(raw, { character = null } = {}) {
   const out = blank(character ?? src.character ?? '', src.agent ?? null);
 
   if (src.format && src.format !== LOADOUT_FORMAT)
-    problems.push(`format is "${src.format}", not "${LOADOUT_FORMAT}" -- reading it anyway`);
+    problems.push(`format is "${src.format}", not "${LOADOUT_FORMAT}" — reading it anyway`);
   out.character = String(character ?? src.character ?? '').trim();
   out.agent = src.agent ? String(src.agent) : null;
   out.updated = src.updated ?? null;
@@ -236,7 +256,7 @@ export function normalise(raw, { character = null } = {}) {
     if (lvl === null || lvl < 0) { problems.push(`school "${k}": ${JSON.stringify(v)} is not a level`); continue; }
     // Six is the length of vlLevelPoints (system.kod:414). A seventh level is not a
     // stretch goal, it is a number the server has no entry for.
-    if (lvl > 6) { problems.push(`school "${k}": level ${lvl} -- the game has six`); continue; }
+    if (lvl > 6) { problems.push(`school "${k}": level ${lvl} — the game has six`); continue; }
     schools[k] = Math.round(lvl);
   }
   out.plan.schools = schools;
@@ -271,7 +291,7 @@ export function normalise(raw, { character = null } = {}) {
     const name = String(item.item ?? item.name ?? '').trim();
     if (!name) { problems.push('a carry entry with no item name'); continue; }
     const key = norm(name);
-    if (seen.has(key)) { problems.push(`"${name}" is listed twice -- the later one wins`); }
+    if (seen.has(key)) { problems.push(`"${name}" is listed twice — the later one wins`); }
     seen.add(key);
     let min = numOr(item.min, 0);
     let max = numOr(item.max, null);
@@ -281,13 +301,13 @@ export function normalise(raw, { character = null } = {}) {
     // max to the min and say so, rather than honouring a pair of numbers that cannot both
     // be satisfied.
     if (max !== null && max < min) {
-      problems.push(`"${name}": max ${max} is below min ${min} -- raised to ${min}, ` +
+      problems.push(`"${name}": max ${max} is below min ${min} — raised to ${min}, ` +
                     'or the keeper would buy and sell the same item for ever');
       max = min;
     }
     const known = catalogue().get(key);
     if (!known && catalogue().size)
-      problems.push(`"${name}" is not in the item catalogue -- kept, but check the spelling ` +
+      problems.push(`"${name}" is not in the item catalogue — kept, but check the spelling ` +
                     '(names are the game\'s own display names)');
     out.carry.push({
       item: name, min, max,
@@ -309,11 +329,11 @@ export function normalise(raw, { character = null } = {}) {
   // direction: keeping something we should have sold costs a slot, selling something we
   // meant to keep costs the item. So keep wins, loudly.
   for (const s of out.sell) if (out.keep.some(k => norm(k) === norm(s)))
-    problems.push(`"${s}" is on both the sell and keep lists -- kept`);
+    problems.push(`"${s}" is on both the sell and keep lists — kept`);
   // And an item with a floor under it cannot also be sell-fodder, for the same reason.
   for (const s of out.sell) {
     const c = out.carry.find(x => norm(x.item) === norm(s));
-    if (c && c.min > 0) problems.push(`"${s}" is sell-on-sight but ${c.min} are wanted -- the floor wins`);
+    if (c && c.min > 0) problems.push(`"${s}" is sell-on-sight but ${c.min} are wanted — the floor wins`);
   }
 
   const weapons = nameList(src.gear?.weapon, 'gear.weapon');
@@ -322,7 +342,7 @@ export function normalise(raw, { character = null } = {}) {
     const list = nameList(v, `gear.slots.${slot}`);
     if (!list.length) continue;
     if (!GEAR_SLOTS.includes(slot))
-      problems.push(`slot "${slot}" is not one this repository knows (${GEAR_SLOTS.join(', ')}) -- carried through`);
+      problems.push(`slot "${slot}" is not one this repository knows (${GEAR_SLOTS.join(', ')}) — carried through`);
     out.gear.slots[slot] = list;
   }
   out.gear.from = src.gear?.from ? String(src.gear.from).slice(0, 200) : null;
@@ -330,58 +350,39 @@ export function normalise(raw, { character = null } = {}) {
   out.purse.float = numOr(src.purse?.float, null);
   out.purse.bank_above = numOr(src.purse?.bank_above, null);
 
-  // ---- keeper policy overlay (optional)
-  // The loadout is the standing answer for per-character keeper settings the operator
-  // would otherwise re-apply after every restart. An empty or absent block is silent:
-  // null here means "the live policy is unchanged". Each known field is normalised to
-  // its own shape -- booleans stay booleans, numbers stay numbers, strings stay strings
-  // -- and an unknown field is reported rather than passed through, because a typo in
-  // the file should not silently become a no-op.
-  const POLICIES = ['buy_reagents', 'buy_food', 'buy_weapons',
-                    'karma', 'hunt', 'assigned_room', 'pulls_before_barren'];
-  if (src.policy && typeof src.policy === 'object') {
-    const p = {};
-    for (const [k, v] of Object.entries(src.policy)) {
-      if (!POLICIES.includes(k)) {
-        problems.push(`policy.${k} is not a known keeper setting (${POLICIES.join(', ')}) -- ignored`);
-        continue;
-      }
-      if (k === 'buy_reagents' || k === 'buy_food' || k === 'buy_weapons') {
-        if (v !== true && v !== false) {
-          problems.push(`policy.${k} must be true or false -- ignored`);
-          continue;
-        }
-        p[k] = v;
-      } else if (k === 'karma') {
-        const kk = String(v ?? '').trim().toLowerCase();
-        if (!['good', 'evil', 'neutral'].includes(kk)) {
-          problems.push(`policy.karma must be good, evil or neutral -- ignored`);
-          continue;
-        }
-        p[k] = kk;
-      } else if (k === 'hunt') {
-        const h = String(v ?? '').trim();
-        if (!h) { problems.push('policy.hunt is empty -- ignored'); continue; }
-        p[k] = h;
-      } else if (k === 'assigned_room') {
-        const n = Number(v);
-        if (!Number.isFinite(n) || n < 0 || Math.floor(n) !== n) {
-          problems.push(`policy.assigned_room must be a non-negative integer -- ignored`);
-          continue;
-        }
-        p[k] = n;
-      } else if (k === 'pulls_before_barren') {
-        const n = Number(v);
-        if (!Number.isFinite(n) || n < 1 || Math.floor(n) !== n) {
-          problems.push(`policy.pulls_before_barren must be a positive integer -- ignored`);
-          continue;
-        }
-        p[k] = n;
-      }
+  // ---- the policy half: what this character's keeper should be set to after a restart.
+  //
+  // AN UNRECOGNISED KEY IS REPORTED AND DROPPED, NEVER CARRIED THROUGH. Carrying it would
+  // put a setting on disk that reads as configuration and does nothing — which is exactly
+  // how `purpose` sat outside the autopilot schema for a year while every keeper in the
+  // fleet ran with an audit switched off that everybody believed was on.
+  //
+  // AN UNUSABLE VALUE IS REPORTED AND DROPPED TOO, rather than being coerced. `karma: "no"`
+  // becoming 0 is a policy nobody wrote.
+  const rawPolicy = (src.policy && typeof src.policy === 'object' && !Array.isArray(src.policy))
+    ? src.policy : {};
+  if (src.policy && typeof src.policy !== 'object')
+    problems.push('policy is not an object — ignored');
+  for (const [k, v] of Object.entries(rawPolicy)) {
+    const spec = POLICY_KEYS[k];
+    if (!spec) {
+      problems.push(`policy."${k}" is not a setting a loadout may make ` +
+                    `(${Object.keys(POLICY_KEYS).join(', ')}) — dropped`);
+      continue;
     }
-    out.policy = Object.keys(p).length ? p : null;
-  } else {
-    out.policy = null;
+    if (v === null || v === undefined || v === '') continue;   // silence means "leave it"
+    if (spec.type === 'number') {
+      const n = numOr(v, null);
+      if (n === null) { problems.push(`policy.${k}: ${JSON.stringify(v)} is not a number — dropped`); continue; }
+      out.policy[k] = n;
+    } else if (spec.type === 'boolean') {
+      if (typeof v !== 'boolean') { problems.push(`policy.${k}: ${JSON.stringify(v)} is not true or false — dropped`); continue; }
+      out.policy[k] = v;
+    } else {
+      const str = String(v).trim();
+      if (!str) { problems.push(`policy.${k} is empty — dropped`); continue; }
+      out.policy[k] = str.slice(0, 120);
+    }
   }
 
   return { loadout: out, problems };
@@ -420,14 +421,14 @@ export function writeLoadout(character, raw, { force = false } = {}) {
   const { loadout, problems } = normalise(raw, { character: raw?.character ?? character });
   // TWO NAMES CAN SLUG TO ONE FILE, AND THE LOSER IS OVERWRITTEN SILENTLY. `slugOf` drops
   // everything that is not a letter or a digit, so "Kermit" and "Kermit the Frog!" differ
-  // by punctuation and land on the same path -- and the second save would replace the
+  // by punctuation and land on the same path — and the second save would replace the
   // first character's whole loadout while reporting success. Refuse instead, unless the
   // caller means it.
   if (!force && fs.existsSync(p)) {
     let held = null;
     try { held = JSON.parse(fs.readFileSync(p, 'utf8')).character ?? null; } catch { /* unreadable: let the write fix it */ }
     if (held && norm(held) !== norm(loadout.character))
-      throw new Error(`${path.basename(p)} already holds "${held}", not "${loadout.character}" -- ` +
+      throw new Error(`${path.basename(p)} already holds "${held}", not "${loadout.character}" — ` +
                       'two names that differ only by punctuation share one file');
   }
   loadout.updated = new Date().toISOString();
@@ -445,17 +446,17 @@ export function writeLoadout(character, raw, { force = false } = {}) {
 //
 // THE GEAR HALF IS THE ONE PART OF A LOADOUT THAT IS ABOUT THE FLEET RATHER THAN ABOUT A
 // CHARACTER. How many reagents this caster burns, which schools it is heading for, what its
-// purse floor is -- all of that is one character's business. "Fight with a short sword, wear
+// purse floor is — all of that is one character's business. "Fight with a short sword, wear
 // leather, carry a shield" is a decision about how the fleet plays, and the only way to give
 // it to twenty-one characters was to type it twenty-one times.
 //
 // So this copies the GEAR AND NOTHING ELSE. Every other field of an existing loadout is left
-// exactly as it was found -- that is what makes it safe to run across characters somebody has
+// exactly as it was found — that is what makes it safe to run across characters somebody has
 // already planned by hand, and it is the property the tests pin hardest.
 //
 // AN EMPTY GEAR IS REFUSED, because it is not a request. A loadout with no gear in it is the
 // ordinary state of one nobody has filled in yet, so a fleet-wide write of it would silently
-// clear twenty-one characters' weapon preferences and report success -- which is exactly the
+// clear twenty-one characters' weapon preferences and report success — which is exactly the
 // shape of every failure this repository has already paid for. `allowEmpty` is how somebody
 // says they meant it.
 
@@ -471,7 +472,7 @@ export const gearIsEmpty = (gear) =>
   !(gear?.weapon?.length) && !Object.values(gear?.slots ?? {}).some(v => v?.length);
 
 // Two gear stanzas are the same answer when they name the same things IN THE SAME ORDER.
-// The order is the preference -- first choice first -- so a list reordered is a different
+// The order is the preference — first choice first — so a list reordered is a different
 // instruction, and reporting it as "no change" would hide the only edit somebody made.
 // `from` is provenance, not preference, and is deliberately not compared.
 export function sameGear(a, b) {
@@ -613,7 +614,7 @@ export function applyInventoryToAll(raw, characters,
 }
 
 // PLANNING AND APPLYING ARE THE SAME FUNCTION, called twice. A preview computed by different
-// code from the write it previews is a preview of something else -- and this one writes to
+// code from the write it previews is a preview of something else — and this one writes to
 // every character at once, which is the worst possible place for that gap.
 //
 // `characters` is [{character, agent}] or plain names. Nothing here asks a broker who the
@@ -622,7 +623,7 @@ export function applyInventoryToAll(raw, characters,
 export function applyGearToAll(gear, characters, { from = null, apply = false, allowEmpty = false } = {}) {
   const { gear: want, problems } = normaliseGear(gear);
   if (gearIsEmpty(want) && !allowEmpty)
-    throw new Error('this plan has no gear on it -- nothing to apply. An empty gear list is not ' +
+    throw new Error('this plan has no gear on it — nothing to apply. An empty gear list is not ' +
                     'an instruction to strip the fleet, it is a loadout nobody has filled in yet.');
 
   const stamp = from ? `${String(from).slice(0, 120)}${apply ? `, ${new Date().toISOString().slice(0, 16).replace('T', ' ')}` : ''}` : null;
@@ -642,7 +643,7 @@ export function applyGearToAll(gear, characters, { from = null, apply = false, a
       // A FILE THAT WILL NOT PARSE IS LEFT ALONE. Overwriting it would replace a loadout
       // whose contents nobody can now see with one holding only gear, and the carry list
       // that went missing would look like something nobody ever wrote.
-      row.error = `${loadoutPath(character)} could not be read (${e.message}) -- left alone`;
+      row.error = `${loadoutPath(character)} could not be read (${e.message}) — left alone`;
       continue;
     }
     // Two names that differ only by punctuation share one file (see writeLoadout). Across a
@@ -650,7 +651,7 @@ export function applyGearToAll(gear, characters, { from = null, apply = false, a
     // with somebody else's gear.
     if (existing && norm(existing.loadout.character) !== norm(character)) {
       row.error = `${path.basename(existing.path)} holds "${existing.loadout.character}", not ` +
-                  `"${character}" -- two names that differ only by punctuation share one file`;
+                  `"${character}" — two names that differ only by punctuation share one file`;
       continue;
     }
 
@@ -659,7 +660,7 @@ export function applyGearToAll(gear, characters, { from = null, apply = false, a
     row.before = existing ? cloneGear(existing.loadout.gear) : null;
     row.changed = !existing || !sameGear(existing.loadout.gear, want);
     // An unchanged row is not rewritten, so what it will hold afterwards is what it holds
-    // now -- including its own provenance. Restamping a file the keeper is reading, to record
+    // now — including its own provenance. Restamping a file the keeper is reading, to record
     // that nothing about it changed, is a write with no reader.
     row.after = row.changed ? { ...cloneGear(want), from: stamp } : cloneGear(existing.loadout.gear);
     if (!apply || !row.changed) { if (existing) row.path = existing.path; continue; }
@@ -691,7 +692,7 @@ export function applyGearToAll(gear, characters, { from = null, apply = false, a
 }
 
 // WHAT THE KEEPER CALLS, EVERY PASS, FOR TWENTY-ONE CHARACTERS. So it caches on mtime and
-// costs a stat() when nothing has changed -- and it never throws, because a keeper that
+// costs a stat() when nothing has changed — and it never throws, because a keeper that
 // dies on a malformed loadout is a character that stops playing because somebody typed a
 // stray comma into a web form.
 const CACHE = new Map();       // slug -> { mtime, loadout, problems }
@@ -716,6 +717,20 @@ export function loadoutFor(character) {
 }
 export const forgetLoadouts = () => CACHE.clear();
 
+// WHEN THIS CHARACTER'S LOADOUT WAS LAST WRITTEN, or 0 if there is not one.
+//
+// The policy overlay needs this rather than the loadout's contents: it re-applies when
+// somebody EDITS the file, and leaves a runtime setting alone in between. Reading the
+// mtime directly rather than diffing the parsed policy is deliberate — a file saved with
+// no change to the policy block is still somebody opening the planner and pressing save,
+// which is as clear a statement of "make it say this" as an edit to the block itself.
+export function loadoutMtime(character) {
+  const slug = slugOf(character);
+  if (!slug) return 0;
+  try { return fs.statSync(path.join(LOADOUT_DIR, slug + '.json')).mtimeMs; }
+  catch { return 0; }
+}
+
 // ------------------------------------------------------------------ matching
 
 // Does this display name satisfy this entry? Exact unless the entry asked otherwise.
@@ -735,7 +750,7 @@ const countIn = (items, entry) => (items || [])
 // ------------------------------------------------------------------ what the keeper asks
 
 // EVERYTHING THIS LOADOUT PROTECTS, as one test. Returns null when the loadout has nothing
-// to say, and null is the answer that means "use the behaviour that was already there" --
+// to say, and null is the answer that means "use the behaviour that was already there" —
 // callers must not read it as "protects nothing".
 export function keepTest(loadout, items = null) {
   if (!loadout) return null;
@@ -760,7 +775,7 @@ export function keepTest(loadout, items = null) {
   const test = (name) => {
     for (const r of rules) {
       if (!entryMatches(r.entry, name)) continue;
-      // Above the floor the surplus is fair game -- that is what a maximum is for.
+      // Above the floor the surplus is fair game — that is what a maximum is for.
       if (r.floor != null && r.have != null && r.have > r.floor) continue;
       return r.why;
     }
@@ -790,7 +805,7 @@ export function sellTest(loadout) {
 // `needs` is the QUANTITY half of `wants`, and the two are deliberately both returned.
 // `wants` answers "may somebody sell this", which only needs a name; `needs` answers "how
 // many should a courier buy", which a name cannot. Farm delivery reads the second, and
-// until it existed the board could only ever state a shortfall of elderberry or herbs --
+// until it existed the board could only ever state a shortfall of elderberry or herbs —
 // so a caster short of forty mushrooms was invisible to the one mechanism that fetches
 // things. A want with no quantity is not a delivery order.
 export function wantsOf(loadout, items) {
@@ -884,19 +899,19 @@ export function reconcile(loadout, { items = [], equipped = [] } = {}) {
 // THE EQUIPMENT HALF OF yieldCheck, AND THE REASON IT HAS TO EXIST AT ALL.
 //
 // `purpose: 'advance'` asks whether the thing being killed can still raise what the
-// character is trying to raise, and says so out loud when it cannot -- because a keeper
+// character is trying to raise, and says so out loud when it cannot — because a keeper
 // grinding worthless prey looks EXACTLY like a healthy one: it kills something every
 // pass, so progress() fires, so the stall detector never trips.
 //
 // Equipment farming has that same shape and none of that protection. Ten characters here
 // are at max health 50 and a level-50 fungus beast cannot advance them, so they farm for
-// gear and coin instead -- which is a perfectly good reason to be out, and one the board
+// gear and coin instead — which is a perfectly good reason to be out, and one the board
 // had no way to distinguish from a keeper achieving nothing. Worse, `yieldCheck` returned
 // null for any purpose other than 'advance', so declaring `equip` would have PROTECTED the
 // run by switching the instrument off rather than by pointing it at the right question.
 //
 // So this is the right question: is what we are killing able to drop what this character
-// is still short of? Two ways for the answer to be no, and they need different words --
+// is still short of? Two ways for the answer to be no, and they need different words —
 // **nothing left to want** is finished, **wanting things this creature never drops** is
 // the afternoon of worthless grinding wearing a different hat.
 //
@@ -926,7 +941,7 @@ export function droppablesOf(creature) {
 
 /**
  * `plan` is a reconcile() result; `creature` is a row from the spawn index.
- * Returns null when it cannot know -- never "fine".
+ * Returns null when it cannot know — never "fine".
  */
 export function equipYield(plan, creature) {
   if (!plan || !creature) return null;
@@ -951,7 +966,7 @@ export function equipYield(plan, creature) {
     drops: droppable.length ? droppable.map(d => d.item) : null,
     why: droppable.length
       ? `${creature.name} drops none of the ${short.length} thing(s) this character is short of`
-      : `${creature.name} has neither an equipment drop nor a treasure table -- it leaves ` +
+      : `${creature.name} has neither an equipment drop nor a treasure table — it leaves ` +
         'nothing behind at all',
     hint: 'this keeper is working and fetching nothing. Re-target it, or clear ' +
           '`purpose` if it is out there for coin rather than for kit.',
@@ -971,7 +986,7 @@ export function dropRank(loadout, items = []) {
   return (name) => {
     if (sell?.(name)) return -1;              // asked for this to go: before anything else
     if (keep?.(name)) return 3;               // protected: only if there is nothing else
-    return null;                              // no opinion -- let the caller's ranking decide
+    return null;                              // no opinion — let the caller's ranking decide
   };
 }
 
@@ -983,7 +998,7 @@ export function dropRank(loadout, items = []) {
 // the fleet already runs on, and both are wrong for somebody and easy to change.
 export function starterFrom(sheet) {
   const l = blank(sheet?.character ?? '', sheet?.agent ?? null);
-  l.note = 'Seeded from the character sheet -- this is what it was carrying, not a plan yet.';
+  l.note = 'Seeded from the character sheet — this is what it was carrying, not a plan yet.';
   const worn = (sheet?.equipment?.worn ?? []).map(w => w.name).filter(Boolean);
   const cat = catalogue();
   for (const n of worn) {
@@ -1041,7 +1056,7 @@ export function weaponTrackLevel(sheet, skillData = null) {
 // ------------------------------------------------------------------ the learning cost
 //
 // PlayerCanLearn, as arithmetic, so the planner can answer "can this character learn that"
-// without asking the server -- which will not answer anyway: a skill it cannot learn is
+// without asking the server — which will not answer anyway: a skill it cannot learn is
 // simply ABSENT from the shop list, with no message of any kind (monster.kod:4855).
 //
 // RE-EXPORTED, NOT REIMPLEMENTED. The planner page needs the same arithmetic in a browser,
@@ -1057,7 +1072,7 @@ export { learnCost, canLearn, trackPoints, levelPointsAt,
 if (import.meta.filename === process.argv[1]) {
   const argv = process.argv.slice(2);
   const flag = (n) => argv.includes('--' + n);
-  // `indexOf` of a missing flag is -1, and -1+1 is 0 -- which is the character name. That
+  // `indexOf` of a missing flag is -1, and -1+1 is 0 — which is the character name. That
   // read the port as `Number("Kermit")`, NaN, and the failure surfaced as the broker not
   // answering on port NaN rather than as a bad argument.
   const pi = argv.indexOf('--port');
@@ -1084,7 +1099,7 @@ if (import.meta.filename === process.argv[1]) {
     if (l.gear.weapon.length) console.log(`  weapon   ${l.gear.weapon.join(' > ')}`);
     for (const [s, v] of Object.entries(l.gear.slots)) console.log(`  ${s.padEnd(8)} ${v.join(' > ')}`);
     for (const c of l.carry)
-      console.log(`  carry    ${c.item} ${c.min}${c.max === null ? '+' : '-' + c.max}` +
+      console.log(`  carry    ${c.item} ${c.min}${c.max === null ? '+' : '–' + c.max}` +
                   `${c.why ? '   (' + c.why + ')' : ''}`);
     if (l.sell.length) console.log(`  sell     ${l.sell.join(', ')}`);
     if (l.keep.length) console.log(`  keep     ${l.keep.join(', ')}`);
@@ -1097,13 +1112,13 @@ if (import.meta.filename === process.argv[1]) {
   if (who && flag('init')) {
     const sheetPath = path.join(REPO, 'substrate', 'sheets', who + '.json');
     if (!fs.existsSync(sheetPath)) {
-      console.error(`no sheet at ${sheetPath} -- run tools/m59-sheet.mjs first, or write the file by hand`);
+      console.error(`no sheet at ${sheetPath} — run tools/m59-sheet.mjs first, or write the file by hand`);
       process.exit(1);
     }
     const sheet = JSON.parse(fs.readFileSync(sheetPath, 'utf8'));
     const p = loadoutPath(who);
     if (fs.existsSync(p) && !flag('force')) {
-      console.error(`${p} already exists -- --force to overwrite it`);
+      console.error(`${p} already exists — --force to overwrite it`);
       process.exit(1);
     }
     const res = writeLoadout(who, starterFrom(sheet));
@@ -1118,11 +1133,11 @@ if (import.meta.filename === process.argv[1]) {
   // one you find out about from the keeper.
   if (who && flag('gear-to-fleet')) {
     const rec = readLoadout(who);
-    if (!rec) { console.error(`no loadout for "${who}" -- nothing to copy gear from`); process.exit(1); }
+    if (!rec) { console.error(`no loadout for "${who}" — nothing to copy gear from`); process.exit(1); }
     let fleet = null;
     try { fleet = await broker('fleet', {}); }
     catch (e) {
-      console.error(`the broker on ${PORT} is not answering (${e.message}) -- and "the fleet" is a ` +
+      console.error(`the broker on ${PORT} is not answering (${e.message}) — and "the fleet" is a ` +
                     'live question. The saved loadouts on this machine are a different set of ' +
                     'characters and are deliberately not substituted for it.');
       process.exit(1);
@@ -1154,7 +1169,7 @@ if (import.meta.filename === process.argv[1]) {
     }
     console.log(`${res.counts.changed} changed, ${res.counts.unchanged} already as asked` +
                 (res.counts.failed ? `, ${res.counts.failed} refused` : ''));
-    if (!flag('apply')) console.log('nothing was written -- add --apply');
+    if (!flag('apply')) console.log('nothing was written — add --apply');
     process.exit(res.counts.failed ? 1 : 0);
   }
 
@@ -1163,7 +1178,7 @@ if (import.meta.filename === process.argv[1]) {
     if (!rows.length) { console.log('no loadouts to check'); process.exit(0); }
     let fleet = null;
     try { fleet = await broker('fleet', {}); }
-    catch (e) { console.error(`the broker on ${PORT} is not answering (${e.message}) -- nothing to check against`); process.exit(1); }
+    catch (e) { console.error(`the broker on ${PORT} is not answering (${e.message}) — nothing to check against`); process.exit(1); }
     for (const rec of rows) {
       const l = rec.loadout;
       const row = (fleet.fleet || []).find(r => norm(r.character) === norm(l.character));
@@ -1187,7 +1202,7 @@ if (import.meta.filename === process.argv[1]) {
   if (who) {
     const rec = readLoadout(who);
     if (!rec) {
-      console.error(`no loadout for "${who}" -- ${loadoutPath(who) ?? 'that name cannot be a filename'}`);
+      console.error(`no loadout for "${who}" — ${loadoutPath(who) ?? 'that name cannot be a filename'}`);
       console.error('write one in the compendium planner, or: node tools/m59-loadout.mjs ' + who + ' --init');
       process.exit(1);
     }

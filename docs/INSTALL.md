@@ -104,6 +104,21 @@ no password, so anything that can reach it can administer your server.
 
 State lives in `docker/data/savegame`. Delete it to start over.
 
+### macOS / Docker Desktop
+
+Everything above works on macOS with one extra step: Docker Desktop must be
+running before anything else. Install it from https://docs.docker.com/desktop/mac/
+and start it. Verify with `docker ps` — if it says `Cannot connect to the Docker
+daemon`, Docker Desktop is not running.
+
+On **Apple Silicon (M1/M2/M3)**, the container builds and runs as `linux/arm64`
+automatically. Nothing needs to be changed.
+
+One macOS-specific wrinkle: Docker Desktop routes container traffic through a
+bridge at `192.168.65.1`, not the standard `172.17.0.1`. The container's
+`MaintenanceMask` is already set to cover both (`172.0.0.0` and `192.168.0.0`),
+so the admin socket works from the host without any extra configuration.
+
 ### Native, if you would rather
 
 **Windows** needs Visual Studio (Community is fine) and a developer command
@@ -243,10 +258,51 @@ node tools/setup.mjs fleet 10
 or directly:
 
 ```bash
+node tools/m59-service.mjs start
+# foreground diagnostics only:
 node tools/m59-broker.mjs --http 8901 --dashboard 8902
 node tools/m59-makefleet.mjs --count 10
 node tools/m59-makefleet.mjs --count 10 --dry-run    # plan only
 ```
+
+### Running a local test fleet alongside prod
+
+If you have a prod fleet on the default ports (8901/8902), use different ports
+and a different fleet name for the local server so the two never collide:
+
+```bash
+node tools/m59-broker.mjs --http 8911 --dashboard 8912 \
+  --fleet local --host 127.0.0.1 --port 5959 --no-rejoin
+
+node tools/m59-makefleet.mjs --count 4 --broker 8911 --prefix fleet
+```
+
+`--fleet local` writes state to `substrate/fleets/local.json` rather than the
+default `substrate/fleet-state.json`, so the two fleets' rosters stay separate.
+`--no-rejoin` is optional but convenient for a test server — it means dropped
+sessions stay out rather than being automatically rejoined, which keeps the log
+quieter while you're working.
+
+`m59-which.mjs` exits non-zero on a fleet mismatch, which is the failure that
+once took down a live 46-session broker while every step reported success. Run it
+before any command that touches characters if you are switching between fleets:
+
+```bash
+node tools/m59-which.mjs      # which fleet would the next command touch?
+```
+
+To use DM tools against the local server (teleporting characters into hunting
+rooms, setting up test scenarios), pass `M59_ADMIN_PORT=9998`:
+
+```bash
+M59_ADMIN_PORT=9998 node tools/m59-dm.mjs relocate "Alfa,Bravo" 60 --verify
+```
+
+Every launch uses explicit `M59_MAP` first, then the gitignored server-matched
+`substrate/m59-map.local.json`, then the checked reference map. Setup regenerates the
+local map from the exact server room resources and service restarts preserve that choice.
+The broker refuses startup if the selected map's collision payloads or manifest do not
+validate; it never substitutes unchecked movement.
 
 ### What making a character actually involves
 
@@ -256,9 +312,19 @@ at creation and never move, and stamina *is* the max-health ceiling
 (`101 + stamina`), so it is permanently capped at 102 max health and permanently
 bad at everything.
 
-So `m59-makefleet.mjs` does three things per character: creates the account, logs
-in, then re-rolls — which suicides the placeholder (the server only accepts a new
-character while `IsFirstTime()` holds) and sends real stats.
+`m59-makefleet.mjs` replaces it by sending `BP_NEW_CHARINFO` — the same packet
+the real client sends when a new player chooses their stats. The server only
+accepts it while `IsFirstTime()` holds (`user.kod:536`), which checks two fields:
+`piLastLoginTime = 0 AND piLast_Restart_time = 0`. Fresh out of `create
+automated`, both are zero. But the first login sets `piLastLoginTime = GetTime()`
+(`user.kod:591`), and a suicide sets `piLast_Restart_time = GetTime()`
+(`user.kod:1439`), so neither login nor suicide alone restores the first-time state.
+
+The fix: immediately after `create automated`, zero both fields directly on the
+user object via the admin socket (`set object <id> piLastLoginTime INT 0` and
+`set object <id> piLast_Restart_time INT 0`). The broker then connects fresh,
+sees `flags & 1` in `BP_CHARACTERS`, and sends `BP_NEW_CHARINFO` with real stats
+— no login, no suicide.
 
 **The server never says no.** Over budget, out of range, wrong list length — none
 of it is refused. It silently stamps `3/1/4/1/5/9` and the default face on you,
@@ -380,6 +446,7 @@ and the fleet page at **http://127.0.0.1:8902/fleet**.
 | `no maintenance socket on 127.0.0.1:9998` | server not running, or 9998 not published. `docker ps --filter name=m59` |
 | image build fails on `-Werror` | the container strips it from `common.mak.linux`; if you build natively you may hit it. |
 | broker starts but every character is empty | a second broker took the stdio path and was refused the lock. Use `m59-mcp-attach.mjs`. |
+| `reroll` says "no character came back" | `IsFirstTime()` returned false. The broker zeros both `piLastLoginTime` and `piLast_Restart_time` via the admin socket before connecting — if that step fails, reroll will fail silently. Check the admin socket is reachable. |
 | `reroll` says the server substituted junk | the request was rejected silently. Do not re-roll anything real until it passes on a spare. |
 | channel logs are 0 bytes for ever | `[Channel] Flush` is `No`. See above. |
 | character cannot get past level 15 | it is the zero-stat placeholder. It cannot be fixed; re-roll it. |

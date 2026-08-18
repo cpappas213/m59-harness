@@ -299,6 +299,378 @@ answering "not in game". Three things it will not do:
 
 `--no-rejoin` or `M59_REJOIN=0` turns it off.
 
+## The two front ends, and the one command that starts everything
+
+```bash
+./m59.sh                 # the fleet terminal (m59.ps1 on Windows)
+./m59.sh up              # broker + field command page, for this checkout's fleet
+./m59.sh status          # both of them, and which fleet
+./m59.sh down            # both of them again
+./m59.sh field           # just open the page
+```
+
+`npm run terminal|start|stop|status|field` are the same commands for anyone who reaches
+for npm first. **Nothing lives in these scripts** — every behaviour is in `tools/`, so
+prefer changing the tool.
+
+There are two views of the same fleet and neither replaces the other. `m59-tui.mjs` is a
+list and a keyboard: it is the only one that can start a program, which is what `L`, `B`,
+`C` and `F` are for. **`maps/m59-strategy-game` is a map in a browser** — the world, the
+roster on it, and a small order set that becomes ordinary broker calls. It holds no
+credentials, starts no broker, pins itself to `127.0.0.1`, and its worker refuses
+non-loopback hosts, because it is a control plane rather than a dashboard.
+
+`m59-webui.mjs` owns its lifecycle, and `m59-service.mjs` starts and stops it with the
+broker — **after** the broker answers, since a page that comes up first spends its first
+seconds reporting a fleet that is not there. `F` in the terminal ensures it is running and
+then opens a browser at it. `node tools/setup.mjs webui` installs it; `all` runs that.
+
+Four things it does rather than documents:
+
+- **IT NEVER BLOCKS THE BROKER.** The broker holds twenty-one irreplaceable sessions and a
+  web page failing to build is not a reason for the fleet not to come up. An absent
+  sibling, an uninstalled one and a failed start are all reported and `start` still exits 0.
+- **IT IS A SEPARATE REPOSITORY AND MAY NOT BE HERE** — same arrangement `B` has with
+  `maps/m59-boswars`. `M59_STRATEGY_DIR` names it when it does not live beside us, and
+  "absent", "not installed" and "somebody else is on the port" are three different answers
+  that the tool says apart.
+- **IT NEVER STOPS SOMETHING IT DID NOT START.** The pid file is the authority; a port
+  answering with no pid file of ours is reported as somebody else's and left alone. Stop
+  signals the process GROUP, because `npm run dev` is npm with a child and a bare kill
+  leaves the dev server orphaned and holding the port — which then reads as "not ours" for
+  ever after.
+- **It runs `npm run dev`, not the bundler directly**, because that script's `predev`
+  refreshes the page's generated world and room maps out of this harness. Skipping it
+  serves whatever the map looked like the last time somebody built.
+
+A one-shot HTTP GET in that module has a hard timer under it and settles on `close` as
+well as on `end`. The first version capped the body with `req.destroy()`, which emits no
+`end` — so the promise never settled, the status line silently stopped printing, and the
+only symptom was Node's "Detected unsettled top-level await" on the one code path where it
+happened to be the last thing running.
+
+## The collision map is EVIDENCE ABOUT A SERVER, NEVER AUTHORITY OVER ONE
+
+`substrate/m59-map.json` carries baked BSP, sidedefs, sector heights and wall chains, and
+the broker validates every in-room move against them with the same rules the stock client
+uses — because the server accepts whatever coordinates you send and expects the CLIENT to
+enforce collision. Using the server as a collision oracle is how bots walked through walls.
+
+**A move that cannot be validated is refused, not retried.** `TERMINAL_MOVEMENT_REASONS`
+in `m59-movement.mjs` is the closed list of failures that no other heading can fix —
+`collision_geometry_unavailable`, `room_geometry_mismatch`, `room_security_unknown` and the
+rest. They propagate instead of looping, which is what stops a bad route being learned.
+
+### THE ROUTER HAS TO PLAN ON THE MAP THE MOVER ENFORCES, AND THE TWO ARE NOT THE SAME MAP
+
+The mover validates against the client's BSP; the router planned on the server's coarse
+one-byte-a-square grid. A router planning on a different map from the one the mover
+enforces does not produce a wrong route — **it produces a character sliding along a wall,
+replanning into the same wall, and giving up.** The trail reads
+`4,15->5,15=5,15` / `5,15->4,16=4,15`, over and over, eight times, then "kept ending up
+somewhere other than the planned square". Measured offline against the twelve boundaries
+`m59-exitgap.mjs` complains about most, **that killed 59% of all walks to an exit**; on
+prod it killed characters, who bounced between two squares in the Western border of the
+Twisted Wood with spiders on them.
+
+**THE PREDICATE THAT LOOKS RIGHT AND IS NOT.** `stepAllowedByCollision` asks whether the
+straight line between two square CENTRES arrives exactly, with no sliding. That is a fair
+question about a line and the wrong one about a character: the player is a disc of radius
+248 in a square of 1024, so a centre within a quarter-square of a wall is a place nobody
+stands, and a person walking that corridor never tries to. Asked that way, room 150 comes
+out in 159 disconnected pieces and room 578 in 214 — which is why collision-aware routing
+was measured, disbelieved and switched off.
+
+**`moverStepLands` is the question that decides anything**: what `validateFineTarget` will
+actually do — aim at the centre, SLIDE, quantize toward the start, and land IN the target
+square, because `walkTo` compares squares. Same rooms: 150 in 15 pieces with 96% in one,
+578 in **two** with 99.4% in one. `protocolToward` is exported from `m59-roo.mjs` so the
+planning half and the sending half cannot drift; the test compares them directly.
+
+Three things hold this up and each fails in the dangerous direction if inverted:
+
+- **The mask is what makes it affordable, and it is baked offline.** `buildStepMask` is one
+  byte a square, one bit a direction, in `STEP_MASK_DIRS` order — which may never be
+  reordered, because a mask read against a different order is a confident map of the wrong
+  doors and nothing downstream can detect it. `node tools/m59-routebake.mjs` writes it,
+  `attachStepMasks` in `m59-routes.mjs` hands it to the geometry at broker start, and
+  `path()` then defaults to `collision: this.hasStepMask`. **No table means the coarse grid,
+  exactly as before** — a checkout that has never run the bake behaves precisely as it did.
+  Running the trace live is what caused the rejoin storm: 0.44ms a pair, tens of thousands
+  of pairs, on the one event loop twenty-one sessions share.
+- **`walkTo` learns the EDGES it is refused, not the squares.** A wall sits between two
+  squares; blaming the square removes a good place to stand that other neighbours reach,
+  and a step that SLID recorded nothing at all, which is what made the bounce eternal. The
+  edge is attributed from where the step was ASKED, never from where it landed — a slid
+  step ends at neither end of the step it requested, and blaming the landing square blames
+  an edge nobody tried. `object_blocked` is treated as the opposite fact: **a monster moves
+  and a wall does not**, so only the first is worth waiting 700ms for.
+- **The mask may only ever PREFER.** It is a model of somebody else's server and it is
+  stricter than the world — on room 579's north boundary it offers no reachable staging
+  square at all from 19 of 35 starting squares. So `exits()` floods twice and falls back to
+  the coarse answer, flagged `grid_only`, rather than dropping the exit; `walkTo` relaxes
+  occupancy first, then refused edges, then the collision view. **A bake must never be the
+  reason a doorway disappears.** Being wrong about a wall costs a walk; refusing costs the
+  errand, silently.
+
+**AN ANCHOR BELONGS TO A DESTINATION, NOT TO A DIRECTION — AND GETTING THAT WRONG DOES NOT
+FAIL, IT ARRIVES SOMEWHERE ELSE.** One wall can carry two exits to two different rooms,
+split by a row or column condition. Western border of the Twisted Wood declares
+`east -> 586 row<19` **and** `east -> 597 row>20`: the same boundary, and which room you
+reach depends on where along it you step off. `exitAnchors` asked
+`edgeApproachCandidates(dir)` — the per-DIRECTION question — took the first square offered
+and gave **both** exits the anchor `9,67`, which satisfies `row<19`. So a character asked
+to walk to The Twisted Wood was routed to a square that puts it in Main gate to the city of
+Tos. Every leg reported success. Nothing downstream compares where a walk MEANT to go with
+where it went, so this is invisible from the trail, from the board and from the logs — it
+shows up only as a character that is somehow in the wrong town, and then as a journey that
+re-routes from there for ever.
+
+The per-exit question already existed and the bake was reaching past it. `edgeCandidatesOf(room, e)`
+runs `selectedEdgeAt`, which simulates `StandardLeaveDir`'s own ordered scan of
+`plEdge_Exits` — and that scan is why testing the one condition in isolation is not enough:
+a default entry is remembered but does **not** stop the scan, so a square can satisfy a
+condition and still lose to a later unconditional edge. The world model had always used it.
+
+Two things pin it, and the second is the one that is not derived from the same `.roo` the
+anchors came from. `m59-routing-test.mjs` asserts that crossing AT an anchor fires the exit
+it was baked FOR — **273 on-boundary anchors, and the assertion is about the destination
+rather than about arriving**, because arriving was never the symptom. And
+`substrate/m59-crossings.json` records where a real client actually crossed and what room it
+turned up in: **25 recorded crossings, 25 agreements, 0 disagreements**. Ranking in
+`exits()` is observation first, baked anchor second, derivation last, for that reason.
+
+**AND THE BAKE IS NOT ABOUT PLANNING COST — MEASURE BEFORE BUILDING A TABLE TO AVOID ONE.**
+The natural reading of "why should getting from one exit to another take any real-time
+planning" is that planning is expensive. It is not: measured on this map with masks
+attached, `path()` costs **0.28 ms in room 587, 0.46 ms in 545 and 1.06 ms in The King's
+Way** — and that was while a full bake was saturating the CPU. A flow field per anchor
+would have bought about a millisecond a room for several megabytes. What the table is
+actually worth is **correctness** (the anchor above), **proof** (which exits the room's body
+can genuinely reach, which `steps` only guesses at) and **a cost that can be compared** —
+`transitCost` prices a room crossing in PIVOTS rather than squares, because a client reports
+position about once a second, so pivots are packets are seconds. The same six routes in 587
+are 311 squares and 66 pivots: charging squares overstates a trip 4.7x and does it
+*unevenly*, so ranking routes on square count prefers exactly the rooms that walk slowest.
+
+**A SAFE SPOT IS THE LAST THING WORTH ROUTING THROUGH, AND A* DOES NOT KNOW THAT.** With a
+flat step cost the router is indifferent between the middle of a gap and the tight side of
+it, so it threads characters along the wall — where a step SLIDES, the mover lands somewhere
+the plan did not expect, and the walker starts the bounce above. `clearanceField` adds cost
+by how much of a square's step ring the MOVER refuses, measured off the baked mask because
+the coarse grid calls the tight side of a gap open and agreeing with it here is how the plan
+and the walk come apart. Measured on this bake: mean blocked neighbours per step across
+random routes goes **1.35 -> 0.72 in room 587**, 1.28 -> 0.49 in 597 and 0.23 -> 0.05 in 544,
+for 6-8% more steps.
+
+**AND IT IS OFF UNLESS THE CALLER ASKS, BECAUSE A SAFE WALL IS A TIGHT SQUARE BY
+DEFINITION.** This is the one setting in the router that can quietly teach the fleet out of
+the game's central defensive mechanic, and it did: `world.reach` measures how far a wall is
+and `nearestSafeSpot` ranks candidates at **-0.5 a step**, so with the preference on
+everywhere it became a penalty ON THE SPOT ITSELF. Measured against the recorded book,
+**36.7% of walks to a held safe wall came back longer, worst case +9 steps — 4.5 points
+against a proof bonus of 20** — and it fell hardest on the walls that are hardest to walk
+into, which are the best ones. So `path` and `clearanceField` both default to weight zero,
+`leaveVia` opts in at 0.6 because crossing a room to a boundary is the long routing where
+the wedge happens, and every tactical question — `world.reach`, `approachSquare`, a pull, a
+melee approach, a walk back to a held wall — plans exactly as it did before any of this
+existed. Three further properties: it is **cost, never a prohibition**, so a route that only
+exists through a tight gap is still taken; **the destination is exempt**, because walking to
+a wall corner is the whole point; and **no mask means no field at all**.
+
+**AND THE BAKE'S "REGIONS" ARE THE SAFE SPOTS.** They are strongly connected components
+now, not a flood fill, and a room coming out in ninety pieces is one body of floor plus a
+scatter of corners the BSP hems in — the same geometric fact the safe-spot book measures
+from the other side. Do not smooth them away to make the count look tidy. What the old
+flood could not say, and this can, is the difference between a pocket you can leave but not
+enter and one you can enter but not leave; for routing one is a trap and the other a
+detour, and for a safe spot only the second is worth walking to. **"Outside the main body"
+is not "cannot be walked to"** — a doorway is a pocket by design, which is why an exit
+anchor is chosen from a staging square the body can REACH rather than the first one the
+boundary publishes, and why the report says "go and look before believing it".
+
+**THE CRAGGED MOUNTAINS CLIFF, STATED AS THE MECHANIC RATHER THAN AS A DIRECTION.** Enter
+578 from The King's Way and you are at the BOTTOM: the other exits cannot be walked to at
+all. Casting **blink** inside the room puts you on TOP of the cliff, and from up there every
+exit is freely reachable. So the one-way is **north to south**, and it is one-way only for a
+character that cannot blink — which is what "joined only by blink" always meant.
+
+Walked by the operator 2026-08-17, in both directions: from the southern exits you CAN walk
+north; from the north exit you cannot walk south.
+
+**CORRECTION, same day, to a correction: an earlier version of this paragraph said the blink
+note was wrong. It was not** — blink up the cliff is exactly the mechanic. What was wrong
+was the claim that this is **"the one place in the world"**: the operator also names Ukgoth,
+Under the shadow of the Sentinel, the Cragged Mountains/Ukgoth border and the Underworld.
+
+**AND IT IS A CAPABILITY, NOT ONLY A GEOMETRY.** A route through this room from the north
+is passable for a character holding blink and impassable for one that is not, so "can this
+fleet walk King's Way -> Cragged -> An ancient place" is a question about the CHARACTER.
+Nothing in the router asks that today.
+
+**WHY THE MODEL LETS A BOT CLIMB IT: `MAX_STEP_HEIGHT` HAS EXACTLY ONE ENFORCEMENT SITE AND
+IT IS INSIDE THE WALL TEST.** `canCrossWallAt` returns TRUE immediately for a null sidedef,
+and at this face there is no sidedef — the wall there begins at z 4800, the TOP of the drop,
+and runs up to the ceiling, so nothing at all spans the 1600 units between the 3200 floor
+and the 4800 one. It is a bare discontinuity between two sectors. No wall is crossed, so no
+height is ever checked, and `moverStepLands` says yes to a 1600-unit climb against a limit
+of 384.
+
+`traceFineMoveClient` takes `enforceStepHeight`, **off by default**, which adds the missing
+check per microstep. Switched on it gets 578 exactly right — north exit reaches nothing,
+southern exits still walk to it, 13 regions. It is off because it also refuses SLOPES, which
+are continuous legal climbs: 3 controls in `m59-collision-test` and 1 in
+`m59-impossible-test` break, all of them legitimate moves, and 578's routing view fragments
+to 146 pieces. Narrowing it to a sector CHANGE is the right idea and does not fire, because
+the microstep resolver reports no transition at that face. **The consequence of leaving it
+off is known and bounded**: the router offers a walking route out of the basin that only a
+character with blink can take.
+
+Measured, so a fix can be judged: across 235,701 legal steps in ten rooms, 98.34% rise no
+more than `MAX_STEP_HEIGHT` in any microstep, 1.66% would be refused, and almost all of
+those are in 578. And the Underworld — which climbs hundreds of units and is entirely
+legitimate — profiles as many small steps (2176 -> 2560, 3360 -> 3680), while the Cragged
+Mountains face profiles flat at 3200 for seven eighths of a step and then 1600 in one. That
+contrast is the signal any real fix has to key on.
+
+**ONE-WAY COMES IN TWO KINDS AND ONLY ONE OF THEM HAS A HOME.** A link between two ROOMS
+is recorded in `substrate/m59-oneway.json` and honoured by `passableExits` in
+`m59-map.mjs`. A one-way *inside* a room cannot be expressed there at all, and room 578 is
+that second kind: `path()` plans straight down the cliff, 48 steps from the north exit to
+the southern ones, on a route that contains a **+1600 climb and four 1600-unit drops
+against a `MAX_STEP_HEIGHT` of 384**. Terraces, walked like stairs. That is a live routing
+bug — a character sent that way gets a confident plan it cannot execute — and it predates
+the standable/stand-point work, which only made the same wrong route shorter.
+
+**THE TABLE IS COMMITTED, AND THE ARGUMENT FOR THAT IS THE MANIFEST.** It used to be
+gitignored on the grounds that it is "regenerated in seconds, so it is build output" and
+that "a committed copy is actively misleading the moment the map is rebaked". The first
+half is simply false — it is **about thirteen minutes** on this machine — and the second
+half is backwards: the table carries `geometryManifestSha256` and is **refused outright**
+when it does not match, so a stale committed copy is inert and says so
+(`[routes] planning on the coarse grid — the routing table was baked from different
+geometry`). What is genuinely misleading is its ABSENCE, which is silent and puts a fresh
+clone straight back into walking into walls. `substrate/m59-map.json` (27 MB), `m59-spawns.json`
+and `m59-items.json` are all committed derived data already; this is 1.4 MB of the same kind,
+and it is regenerated in the same breath as the map it comes from.
+
+```bash
+node tools/setup.mjs routes        # bake it; `all` runs this, before the broker
+node tools/setup.mjs doctor        # says whether the table on disk carries masks
+node tools/m59-routebake.mjs --resume    # after a killed bake: keeps what is on disk
+node tools/m59-routes.mjs                # what is baked, and whether it matches the map
+node tools/m59-routes.mjs --verify       # re-walk every baked route
+```
+
+Three things about running it that are not obvious. **`--resume` adopts only what was baked
+from the same geometry AND the same view** — a half-table stitched from two maps is the one
+kind of wrong nothing downstream could detect. **The partial table is flushed every minute
+and carries `complete: false`**, because the whole thing used to be a single write after the
+loop and a Ctrl-C at room 250 of 264 produced nothing at all. And **`doctor` counts MASKS,
+not rooms**: a table baked before masks existed has all 264 rooms, matches the manifest, and
+leaves the broker on the coarse grid — counting rooms put a green tick over exactly the
+failure that line exists to catch.
+
+`node tools/m59-routing-test.mjs` (38) pins all of it, offline.
+
+**AND THE SAME FACT THAT MAKES A SQUARE SAFE MAKES IT A TRAP: THE WAY OUT OF A POCKET IS
+THE WAY IN, WALKED BACKWARDS.** A safe wall IS the coarse grid and the BSP disagreeing —
+that is the mechanism, measured — and the fleet seeks those squares out. Since the router
+plans on the collision view, a character standing on one frequently **cannot plan a route
+to its own room's exits**: room 587 is 68 regions with both exits in region 0, and there
+are 17,402 such pockets world-wide. It tries, is refused, replans, tries again, forever;
+the keeper pass never returns, so the board reports `travelling` while the character
+twitches in a corner. Watched in the client 2026-08-16 — *"like a person pretending to get
+stuck trying to find their way out the door right next to it"*.
+
+`queueValidatedMove` therefore keeps the last 64 moves it sent, and `retreatAlongBreadcrumbs`
+replays them in reverse when `walkTo` finds no route. **Every step replayed was accepted by
+the fine validator on the way in, so it cannot invent an impossible traversal — it can only
+undo one.** That is the whole argument for breadcrumbs over the obvious alternative: a
+coarse-grid escape hatch was **considered and rejected**, because falling back to the
+server's grid relaxes collision precisely where the two views disagree most, which is the
+mechanism that let bots climb cliffs and cross boundaries no client can. The concern was
+never that a bot slips slightly too deep into a safe spot.
+
+Four things it does that read backwards:
+
+- **A broken trail is dropped whole, never skipped.** A crumb that does not START where the
+  character is standing means something else moved it — a teleport, a knockback, a room
+  change — and the crumbs below it are no better connected than that one.
+- **It stops the moment the route reappears.** The goal is to leave the pocket, not to undo
+  the journey, so `until` is asked after every crumb.
+- **A refused reverse step ends the retreat and says so.** It is the same validator, so a
+  step it will not authorise is not forced; the walk then fails honestly, carrying
+  `retreated`, rather than silently.
+- **It runs once per walk.** Undoing the trail twice unwinds the journey.
+
+`node tools/m59-breadcrumb-test.mjs` (32) pins all of it against a scripted validator —
+including the one-way ledge, which is the case that must stop rather than teleport.
+
+**THE BAKE IS LOCAL AND THE SERVER IS NOT.** The map is generated from a source tree here;
+`prod` is somebody else's machine and can be patched on a Tuesday without telling us. Two
+consequences the design turns on:
+
+- **A stale map is a WARNING at startup, not a refusal.** It used to `return 1` — no
+  broker at all. But the per-move validator already fails closed one room at a time,
+  against the server's own announced security value, so refusing to start adds no safety
+  and enormous blast radius: a map that drifted in four rooms would cost twenty-one
+  characters, every room, and everything that is not movement. `--require-map` (or
+  `M59_REQUIRE_MAP=1`) restores the refusal for a machine that should not run a fleet it
+  cannot fully validate. It is opt-in because the failure it prevents is smaller than the
+  one it causes.
+- **Drift is recorded and reported, not merely refused.** Every room whose live security
+  disagrees with the bake is written down and surfaced on `/health` as `geometry_drift`
+  and on `m59-service.mjs status`. A refusal says a character did not walk; the record is
+  what says the WORLD changed, which is the half anyone can act on. Refresh with
+  `node tools/setup.mjs server`.
+
+**A LIVE ROOM ANIMATION BLOCKS MOVEMENT, AND THE BLOCK HAS TO EXPIRE.** `BP_SECTOR_MOVE`
+and the two collision-bearing `BP_CHANGE_TEXTURE` forms set `room.collisionInvalidated`,
+because the stock client mutates its in-memory BSP on those packets and we cannot. The
+refusal is right. **Refusing for ever is a cage**: the flag is cleared in exactly one
+place — `BP_PLAYER`, which arrives on a ROOM CHANGE — and changing rooms requires the
+movement the flag refuses. Any room that animates a sector traps whoever is standing in
+it until a restart, a death or a teleport.
+
+That is not hypothetical: within ten minutes of shipping it, Bunsen and Rizzo were held in
+North Barloque and Scooter in room 589, each reporting `could not reach the bank` six times
+over. So the record carries `until` (`M59_COLLISION_ANIMATION_MS`, 8s) and the check honours
+it — while a record with **no** `until` still blocks, because "we do not know when this ends"
+is not "it has ended".
+
+Two things to know before editing that path:
+
+- **`validateFineTarget` and `queueValidatedMove` are LIFTED OUT OF `m59-broker.mjs` BY
+  TEXT and evaluated** by `m59-collision-test.mjs`, because the broker cannot be imported
+  without taking the fleet lock. So **any module-scope symbol either of them calls must be
+  declared in that test's `dependencies` map** — a free identifier that is fine at runtime
+  is a `ReferenceError` in the test, which is how this was caught. `validateFineTarget`
+  stays PURE and returns its evidence; the caller writes it down.
+- **The map costs real memory.** Measured on this machine: 26.8 MB on disk, **5.6 s and
+  ~399 MB RSS** to load and validate 264/264 rooms at broker start. The PR that introduced
+  it measured 3.2 s and 303 MB elsewhere, so budget for the machine rather than the number.
+
+`node tools/m59-collision-test.mjs` (153) pins it, and **10 of those skip without the raw
+`.roo` files** — set `M59_ROO_DIR` (or `M59_ROOT`) to a tree containing `resource/rooms`
+or the suite quietly reports 137 and calls it a pass.
+
+**AND ALL 153 OF THOSE ASSERTIONS ARE POSITIVE, WHICH MEANS THE SUITE PASSES CLEANLY ON THE
+DAY THE WALLS STOP WORKING.** Brownestone's doorway, the Limping Toad's half-wall, Icky,
+Farol, Ukgoth, Cor Noth, the Temple, the Fey precision cases — every one of them asserts
+that a legitimate move REMAINS USABLE. That is the right thing to protect and it is half a
+contract: a bake exists to REFUSE, and nothing was testing the refusing.
+`node tools/m59-impossible-test.mjs` (126) is the other polarity — checked-in fine traces
+across the King's Way, both Cragged Mountains, the Twisted Wood and its western border,
+Ukgoth, the Sentinel, the Icky Cave and the four floors of Castle Victoria, each asserting
+a refusal AND naming the wall index that refused it, so "still refused, for a completely
+different reason" cannot pass as unchanged. It carries **controls in the same rooms out of
+the same bake**, because a suite that only asserts refusals passes perfectly when
+everything is refused, which is the fleet standing still. And **observation cannot be the
+oracle here**: players legitimately appear to phase through walls from another client's
+view — that is lag compensation — so "I watched it happen" proves nothing about legality.
+Assert against our own validator, which is the only thing this repository controls.
+
 ## Backing the fleet up, and putting it back
 
 ```bash
@@ -358,6 +730,105 @@ as the originals; and **a roster that would shrink is refused outright** unless 
 
 `node tools/m59-backup-test.mjs` (42) pins all of that against scratch directories.
 
+## Setting a test scenario up — DM powers, and a scenario in one file
+
+Everything in this section is for a server running **on this machine**, and all three tools
+refuse a host that is not loopback rather than trusting you to remember. The maintenance
+port is unauthenticated and IP-restricted and that is its entire security model, so
+pointing it at `prod` — somebody else's machine, with real players on it — is not a
+configuration choice.
+
+```bash
+node tools/m59-dm.mjs where TESTER Alpha           # names -> object ids
+node tools/m59-dm.mjs relocate Alpha,Bravo 60 --at 13,16 --verify
+node tools/m59-dm.mjs kit TESTER --stats 50 --health 151 --karma -60 --spells 99
+node tools/m59-dm.mjs heal Alpha,Bravo
+node tools/m59-testbed.mjs up    scenarios/arena.json     # the whole scenario
+node tools/m59-testbed.mjs reset scenarios/arena.json     # between rounds
+node tools/m59-patrol.mjs --agents arena1,arena2 --room 60 --radius 5
+```
+
+**WALKING IS THE WRONG TOOL FOR PLACING A TEST CHARACTER.** Getting six characters from the
+newbie island to the Tos arena by travelling took about twenty minutes and failed halfway
+on five of them; the same placement over this socket is **0.22 seconds, verified**. The
+primitive is `System.UtilGoNearSquare` (`util.kod:20`), whose own docstring is "Move any
+object anywhere in any room" and which is what the DM rescue spell uses.
+
+**A SCENARIO FILE IS A CREDENTIAL STORE**, because creating the account is the one step that
+cannot go over the game protocol. `/scenarios/*.json` is gitignored for the same reason a
+roster is; `*.example.json` is the exception and its passwords are placeholders.
+
+Five things these tools do that are not obvious:
+
+- **THE SOCKET NEEDS NO PACING AT ALL, and every other caller in this repository paces
+  itself.** 70ms in `m59-godmode.mjs`, 400ms in `m59-makefleet.mjs` — and that pacing IS
+  their runtime. Measured: **2000 commands written as one buffer got 2000 replies**, with
+  no elapsed time beyond the settle wait the measurement itself imposed. `m59-dm.mjs`
+  writes a batch in one go and reads until a sentinel, so a full character kit went from
+  fourteen seconds to under one.
+- **OBJECT IDS ARE NOT STABLE. The server renumbers them when it garbage-collects, which it
+  does on every save** — `[Auto] SavePeriod` is 15 minutes here. In one session a character
+  resolved as 7218, was configured as 7218 successfully, and half an hour later object 7218
+  was a heartstone while the character had become 7124. Nothing errored. So resolve names in
+  the same batch that uses them and **never cache an id across a call**; a broker holding
+  stale ids goes quietly deaf and the cure is `m59-service.mjs restart`.
+- **`reset` IS THE VERB THAT MATTERS**, because it runs between every round rather than once
+  per scenario. It is deliberately the cheap one — ceilings, heal, place, all pure
+  maintenance-socket batches, no broker, no walking, no logins.
+- **A SPEC STATES AN END STATE, NOT AN ERRAND** — the same shape as the guild wants, and for
+  the same reason. `reagents: 50` means "carries 50", so `give` reads the pack and creates
+  only the shortfall. The first live `up` re-run doubled every stack to 100 before this was
+  fixed, which is what a delivery does and not what a spec means. It tops up and never takes
+  away: trimming would mean deleting objects out of a character to satisfy a number.
+- **SAY A BOT'S NAME IN AN ARENA AND IT SAYS `challenge`.** `arenaCall` in `m59-chatter.mjs`,
+  guarded on a loopback server AND an arena room AND the whole utterance being the name —
+  not a substring, or a bot called Echo answers "echo location" and the keeper's own status
+  line (which opens with the character's name) calls every bot in the room into the ring for
+  ever. The keeper's `social()` stands down when it matches rather than answering first,
+  which it used to: asked to challenge, Alpha replied "Alpha: not hunting anything, 88/50
+  health."
+
+## Asked for a "minimal summary"?
+
+```bash
+node tools/m59-minimal.mjs            # min/max/avg max health and kills per minute
+node tools/m59-minimal.mjs --minutes 60
+node tools/m59-minimal.mjs --json
+```
+
+Six numbers and nothing else, so the same request gives the same shape every time and
+two readings can be compared. Max health because it IS the level here; kills per minute
+because it is the rate that vigor, supply, safe spots and room choice all exist to
+protect.
+
+**Kills come from the ledger, never from a keeper's own tally.** `Autopilot.tally.kills`
+is emptied in the constructor and keepers restart constantly, so that field means "since
+the last restart" and cannot answer "is this character earning now". Do not answer this
+question by averaging `fleet` rows.
+
+## Who is not fighting, and what is stopping them
+
+```bash
+node tools/m59-overhead.mjs           # worst first: travel + trade against fighting
+```
+
+Overhead is travel plus trade. A character at 90% overhead and 0% fighting is not idle
+and not stalled — it is busy doing something that is not the job, and the fleet board
+cannot show that because every row looks healthy.
+
+**Read the castings column, never the reagent pair.** Castings are
+`min(elderberry, herbs) / 2`, so 3/94 is ONE casting and reads as well stocked to
+anything that sums or averages. Measured on this fleet: every character at or below 3
+castings ran 76-100% overhead with 0-8% fighting, and every character above 18 castings
+ran under 55% overhead. Characters without reagents spend all their time getting reagents.
+
+**And read the band.** `walking_money` is both the float kept after banking and the floor
+`restockReagents` refuses to spend below, so what a character can actually spend is
+`bank_above - walking_money`. At the shipped 500/400 that band is 100 shillings: purses
+sat at 0-586 against bank balances of 10,000-36,000, restocks arrived 150 shillings at a
+time against a 3,360sh full fill, and trading reached 54% of all active time against 17%
+fighting. Raising `walking_money` makes it worse, not better — it is a floor.
+
 ## Asked to shut down, stop the server, or "we're done for now"?
 
 ```bash
@@ -410,6 +881,42 @@ not mean anything can be built. If the daemon is down, say so and ask the user t
 start Docker Desktop; do not try to start it yourself unless they ask.
 
 ## Traps that will waste your time if you do not know them
+
+- **A `send` REPLY NAMES ITS RECEIVER BEFORE IT NAMES ITS ANSWER, so a bare
+  `/OBJECT (\d+)/` reads the wrong number.** The maintenance socket answers
+
+      :< return from OBJECT 0 MESSAGE FindRoomByNum (10268)
+      : OBJECT 267
+      :   is CLASS TosArena (10374)
+
+  and the first match in that is the object the message was SENT TO. Asking for the arena
+  therefore returned **0**, and six characters were relocated into the system object while
+  every reply said success — because `UtilGoNearSquare` never says no either: handed a
+  target square of (99,99) in a 24x24 room it searches outward, lands somewhere else, and
+  returns 1. `returnedObject` in `m59-dm.mjs` takes the line that is only a colon and an
+  object; `m59-godmode.mjs` had the same fallback for its money lookup, where it would have
+  matched the player. **Verify a placement by reading the character back**, which
+  `relocate --verify` does — a reply of 1 means "somebody was moved somewhere".
+
+- **THREE MESSAGES FOR REFILLING A VITAL LOOK RIGHT AND ARE NOT.** `GainHealth` is not the
+  one whose docstring says it stops at the maximum: it caps at **twice** `piMax_health`
+  ("some attempt here to quell the vamp touch bugs"), so a flat `GainHealth 10000` leaves a
+  50-health character reading **88/50**. `GainMana` does not clamp **at all** unless passed
+  `bCapped`, which defaults FALSE. And `GainHealthNormal`, the one that does clamp, returns
+  0 and changes nothing when health is already over the maximum — so it cannot undo the
+  first. `m59-dm.mjs heal` reads each character's own ceiling and SETS the property, which
+  is the only thing that brings an over-max character back down.
+
+- **MAX MANA IS DERIVED, AND IT LOOKS STORED.** `piMax_Mana` is declared at 20 and the only
+  thing that visibly writes it is `GainMaxMana`, so grepping for writers says "stored" —
+  which is what this file's author concluded out loud, and it is wrong.
+  `ComputeMaxMana` (`player.kod:6116`) throws the number away and rebuilds it from
+  `GetInitialMaxMana = 15 + mysticism/5`, plus melded mana nodes, worn items and
+  enchantments; it runs **on login**, on an equipment change and on an enchantment change.
+  So a character set to 200 reads 200 for as long as you watch it and comes back from the
+  next relog at 25. The durable lever is mana nodes — `piNodelist`, what `m59-mananode.mjs`
+  exists to earn. For a test character the ceiling is the test bed's to maintain, which is
+  why `m59-testbed.mjs reset` re-asserts it before healing.
 
 - **`create automated` makes a character with ZERO in every attribute.**
   Attributes are fixed at creation and never move, and stamina *is* the
@@ -759,6 +1266,145 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   and take one back. Add a new errand kind and it shows up on the board that day — an
   unrecognised kind is reported as itself rather than dropped, which is what stops a new
   operation being invisible to the one thing meant to protect it.
+
+- **A CHARACTER CAN BECOME UNABLE TO RECEIVE, AND IT LOOKS EXACTLY LIKE A BROKEN TRADE
+  PROTOCOL.** It can still GIVE, still fight, and reads as completely healthy on the board —
+  but every attempt to hand it a new item fails, with `supply` reporting only *"the trade
+  did not complete — nothing moved"*. Nothing names the pack.
+
+  This cost two check-ins on one character. Lew sat at zero kills for five of them, unarmed,
+  standing in a room where one fleetmate carried 22 weapons and another 19. Its keeper said
+  so plainly — `UNARMED_NO_DONOR`, *"unarmed — 10 mana, needs 15 to make one"*, remedy
+  *"hand it a weapon"* — and thirteen donors in the same room all failed identically.
+  **Shedding four heavy stacks fixed it instantly** and it killed something within a minute.
+
+  **CORRECTION, same day: this entry first said the limit was 14 STACKS. That is WRONG.**
+  Written from one character at 14 that could not receive and could at 10, which is a sample
+  of one and a coincidence of counting. Measured across the fleet an hour later: characters
+  routinely carry **26, 28, 30, 34 and 35 stacks**, and one that had just failed to receive
+  at 22 accepted an item at 19 — while another accepted at 28. There is no 14. What the
+  successful fix actually removed was **WEIGHT and BULK**: the four stacks shed from Lew were
+  55 red mushrooms, 59 mushrooms and 34 emeralds, and its pack went from 74% to 35% in one
+  step. `pack.binding` on the fleet row already says which of the two is the live ceiling,
+  and it differs per character (`1700 + might*20`, so 2000–2700 here).
+
+  The honest state of this trap: **a character that cannot receive is nearly always full,
+  the board's `pack.percent` and `pack.binding` are the numbers to read, and shedding the
+  heaviest stacks is the fix.** Do not go looking for a stack count. And note what the wrong
+  version cost — nothing, because the remedy was the same either way, which is exactly why
+  it survived a commit without anybody noticing.
+
+  **Every diagnosis that fits the symptom is wrong in a way that wastes a session.** It is
+  not the keeper (it fails with the keeper stopped). It is not the room (`supply` checks,
+  and says so when they are apart). It is not the trade tooling: the CONTROL matters
+  here, and it is one call. Ask three questions, not one:
+
+  | | Lew | reading |
+  |---|---|---|
+  | can it RECEIVE a light item? | no | — |
+  | can it GIVE? | **yes** | so its session and the protocol are fine |
+  | can two OTHER characters trade? | **yes** | so the tooling is fine |
+
+  One-directional failure is the signature. **`pack.percent` and `pack.binding` are the
+  numbers to read — not `carrying`**, which is what the first version of this entry said and
+  is what led it to invent a stack limit that does not exist.
+
+  **`trade` lies in BOTH directions and must never be trusted over a re-read.** It returned
+  `offered: false` on an offer that had in fact landed with the item on the table — so the
+  natural response, retrying, cancels a working trade. It then returned `accepted: true`
+  with `carried_before` equal to `carried_after`, having transferred nothing. Watch the
+  recipient's `mayAccept`: it stayed **false** through a successful counter, so the giver's
+  accept was the only one and it ENDED the trade rather than completing it. **Use `supply`**
+  — it drives both ends and verifies the receiver actually holds the goods afterwards, which
+  is the whole reason it exists.
+
+- **"BOUGHT X BUT WON'T WIELD IT" IS ALMOST ALWAYS "CAN'T PUT DOWN Y", AND THERE ARE
+  EXACTLY TWO THINGS THAT DO IT.** A character that buys a mace and keeps swinging a long
+  sword is not a ranking bug and not a failed purchase — something already in its hands
+  refuses to come off, and both culprits are silent about it in the ways this file keeps
+  warning about.
+
+  **A CURSED WEAPON CANNOT BE PUT DOWN, EVER.** `WeapAttCursed.ItemReqUnuse`
+  (`wacursed.kod:97`) tests nothing at all — it returns FALSE unconditionally and says
+  *"%s%s seems to cling to your hand!"* — and `ItemReqLeaveOwner` refuses the drop for as
+  long as the item is in `getplayerusing`. So **wielding one is the only irreversible
+  mistake in this repository**: no swap, no sale, no handover, no drop, for the life of
+  the character.
+
+  And it is a **downgrade, not a trade-off**: `ModifyDamage` and `ModifyHitRoll` both
+  return `x - 2*power`, so it is strictly worse than what it replaced at hitting *and* at
+  hurting. There is no upside to weigh against being stuck with it.
+
+  Nothing in the harness knew the attribute existed. The name is `"cursed %s"`, so a
+  cursed long sword matches `/long ?sword/` and scored **7** — ahead of every mace in the
+  pack. It is **10% of the item-attribute treasure table**
+  (`AddToItemAttTreasureTable(#percent=10)`) and this fleet loots a weapon from almost
+  every kill, so it is a live hazard rather than a curiosity. `isCursed` in
+  `m59-skills.mjs` keeps it out of `weaponRanking`.
+
+  **The guard is on WIELDING only, and that is deliberate.** One that is merely carried is
+  harmless and still sellable — `ItemReqLeaveOwner` refuses only while it is in the use
+  list — so it stays a weapon to `weaponScore`, `sellable` and the equipment plan, and the
+  ordinary sell rules shed it. Scoring it zero would make it invisible to the very code
+  that should be getting rid of it. **Unwieldable, not invisible.**
+
+  **The other culprit is a TOKEN**, which takes both hand slots and is already on the
+  fleet row as `holding_token` — see the note in `m59-broker.mjs` about why it is a flag
+  rather than a reading. Check that first; it is free.
+
+- **A SMITH DOES NOT BUY MUSHROOMS, AND OFFERING HIM ONE IS A SUCCESSFUL CALL THAT RETURNS
+  A SILENCE.** What a merchant deals in is `ObjectDesired`, declared per class.
+  `Monster.ObjectDesired` (`monster.kod:4707`) returns TRUE and its own docstring says
+  *"This is set in individual buyers. It allows them to pick and choose what they want to
+  buy."* — **fifteen classes in the tree override it**, each in a couple of lines of
+  category tests. That is the whole vocabulary, and `m59-buyers.mjs` is it with citations.
+
+  The categories are **not** the item kinds, and nothing else groups them this way:
+
+  | predicate | is | `monster.kod` |
+  |---|---|---|
+  | `IsObjectWeapon` | Weapon | :4142 |
+  | `IsObjectWearable` | Armor, Helmet, Gauntlet, Necklace, **Shield**, Pants | :4183 |
+  | `IsObjectSundry` | Torch, Flask, Mug, **Food** | :4152 |
+  | `IsObjectMisc` | Chalice, Scepter, SpecialWand, SpellItem, Book, Arsenic, SpiderEgg(Shell), Key | :4165 |
+  | `IsObjectGem` | JewelofFroz, Emerald, Ruby, Sapphire, Diamond, **Ring** | :4198 |
+  | `IsObjectReagent` | `IsItemType(ITEMTYPE_REAGENT)` — asks the item | :4213 |
+
+  **A GEM IS ALSO A REAGENT**, which is why three of the four apothecaries name the
+  exclusion explicitly (`TsApoth.kod:66`, `bqapoth.kod:128`, `kcapoth.kod:49`) and why
+  **Hazar is the only apothecary that takes one** (`hzapoth.kod:55`). `Ring` counting as a
+  gem is how a signet ring gets refused by a counter buying every other reagent. And the
+  smiths are not interchangeable: five buy weapons *and* wearables, but **Marion's buys
+  weapons and shields and no body armour** (`MrSmith.kod:80`), so folding the six into one
+  rule sells his leather to a silence.
+
+  **`buys_anything` on the merchant row does not answer this and inverts it.** It is
+  computed as "did this class override `ObjectDesired`", which is accurate and is a
+  different question: it is TRUE for the bankers who take your goods and thank you, and
+  FALSE for every merchant actually worth walking to.
+
+  This cost real trips. `sell_all` offered whatever the loadout marked sellable to whoever
+  was standing there, so a run at Quintor's Smithy in Jasper offered him sapphires,
+  mushrooms and water skins — each a full offer/cancel round trip plus 900ms of pacing,
+  each returning `no counteroffer came back`, and together burying the one line that
+  mattered. It now partitions first and returns **`not_offered`** beside `sold` and
+  `refused`, with a reason and a citation per item.
+
+  ```bash
+  node tools/m59-buyers.mjs                              # the whole table
+  node tools/m59-buyers.mjs Quintor "long sword" sapphire
+  node tools/m59-buyers.mjs --who-buys sapphire          # who takes it — ask BEFORE the walk
+  ```
+
+  The MCP tool is `who_buys`, and it moves nobody. **`refused` and `not_offered` are
+  different facts**: the first was turned down at the counter, the second never left the
+  pack and is still saleable somewhere else.
+
+  **CANNOT SAY IS NOT NO, and that asymmetry is the whole safety argument.** An
+  unrecognised merchant class or an item missing from the index answers `null`, and every
+  caller offers it anyway. Being wrong about a category costs a round trip; holding
+  something back that would have sold costs the sale **invisibly** — the trip reports
+  success, the goods are still in the pack, and nothing says why.
 
 - **TWO MERCHANTS HOLD A REAL INVENTORY AND CAN RUN OUT — OF STOCK, AND OF SHELF SPACE.**
   Every other merchant assembles its list on demand and cannot run dry: `monster.kod`
@@ -1250,6 +1896,98 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   against server-built fixtures, the title ordering, the rent sign and its overlapping
   sentences, the Bookmaker's override, and the pooling arithmetic.
 
+- **THE RED NAME IS ALREADY ON THE WIRE, AND `PF_*` IS AN ENUM RATHER THAN A BITMASK — SO
+  THE OBVIOUS TEST OPENS FIRE ON EVERY DUNGEON MASTER.** The client colours a player's
+  name from nothing but its object flags (`GetPlayerNameColor`, `clientd3d/color.c:619`):
+  red for a killer, orange for an outlaw. Every room description we already receive
+  carries it; this repository simply never read it.
+
+  The bits live in `OF.PLAYER_MASK` (0x1C000) as an **enumerated field**, and
+  **`PF.DM` is 0xC000, which is exactly `PF.KILLER | PF.OUTLAW`**. So `flags & PF.KILLER`
+  is true for every DM on the server. The game's own client `switch`es on the masked
+  value; `playerClass()` in `m59-parse.mjs` does the same, and `flaggedAggressor()` is the
+  only predicate anything defensive should ask.
+
+- **THE SERVER IS THE SAFETY, AND THE RIGHT MOVE IS TO LEAVE IT ON.** `PFLAG_SAFETY` is a
+  real server-side flag, not a client courtesy, and `Player.CheckStatusAndSafety`
+  (`player.kod:3767`) says what it does in its own docstring: *"PFLAG_SAFETY prevents
+  accidental attacks. **You can always successfully hit a murderer or outlaw, though.**"*
+
+  So with safety ON the server does exactly the discrimination a defensive fleet wants:
+
+  | | with our safety ON |
+  |---|---|
+  | attack an ordinary player | **refused** — *"Hey! You almost hit %s%s! Good thing your safety was on!"* (`player.kod:177`) |
+  | attack a murderer or outlaw | allowed, and the outlaw-granting branch is skipped entirely (`player.kod:3816`) |
+  | **kill** a murderer or outlaw | `piJustified_kill_count`, **no** murderer flag, **no** outlaw flag, no faction loss (`player.kod:4841`, `:4856`) |
+
+  Turning safety off to fight back would be strictly worse: it buys nothing we need and
+  removes the interlock. `defend_against_players` therefore never touches it.
+
+- **A MONSTER DOES NOT COME BACK TOMORROW, SO SELF-DEFENCE NEEDS A MEMORY AND THE MEMORY
+  IS THE FLEET'S.** `m59-grudge.mjs` records who attacked us, fleet-wide, for an hour. One
+  character being hit is everybody's information — that is what lets eight fleetmates in
+  the room defend the one that got hit, and what lets any of them recognise the same
+  person later in another town.
+
+  **Three things must all hold before a swing**, and only the first is ours to get wrong:
+
+  1. the **grudge** — this name attacked one of ours inside the hour;
+  2. the **live flag** — the object in front of us is carrying `PF_KILLER` or `PF_OUTLAW`
+     *right now*, re-read every time and never taken from the record;
+  3. the **server's own safety**, above.
+
+  **It is keyed on the NAME, which is the weaker key, and deliberately.** Everything else
+  here insists on the object id — but that rule exists because a live session gives the
+  server's own answer, and **a stranger gives us no session**, while object ids are
+  renumbered on every save. An hour-long grudge keyed on an id would outlive the id. The
+  cost is bounded by rule 2: to be hit under a coincidental name you must *also* be
+  currently flagged, which the server permits and penalises nobody for.
+
+  `node tools/m59-grudge.mjs` reads the book; `--forgive <name>` and `--clear` empty it.
+  It is **gitignored**, because every row is an accusation against a named real person.
+
+  `node tools/m59-grudge-test.mjs` (48) is the contract test, and the DM assertion in it
+  should never be deleted.
+
+- **A TRIP THAT CANNOT FIX THE THING THAT OPENED IT WILL RUN FOR EVER, AND EVERY LAP OF IT
+  REPORTS SUCCESS.** `bankRun` has five doors and they have different remedies: a full pack
+  is fixed by SELLING, a reagent shortfall only by BUYING, and buying needs money. The
+  `supply` trigger was added to `checkIfShouldSell` long after `bankRun` learned to read
+  that function's answer as `packFull`, so a shortfall was routed to a **market** — Roq
+  buys and sells nothing — and the character arrived with an empty pack, sold nothing,
+  walked one room to the apothecary with the two shillings it set out with, was refused,
+  and walked back with the condition exactly as true as when it started.
+
+  Measured 2026-08-16: **Fozzie made the 110 → 104 round trip every thirty-five seconds for
+  over five hours** — 155 `buy_declined` in one day, every one reading `spendable: 2`, 0
+  kills in the last half hour — **while holding 27,282 shillings in the bank**. Twelve of
+  twenty-one were in the same loop and the fleet was sitting on **666,540 banked
+  shillings**. Nothing errored, nothing stalled, and `m59-supervise.mjs` had nothing to
+  unstick because the character was moving perfectly well.
+
+  Three things kept it invisible, and all three are the general lesson:
+
+  - **Every trip that was not the food one logged `going to the bank`**, including the ones
+    walking to a market. The one line an operator had named neither the destination nor the
+    reason, so an hour of ping-pong read as a fleet doing its banking. The note now names
+    the errand and carries the trigger and the bill.
+  - **THE CHARACTER WAS NOT POOR, IT WAS ILLIQUID** — and the door for that already existed.
+    `needsCashFirst` sends a character to a bank before the shop and was written for hunger;
+    nobody wired it to supply. A balance buys nothing while it is in the bank.
+  - **The comment saying this trip "cannot spin, because it always achieves something" was
+    true when it was written** and stopped being true when the trigger was added. A cooldown
+    was declined on that reasoning, so the loop ran at one lap per keeper pass.
+
+  `townDestinations` is now the single ordered answer to "which counter", written as a table
+  so the next door added is a row rather than another arm of a nested conditional, and
+  `reagentGapCost` is the single answer to "what does this errand cost" — the trip and the
+  withdrawal both read it, and two answers there is how a character draws pocket money for
+  an 8,400sh fill and is back on the road inside the hour. There is a cooldown as well as a
+  destination, because the destination fix assumes there is a balance to fetch: with an
+  empty bank too, the shortfall is real and unfixable this hour and the character should be
+  farming rather than walking.
+
 - **A KEEPER EARNING NOTHING LOOKS EXACTLY LIKE A HEALTHY ONE, AND THE CHECK THAT SAYS SO
   WAS UNREACHABLE FOR A YEAR.** `noProgress()` fires when nothing WORKS. `yieldCheck()` fires
   when everything works and none of it is worth anything — the keeper kills something every
@@ -1357,6 +2095,123 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   at 0 bytes for ever. This looks exactly like a hook not firing. The container
   turns it on; a native build may not have.
 
+## LENDING CHARACTERS OVER THE INTERNET WITHOUT LENDING THE PASSWORD
+
+The fleet cannot be handed over the way a session is handed over, and the server source
+says why. `SynchedAcceptLogin` (`blakserv/synched.c:321`) is the whole of authentication —
+`a = AccountLoginByName(name)` then `a->password != password` — re-checked on every TCP
+connect. **There is no resume verb in the AP table**, so there is no session to pass. The
+wire carries `MD5(password)` rather than the plaintext (`m59-client.mjs`, `mdpass`), but
+that digest IS the credential: it is compared directly against what is stored, so shipping
+digests instead of passwords moves the same authority under a different name.
+
+Nor can the live connection travel. Every session holds anti-spoof state — `seeds[]`,
+`secure_token`, `sliding_token` — advancing on **every packet** in lockstep with the server
+(`commcli.c:160-177`); one step out of line sets `seeds_hacked` and the server drops you
+silently. And the IP is not the obstacle people expect: it appears only in a ban list and
+in `MaxPerIPAddress` (default `0`, unlimited), never binding a session to an address.
+
+**So what moves is AUTHORITY.** The broker stays here holding the roster and the sockets;
+somebody else drives part of it through a door that can be shut.
+
+```bash
+node tools/m59-handoff.mjs mint --to "a guildmate" --agents t1,t2 --for 4h   # owner
+node tools/m59-lend.mjs --port 8931                                          # owner, behind a tunnel
+node tools/m59-mcp-attach.mjs --host <tunnel> --port 8931 --token m59g_...   # borrower
+```
+
+The borrowed characters then appear in the borrower's own tooling as ordinary MCP tools.
+`node tools/m59-handoff.mjs list` shows every grant and what it has been used for;
+`revoke <id>` ends it on the next request.
+
+- **A grant is FULL CONTROL by default**, including what cannot be undone. That is
+  deliberate: half-lending a character produces a bot that stalls on the verb you withheld,
+  and you find out from a silence rather than an error. `--safe` opts into withholding the
+  irreversible ones (`leave`, `forget`, `reroll`, `pilot`, `describe`, and the destructive
+  guild verbs). **`leave` and `forget` are the worst of them** — they drop the roster entry,
+  and the roster is the only record of the account password.
+- **What a grant still is not, even at full control**, is the reason it beats telling
+  somebody the password: it is revocable in one command, it expires on its own, it is
+  scoped to named characters rather than the account, every use is attributed — and the
+  holder never learns the credential, so revoking actually ends it.
+- **The token is never stored**, only a salted SHA-256, so a leaked grant file names who was
+  trusted and grants nothing.
+- **`fleet` comes back filtered** to the characters the grant covers. A borrower of two
+  characters gets a board of two; otherwise every lend leaks the whole roster's positions,
+  health and money.
+- **`m59-lend.mjs` is a separate process from the broker and must stay one.** The broker's
+  own port has no authentication — its controls render only for loopback and the POST is
+  refused at the socket for anything else — which is right for something holding twenty-one
+  irreplaceable accounts, and exactly what you do not bolt an internet-facing auth layer
+  onto. The lend door owns no sessions, no roster and no lock, and can do nothing a local
+  operator could not.
+- **There is no TLS here.** Put it behind a VPN or an SSH tunnel; never expose either port
+  directly. `substrate/grants/` is gitignored, like the roster.
+
+## A NUMBER THAT IS THIS CHECKOUT'S OPINION DOES NOT BELONG IN GIT
+
+`fight_above_vigor: 180` was two different claims wearing one coat, and they have
+opposite homes.
+
+One is **mechanics**: resting stops awarding vigor at 80 of 200 (`RestTimer`, and
+`REST_VIGOR_CAP` here), so everything above 80 has to be EATEN, and `create food` costs 2
+elderberry **and** 2 herbs. That is not an opinion, it is what the game does, and it
+belongs in the repository with its citation.
+
+The other is a **bet**: that this fleet's apothecary run is working well enough to keep
+twenty-one characters fed past the cap. That is true on a good afternoon and false on a
+bad one — measured 2026-08-14, herbs were **zero on all 21 characters** with 10
+elderberry between them, so not one of them could cast it — and it was never true for
+anybody else's roster at all. Committed, it ships as advice to a stranger whose fleet it
+will get killed, and the history fills with an argument about a number that was only ever
+local.
+
+So the bet moves out:
+
+```bash
+node tools/m59-localpolicy.mjs             # what this checkout overrides, and what it does not
+node tools/m59-localpolicy.mjs --explain   # the overridable surface, and the mechanics behind each key
+node tools/m59-localpolicy.mjs --example   # a starter file to copy
+```
+
+`substrate/policy.local.json` is gitignored and holds this machine's answer, per block —
+`valley_orders` and `lowland_orders` are the two `m59-supervise.mjs` deploys with. The
+committed defaults in that file are untouched and remain **exactly what a fresh clone
+runs**. `meridian59-dum-bot` has the same split already and now uses it the same way: the
+committed doctrine keeps 180 as its documented example, `doctrines/local/` carries what
+prod actually runs, and `loadDoctrine`'s provenance names the local file so you can see
+which one won.
+
+Four properties, each of which is the cheap mistake:
+
+- **Silence means the behaviour that was already there, never an empty policy.** An
+  absent file, an empty one, a block this build has no name for — all three return the
+  committed orders object unchanged. Returning `{}` would strip every flee threshold off
+  a live fleet while looking like doing nothing, which is the same failure the loadout
+  overlay is built to avoid.
+- **A file that will not parse is not an empty file.** It keeps the committed defaults
+  *and says so*, because the operator who just edited it is the last person who would
+  suspect that their broken JSON silently reverted the fleet.
+- **An unusable value keeps the committed one rather than unsetting it.** `flee_below: 35`
+  is somebody typing a percentage; it must not become a threshold of 3500% and it must not
+  quietly remove the floor. Falling back to the default is the safe direction.
+- **An unrecognised key is reported, never applied and never dropped.** A setting that
+  silently does nothing is how `purpose` stayed out of a schema for a year while every
+  keeper in the fleet ran with an audit switched off that everyone believed was on.
+
+And the **mechanics are not overridable**. `VIGOR_MAX`, `REST_VIGOR_CAP` and
+`MIN_FIGHT_VIGOR` are exported for citation and a local file naming one is refused —
+but a floor **above** the cap is *allowed* and **warned about**, naming the recipe,
+because a fleet holding out for a vigor no amount of resting can deliver looks on the
+board exactly like a fleet that is working. That warning is the whole reason the module
+exists: it is the sentence that would have been printed on the round the fleet sat at
+exactly 80 vigor with an empty larder, reading as twenty-one healthy characters.
+
+`MIN_FIGHT_VIGOR` (100) sits **above** `REST_VIGOR_CAP` (80), so the two are not the ends
+of a quiet middle band — there is no setting that clears both. Written as an either/or,
+every value warned about something, which reads the same as nothing. They are independent
+remarks and a value may collect both.
+
 ## Working in this repository
 
 - **A CLAIM THAT CONTRADICTS WHAT IS ALREADY WRITTEN DOWN NEEDS A REPRODUCTION BEFORE
@@ -1410,6 +2265,27 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-chat-test.mjs` (128) and
   `node tools/m59-rest-test.mjs` (38) and
   `node tools/m59-ledger-test.mjs` (25) and
+  `node tools/m59-localpolicy-test.mjs` (71 — **the contract test for the overlay that
+  separates this checkout's opinions from this repository's**: that an absent, empty or
+  unparseable local file all mean the committed behaviour rather than an empty policy,
+  that an unusable value keeps the committed one instead of unsetting it, that an
+  unrecognised key is reported rather than dropped, and that no local file can move a
+  mechanic or throw hard enough to stop a supervisor round) and
+  `node tools/m59-handoff-test.mjs` (112 — **the contract test for lending a character
+  without lending the password**: that the token is never on disk so a leaked grant file is
+  an audit record rather than a key, that expiry is decided on USE and revocation on the
+  next request, that `read` cannot order and an agent allowlist actually excludes, that a
+  grant is FULL CONTROL by default and `--safe` is opt-in, and that a restricted tool whose
+  destructive verbs are chosen by an argument is refused when the argument is omitted. It
+  caught a real intermittent auth bug: ids were base64url, whose alphabet contains the
+  token separator) and
+  `node tools/m59-travel-test.mjs` (24 — **one call is the whole journey**: that a refused
+  doorway and an off-grid instant are re-settled and retried rather than returned, that a
+  stumble is not a hop so re-settling cannot eat the room budget, that patience is bounded
+  and the reason survives to the caller, that a journey whose last hop is also its last
+  permitted hop reports arrival rather than "gave up", and that a cancelled movement still
+  wins. It lifts the real method out of `m59-broker.mjs` by brace-matching rather than
+  reimplementing it, because that file cannot be imported without taking the fleet lock) and
   `node tools/m59-escape-test.mjs` (70) and
   `node tools/m59-combat-test.mjs` (383) and
   `node tools/m59-playbook-test.mjs` (37 — the three moments, the closed verb set, and
@@ -1428,7 +2304,19 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   `node tools/m59-compendium-test.mjs` (42) and
   `node tools/m59-prey-test.mjs` (56) and
   `node tools/m59-spellaudit-test.mjs` (28) and
-  `node tools/m59-localclient-test.mjs` (55) and
+  `node tools/m59-localclient-test.mjs` (65 — the last ten spawn REAL processes named
+  `Meridian.exe`, because every failure mode of the POSIX scan is invisible to a fixture.
+  **A PROTON LAUNCH IS SIX PROCESSES, NOT ONE** — reaper, srt-bwrap, pv-adverb, proton,
+  steam.exe, the game — all repeating one command line, so a naive count reads six clients
+  and refuses to claim any of them; the identity is the ACCOUNT. Only the last of the six
+  has the executable at `argv[0]`, and that is the one a claim must bind to, because a
+  claim is released when its pid exits. A process that merely mentions the client, like a
+  grep or `m59-shortcuts.mjs --show`, must not be claimed off flags that are only quoted
+  text. And the cap counts CLIENTS, not processes: at eight raw matches the second
+  person's launch truncates mid-chain. The fixture symlinks `/bin/bash`, because a
+  `#!/bin/bash` script runs with `argv[0]` = `/bin/bash` and would have tested the wrong
+  shape. **The scan reads the whole machine**, so the assertions are scoped to accounts
+  nobody plays — a live Kermit failed five of them by being correctly detected) and
   `node tools/m59-bank-test.mjs` (52) and
   `node tools/m59-describe-test.mjs` (52) and
   `node tools/m59-party-test.mjs` (57) and
@@ -1441,6 +2329,16 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   enough to be handed it, and how far a courier walks: that a loadout shortfall of any kind
   reaches the board with its quantity, that the neighbourhood is polled nearest-first, and
   that a stale declaration and a zero shortfall are both refused as delivery orders) and
+  `node tools/m59-grudge-test.mjs` (48 — **the contract test for the only code here that
+  can make a character hit a real person**: that `PF_*` is read as an enum so a Dungeon
+  Master is never mistaken for a murderer, that a grudge and a live flag are BOTH required
+  and neither alone is enough, that the hour is measured from the last blow, and that a
+  fleetmate is refused before anything else is asked) and
+  `node tools/m59-townrun-test.mjs` (15 — **which counter a town trip is aimed at, and what
+  the errand costs**: that a reagent shortfall goes to the apothecary and never to a market
+  that cannot sell it anything, that an empty purse sends it to a bank FIRST, that a full
+  pack still goes to Roq, and that the bill the trip and the withdrawal both read has one
+  home. See the trap below on a trip that cannot fix the thing that opened it) and
   `node tools/m59-guild-test.mjs` (192 — **the contract test for a command space that
   refuses in total silence**: that the permission check runs off the server's own bitmask
   rather than the rank table, that invite is LORD while exile is LIEUTENANT, that
@@ -1461,8 +2359,57 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   carry arithmetic have one home. Runs against scratch sheets, never the fleet's own) and
   `node tools/m59-backup-test.mjs` (42 — backing the rosters up and putting them back,
   against scratch directories; never touches a real fleet) and
+  `node tools/m59-testbed-test.mjs` (104 — the DM command vocabulary, the patrol ring, the
+  scenario spec and the arena reply. **Opens no socket, deliberately**: every live failure
+  these three tools have had was "the command we sent was not the command we meant" — a
+  room object id read out of a reply header, a karma figure a hundred times too small, a
+  name with a digit in it that the server accepts and silently replaces — and all of those
+  are decidable from a string) and
+  `node tools/m59-buyers-test.mjs` (38 — **what a merchant will actually buy**: that a gem
+  is also a reagent and the apothecaries' exclusion turns on it, that Marion's smith takes
+  no body armour, that an exclusive rule excludes a sibling of the same family, and above
+  all that "cannot say" falls through to OFFERING. The two failure directions are not
+  symmetric — a wasted offer costs a round trip, a wrongly withheld item costs the sale and
+  is invisible) and
   `node tools/m59-merchants-test.mjs` (77, dropping to 43 without `M59_ROOT`) and
-  `node tools/m59-roo-test.mjs` (57, of which 9 skip without a copy of the game's
+  `node tools/m59-collision-test.mjs` (148 — **the fail-closed contract for all
+  movement**: compact collision metadata survives a bake, legacy maps cannot authorize
+  a coordinate packet, the player cylinder catches wall bodies and corners, long strides
+  cannot tunnel, stock endpoint-0 slope and water-depth rules are preserved, every
+  emitted packet is revalidated, and the documented Brownestone, Limping Toad, Icky,
+  Farol, Ukgoth, Cor Noth, Temple, and Fey precision cases remain usable) and
+  `node tools/m59-routing-test.mjs` (38 — **the contract test for planning on the map the
+  mover enforces**: that `moverStepLands` and not `stepAllowedByCollision` is the question
+  that decides anything, that the quantizer has one answer for the planning half and the
+  sending half, that a mask round-trips bit for bit and one of the wrong size is refused
+  rather than mis-indexed, that with no mask the router plans exactly as it did before any
+  of this existed, that a refusal removes an EDGE and not a SQUARE, that the tiny pockets
+  against the walls are kept because they are the safe-spot signal, and that an exit a bake
+  cannot reach is still OFFERED — a bake must never be the reason a doorway disappears, and
+  that the clearance preference routes further from the walls while never removing a route) and
+  `node tools/m59-impossible-test.mjs` (126 — **the polarity the 153 collision assertions do
+  not cover**: every one of those asserts a legitimate move REMAINS USABLE, so that suite
+  passes cleanly on the day the walls stop working. This one asserts refusals, by checked-in
+  fine traces that each name the wall index that refused them, with controls in the same
+  rooms out of the same bake — because a suite that only asserts refusals passes perfectly
+  when everything is refused, which is the fleet standing still. Observation cannot be the
+  oracle: another client's view of a player phasing through a wall is lag compensation) and
+  `node tools/m59-safewall-test.mjs` (15 — **the mechanism, on real geometry, against
+  squares characters actually held**. The other 141 safe-spot assertions are about the
+  BOOK-KEEPING and the mechanism itself is tested only on synthetic grids, so nothing
+  asserted that what the fleet stands on in the real world is a safe wall. It reads the
+  book and the baked map: every held square is still nominated, a held square offers
+  materially more unanswerable shots and more wall at its back than ordinary floor in the
+  SAME room (3.24 vs 1.49 and 3.46 vs 0.85 across 37 rooms), and the chooser still lands on
+  one. Its last section is the guard against the routing preference leaking back into the
+  tactical questions and teaching the fleet off the walls — flip `path`'s clearance default
+  back on and it goes red on 302 of 395 walks) and
+  `node tools/m59-breadcrumb-test.mjs` (32 — **the contract test for getting out of a safe
+  spot**: that a crumb is recorded at the one choke point every move passes through, that a
+  retreat cannot invent an impossible traversal because every step goes back through the
+  fine validator, that a broken trail is dropped whole rather than skipped, that it stops
+  the moment the route reappears, and that a genuine dead end still reports itself) and
+  `node tools/m59-roo-test.mjs` (74, with raw-room checks skipping without a copy of the game's
   `resource/rooms`). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on
   8899 and fail with `ECONNREFUSED` without one, which is not a regression.
@@ -1484,6 +2431,45 @@ start Docker Desktop; do not try to start it yourself unless they ask.
   square is therefore worth exactly nothing, and an earlier "hug the wall by 24 of 64
   fine units" change was inert by construction. Do not reach for sub-square positioning
   to explain a safe spot; the answer is always in the squares.
+
+- **A SAFE WALL IS THE TWO GRIDS DISAGREEING, AND THAT IS MEASURABLE RATHER THAN POETIC.**
+  This started as an operator's hunch — that safe spots turn up exactly where the coarse
+  walkable grid and the client's BSP disagree — and the recorded book bears it out.
+
+  "Disagree" means: the one-byte-a-square grid offers a neighbour that
+  `traceFineMoveClient` refuses. Measured across every tested square in
+  `substrate/m59-safespots.json`:
+
+  | | at a disagreeing square |
+  |---|---|
+  | squares that HELD | **44.0%** (405/920) |
+  | squares that FAILED | 34.5% (688/1997) |
+  | ordinary floor, same rooms | **23.9%** (3249/13594) |
+
+  And it is dose-responsive, which is what makes it a mechanism rather than a coincidence
+  — by how many of the grid's neighbours the BSP refuses:
+
+  | refused | held |
+  |---|---|
+  | 0 | 28.2% (515/1824) |
+  | 1 | 26.6% (175/657) |
+  | 2 | 49.1% (141/287) |
+  | 3 | 55.2% (58/105) |
+  | 4+ | **70.5% (31/44)** |
+
+  Not a room-level confound: comparing high- against low-disagreement squares WITHIN each
+  room, 12 rooms favour it, 3 go against and 2 tie.
+
+  **The mechanism is the asymmetry below, seen from the other side.** A square the BSP
+  hems in is a square whose lines to the surrounding floor are broken — and it is exactly
+  those lines that `Room.LineOfSight` tests for the monster and nothing tests for us. The
+  disagreement and the safe wall are one geometric fact.
+
+  Two things follow. A safe spot is **predictable from geometry** rather than only
+  discoverable by standing somewhere and being hit for it, which is what the book pays for
+  today. And the routing fragmentation those same disagreements cause is mostly harmless —
+  it is tiny dead corners, not severed halves of a room — so it is a poor reason to refuse
+  a route and a good reason to rank a wall.
 
 - **The safe wall is an asymmetry in who checks line of sight.** `Monster.CanReach`
   calls `Room.LineOfSight` (`monster.kod:1782`); `Player.TargetWithinSightAndRange`

@@ -18,16 +18,20 @@
 // cleverer, and a dependency here would be a dependency in the one tool you reach for
 // when things are already broken.
 import { stdin, stdout, env, exit, argv } from 'node:process';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import { readFileSync, openSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveFleet } from './m59-fleetpath.mjs';
+import { findClient, findClientExe, isSteamInstall, clientArgs, STEAM_APPID }
+  from './m59-shortcuts.mjs';
 import { ensureServing, openBrowser, importUrl, COMPENDIUM_PORT } from './m59-compendium.mjs';
+import * as webui from './m59-webui.mjs';
 import { commitmentOf, stepSelection, firstSelectable, allCommitted } from './m59-commitment.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
+const WIN = process.platform === 'win32';
 // Which roster this TUI is looking at. Must match the broker it is talking to —
 // pass --fleet <name> to both, or neither.
 const { label: FLEET_LABEL, stateFile: STATE_FILE } = resolveFleet();
@@ -229,7 +233,8 @@ function listView() {
         c.dim(' off ' + cut(curHeld.label ?? 'fleet work', 24))
       : c.bold(c.yellow('X')) + c.dim(' leave override');
   L.push(c.dim('  ↑↓/jk move · ⏎ open · L launch · ') + c.cyan('S swarm') + c.dim(' · ') +
-         c.cyan('B board') + c.dim(' · C compendium · P plan · ') + xSays +
+         c.cyan('B board') + c.dim(' · ') + c.cyan('F field cmd') +
+         c.dim(' · C compendium · P plan · ') + xSays +
          c.dim(' · r refresh · q quit'));
   if (S.status) L.push('  ' + S.status);
   if (S.lastError) L.push('  ' + c.red(S.lastError));
@@ -302,6 +307,7 @@ function heroView() {
   L.push(c.dim('  ⏎/q back · ') + c.bold(c.yellow('L')) + c.dim(' LAUNCH the client as this character · ') +
          c.bold(c.cyan('S')) + c.dim(' SWARM — launch and the fleet follows · ') +
          c.bold(c.cyan('B')) + c.dim(` BOARD — the whole ${FLEET_LABEL} fleet in the commander · `) +
+         c.bold(c.cyan('F')) + c.dim(' FIELD COMMAND — the same fleet on a map, in a browser · ') +
          (held ? c.bold(c.yellow('X')) + c.dim(' take it off ' + cut(held.label ?? 'fleet work', 22)) + c.dim(' · ') : '') +
          c.dim('r refresh'));
   if (S.status) L.push('  ' + S.status);
@@ -372,8 +378,16 @@ async function ensureProxy(host, port) {
 async function launch(row, { viaProxy = false } = {}) {
   const creds = rosterFor(row.agent);
   if (!creds) { S.status = c.red('no credentials on file for ' + row.agent); return; }
-  const exe = env.M59_CLIENT_EXE ||
-    'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Meridian 59\\Meridian.exe';
+  // FIND THE CLIENT THE WAY doctor AND THE SHORTCUTS FIND IT. This was a hardcoded
+  // `C:\Program Files (x86)\...`, which on Linux is not a path at all — and on a
+  // Windows box with Steam installed anywhere else was simply wrong.
+  const clientDir = findClient();
+  const exe = findClientExe(clientDir);
+  if (!exe) {
+    S.status = c.red('no Meridian 59 client found') + ' ' +
+      c.dim('· set M59_CLIENT to its folder · store.steampowered.com/app/' + STEAM_APPID);
+    return;
+  }
   // THE CHARACTER'S OWN SERVER, not this machine's.
   //
   // A roster entry records the host and port it was joined against, because a fleet is
@@ -401,19 +415,30 @@ async function launch(row, { viaProxy = false } = {}) {
       S.status = c.dim(p.started ? `started the proxy on ${PROXY_PORT}… ` : `proxy already up… `);
     }
   }
+  const steam = isSteamInstall(clientDir);
+  // The same list m59-shortcuts.mjs bakes into a .desktop/.lnk, from the same function,
+  // so /S cannot go missing from one of them alone. host and port are passed ON THE
+  // ENTRY because they are already resolved above — a swarm launch points them at the
+  // proxy, and clientArgs prefers the entry's own over the fallback.
+  const args = clientArgs({ ...creds, host, port }, { host, port }, steam);
+  // KEEP THE OUTPUT. Throwing it away is what made a failed launch indistinguishable
+  // from a slow one — the injector reports its verdict on stdout and exits 1 on trouble.
+  const logPath = join(REPO, 'substrate', 'm59-launch.log');
+  let stdio = 'ignore';
+  try { const fd = openSync(logPath, 'a'); stdio = ['ignore', fd, fd]; } catch { /* keep going */ }
+
+  if (!WIN) return launchViaSteam({ row, creds, clientDir, steam, args, stdio, viaProxy });
+
   const inject = join(REPO, 'tools', 'm59-inject.ps1');
   // LAUNCH IT FROM ITS OWN DIRECTORY. The client resolves `resource\` relative to the
   // working directory, so started from the repo it cannot find the module DLLs it is
   // told to load and takes an access violation shortly after BP_LOAD_MODULE — which
   // reads as a stall, because the last thing on the wire is a healthy ping exchange.
   // Start-Process inherits OUR cwd unless told otherwise, so it has to be told.
-  const args = [`'/H:${host}'`, `'/P:${port}'`,
-                `'/U:${creds.account}'`, `'/W:${creds.password}'`, `'/Q'`];
-  // /S means "this is a Steam install" and stops the client reading a download_time of
-  // 9999 as a real download (config.c:445-470); without it a Steam build tries to patch
-  // itself instead of connecting. Both of these are settled in m59-fleet.mjs — this is
-  // the same launch, and the two must not drift.
-  if (/steam/i.test(exe)) args.push(`'/S'`);
+  //
+  // Start-Process wants one PowerShell-quoted string per argument; doubling an embedded
+  // quote is the whole of PowerShell's single-quote escaping.
+  const psArgs = args.map(a => `'${String(a).replace(/'/g, "''")}'`);
   // Start the client, give it time to come up, then inject. Done in one detached
   // PowerShell so closing this TUI does not take the client with it.
   const ps = [
@@ -421,7 +446,7 @@ async function launch(row, { viaProxy = false } = {}) {
       + `${row.character ?? row.agent} (${creds.account}) ==="`,
     `if (-not (Test-Path '${exe}')) { Write-Output 'NO CLIENT AT THAT PATH'; exit 1 }`,
     `$p = Start-Process -FilePath '${exe}' -WorkingDirectory '${dirname(exe)}' `
-      + `-ArgumentList ${args.join(',')} -PassThru`,
+      + `-ArgumentList ${psArgs.join(',')} -PassThru`,
     // WAIT FOR THE WINDOW RATHER THAN GUESSING AT IT. A fixed sleep was the reason this
     // key looked broken: a cold Steam start takes upwards of fifteen seconds to become
     // a process with a window, the injector ran at six, found nothing, and exited 1 —
@@ -450,13 +475,6 @@ async function launch(row, { viaProxy = false } = {}) {
     'Start-Sleep -Seconds 3',
     `& powershell -NoProfile -ExecutionPolicy Bypass -File '${inject}'`,
   ].join('; ');
-  // KEEP THE OUTPUT. Throwing it away is what made a failed launch indistinguishable
-  // from a slow one — the injector reports its verdict on stdout and exits 1 on trouble,
-  // and with stdio ignored none of that survived to be read. It goes to a log instead,
-  // which the status line names so there is somewhere to look.
-  const logPath = join(REPO, 'substrate', 'm59-launch.log');
-  let stdio = 'ignore';
-  try { const fd = openSync(logPath, 'a'); stdio = ['ignore', fd, fd]; } catch { /* keep going */ }
   // NOT detached — that is what made this key do nothing at all. `detached: true` on
   // Windows means DETACHED_PROCESS, which gives the child no console; powershell.exe
   // needs one and dies on the spot, before running a single statement. With stdio
@@ -472,16 +490,12 @@ async function launch(row, { viaProxy = false } = {}) {
   child.unref();
   child.on('error', e => { S.status = c.red('could not start powershell: ' + e.message); draw(); });
   S.status = c.green(`launching ${row.character ?? row.agent}…`) + ' ' +
-             c.dim('~20s · log: substrate\\m59-launch.log · keep the client focused or it drops movement');
-  // SAY WHAT THIS INTERRUPTS. The pilot claim stops the keeper, which leaves an errand
-  // sitting there to resume when the client closes — that is fine and deliberate. A
-  // PAIRING is not fine: the other half is now waiting in a room for a character that is
-  // in a client window, and it will not start a fight without it. Neither is announced
-  // anywhere else, so it is announced here rather than discovered later.
-  const held = commitmentOf(row);
-  if (held) S.status += ' ' + c.yellow(`· still ${held.label}`) +
-    c.dim(held.kind === 'partner' ? ' — its partner is now waiting on a client window; X releases it'
-                                  : ' — resumes when the client closes; X cancels it');
+             c.dim('~20s · log: substrate/m59-launch.log · keep the client focused or it drops movement');
+  // The pilot claim stops the keeper, which leaves an errand sitting there to resume when
+  // the client closes — that is fine and deliberate. A PAIRING is not: the other half is
+  // now waiting in a room for a character that is in a client window, and it will not
+  // start a fight without it. Neither is announced anywhere else.
+  noteCommitment(row);
 
   // TELL THE BROKER TO LOOK. It does not hunt for clients on a timer — scanning costs a
   // process spawn, so it goes quiet once it has seen no client and waits to be told.
@@ -494,6 +508,63 @@ async function launch(row, { viaProxy = false } = {}) {
     S.status += ' ' + c.red('· broker not told to watch (' + r.__error + ') — `pilot claim` by hand');
     draw();
   }
+}
+
+// SAY WHAT THIS INTERRUPTS — shared by both platforms, because what a character is in the
+// middle of has nothing to do with which operating system is starting the client.
+function noteCommitment(row) {
+  const held = commitmentOf(row);
+  if (held) S.status += ' ' + c.yellow(`· still ${held.label}`) +
+    c.dim(held.kind === 'partner' ? ' — its partner is now waiting on a client window; X releases it'
+                                  : ' — resumes when the client closes; X cancels it');
+}
+
+// ------------------------------------------------------------------ launching, Linux
+//
+// The client is a Windows binary and Proton belongs to Steam, so `steam -applaunch <appid>
+// <args>` is the one supported way to start it with arguments of our own — the same
+// command m59-shortcuts.mjs bakes into every .desktop file. Running the .exe directly
+// would mean assembling a Proton prefix by hand, which is not a shortcut.
+//
+// TWO THINGS THE WINDOWS PATH DOES THAT THIS ONE CANNOT, and both are said out loud
+// rather than left to be discovered:
+//
+//   * NO DLL INJECTION. m59-inject.ps1 is Win32 CreateRemoteThread against a local
+//     process; from this side the client lives inside a Proton prefix and there is no
+//     equivalent reach into it. So the character is playable BY HAND only.
+//   * THE PILOT CLAIM IS NOT MADE FROM HERE, but it is no longer absent. The launcher
+//     cannot make it — that needs the client's pid, and `steam -applaunch` returns
+//     immediately with the game a Proton grandchild — so it is the broker's own scan that
+//     answers, and that scan now has a POSIX branch: `/proc/<pid>/cmdline` carries the
+//     `/U:` Proton passed straight through. So the claim arrives within one scan (8s)
+//     rather than never, and `pilot claim` by hand remains the way to have it at once.
+//
+// Logging in bumps the broker off the character, one connection per character, so until
+// that scan lands the 45s rejoin sweep can still fight the client for it. Launch with S
+// (via the proxy) rather than L when even a few seconds of that matters.
+function launchViaSteam({ row, clientDir, steam, args, stdio }) {
+  if (!steam) {
+    S.status = c.red('that client is not a Steam install') + ' ' +
+      c.dim(`· ${clientDir} · on Linux only \`steam -applaunch\` can start it`);
+    return;
+  }
+  // Detached, unlike the Windows branch: there is no console to inherit and nothing to
+  // stay attached for, so quitting the TUI never takes the client with it.
+  const child = spawn('steam', ['-applaunch', STEAM_APPID, ...args], { stdio, detached: true });
+  child.unref();
+  child.on('error', e => {
+    S.status = e.code === 'ENOENT'
+      ? c.red('steam is not on PATH') + ' ' + c.dim('· it is what starts a Proton client')
+      : c.red('could not start steam: ' + e.message);
+    draw();
+  });
+  S.status = c.green(`launching ${row.character ?? row.agent}…`) + ' ' +
+             c.dim('~20s via Steam · log: substrate/m59-launch.log') + ' ' +
+             c.yellow('· claim within ~8s') +
+             c.dim(' — the broker reads /U: off /proc; `pilot claim` for it now. No DLL' +
+                   ' injection on Linux, so this character is playable BY HAND only');
+  noteCommitment(row);
+  draw();
 }
 
 // S — LAUNCH AS THE SWARM LEADER. The same launch as L, plus handing the rest of the
@@ -563,12 +634,25 @@ async function swarm(row) {
 // this fleet and the prompt never appears; if it is not, being asked is correct.
 const BOSWARS = env.M59_BOSWARS || join(REPO, '..', 'm59-boswars');
 
+// WHICH LAUNCHER. `m59.mjs` is the portable one and is preferred everywhere; `m59.ps1`
+// is the Windows toolchain's and is the fallback only where PowerShell exists. Choosing
+// by what is on disk rather than by platform means a checkout carrying only one of them
+// still works, and a Linux box is never handed the .ps1 — which is how this key used to
+// fail, with `spawn cmd ENOENT`, since there is no cmd.exe to start powershell with.
+function commanderLauncher() {
+  const portable = join(BOSWARS, 'm59.mjs');
+  if (existsSync(portable)) return { kind: 'node', path: portable };
+  const windows = join(BOSWARS, 'm59.ps1');
+  if (existsSync(windows) && process.platform === 'win32') return { kind: 'ps1', path: windows };
+  return null;
+}
+
 function commander() {
-  const menu = join(BOSWARS, 'm59.ps1');
-  if (!existsSync(menu)) {
+  const launcher = commanderLauncher();
+  if (!launcher) {
     S.status = c.red('no commander beside this checkout') +
-      c.dim(` · looked for ${menu} · it is its own repository (maps/m59-boswars);` +
-            ' set M59_BOSWARS if it lives elsewhere');
+      c.dim(` · looked for ${join(BOSWARS, 'm59.mjs')} · it is its own repository` +
+            ' (maps/m59-boswars); set M59_BOSWARS if it lives elsewhere');
     return;
   }
   // The label becomes a command-line argument. resolveFleet() already refuses anything
@@ -578,17 +662,42 @@ function commander() {
     S.status = c.red(`refusing to hand ${JSON.stringify(FLEET_LABEL)} over as a fleet name`);
     return;
   }
-  const args = ['/c', 'start', '', 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-                '-NoExit', '-File', menu, '-Choice', FLEET_LABEL];
-  // Only when it is not the port the commander would have tried anyway, so this key
-  // still works against a boswars checkout that predates the parameter.
-  if (PORT !== '8901') args.push('-BrokerPort', PORT);
   // A WINDOW OF ITS OWN, because this one is a full-screen app. The menu prints which
   // fleets it found and whether this one is COMMAND or SPECTATE, then the launcher
   // prints twenty seconds of gateway and client startup — none of which can land here
-  // without taking the board apart. `cmd /c start` is what makes a console; `-NoExit`
-  // keeps it after a failure, which is the only time you need to read it.
-  const child = spawn('cmd', args, { cwd: BOSWARS, stdio: 'ignore' });
+  // without taking the board apart.
+  //
+  // ON WINDOWS `cmd /c start` is what makes that console and `-NoExit` keeps it after a
+  // failure, which is the only time you need to read it. ON LINUX THERE IS NO `cmd`, and
+  // spawning it is exactly the `spawn cmd ENOENT` this key used to die with. There is
+  // also no one terminal emulator to depend on, so the terminals are tried in turn and
+  // the last resort is to run detached with the output on a log — a launcher you can
+  // read afterwards beats a window that never opened.
+  let file, args;
+  if (process.platform === 'win32') {
+    const inner = launcher.kind === 'node'
+      ? ['node', launcher.path, '--choice', FLEET_LABEL]
+      : ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit',
+         '-File', launcher.path, '-Choice', FLEET_LABEL];
+    // Only when it is not the port the commander would have tried anyway, so this key
+    // still works against a boswars checkout that predates the parameter.
+    if (PORT !== '8901') inner.push(launcher.kind === 'node' ? '--broker-port' : '-BrokerPort', PORT);
+    file = 'cmd';
+    args = ['/c', 'start', '', ...inner];
+  } else {
+    const inner = [process.execPath, launcher.path, '--choice', FLEET_LABEL];
+    if (PORT !== '8901') inner.push('--broker-port', PORT);
+    const term = ['x-terminal-emulator', 'konsole', 'gnome-terminal', 'xfce4-terminal', 'xterm']
+      .find(t => { try { return spawnSync('command', ['-v', t], { shell: true }).status === 0; } catch { return false; } });
+    if (term) {
+      file = term;
+      args = term === 'gnome-terminal' ? ['--', ...inner] : ['-e', ...inner];
+    } else {
+      file = inner[0];
+      args = inner.slice(1);
+    }
+  }
+  const child = spawn(file, args, { cwd: BOSWARS, stdio: 'ignore', detached: true });
   child.unref();
   child.on('error', e => { S.status = c.red('could not open the commander: ' + e.message); draw(); });
   S.status = c.green(`opening the commander on ${FLEET_LABEL}…`) + ' ' +
@@ -666,6 +775,53 @@ async function compendium(row, to = '/creatures/') {
   draw();
 }
 
+// F — THE FIELD COMMAND PAGE, WHICH IS THE BROWSER HALF OF THIS TERMINAL.
+//
+// `maps/m59-strategy-game` is a command surface for the fleet this broker already holds:
+// a world map, the roster on it, and a small set of orders that become ordinary broker
+// calls. It is the view this terminal cannot give — a map — and the terminal is the view
+// it cannot give, which is why both exist and why this is one key rather than a rewrite.
+//
+// ENSURES, THEN OPENS. Same contract as `C`: if it is not running, start it and wait for
+// it to answer before pointing a browser at it, because a browser opened at a port that
+// is still compiling shows a connection error and teaches the operator the key is broken.
+//
+// IT IS A SEPARATE REPOSITORY AND IT MAY NOT BE HERE. Absent, uninstalled, and somebody
+// else's server on the port are three different answers and this says which — the same
+// arrangement `B` has with maps/m59-boswars.
+async function fieldCommand() {
+  S.status = c.dim('opening field command…');
+  draw();
+  try {
+    const before = await webui.status();
+    if (before.absent) {
+      S.status = c.yellow('field command: not installed beside this checkout') + ' ' +
+                 c.dim(`· ${before.why}`);
+      return draw();
+    }
+    if (!before.installed && !before.running) {
+      S.status = c.yellow('field command is not installed') + ' ' +
+                 c.dim('· run: node tools/m59-webui.mjs install');
+      return draw();
+    }
+    const r = before.running ? before : await webui.start({ log: () => {} });
+    if (!r.ok && !r.running) {
+      S.status = c.red('field command did not come up') + ' ' +
+                 c.dim(`· read substrate/webui.log`);
+      return draw();
+    }
+    const url = `http://127.0.0.1:${r.port ?? 3000}`;
+    openBrowser(url);
+    S.status = c.green(before.running ? 'field command already serving' : 'started field command') +
+               ' ' + c.dim(`· ${url}`) +
+               (before.running && before.ours === false
+                 ? ' ' + c.yellow('(this checkout did not start it)') : '');
+  } catch (e) {
+    S.status = c.red('field command: ' + e.message);
+  }
+  draw();
+}
+
 // ------------------------------------------------------------------ keys
 
 // THE OVERRIDE KEY, and what it does depends on where the cursor is — which is why the
@@ -726,6 +882,7 @@ function onKey(str, key) {
     else if (str === 'S' || str === 's') swarm(S.rows[S.sel]).then(draw, fail);
     // B is about the FLEET, not the row under the cursor — the board draws all of them.
     else if (str === 'B' || str === 'b') commander();
+    else if (str === 'F' || str === 'f') fieldCommand();
     else if (str === 'C' || str === 'c') compendium(S.rows[S.sel]);
     else if (str === 'P' || str === 'p') compendium(S.rows[S.sel], '/planner/');
     else if (str === 'r') { S.status = c.dim('refreshing…'); refresh().then(draw); }
@@ -736,6 +893,7 @@ function onKey(str, key) {
     else if (str === 'L' || str === 'l') launch(S.hero).then(draw, fail);
     else if (str === 'S' || str === 's') swarm(S.hero).then(draw, fail);
     else if (str === 'B' || str === 'b') commander();
+    else if (str === 'F' || str === 'f') fieldCommand();
     else if (str === 'C' || str === 'c') compendium(S.hero);
     else if (str === 'P' || str === 'p') compendium(S.hero, '/planner/');
     else if (str === 'r') { refresh().then(() => { S.hero = S.rows.find(r => r.agent === S.hero.agent) ?? S.hero; draw(); }); }

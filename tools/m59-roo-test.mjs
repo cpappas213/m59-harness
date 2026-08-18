@@ -119,19 +119,23 @@ console.log('\nthe sector record is variable-length');
        sectorBytes({ id: 7, floorKod: 1, ceilKod: 2, flags: SF.SLOPED_FLOOR | SF.SLOPED_CEILING, slopes: 2 }),
        sectorBytes({ id: 8, floorKod: 3, ceilKod: 4, flags: 0 }),
      ), 12, SEC_OFF)[1]?.serverId === 8);
-  // Negative floors are ordinary. Read as unsigned they come back as ~65000 and every
-  // step onto them becomes an unclimbable cliff.
+  // LoadSectors reads a WORD. A high-bit pattern must therefore remain a high
+  // unsigned height rather than being sign-extended into a low/negative surface.
   const neg = parseRooSectors(section(sectorBytes({ id: 1, floorKod: -40, ceilKod: 100, flags: 0 })), 12, SEC_OFF);
-  ok('floor heights are signed', neg[0].floorHeight === heightKodToClient(-40), `${neg[0].floorHeight}`);
+  ok('floor heights preserve unsigned WORD semantics',
+    neg[0].floorHeight === heightKodToClient(0x10000 - 40), `${neg[0].floorHeight}`);
   const highTexture = sectorBytes({ id: 1, floorKod: 0, ceilKod: 100, flags: 0 });
   highTexture.writeUInt16LE(50063, 2);
   ok('texture resource ids are unsigned WORDs',
     parseRooSectors(section(highTexture), 12, SEC_OFF)[0].floorType === 50063,
     'real resource ids exceed signed int16');
-  // Truncation must lose sectors, not invent them: the header claims nine, one is present.
+  // A partial collision table is not usable geometry. Silently returning the records
+  // that happened to fit can turn every missing wall reference into a null/open side.
   const short = section(sectorBytes({ id: 1, floorKod: 1, ceilKod: 2, flags: 0 }));
   short.writeUInt16LE(9, SEC_OFF);
-  ok('a truncated section stops rather than guessing', parseRooSectors(short, 12, SEC_OFF).length === 1);
+  let truncatedRejected = false;
+  try { parseRooSectors(short, 12, SEC_OFF); } catch { truncatedRejected = true; }
+  ok('a truncated sector table is rejected', truncatedRejected);
 }
 
 // ------------------------------------------------------- BSP leaves / subsectors

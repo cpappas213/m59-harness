@@ -259,5 +259,68 @@ console.log('\nthe three moments');
      decide('improved', retask, { what: 'max_health', from: 40, to: 41, hunting: 'x', room: 544 }) === null);
 }
 
+console.log('\ncalling for help — the three verbs that speak to strangers');
+{
+  const lit = 'HELP - a murderer is killing me in the Sewers of Barloque';
+
+  ok('yell needs a literal like say does',
+     validate({ on: { attacked_by_player: [{ do: 'yell' }] } }).some(p => /message/.test(p.where)));
+  ok('tell_guild does too',
+     validate({ on: { attacked_by_player: [{ do: 'tell_guild' }] } }).some(p => /message/.test(p.where)));
+  ok('a templated yell is refused, exactly as a templated say is',
+     validate({ on: { attacked_by_player: [{ do: 'yell', message: 'help me in ${room}' }] } })
+       .some(p => /template/.test(p.why)));
+
+  // THE SECOND SENTENCE GOES TO REAL PEOPLE TOO, and it is the one that would be easy to
+  // leave unvalidated because it is optional.
+  ok('a templated guild_message is refused',
+     validate({ on: { attacked_by_player: [
+       { do: 'call_for_help', message: lit, guild_message: 'help at ${room}', stay_off_s: 300 }] } })
+       .some(p => /guild_message/.test(p.where) && /template/.test(p.why)));
+  ok('an empty guild_message is refused rather than silently skipped',
+     validate({ on: { attacked_by_player: [
+       { do: 'call_for_help', message: lit, guild_message: '  ', stay_off_s: 300 }] } })
+       .some(p => /guild_message/.test(p.where)));
+  ok('but omitting it entirely is fine — not every character has a guild',
+     validate({ on: { attacked_by_player: [
+       { do: 'call_for_help', message: lit, stay_off_s: 300 }] } }).length === 0);
+
+  // call_for_help ENDS in a logoff, so it inherits the stay-off ceiling. A character that
+  // is off is not being defended, not earning and not on the board.
+  ok('call_for_help is held to the same stay_off_s rules as logoff',
+     validate({ on: { attacked_by_player: [
+       { do: 'call_for_help', message: lit, stay_off_s: 99999 }] } }).some(p => /stay_off_s/.test(p.where)));
+  ok('and a missing stay_off_s is refused, not defaulted to zero',
+     validate({ on: { attacked_by_player: [{ do: 'call_for_help', message: lit }] } })
+       .some(p => /stay_off_s/.test(p.where)));
+
+  // THE LOCATION PROBLEM, SOLVED BY THE CONDITION SYSTEM RATHER THAN BY A TEMPLATE.
+  // `room` is a fact on this trigger, so one rule per room carries a sentence its author
+  // actually wrote. This is the pattern the docs should show.
+  const perRoom = { on: { attacked_by_player: [
+    { when: { room: 108 }, do: 'call_for_help', stay_off_s: 600,
+      message: 'HELP - a murderer is killing me in the Sewers of Barloque',
+      guild_message: 'Murderer in the Sewers of Barloque - I am logging off' },
+    { when: { room: 52 }, do: 'call_for_help', stay_off_s: 600,
+      message: 'HELP - a murderer is killing me in Familiars, Tos',
+      guild_message: 'Murderer in Familiars - I am logging off' },
+    { do: 'logoff', stay_off_s: 600, why: 'somewhere with no sentence written for it' },
+  ] } };
+  ok('the per-room playbook validates', validate(perRoom).length === 0);
+  const inSewers = decide('attacked_by_player', perRoom,
+    { who: 'X', health_pct: 20, room: 108, attackers: 1, in_safe_spot: false });
+  ok('and the sewers rule names the sewers', /Sewers of Barloque/.test(inSewers.args.message));
+  const inFamiliars = decide('attacked_by_player', perRoom,
+    { who: 'X', health_pct: 20, room: 52, attackers: 1, in_safe_spot: false });
+  ok('the Familiars rule names Familiars', /Familiars/.test(inFamiliars.args.message));
+  // A ROOM NOBODY WROTE A SENTENCE FOR STILL GETS THE SURVIVAL BEHAVIOUR, silently and
+  // without inventing a sentence — which is the whole reason the fallback rule is a bare
+  // logoff rather than a templated shout.
+  const elsewhere = decide('attacked_by_player', perRoom,
+    { who: 'X', health_pct: 20, room: 999, attackers: 1, in_safe_spot: false });
+  ok('an unwritten room falls through to the plain logoff', elsewhere.verb === 'logoff');
+  ok('and says nothing at all there', elsewhere.args.message === undefined);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

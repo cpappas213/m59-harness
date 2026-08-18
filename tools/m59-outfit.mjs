@@ -63,6 +63,20 @@ const URL = `http://127.0.0.1:${PORT}/`;
 const DRY = !!arg('dry-run', false);
 const AT = arg('at', null) == null ? null : Number(arg('at'));
 const WITHDRAW = Number(arg('withdraw', 1000));
+// HOW MANY OF THE WORKING WEAPON TO CARRY AWAY. A weapon in use shatters, and a shattered
+// one is unequipped, left in the pack under its own name (weapon.kod:788 changes only the
+// icon), refused silently by the next wield, and dropped by the keeper's 120s sweep. So the
+// character needs DEPTH here, not a spare: one replacement per trip loses the race against
+// a fleet that re-armed four times in an afternoon and was back on looted long swords each
+// time. Three is a few hours of farming rather than one.
+const WEAPON_SPARES = Number(arg('weapon-spares', 3));
+// And what sell_all may keep, which must LEAVE ROOM FOR THOSE — selling runs first, so a
+// keep limit below the spare depth would sell a mace at the start of every trip and buy it
+// back at the end, paying the vendor spread for the privilege. One above the depth, for
+// whatever is currently wielded. `sell_all` defaults this to null, and null means "no
+// weapon limit configured", which keeps every long sword in the pack — so it is always
+// passed explicitly rather than left to the default.
+const WEAPONS_TO_KEEP = Number(arg('keep-weapons', WEAPON_SPARES + 1));
 // Planned-learning buttons know the exact fixed ability price before leaving. In that
 // mode, carry the bill rather than the outfitter's ordinary 200-shilling contingency;
 // the character is going to one teacher for one purchase, not shopping speculatively.
@@ -108,9 +122,9 @@ const OWNER = `outfit/${process.pid}`;
 // This is the FLEET default and it is one answer for twenty-one characters. A character
 // with a loadout gets its own list instead — see wantsFor below.
 const WANTS = [
-  { slot: 'armour', re: /leather (armor|armour)/i,  fallback: /armor|armour|mail|leather|scale/i, what: 'armour' },
+  { slot: 'armour', re: /leather (armor|armour)/i,  fallback: /armor|armour|mail/i, what: 'leather armour' },
   { slot: 'shield', re: /metal shield/i,            fallback: /shield/i,            what: 'a shield' },
-  { slot: 'weapon', re: /\bmace\b/i,                fallback: /sword|axe|hammer|mace|staff|spear|dagger|knife/i, what: 'a weapon' },
+  { slot: 'weapon', re: /\bmace\b/i,                fallback: /sword|axe|hammer|mace/i, what: 'a mace' },
 ];
 
 const nameOf = (i) => String(i?.name ?? i ?? '');
@@ -330,7 +344,38 @@ async function outfit(row) {
   // Sorted here rather than in wantsFor, so a loadout keeps meaning what it says about
   // WHICH items are wanted and only the sequence of spending is imposed.
   const SLOT_ORDER = { armour: 0, shield: 1, weapon: 2 };
-  const allMissing = WANT_GEAR ? missingFor(items, wants) : [];
+  // DOWN TO THE LAST WORKING WEAPON IS A REASON TO GO, AND `missingFor` CANNOT SAY IT.
+  //
+  // That test is count-blind — it asks whether the pack holds ANYTHING matching the want,
+  // so a character with one mace and a character with four both read "already stocked"
+  // and neither travels. Combined with a fallback that accepts the whole family, an AXE
+  // satisfies the mace want too, which is how Kermit, Camilla, Sweetums and Bunsen were
+  // all reported stocked while carrying no blunt weapon at all against skeletons that
+  // resist edges at 70%.
+  //
+  // The weapon is the one slot where that matters, because it is the one that is
+  // CONSUMED — see the spares purchase below. So running down to the last one is treated
+  // as missing, which is what makes the trip happen; the spares loop then fills to depth
+  // once the character is standing at the counter.
+  //
+  // Deliberately `<= 1` rather than `< WEAPON_SPARES`: the trigger is "about to be
+  // fighting bare-handed", not "not completely stocked". Sending twenty-one characters
+  // shopping every time one of them is a mace short of ideal costs more farming than the
+  // spare is worth, and this tool stops a keeper to run.
+  const bluntDepth = (list) => {
+    const w = (list || WANTS).find(x => x.slot === 'weapon');
+    return w ? (items || []).filter(i => w.re.test(nameOf(i)) && !i.broken).length : 0;
+  };
+  const runningOut = WANT_GEAR && WEAPON_SPARES > 0 && bluntDepth(wants) <= 1;
+  const allMissing = WANT_GEAR
+    ? (() => {
+        const m = missingFor(items, wants);
+        const weaponWant = (wants || WANTS).find(w => w.slot === 'weapon');
+        return runningOut && weaponWant && !m.some(w => w.slot === 'weapon')
+          ? [...m, { ...weaponWant, what: `${weaponWant.what} (down to ${bluntDepth(wants)})` }]
+          : m;
+      })()
+    : [];
   const suppressedWeapons = allMissing.filter(w => w.slot === 'weapon' && !mayBuyWeapons);
   const missing = WANT_GEAR
     ? allMissing.filter(w => w.slot !== 'weapon' || mayBuyWeapons).sort((a, b) =>
@@ -669,9 +714,49 @@ async function outfit(row) {
     if (!arrived) return `${who}: no ${toLearn.length ? 'teacher' : 'smith'} worked out — tried ${tried.join('; ')}`;
     log.push(`at ${shopRoom}`);
 
-    // FUND IT. The purse first, then the bank we are standing next to, then a partner.
+    // SELL FIRST, ALWAYS, AND BEFORE THE BANK. Two reasons, and the second is the one
+    // that was costing the fleet every trip:
+    //
+    //   The money. What a farming character carries is usually worth more than the
+    //   armour, so a sale often removes the need for a bank trip entirely.
+    //
+    //   THE SPACE. `ReqNewHold` refuses a purchase when the pack cannot hold the goods,
+    //   and the merchant answers "Perhaps you carry too much?" — a sentence spoken to the
+    //   room, not an error, so the buy reports nothing wrong and the errand walks home
+    //   empty. Measured this session: Kermit at Rook, Fozzie and Floyd at Quintor, Lew at
+    //   Fehr'loi Qan, all refused in one run, while Floyd carried SEVEN long swords it had
+    //   looted and never sold. Selling afterwards cannot help — by then the buy has failed.
+    //
+    // AND THE OLD `keep` LIST WAS THE REASON THEY PILED UP. It held back anything matching
+    // sword/mace/axe/hammer/armor/shield, which is exactly the loot this trip exists to
+    // convert, so a character could sell reagents to fund a mace it then had no room for.
+    // It is gone rather than trimmed: `sell_all` already honours this character's LOADOUT
+    // — which names the spares to shed and the floors to protect — and what is worn or
+    // wielded is protected by the server's own use list, which no list here can override.
+    // A second, coarser opinion about what to keep could only disagree with the loadout,
+    // and when it did the loadout lost.
     items = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
     let money = purseOf(items);
+    // MAX_WEAPONS MUST BE SAID OUT LOUD HERE. `sell_all` defaults it to null, and null
+    // means "no weapon limit is configured" — which keeps EVERY weapon in the pack. The
+    // keeper always passes its own policy (2 on this fleet) so its town trips shed spares;
+    // an errand calling the tool directly gets the permissive default instead. Floyd hit
+    // exactly that: seven looted long swords, all "held back", a pack too full to accept
+    // the mace this trip existed to buy, and a sale that reported nothing to sell.
+    // Equipped and wielded weapons are kept regardless — plUsing is the server's list.
+    const preSale = await call('sell_all', { agent: row.agent, merchant: seller.id,
+                                             max_weapons: WEAPONS_TO_KEEP })
+                          .catch(() => null);
+    if (preSale?.total_received) {
+      money += preSale.total_received;
+      log.push(`sold ${(preSale.sold || []).length} item(s) for ${preSale.total_received}sh`);
+    } else if (preSale?.not_offered?.length) {
+      // Nothing this counter deals in. Worth saying, because it is the difference between
+      // "there was nothing to sell" and "we brought the wrong goods to the wrong shop".
+      log.push(`nothing ${preSale.merchant?.class || 'here'} buys (${preSale.not_offered.length} held back)`);
+    }
+
+    // FUND IT. The purse first, then the bank we are standing next to, then a partner.
     if (money < WITHDRAW / 2) {
       const b = await call('bank', { agent: row.agent, action: 'withdraw', amount: WITHDRAW })
                       .catch(e => ({ error: e.message }));
@@ -685,16 +770,6 @@ async function outfit(row) {
         // account may be in another town. Say which, and carry on with what we carry.
         log.push('no withdrawal here (each town banks separately)');
       }
-    }
-
-    // Sell what we are carrying if that is what it takes. A character that has been
-    // farming carries reagents and drops worth more than the armour costs.
-    // `seller` was found above, as part of deciding this shop was worth stopping at.
-    if (money < Math.max(400, bill)) {
-      const sold = await call('sell_all', { agent: row.agent, merchant: seller.id,
-        keep: ['flask', 'mace', 'sword', 'axe', 'hammer', 'armor', 'armour', 'shield', 'helm'] })
-        .catch(() => null);
-      if (sold?.total_received) { money += sold.total_received; log.push(`sold for ${sold.total_received}sh`); }
     }
 
     const shop = await call('shop', { agent: row.agent, seller: seller.id }).catch(() => ({}));
@@ -731,9 +806,71 @@ async function outfit(row) {
       if (!opt) { log.push(`${w.what}: not sold here`); continue; }
       const cost = opt.cost ?? opt.price ?? 0;
       if (cost > money) { log.push(`${w.what}: ${cost}sh, only ${money}sh`); continue; }
-      await call('shop', { agent: row.agent, seller: seller.id, buy_ids: [opt.id] }).catch(() => null);
+      // SAY WHAT ARRIVED, NOT WHAT WAS ORDERED. This logged `bought X @N` unconditionally
+      // with the reply thrown away, so a purchase that took the money and delivered
+      // nothing read exactly like one that worked. Measured: Rizzo withdrew 1744sh, the
+      // line said `bought hammer @810`, and its pack held no weapon at all afterwards —
+      // 810 shillings gone, still fighting with its fists, and the only hint was the
+      // verification further down saying STILL MISSING.
+      //
+      // `got` is the broker's list of what actually entered the pack, off the server's own
+      // `got` events. An empty one is the silent refusal this whole file exists to catch:
+      // a merchant declining is a sentence spoken to the room, never an error on the wire.
+      const res = await call('shop', { agent: row.agent, seller: seller.id, buy_ids: [opt.id] })
+                          .catch(e => ({ error: e.message }));
+      const got = Array.isArray(res?.got) ? res.got : [];
       money -= cost;
-      log.push(`bought ${nameOf(opt)} @${cost}`);
+      if (got.length) log.push(`bought ${nameOf(opt)} @${cost}`);
+      else log.push(`*** ASKED FOR ${nameOf(opt)} @${cost} AND GOT NOTHING` +
+                    (res?.clamped?.length ? ` — clamped by ${[...new Set(res.clamped
+                       .flatMap(c => c.limited_by || []))].join('/') || 'purse/weight/bulk'}` : '') +
+                    (res?.messages?.length ? ` — the counter said: ${res.messages.join('; ').slice(0, 80)}` : '') +
+                    ' ***');
+    }
+
+    // A WEAPON IS A CONSUMABLE HERE, AND ARMOUR IS NOT. Buy spares of the weapon.
+    //
+    // This fleet re-armed with maces four times in one afternoon and was back on looted
+    // long swords within hours each time, and the reason is not that anything sells or
+    // drops them deliberately. A weapon in use SHATTERS — and when it does the server
+    // unequips it and leaves it in the pack under its own name, because `weapon.kod:788`
+    // changes only the ICON. So the broken mace still out-scores nothing, `equip_best` is
+    // refused with no message at all, and the keeper's 120-second sweep
+    // (`dropBrokenEverySec`) drops it as junk. The character then wields the best thing
+    // left, which is whatever it last looted — a long sword, 70% resisted by the very
+    // creature that broke the mace.
+    //
+    // THE LOOT NEVER BREAKS, WHICH IS WHY THE PACK FILLS WITH IT. Long swords are never
+    // swung, so they accumulate — nineteen on one character — while the one weapon doing
+    // the work is consumed. Buying a single replacement per trip loses that race.
+    //
+    // So the weapon slot, and only the weapon slot, is stocked to a depth. Armour is not
+    // treated this way on purpose: it wears but is not destroyed the same way, and a spare
+    // suit is dead weight in a pack that is already the binding constraint.
+    if (WEAPON_SPARES > 0 && !DRY) {
+      const want = missing.find(w => w.slot === 'weapon') ??
+                   { re: /mace|hammer/i, fallback: /mace|hammer|axe/i, what: 'weapon', slot: 'weapon' };
+      const held = (await call('inventory', { agent: row.agent }).catch(() => ({ items: [] }))).items || [];
+      const haveBlunt = held.filter(i => want.re.test(String(i.name || ''))).length;
+      const shortfall = Math.max(0, WEAPON_SPARES - haveBlunt);
+      for (let n = 0; n < shortfall; n++) {
+        const opt = stock.filter(i => want.re.test(nameOf(i)))
+                         .sort((a, b) => (a.cost ?? a.price ?? 9e9) - (b.cost ?? b.price ?? 9e9))[0];
+        if (!opt) break;
+        const cost = opt.cost ?? opt.price ?? 0;
+        // Spares are the FIRST thing to give up when money is short — the trip has already
+        // bought what the character was actually missing.
+        if (cost > money) { log.push(`spare ${nameOf(opt)}: ${cost}sh, only ${money}sh left`); break; }
+        const res = await call('shop', { agent: row.agent, seller: seller.id, buy_ids: [opt.id] })
+                            .catch(() => ({}));
+        money -= cost;
+        if (!(Array.isArray(res?.got) && res.got.length)) {
+          log.push(`spare ${nameOf(opt)} @${cost}: got nothing` +
+                   (res?.messages?.length ? ` — ${res.messages.join('; ').slice(0, 60)}` : ''));
+          break;   // a refusal will refuse the next one too; do not spend the trip on it
+        }
+        log.push(`spare ${nameOf(opt)} @${cost}`);
+      }
     }
 
     // LEARN IT. The same list and the same purchase — a skill in the offer list is an
@@ -808,7 +945,7 @@ async function outfit(row) {
     // hand run -- is refused the lease this one holds and backs off instead of walking
     // the same character to a second shop. GOAP reads the busy flag via `busyErrand` and
     // steps over a character we are driving, which is the guard this was decomposed for.
-    const owned = await armOwnership(brokerDriver(call), {
+    const owned = await armOwnership(brokerDriver(null, call), {
       agent: row.agent, by: OWNER, kind: 'arm', label: `arming ${who}`,
       leaseMs: 120_000, heartbeatMs: 60_000, run: body,
     });

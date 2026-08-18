@@ -29,10 +29,22 @@ const URL_ = `http://${HOST}:${PORT}/`;
 // A tool call can be a long walk across the world; the pacer runs at one action a
 // second and travel is measured in minutes. No timeout here — the broker decides when
 // it is done, and cutting it off would leave the character mid-errand.
+// BORROWED CHARACTERS COME THROUGH HERE TOO. With `--token` this attaches to somebody
+// else's `m59-lend.mjs` instead of a local broker, and the characters their grant covers
+// appear as ordinary tools — that is the whole of "their fleet, in mine". The token is a
+// revocable capability, never a password; see tools/m59-handoff.mjs.
+//
+// Taken from the environment as well as the flag, because a token on a command line ends
+// up in the shell history and in `ps` output on a shared machine.
+const TOKEN = arg('--token', process.env.M59_GRANT_TOKEN || '');
+
 async function forward(msg) {
   const res = await fetch(URL_, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(TOKEN ? { authorization: `Bearer ${TOKEN}` } : {}),
+    },
     body: JSON.stringify(msg),
   });
   if (res.status === 202) return null;             // notification, no body

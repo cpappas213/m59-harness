@@ -337,7 +337,52 @@ async function stockUp(row) {
     // of an account holding 813 is refused outright and reads exactly like an empty
     // account. That cost `m59-outfit.mjs` two walked banks and a bare character.
     const BANKS = [54, 376];
-    const needMoney = 260;   // ~16 of each half at the Barloque shelf, with room to spare
+    // PRICE THE TRIP, THEN DECIDE WHETHER TO VISIT THE BANK. This was a flat 260 — "~16 of
+    // each half at the Barloque shelf" — and it stopped being the right question the day
+    // the target moved. The withdrawal AMOUNT was raised 900 -> 4,000 -> 10,000 as the
+    // loadouts deepened; the TRIGGER stayed at 260, so the two now describe different
+    // errands. A character with 400sh skips the bank as "well funded" and then cannot
+    // afford what it came for.
+    //
+    // Measured on one run of this tool, and the split is exactly on this line: everybody
+    // who withdrew came home full — Robin 4 -> 40 and Animal 4 -> 40, twenty castings each.
+    // Everybody who skipped the bank came home short or empty — Camilla 9 castings
+    // [clamped: purse], Sweetums 2 with its whole 400sh spent, and Kermit ASKED FOR 46 AND
+    // SPENT NOTHING with 1,249sh in hand. None of those is a failure the trip reports as
+    // one; "spent 0sh" is not an error, which is the failure mode this whole file exists
+    // to catch.
+    //
+    // So the floor is what the shortfall actually costs. Prices read directly off counter
+    // 373 — elderberry 28sh, herbs 14sh — which is the same pair the withdrawal comment
+    // below does its 1,680sh arithmetic with; having one number for the cost and a
+    // different one for the trigger is what produced this. Estimated rather than quoted
+    // because the shop list is only readable on arrival and this decision happens before
+    // the walk, so it carries a margin and errs toward visiting the bank: a needless bank
+    // leg costs a walk, and skipping a needed one costs the entire trip.
+    const UNIT = { elderberry: 28, herbs: 14 };
+    const held = row.reagents ?? {};
+    const gap = (kind) => Math.max(0, WANT - Number(held[kind] ?? 0));
+    const tripCost = gap('elderberry') * UNIT.elderberry + gap('herbs') * UNIT.herbs;
+    // THE MARGIN IS DOUBLE, AND THAT IS NOT TIMIDITY — IT IS THE MEASURED ERROR.
+    //
+    // 28 and 14 are one counter's prices and every merchant applies its own markup, so the
+    // estimate is a floor on the true cost rather than a prediction of it. Camilla proves
+    // the gap: it set out with 1,217sh against an estimated 952sh trip — comfortably
+    // funded by this arithmetic — spent 1,200 of it, and still came home at 9 castings,
+    // `[clamped: purse]`. Kermit did the same with 1,249sh against ~770sh and bought
+    // nothing at all. An estimate that says "affordable" for both of those is too tight to
+    // decide on.
+    //
+    // The two errors are not symmetric and that settles the direction. A needless bank leg
+    // costs one walk between two counters that are deliberately next door to each other
+    // (54 beside the Tos apothecary, 376 beside the Jasper merchant). A skipped one costs
+    // the entire trip — the walk out, the walk back, and a character that farms at two
+    // castings until the next pass notices. Bank balances on this fleet run 10,000 to
+    // 36,000 and the withdrawal is capped at 10,000, so the money is there to be wrong with.
+    // Nothing to buy, nothing to fund: a character whose shortfall priced out at zero needs
+    // no money and must not be walked to a counter to prove it. The 260 floor is for
+    // "there IS something to buy and the purse is pocket change", not for an empty errand.
+    const needMoney = tripCost > 0 ? Math.max(260, tripCost * 2) : 0;
     if (purse1 < needMoney) {
       const balance = row.banked?.balance ?? null;
       if (balance === 0) {
@@ -348,7 +393,28 @@ async function stockUp(row) {
         for (const bank of BANKS) {
           const at = await goTo(row.agent, bank, where);
           if (at !== bank) continue;
-          const want = Math.min(900, balance == null ? 900 : balance);
+          // WITHDRAW WHAT AN OUTFITTING ACTUALLY COSTS, not a flat 900.
+          //
+          // Read off counter 373 directly: elderberry 28sh, herbs 14sh. Shipping out with
+          // 40 of each — what the loadouts ask for — is 1,680sh before a single loaf or
+          // any armour, so a 900 cap could not fund the target and every character needed
+          // at least two round trips to approach it. That churn is the fleet's largest
+          // cost: measured across all twenty-one, only 23% of active time was spent
+          // fighting, with nine of them travelling or at a counter at any moment.
+          //
+          // WHAT THIS BUYS IS PAID FOR IN CARRIED RISK. Everything in the pack drops where
+          // a character dies and a bank balance does not, so a bigger float means more of
+          // the fleet's money riding on one character that can die in the next eight
+          // seconds — the same bet the banking threshold makes, and this is the other half
+          // of it. 4,000 is the operator's number, set to cover one full outfitting
+          // (reagents, prepared food, a piece of armour) in a SINGLE trip.
+          // A DEEP TRIP, NOT A TOP-UP. 150 elderberry and 150 herbs is 6,300sh at counter prices
+          // and 75 castings — hours of farming — against roughly half the pack. 4,000 bought 40
+          // castings and sent the character back within the hour, which is the churn the whole
+          // supply-limited arrangement exists to stop. Bank balances on this fleet run 10,000 to
+          // 36,000, so the money is there; the cap was the only thing rationing it.
+          const WITHDRAW_MAX = Number(process.env.M59_WITHDRAW_MAX || 10000);
+          const want = Math.min(WITHDRAW_MAX, balance == null ? WITHDRAW_MAX : balance);
           if (want <= 0) break;
           await call('bank', { agent: row.agent, action: 'withdraw', amount: want }).catch(() => null);
           await sleep(800);
@@ -445,19 +511,49 @@ async function stockUp(row) {
       { what: 'herbs',      have: hb0, offers: wanted.filter(o => /herb/i.test(o.name || '')) },
       { what: 'elderberry', have: eb0, offers: wanted.filter(o => /elder/i.test(o.name || '')) },
     ];
-    const short = perReagent.filter(r => r.have < WANT && r.offers.length);
+    // BUY THE BINDING HALF FIRST. Castings are min(elder, herb)/2, so the scarcer half is
+    // the only one that raises the number — and ordering now decides who gets the money,
+    // because the broker's buy clamps line by line against a purse that runs out.
+    //
+    // The fixed herbs-then-elderberry order above was written when only herbs had to be
+    // bought. With both bought and elderberry at 28sh against herbs at 14sh, herbs took
+    // the purse every trip and elderberry starved: measured across the fleet, herbs ran
+    // 22, 26, 34, 36, 41, 58 and 100 while the same characters held 1 or 2 elderberry and
+    // could not cast at all. The shortage simply moved from one half to the other and the
+    // report still read like a restock, because it named what went up.
+    //
+    // Sorting by what is actually in the pack is self-correcting: whichever half is
+    // scarcer at the counter is the one funded first, whichever direction it has drifted.
+    const short = perReagent.filter(r => r.have < WANT && r.offers.length)
+                            .sort((a, b) => a.have - b.have);
     if (!short.length) {
       const missing = perReagent.filter(r => r.have < WANT).map(r => r.what);
       return missing.length
         ? `${who}: ${arrived} sells no ${missing.join(' or ')} after all — bought nothing, purse still ${purse1}sh`
         : `${who}: already holds ${WANT}+ of both halves — bought nothing, purse still ${purse1}sh`;
     }
+    // SEND THE WHOLE ORDER. The truncation, not the encoding, was the bug.
+    //
+    // `i < 40` capped need at 40 whatever --want said, and `buyIds.slice(0, 60)` then cut
+    // the list mid-order. The two compounded: the list grows as need × offers, so a counter
+    // listing the same herb under two ids produced two entries per unit and the effective
+    // quantity became 60 / offers.length. Measured here — --want 40 with both halves empty
+    // asked for 80 ids, sent 60, and came away with 40 herbs and 20 elderberry, reported as
+    // a success. Topping the fleet to 40/40 therefore needed repeated passes for no reason.
+    //
+    // ONE ID PER UNIT IS THE FORM THAT IS KNOWN TO WORK, and it is kept deliberately.
+    // `shop` also accepts `{id, amount}` and the broker maps it, but a single entry asking
+    // for 40 was tried against counter 373 and bought NOTHING — sold fine, `spent 0sh`,
+    // elderberry 0 -> 0 — while the repeated-id form had bought 12/12 at that same counter
+    // minutes earlier. Whatever the server does with a large amount on one line, it is not
+    // this. The purse is the only witness that separates them, which is why the quantity
+    // form is not adopted here on the strength of the broker accepting the argument.
     const buyIds = [];
     for (const r of short) {
       const need = Math.max(0, WANT - r.have);
-      for (let i = 0; i < need && i < 40; i++) for (const o of r.offers) buyIds.push(o.id);
+      for (let i = 0; i < need; i++) for (const o of r.offers) buyIds.push(o.id);
     }
-    const bought = await call('shop', { agent: row.agent, seller: seller.id, buy_ids: buyIds.slice(0, 60) },
+    const bought = await call('shop', { agent: row.agent, seller: seller.id, buy_ids: buyIds },
                               180_000).catch(e => ({ error: e.message }));
 
     const inv2 = await call('inventory', { agent: row.agent }, 60_000).catch(() => ({ items: [] }));
@@ -479,10 +575,26 @@ async function stockUp(row) {
     const castings = Math.floor(Math.min(eb2, hb2) / 2);
     const dry = castings === 0
       ? `  *** STILL CANNOT CAST — ${eb2 ? 'no herbs' : 'no elderberry'} at this counter ***` : '';
+    // SAY WHY NOTHING ARRIVED. `spent 0sh` with money in the purse and space in the pack
+    // is the shape every silent failure here has taken, and the report named none of them:
+    // the counter refusing to hand goods over ("Perhaps you carry too much?") is a sentence
+    // spoken to the room, and the broker's own clamp reports what it cut and why. Both were
+    // being returned and thrown away. A trip that spends nothing must say what it heard.
+    const askedFor = buyIds.length;
+    const gotBack = Array.isArray(bought?.got) ? bought.got.length : null;
+    const quiet = askedFor > 0 && (purse1 - purse2) === 0;
+    const clampNote = bought?.clamped?.length
+      ? `  [clamped: ${[...new Set(bought.clamped.flatMap(c => c.limited_by || []))].join('/')}]` : '';
+    const saidNote = quiet && bought?.messages?.length
+      ? `  [the counter said: ${bought.messages.join('; ').slice(0, 90)}]` : '';
+    const quietNote = quiet && !clampNote && !saidNote
+      ? `  *** ASKED FOR ${askedFor} AND SPENT NOTHING — counter said nothing, ` +
+        `got ${gotBack ?? '?'} ***` : '';
     return `${who}: at ${arrived}, sold ${sellable.length} kind(s) ` +
            `(${purse0} -> ${purse1}sh)${bankNote}, spent ${purse1 - purse2}sh, ` +
            `elderberry ${eb0} -> ${eb2}, herbs now ${hb2}, ${castings} casting(s)` +
-           (bought?.error ? ` [buy said: ${String(bought.error).slice(0, 50)}]` : '') + dry;
+           (bought?.error ? ` [buy said: ${String(bought.error).slice(0, 50)}]` : '') +
+           clampNote + saidNote + quietNote + dry;
   } finally {
     // The same invariant every errand in this repo needed and each learned by finding
     // characters standing in towns with nothing driving them: whoever this stopped is

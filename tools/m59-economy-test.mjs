@@ -320,12 +320,13 @@ console.log('\nboth boards render against this fixture');
 
 // ------------------------------------------------------------------ the tab bar
 //
-// The whole reason m59-page-chrome.mjs exists: eight boards carrying eight copies of one
+// The whole reason m59-page-chrome.mjs exists: nine boards carrying nine copies of one
 // list would inevitably leave a newly added page invisible from one of the others.
-console.log('\none tab bar, eight boards');
+console.log('\none tab bar, nine boards');
 {
   const { NAV, TABS } = await import('./m59-page-chrome.mjs');
-  ok('every board has a tab', TABS.length === 8);
+  ok('every board has a tab', TABS.length === 9);
+  ok('and Players is one of them', TABS.some(t => t.key === 'players' && t.href === '/players'));
   const nav = NAV('economy');
   ok('the current page is the only one marked', (nav.match(/class="on"/g) || []).length === 1);
   ok('and it is the right one', /href="\/economy" class="on"/.test(nav));

@@ -2,14 +2,15 @@
 // The room graph: how an agent gets from anywhere to anywhere.
 //
 //   node tools/m59-map.mjs build            walk the server, write substrate/m59-map.json
+//   node tools/m59-map.mjs refresh-geometry refresh baked .roo collision without the server
 //   node tools/m59-map.mjs path <from> <to> shortest route between two room numbers or names
 //   node tools/m59-map.mjs room <n>         one room's exits and neighbours
 //   node tools/m59-map.mjs stats            what the graph looks like
 //
-// Built ONCE over the admin socket, used forever over the game protocol. That split
-// is deliberate: the maintenance port has no password and must stay on loopback, but
-// a JSON file is remote-safe, so the broker ships the graph as data and never needs
-// privileged access at play time.
+// The room graph is built over the admin socket; collision bytes are refreshed from
+// the exact .roo resources used by the server. That split is deliberate: the
+// maintenance port has no password and must stay on loopback, but a JSON artifact is
+// remote-safe, so the broker needs no privileged access at play time.
 //
 // Two exit mechanisms, and an agent must use the right one:
 //
@@ -36,9 +37,15 @@
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { loadRoo, RoomGeometry } from './m59-roo.mjs';
+import { loadRoo, RoomGeometry, sharedRoomGeometry, DEFAULT_ROO_DIRS } from './m59-roo.mjs';
 import { loadCodeExits } from './m59-codeexits.mjs';
+import {
+  CHECKED_MAP_FILE, LOCAL_MAP_FILE, movementMapFile,
+  geometryOutputFile, geometryRefreshBaseFile,
+} from './m59-map-path.mjs';
+export { CHECKED_MAP_FILE, LOCAL_MAP_FILE, movementMapFile } from './m59-map-path.mjs';
 
 // Exits that exist only as code in the room class — see m59-codeexits.mjs. Built by:
 // node tools/m59-codeexits.mjs
@@ -48,8 +55,8 @@ const CODE_EXITS_FILE = process.env.M59_CODE_EXITS ||
 
 const HOST = process.env.M59_HOST || '127.0.0.1';
 const ADMIN_PORT = Number(process.env.M59_ADMIN_PORT || 9998);
-const MAP_FILE = process.env.M59_MAP ||
-  path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'substrate', 'm59-map.json');
+const MAP_FILE = movementMapFile();
+const OUTPUT_MAP_FILE = geometryOutputFile();
 
 // blakston.khd:1219-1226. Note LEAVE_x and ENTER_x share numbers with opposite
 // meanings, so never mix the two vocabularies.
@@ -62,6 +69,14 @@ export const COND_NAME = { 1: 'row>', 2: 'row<', 3: 'col>', 4: 'col<', 5: 'defau
 
 export const ROOM_LOCKED_DOOR = -1;         // blakston.khd:371
 export const ROTATE_NONE = 8;               // blakston.khd:1253
+
+// An explicitly named server resource directory is the whole authority. Treating it
+// as merely the first hint can fill a missing server room from Steam and produce a
+// mixed map whose provenance and collision decisions are both false.
+export function roomResourceDirs({ explicit = process.env.M59_ROO_DIR,
+                                   defaults = DEFAULT_ROO_DIRS } = {}) {
+  return explicit ? [path.resolve(explicit)] : [...defaults];
+}
 
 // EXITS THE ROOM GRAPH CANNOT OBSERVE, BUT THE ROOM CLASS DEFINITELY IMPLEMENTS.
 //
@@ -171,6 +186,162 @@ async function roomObjectIds() {
     if (m) ids.push(Number(m[1]));
   }
   return { listId, ids: [...new Set(ids)] };
+}
+
+export function resourcePathWithin(root, candidate) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep)
+    && !path.isAbsolute(relative));
+}
+
+export function bakeRoomGeometry(byNum, {
+  dirs = DEFAULT_ROO_DIRS,
+  includeSurfaces = 'preserve',
+  authoritativeDir = process.env.M59_ROO_DIR ? path.resolve(process.env.M59_ROO_DIR) : null,
+} = {}) {
+  let baked = 0;
+  const missing = [];
+  const sources = [];
+  // Abstract routing starts each intermediate room at the coordinates published by
+  // the hop that entered it. Price edge approaches against the union of those known
+  // arrivals so a decorative/disconnected boundary component is not advertised to
+  // findPath. Live World.exits still considers the component the character is
+  // actually standing in, including unusual operator-placed starts.
+  const arrivals = new Map();
+  const edgeDirections = new Map();
+  const addDirection = (roomNum, direction) => {
+    if (!byNum[roomNum] || !direction) return;
+    if (!edgeDirections.has(roomNum)) edgeDirections.set(roomNum, new Set());
+    edgeDirections.get(roomNum).add(direction);
+  };
+  const addArrival = (to, row, col) => {
+    if (!byNum[to] || !Number.isInteger(row) || !Number.isInteger(col)) return;
+    if (!arrivals.has(to)) arrivals.set(to, []);
+    const list = arrivals.get(to);
+    if (!list.some(point => point.row === row && point.col === col)) list.push({ row, col });
+  };
+  for (const room of Object.values(byNum)) {
+    for (const exit of edgeExitsOf(room)) {
+      addDirection(room.num, exit.leaveName ?? LEAVE_NAME[exit.leave]);
+      addArrival(exit.to, exit.arriveRow, exit.arriveCol);
+      // inferredExits can use the physically valid reverse boundary when the
+      // destination publishes edge exits of its own.
+      if ((byNum[exit.to]?.edgeExits || []).length)
+        addDirection(exit.to, LEAVE_NAME[OPPOSITE[exit.leave]]);
+    }
+    for (const exit of room.goExits || [])
+      addArrival(exit.to, exit.arriveRow, exit.arriveCol);
+    for (const exit of codeExits(room.num))
+      addArrival(exit.to, exit.arrive?.row, exit.arrive?.col);
+  }
+  for (const room of Object.values(byNum)) {
+    if (!room.rooFile) { missing.push(room.name); continue; }
+    let geo;
+    try { geo = loadRoo(room.rooFile, dirs, { strict: true }); }
+    catch (error) {
+      missing.push(`${room.name} (${room.rooFile}): ${error.message}`);
+      continue;
+    }
+    if (!geo) { missing.push(`${room.name} (${room.rooFile}): file not found`); continue; }
+    if (authoritativeDir && !resourcePathWithin(authoritativeDir, geo.file)) {
+      missing.push(`${room.name} (${room.rooFile}): resolved outside authoritative directory ` +
+        authoritativeDir);
+      continue;
+    }
+    // The movement payload is compact and self-contained. Rich RTS render surfaces
+    // remain opt-in; baking 88k pretty-printed leaf objects grows this file by 40 MB.
+    const bakeSurfaces = includeSurfaces === true || (includeSurfaces === 'preserve'
+      && Array.isArray(room.roo?.sectors) && Array.isArray(room.roo?.leaves));
+    const bakedRoo = geo.toJSON({ includeSurfaces: bakeSurfaces,
+      graphEntrySquares: arrivals.get(room.num) ?? null,
+      edgeDirections: edgeDirections.get(room.num) ?? [] });
+    if (!bakedRoo.collisionVersion) {
+      missing.push(`${room.name} (${room.rooFile}): collision payload was not emitted`);
+      continue;
+    }
+    // kod's piRows/piCols and the .roo grid must agree or every coordinate from
+    // perception indexes the wrong square. A collision artifact with mismatched
+    // bounds is unusable, so strict refresh rejects it instead of merely recording
+    // a warning that runtime movement cannot safely ignore.
+    if (room.rows != null && (geo.rows !== room.rows || geo.cols !== room.cols)) {
+      missing.push(`${room.name} (${room.rooFile}): KOD dimensions ${room.rows}x${room.cols} ` +
+        `do not match .roo ${geo.rows}x${geo.cols}`);
+      continue;
+    }
+    room.roo = bakedRoo;
+    sources.push(geo.file);
+    delete room.rooDimensionMismatch;
+    baked++;
+  }
+  return { baked, missing, sources };
+}
+
+export function geometryManifest(rooms) {
+  const entries = Object.entries(rooms).map(([key, room]) => [
+    key, room.num, room.rows ?? null, room.cols ?? null, room.rooFile ?? null,
+    room.roo?.file ?? room.rooFile ?? null,
+    room.roo?.security ?? null, room.roo?.collision?.digest ?? null,
+  ]).sort((a, b) => Number(a[0]) - Number(b[0]));
+  return {
+    geometryRoomCount: entries.length,
+    geometryManifestSha256: crypto.createHash('sha256')
+      .update(JSON.stringify(entries)).digest('hex'),
+  };
+}
+
+export function setGeometryProvenance(map, outputFile, {
+  sourceDir = process.env.M59_ROO_DIR,
+  sourceRoot = process.env.M59_ROOT,
+  now = () => new Date().toISOString(),
+} = {}) {
+  const checkedReference = path.resolve(outputFile) === path.resolve(CHECKED_MAP_FILE);
+  if (checkedReference) {
+    // The committed reference is reproducible and reviewable by its semantic manifest.
+    // Never leak a maintainer's absolute source path or restamp an unchanged artifact.
+    delete map.geometryBuiltAt;
+    map.geometrySource = 'portable reference room resources';
+  } else {
+    map.geometryBuiltAt = now();
+    map.geometrySource = sourceDir ? path.resolve(sourceDir)
+      : (sourceRoot ? 'M59_ROOT/resource/rooms' : 'auto-discovered room resources');
+  }
+  return map;
+}
+
+// Decode the authority the movement code will actually use, not just its version
+// number. This catches a valid-looking header with a bad digest, orphaned wall chain,
+// wrong-direction edge approach, or other semantic corruption before the broker can
+// advertise itself as healthy.
+export function movementMapReadiness(map) {
+  const entries = Object.entries(map?.rooms ?? {});
+  const rooms = entries.map(([, room]) => room);
+  const invalid = [];
+  const numbers = new Set();
+  for (const [key, room] of entries) {
+    const geometry = room.roo && !room.rooDimensionMismatch
+      ? sharedRoomGeometry(room) : null;
+    const number = Number(room.num);
+    const unique = Number.isInteger(number) && !numbers.has(number);
+    if (unique) numbers.add(number);
+    const keyMatches = String(number) === String(key);
+    const dimensionsMatch = geometry && room.rows === geometry.rows && room.cols === geometry.cols;
+    const fileMatches = geometry && path.basename(String(room.rooFile ?? '')).toLowerCase() ===
+      path.basename(String(geometry.file ?? '')).toLowerCase();
+    if (!geometry?.collisionReady || !unique || !keyMatches || !dimensionsMatch || !fileMatches)
+      invalid.push(room.num ?? room.name ?? key ?? '?');
+  }
+  const manifest = geometryManifest(map?.rooms ?? {});
+  const manifestMatches = map?.geometryRoomCount === manifest.geometryRoomCount
+    && map?.geometryManifestSha256 === manifest.geometryManifestSha256;
+  return {
+    ok: rooms.length > 0 && invalid.length === 0 && manifestMatches,
+    total: rooms.length,
+    ready: rooms.length - invalid.length,
+    invalid,
+    manifest_matches: manifestMatches,
+    expected_manifest: manifest.geometryManifestSha256,
+    actual_manifest: map?.geometryManifestSha256 ?? null,
+  };
 }
 
 async function build({ chunk = 300 } = {}) {
@@ -288,32 +459,29 @@ async function build({ chunk = 300 } = {}) {
   // Bake the walkability geometry in. It could be loaded from the game's resource
   // directory at play time instead, but baking it means the broker needs no access
   // to the M59 tree at all — the same reason the resource strings are baked. Three
-  // byte planes per room, base64'd, is a few kB each.
-  let baked = 0, missing = [];
-  for (const room of Object.values(byNum)) {
-    if (!room.rooFile) { missing.push(room.name); continue; }
-    const geo = loadRoo(room.rooFile);
-    if (!geo) { missing.push(`${room.name} (${room.rooFile})`); continue; }
-    room.roo = geo.toJSON();
-    // kod's piRows/piCols and the .roo grid must agree or every coordinate from
-    // perception indexes the wrong square. Record the disagreement rather than
-    // silently preferring one.
-    if (room.rows != null && (geo.rows !== room.rows || geo.cols !== room.cols))
-      room.rooDimensionMismatch = { kod: [room.rows, room.cols], roo: [geo.rows, geo.cols] };
-    baked++;
-  }
+  // compact sectors, leaves, BSP nodes, directional sidedefs, and reachable boundary
+  // approaches. The generated reference artifact is intentionally tens of MB rather
+  // than a few unchecked minimap planes.
+  // A full build remains the source for the rich RTS scene surfaces. The offline
+  // refresh below upgrades collision only and preserves the existing graph payload.
+  const { baked, missing } = bakeRoomGeometry(byNum, {
+    dirs: roomResourceDirs(), includeSurfaces: true,
+  });
   process.stderr.write(`  pass 3: geometry baked for ${baked}/${Object.keys(byNum).length} rooms` +
                        `${missing.length ? `, missing ${missing.length}` : ''}\n`);
   if (missing.length) process.stderr.write(`    missing: ${missing.slice(0, 8).join(', ')}\n`);
+  if (missing.length)
+    throw new Error('refusing to build a map with incomplete collision geometry');
 
-  return {
+  return setGeometryProvenance({
     builtAt: new Date().toISOString(),
+    ...geometryManifest(byNum),
     note: 'Room numbers (piRoom_num) are stable across save/restart; objId is NOT — ' +
           'it is recorded for admin-socket convenience only and must be re-resolved after a save. ' +
           'nameRsc and roomRsc are protocol-visible (BP_PLAYER) and are the keys a broker ' +
           'should use to identify which room a session is standing in.',
     rooms: byNum,
-  };
+  }, OUTPUT_MAP_FILE);
 }
 
 // ------------------------------------------------------------------ graph
@@ -322,11 +490,79 @@ export function loadMap(file = MAP_FILE) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
+export function writeMapAtomic(file, map) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temp = path.join(path.dirname(file),
+    `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp`);
+  let fd = null;
+  try {
+    fd = fs.openSync(temp, 'wx');
+    fs.writeFileSync(fd, JSON.stringify(map, null, 1));
+    fs.fsyncSync(fd);
+    fs.closeSync(fd); fd = null;
+    fs.renameSync(temp, file);
+  } finally {
+    if (fd != null) fs.closeSync(fd);
+    try { fs.unlinkSync(temp); } catch { /* renamed successfully, or never created */ }
+  }
+}
+
+function edgeConditionAllows(condition, candidate) {
+  if (!condition) return true;
+  const { type, threshold } = condition;
+  if (type === COND.ROW_GT) return candidate.row > threshold;
+  if (type === COND.ROW_LT) return candidate.row < threshold;
+  if (type === COND.COL_GT) return candidate.col > threshold;
+  if (type === COND.COL_LT) return candidate.col < threshold;
+  return true;
+}
+
+// StandardLeaveDir evaluates the complete ordered plEdge_Exits list. A default
+// (NO_OTHER_CONDITIONS) is remembered but does not stop the scan; a later matching
+// condition or unconditional entry wins. Simulate that selection so a crossing
+// grounded for Fey's default south exit cannot actually send the character east.
+export function selectedEdgeAt(room, direction, candidate) {
+  let selected = null;
+  for (const edge of edgeExitsOf(room)) {
+    if ((edge.leaveName ?? LEAVE_NAME[edge.leave]) !== direction || edge.synthetic) continue;
+    if (edge.condition?.type === COND.NONE) { selected = edge; continue; }
+    if (!edge.condition || edgeConditionAllows(edge.condition, candidate)) {
+      selected = edge;
+      break;
+    }
+  }
+  return selected;
+}
+
+// Exact BSP-validated crossings for a declared server edge. Keeping this beside the
+// graph makes an impossible direct edge disappear before route search chooses it;
+// execution revalidates the selected coordinates against live room state.
+export function edgeCandidatesOf(room, edgeOrDirection, condition = null, { live = false } = {}) {
+  if (!room?.roo || room.rooDimensionMismatch) return [];
+  const direction = typeof edgeOrDirection === 'string'
+    ? edgeOrDirection : edgeOrDirection?.leaveName ?? LEAVE_NAME[edgeOrDirection?.leave];
+  const edgeCondition = typeof edgeOrDirection === 'object'
+    ? edgeOrDirection.condition : condition;
+  const geo = sharedRoomGeometry(room);
+  if (!geo?.collisionReady) return [];
+  const approaches = geo.edgeApproachCandidates(direction)
+    .filter(candidate => live || candidate.graph_routable !== false);
+  if (typeof edgeOrDirection !== 'object' || edgeOrDirection.synthetic)
+    return approaches.filter(candidate => edgeConditionAllows(edgeCondition, candidate));
+  const declared = edgeExitsOf(room).includes(edgeOrDirection);
+  if (!declared) return approaches.filter(candidate => edgeConditionAllows(edgeCondition, candidate));
+  return approaches.filter(candidate => selectedEdgeAt(room, direction, candidate) === edgeOrDirection);
+}
+
 // Every way out of a room, as one uniform list, because an agent should not have to
 // care which mechanism a given door uses — only what it has to do.
 export function exitsOf(room) {
   const out = [];
   for (const e of edgeExitsOf(room)) {
+    // Hand-authored/diagnostic graph fixtures without any geometry remain useful for
+    // abstract route search. Once a room carries a .roo payload, however, a declared
+    // edge with no validated approach is physically non-routable and must disappear.
+    if (room?.roo && !edgeCandidatesOf(room, e).length) continue;
     out.push({
       kind: 'edge', to: e.to, direction: e.leaveName,
       how: `walk ${e.leaveName} past the room edge` +
@@ -412,12 +648,76 @@ export function forgetInferredExit(from, to) {
 }
 export function inferredExitCount() { return badInferred.size; }
 
+// A DECLARED EDGE THAT IS ONE-WAY IN THE ACTUAL GAME HAS HAD NOWHERE TO LIVE.
+//
+// `badInferred` above only ever filters edges this file INFERRED — reverses it invented
+// and the server then refused. An edge the map genuinely declares, which a player
+// nonetheless cannot walk, is a different fact and there was no home for it.
+//
+// The instance that forced this: the operator, who knows the world, states that going
+// from *An ancient place, its origin forgotten* [579] to *Ukgoth* [599] **through Under
+// the shadow of the Sentinel [589] is impossible for a player**, and that the real way
+// round is 578 -> 576 -> 587 -> 597 -> 598. Our router planned the impossible way, in two
+// hops, and would have kept planning it for ever: the geometry catches the `599 -> 598`
+// half of that corridor (zero routable crossing squares) and misses the `589 -> 599` half,
+// which offers four.
+//
+// SO THE RECORD IS OPERATOR KNOWLEDGE, NOT A MEASUREMENT, and it is committed for exactly
+// that reason — it is a fact about the world rather than about this machine, the same
+// class of thing as the merchant allowlist. Anything derived from geometry belongs in the
+// bake instead; if a future scan can prove the crossing impossible on its own, the entry
+// becomes redundant rather than wrong.
+//
+// DIRECTED, and the direction matters: 599 -> 589 is walkable and only the reverse is not.
+// Recording it as a symmetric block would delete a legitimate route.
+const ONE_WAY_FILE = process.env.M59_ONE_WAY ||
+  path.join(path.dirname(fileURLToPath(import.meta.url)),
+            '..', 'substrate', 'm59-oneway.json');
+
+let oneWayCache = null;
+export function oneWayBlocks() {
+  if (oneWayCache) return oneWayCache;
+  const out = new Map();
+  try {
+    const j = JSON.parse(fs.readFileSync(ONE_WAY_FILE, 'utf8'));
+    for (const e of j.blocked ?? [])
+      if (Number.isFinite(e?.from) && Number.isFinite(e?.to))
+        // KEYED ON THE EXIT, NOT THE ROOM PAIR, when the record says which exit. Two rooms
+        // are frequently joined by more than one thing — Cor Noth reaches Main gate to Cor
+        // Noth by a dead west EDGE and by a working DOOR — and a block that cannot tell
+        // them apart removes both. That is not hypothetical: it routed 150 -> 574 eight
+        // hops round the Merchant Ways instead of through the door beside it.
+        out.set(e.from + '->' + e.to + (e.leave ? '|' + e.leave : ''),
+                e.why ?? 'recorded as unusable');
+  } catch { /* no file is "nothing is known", which routes exactly as it used to */ }
+  oneWayCache = out;
+  return out;
+}
+// An exit is blocked when the record names the whole pair, or names this exit exactly.
+export function isOneWayBlocked(from, to, ex = null) {
+  const book = oneWayBlocks();
+  if (book.has(from + '->' + to)) return true;                     // whole-pair block
+  const dir = ex?.leaveName ?? ex?.leave_name ?? null;
+  return dir ? book.has(from + '->' + to + '|' + dir) : false;
+}
+
+// The one place both searches ask "where can I go from here", so a rule added here cannot
+// be honoured by one of them and not the other — which is how the two would come to
+// disagree about which routes exist.
+export function passableExits(map, at) {
+  const room = map.rooms[at];
+  if (!room) return [];
+  return [...exitsOf(room), ...inferredExits(map, at), ...codeExits(at)]
+    .filter(ex => ex.to != null && !isOneWayBlocked(Number(at), Number(ex.to), ex));
+}
+
 export function inferredExits(map, roomNum) {
   if (!map.__reverse) {
     const rev = new Map();
     for (const r of Object.values(map.rooms)) {
       for (const e of r.edgeExits || []) {
         if (e.to == null || e.condition) continue;   // conditional exits are not symmetric
+        if (r.roo && !edgeCandidatesOf(r, e).length) continue;
         const back = OPPOSITE[e.leave];
         if (!back) continue;
         // NEVER infer an edge OUT of a room that declares no edge exits at all.
@@ -433,6 +733,11 @@ export function inferredExits(map, roomNum) {
         // exit always beats an inferred one.
         const declared = (map.rooms[e.to]?.edgeExits || []).some(x => x.to === r.num);
         if (declared) continue;
+        // A reverse is only actionable where the destination room's own BSP has a
+        // real crossing in that direction. This excludes sealed authored bounds
+        // before route search can repeatedly choose them.
+        if (map.rooms[e.to]?.roo
+            && !edgeCandidatesOf(map.rooms[e.to], LEAVE_NAME[back]).length) continue;
         if (!rev.has(e.to)) rev.set(e.to, []);
         if (!rev.get(e.to).some(x => x.to === r.num))
           rev.get(e.to).push({ kind: 'edge', to: r.num, direction: LEAVE_NAME[back],
@@ -480,6 +785,41 @@ export function codeExits(roomNum) {
 // avoiding it costs hops rather than reachability.
 export const AVOID_IN_TRANSIT = new Set([534]);
 
+// ROOMS THAT KILL BY A RULE, NOT BY A FIGHT — AND THE BLOCK ON THEM IS NOT NEGOTIABLE.
+//
+// `AVOID_IN_TRANSIT` is a PREFERENCE: findPath tries to route around 534 and, if there is
+// no other way, goes through it anyway. That is right for a room that is merely dangerous
+// — a corridor full of monsters is survivable, and refusing to cross it would strand a
+// character. It is exactly wrong for a room whose hazard is arithmetic.
+//
+// 555, The Forest Shrine, is a gas-field puzzle. `OutdoorsE5.PunishPlayer` (e5.kod:452)
+// charges `GetBaseMaxHealth / 3` as ATCK_SPELL_ACID for every step onto a wrong square,
+// and when that reduction kills you it calls `@killed` outright — "The acid steam melts
+// the flesh from your bones." Three bad steps kill anything in this fleet from full
+// health, and NOTHING ABOUT THE ROOM IS VISIBLE TO A ROUTER: the safe row is chosen at
+// random by `InitPuzzle`, it MOVES as you cross, and the only way to learn it is to ask
+// the NPC (LadyPheonix) for protection and be told, one row at a time. A bot that has not
+// been taught the protocol is not taking a risk in there; it is walking a fixed number of
+// steps to its death. Statler died in it this session, in transit.
+//
+// So these are removed from the graph on EVERY pass, including the permissive fallback
+// that exists so a route is always found. "No route" is the correct answer here — an
+// errand that cannot be done without crossing a death room is an errand that should fail
+// and say so, loudly, rather than succeed at the cost of a character.
+//
+// Two exceptions, both narrow and both necessary:
+//   - THE ORIGIN IS NEVER BLOCKED. A character that is somehow standing in one must be
+//     able to walk out, and that is the one moment routing through it is the whole point.
+//   - THE DESTINATION IS BLOCKED UNLESS SOMEBODY ASKS FOR IT BY NAME, via
+//     `allowHazardDestination`. An operator sending a character there deliberately is a
+//     decision a person can make; a keeper choosing it while roaming is not, and the
+//     keeper never passes the flag. This is the "are you sure?" that defaults to no.
+export const NEVER_ENTER = new Map([
+  [555, 'The Forest Shrine — acid gas puzzle, kills outright (e5.kod:452 PunishPlayer); ' +
+        'the safe row is random and moves, and is only learnable by asking LadyPheonix'],
+]);
+export const hazardReason = (room) => NEVER_ENTER.get(Number(room)) ?? null;
+
 // EVERY ROOM WITHIN `radius` HOPS, the destination itself first. Farm delivery reads this
 // to answer "who is near enough to be worth walking to", which one room number cannot.
 //
@@ -524,7 +864,7 @@ function bfsPath(map, fromNum, toNum, avoid) {
     const [at, sofar] = q.shift();
     const room = map.rooms[at];
     if (!room) continue;
-    for (const ex of [...exitsOf(room), ...inferredExits(map, at), ...codeExits(at)]) {
+    for (const ex of passableExits(map, at)) {
       if (ex.to == null || seen.has(ex.to)) continue;
       const hop = { from: at, fromName: room.name, to: ex.to,
                     toName: map.rooms[ex.to]?.name || `room ${ex.to}`, ...ex };
@@ -618,7 +958,7 @@ function safestPath(map, fromNum, toNum, avoid, danger, budget) {
     if (budget != null && cur.hops > budget) continue;
     const room = map.rooms[cur.at];
     if (!room) continue;
-    for (const ex of [...exitsOf(room), ...inferredExits(map, cur.at), ...codeExits(cur.at)]) {
+    for (const ex of passableExits(map, cur.at)) {
       if (ex.to == null) continue;
       const hop = { from: cur.at, fromName: room.name, to: ex.to,
                     toName: map.rooms[ex.to]?.name || `room ${ex.to}`, ...ex };
@@ -658,13 +998,24 @@ function safestPath(map, fromNum, toNum, avoid, danger, budget) {
 // have returned before. So the worst case is today's behaviour, which is the property
 // worth having in the most load-bearing function in the repository.
 export function findPath(map, fromNum, toNum,
-                         { avoid = AVOID_IN_TRANSIT, danger = true } = {}) {
+                         { avoid = AVOID_IN_TRANSIT, danger = true,
+                           allowHazardDestination = false } = {}) {
   if (fromNum === toNum) return { found: true, hops: [] };
+
+  // THE HARD BLOCK, APPLIED BEFORE ANYTHING ELSE AND NEVER RELAXED. See NEVER_ENTER: the
+  // permissive fallback at the bottom of this function is what makes `avoid` a preference,
+  // and a preference is not what a room that kills by arithmetic needs.
+  if (!allowHazardDestination && hazardReason(toNum))
+    return { found: false, hops: [], hazard: Number(toNum),
+             reason: `refusing to route to ${toNum}: ${hazardReason(toNum)}` };
+  const forbidden = new Set([...NEVER_ENTER.keys()].filter(r => r !== Number(fromNum) &&
+                                                                r !== Number(toNum)));
+
   // Never avoid where we are or where we are going: a character standing IN a hazard has
   // to be able to leave it, and one sent to it has to be able to arrive.
-  const skip = avoid && avoid.size
-    ? new Set([...avoid].filter(r => r !== fromNum && r !== toNum))
-    : null;
+  const soft = avoid && avoid.size
+    ? [...avoid].filter(r => r !== fromNum && r !== toNum) : [];
+  const skip = (soft.length || forbidden.size) ? new Set([...soft, ...forbidden]) : null;
 
   // THE ORDER HERE IS THE SAFETY ARGUMENT, and it is the same one the two-pass version
   // made: every step down this list is strictly more permissive than the one above, and
@@ -695,7 +1046,16 @@ export function findPath(map, fromNum, toNum,
     const safer = bfsPath(map, fromNum, toNum, skip);
     if (safer.found) return safer;
   }
-  return bfsPath(map, fromNum, toNum, null);
+  // THE LAST RESORT STILL HONOURS THE HARD BLOCK. This line used to pass `null`, which is
+  // what made every avoid a preference — and it is the line Statler's route came down.
+  // A soft hazard is dropped here; a NEVER_ENTER room is not, so a journey that needs one
+  // comes back `found: false` and names the room rather than walking a character into it.
+  const last = bfsPath(map, fromNum, toNum, forbidden.size ? forbidden : null);
+  if (!last.found && forbidden.size)
+    return { ...last, blocked_by_hazard: [...forbidden],
+             reason: `${last.reason} without crossing ${[...forbidden]
+               .map(r => `${r} (${hazardReason(r)})`).join('; ')}` };
+  return last;
 }
 
 // Name or number in, room number out. Agents think in names.
@@ -726,11 +1086,10 @@ if (import.meta.filename === process.argv[1]) {
   if (cmd === 'build') {
     console.log('walking the server over the admin socket...');
     const map = await build();
-    fs.mkdirSync(path.dirname(MAP_FILE), { recursive: true });
-    fs.writeFileSync(MAP_FILE, JSON.stringify(map, null, 1));
+    writeMapAtomic(OUTPUT_MAP_FILE, map);
     const rooms = Object.values(map.rooms);
     const edges = rooms.reduce((n, r) => n + exitsOf(r).filter(e => e.to != null).length, 0);
-    console.log(`\nwrote ${MAP_FILE}`);
+    console.log(`\nwrote ${OUTPUT_MAP_FILE}`);
     console.log(`${rooms.length} rooms, ${edges} directed exits`);
     console.log(`${rooms.filter(r => !r.edgeExits.length && !r.goExits.length).length} rooms with no exits at all`);
     console.log(`${rooms.reduce((n, r) => n + r.goExits.filter(g => g.locked).length, 0)} locked doors`);
@@ -743,6 +1102,36 @@ if (import.meta.filename === process.argv[1]) {
       ? `WARNING: ${dangling.size} exits point at rooms not in the graph: ${[...dangling].slice(0, 20).join(', ')}\n` +
         `  widen the scan range: node tools/m59-map.mjs build <maxObjectId>`
       : 'every exit destination is present in the graph');
+    process.exit(0);
+  }
+
+  // Re-bake only the .roo payload without touching room ids, exits, names, or the
+  // admin socket. This is the safe upgrade path when the geometry schema changes.
+  if (cmd === 'refresh-geometry') {
+    // A setup-specific M59_MAP starts from the committed room graph, then receives
+    // collision bytes from the exact source tree the local server was built from.
+    const map = loadMap(geometryRefreshBaseFile(OUTPUT_MAP_FILE));
+    // An explicit directory is an authority, not just the first search hint. Mixing
+    // server and Steam/client ROOs can produce a map whose provenance label is false.
+    const exclusiveDir = process.env.M59_ROO_DIR ? path.resolve(process.env.M59_ROO_DIR) : null;
+    const dirs = roomResourceDirs();
+    const { baked, missing, sources } = bakeRoomGeometry(map.rooms, { dirs });
+    if (exclusiveDir) {
+      const outside = sources.filter(source => {
+        const relative = path.relative(exclusiveDir, path.resolve(source));
+        return relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative);
+      });
+      if (outside.length) missing.push(`room resources escaped authoritative directory ${exclusiveDir}`);
+    }
+    if (missing.length) {
+      console.error(`could not load ${missing.length} room file(s): ${missing.slice(0, 8).join(', ')}`);
+      process.exit(1);
+    }
+    setGeometryProvenance(map, OUTPUT_MAP_FILE, { sourceDir: exclusiveDir });
+    Object.assign(map, geometryManifest(map.rooms));
+    writeMapAtomic(OUTPUT_MAP_FILE, map);
+    console.log(`refreshed collision geometry for ${baked}/${Object.keys(map.rooms).length} rooms`);
+    console.log(`wrote ${OUTPUT_MAP_FILE}`);
     process.exit(0);
   }
 
@@ -798,6 +1187,7 @@ if (import.meta.filename === process.argv[1]) {
     process.exit(0);
   }
 
-  console.error('usage: m59-map.mjs build [maxObjectId] | path <from> <to> | room <n|name> | stats');
+  console.error('usage: m59-map.mjs build [maxObjectId] | refresh-geometry | ' +
+                'path <from> <to> | room <n|name> | stats');
   process.exit(1);
 }

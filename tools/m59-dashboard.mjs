@@ -134,29 +134,43 @@ function yesno(v, { yes = 'Y', no = 'N' } = {}) {
   return v ? `<span class="good">${yes}</span>` : `<span class="bad">${no}</span>`;
 }
 
-// GEAR CONDITION CELL. Shows the item name (shortened) plus a coloured condition badge.
+// GEAR CONDITION CELL. Shows item name plus a 4-square bar coloured by condition.
 //
 // Level scale from m59-skills.mjs parseConditionLevel:
-//   4 = flawless, 3 = good, 2 = worn, 1 = poor (nearly broken), 0 = broken
+//   4 = flawless (all squares full/amber)
+//   3 = good
+//   2 = worn     (frontier square orange)
+//   1 = poor     (only one square, orange frontier)
+//   0 = broken   (all squares red/gone)
 //
 // When gear_condition is null (never inspected) we fall back to the old boolean display.
 // When the slot is null (nothing equipped) it renders as a dash.
 const COND_LABEL = ['broken', 'poor', 'worn', 'good', '★'];
-const COND_CLS   = ['bad',    'bad',  'warn',  '',   'good'];
+const COND_CLS   = ['bad',    'bad',  'warn', '',    'good'];
 
-function gearCell(slotData, fallbackBool) {
-  if (slotData === undefined) {
-    // gear_condition not present on row — legacy broker without this feature
+// gearCondition is the whole gear_condition object (or undefined if absent from row).
+// slot is 'weapon' or 'armor'. fallbackBool is has_weapon for the weapon slot.
+//
+// Three states:
+//   gearCondition === undefined  — old broker, field not present; fall back to Y/N
+//   gearCondition === null       — broker present but sweepGearCondition hasn't run yet
+//   gearCondition[slot] === null — sweep ran but nothing equipped in that slot; dash
+//   gearCondition[slot]          — show shortened name + coloured condition badge
+function gearCell(gearCondition, slot, fallbackBool) {
+  if (gearCondition === undefined) {
     return `<span class="dim">${fallbackBool == null ? '?' : fallbackBool ? 'Y' : 'N'}</span>`;
   }
-  if (slotData === null) return '<span class="dim">—</span>';
+  if (gearCondition === null) {
+    return `<span class="dim">—</span>`;
+  }
+  const slotData = gearCondition[slot];
+  if (!slotData) return `<span class="dim">—</span>`;
   const { name, level } = slotData;
   const shortName = (name || '').replace(/\b(leather|chain|scale|plate)\b.*/i, m => m.split(' ')[0]);
-  if (level == null) {
+  if (level == null)
     return `<span title="${esc(name)}">${esc(shortName)}</span><span class="dim" title="condition not yet read"> ?</span>`;
-  }
   const label = COND_LABEL[level] ?? '?';
-  const cls   = COND_CLS[level]  ?? '';
+  const cls   = COND_CLS[level]   ?? '';
   return `<span title="${esc(name)}">${esc(shortName)}</span> <span class="${cls || 'dim'}" title="condition: ${label}">${label}</span>`;
 }
 
@@ -195,7 +209,7 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
     return current ? { ...row,
       learning: current.learning?.progress ?? row.learning ?? null,
       planned_learning: current.learning?.planned ?? row.planned_learning ?? null,
-      gear_condition: current.gear_condition ?? row.gear_condition ?? undefined,
+      gear_condition: 'gear_condition' in current ? current.gear_condition : row.gear_condition,
       has_weapon: current.has_weapon ?? row.has_weapon,
       wielding: current.wielding ?? row.wielding,
     } : row;
@@ -281,6 +295,13 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
     // row's numbers are about someone playing rather than something farming — which is
     // the one case where "stalled" and "no kills" mean nothing is wrong.
     const mine = nowPiloted.has(String(r.character ?? '').toLowerCase());
+    // A HELD TOKEN IS FLAGGED ON THE VIGOR CELL, because that is the cell it lies in.
+    // Token.NewUsed (token.kod:227) pins the vigor rest threshold at 10 for as long as it
+    // is held, so the character sits under every vigor floor there is and will not fight —
+    // while looking, on this row, exactly like one that has simply been walking. The
+    // difference is that walking fixes itself on the next rest and this never does.
+    // Marked on the number rather than in a column of its own so it cannot be scrolled
+    // past: the value and the reason it is wrong belong side by side.
     return `
     <tr${mine ? ' class="piloted"' : ''}>
       <td class="name"><a class="hero" href="/hero/${encodeURIComponent(r.character ?? '')}">${esc(r.character)}</a>${
@@ -301,10 +322,13 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
       })()}</td>
       <td class="vital">${bar(hp.value, hp.max, 'hp')}<span class="vnum">${esc(r.health ?? '—')}</span></td>
       <td class="vital">${bar(mp.value, mp.max, 'mp')}<span class="vnum">${esc(r.mana ?? '—')}</span></td>
-      <td class="vital">${bar(vg.value, vg.max, 'vg')}<span class="vnum">${esc(r.vigor ?? '—')}</span></td>
+      <td class="vital${r.holding_token ? ' token' : ''}"${r.holding_token
+        ? ' title="Holding a Council Token — it pins the vigor rest threshold at 10, so resting will NOT bring this character back to fighting vigor. Drop it or return it to a councilor; reviving the keeper does nothing."'
+        : ''}>${bar(vg.value, vg.max, 'vg')}<span class="vnum">${esc(r.vigor ?? '—')}</span>${
+        r.holding_token ? '<span class="tokenflag">TOKEN</span>' : ''}</td>
       <td class="num">${yesno(r.has_food)}</td>
-      <td class="gear">${gearCell(r.gear_condition?.weapon, r.has_weapon)}</td>
-      <td class="gear">${gearCell(r.gear_condition?.armor,  null)}</td>
+      <td class="gear">${gearCell(r.gear_condition, 'weapon', r.has_weapon)}</td>
+      <td class="gear">${gearCell(r.gear_condition, 'armor',  null)}</td>
       <td>${esc(r.strategy ?? '—')}</td>
       <td class="num ${r.deaths ? 'bad' : 'dim'}">${r.deaths}</td>
       <td class="num dim">${r.kills ?? 0}</td>
@@ -379,6 +403,12 @@ export function renderDashboard({ hours = 24, localhost = false, piloted = [], l
   .dim { color:var(--dim); }
   .good { color:var(--good); }
   .bad { color:var(--bad); font-weight:600; }
+  /* A HELD TOKEN. Loud on purpose: it is the one low-vigor cause that does not clear
+     itself, and it is indistinguishable from ordinary travel exhaustion at a glance. */
+  td.vital.token { background:color-mix(in srgb, var(--bad) 18%, transparent);
+                   box-shadow:inset 0 0 0 1px var(--bad); }
+  .tokenflag { margin-left:.45em; padding:.05em .4em; border-radius:3px; font-size:.68em;
+               letter-spacing:.04em; font-weight:700; color:#fff; background:var(--bad); }
   .room { color:var(--dim); max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .room-link { color:var(--dim); text-decoration:none; border-bottom:1px dotted var(--line); }
   .room-link:hover { color:var(--accent); border-bottom-color:var(--accent); }

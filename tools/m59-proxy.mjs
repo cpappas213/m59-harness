@@ -38,7 +38,7 @@ import net from 'node:net';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
 import { parseRoomContents, objId } from './m59-parse.mjs';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -167,6 +167,10 @@ export class ProxySession extends EventEmitter {
     this.inGame = false;
     this.lastEpoch = 0;
     this.stats = { fromClient: 0, fromServer: 0, injected: 0, rewritten: 0 };
+    // Where a human's own move requests get written down. One file per proxy run, because
+    // a walk is a session and mixing two people's sessions into one trace would make the
+    // step-to-step comparisons below meaningless.
+    this.walkLog = ProxySession.walkLog ?? null;
     // How many times we have advanced the stream purely to stay level with the
     // server while forwarding the client's own packets untouched.
     this.shadowed = 0;
@@ -268,6 +272,28 @@ export class ProxySession extends EventEmitter {
         y: payload.readUInt16LE(1), x: payload.readUInt16LE(3),
         speed: payload.readUInt8(5), room: payload.readUInt32LE(6),
       };
+      // GROUND TRUTH ABOUT WHERE A PLAYER CAN ACTUALLY WALK, AND THERE IS NO OTHER SOURCE
+      // FOR IT.
+      //
+      // Everything this repository believes about walkable space is a MODEL: the server's
+      // one-byte-a-square grid (which is what monsters use), and our transcription of the
+      // client's BSP. Both have been caught being wrong, and the only thing that settles it
+      // is a person walking somewhere and us seeing the coordinates they walked to. This is
+      // that: the human client's own move requests, in fine wire units, exactly as the
+      // client decided them.
+      //
+      // It is APPEND-ONLY AND BEST-EFFORT. A failed write must never break the stream —
+      // the stream is somebody playing the game, and a debugging convenience does not get
+      // to interrupt it. See m59-walkcheck.mjs for the half that reads these back.
+      if (this.walkLog) {
+        try {
+          appendFileSync(this.walkLog, JSON.stringify({
+            at: Date.now(), room: this.lastMove.room,
+            x: this.lastMove.x, y: this.lastMove.y, speed: this.lastMove.speed,
+            col: Math.floor(this.lastMove.x / 64), row: Math.floor(this.lastMove.y / 64),
+          }) + '\n');
+        } catch { /* never let the recorder cost somebody their session */ }
+      }
       if (this.knownRoom !== this.lastMove.room) {
         this.knownRoom = this.lastMove.room;
         this.log(`learned room objId=${this.knownRoom} from the player's move ` +
@@ -760,6 +786,18 @@ export function serveProxy({ listen = 5960, host = '127.0.0.1', port = 5959,
     return [...sessions].find(s => s.playerId === sel) ?? null;
   };
   if (control) serveControl(control, pick);
+  // RECORD WHERE A HUMAN ACTUALLY WALKS. One file per proxy run — see the note on
+  // `walkLog` in the session. `--no-walklog` turns it off; it is on by default because
+  // the trace is the only ground truth this repository has about walkable space, and the
+  // one thing guaranteed to lose it is having to remember to switch it on.
+  if (!process.argv.includes('--no-walklog')) {
+    const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'substrate', 'walks');
+    try {
+      mkdirSync(dir, { recursive: true });
+      ProxySession.walkLog = join(dir, `walk-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`);
+      console.error(`recording the player's own moves to ${ProxySession.walkLog}`);
+    } catch (e) { console.error(`could not open a walk log (${e.message}) — carrying on without one`); }
+  }
   const server = net.createServer(sock => {
     const tag = `${sock.remoteAddress}:${sock.remotePort}`;
     const log = (m) => console.error(`[proxy ${tag}] ${m}`);

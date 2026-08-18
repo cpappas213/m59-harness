@@ -10,7 +10,7 @@ One process, N player characters, arbitrary agents driving them. `tools/m59-brok
 ```
 
 Agents and humans are peers. A character held by the broker has an ordinary player
-session: the server validates its movement, `who` lists it beside the humans, and
+session: the broker validates movement before the server sees it, `who` lists it beside the humans, and
 it perceives only what a player perceives. The admin socket is not involved at all
 — which matters, because `:9998` has no password and must stay on loopback,
 whereas this works from anywhere the game port is reachable.
@@ -26,8 +26,8 @@ the world, and most of them fail silently if you do not know them.
 # stdio — one MCP client, which may still drive several characters
 node tools/m59-broker.mjs
 
-# HTTP — many heterogeneous clients share ONE broker process
-node tools/m59-broker.mjs --http 8899
+# HTTP — many heterogeneous clients share ONE supervised broker process
+node tools/m59-service.mjs start --http 8899
 curl -s http://127.0.0.1:8899/health
 
 # drive it end to end with no agent at all
@@ -36,6 +36,9 @@ node tools/m59-broker.mjs --selftest agent1 agentpass1
 
 Environment: `M59_HOST` (default `127.0.0.1`), `M59_PORT` (`5959`), `M59_RATE`
 (outbound packets per second, default 4 — see pacing below).
+`M59_MAP` explicitly selects a collision map. Without it, every launch path prefers
+the gitignored server-matched `substrate/m59-map.local.json`, then the checked reference;
+the broker validates the complete semantic manifest before accepting sessions.
 
 Prefer HTTP when more than one agent is playing. One process means one resource
 table, one client per character, and one place where pacing is enforced.
@@ -362,17 +365,29 @@ produces no reply at all:
 route first without walking it. Names resolve against the graph; an ambiguous name
 comes back as an error listing the matches.
 
-The graph is built once over the admin socket and shipped as data:
+The graph is built over the admin socket. Collision geometry must be refreshed from
+the exact room resources used by the server; `setup.mjs` does this automatically into
+a gitignored local map:
 
 ```bash
-node tools/m59-map.mjs build          # 264 rooms, 981 exits, geometry baked in
+M59_ROO_DIR=/path/to/server/resource/rooms node tools/m59-map.mjs build # 264 rooms, 980 exits
+# maintainer: refresh the portable checked reference
+M59_ROO_DIR=/path/to/reference/resource/rooms node tools/m59-map.mjs refresh-geometry
+# setup does this automatically for a server-local artifact:
+M59_MAP=substrate/m59-map.local.json M59_ROO_DIR=/path/to/server/resource/rooms \
+  node tools/m59-map.mjs refresh-geometry
 node tools/m59-map.mjs path "Yonder Inn of Jasper" "The Streets of Tos"
 node tools/m59-roo.mjs show "The Spider Nest"
 node tools/m59-roo.mjs show "Yonder Inn of Jasper" --walls
 ```
 
-Rebuild it after any change to the game's rooms. It keys off room *numbers* and *name
-resources*, both of which survive `save game`; object ids do not.
+Refresh it after any change to the game's rooms. An explicit `M59_ROO_DIR` is
+exclusive: a missing server room is an error, never silently filled from a Steam
+install, during both full build and geometry-only refresh. A setup-local refresh always
+starts from the current checked graph, so obsolete exits cannot survive in an old local
+artifact. The graph keys off room *numbers* and *name resources*, both of which survive
+`save game`; object ids do not. A security mismatch or live wall/sector mutation stops
+movement with a specific fail-closed reason until matching geometry is available.
 
 ## Handing things over
 

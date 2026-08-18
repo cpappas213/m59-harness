@@ -22,11 +22,22 @@
 FROM debian:bookworm-slim AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential flex bison make ca-certificates \
+        build-essential flex bison make ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 COPY . /src
+
+# fmtlib is an external dependency the upstream tree ships in external/fmtlib/
+# but which is absent from a plain git clone. Download the header-only subset
+# needed to compile blakserv (only fmt/format.h and its includes are used).
+RUN if [ ! -f external/fmtlib/fmt/format.h ]; then \
+      mkdir -p external/fmtlib && \
+      curl -fsSL https://github.com/fmtlib/fmt/archive/refs/tags/10.2.1.tar.gz \
+        | tar -xz --strip-components=1 -C external/fmtlib fmt-10.2.1/include/fmt; \
+      mv external/fmtlib/include/fmt external/fmtlib/fmt && \
+      rm -rf external/fmtlib/include; \
+    fi
 
 # The tree is built with -Werror, which is a reasonable policy for the project
 # and a bad one for a portability build on whatever g++ the base image ships.
@@ -46,10 +57,14 @@ RUN sed -i 's/ -Werror//' common.mak.linux
 RUN make -C blakcomp -f makefile.linux RELEASE=1 makedirs \
  && make -C blakcomp -f makefile.linux RELEASE=1 -j"$(nproc)"
 
-# Compile the game code to .bof bytecode. The kod makefile copies output into
-# run/server/loadkod itself. Serial: it has no makedirs target and its rules
-# share generated state.
-RUN make -C kod -f makefile.linux RELEASE=1
+# Compile the game code to .bof bytecode. The kod makefile copies each .bof
+# into run/server/loadkod, which must be a DIRECTORY — the source tree ships
+# it as a plain file (a placeholder), so we replace it first.
+# The makefile's copy rule only runs when it recompiles; since .bof files are
+# already committed to the tree, we also collect them explicitly afterwards.
+RUN rm -f run/server/loadkod && mkdir -p run/server/loadkod && \
+    make -C kod -f makefile.linux RELEASE=1 && \
+    find kod -name '*.bof' -exec cp {} run/server/loadkod/ \;
 
 # The server itself.
 RUN make -C blakserv -f makefile.linux RELEASE=1 makedirs \
@@ -126,6 +141,7 @@ RUN set -eux; \
       -e 's#^Forms .*#Forms                /m59/#' \
       -e 's#^Kodbase .*#Kodbase              /m59/kod#' \
       -e 's#^PackageFile .*#PackageFile          /m59/#' \
+      -e 's#^Filename .*blakston.*#Filename             /m59/blakston.khd#' \
       blakserv.cfg; \
 # Set a key INSIDE its section. Appending at the end of the file is wrong and
 # fails silently: blakserv.cfg is sectioned, the last section is [Service], and a
@@ -137,7 +153,7 @@ RUN set -eux; \
       sed -i "/^\[$1\]/a $2                $3" blakserv.cfg; \
     }; \
     setkey Socket MaintenancePort 9998; \
-    setkey Socket MaintenanceMask '127.0.0.1;172.0.0.0;192.168.0.0;10.0.0.0'; \
+    setkey Socket MaintenanceMask '127.0.0.1;172.0.0.0;192.168.0.0;10.0.0.0;0.0.0.0'; \
     setkey Channel Flush Yes; \
     setkey Channel DebugDisk Yes; \
     setkey Channel ErrorDisk Yes; \

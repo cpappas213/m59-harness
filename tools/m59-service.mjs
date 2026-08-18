@@ -35,6 +35,9 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fleetName } from './m59-fleetpath.mjs';
 import * as uptime from './m59-uptime.mjs';
+import * as webui from './m59-webui.mjs';
+import { movementMapFile } from './m59-map-path.mjs';
+import { loadMap, movementMapReadiness } from './m59-map.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -169,7 +172,62 @@ async function cmdStart() {
   if (found.running) {
     console.log(c.ok(`already up — pid ${found.pid}, fleet "${LABEL}", ` +
                      `${found.health.sessions?.length ?? 0} session(s)`));
+    // AND STILL CHECK THE PAGE. "The broker is up" and "everything is up" are different
+    // answers, and returning the first for the second is how `start` becomes a command
+    // that silently does nothing about the half that is actually down.
+    if (!has('--no-ui')) {
+      const r = await webui.start({ log: (m) => console.log(c.dim(`  field cmd  ${m}`)) });
+      if (r.ok) console.log(`  field cmd  http://127.0.0.1:${r.port}`);
+    }
     return 0;
+  }
+  // THE COLLISION MAP IS CHECKED HERE, AND A STALE ONE IS A WARNING RATHER THAN A REFUSAL.
+  //
+  // This gate used to `return 1` — no broker at all — and that is the wrong trade for a
+  // reason worth writing down, because the instinct behind it is a good one.
+  //
+  // THE PER-MOVE VALIDATOR ALREADY FAILS CLOSED, PER ROOM. `m59-broker.mjs` refuses any
+  // move whose room has no baked geometry, whose geometry changed live, or whose security
+  // value does not match what the server announced — `collision_geometry_unavailable`,
+  // `room_geometry_mismatch` and friends are terminal and never retried. So the safety
+  // property this gate was protecting is enforced one room at a time, at the moment it
+  // matters, against the server's own answer.
+  //
+  // What refusing to start adds is not safety, it is BLAST RADIUS. A map that has drifted
+  // in four rooms costs four rooms; refusing to start costs twenty-one characters, every
+  // room, and everything that is not movement — fighting, resting, banking, being visible
+  // on the board at all.
+  //
+  // AND PROD IS SOMEBODY ELSE'S SERVER. It can be patched on a Tuesday without telling us,
+  // which is precisely when the baked map goes stale — so a gate like this converts
+  // somebody else's routine update into our total outage, at the exact moment we would
+  // most want the fleet up to find out what changed. The map is baked from a local source
+  // tree; it is evidence about the server, never authority over it.
+  //
+  // `--require-map` (or M59_REQUIRE_MAP=1) restores the refusal for anyone who wants a
+  // machine that will not run a fleet it cannot fully validate. Opt in, because the
+  // failure it prevents is smaller than the one it causes.
+  const mapFile = movementMapFile();
+  let mapStatus = null;
+  try { mapStatus = movementMapReadiness(loadMap(mapFile)); } catch { /* reported below */ }
+  const strictMap = has('--require-map') || process.env.M59_REQUIRE_MAP === '1';
+  if (!mapStatus?.ok) {
+    const line = mapStatus
+      ? `${mapStatus.ready}/${mapStatus.total} rooms ready; ` +
+        `manifest ${mapStatus.manifest_matches ? 'matches' : 'does not match'}`
+      : 'the map could not be read at all';
+    if (strictMap) {
+      console.error(c.bad('broker not started: its collision map is missing, corrupt, or obsolete'));
+      console.error(`  ${line}`);
+      console.error('  run node tools/setup.mjs server, or set M59_MAP to a validated server-matched map');
+      console.error('  (this refusal is --require-map; without it the broker starts and movement');
+      console.error('   fails closed only in the rooms that actually mismatch)');
+      return 1;
+    }
+    console.log(c.bad('COLLISION MAP IS NOT FULLY VALID') + c.dim(` — ${line}`));
+    console.log(c.dim('  starting anyway: movement fails closed per room, so this costs the rooms'));
+    console.log(c.dim('  that drifted and not the fleet. Refresh with node tools/setup.mjs server,'));
+    console.log(c.dim('  or pass --require-map to make this a refusal.'));
   }
   mkdirSync(SUB, { recursive: true });
   // Append, never truncate: the log is the only account of what the last run did, and
@@ -178,7 +236,9 @@ async function cmdStart() {
   const args = [join(HERE, 'm59-broker.mjs'), '--http', String(HTTP_PORT),
                 '--dashboard', String(DASH_PORT)];
   if (FLEET) args.push('--fleet', FLEET);
-  const env = { ...process.env };
+  // Setup's server-matched local map remains authoritative across ordinary service
+  // restarts. An explicit M59_MAP still wins; otherwise selection is local-then-reference.
+  const env = { ...process.env, M59_MAP: mapFile };
   const child = spawn(process.execPath, args,
     // detached + unref is what makes this outlive the shell that ran it. stdio goes to
     // the log rather than 'ignore', which is how the previous arrangement lost every
@@ -197,6 +257,18 @@ async function cmdStart() {
       console.log(`  rpc        http://127.0.0.1:${HTTP_PORT}`);
       console.log(`  dashboard  http://127.0.0.1:${DASH_PORT}/fleet`);
       console.log(`  log        ${LOG_FILE}`);
+      // AND THE PAGE, IF IT IS HERE. Started AFTER the broker answers, because it exists
+      // only to talk to one and a page that comes up first spends its first seconds
+      // reporting a fleet that is not there yet.
+      //
+      // NEVER FATAL. This function's contract is "the fleet is up", and it already is by
+      // the time we get here — twenty-one sessions do not depend on a web server. So an
+      // absent sibling, an uninstalled one and a failed build are all REPORTED and the
+      // exit code stays 0. `--no-ui` skips it entirely.
+      if (!has('--no-ui')) {
+        const r = await webui.start({ log: (m) => console.log(c.dim(`  field cmd  ${m}`)) });
+        if (r.ok) console.log(`  field cmd  http://127.0.0.1:${r.port}`);
+      }
       return 0;
     }
     process.stdout.write('.');
@@ -279,6 +351,14 @@ async function cmdStop({ quiet = false, force = false } = {}) {
     console.error('  carrying undelivered, with their walk wasted. Wait, or pass --force.');
     return 1;
   }
+  // THE PAGE GOES FIRST, and it goes even when the broker is already down. It is a view
+  // of a broker; leaving it running after one is stopped leaves a control surface whose
+  // every button fails, which reads as the fleet being broken rather than absent. Only
+  // ever stops what this checkout started — see m59-webui.mjs.
+  if (!has('--no-ui')) {
+    const r = await webui.stop({ log: (m) => { if (!quiet) console.log(c.dim(`  field cmd  ${m}`)); } });
+    if (r.stopped && !quiet) console.log(c.dim(`  field cmd  stopped pid ${r.stopped}`));
+  }
   const found = await findBroker();
   if (found.foreign) { console.error(c.bad(found.why)); return 1; }
   if (!found.running) {
@@ -332,7 +412,7 @@ async function cmdStatus() {
     return 1;
   }
   // How many are actually playing, which is the question status is really asked for.
-  let inGame = null, agents = h.sessions?.length ?? 0;
+  let inGame = null, stalled = 0, agents = h.sessions?.length ?? 0;
   try {
     const j = await fetchJson(`http://127.0.0.1:${HTTP_PORT}/`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, timeoutMs: 20000,
@@ -340,14 +420,44 @@ async function cmdStatus() {
                              params: { name: 'fleet', arguments: {} } }) });
     const f = JSON.parse(j.result.content[0].text);
     agents = f.agents ?? agents;
-    inGame = agents - (f.stalled_count ?? 0);
+    // NOT "IN GAME". This is agents MINUS the ones the stall detector has flagged, and a
+    // flagged character is nearly always logged in and busy: `ms_since_moved` measures the
+    // KEEPER, so it climbs right through a multi-minute travel and through any errand that
+    // holds the keeper inert by design.
+    //
+    // Labelled "in game" it read as five characters having fallen out of the world, which
+    // is the one thing it does not mean — checked at the moment this was written: 21
+    // sessions, 0 reporting `in_game: false`, and the five "missing" were two travelling
+    // and three hunting. A number under a wrong name sends you looking for a fault that
+    // is not there, which is expensive at exactly the moment status is being read.
+    stalled = f.stalled_count ?? 0;
+    inGame = (f.fleet ?? []).filter(r => r.in_game !== false).length || null;
   } catch { /* the broker is up; the fleet call is a nicety */ }
   console.log(c.ok(`broker "${LABEL}"  UP`) + `  pid ${h.pid}`);
   console.log(`  rpc        http://127.0.0.1:${HTTP_PORT}`);
   console.log(`  dashboard  http://127.0.0.1:${DASH_PORT}/fleet`);
   console.log(`  roster     ${h.state}`);
-  console.log(`  characters ${inGame == null ? agents + ' registered' : `${inGame}/${agents} in game`}`);
+  console.log(`  characters ${inGame == null ? agents + ' registered' : `${inGame}/${agents} in game`}` +
+              (stalled ? c.dim(`  ·  ${stalled} flagged by the stall detector` +
+                               ` (a travelling character trips it — see ms_since_moved)`) : ''));
   console.log(`  log        ${existsSync(LOG_FILE) ? LOG_FILE : '(none yet)'}`);
+  // HAS PROD MOVED UNDER US? The baked collision map is evidence about somebody else's
+  // server, and that server can be patched without telling us. Every room where the live
+  // security value disagreed with the bake is listed here, so "they changed a room" is a
+  // named condition on the status line rather than a character that mysteriously will not
+  // walk. Silence means no room has disagreed — which is the ordinary answer.
+  const drift = Array.isArray(h.geometry_drift) ? h.geometry_drift : [];
+  if (drift.length)
+    console.log(c.bad(`  geometry  ${drift.length} room(s) DRIFTED from the baked map`) +
+                c.dim(` — ${drift.slice(0, 6).map(d => d.room).join(', ')}` +
+                      `${drift.length > 6 ? ' …' : ''}; movement fails closed in those rooms.`) +
+                c.dim(' Refresh: node tools/setup.mjs server'));
+  const ui = await webui.status();
+  console.log(`  field cmd  ${ui.absent ? c.dim('absent — maps/m59-strategy-game is not beside this checkout')
+    : ui.running ? (ui.ours ? `http://127.0.0.1:${ui.port}  pid ${ui.pid}`
+                            : c.dim(`http://127.0.0.1:${ui.port} — up, but this checkout did not start it`))
+    : !ui.installed ? c.dim('not installed — node tools/m59-webui.mjs install')
+    : c.dim(`down — node tools/m59-webui.mjs start`)}`);
   if (inGame != null && agents && inGame < agents)
     console.log(c.bad(`  ${agents - inGame} character(s) are not in game`) +
                 c.dim(' — the broker rejoins them on its own; watch the log'));
