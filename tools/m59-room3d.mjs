@@ -15,6 +15,8 @@ export function renderRoom3D(name, rv) {
   const hasWalls = walkable.length === cols * rows && walkable.some(v => v === 0);
 
   const wallData = hasWalls ? JSON.stringify(walkable) : 'null';
+  const wallSegs = (rv.walls ?? []).map(w => [w[0], w[1], w[2], w[3]]);
+  const wallSegsJson = JSON.stringify(wallSegs);
   const objectsJson = JSON.stringify(objects.map(o => ({
     x: Math.min(Math.max(o.col, 0), cols - 1),
     z: Math.min(Math.max(o.row, 0), rows - 1),
@@ -62,6 +64,7 @@ const { OrbitControls } = await import('/vendor/OrbitControls.js');
 
 const COLS = ${cols}, ROWS = ${rows};
 const WALLS = ${wallData};
+const WALL_SEGS = ${wallSegsJson};
 const OBJECTS = ${objectsJson};
 const SELF = ${selfJson};
 
@@ -167,6 +170,23 @@ if (WALLS) {
   ], 3));
   const borderMat = new THREE.LineBasicMaterial({ color: 0x5566aa });
   scene.add(new THREE.LineSegments(borderGeo, borderMat));
+}
+
+// Wall segments (from .roo geometry, fine polygon walls)
+if (WALL_SEGS.length) {
+  const segVerts = [];
+  const wallH = 2.0;
+  for (const [x0, z0, x1, z1] of WALL_SEGS) {
+    // Vertical posts at each end
+    segVerts.push(x0, 0, z0, x0, wallH, z0);
+    segVerts.push(x1, 0, z1, x1, wallH, z1);
+    // Horizontal top
+    segVerts.push(x0, wallH, z0, x1, wallH, z1);
+  }
+  const segGeo = new THREE.BufferGeometry();
+  segGeo.setAttribute('position', new THREE.Float32BufferAttribute(segVerts, 3));
+  const segMat = new THREE.LineBasicMaterial({ color: 0x6a6a9a, linewidth: 1 });
+  scene.add(new THREE.LineSegments(segGeo, segMat));
 }
 
 // Entities

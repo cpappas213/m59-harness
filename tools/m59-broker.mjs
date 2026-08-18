@@ -14236,6 +14236,31 @@ function heroSnapshot(name) {
             return new Array(rows * cols).fill(1);
           } catch { return []; }
         })(),
+        walls: (() => {
+          try {
+            const roomNum = c.room.id;
+            const roo = worldMap.rooms?.[roomNum]?.roo;
+            const segs = roo?.walls ?? [];
+            if (segs.length) return segs.map(w => [w.x0/1024, w.y0/1024, w.x1/1024, w.y1/1024]);
+            // Unmapped room: try .roo lookup
+            const roomName = c.rsc?.get?.(c.roomNameRsc);
+            if (roomName && roomRooLookup.size) {
+              const rooFile = roomRooLookup.get(roomName);
+              if (rooFile) {
+                const cacheKey = 'w:' + roomName;
+                if (_walkableCache.has(cacheKey)) return _walkableCache.get(cacheKey);
+                try {
+                  const m59Root = process.env.M59_ROOT || '/Users/costas/Documents/Projects/Meridian59';
+                  const geo = loadRoo(rooFile, [m59Root + '/resource/rooms']);
+                  const out = (geo?.walls ?? []).map(w => [w.x0/1024, w.y0/1024, w.x1/1024, w.y1/1024]);
+                  _walkableCache.set(cacheKey, out);
+                  return out;
+                } catch {}
+              }
+            }
+            return [];
+          } catch { return []; }
+        })(),
         objects: [...c.room.objects.values()].map(o => ({
           id: o.id,
           name: c.rsc?.get?.(o.nameRsc) ?? 'unknown',
