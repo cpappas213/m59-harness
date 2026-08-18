@@ -50,8 +50,31 @@ export async function scavenge(client, session) {
     return true; // include both NPCs and players
   });
 
-  if (!hostiles.length)
+  if (!hostiles.length) {
+    // No hostiles: try walking a few steps in a random direction.
+    // Mobs spawn at fixed locations; standing still in a dead-end
+    // pocket means you'll never see them. The game's fine-grid
+    // collision will either let us through or not, but trying is
+    // better than standing still.
+    try {
+      // Find current position
+      const room = client?.room;
+      const self = room?.objects instanceof Map
+        ? [...room.objects.values()].find(o => o.is_self || o.id === client?.obj_id)
+        : null;
+      const myX = self?.x ?? 0, myZ = self?.z ?? 0;
+      // Pick a random direction and try to walk 3-5 cells
+      const directions = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+      const [dx, dz] = directions[Math.floor(Math.random() * directions.length)];
+      const steps = 3 + Math.floor(Math.random() * 3);
+      const targetX = myX + dx * steps;
+      const targetZ = myZ + dz * steps;
+      if (client.moveToSquare) {
+        client.moveToSquare(targetX, targetZ).catch(() => {});
+      }
+    } catch {}
     return { sent: false, killed: false, reason: 'no hostiles in the room' };
+  }
 
   // Pick the weakest (lowest max HP, or lowest HP as a fallback).
   const myLevel = client?.vitals?.()?.health?.max ?? 20;
