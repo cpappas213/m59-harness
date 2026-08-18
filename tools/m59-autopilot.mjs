@@ -7428,7 +7428,27 @@ export class Autopilot {
       // unrecoverable one. The room is in the post-mortem we just wrote, which is
       // deliberately taken before the Underworld overwrites the frames.
       const diedIn = this.lastPostMortem?.where?.num ?? null;
-      const e = await skills.escapeUnderworld(s, { maxSeconds: 120, nearestTo: diedIn });
+      let e = await skills.escapeUnderworld(s, { maxSeconds: 60, nearestTo: diedIn });
+      console.error(`[autopilot] ${this.policy?.agent ?? '?'} escapeUnderworld result: left=${e.left} reason=${e.reason ?? 'none'} tried=${JSON.stringify(e.tried ?? [])}`);
+      // If the legacy escape failed with a pathfinding error, try a
+      // direct walk to the nearest portal, bypassing the pathfinder.
+      if (!e.left) {
+        const pathFail = (e.tried ?? []).some(t => /kept ending up|never got onto/.test(t.why ?? ''));
+        if (pathFail) {
+          try {
+            const { directWalkToPortal } = await import('./m59-act/escape-underworld.mjs');
+            const direct = await directWalkToPortal(c, s);
+            if (direct.left) {
+              e = { left: true, arrived_in: direct.arrived_in, via: direct.via };
+              console.error(`[autopilot] ${this.policy?.agent ?? '?'} DIRECT WALK SUCCEEDED: ${direct.via} -> ${direct.arrived_in}`);
+            } else {
+              console.error(`[autopilot] ${this.policy?.agent ?? '?'} direct walk failed: ${direct.reason}`);
+            }
+          } catch (de) {
+            console.error(`[autopilot] ${this.policy?.agent ?? '?'} direct walk threw: ${de.message}`);
+          }
+        }
+      }
       if (e.left) {
         this.reportedDeath = false;
         this.tally.rooms_moved++;
