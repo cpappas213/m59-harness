@@ -29,6 +29,7 @@
 
 import { evaluate, unknowns, validateAll } from './m59-worldstate.mjs';
 import { plan as astar } from './m59-goap-planner.mjs';
+import { costOf } from './m59-cost.mjs';
 
 import { attack }        from './m59-act/attack.mjs';
 import { step }          from './m59-act/step.mjs';
@@ -51,13 +52,13 @@ const ALWAYS = [attack, equip, rest, stand, eat];
  * `pre`, `effects`, `atomic`, and `node` (the callable), which is the shape
  * m59-goap-planner expects.
  */
-export function actionsFor(client, { extra = [] } = {}) {
+export function actionsFor(client, { extra = [], costCtx = {} } = {}) {
   const all = [...ALWAYS, ...groundedCasts(client), ...extra];
   return all.map(fn => ({
     name: fn.atomic,
     pre: fn.pre ?? [],
     effects: fn.effects ?? [],
-    cost: fn.cost ?? 1,
+    cost: fn.cost ?? costOf(fn, costCtx),
     node: fn,          // the callable atomic: (client, session, args)
     run: fn,
   }));
@@ -79,8 +80,8 @@ export function actionsFor(client, { extra = [] } = {}) {
  * is invisible: it looks exactly like a confident one. Callers should surface it.
  */
 export function planFor(client, goal, { session = null, policy = {}, agent = null,
-                                        ws: wsIn = null, extra = [] } = {}) {
-  const actions  = actionsFor(client, { extra });
+                                        ws: wsIn = null, extra = [], costCtx = {} } = {}) {
+  const actions  = actionsFor(client, { extra, costCtx });
   const problems = validateAll(actions);
   if (problems.length)
     return { found: false, problems, reason: 'the action set names symbols nothing produces' };
