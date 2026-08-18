@@ -3693,6 +3693,9 @@ class Session {
     // this is incremented; past a handful it means the square-by-square plan is not the
     // thing being walked, and continuing to replan it is how a room takes three minutes.
     let offPlan = 0, wentFine = false;
+    // Health across the walk, so a body in the way can be told from a body that is EATING
+    // us. See the under-fire note in the blocked branch below.
+    let hpAtLastBlock = c.vitals?.()?.health?.value, damageWhileBlocked = 0, underFire = false;
     while (queue.length && taken < maxSteps) {
       if (this.movementWasCancelled(movementGeneration, controlToken))
         return this.cancelledMovement({ steps: taken, replans });
@@ -3852,6 +3855,34 @@ class Session {
         if (!blockedEdges.has(k)) { blockedEdges.add(k); learned = true; }
       }
 
+      // A BODY THAT IS HITTING US IS NOT GOING TO WANDER OFF.
+      //
+      // The retry below is built on "monsters wander, so one retry costs a second and
+      // often clears it". That is true of a monster that has not noticed us and false of
+      // the only case that kills anybody: one that is ENGAGED. An engaged monster stays
+      // exactly where it is, because we are what it is standing there for — so every
+      // patient 500-1000ms lap is damage taken for nothing, and the walker takes them one
+      // after another while its keeper is inert by design for the length of the errand.
+      //
+      // Measured on prod, deaths in one two-hour window: 5 of the 18 that recorded hits in
+      // their last minute took EVERY one of them on a single square. Kermit stood on one
+      // square in Main gate to Cor Noth for 118 seconds and took 23 hits; Beaker and
+      // Statler each lost 47-51 health in 9 seconds without moving. Those are not walks
+      // that were too slow, they are walks that stood still and were eaten.
+      //
+      // So being hit does not end the trip — doctrine is explicit that a planned journey
+      // completes, and two attempts to bail out on health were tried here and reverted —
+      // it just stops us WAITING. Under fire the polite lap is skipped and the walker goes
+      // straight to the moves that change something: round the body, or a replan that
+      // treats its square as taken.
+      const hpNow = c.vitals?.()?.health?.value;
+      if (Number.isFinite(hpNow)) {
+        if (!Number.isFinite(hpAtLastBlock)) hpAtLastBlock = hpNow;
+        if (hpNow < hpAtLastBlock) { damageWhileBlocked += hpAtLastBlock - hpNow; underFire = true; }
+        else if (hpNow > hpAtLastBlock) underFire = false;   // healed or disengaged
+        hpAtLastBlock = hpNow;
+      }
+
       if (didNotMove && hitSomething) {
         // COUNTED, BECAUSE A WALK EATEN BY BODIES USED TO BE INDISTINGUISHABLE FROM A
         // WALK WITH TOO SMALL A BUDGET. Both returned `stopped after N steps` with
@@ -3867,7 +3898,7 @@ class Session {
 
         // Monsters wander. One retry costs a second and often clears it, which is
         // cheaper and less disruptive than routing the long way round.
-        if (stalledOn === `${next.row},${next.col}` && stalledTimes >= 1) {
+        if (underFire || (stalledOn === `${next.row},${next.col}` && stalledTimes >= 1)) {
           // GO ROUND IT RATHER THAN ROUND THE ROOM. Marking the square occupied and
           // replanning is correct and expensive: A* re-solves the whole route, and in a
           // corridor the only answer it can find is the long way, which is how a
@@ -3911,7 +3942,11 @@ class Session {
           // try would make the walker unreproducible, and every routing test here depends
           // on the same inputs giving the same route; a timing difference changes when a
           // decision happens, not what it is.
-          await new Promise(res => setTimeout(res, 500 + Math.floor(Math.random() * 500)));
+          // The wait is for a body that might drift off its square. Under fire it will
+          // not, so the second spent here is simply a hit taken — skip it and let the
+          // branch above route round on the very next lap.
+          if (!underFire)
+            await new Promise(res => setTimeout(res, 500 + Math.floor(Math.random() * 500)));
           continue;
         }
       }
@@ -3948,7 +3983,11 @@ class Session {
                  routed_around: [...occupied], refused_edges: blockedEdges.size,
                  ...(monsterBlocks ? { monster_blocked: monsterBlocks,
                                        blocked_by_bodies_at: [...blockedBy] } : {}),
-                 note: 'kept ending up somewhere other than the planned square' };
+                 ...(damageWhileBlocked ? { damage_while_blocked: damageWhileBlocked } : {}),
+                 note: damageWhileBlocked
+                   ? `kept ending up somewhere other than the planned square, and lost ` +
+                     `${damageWhileBlocked} health to whatever is standing in the way`
+                   : 'kept ending up somewhere other than the planned square' };
       // A SWITCH TO FINE MOVEMENT HERE WAS TRIED, AND ITS MEASUREMENT WAS INVALID.
       //
       // The idea was to hand the remainder of a walk to `walkFine` once `offPlan` passed
@@ -4026,14 +4065,20 @@ class Session {
     // us thirty steps whenever the rats are out" becomes visible at all.
     const bodies = monsterBlocks
       ? { monster_blocked: monsterBlocks, blocked_by_bodies_at: [...blockedBy],
-          ...(sidestepped.size ? { sidestepped: sidestepped.size } : {}) }
+          ...(sidestepped.size ? { sidestepped: sidestepped.size } : {}),
+          // WHAT IT COST, NOT JUST THAT IT HAPPENED. "11 monster collisions" reads as
+          // traffic; "11 monster collisions and 33 health" reads as the thing that killed
+          // the character, and only the second tells an operator which rooms are eating
+          // the fleet. Absent when nothing was lost, so a quiet block stays quiet.
+          ...(damageWhileBlocked ? { damage_while_blocked: damageWhileBlocked } : {}) }
       : {};
     return { arrived, position: me && { col: me.col, row: me.row }, steps: taken, replans,
              ...bodies,
              ...(taken >= maxSteps
                  ? { note: monsterBlocks
                        ? `stopped after ${maxSteps} steps — ${monsterBlocks} monster collision(s) ` +
-                         'during travel ate the budget; the route itself was not refused'
+                         'during travel ate the budget; the route itself was not refused' +
+                         (damageWhileBlocked ? `, and it lost ${damageWhileBlocked} health standing there` : '')
                        : 'stopped after ' + maxSteps + ' steps' }
                  : {}) };
   }

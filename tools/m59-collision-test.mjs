@@ -1206,6 +1206,71 @@ console.log('\nterminal movement propagation and edge packet authority');
     ok('walkTo reports a permanently floorless start as terminal',
        floorlessResult.reason === 'start_has_no_floor' &&
        isTerminalMovementReason(floorlessResult.reason), JSON.stringify(floorlessResult));
+
+    // ------------------------------------------------ blocked by a body that is EATING us
+    // WAITING FOR AN ENGAGED MONSTER TO WANDER OFF IS SUICIDE, AND IT WAS THE DEFAULT.
+    //
+    // The retry is built on "monsters wander, so one lap costs a second and often clears
+    // it". True of a monster that has not noticed us; false of the only case that kills
+    // anybody. An engaged monster stays exactly where it is — we are what it is standing
+    // there for — so every patient 500-1000ms lap is a hit taken, and the keeper is inert
+    // by design for the length of an errand.
+    //
+    // Measured on prod: of the 18 deaths in one two-hour window that recorded hits in
+    // their last minute, 5 took EVERY hit on a single square. Kermit stood on one square
+    // in Main gate to Cor Noth for 118 seconds and took 23 hits; Beaker and Statler each
+    // lost 47-51 health in 9 seconds without moving once.
+    //
+    // Being hit does NOT end the trip — doctrine is explicit that a planned journey
+    // completes, and two health-based bail-outs were tried here and reverted. It stops us
+    // WAITING. Both directions are pinned, because the failure is symmetric: lose the
+    // patience and every passing rat costs a reroute, lose the escalation and the fleet
+    // goes back to standing still while it is eaten.
+    const blockedRun = async ({ falling }) => {
+      let hp = 50, sleepMs = 0;
+      const client = {
+        self: { col: 1, row: 1, x: 96, y: 96 },
+        vitals: () => ({ health: { value: hp, max: 50 } }),
+      };
+      const geometry = {
+        walkable: () => true, standable: () => true,
+        path: () => ({ found: true, steps: [{ col: 2, row: 1 }] }),
+      };
+      const session = {
+        client, world: { geometry }, movementGeneration: 0,
+        need() { return this.client; },
+        movementWasCancelled() { return false; },
+        threatsHere() { return []; },
+        // No way round, so the walker must fall through to the occupancy path either way.
+        sidestepAround() { return null; },
+        async step() {
+          if (falling) hp -= 3;                       // it is hitting us every lap
+          return { moved: false, left_room: false, reason: 'object_blocked' };
+        },
+      };
+      const t0 = Date.now();
+      const out = await walkTo.call(session, 2, 1, { maxSteps: 6, hardCap: 12 });
+      return { out, elapsed: Date.now() - t0 };
+    };
+    const patient = await blockedRun({ falling: false });
+    const underFire = await blockedRun({ falling: true });
+
+    ok('a body in the way with no damage still gets the patient retry',
+       patient.elapsed >= 400,
+       `waited only ${patient.elapsed}ms — the retry that lets a wandering monster clear is gone`);
+    ok('but a body that is HITTING us is never waited for',
+       underFire.elapsed < patient.elapsed && underFire.elapsed < 400,
+       `under fire took ${underFire.elapsed}ms against ${patient.elapsed}ms patient`);
+    ok('and the walk reports the health it lost standing there',
+       underFire.out.damage_while_blocked > 0 &&
+       /lost \d+ health/.test(underFire.out.note ?? ''),
+       JSON.stringify({ damage: underFire.out.damage_while_blocked, note: underFire.out.note }));
+    ok('a walk blocked without damage reports no damage figure at all',
+       patient.out.damage_while_blocked === undefined,
+       JSON.stringify(patient.out));
+    ok('both still report the bodies rather than blaming the geometry',
+       (patient.out.monster_blocked ?? 0) > 0 && (underFire.out.monster_blocked ?? 0) > 0,
+       JSON.stringify({ patient: patient.out.monster_blocked, underFire: underFire.out.monster_blocked }));
   }
 
   if (typeof leaveVia !== 'function') {
