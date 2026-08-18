@@ -6870,13 +6870,20 @@ export class Autopilot {
       const room = s.world?.room ?? c?.room;
       // Underworld: check both the broker's room tracking and the
       // client's room. The broker's room is a map object (nameRsc,
-      // objId); the client's room is a wire object (name, num).
-      const roomName = room?.name ?? c?.room?.name ?? '';
-      const roomNum  = room?.num  ?? c?.room?.num  ?? room?.objId;
+      // objId); the client's room is a wire object (roomNameRsc, id).
+      const clientRoomName = c?.roomNameRsc ? (c.rsc?.get?.(c.roomNameRsc) ?? '') : '';
+      const roomName = room?.name ?? clientRoomName;
+      const roomNum  = room?.objId ?? c?.room?.id;
       const isUnderworld = /underworld/i.test(roomName) || roomNum === 6;
       if (isUnderworld) {
-        const r = await this.passUnderworld({ s, c, room, v: c.vitals?.() ?? {} });
-        if (r) return;
+        console.error(`[autopilot] ${this.policy?.agent ?? '?'} Underworld detected: roomName=${roomName} roomNum=${roomNum}`);
+      }
+      if (isUnderworld) {
+        // Always return: the GOAP keeper should not plan in the
+        // Underworld. passUnderworld handles the escape; if it
+        // can't, the character stays and tries again next pass.
+        await this.passUnderworld({ s, c, room, v: c.vitals?.() ?? {} });
+        return;
       }
       if (c && typeof c.armed === 'function' && !c.armed()) {
         const r = await this.passArm({ s, c, room, v: c.vitals?.() ?? {} });
