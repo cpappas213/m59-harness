@@ -14187,13 +14187,17 @@ function heroSnapshot(name) {
         self: me ? { col: me.col, row: me.row } : null,
         walkable: (() => {
           try {
-            const raw = c.room.flags;
-            if (typeof raw !== 'string' || !raw.length) return [];
-            const buf = Buffer.from(raw, 'base64');
-            const cols = c.room.cols ?? 50;
-            const rows = c.room.rows ?? 48;
-            if (buf.length !== rows * cols) return [];
-            return Array.from(buf).map(b => (b & 0x01));
+            const roomNum = c.room.id;
+            const roo = worldMap.rooms?.[roomNum]?.roo;
+            const cols = roo?.cols ?? c.room.cols ?? 50;
+            const rows = roo?.rows ?? c.room.rows ?? 48;
+            if (roo?.flags && typeof roo.flags === 'string' && roo.flags.length) {
+              const buf = Buffer.from(roo.flags, 'base64');
+              if (buf.length === rows * cols)
+                return Array.from(buf).map(b => (b & 0x01));
+            }
+            // Unmapped room: all walkable (no wall data available)
+            return new Array(rows * cols).fill(1);
           } catch { return []; }
         })(),
         objects: [...c.room.objects.values()].map(o => ({
