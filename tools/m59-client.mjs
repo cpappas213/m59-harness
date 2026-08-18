@@ -1355,10 +1355,23 @@ export class M59Client {
       // still where the bake says — only sector HEIGHTS can have shifted — and a
       // character that may mis-step is a far smaller problem than one that can never
       // move again. `until` is what the movement check reads; see m59-broker.mjs.
+      // AND IT SAYS WHICH SECTOR, SO THE REFUSAL DOES NOT HAVE TO BE THE WHOLE ROOM.
+      // `HandleSectorMove` (clientd3d/server.c:1453) reads
+      //     type(1) sector_num(2) height(2) speed(1)
+      // and that sector number is the difference between "one door is moving" and "this
+      // room is unusable". The Temple of Qor door lives in room 598 and cycles faster than
+      // the 8s window, so every packet re-armed a room-wide block and a character standing
+      // anywhere in the Cragged Mountains could never move again — reproduced with the
+      // character claimed, six attempts over seventy seconds, never moved a square. The
+      // operator had named that room as THE exception to "the geometry does not change".
       case BP.SECTOR_MOVE:
         this.room.collisionInvalidated = {
           opcode: op,
           kind: BPNAME[op] || `bp ${op}`,
+          // Absent if the packet is short, and the movement check reads a missing sector
+          // as "we do not know which" and keeps refusing the whole room — the same safe
+          // reading it already applies to a record with no `until`.
+          sector: body.length >= 3 ? body.readUInt16LE(1) : null,
           at: Date.now(),
           until: Date.now() + COLLISION_ANIMATION_MS,
         };

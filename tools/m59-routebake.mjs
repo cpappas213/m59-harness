@@ -59,12 +59,12 @@
 // checked map with its own manifest; this is derived from it and regenerable, and mixing
 // the two would mean rebaking geometry to change a routing decision.
 
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadMap } from './m59-map.mjs';
+import { loadMap, edgeCandidatesOf } from './m59-map.mjs';
 import { movementMapFile } from './m59-map-path.mjs';
-import { sharedRoomGeometry } from './m59-roo.mjs';
+import { sharedRoomGeometry, CLIENT_FINENESS, STEP_MASK_VERSION } from './m59-roo.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -110,9 +110,24 @@ export function exitAnchors(room, geometry, { reachable = null } = {}) {
     // of them — the first square on the list happened to be one the mover cannot get to,
     // and the other ten were never considered. `reachable` is the room's own body, so a
     // square it can walk to always beats a square merely printed first.
+    // ASK PER EXIT, NOT PER DIRECTION — A WALL CAN LEAD TO TWO DIFFERENT ROOMS.
+    //
+    // `edgeApproachCandidates(dir)` answers "where can I cross this boundary", and a
+    // boundary is frequently more than one exit. Western border of the Twisted Wood
+    // declares east->586 `row < 19` AND east->597 `row > 20`: the same wall, split. Taking
+    // the direction's first candidate gave BOTH exits the anchor 9,67, which satisfies
+    // `row < 19` — so a character asked to walk to The Twisted Wood was sent to a square
+    // that puts it in Main gate to Tos instead. Not a failure to arrive; arriving in the
+    // WRONG ROOM, which nothing downstream would have reported as an error.
+    //
+    // `edgeCandidatesOf(room, e)` is the per-exit question and already exists: it runs
+    // `selectedEdgeAt`, which simulates StandardLeaveDir's own ordered scan of
+    // plEdge_Exits, so a candidate is kept only if crossing THERE actually fires THIS
+    // exit. The world model has always used it; the bake reached past it to the raw list.
+    // The operator's recorded crossings agree — 587 -> 597 is walked from row 47.
     let best = null, fallback = null;
     try {
-      for (const a of geometry.edgeApproachCandidates(dir)) {
+      for (const a of edgeCandidatesOf(room, e)) {
         for (const stage of a.stages ?? []) {
           fallback ??= stage;
           if (!reachable || reachable.has(`${stage.row},${stage.col}`)) { best = stage; break; }
@@ -128,14 +143,29 @@ export function exitAnchors(room, geometry, { reachable = null } = {}) {
     if (!Number.isInteger(g.row) || !Number.isInteger(g.col)) continue;
     out.push({ kind: 'go', to: g.to, row: g.row, col: g.col, locked: !!g.locked });
   }
-  // One anchor per square: two exits sharing a square are one place to walk to.
-  const seen = new Set();
-  return out.filter(a => {
+  // TWO EXITS SHARING A SQUARE ARE ONE PLACE TO WALK TO AND STILL TWO EXITS.
+  //
+  // This used to drop the later one, which is right about the ROUTING — the pair share a
+  // square so they share a path — and wrong about everything else, because the discarded
+  // entry takes its `to` with it. Western border of the Twisted Wood declares east->586
+  // AND east->597, both staging at 9,67; the table therefore had no anchor for 597 at all,
+  // and a caller asking "where do I stand to reach The Twisted Wood" got nothing and fell
+  // back to deriving one live — which is how a character ended up walking at a phantom.
+  //
+  // So every declared exit is kept, and the deduplication moves to where the cost actually
+  // is: one BFS per DISTINCT SQUARE rather than per exit. Nothing is recomputed and
+  // nothing is lost.
+  return out;
+}
+
+/** The distinct squares among a set of anchors — one BFS each is all the work there is. */
+export function anchorSquares(anchors) {
+  const seen = new Map();
+  for (const a of anchors) {
     const k = `${a.row},${a.col}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+    if (!seen.has(k)) seen.set(k, { row: a.row, col: a.col });
+  }
+  return [...seen.values()];
 }
 
 // WHICH VIEW OF "CAN I STEP THERE" THE BAKE USES — AND THE CORRECTION THAT MADE THE
@@ -204,7 +234,10 @@ export function components(geometry, { collision = true } = {}) {
 
   for (let r0 = 1; r0 <= rows; r0++) {
     for (let c0 = 1; c0 <= cols; c0++) {
-      if (!geometry.walkable(r0, c0) || index[at(r0, c0)] !== -1) continue;
+      // `standable`, the same predicate `neighbors` plans with. Labelling only the coarse
+      // grid's squares would leave every square the BSP adds unlabelled — outside every
+      // region, and so "unreachable" to anything that asks whether two exits connect.
+      if (!geometry.standable(r0, c0) || index[at(r0, c0)] !== -1) continue;
       // Each frame is one square plus how many of its neighbours have been dealt with.
       const work = [{ r: r0, c: c0, i: 0, ns: null }];
       while (work.length) {
@@ -308,7 +341,7 @@ export function bakeRoom(room, { collision = true } = {}) {
   let mainSeed = null;
   for (let r = 1; r <= geometry.rows && !mainSeed; r++)
     for (let c = 1; c <= geometry.cols && !mainSeed; c++)
-      if (geometry.walkable(r, c) && comp.label[comp.at(r, c)] === mainRegion) mainSeed = { r, c };
+      if (geometry.standable(r, c) && comp.label[comp.at(r, c)] === mainRegion) mainSeed = { r, c };
   const reachedFromBody = new Set();
   if (mainSeed) {
     const stack = [mainSeed];
@@ -341,16 +374,46 @@ export function bakeRoom(room, { collision = true } = {}) {
   //
   // The BFS already answers the only question that matters — is there a way from here to
   // there — so it is simply asked, and a pair with no path silently produces no entry.
+  // ONE BFS PER DISTINCT SQUARE, not per exit — see anchorSquares. Two exits on one
+  // square asked the same question twice.
+  const squares = anchorSquares(tagged.filter(a => a.region >= 0));
   const routes = {};
-  for (const from of tagged) {
-    if (from.region < 0) continue;
-    const targets = tagged.filter(t => t !== from);
+  const pivots = {};
+  for (const from of squares) {
+    const targets = squares.filter(t => t.row !== from.row || t.col !== from.col);
     if (!targets.length) continue;
     const { came, key } = bfs(geometry, from.row, from.col, { collision });
     for (const to of targets) {
       const p = pathString(came, key, from.row, from.col, to.row, to.col);
       if (p == null) continue;
-      routes[`${from.row},${from.col}>${to.row},${to.col}`] = p;
+      const pair = `${from.row},${from.col}>${to.row},${to.col}`;
+      routes[pair] = p;
+
+      // AND THE PIVOTS, WHICH ARE WHAT A WALKER SHOULD ACTUALLY BE GIVEN.
+      //
+      // A square-by-square route reproduces the failure the whole bake exists to avoid:
+      // stepping between square CENTRES runs an axis-aligned move into wall faces that
+      // are 54.9% non-axis-aligned in these rooms, and measured on 587 that refuses 218
+      // of 311 steps — 200 of them without moving the character at all.
+      //
+      // `stringPull` reaches as far along the route as the straight line still ARRIVES
+      // with `slide:false`, which is stricter than the ordinary mover. Doing it HERE
+      // rather than at walk time is the point of a bake: every leg is proved before any
+      // character walks it, once, offline, instead of being rediscovered per journey.
+      // `unverified` counts the legs it could not prove — a route that is mostly those is
+      // one the walker will still struggle with, and the table should say so rather than
+      // let it be inferred.
+      try {
+        const steps = replay(from.row, from.col, p);
+        const pts = [{ row: from.row, col: from.col }, ...steps]
+          .map(s => ({ x: (s.col - 0.5) * CLIENT_FINENESS, y: (s.row - 0.5) * CLIENT_FINENESS }));
+        const pulled = geometry.stringPull(pts);
+        pivots[pair] = {
+          squares: pulled.points.map(pt => [Math.round(pt.y / CLIENT_FINENESS - 0.5) + 1,
+                                            Math.round(pt.x / CLIENT_FINENESS - 0.5) + 1]),
+          unverified: pulled.unverified,
+        };
+      } catch { /* a route we cannot pull is still a route; the step string stands */ }
     }
   }
   return {
@@ -378,7 +441,108 @@ export function bakeRoom(room, { collision = true } = {}) {
                                 row: a.row, col: a.col, region: a.region,
                                 from_body: !!a.from_body })),
     routes,
+    // The same routes as verified PIVOTS. See where these are built: a walker given
+    // squares re-discovers the off-plan problem; a walker given pivots does not.
+    pivots,
   };
+}
+
+
+/**
+ * The order to bake rooms in: the ones the fleet actually stands in, first.
+ *
+ * A PARTIAL TABLE IS USEFUL IN PROPORTION TO WHICH ROOMS ARE IN IT, and until now the
+ * order was `Object.values(map.rooms)`, i.e. whatever the map happened to list. That makes
+ * the first twenty minutes of a bake worth almost nothing to a running fleet, because the
+ * rooms it walks are scattered through the file. Rooms without a mask degrade individually
+ * to the coarse grid, so an interrupted bake in this order is a table that already covers
+ * the routes anybody is on.
+ *
+ * Three tiers, and the third is why islands sort last:
+ *
+ *   1. VISITED, by how often. `substrate/history/` records a room NAME on every sample and
+ *      event — 110 distinct rooms across this machine's records, from 22,722 samples in
+ *      Upstairs in Castle Victoria down to single figures. Walk logs add the operator's own
+ *      rooms by object id.
+ *   2. NEAR something visited, by hop distance over the room graph. A room one door from
+ *      the fleet's ground is a room the fleet is one decision away from entering.
+ *   3. Everything else, in map order.
+ *
+ * A NAME IS NOT A ROOM AND TWO ROOMS SHARE A NAME. "The King's Way" is 575 and 576; "The
+ * Cragged Mountains" is 578 and 598. Both get the credit, which is right for an ordering —
+ * the cost of baking one room early is nothing, and resolving the ambiguity would need
+ * per-sample coordinates the history does not carry.
+ *
+ * Ordering only. It never drops a room, so the finished table is identical either way.
+ */
+export function bakeOrder(map, { historyDir = null, walksDir = null } = {}) {
+  const byName = new Map();
+  for (const r of Object.values(map.rooms)) {
+    const k = String(r?.name ?? '').trim().toLowerCase();
+    if (!k) continue;
+    if (!byName.has(k)) byName.set(k, []);
+    byName.get(k).push(Number(r.num));
+  }
+  const visits = new Map();
+  const bump = (num, n) => visits.set(num, (visits.get(num) ?? 0) + n);
+
+  const hist = historyDir ?? join(REPO, 'substrate', 'history');
+  const walk = (dir, depth = 0) => {
+    let entries = [];
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) { if (depth < 2) walk(full, depth + 1); continue; }
+      if (!e.name.endsWith('.jsonl')) continue;
+      let text = '';
+      try { text = readFileSync(full, 'utf8'); } catch { continue; }
+      for (const m of text.matchAll(/"room":"([^"]*)"/g))
+        for (const num of byName.get(m[1].trim().toLowerCase()) ?? []) bump(num, 1);
+    }
+  };
+  walk(hist);
+
+  // The operator's own recorded walks, which name rooms by the SERVER's object id.
+  const byObj = new Map();
+  for (const r of Object.values(map.rooms)) if (r?.objId) byObj.set(r.objId, Number(r.num));
+  const wdir = walksDir ?? join(REPO, 'substrate', 'walks');
+  try {
+    for (const f of readdirSync(wdir)) {
+      if (!f.endsWith('.jsonl')) continue;
+      for (const m of readFileSync(join(wdir, f), 'utf8').matchAll(/"room":(\d+)/g)) {
+        const num = byObj.get(Number(m[1]));
+        if (num != null) bump(num, 1);
+      }
+    }
+  } catch { /* no walk logs is not an error */ }
+
+  // Hop distance from the visited set, over whatever exits the map declares.
+  const neighbours = num => {
+    const r = map.rooms[String(num)];
+    const out = new Set();
+    for (const e of r?.edgeExits ?? []) if (e?.to != null) out.add(Number(e.to));
+    for (const e of r?.goExits ?? []) if (e?.to != null && Number(e.to) > 0) out.add(Number(e.to));
+    return [...out];
+  };
+  const dist = new Map();
+  let frontier = [...visits.keys()];
+  for (const n of frontier) dist.set(n, 0);
+  for (let d = 1; frontier.length && d <= 12; d++) {
+    const next = [];
+    for (const n of frontier)
+      for (const m of neighbours(n))
+        if (!dist.has(m)) { dist.set(m, d); next.push(m); }
+    frontier = next;
+  }
+
+  return { visits, dist,
+    compare: (a, b) => {
+      const va = visits.get(Number(a.num)) ?? 0, vb = visits.get(Number(b.num)) ?? 0;
+      if (va !== vb) return vb - va;                       // most-visited first
+      const da = dist.get(Number(a.num)) ?? 99, db = dist.get(Number(b.num)) ?? 99;
+      if (da !== db) return da - db;                       // then nearest to somewhere visited
+      return Number(a.num) - Number(b.num);                // then stable
+    } };
 }
 
 // ---------------------------------------------------------------------------- CLI
@@ -395,6 +559,10 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   const manifest = map.geometryManifestSha256 ?? null;
   const rooms = Object.values(map.rooms)
     .filter(r => r?.roo && (!only || only.includes(Number(r.num))));
+  // MOST-WALKED FIRST — see bakeOrder. A bake that is interrupted, or read while still
+  // running, then covers the rooms the fleet is actually in rather than a scatter.
+  const order = bakeOrder(map);
+  rooms.sort(order.compare);
 
   // THIRTEEN MINUTES THAT USED TO BE ALL-OR-NOTHING. The whole table was one write after
   // the loop, so a Ctrl-C, a reboot or an OOM at room 250 of 264 produced nothing at all
@@ -414,7 +582,10 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       const sameMap = prior?.geometryManifestSha256 && manifest
         && prior.geometryManifestSha256 === manifest;
       const sameView = (prior?.view ?? 'grid') === (collision ? 'collision' : 'grid');
-      if (sameMap && sameView) {
+      // A half-table stitched from two PREDICATES is the same kind of undetectable wrong
+      // as one stitched from two maps, so --resume refuses it for the same reason.
+      const samePredicate = (prior?.stepMaskVersion ?? 1) === STEP_MASK_VERSION;
+      if (sameMap && sameView && samePredicate) {
         for (const [num, baked] of Object.entries(prior.rooms ?? {}))
           if (baked && !baked.skipped) out[num] = baked;
         console.error(`resuming: ${Object.keys(out).length} room(s) already baked from the same map`);
@@ -443,6 +614,10 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       builtAt: new Date().toISOString(),
       builtFrom: movementMapFile(),
       geometryManifestSha256: manifest,
+      // WHAT THE MASK BITS MEAN. The manifest above hashes the geometry and therefore
+      // cannot notice the PREDICATE changing, so a table baked by older code against the
+      // same map verifies perfectly and encodes the wrong doors. See STEP_MASK_VERSION.
+      stepMaskVersion: STEP_MASK_VERSION,
       // Says outright that the table is short of the map it was built from, so a partial
       // flush cannot be mistaken for a finished bake by anything reading it.
       complete: Object.keys(out).length + skipped >= rooms.length && !only,

@@ -151,6 +151,41 @@ console.log('\nchoosing a broker');
      'reports, never on the label, so this scopes to Bramwell and not to Kermit',
      s2.filtered && s2.characters.has('Bramwell') && !s2.characters.has('Kermit'));
 
+  // A NAMED FLEET OUTRANKS A RUNNING BROKER — the regression for a wrong number that a
+  // check-in read as fact. `m59-postmortems.mjs` reported 3 deaths for prod when the real
+  // figure was 323: prod's broker was down, an unrelated broker was the only one answering,
+  // and the lone-broker shortcut adopted it. The tool named the substitution on its second
+  // line while its FIRST line — the one `| head -1` reads — was confidently about the wrong
+  // fleet. Both halves are asserted here, because either alone would have let it through.
+  const stranger = await serve(join(root, 'somebody-elses.json'), 'boscontrol');
+  writeFileSync(join(root, 'somebody-elses.json'),
+                JSON.stringify({ t1: { credentials: { character: 'Aldric' } } }));
+  {
+    // Asked for by name, and the only broker running holds something else.
+    const named = await S.fleetScope({ argv: ['--fleet', 'prod'],
+                                       env: { M59_STATE_FILE: rosterPath } });
+    ok('a fleet named on the command line is NOT replaced by the only broker that answers',
+       !named.characters?.has('Aldric'),
+       named.from);
+    ok('and it scopes to the roster belonging to the named fleet instead',
+       named.filtered && named.characters.has('Kermit'));
+    ok('while saying plainly that no broker is holding it',
+       /no broker answering/.test(named.from), named.from);
+
+    const viaEnv = await S.fleetScope({ argv: [],
+                                        env: { M59_STATE_FILE: rosterPath, M59_FLEET: 'prod' } });
+    ok('M59_FLEET is honoured the same way', !viaEnv.characters?.has('Aldric'), viaEnv.from);
+  }
+  {
+    // AND THE SHORTCUT STILL WORKS WHEN NOBODY SAID WHICH, which is what it is for: one
+    // broker up, no fleet named anywhere, is unambiguous and adopting it is right.
+    const unasked = await S.fleetScope({ argv: [], env: { M59_STATE_FILE: join(root, 'nope.json') },
+                                         port: stranger.port });
+    ok('with no fleet named, a single answering broker is still adopted',
+       unasked.broker != null && /broker on [0-9]+/.test(unasked.from), unasked.from);
+  }
+  stranger.srv.close();
+
   mine.srv.close(); theirs.srv.close();
 }
 

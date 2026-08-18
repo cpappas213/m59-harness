@@ -1,0 +1,58 @@
+{
+ "runs": [
+  {
+   "at": 1786961075535,
+   "room": 575,
+   "row": 4,
+   "col": 23,
+   "open": {
+    "row": 5,
+    "col": 28
+   },
+   "seconds": 15,
+   "on_damage": 0,
+   "off_damage": 0,
+   "back_damage": 0,
+   "attackers": 0,
+   "free_shots": 6,
+   "verdict": "inconclusive",
+   "why": "nothing hit us on open ground either — nothing was trying"
+  },
+  {
+   "at": 1786961189306,
+   "room": 575,
+   "row": 4,
+   "col": 23,
+   "open": {
+    "row": 5,
+    "col": 28
+   },
+   "seconds": 15,
+   "on_damage": 2,
+   "off_damage": 0,
+   "back_damage": 0,
+   "attackers": 0,
+   "free_shots": 6,
+   "verdict": "INVALID",
+   "why": "health went UP mid-phase — something else is healing this character"
+  },
+  {
+   "at": 1786962040160,
+   "room": 575,
+   "row": 4,
+   "col": 23,
+   "open": {
+    "row": 5,
+    "col": 28
+   },
+   "seconds": 15,
+   "on_damage": 2,
+   "off_damage": 0,
+   "back_damage": 0,
+   "attackers": 0,
+   "free_shots": 6,
+   "verdict": "inconclusive",
+   "why": "nothing hit us on open ground either — nothing was trying"
+  }
+ ]
+}

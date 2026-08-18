@@ -23,6 +23,8 @@ import { exitsOf, findPath, inferredExits, codeExits, edgeExitsOf, edgeCandidate
 import { inRegion } from './m59-codeexits.mjs';
 import { affordances, OF, isTeleporter, KOD_FINENESS } from './m59-parse.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
+import { observedCrossings } from './m59-crossings.mjs';
+import { activeRoutes, anchorFor } from './m59-routes.mjs';
 
 // Marks used on the minimap. Chosen so the picture stays readable in a terminal and
 // so the important things are the ones that stand out: you, then players, then
@@ -308,7 +310,20 @@ export class World {
     if (!me) return { reachable: null, why: 'own position unknown' };
     if (!geo) return { reachable: null, why: 'no geometry for this room' };
     if (me.col === toCol && me.row === toRow) return { reachable: true, steps: 0, path: [] };
-    const r = geo.path(me.row, me.col, toRow, toCol);
+    // NO CLEARANCE PREFERENCE HERE, AND THE SAFE-SPOT RANKING IS WHY.
+    //
+    // `path`'s clearance cost keeps LONG routes off the walls, which is right for crossing
+    // a room and wrong for this: `nearestSafeSpot` ranks candidates at -0.5 per step of
+    // whatever this returns, so a preference that lengthens the approach quietly becomes a
+    // penalty ON THE SPOT ITSELF. Measured against the recorded book: 36.7% of walks to a
+    // held safe wall came back longer, worst case +9 steps — 4.5 points against a proof
+    // bonus of 20 — and it fell hardest on the walls that are hardest to walk into, which
+    // are the best ones. A SAFE WALL IS A TIGHT SQUARE BY DEFINITION; the fleet must not
+    // be taught to shy away from the thing the game is balanced around.
+    //
+    // So this answers the tactical question — how far is that square, really — exactly as
+    // it did before clearance existed. Crossing the room is `walkTo`'s business.
+    const r = geo.path(me.row, me.col, toRow, toCol, { clearance: 0 });
     if (!r.found) return { reachable: false, why: r.reason };
     return { reachable: true, steps: r.steps.length, path: r.steps.map(s => ({ col: s.col, row: s.row, dir: s.dir })),
              ...(me.offGrid ? { from_nearest_floor: { col: me.col, row: me.row },
@@ -327,7 +342,10 @@ export class World {
       const r = toRow + dr, c = toCol + dc;
       if (!geo.walkable(r, c)) continue;
       if (me.row === r && me.col === c) return { col: c, row: r, steps: 0, path: [] };
-      const p = geo.path(me.row, me.col, r, c);
+      // Same as reach(): this is melee range, not a journey. The square next to a monster
+      // is frequently a tight one, and choosing between the eight of them on a preference
+      // meant for crossing rooms picks the roomy side rather than the near one.
+      const p = geo.path(me.row, me.col, r, c, { clearance: 0 });
       if (!p.found) continue;
       if (!best || p.steps.length < best.steps) best = { col: c, row: r, steps: p.steps.length, path: p.steps };
     }
@@ -423,7 +441,57 @@ export class World {
       // decides between equals. Sorting on steps alone put the whole fleet at the nearest
       // opening on the wall whether or not it could be walked to, and that nearest opening
       // is exactly where the bounce happened.
-      precise.sort((a, b) => (!!a.grid_only - !!b.grid_only) || (a.steps - b.steps));
+      // AND A SQUARE A REAL PLAYER HAS ACTUALLY CROSSED FROM BEATS BOTH.
+      //
+      // The two keys above are both about the MODEL — is the mover happy, is it near —
+      // and the model is what has been wrong. Measured across 18 boundary pairs in
+      // recorded operator walks, the observed crossing square is almost always somewhere
+      // in this list already; it simply is not the one distance picks. So the failure was
+      // never coverage, it was CHOICE, and the cheapest correction is to let an
+      // observation outrank a derivation.
+      //
+      // The evidence costs the operator nothing but playing: `m59-proxy.mjs` logs every
+      // move packet, so a room change in that log brackets the crossing exactly — which
+      // matters because it cannot be reported by hand. In the operator's words: "the
+      // moment I touch it, I'm teleported, far before I'd be able to react". The recorded
+      // square is OFF THE MAP, because that outward step is the trigger, so the book
+      // stores it pulled back one square to where a character stands.
+      //
+      // NO BOOK MEANS THE ORDER THAT WAS ALWAYS USED. A fresh clone has never watched
+      // anybody play and must behave exactly as it did.
+      const observed = observedCrossings(Number(room?.num ?? 0), Number(e.to));
+      const seenAt = new Map(observed.map(o => [o.row + ',' + o.col, o.seen]));
+      // AGAINST THE CROSSING SQUARE, NOT THE STAGING SQUARE. A `precise` entry carries the
+      // staging square in col/row and the crossing it stages for in `fine_stand_on`, and
+      // the book records where a player actually CROSSED. Comparing the two silently
+      // matched nothing: on Western border of the Twisted Wood -> The Twisted Wood the
+      // book holds row 47 and the entry chosen staged at 66,45, so the preference had no
+      // effect at all while appearing to work.
+      const witness = c => seenAt.get(Math.floor(c.fine_stand_on.y / KOD_FINENESS) + ',' +
+                                      Math.floor(c.fine_stand_on.x / KOD_FINENESS)) ?? 0;
+      // THE BAKED ANCHOR IS THE THIRD OPINION, AND IT RANKS BELOW AN OBSERVATION ON
+      // PURPOSE. The bake is a flood over the room's own body, so an anchor is a crossing
+      // square this room was PROVEN able to walk to offline — which is the question
+      // `steps` only guesses at, since a nearer square hemmed in by geometry is a worse
+      // answer than a further one on open floor. But it is still derived from the same
+      // .roo the candidates came from, while the crossing book is a record of a real
+      // client actually arriving somewhere, so a witness keeps the last word.
+      //
+      // ASKED BY DESTINATION. Both of Western border of the Twisted Wood's east exits sit
+      // on one wall, split `row<19` / `row>20`; asking the table by direction would hand
+      // the same square to both and send a character to the wrong room while every leg
+      // reported success. `anchorFor` is the accessor that cannot express that mistake.
+      //
+      // NO TABLE, OR A ROOM IT DOES NOT COVER, MEANS THE ORDER THAT WAS ALWAYS USED.
+      const anchor = anchorFor(activeRoutes(), Number(room?.num ?? 0), Number(e.to));
+      const anchored = c => anchor
+        && ((c.row === anchor.row && c.col === anchor.col)
+            || (Math.floor(c.fine_stand_on.y / KOD_FINENESS) === anchor.row
+                && Math.floor(c.fine_stand_on.x / KOD_FINENESS) === anchor.col)) ? 1 : 0;
+      precise.sort((a, b) => (witness(b) - witness(a))
+                          || (anchored(b) - anchored(a))
+                          || (!!a.grid_only - !!b.grid_only)
+                          || (a.steps - b.steps));
       approach = precise[0];
       const MIN_FINE_APART = 4 * KOD_FINENESS, MAX_FINE_CANDIDATES = 8;
       const fineAlong = candidate => (e.leave === LEAVE.NORTH || e.leave === LEAVE.SOUTH)

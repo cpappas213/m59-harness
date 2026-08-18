@@ -121,11 +121,18 @@ function summarise(samples) {
       if (!per.has(r.agent)) per.set(r.agent, {
         agent: r.agent, character: r.character, rooms: [], blocked: [], interrupts: [],
         activities: new Set(), refusals: new Set(), waiting: new Set(), kills: [], passes: [],
+        // THE BODY, NOT THE KEEPER. Everything else on this row measures the keeper, and
+        // a wedged character has a keeper that is working hard — replanning into the same
+        // wall — so `passes` advances and `blocked_now_ms` stays small while nobody moves.
+        // See PULSE_MS in m59-autopilot.mjs.
+        wedged: [], wedges: [],
       });
       const p = per.get(r.agent);
       if (r.room_num !== undefined && p.rooms.at(-1) !== r.room_num) p.rooms.push(r.room_num);
       if (r.watchdog?.blocked_now_ms !== undefined) p.blocked.push(r.watchdog.blocked_now_ms);
       if (r.watchdog?.interrupts !== undefined) p.interrupts.push(r.watchdog.interrupts);
+      if (r.watchdog?.wedges !== undefined) p.wedges.push(r.watchdog.wedges);
+      if (r.watchdog?.wedged) p.wedged.push(r.watchdog.wedged);
       if (r.activity) p.activities.add(String(r.activity).split(/[:—]/)[0].trim());
       for (const x of (r.refusals || [])) p.refusals.add(typeof x === 'string' ? x : JSON.stringify(x).slice(0, 60));
       if (r.waiting_on) p.waiting.add(typeof r.waiting_on === 'string' ? r.waiting_on : JSON.stringify(r.waiting_on).slice(0, 60));
@@ -136,8 +143,8 @@ function summarise(samples) {
 
   const secs = ms => (ms / 1000).toFixed(0) + 's';
   console.log(`\n  ${samples.length} sample(s) over ${SECONDS}s at ${INTERVAL}s, depth=${DEPTH}\n`);
-  console.log('  agent  character   moved  maxblock  intr  passes  kills  activity / stuck on');
-  const stuck = [];
+  console.log('  agent  character   moved  maxblock  intr  passes  kills  !  activity / stuck on');
+  const stuck = [], notMoving = [];
   for (const p of per.values()) {
     const maxBlock = p.blocked.length ? Math.max(...p.blocked) : null;
     const intr = p.interrupts.length ? Math.max(...p.interrupts) - Math.min(...p.interrupts) : null;
@@ -147,9 +154,15 @@ function summarise(samples) {
     // A PASS COUNT THAT DOES NOT ADVANCE IS THE REAL STALL SIGNAL — a character can look
     // busy, hold a room, and never complete a keeper pass.
     if (maxBlock !== null && maxBlock > 60000 && passes === 0) stuck.push(p.character);
+    // A SECOND, INDEPENDENT STALL SIGNAL, and it catches the case the one above cannot:
+    // the keeper completing passes normally while the character never changes square.
+    const wedgeEpisodes = p.wedges.length ? Math.max(...p.wedges) - Math.min(...p.wedges) : 0;
+    const stillWedged = p.wedged.at(-1) ?? null;
+    if (stillWedged || wedgeEpisodes) notMoving.push({ character: p.character, stillWedged, wedgeEpisodes });
     console.log(`  ${String(p.agent).padEnd(6)} ${String(p.character).padEnd(11)} ` +
       `${String(moved).padStart(5)} ${String(maxBlock === null ? '?' : secs(maxBlock)).padStart(9)} ` +
       `${String(intr ?? '?').padStart(5)} ${String(passes ?? '?').padStart(7)} ${String(kills).padStart(6)}  ` +
+      `${(stillWedged ? '!' : wedgeEpisodes ? '·' : ' ')}  ` +
       `${[...p.activities].join(',').slice(0, 26)}` +
       (p.waiting.size ? ` | waiting: ${[...p.waiting].join(',').slice(0, 40)}` : '') +
       (p.refusals.size ? ` | refused: ${[...p.refusals].join(',').slice(0, 40)}` : ''));
@@ -160,6 +173,20 @@ function summarise(samples) {
     console.log(`    ${stuck.join(', ')}`);
     console.log(`    That is not slow travel. The pass is not running; the watchdog ticks but`);
     console.log(`    does not interrupt unless health crosses the flee line.`);
+  }
+  if (notMoving.length) {
+    console.log(`
+  ! NOT MOVING — the position pulse says the CHARACTER did not change`);
+    console.log(`    square for two samples a second apart, while having somewhere to be.`);
+    console.log(`    Resting, holding a safe wall and inert are all excluded, so this is`);
+    console.log(`    standing still with an errand outstanding — which is what the pocket`);
+    console.log(`    trap looks like from outside, and what no keeper-side number can say.`);
+    for (const n of notMoving)
+      console.log(`    ${n.character}: ${n.stillWedged
+        ? `STILL WEDGED at ${n.stillWedged.at?.col},${n.stillWedged.at?.row} in room ` +
+          `${n.stillWedged.at?.room} for ${secs(n.stillWedged.for_ms ?? 0)} while ` +
+          `${n.stillWedged.doing}` + (n.stillWedged.taking_hits ? ' AND TAKING HITS' : '')
+        : `${n.wedgeEpisodes} episode(s) during this trace, moving again now`}`);
   }
   const unreachable = samples.filter(s => s.unreachable).length;
   if (unreachable)

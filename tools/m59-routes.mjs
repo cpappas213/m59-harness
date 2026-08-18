@@ -19,7 +19,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROUTES_FILE, replay } from './m59-routebake.mjs';
-import { sharedRoomGeometry } from './m59-roo.mjs';
+import { sharedRoomGeometry, STEP_MASK_VERSION } from './m59-roo.mjs';
 
 let cache = { mtime: -1, value: null };
 
@@ -54,6 +54,23 @@ export function routesFor(mapManifest) {
 }
 
 /**
+ * Was this table's mask built by the predicate this build reads it with?
+ *
+ * THE MANIFEST CANNOT ANSWER THIS AND THAT IS THE WHOLE PROBLEM. It hashes the GEOMETRY,
+ * so a table baked by older code against an unchanged map passes every check here and is
+ * attached without a word — while every bit in it encodes a question nobody is asking any
+ * more. When `moverStepLands` stopped gating on the server's coarse grid, that would have
+ * kept the fleet out of hundreds of steps per room, silently, on a table that verified.
+ *
+ * A mismatch is NOT an error. It degrades to "plan on the coarse grid", which is exactly
+ * what a checkout that has never run the bake does, and it says so — because the fix is a
+ * rebake and the operator has to be told that rather than left to wonder.
+ */
+export function stepMaskCurrent(table) {
+  return (table?.stepMaskVersion ?? 1) === STEP_MASK_VERSION;
+}
+
+/**
  * Hand every baked step mask to the geometry that will be planning on it.
  *
  * THIS IS THE ONE CALL THAT CHANGES HOW THE FLEET WALKS. Without it the router plans on
@@ -71,6 +88,20 @@ export function routesFor(mapManifest) {
  * means "plan on the grid, exactly as this repository did before any of this existed" —
  * so a fresh clone that has never run the bake behaves precisely as it always has.
  */
+// THE TABLE THIS PROCESS IS ACTUALLY PLANNING ON, or null.
+//
+// Set by `attachStepMasks` and by nothing else, so it is the table that passed the
+// manifest check rather than whatever happens to be on disk. `null` is the ordinary answer
+// in any tool that never attached masks, and every reader must treat it as "work it out
+// live" — the table only ever held the common case, and a checkout that has never run the
+// bake has to behave exactly as it did before the bake existed.
+// AND IT IS AN ACCESSOR RATHER THAN A FIELD ON THE SUMMARY, which is not a style choice.
+// `attachStepMasks` returns a small object that half a dozen tools print verbatim; putting
+// the table on it turned `step masks: {...}` into a 1.5 MB dump of base64 masks in every
+// one of them at once. A summary is something people look at.
+let attachedTable = null;
+export const activeRoutes = () => attachedTable;
+
 export function attachStepMasks(map, { geometryOf } = {}) {
   const table = routesFor(map?.geometryManifestSha256 ?? null);
   if (!table) return { attached: 0, rooms: 0, ok: false,
@@ -80,6 +111,18 @@ export function attachStepMasks(map, { geometryOf } = {}) {
   // Two counters rather than one, because "the table is empty" and "the table predates
   // step masks" are different problems with different fixes, and a single counter told
   // the second story with the first one's words.
+  attachedTable = table;
+  // A MASK FROM A DIFFERENT PREDICATE IS WORSE THAN NO MASK, so it is refused wholesale.
+  // See stepMaskCurrent: the manifest hashes GEOMETRY and cannot see the predicate change,
+  // so such a table verifies perfectly while encoding the wrong doors.
+  //
+  // REFUSED, BUT NOT SHORT-CIRCUITED — this loop is how several callers BUILD their
+  // geometry. `geometryOf` is not only a lookup, it is a constructor with a cache behind
+  // it (m59-stringpull-test, m59-overlay, m59-highlight, m59-hoptest and m59-provewall all
+  // populate a Map from inside it), so returning early left every one of them holding an
+  // empty cache and a TypeError. Refusing to attach is the decision; not visiting the
+  // rooms was an accident of where the decision was made.
+  const stale = !stepMaskCurrent(table);
   let attached = 0, refused = 0, masked = 0;
   const rooms = Object.keys(table.rooms).length;
   for (const [num, baked] of Object.entries(table.rooms)) {
@@ -89,6 +132,7 @@ export function attachStepMasks(map, { geometryOf } = {}) {
     if (!room?.roo) continue;
     const geometry = geometryOf ? geometryOf(room) : sharedRoomGeometry(room);
     if (!geometry) continue;
+    if (stale) continue;                 // geometry built above; the mask is not trusted
     const bytes = Buffer.from(baked.stepMask, 'base64');
     if (geometry.attachStepMask(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.length)))
       attached++;
@@ -98,6 +142,11 @@ export function attachStepMasks(map, { geometryOf } = {}) {
   // hit: every table baked before masks existed has all 264 rooms, matches the manifest,
   // and carries nothing the router can use. "No routing table" would send them looking for
   // a file that is sitting right there.
+  if (stale)
+    return { attached: 0, rooms, masked, refused: 0, ok: false, view: table.view ?? 'grid',
+             why: `the routing table's step masks were baked by an older predicate ` +
+                  `(v${table.stepMaskVersion ?? 1}, this build reads v${STEP_MASK_VERSION}) — ` +
+                  `rerun node tools/m59-routebake.mjs` };
   return { attached, rooms, masked, refused, ok: attached > 0, view: table.view ?? 'grid',
            ...(attached ? {} : { why: !rooms
              ? 'the routing table has no rooms in it'
@@ -127,6 +176,80 @@ export function bakedPath(table, roomNum, from, to) {
   const p = r.routes?.[`${from.row},${from.col}>${to.row},${to.col}`];
   if (typeof p !== 'string') return null;
   return replay(from.row, from.col, p);
+}
+
+/**
+ * The baked square to stand on to leave `roomNum` for `toRoom`, or null.
+ *
+ * ASK BY DESTINATION, NOT BY DIRECTION — that distinction is the whole point of this
+ * accessor. A wall can carry two exits to two different rooms, split by a row or column
+ * condition (Western border of the Twisted Wood sends `row<19` to Main gate to the city of
+ * Tos and `row>20` to The Twisted Wood, both eastward). A caller that asks "where do I
+ * cross going east" gets a square that is right for one destination and silently wrong for
+ * the other: the walk succeeds, every leg reports success, and the character is in the
+ * wrong room. `exitAnchors` bakes one anchor per declared exit for exactly this reason, so
+ * reading it back by direction would throw the distinction away again at the last step.
+ *
+ * `from_body` is not filtered here. An anchor the room's main body cannot reach is still
+ * the right place to leave from — it is reported so a caller can prefer another exit, and
+ * a bake must never be the reason a doorway disappears.
+ */
+export function anchorFor(table, roomNum, toRoom) {
+  const r = table?.rooms?.[roomNum] ?? table?.rooms?.[String(roomNum)];
+  if (!r?.anchors) return null;
+  const want = Number(toRoom);
+  const hit = r.anchors.filter(a => Number(a.to) === want);
+  if (!hit.length) return null;
+  // Two declared exits to the SAME room is ordinary (The King's Way reaches 575 twice).
+  // Prefer one the body can walk to; otherwise the first, which is still a real crossing.
+  return hit.find(a => a.from_body) ?? hit[0];
+}
+
+/**
+ * A baked route as PIVOTS — the corners a walker actually has to aim at — or null.
+ *
+ * Same contract as `bakedPath`: null means "the table does not cover this", never "there
+ * is no route". The difference is what the caller then does with it. A route handed over
+ * as 73 grid squares is 73 chances to end up somewhere the plan did not expect, because a
+ * step that SLIDES lands off-plan and the walker replans from a square it never chose;
+ * measured in the Western border of the Twisted Wood, 218 of 311 grid steps failed and 200
+ * of those did not move the character at all. The same route as 21 pivots is 21 aimed
+ * moves, each already checked offline to ARRIVE rather than slide.
+ *
+ * `unverified` counts the legs the string pull could not prove. They are still emitted —
+ * the underlying grid route is real — but a caller that cares can fall back rather than
+ * trust a long leg through geometry nobody confirmed.
+ */
+export function bakedPivots(table, roomNum, from, to) {
+  const r = table?.rooms?.[roomNum] ?? table?.rooms?.[String(roomNum)];
+  const p = r?.pivots?.[`${from.row},${from.col}>${to.row},${to.col}`];
+  if (!p?.squares?.length) return null;
+  return { squares: p.squares.map(([row, col]) => ({ row, col })),
+           unverified: p.unverified ?? 0 };
+}
+
+// A CLIENT REPORTS ITS POSITION ABOUT ONCE A SECOND, so what a room crossing COSTS is
+// packets, not squares. Measured in Western border of the Twisted Wood, a six-route sample
+// is 311 grid squares and 66 pivots; charging the squares overstates the trip by 4.7x and,
+// worse, overstates it UNEVENLY — a long straight hall costs one pivot and a short
+// switchback costs eight, so ranking candidate routes on square count prefers exactly the
+// rooms that are slowest to walk.
+const SECONDS_PER_PIVOT = 1.0;
+
+/**
+ * What crossing this room between these two exits should cost, in seconds, or null.
+ *
+ * Null means the table does not cover this pair, and a caller must read it as "no
+ * estimate" rather than "free" — a zero here would make an unbaked room the most
+ * attractive one on every route. This is an estimate of WALKING and nothing else: it
+ * cannot know about a monster standing in a doorway, and it is not a promise.
+ */
+export function transitCost(table, roomNum, from, to) {
+  const p = bakedPivots(table, roomNum, from, to);
+  if (!p) return null;
+  // The first pivot is where we already are, so the moves are the gaps between them.
+  return { seconds: Math.max(0, p.squares.length - 1) * SECONDS_PER_PIVOT,
+           pivots: p.squares.length, unverified: p.unverified };
 }
 
 /** Can walking join these two exits at all? `null` when the table cannot say. */

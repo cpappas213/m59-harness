@@ -44,7 +44,7 @@ import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath }
   from './m59-map.mjs';
-import { CLIENT_FINENESS } from './m59-roo.mjs';
+import { CLIENT_FINENESS, elideLoops, protocolToClient } from './m59-roo.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -238,6 +238,15 @@ const ATTACK_INTERVAL_MS = 1050;     // IsOkayAttackTime, plus a little
 // past something is walking past it rather than standing beside it.
 const MOVE_INTERVAL_MS = Number(process.env.M59_MOVE_INTERVAL_MS || 250);
 
+// HOW LONG A BOUNDARY CROSSING MAY TAKE TO COME BACK. Not the same question as a door,
+// and not the same answer: the operator's account of doing this by hand is that under
+// load you stop dead against the edge and are moved a beat later, so a slow crossing is
+// the ordinary case rather than a failed one. At the old 4s this gave up on crossings
+// that were still in flight and reported them as "stepping past the edge did nothing" —
+// the reading that makes a working exit look like a phantom, and the one that would have
+// had us delete a real edge from the map.
+const EDGE_CROSSING_WAIT_MS = Number(process.env.M59_EDGE_CROSSING_WAIT_MS || 10000);
+
 // The server may silently discard UserGo when it follows the final movement packet
 // too closely. Preserve normal 250ms walking, but leave half a second between the
 // most recent movement packet and every door request. Pacer waits only the remaining
@@ -318,6 +327,27 @@ const squaresPerSecond = speed => SQUARES_PER_SECOND[speed] ?? (speed > WALK_SPE
 // elapsed — so about 14 squares. One second of running is 5 squares, squared distance
 // 25, comfortably inside it. Eight is the ceiling this uses, which is still only 64.
 const MOVE_HOP_MAX_SQUARES = Number(process.env.M59_MOVE_HOP_MAX || 8);
+
+// HOW MANY OFF-PLAN LANDINGS BEFORE THE WALKER STOPS TALKING IN SQUARES.
+//
+// Measured on room 587's approach to its western gap: 4 of 9 planned steps land somewhere
+// other than the plan asked for from one start, 24 of 42 from another — so the rate is
+// high enough that a threshold of two or three separates "the world moved" from "my plan
+// is in the wrong unit", while a walk across open floor never reaches it at all. Three,
+// because two is within the noise of a single monster stepping across a doorway.
+//
+// Raise it to disable the behaviour without removing it; the square walk below is
+// unchanged and still ends the walk honestly on its own budget.
+const OFFPLAN_BEFORE_FINE = Number(process.env.M59_OFFPLAN_BEFORE_FINE || 3);
+
+// HOW CLOSE A TRACED LINE MUST LAND TO COUNT AS ARRIVING, when deciding whether several
+// planned squares can be crossed in one packet.
+//
+// A sixteenth of a square. It is deliberately tight: the whole safety argument for
+// skipping ground is that the line ARRIVED rather than slid, and a loose threshold would
+// quietly readmit the sliding this is meant to avoid. Loosening it does not make walks
+// succeed, it makes them skip ground nothing checked.
+const PIVOT_ARRIVE_WITHIN = Number(process.env.M59_PIVOT_ARRIVE_WITHIN || 64);
 
 // ---------------------------------------------------------------- pacing
 
@@ -2700,13 +2730,45 @@ class Session {
     //
     // Pure on purpose: m59-collision-test lifts this method out by text, so this may use
     // nothing but `this`, the injected dependencies and built-ins.
+    // AND SCOPED TO THE SECTOR THAT MOVED, WHICH IS THE SECOND HALF OF THE SAME FIX.
+    //
+    // Bounding the refusal in TIME stopped a room being a permanent cage only while the
+    // animation is rare. The Temple of Qor door in room 598 cycles faster than the 8s
+    // window, so every packet re-armed the block and the bound never expired: reproduced
+    // with the character claimed so nothing else could steer it, six attempts across
+    // seventy seconds, never moved one square. The operator had already named that room as
+    // THE exception to "the geometry does not change day to day".
+    //
+    // The refusal was always wider than its own justification. This file's note says it:
+    // after the animation "the walls are still where the bake says — only sector HEIGHTS
+    // can have shifted". One sector moved; the rest of the room is exactly as baked. So
+    // refuse a move that STARTS OR ENDS in that sector, and let the rest of the room walk.
+    //
+    // `sector` absent means we could not tell which — a short packet, or a wall program
+    // rather than a sector one — and that reads as "we do not know", so the whole room is
+    // still refused. Same safe reading `until == null` already gets.
     const invalidated = c.room.collisionInvalidated;
-    if (invalidated && (invalidated.until == null || Date.now() < invalidated.until)) return {
-      available: false, moved: false, blocked: true,
-      reason: 'collision_geometry_changed',
-      note: `${invalidated.kind} changed live room geometry; movement is fail-closed ` +
-            'until that animation finishes or the room is re-entered',
-    };
+    if (invalidated && (invalidated.until == null || Date.now() < invalidated.until)) {
+      let touches = true;
+      if (Number.isInteger(invalidated.sector) && typeof geo.leafAtClient === 'function') {
+        const scale0 = CLIENT_FINENESS / KOD_FINENESS;
+        const wx = Number.isFinite(me.x) ? me.x : me.col * KOD_FINENESS + (KOD_FINENESS >> 1);
+        const wy = Number.isFinite(me.y) ? me.y : me.row * KOD_FINENESS + (KOD_FINENESS >> 1);
+        const inSector = (cx, cy) => {
+          const leaf = geo.leafAtClient(cx, cy);
+          return leaf != null && leaf.sectorNum === invalidated.sector;
+        };
+        touches = inSector((wx - KOD_FINENESS) * scale0, (wy - KOD_FINENESS) * scale0)
+               || inSector((x - KOD_FINENESS) * scale0, (y - KOD_FINENESS) * scale0);
+      }
+      if (touches) return {
+        available: false, moved: false, blocked: true,
+        reason: 'collision_geometry_changed',
+        note: `${invalidated.kind} changed live room geometry` +
+              (Number.isInteger(invalidated.sector) ? ` in sector ${invalidated.sector}` : '') +
+              '; movement is fail-closed until that animation finishes or the room is re-entered',
+      };
+    }
     const roomSecurity = c.room.security;
     if (!Number.isInteger(roomSecurity) || !Number.isInteger(geo.security)) return {
       available: false, moved: false, blocked: true, reason: 'room_security_unknown',
@@ -2757,7 +2819,51 @@ class Session {
       overrideDepths: c.room.overrideDepths ?? null,
       motionZ,
     };
-    const requestedTrace = geo.traceFineMoveClient(fromX, fromY, toClient(x), toClient(y), traceOptions);
+    let requestedTrace = geo.traceFineMoveClient(fromX, fromY, toClient(x), toClient(y), traceOptions);
+
+    // A TRACE FROM NOWHERE ANSWERS NOTHING, AND REFUSING ON IT IS A CAGE.
+    //
+    // `traceFineMoveClient` tests the leaf under the ORIGIN before it tests a single wall,
+    // and answers `start_has_no_floor` when there is none. That refusal is about where we
+    // ARE, not about where we are going — so it is identical for every heading, and the
+    // fan in `walkFine` tries nine of them, at four reaches, and gets it thirty-six times.
+    // Measured offline against room 587's real geometry: from the centre of square 2,4 the
+    // walk to the west exit fails with `blocked — every heading refused` having sent
+    // ZERO PACKETS, while from three of the surrounding squares — and from the parts of
+    // 2,4 that do have floor, 21 of 64 points sampled — the identical call arrives in
+    // three or four packets. A character whose position reads as such a point cannot move
+    // by any path this file owns: `walkTo`'s off-grid recovery routes through here too,
+    // which is why it reports `could not step back onto solid ground`.
+    //
+    // The server has no opinion about any of this. It does not validate player movement at
+    // all — `ReqSomethingMoved` is bypassed for users — so the only thing holding the
+    // character still is our own check, applied from an origin the check itself calls
+    // invalid. That is the definition of failing closed on no information.
+    //
+    // SO: WHEN THE ORIGIN HAS NO FLOOR, THE DESTINATION DECIDES. Narrowly, and every
+    // clause is load-bearing:
+    //
+    //   * only for `start_has_no_floor` — a wall between here and there is still a wall,
+    //     and every other refusal is about the journey rather than the origin;
+    //   * the destination must itself be standable, checked by the same BSP that just
+    //     refused, so this can only ever move a character ONTO valid floor;
+    //   * at most one square, so it is a recovery step and not a licence to cross a room;
+    //   * and it is reported as `recovered_from_no_floor`, because a move nothing
+    //     validated must be visible to whatever reads the result.
+    //
+    // This cannot widen what the fleet may traverse: the reachable set is unchanged for
+    // every character standing anywhere the trace can start from. It only restores the
+    // ability to leave a square the model cannot reason about — which the game plainly
+    // allows, because a person walks off those squares without noticing they exist.
+    let recovered = null;
+    if (requestedTrace.reason === 'start_has_no_floor'
+        && Math.abs(x - fromWireX) <= KOD_FINENESS && Math.abs(y - fromWireY) <= KOD_FINENESS
+        && geo.leafAtClient(toClient(x), toClient(y))) {
+      recovered = { from: { x: fromWireX, y: fromWireY } };
+      requestedTrace = { available: true, moved: true, arrived: true, blocked: false,
+                         slid: false, x: toClient(x), y: toClient(y),
+                         reason: 'recovered_from_no_floor' };
+    }
     if (!requestedTrace.available) return requestedTrace;
     if (!requestedTrace.moved) return requestedTrace;
 
@@ -2767,7 +2873,16 @@ class Session {
     let quantizedX = toProtocol(requestedTrace.x, fromX);
     let quantizedY = toProtocol(requestedTrace.y, fromY);
     let trace = null;
-    for (let attempt = 0; attempt < 8; attempt++) {
+    // THE QUANTIZER RE-TRACES FROM THE SAME ORIGIN, so a recovery has to carry through it
+    // or it is undone one line later — the loop below would ask the identical question,
+    // get `start_has_no_floor` again, and refuse. The endpoint is already an exact integer
+    // wire coordinate (it is the caller's own target, checked for floor above), so there
+    // is nothing left for the quantizer to converge on.
+    if (recovered) {
+      quantizedX = Math.round(x); quantizedY = Math.round(y);
+      trace = { ...requestedTrace, arrived: true };
+    }
+    for (let attempt = 0; !recovered && attempt < 8; attempt++) {
       trace = geo.traceFineMoveClient(fromX, fromY, toClient(quantizedX), toClient(quantizedY),
         traceOptions);
       if (!trace.available) return trace;
@@ -2797,12 +2912,51 @@ class Session {
   }
 
   async queueValidatedMove(x, y, { speed = 18, slide = true, beforeMutation = null,
-                                    minGap = MOVE_INTERVAL_MS, expectedRoomId = null } = {}) {
+                                    minGap = MOVE_INTERVAL_MS, expectedRoomId = null,
+                                    offMap = false } = {}) {
     const c = this.need();
     const roomId = expectedRoomId ?? c.room.id;
     if (c.room.id !== roomId) return { sent: false, validation: {
       available: false, moved: false, blocked: true, reason: 'room_changed_before_move',
     } };
+
+    // OFF THE MAP IS A LEGAL DESTINATION, AND THE LOCAL VALIDATOR CANNOT KNOW THAT.
+    //
+    // One move in the whole client deliberately targets a square that does not exist:
+    // the outward step past a room boundary, which is the ONLY thing that reaches
+    // `Room.SomethingMoved`'s `new_col < 1` branch and therefore the only thing that
+    // triggers StandardLeaveDir (room.kod:2232-2258). The BSP has no floor out there, so
+    // `validateFineTarget` clips at the boundary, never reports `arrived`, and the packet
+    // is never sent. Measured on Alpha against 587 -> 576: 50 attempts, 5 crossings, and
+    // 28 of the 45 failures were "every square for that exit refused". The operator's
+    // description of watching it was exact — it looked scared to touch the wall.
+    //
+    // Sending anyway is not a relaxation of collision. `UserMove` BYPASSES
+    // `ReqSomethingMoved` for users — room.kod's own comment is "already been checked by
+    // client (HAHA!)" — so there is no server-side geometry check on a player move to
+    // defer to, and the real client sends this same packet. See the dead-reckoning note
+    // below, which is the same argument.
+    //
+    // It is opt-in per call and used in exactly one place. NO BREADCRUMB IS RECORDED: the
+    // escape logic replays crumbs in reverse and its whole safety argument is that every
+    // crumb was a move the validator accepted, so a crumb pointing off the map would let
+    // it "undo" its way through a wall.
+    if (offMap) {
+      const target = { x: Math.round(x), y: Math.round(y) };
+      return this.pacer.submit('move', () => {
+        if (c.room.id !== roomId) return { sent: false, validation: {
+          available: false, moved: false, blocked: true, reason: 'room_changed_before_move' } };
+        const before = c.self ? { x: c.self.x, y: c.self.y, col: c.self.col, row: c.self.row } : null;
+        if (!before) return { sent: false, validation: {
+          available: false, moved: false, blocked: true, reason: 'own position unknown' } };
+        if (typeof beforeMutation === 'function') beforeMutation('move', { x, y });
+        const eventSeq = c.evSeq;
+        c.moveTo(target.x, target.y, speed, roomId);
+        return { sent: true, roomId, eventSeq, before, target,
+                 validation: { available: true, moved: true, blocked: false, offMap: true, target } };
+      }, minGap);
+    }
+
     const initial = this.validateFineTarget(x, y, { slide });
     // WRITE DOWN THAT PROD MOVED. Otherwise a drifted room is only ever visible as a move
     // that did not happen — and the baked map is evidence about somebody else's server,
@@ -2826,6 +2980,33 @@ class Session {
         return { sent: false, validation: { ...validation, moved: false } };
       if (typeof beforeMutation === 'function') beforeMutation('move', { x, y });
       const eventSeq = c.evSeq;
+      // BREADCRUMBS — the only record of how this character got where it is standing.
+      //
+      // A safe spot IS the coarse grid and the BSP disagreeing, which is what makes it
+      // safe and what the fleet seeks out. Since the router plans on the collision view,
+      // a character parked in such a pocket cannot plan a route out of it: room 587 is 68
+      // regions and both exits are in region 0, and there are 17,402 such pockets
+      // world-wide. It tries, is refused, replans, forever, and the board says
+      // `travelling` while it twitches in a corner.
+      //
+      // Every crumb here is a move the fine validator ACCEPTED, immediately before it was
+      // sent. Replaying them in reverse therefore cannot invent an impossible traversal —
+      // it can only undo one. That is the whole safety argument for the escape, and it is
+      // why the escape is breadcrumbs rather than a coarse-grid fallback: falling back to
+      // the server's grid would relax collision precisely where the two views disagree
+      // most, which is the mechanism that let bots climb cliffs no client can.
+      //
+      // Recorded here rather than in `step`, because this is the one choke point every
+      // move in this file passes through, and it is the only place that knows both the
+      // position the packet left from and the clipped endpoint it actually asked for.
+      const crumbs = (this.breadcrumbs ??= []);
+      const last = crumbs[crumbs.length - 1];
+      if (!last || last.roomId !== roomId || last.to.x !== before.x || last.to.y !== before.y)
+        crumbs.length = 0;             // a teleport, a room change, or somebody else moved us
+      crumbs.push({ roomId, at: Date.now(),
+                    from: { x: before.x, y: before.y },
+                    to: { x: validation.target.x, y: validation.target.y } });
+      if (crumbs.length > 64) crumbs.shift();
       c.moveTo(validation.target.x, validation.target.y, speed, roomId);
       const destinationFloor = validation.destinationFloor;
       if (Number.isFinite(destinationFloor)) {
@@ -2919,9 +3100,25 @@ class Session {
     // full second. Both are the same 5 squares/second.
     const gap = this._moveGapMs ?? MOVE_INTERVAL_MS;
     const dist = before ? Math.max(Math.abs(col - before.col), Math.abs(row - before.row)) : 1;
+    // THE ONE PLACE A PLANNED SQUARE BECOMES A PACKET, so it is the one place the aim can
+    // diverge from the plan. `moverStepLands` decides what to plan by tracing between the
+    // two squares' STAND POINTS; if this kept aiming at centres, the router would be
+    // authorising steps against one point and the mover attempting them against another —
+    // the exact split this whole subsystem exists to close.
+    //
+    // For every square whose centre is floor `standPointWire` returns `col * KOD_FINENESS
+    // + half` exactly, so ordinary movement is unchanged to the byte and only a square a
+    // wall cuts in half moves at all. Measured in Western border of the Twisted Wood: 1406
+    // squares identical to their centre — precisely the count the coarse grid calls
+    // walkable — and 299 moved, none of which the grid had accepted.
+    //
+    // Falls back to the centre when there is no geometry, which is both the honest answer
+    // for a room with no collision payload and what keeps this method liftable: it had no
+    // dependency on `this.world` at all before, and one of its test fixtures has none.
     const half = KOD_FINENESS >> 1;
-    const queued = await this.queueValidatedMove(col * KOD_FINENESS + half,
-      row * KOD_FINENESS + half, { speed, slide: true,
+    const aim = this.world?.geometry?.standPointWire?.(row, col)
+             ?? { x: col * KOD_FINENESS + half, y: row * KOD_FINENESS + half };
+    const queued = await this.queueValidatedMove(aim.x, aim.y, { speed, slide: true,
         beforeMutation: typeof beforeMutation === 'function'
           ? () => beforeMutation('move', { col, row }) : null,
         minGap: gap, expectedRoomId: roomId });
@@ -3141,6 +3338,86 @@ class Session {
              geometry_rejections: [...geometryRejections] };
   }
 
+  // THE WAY OUT OF A POCKET IS THE WAY IN, WALKED BACKWARDS.
+  //
+  // Called when the router says there is no route from here — which, in this world, far
+  // more often means "here is one of the 17,402 squares the collision view considers cut
+  // off from the rest of its room" than it means the destination is unreachable. The
+  // character walked in, so a walk out exists; the router simply cannot see it, because
+  // the pocket is a pocket to the model and not to the world.
+  //
+  // Every step replayed was accepted by the fine validator on the way in, so this CANNOT
+  // INVENT AN IMPOSSIBLE TRAVERSAL — it can only undo one. If a character reached a pocket
+  // by a traversal that should never have been legal, the breadcrumbs walk it back out the
+  // same way rather than widening the hole. That is why this, and not a coarse-grid escape
+  // hatch: the grid disagrees with the BSP exactly where the cliff climbs and the boundary
+  // crossings live, and relaxing collision there is the failure we are protecting.
+  //
+  // `until` is asked after every crumb, so the caller stops the moment its route reappears
+  // rather than unwinding the whole trail — the goal is to get out of the pocket, not to
+  // undo the journey.
+  async retreatAlongBreadcrumbs({ maxCrumbs = 12, until = null,
+    movementGeneration = this.movementGeneration, controlToken } = {}) {
+    const c = this.need();
+    const crumbs = this.breadcrumbs ?? [];
+    // TRIM THE LOOPS OUT OF THE TRAIL BEFORE WALKING IT BACKWARDS.
+    //
+    // The trail is what the character actually did, and what it actually did includes the
+    // bouncing that got it into trouble — `4,15 -> 5,15` / `5,15 -> 4,16`, over and over.
+    // Replaying that in reverse spends the crumb budget re-doing a round trip that arrived
+    // exactly where it started. `maxCrumbs` is 12, so a single eight-step bounce can eat
+    // the whole retreat and leave the character in the pocket it was trying to leave.
+    //
+    // Nothing here can be invented by removing a cycle, because both ends of a cycle are
+    // THE SAME SQUARE: the join is "X, then whatever followed X the last time", which is a
+    // pair the trail already contained. And every step is still put through the validator
+    // on the way back out, so a one-way ledge still stops the retreat rather than being
+    // teleported over — see the note below about a refused reverse step.
+    //
+    // Measured over the recorded walks: 41% of per-room runs contain a loop, and across
+    // all of them 47% of the squares visited are revisits. Some of that is a person
+    // exploring on purpose; none of it is worth undoing.
+    if (crumbs.length > 2) {
+      // Keyed on the EXACT landing point, which is what keeps the chain joinable — see
+      // elideLoops. A crumb is a validated move, not a square.
+      const trimmed = elideLoops(crumbs, cr => `${cr.roomId}:${cr.to.x},${cr.to.y}`);
+      if (trimmed.length < crumbs.length) crumbs.length = 0, crumbs.push(...trimmed);
+    }
+    const roomId = c.room?.id;
+    let steps = 0, blocked = null;
+    while (steps < maxCrumbs && crumbs.length) {
+      if (this.movementWasCancelled(movementGeneration, controlToken))
+        return this.cancelledMovement({ steps });
+      const crumb = crumbs[crumbs.length - 1];
+      const me = c.self;
+      if (!me) { blocked = 'own_position_unknown'; break; }
+      // A crumb from another room, or one that does not START where we are standing, is
+      // not a step we can undo: something moved us since, and reversing it would be a
+      // guess about geometry rather than a replay of it. Drop the whole trail rather
+      // than skipping — the crumbs below it are no more connected to us than this one.
+      if (crumb.roomId !== roomId || crumb.to.x !== me.x || crumb.to.y !== me.y) {
+        crumbs.length = 0; blocked = 'breadcrumb_trail_broken'; break;
+      }
+      const back = await this.queueValidatedMove(crumb.from.x, crumb.from.y,
+        { slide: true, expectedRoomId: roomId });
+      if (!back.sent) { blocked = back.validation?.reason ?? 'geometry_blocked'; break; }
+      // The crumb this move just recorded is the retreat itself; drop both, or the trail
+      // grows a there-and-back pair and the next retreat undoes the undo.
+      if (crumbs[crumbs.length - 1] !== crumb) crumbs.pop();
+      const idx = crumbs.lastIndexOf(crumb);
+      if (idx >= 0) crumbs.splice(idx, 1);
+      steps++;
+      c.predictSelf({ x: back.target.x, y: back.target.y,
+                      col: Math.floor(back.target.x / KOD_FINENESS),
+                      row: Math.floor(back.target.y / KOD_FINENESS) });
+      if (typeof until === 'function' && until()) break;
+    }
+    const me = c.self;
+    return { moved: steps > 0, steps, crumbs_left: crumbs.length,
+             position: me ? { col: me.col, row: me.row, x: me.x, y: me.y } : null,
+             ...(blocked ? { reason: blocked } : {}) };
+  }
+
   // Walk to a square along a route computed through the real geometry, rather than
   // pushing blindly toward it. Both halves matter: the route lets an agent round a
   // corner it would otherwise stall against, and the pacing keeps the session from
@@ -3148,12 +3425,95 @@ class Session {
   //
   // With no geometry it fails closed. Player movement is not checked by the server,
   // so sign-stepping without a map is an unchecked coordinate write, not navigation.
+  // GO ROUND A BODY, NOT ROUND THE ROOM.
+  //
+  // Pure, and it takes the geometry rather than reading `this`, so the decision can be
+  // tested without a session. Returns `{ back, through }` — the square to retreat to
+  // first (may be null when standing still already opens the angle) and the square to
+  // pass through — or null when neither side is available.
+  //
+  // THE TWO SIDES ARE THE PERPENDICULARS OF THE STEP WE WERE REFUSED, which is what makes
+  // this cheap: one body occupies one square, so the detour is one square wide and the
+  // router never has to be consulted. Both are checked against the SAME things the walker
+  // already knows — the mover's step relation, the edges it has been refused, and the
+  // squares it has seen bodies on — so a sidestep cannot propose a traversal the ordinary
+  // path would reject.
+  sidestepAround(was, blocked, { blockedEdges, occupied, geo, prefer = 0 }) {
+    if (!was || !blocked || !geo) return null;
+    const dr = Math.sign(blocked.row - was.row), dc = Math.sign(blocked.col - was.col);
+    if (!dr && !dc) return null;
+    // Perpendiculars of the refused direction. For a diagonal step these are the two
+    // cardinals it decomposes into, which is the right answer for the same reason.
+    let sides = (dr && dc) ? [{ dr, dc: 0 }, { dr: 0, dc }]
+                           : [{ dr: dc, dc: dr }, { dr: -dc, dc: -dr }];
+    // BREAK THE TIE ON SOMETHING THAT DIFFERS BETWEEN THE TWO PARTIES, or the fix becomes
+    // the bug. Both characters run this identical function, so with a fixed side order
+    // two of them meeting head-on both dodge the same way, collide, both dodge back, and
+    // mirror each other indefinitely — watched live and described exactly: *"like two
+    // people stuck in a hallway, I'll go left, no you go left, no my left, no your
+    // left"*. Ordering by the mover's own object id makes two characters prefer opposite
+    // sides by construction, which is the one thing a shared rule cannot achieve.
+    //
+    // The object id and not a random number: a coin flip breaks the deadlock eventually
+    // and produces a different dance each pass, which is both slower to converge and
+    // impossible to reproduce in a test.
+    if (prefer & 1) sides = [sides[1], sides[0]];
+    // `standable`: somewhere to step round a body is somewhere a body can BE, which is a
+    // question about floor rather than about the server's byte. `moverStepLands` still has
+    // to authorise the step itself, so this only widens the candidates, never the rules.
+    const free = (r, c) => geo.standable(r, c) && !occupied.has(`${r},${c}`);
+    const canStep = (fr, fc, tr, tc) =>
+      !blockedEdges.has(`${fr},${fc}>${tr},${tc}`) && geo.moverStepLands(fr, fc, tr, tc);
+
+    for (const s of sides) {
+      const tr = was.row + s.dr, tc = was.col + s.dc;
+      if (!free(tr, tc) || !canStep(was.row, was.col, tr, tc)) continue;
+      // From the side square, can we reach the square BEYOND the blocker — i.e. carry on
+      // in the direction we were going? That is the whole point; stepping aside and back
+      // again achieves nothing.
+      const br = blocked.row + dr, bc = blocked.col + dc;
+      if (free(br, bc) && canStep(tr, tc, br, bc))
+        return { back: null, through: { row: tr, col: tc }, beyond: { row: br, col: bc } };
+      // Otherwise settle for reaching the blocked square itself from the side, which is
+      // the case where the body is standing in a doorway we can enter at an angle.
+      if (canStep(tr, tc, blocked.row, blocked.col))
+        return { back: null, through: { row: tr, col: tc } };
+    }
+
+    // NOTHING WORKED FROM HERE, SO BACK UP AND TRY AGAIN — the operator's own suggestion,
+    // and the reason it is second rather than first is that retreating costs a step and
+    // is usually unnecessary. Standing hard against a body the diagonal past it is often
+    // refused for clearance; one square back it is not.
+    const br0 = was.row - dr, bc0 = was.col - dc;
+    if (!free(br0, bc0) || !canStep(was.row, was.col, br0, bc0)) return null;
+    for (const s of sides) {
+      const tr = br0 + s.dr, tc = bc0 + s.dc;
+      if (!free(tr, tc) || !canStep(br0, bc0, tr, tc)) continue;
+      if (canStep(tr, tc, blocked.row, blocked.col) ||
+          (free(blocked.row + dr, blocked.col + dc) &&
+           canStep(tr, tc, blocked.row + dr, blocked.col + dc)))
+        return { back: { row: br0, col: bc0 }, through: { row: tr, col: tc } };
+    }
+    return null;
+  }
+
   async walkTo(col, row, {
     maxSteps = 60,
     hardCap = 400,
     movementGeneration = this.movementGeneration,
     controlToken,
     beforeMutation = null,
+    // KEEP OFF THE WALLS ON THE WAY PAST THEM — OPT IN, AND OFF BY DEFAULT.
+    //
+    // See RoomGeometry.clearanceField. It is right for CROSSING a room and wrong for a
+    // walk to a square somebody has already chosen tactically: a safe wall is a tight
+    // square BY DEFINITION — that is the whole mechanism, the coarse grid and the BSP
+    // disagreeing — and the fleet must not be taught to shy away from the thing the game
+    // is balanced around. `leaveVia` turns it on, because walking to a boundary is the
+    // long routing where a slid step starts the bounce. A pull, a melee approach and a
+    // walk back to a held wall all leave it off and plan exactly as they did before it
+    // existed.
+    clearance = 0,
   } = {}) {
     const c = this.need();
     const geo = this.world.geometry;
@@ -3173,7 +3533,14 @@ class Session {
     // all. The server does not check walls for players, so we can simply step onto
     // solid ground and carry on — but it has to be done deliberately, because from
     // here the pathfinder has nothing to say.
-    if (!geo.walkable(me0.row, me0.col)) {
+    //
+    // `standable`, NOT `walkable`, AND THIS ONE IS LOAD-BEARING. Asked the coarse grid's
+    // way, a character standing in a diagonal corridor square that the grid rounds down to
+    // wall — 137 such positions are recorded in the operator's own walk logs — reads as
+    // "parked off the floor" and gets DRAGGED to `nearestWalkable` before the walk even
+    // begins. That is the opposite of the repair: it takes a character that is standing
+    // somewhere perfectly legitimate and moves it, every walk, for ever.
+    if (!geo.standable(me0.row, me0.col)) {
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
       const spot = geo.nearestWalkable(me0.row, me0.col);
       if (!spot) return { arrived: false, reason: 'start_has_no_floor',
@@ -3184,42 +3551,106 @@ class Session {
       // "did that work", and a predicted yes would report solid ground under a character
       // still standing off the floor — from which no route exists at all.
       const half = KOD_FINENESS >> 1;
-      const r = await this.stepFine(spot.col * KOD_FINENESS + half,
-                                    spot.row * KOD_FINENESS + half);
+      const targetX = spot.col * KOD_FINENESS + half, targetY = spot.row * KOD_FINENESS + half;
+      const r = await this.stepFine(targetX, targetY);
       if (isTerminalMovementReason(r.reason))
         return { arrived: false, ...r, position: r.position ?? { col: me0.col, row: me0.row } };
-      if (!r.moved) return { arrived: false, reason: 'could not step back onto solid ground',
-                             position: r.position,
-                             note: r.note ?? r.reason ?? 'local collision found no safe recovery path' };
+
+      // ONE STEP IS NOT ENOUGH TO GET OFF THE GRID, AND FINE MOVEMENT IS THE STRICTER
+      // TOOL RATHER THAN THE LOOSER ONE.
+      //
+      // Measured 2026-08-17: characters really do end up on squares the bake calls
+      // unwalkable — Bravo standing at 30,30 in room 587 and Charlie at 25,25 in 566,
+      // both `walkable: false`, both perfectly upright on the server, and from there
+      // `walkTo` cannot plan at all. `stepFine` asks for ONE clipped step at the nearest
+      // floor square, and when the pocket is deeper than one step, or that particular
+      // endpoint is refused, the walk ends here with `could not step back onto solid
+      // ground` — which is what the three broken boundaries on the Tos-Jasper corridor
+      // came down to.
+      //
+      // `walkFine` is the same collision rules applied up to 120 times with sliding, so
+      // it can work its way out where a single step cannot. It is NOT the coarse-grid
+      // escape hatch this repository considered and rejected: that one FELL BACK to the
+      // server's one-byte grid and relaxed collision, which is the mechanism that let
+      // bots climb cliffs. This clips every endpoint against the same BSP the stock
+      // client enforces — walls, step heights, slopes, ceilings and the 248-unit player
+      // radius — so it is strictly more conservative than the router it is rescuing, and
+      // cannot authorise a traversal a person could not make.
+      //
+      // Second, and only on failure, because it costs packets and the single step is
+      // usually enough.
+      if (!r.moved) {
+        if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
+        const fine = await this.walkFine(targetX, targetY,
+          { maxSteps: 40, movementGeneration, controlToken }).catch(() => null);
+        if (isTerminalMovementReason(fine?.reason))
+          return { arrived: false, ...fine, position: fine.position ?? { col: me0.col, row: me0.row } };
+        const now = c.self;
+        // Same question as above — did we reach ground a player can occupy — so it has to
+        // be the same predicate, or the recovery declares failure while standing on floor.
+        if (!now || !geo.standable(now.row, now.col))
+          return { arrived: false, reason: 'could not step back onto solid ground',
+                   position: now ?? r.position,
+                   recovered_by: 'neither one clipped step nor fine walking reached floor',
+                   note: r.note ?? r.reason ?? 'local collision found no safe recovery path' };
+      }
     }
 
-    const from = c.self ?? me0;
+    let from = c.self ?? me0;
     // Route round what can see us, at a cost rather than a prohibition — see
     // threatsHere(). Computed once per walk rather than per step: monsters wander, but
     // re-deriving a whole field every square would cost more than the detour saves,
     // and the replan below picks up anything that has moved into the way since.
     const threats = this.threatsHere();
-    let plan = geo.path(from.row, from.col, row, col, { threats });
     // THE MASK MAY ONLY EVER PREFER, AND THAT HAS TO HOLD AT PLAN TIME TOO.
     //
-    // The replan below already falls back to the coarse grid when the collision view runs
-    // out of routes; the FIRST plan did not, so a goal the model dislikes was refused
-    // before a single packet — which is the same silent refusal this whole path exists to
-    // remove, just arriving earlier. It bites hardest at doors: an exit anchor for a `go`
-    // exit is the door tile itself, a pocket by design, and 346 of the 383 anchors this
-    // bake cannot reach from their room's body are exactly those. Exempting the last step
-    // into the goal recovers 57 of them; the other 326 have the whole approach refused, and
-    // for those the answer is to plan on the grid and let the mover clip each step for
-    // real — which is what `leaveVia` then finishes with fine positioning.
+    // The replan inside the walk already falls back to the coarse grid when the collision
+    // view runs out of routes; the FIRST plan did not, so a goal the model dislikes was
+    // refused before a single packet — which is the same silent refusal this whole path
+    // exists to remove, just arriving earlier. It bites hardest at doors: an exit anchor
+    // for a `go` exit is the door tile itself, a pocket by design, and 346 of the 383
+    // anchors this bake cannot reach from their room's body are exactly those. Exempting
+    // the last step into the goal recovers 57 of them; the other 326 have the whole
+    // approach refused, and for those the answer is to plan on the grid and let the mover
+    // clip each step for real — which is what `leaveVia` then finishes with fine
+    // positioning.
     //
     // Only when the COLLISION view is what refused. A coarse-grid "no route" is the room
     // telling us something, and re-asking it the same question would just be slower.
-    if (!plan.found && plan.collision_view)
-      plan = geo.path(from.row, from.col, row, col, { threats, collision: false });
+    const replan = (r, cc) => {
+      let p = geo.path(r, cc, row, col, { threats, clearance });
+      if (!p.found && p.collision_view)
+        p = geo.path(r, cc, row, col, { threats, clearance, collision: false });
+      return p;
+    };
+    let plan = replan(from.row, from.col);
+    // NO ROUTE FROM HERE USUALLY MEANS "HERE IS A POCKET", NOT "THERE IS UNREACHABLE".
+    //
+    // Both are refusals of the same shape and only one of them is about the destination.
+    // A character standing on a safe wall is standing where the coarse grid and the BSP
+    // disagree — that is what a safe wall IS — and to the collision view that square is
+    // frequently cut off from its own room's exits. Walking the breadcrumbs back undoes
+    // whatever got it in there, and the plan is re-asked from wherever that lands.
+    let escaped = 0;
+    if (!plan.found && !plan.stuck) {
+      const out = await this.retreatAlongBreadcrumbs({
+        movementGeneration, controlToken,
+        until: () => replan(c.self?.row ?? -1, c.self?.col ?? -1).found,
+      });
+      if (out.cancelled) return out;
+      escaped = out.steps ?? 0;
+      if (out.moved) {
+        from = c.self ?? from;
+        plan = replan(from.row, from.col);
+      }
+    }
     if (!plan.found)
       return { arrived: false, reason: plan.reason, position: { col: from.col, row: from.row },
                ...(plan.stuck ? { nearest_floor: plan.nearest_floor } : {}),
-               note: 'the geometry says there is no route to that square from here' };
+               ...(escaped ? { retreated: escaped } : {}),
+               note: escaped
+                 ? 'no route even after walking the breadcrumbs back out of the pocket'
+                 : 'the geometry says there is no route to that square from here' };
 
     // If a route exists, walking it is what was asked for. Refusing partway because of
     // a caller's default budget is a silent failure dressed as a limit — so the plan
@@ -3247,6 +3678,16 @@ class Session {
     const blockedEdges = new Set();
     const edgeKey = (fr, fc, tr, tc) => `${fr},${fc}>${tr},${tc}`;
     let stalledOn = null, stalledTimes = 0;
+    // MONSTER COLLISION DURING TRAVEL, kept as its own fact. See the block below that
+    // increments these: a body is not a wall, it moves, and a walk that failed because of
+    // one has a completely different remedy from a walk the geometry refused.
+    let monsterBlocks = 0;
+    const blockedBy = new Set();       // squares a body was standing on
+    const sidestepped = new Set();     // squares we have already tried to go round, once each
+    // HOW OFTEN THE MOVER PUT US SOMEWHERE THE PLAN DID NOT ASK FOR. See the note where
+    // this is incremented; past a handful it means the square-by-square plan is not the
+    // thing being walked, and continuing to replan it is how a room takes three minutes.
+    let offPlan = 0, wentFine = false;
     while (queue.length && taken < maxSteps) {
       if (this.movementWasCancelled(movementGeneration, controlToken))
         return this.cancelledMovement({ steps: taken, replans });
@@ -3262,16 +3703,70 @@ class Session {
       // so the line we skip along is the line we planned. Coalescing across a TURN
       // would cut the corner — through whatever the turn was avoiding — which is the
       // one way this could put a character through a wall on purpose.
+      // AND COLLINEAR IS TOO NARROW A TEST ON GEOMETRY THAT IS NOT AXIS-ALIGNED.
+      //
+      // The paragraph above is right that coalescing across a turn could cut a corner —
+      // IF the only thing known about the skipped ground is that the router accepted the
+      // squares. But there is a stronger check available and it is the one the mover
+      // itself uses: trace the straight line and require it to ARRIVE, with `slide:false`.
+      // A line that arrives without sliding has not clipped anything, whatever direction
+      // it runs, so the corner-cutting argument does not apply to it.
+      //
+      // This matters because the rooms are not boxes. Room 587's wall length is 54.9% NOT
+      // axis-aligned; the exit to the Twisted Wood is a 45 degree run. Measured there,
+      // stepping centre-to-centre along a grid route fails 218 of 311 steps, and 200 of
+      // those 218 — 92% — do not move the character AT ALL. Collinear coalescing cannot
+      // help with any of them, because the refused step is a single step.
+      //
+      // Same six routes, reaching as far as the line still clears: 311 grid steps become
+      // 66 pivots. See RoomGeometry.stringPull and m59-stringpull-test.mjs.
       let next = queue.shift();
       let hop = 1;
-      const dc0 = Math.sign(next.col - (c.self?.col ?? next.col));
-      const dr0 = Math.sign(next.row - (c.self?.row ?? next.row));
-      while (hop < MOVE_HOP_MAX_SQUARES && queue.length) {
-        const peek = queue[0];
-        if (Math.sign(peek.col - next.col) !== dc0 || Math.sign(peek.row - next.row) !== dr0) break;
-        if (occupied.has(`${peek.row},${peek.col}`)) break;
-        if (blockedEdges.has(edgeKey(next.row, next.col, peek.row, peek.col))) break;
-        next = queue.shift(); hop++;
+      const from0 = c.self ? { col: c.self.col, row: c.self.row } : null;
+      // THE SECOND AIM, AND IT HAS TO MATCH THE FIRST. This traces a straight line across
+      // several squares to decide which of them may be skipped, so if it measured that
+      // line between CENTRES while `step` sends stand points, the line proved clear is not
+      // the line walked. `standPoint` is the centre for every ordinary square, so this is
+      // unchanged wherever the old aim was right.
+      const half0 = KOD_FINENESS >> 1;
+      const fineOf = s => geo.standPoint?.(s.row, s.col)
+                       ?? { x: protocolToClient(s.col * KOD_FINENESS + half0),
+                            y: protocolToClient(s.row * KOD_FINENESS + half0) };
+      const arrives = (a, b) => {
+        const t = geo.traceFineMoveClient?.(a.x, a.y, b.x, b.y, { slide: false });
+        return !!t && Math.hypot(t.x - b.x, t.y - b.y) <= PIVOT_ARRIVE_WITHIN;
+      };
+      if (from0 && geo.collisionReady) {
+        const here = fineOf(from0);
+        // FURTHEST FIRST, so a long clear run costs one trace rather than one per square.
+        // Bounded by the same hop ceiling as before, so the packet a walk sends is no
+        // bigger than it ever was — this changes WHICH squares may be skipped, not how
+        // many.
+        const reach = [];
+        for (let i = 0; i < queue.length && reach.length < MOVE_HOP_MAX_SQUARES - 1; i++) {
+          const s = queue[i];
+          if (occupied.has(`${s.row},${s.col}`)) break;
+          reach.push(s);
+        }
+        for (let i = reach.length - 1; i >= 0; i--) {
+          if (arrives(here, fineOf(reach[i]))) {
+            for (let k = 0; k <= i; k++) { next = queue.shift(); hop++; }
+            hop--;                       // `next` was already counted by the shift above
+            break;
+          }
+        }
+      } else {
+        // NO COLLISION MODEL MEANS THE OLD RULE, EXACTLY. A checkout with no baked
+        // geometry has nothing to trace against, and must walk precisely as it did.
+        const dc0 = Math.sign(next.col - (c.self?.col ?? next.col));
+        const dr0 = Math.sign(next.row - (c.self?.row ?? next.row));
+        while (hop < MOVE_HOP_MAX_SQUARES && queue.length) {
+          const peek = queue[0];
+          if (Math.sign(peek.col - next.col) !== dc0 || Math.sign(peek.row - next.row) !== dr0) break;
+          if (occupied.has(`${peek.row},${peek.col}`)) break;
+          if (blockedEdges.has(edgeKey(next.row, next.col, peek.row, peek.col))) break;
+          next = queue.shift(); hop++;
+        }
       }
       const was = c.self ? { col: c.self.col, row: c.self.row } : null;
       const r = await this.step(next.col, next.row, { beforeMutation });
@@ -3286,6 +3781,20 @@ class Session {
                    note: 'lost authoritative own-position state while walking',
                    steps: taken, replans };
       if (now.col === next.col && now.row === next.row) { stalledOn = null; stalledTimes = 0; continue; }
+
+      // LANDED SOMEWHERE ELSE — counted, because the RATE is the diagnosis.
+      //
+      // The router validates a step centre-to-centre (`moverStepLands` asks "from the
+      // CENTRE of A, can I land in B"), and after the first slide the walker is never at
+      // a centre again. Simulated on room 587's approach to its western gap with the real
+      // fine position carried forward: 4 of 9 planned steps land off-plan from one start
+      // and 24 of 42 from another, while the model calls every one of them legal.
+      //
+      // Each of those costs a replan, and the replan produces the same square-to-square
+      // plan that just failed — which is why crossing one room took 88-208s against 15s
+      // for a direct walk to the same gap, and why a four-square doorway becomes a
+      // pile-up as soon as a second character wants it.
+      offPlan++;
 
       // DID NOT MOVE AT ALL vs ENDED UP SOMEWHERE ELSE. These were treated the same and
       // they need opposite responses. Ending up elsewhere means the route is stale, so
@@ -3323,16 +3832,65 @@ class Session {
       }
 
       if (didNotMove && hitSomething) {
+        // COUNTED, BECAUSE A WALK EATEN BY BODIES USED TO BE INDISTINGUISHABLE FROM A
+        // WALK WITH TOO SMALL A BUDGET. Both returned `stopped after N steps` with
+        // `replans: 0` — the zero because adding an occupied square sets `learned`, and
+        // `learned` suppresses the replan counter below. Measured live in the King's Way:
+        // the same 3-step walk read `steps: 40, replans: 0` with eleven rats plugging a
+        // two-wide corridor and `steps: 3, arrived` once they moved. Nothing in the reply
+        // named a monster, so this read as a routing fault for as long as anyone looked
+        // at it — which is how it got attributed to the safe-wall geometry it happened to
+        // be near. It is a different bug and it needs a different word.
+        monsterBlocks++;
+        blockedBy.add(`${next.row},${next.col}`);
+
         // Monsters wander. One retry costs a second and often clears it, which is
         // cheaper and less disruptive than routing the long way round.
         if (stalledOn === `${next.row},${next.col}` && stalledTimes >= 1) {
+          // GO ROUND IT RATHER THAN ROUND THE ROOM. Marking the square occupied and
+          // replanning is correct and expensive: A* re-solves the whole route, and in a
+          // corridor the only answer it can find is the long way, which is how a
+          // three-step walk becomes forty. A body is one square wide — the cheap move is
+          // to try the two squares either side of it first.
+          //
+          // BACK UP FIRST, and that is the part that is not obvious. Standing next to the
+          // blocker, the diagonal past it is frequently refused by the mover as well:
+          // squeezing between a body and a wall is exactly the clearance the player disc
+          // does not have. Retreating one square opens the angle, which is what a person
+          // does without thinking about it.
+          //
+          // It is only ever a PREFERENCE. If neither side works the ordinary occupancy
+          // path below runs exactly as it did before, so this can cost a couple of steps
+          // and cannot cost the walk.
+          const side = this.sidestepAround(was, next,
+            { blockedEdges, occupied, geo, prefer: Number(c.self?.id ?? 0) });
+          if (side && !sidestepped.has(`${next.row},${next.col}`)) {
+            sidestepped.add(`${next.row},${next.col}`);
+            queue.unshift(next);
+            queue.unshift(side.through);
+            if (side.back) queue.unshift(side.back);
+            stalledOn = null; stalledTimes = 0;
+            continue;
+          }
           occupied.add(`${next.row},${next.col}`);
           stalledOn = null; stalledTimes = 0; learned = true;
         } else {
           stalledOn = `${next.row},${next.col}`;
           stalledTimes++;
           queue.unshift(next);                       // try the same square once more
-          await new Promise(res => setTimeout(res, 700));
+          // JITTERED, TO BREAK LOCKSTEP IN TIME AS WELL AS IN SPACE.
+          //
+          // Two characters that meet head-on retry on the same 700ms cadence, so they
+          // step, collide, wait, and step again in perfect unison — and a side preference
+          // alone does not help if both are always deciding at the same instant. A few
+          // hundred milliseconds of spread means one of them acts while the other is
+          // still waiting, which is how two people actually get past each other.
+          //
+          // THE JITTER IS ON THE WAIT AND NEVER ON THE CHOICE. Randomising which side to
+          // try would make the walker unreproducible, and every routing test here depends
+          // on the same inputs giving the same route; a timing difference changes when a
+          // decision happens, not what it is.
+          await new Promise(res => setTimeout(res, 500 + Math.floor(Math.random() * 500)));
           continue;
         }
       }
@@ -3343,14 +3901,54 @@ class Session {
       // room impassable. So an informative failure is free — the edge set is finite and
       // shrinks the search each time — and only a repeat burns the budget. `hardCap` still
       // bounds the whole walk in steps, so this cannot run away.
-      if (!learned && ++replans > 8)
+      // AND THE BUDGET HAS TO SCALE WITH THE ROUTE, FOR THE SAME REASON `maxSteps` DOES.
+      //
+      // Eight was a fixed number against a route of any length, and the step budget ten
+      // lines above already scales (`plan.steps.length + 10`) — that asymmetry was
+      // arbitrary and it is what ends long walks. The King's Way is 129x88 with 8,639
+      // walkable squares and its east boundary is a median 91 steps away; in geometry
+      // where ~70% of steps land off-plan, eight uninformative replans are gone in the
+      // first quarter of the walk.
+      //
+      // Measured, with an operator watching the character it happened to: Western border
+      // of the Twisted Wood -> The Twisted Wood failed six times over 40s, every attempt
+      // reporting "kept ending up somewhere other than the planned square" — this exact
+      // message — against the SAME staging square, which it then re-planned and tried
+      // again. The character was standing on a square with seven of seven mover
+      // neighbours and an eighteen-step route to the boundary.
+      //
+      // One extra replan per ten planned steps, so a short walk is unchanged (a 9-step
+      // route still gets 8) and a 91-step crossing gets 17. `hardCap` still bounds the
+      // whole walk at 400 steps, so this cannot run away — the cap that actually stops a
+      // runaway is the step count, not this.
+      const replanBudget = 8 + Math.floor((plan.steps?.length ?? 0) / 10);
+      if (!learned && ++replans > replanBudget)
         return { arrived: false, blocked_at: { col: now.col, row: now.row }, steps: taken,
                  routed_around: [...occupied], refused_edges: blockedEdges.size,
+                 ...(monsterBlocks ? { monster_blocked: monsterBlocks,
+                                       blocked_by_bodies_at: [...blockedBy] } : {}),
                  note: 'kept ending up somewhere other than the planned square' };
+      // A SWITCH TO FINE MOVEMENT HERE WAS TRIED, AND ITS MEASUREMENT WAS INVALID.
+      //
+      // The idea was to hand the remainder of a walk to `walkFine` once `offPlan` passed
+      // a threshold. It A/B'd at 1/5 against 4/5 for the plain square walk, which looked
+      // decisive — and was not: a second agent was committing to this same file between
+      // the two arms (5421a69, a4d4c71), so the arms differed by more than the change
+      // under test. The comparison is withdrawn rather than reported.
+      //
+      // It is still not reinstated, for a reason that survives the bad measurement: those
+      // two commits found the actual causes of the same symptom — the outward step past a
+      // boundary was clipped and never sent, and `neighbors()` was gating every step on
+      // the monster grid — and both are upstream of the off-plan rate this was trying to
+      // paper over. Fixing a rate is the wrong move when the thing generating it has just
+      // been fixed properly.
+      //
+      // `offPlan` is kept as TELEMETRY only. It costs an integer, it is the number that
+      // would say whether the remaining slide still matters, and nothing acts on it.
       // A replan is exactly when something has moved into the way, so the threat field
       // is re-read here rather than reused from the top of the walk.
       const re = geo.path(now.row, now.col, row, col,
-        { avoid: occupied, blockedEdges, threats: this.threatsHere() });
+        { avoid: occupied, blockedEdges, threats: this.threatsHere(), clearance });
       if (!re.found) {
         // RELAX IN THE ORDER THE FACTS DECAY. Occupancy is a guess about where something
         // was standing a moment ago and is dropped first; a refused edge is a wall and is
@@ -3358,7 +3956,8 @@ class Session {
         // wrong about a wall costs a walk, and refusing costs the errand, so the last try
         // is the coarse grid we planned on before any of this existed.
         let open = occupied.size
-          ? geo.path(now.row, now.col, row, col, { blockedEdges, threats: this.threatsHere() })
+          ? geo.path(now.row, now.col, row, col,
+              { blockedEdges, threats: this.threatsHere(), clearance })
           : re;
         if (open.found) occupied.clear();
         else if (blockedEdges.size) {
@@ -3370,18 +3969,52 @@ class Session {
           open = geo.path(now.row, now.col, row, col, { collision: false });
           if (open.found) occupied.clear();
         }
+        // AND THE POCKET CAN BE WALKED INTO MID-WALK, not only stood in at the start —
+        // a slid step lands where it lands, and where it lands can be cut off. Same
+        // escape, once per walk: undoing the trail twice would unwind the journey.
+        if (!open.found && !escaped) {
+          const out = await this.retreatAlongBreadcrumbs({
+            movementGeneration, controlToken,
+            until: () => geo.path(c.self?.row ?? -1, c.self?.col ?? -1, row, col,
+              { blockedEdges }).found,
+          });
+          if (out.cancelled) return out;
+          escaped = Math.max(1, out.steps ?? 0);
+          const at = c.self;
+          if (out.moved && at) open = geo.path(at.row, at.col, row, col, { blockedEdges });
+        }
         if (!open.found)
           return { arrived: false, blocked_at: { col: now.col, row: now.row }, steps: taken,
-                   refused_edges: blockedEdges.size, reason: open.reason };
+                   refused_edges: blockedEdges.size, reason: open.reason,
+                   ...(escaped ? { retreated: escaped } : {}) };
         queue = open.steps.slice();
         continue;
       }
       queue = re.steps.slice();
     }
     const me = c.self;
-    return { arrived: !!me && me.col === col && me.row === row,
-             position: me && { col: me.col, row: me.row }, steps: taken, replans,
-             ...(taken >= maxSteps ? { note: 'stopped after ' + maxSteps + ' steps' } : {}) };
+    const arrived = !!me && me.col === col && me.row === row;
+    // MONSTER COLLISION DURING TRAVEL IS NAMED, EVERY TIME, INCLUDING ON SUCCESS.
+    //
+    // The failure this repairs was not that the walk stopped — it was that the reply
+    // said `stopped after 40 steps` and nothing else, so an operator watching a bot
+    // shuffle in a corridor had no way to tell a plugged corridor from a wall, and the
+    // fault was filed against the geometry it happened to be standing near. A count and
+    // the squares are enough to tell them apart at a glance, and reporting it on a
+    // SUCCESSFUL walk matters just as much: that is how "this route is fine but it costs
+    // us thirty steps whenever the rats are out" becomes visible at all.
+    const bodies = monsterBlocks
+      ? { monster_blocked: monsterBlocks, blocked_by_bodies_at: [...blockedBy],
+          ...(sidestepped.size ? { sidestepped: sidestepped.size } : {}) }
+      : {};
+    return { arrived, position: me && { col: me.col, row: me.row }, steps: taken, replans,
+             ...bodies,
+             ...(taken >= maxSteps
+                 ? { note: monsterBlocks
+                       ? `stopped after ${maxSteps} steps — ${monsterBlocks} monster collision(s) ` +
+                         'during travel ate the budget; the route itself was not refused'
+                       : 'stopped after ' + maxSteps + ' steps' }
+                 : {}) };
   }
 
   // Leave the room. The tool picks the mechanism, because using the wrong one
@@ -3399,8 +4032,12 @@ class Session {
     const budget = e => Math.max(40, (e.steps_away ?? 0) + 20);
 
     if (exit.kind === 'go') {
+      // CLEARANCE ON, because this is the long routing: crossing a whole room to a
+      // boundary square is exactly where hugging the wall makes a step slide, the mover
+      // land off plan, and the walker start the bounce. See walkTo's `clearance`.
       let walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
-                                   { maxSteps: budget(exit), movementGeneration, controlToken });
+                                   { maxSteps: budget(exit), movementGeneration, controlToken,
+                                     clearance: 0.6 });
       if (isTerminalMovementReason(walk.reason))
         return { left: false, stage: 'walk', ...walk };
 
@@ -3599,14 +4236,46 @@ class Session {
       // gives for a cliff ledge, and wrong for the same reason. Pick the nearest
       // floor square actually on that boundary and walk to it with fine BSP collision.
       const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
-                                     { maxSteps: budget(exit), movementGeneration, controlToken });
+                                     { maxSteps: budget(exit), movementGeneration, controlToken,
+                                       clearance: 0.6 });
       if (walk.left_room || c.room.id !== edgeStartRoom)
         return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
                  note: 'the room changed while approaching the boundary' };
       if (isTerminalMovementReason(walk.reason))
         return { left: false, stage: 'walk', ...walk };
-      if (!walk.arrived && !(c.self && c.self.col === exit.stand_on.col && c.self.row === exit.stand_on.row))
-        return { left: false, stage: 'walk', ...walk };
+      // ARRIVING ON *A* CROSSING SQUARE IS ARRIVING. THE EXACT ONE DOES NOT MATTER.
+      //
+      // This used to demand the walk finish on the one anchor `exits()` picked, and give
+      // up otherwise — without ever attempting the crossing. That produced the dance an
+      // operator watched and described exactly: a character walks to one opening, does
+      // not cross, walks all the way across the room to the other opening, does not
+      // cross, and comes back. `travel` re-plans after each refusal and picks a different
+      // candidate, so the two openings alternate for ever.
+      //
+      // It is also unnecessary, and `exits()` says so twenty lines away: "the boundary is
+      // one exit and any square on it crosses". Measured on the west wall of Main gate to
+      // the city of Tos, which has two separate openings at rows 20-23 and 43-48: a
+      // character teleported onto 20,1 and onto 47,1 crossed in ZERO seconds from both.
+      // The crossing was never the problem — landing on one exact square was.
+      //
+      // So when the walk ends somewhere else, look for where we ACTUALLY are among this
+      // boundary's crossing squares and use that one's own fine target. Only if we are on
+      // none of them is the walk a failure.
+      if (!walk.arrived) {
+        const me = c.self;
+        const crossings = [{ col: exit.stand_on.col, row: exit.stand_on.row,
+                             fine_stand_on: exit.fine_stand_on, edge_target: exit.edge_target,
+                             fine_path: exit.fine_path },
+                           ...(exit.alternates ?? [])];
+        const here = me && crossings.find(a => a.col === me.col && a.row === me.row
+                                            && a.fine_stand_on && a.edge_target);
+        if (!here) return { left: false, stage: 'walk', ...walk };
+        exit = { ...exit, stand_on: { col: here.col, row: here.row },
+                 fine_stand_on: here.fine_stand_on, edge_target: here.edge_target,
+                 fine_path: here.fine_path,
+                 crossed_from_alternate: true };
+      }
+      let pressedInWithoutExactFit = null;
       const finePath = exit.fine_path?.length ? exit.fine_path : [exit.fine_stand_on];
       for (const point of finePath) {
         const fine = await this.walkFine(point.x, point.y, {
@@ -3618,20 +4287,40 @@ class Session {
                    note: 'crossed the boundary while fine-positioning at its opening' };
         if (isTerminalMovementReason(fine.reason))
           return { left: false, stage: 'walk', ...fine };
-        if (!fine.arrived)
-          return { left: false, stage: 'walk', ...fine,
-                   note: fine.note ?? 'could not reach the exact BSP-valid edge opening' };
+        // NOT ARRIVING EXACTLY IS NOT A REASON NOT TO TRY THE EDGE.
+        //
+        // `arriveWithin: 1` above asks to land within ONE fine unit — a 64th of a square
+        // — and returning here when it does not is the machinery refusing to press into
+        // the wall. The operator's rule, and it is simply how the game works: for every
+        // exit that is not a door or a portal, leaving ALWAYS requires one more step
+        // toward the edge, and that edge is an invisible wall you run into. There is no
+        // version of it where precision at the opening matters, because the thing that
+        // triggers `Room.StandardLeaveDir` is the outward step, not where you stood.
+        //
+        // Proved by teleport: a character placed on 20,1 and on 47,1 of Main gate to the
+        // city of Tos — different openings, neither the blessed anchor — both crossed in
+        // ZERO seconds. What has been failing is never the crossing; it is everything
+        // this function does before allowing itself to attempt one.
+        //
+        // So a fine-positioning miss now falls through to the outward step instead of
+        // returning. If we are somewhere the edge step cannot fire from, that step fails
+        // on its own and reports it — one wasted packet against an errand abandoned at
+        // the door.
+        if (!fine.arrived) {
+          pressedInWithoutExactFit = fine.note ?? 'did not reach the exact opening; pressing into the edge anyway';
+          break;
+        }
       }
       // One more step OUTWARD, past the grid. Nothing else triggers
-      // Room.StandardLeaveDir. It is still an ordinary client move first: the stock
-      // client clips it against BSP walls/objects before deciding it left the room.
+      // Room.StandardLeaveDir, and `offMap` is what stops our own collision view
+      // refusing to send it — there is no floor out there and there is not meant to be.
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
       const edgeMove = await this.queueValidatedMove(
         exit.edge_target.x, exit.edge_target.y,
         // Stock UserMovePlayer sends speed zero for the one StandardLeaveDir
         // out-of-room request; it is not a run/vigor-bearing in-room step.
         { speed: 0, slide: false, minGap: MOVE_INTERVAL_MS,
-          expectedRoomId: edgeStartRoom });
+          expectedRoomId: edgeStartRoom, offMap: true });
       if (!edgeMove.sent && c.room.id !== edgeStartRoom)
         return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
                  note: 'the room changed before the final edge packet was needed' };
@@ -3639,12 +4328,27 @@ class Session {
         left: false, stage: 'edge',
         reason: edgeMove.validation?.reason ?? 'geometry_blocked',
         note: edgeMove.validation?.note ??
-          'the outward edge segment was rejected by local client collision before any packet was sent',
+          'the outward edge packet could not be sent at all — not a collision refusal',
       };
       const tGo = Date.now();
-      const ev = await c.waitFor({ since: edgeMove.eventSeq, kinds: ['room-entered'], timeoutMs: 4000 });
+      // THE CROSSING IS SLOW WHEN THE SERVER IS BUSY, AND IT STILL WORKS.
+      //
+      // The operator's description of playing this by hand: you stop dead against the
+      // invisible wall, and a beat later it jumps you to the next map. So a late
+      // `room-entered` is the ORDINARY case under load, not a failure — and at 4s we
+      // were giving up on crossings that were still in flight and recording them as
+      // "stepping past the edge did nothing", which is the one reading that makes a
+      // working exit look like a phantom.
+      const ev = await c.waitFor({ since: edgeMove.eventSeq, kinds: ['room-entered'],
+                                   timeoutMs: EDGE_CROSSING_WAIT_MS });
       Pacer.note('go', 'blocked', Date.now() - tGo);
-      const entered = ev.events.find(e => e.kind === 'room-entered');
+      let entered = ev.events.find(e => e.kind === 'room-entered');
+      // ASK THE WORLD, NOT ONLY THE EVENT RING. The event can be missed — evicted, or
+      // arriving on a rejoined client — while the character is demonstrably somewhere
+      // else. Having crossed is a fact about where we are standing.
+      if (!entered && c.room.id !== edgeStartRoom)
+        return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
+                 note: 'the room changed but no room-entered event was seen' };
       if (!entered) {
         // If this was an edge we INFERRED rather than one the room declared, the
         // inference was simply wrong — drop it so neither the planner nor anything
@@ -3679,7 +4383,7 @@ class Session {
         eventsSince: since => c.eventsSince(since),
         cancelled: () => this.movementWasCancelled(movementGeneration, controlToken),
         walk: candidate => this.walkTo(candidate.stand_on.col, candidate.stand_on.row,
-          { maxSteps: budget(candidate), movementGeneration, controlToken }),
+          { maxSteps: budget(candidate), movementGeneration, controlToken, clearance: 0.6 }),
         fineWalk: async candidate => {
           // Get as close as the square graph knows how before bypassing it. Fine movement
           // is deliberately expensive — every step is confirmed by a room read — and from
@@ -3694,7 +4398,7 @@ class Session {
           let staged = null;
           if (approach) {
             staged = await this.walkTo(approach.col, approach.row,
-              { maxSteps: budget(candidate), movementGeneration, controlToken });
+              { maxSteps: budget(candidate), movementGeneration, controlToken, clearance: 0.6 });
             if (staged.left_room || (!staged.arrived &&
                 !(c.self && c.self.col === approach.col && c.self.row === approach.row)))
               return { arrived: false, ...(staged.left_room ? { left_room: true } : {}),
@@ -3763,7 +4467,8 @@ class Session {
       const before = c.evSeq;
       const portalStartRoom = c.room.id;
       const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
-                                     { maxSteps: budget(exit), movementGeneration, controlToken });
+                                     { maxSteps: budget(exit), movementGeneration, controlToken,
+                                       clearance: 0.6 });
       if (isTerminalMovementReason(walk.reason) && c.room.id === portalStartRoom)
         return { left: false, stage: 'walk', ...walk };
       const tGo = Date.now();
@@ -3812,13 +4517,60 @@ class Session {
         !Number.isInteger(y) || y < 0 || y > 0xffff)
       return { left: false, reason: 'fallback target is off the wire grid' };
     this.exitFallbacks = (this.exitFallbacks || 0) + 1;
-    try { c.moveTo(x, y, 18, startRoom); }
-    catch (e) { return { left: false, reason: e.message }; }
-    const ev = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 4000 })
+    // AN EDGE IS LEFT BY STEPPING PAST IT, NOT ONTO IT — and this fallback stepped onto
+    // it. `Room.SomethingMoved` only reaches StandardLeaveDir when the new row or col is
+    // OUT of the room (room.kod:2232-2258), so moving to the boundary square is an
+    // ordinary in-room step and can never cross. For a region exit arriving is the whole
+    // trigger, which is why this went unnoticed: the fallback worked for the kind of exit
+    // that needs no outward step, and silently could not work for the kind that does.
+    //
+    // Measured before this: 587 -> 576 reported "every square for that exit refused"
+    // even though the outward step had been fixed, because every square WAS refused and
+    // then the fallback took the one step that cannot cross either.
+    // AND IT MUST ALREADY BE AT THE OPENING. This is the dangerous half, and without the
+    // guard the fix above is worse than the bug it repairs.
+    //
+    // The server does no geometry check on a player move, so an unvalidated packet aimed
+    // off the map from ANYWHERE in the room would cross — straight through whatever
+    // stands between here and the boundary. Meridian has one-way overland links that are
+    // one-way precisely because of terrain near the seam: 589 -> 599 -> 598 is walkable
+    // westward and not eastward, because eastward you would have to climb the cliffs you
+    // drop off going the other way. The boundary openings are wide (30 and 40 squares);
+    // it is the APPROACH that is impossible, and this fallback firing from mid-room would
+    // step straight over it and call a one-way link two-way.
+    //
+    // That is the same failure the breadcrumb note below warns about — relaxing collision
+    // exactly where the two views disagree is what let bots climb cliffs no client can.
+    // So: only when we are already standing within a square of the published opening,
+    // which means the approach succeeded and the only thing left is the step the model
+    // will not take.
+    const outward = exit?.edge_target;
+    const opening = exit?.fine_stand_on;
+    const near = Number.isFinite(c.self?.x) && Number.isFinite(opening?.x)
+      && Math.abs(c.self.x - opening.x) <= KOD_FINENESS
+      && Math.abs(c.self.y - opening.y) <= KOD_FINENESS;
+    const useOutward = exit?.kind === 'edge' && outward
+      && Number.isFinite(outward.x) && Number.isFinite(outward.y) && near;
+    if (exit?.kind === 'edge' && !useOutward)
+      return { left: false, reason: 'not at the opening',
+               note: 'the unvalidated outward step is only taken from the boundary itself — ' +
+                     'firing it from mid-room would cross terrain the approach could not' };
+    try {
+      if (useOutward) c.moveTo(Math.round(outward.x), Math.round(outward.y), 0, startRoom);
+      else c.moveTo(x, y, 18, startRoom);
+    } catch (e) { return { left: false, reason: e.message }; }
+    const ev = await c.waitFor({ since: before, kinds: ['room-entered'],
+                                 timeoutMs: EDGE_CROSSING_WAIT_MS })
                       .catch(() => ({ events: [] }));
     const entered = ev.events?.find(e => e.kind === 'room-entered');
     if (entered) return { left: true, arrived_in: entered.roomName, via: 'exit-fallback',
                           stood_on: { col: target.col, row: target.row } };
+    // The room is the authority on having left, not the event — see the same argument
+    // at the end of leaveVia.
+    if (c.room.id !== startRoom)
+      return { left: true, arrived_in: c.rsc.get(c.roomNameRsc), via: 'exit-fallback',
+               stood_on: { col: target.col, row: target.row },
+               note: 'the room changed but no room-entered event was seen' };
     return { left: false, reason: 'the unvalidated step did not change rooms either' };
   }
 
@@ -6436,7 +7188,7 @@ const TOOLS = [
       if (!geometry)
         throw new Error(`move intent refused: room ${room} has no local ROO geometry`);
       if (row < 1 || row > geometry.rows || col < 1 || col > geometry.cols ||
-          !geometry.walkable(row, col))
+          !geometry.standable(row, col))
         throw new Error(`move intent destination ${col},${row} is outside the walkable room floor`);
       const maxSteps = Math.max(1, Math.min(400, Math.trunc(num(a.max_steps, 120))));
       const guard = rtsPacketAuthority({
@@ -6446,13 +7198,13 @@ const TOOLS = [
         validate: (packet, detail) => {
           const currentGeometry = s.world?.geometry;
           if (!currentGeometry || row < 1 || row > currentGeometry.rows ||
-              col < 1 || col > currentGeometry.cols || !currentGeometry.walkable(row, col))
+              col < 1 || col > currentGeometry.cols || !currentGeometry.standable(row, col))
             throw new Error(`RTS ${packet} refused: destination ${col},${row} is no longer on the walkable floor`);
           if (!detail || !Number.isSafeInteger(detail.col) || !Number.isSafeInteger(detail.row))
             throw new Error(`RTS ${packet} refused: no exact next-step square accompanied the packet`);
           if (detail.row < 1 || detail.row > currentGeometry.rows ||
               detail.col < 1 || detail.col > currentGeometry.cols ||
-              !currentGeometry.walkable(detail.row, detail.col))
+              !currentGeometry.standable(detail.row, detail.col))
             throw new Error(`RTS ${packet} refused: next step ${detail.col},${detail.row} is not walkable`);
         },
       });
@@ -6531,7 +7283,7 @@ const TOOLS = [
         if (!geometry)
           throw new Error(`${action} refused: room ${room} has no local ROO geometry`);
         if (row < 1 || row > geometry.rows || col < 1 || col > geometry.cols ||
-            !geometry.walkable(row, col))
+            !geometry.standable(row, col))
           throw new Error(`${action} destination ${col},${row} is outside the walkable room floor`);
       } else if (action === 'take' || action === 'grab_nearby') {
         targets = action === 'take' ? [Number(a.target)]
@@ -6687,7 +7439,7 @@ const TOOLS = [
           const geometry = s.world?.geometry;
           if (!geometry || detail.row < 1 || detail.row > geometry.rows ||
               detail.col < 1 || detail.col > geometry.cols ||
-              !geometry.walkable(detail.row, detail.col))
+              !geometry.standable(detail.row, detail.col))
             throw new Error(`RTS ${packet} refused: next step ${detail.col},${detail.row} is not walkable`);
         }
         if (action === 'rest_here' || action === 'recover_here') {

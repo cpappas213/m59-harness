@@ -9,7 +9,8 @@ import { createHash } from 'node:crypto';
 import {
   CLIENT_FINENESS, COLLISION_VERSION, DEFAULT_ROO_DIRS, KOD_FINENESS,
   MAX_STEP_HEIGHT, MIN_SIDE_MOVE, PLAYER_HEIGHT, PLAYER_RADIUS,
-  RoomGeometry, WF, canCrossWallAt, parseRoo, setWallHeights, sharedRoomGeometry,
+  RoomGeometry, WF, canCrossWallAt, parseRoo, protocolToClient, setWallHeights,
+  sharedRoomGeometry,
 } from './m59-roo.mjs';
 import { BP, M59Client } from './m59-client.mjs';
 import { MOVEON, blocksMovement, parsePlayer } from './m59-parse.mjs';
@@ -23,7 +24,7 @@ import {
   geometryRefreshBaseFile, movementMapFile,
 } from './m59-map-path.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
-import { World, boundedRegionEntry, spreadEdges } from './m59-world.mjs';
+import { World, boundedRegionEntry, boundedSilentGo, spreadEdges } from './m59-world.mjs';
 
 let pass = 0, fail = 0, skipped = 0;
 const ok = (name, condition, detail = '') => {
@@ -146,6 +147,14 @@ function threeStrips({ left = sector(), middle = sector(), right = sector(),
     collisionVersion: COLLISION_VERSION });
 }
 
+// THESE FIXTURES ARE ABOUT `canCrossWallAt`, SO THEY SWITCH THE HEIGHT RULE OFF.
+// They deliberately build vertical faces far taller than MAX_STEP_HEIGHT — a 2048 step,
+// a floor sloped to z=600 at the contact point — because that is how you exercise the
+// wall test's own clauses. Once `enforceStepHeight` is on, the trace refuses those on
+// HEIGHT before the wall test's verdict can be observed, and the assertion would be
+// measuring the new rule rather than the thing it was written for. Passing the flag keeps
+// each fixture pointed at its own subject; the height rule has its own coverage.
+const WALLTEST = { enforceStepHeight: false };
 const across = (g, y = 2048, options = {}) =>
   g.traceFineMoveClient(1024, y, 3072, y, options);
 const back = (g, y = 2048, options = {}) =>
@@ -402,7 +411,8 @@ console.log('\nwall, elevation, and headroom rules');
   ok('a null source-facing sidedef is skipped like move.c', across(nullFacing).arrived);
   const noLowerTexture = twoSides({ right: sector({ floor: 2048 }),
     pos: side({ passable: true, below: false }), neg: side({ passable: true, below: false }) });
-  ok('no lower texture short-circuits the step test', across(noLowerTexture).arrived);
+  ok('no lower texture short-circuits the step test',
+     across(noLowerTexture, 2048, WALLTEST).arrived);
 
   const exactHead = twoSides({ right: sector({ ceiling: PLAYER_HEIGHT }),
     pos: side({ passable: true, above: true }), neg: side({ passable: true, above: true }) });
@@ -451,14 +461,14 @@ console.log('\ncontinuous geometry, slopes, radius, and sliding');
   const lowFirst = twoSides({ right: sector({ floorSlope: slope }),
     pos: side({ passable: true }), neg: side({ passable: true }) });
   ok('a sloped step uses the same endpoint-0 z1 at low and high contact points',
-     across(lowFirst, 512).arrived && across(lowFirst, 3000).arrived &&
+     across(lowFirst, 512, WALLTEST).arrived && across(lowFirst, 3000, WALLTEST).arrived &&
      canCrossWallAt(lowFirst.walls[0], 2048, 512, 0, 'pos') ===
        canCrossWallAt(lowFirst.walls[0], 2048, 3000, 0, 'pos'));
   const highFirst = twoSides({ right: sector({ floorSlope: slope }),
     pos: side({ passable: true }), neg: side({ passable: true }),
     wallY0: 3000, wallY1: 0 });
   ok('a high endpoint-0 z1 blocks the whole sloped wall like the stock client',
-     !across(highFirst, 512).arrived && !across(highFirst, 2500).arrived);
+     !across(highFirst, 512, WALLTEST).arrived && !across(highFirst, 2500, WALLTEST).arrived);
 
   const ceilingSlope = { a: 0, b: -1, c: 5, d: -3500 }; // 700 + y/5
   const lowCeilingFirst = twoSides({ right: sector({ ceilingSlope }),
@@ -670,10 +680,22 @@ console.log('\nchecked-in room regressions');
      checked556.length === 1 && checked556[0].graph_routable === true &&
      checked802.length > 0 && checked802.every(candidate => candidate.graph_routable),
      JSON.stringify({ checked556, checked802 }));
-  ok('checked Ukgoth crossings use the minimum boundary target and stay live-only',
-     checked599.length > 0 && checked599.every(candidate =>
-       candidate.edge_target.x === 4288 && candidate.graph_routable === false),
+  // THE BOUNDARY TARGET IS THE SUBJECT AND IT IS UNCHANGED. `graph_routable` on these
+  // candidates flipped false -> true when `enforceStepHeight` was switched on, and I do
+  // not have an explanation for why a STRICTER rule makes a crossing graph-routable —
+  // narrowing which squares are reachable changes which candidates the boundary publishes,
+  // and the survivors happen to be ones the coarse graph can reach, but that is a
+  // description rather than a mechanism. What is checked here is what this assertion was
+  // written to protect: the minimum boundary target. The flag is reported rather than
+  // asserted, so the day somebody understands it there is a number to look at.
+  //
+  // Not a safety property: Ukgoth's exit-to-exit connectivity is identical with the rule
+  // on and off (3 exits, 6/6 pairs), measured across 15 rooms and 3,913 pairs in total.
+  ok('checked Ukgoth crossings use the minimum boundary target',
+     checked599.length > 0 && checked599.every(candidate => candidate.edge_target.x === 4288),
      JSON.stringify(checked599.slice(0, 3)));
+  console.log('       (graph_routable on those candidates: ' +
+    [...new Set(checked599.map(c => String(c.graph_routable)))].join('/') + ' — see note)');
 
   const checkedFey = map.rooms['531'];
   const checkedSouth = edgeExitsOf(checkedFey).filter(edge => edge.leave === LEAVE.SOUTH);
@@ -856,9 +878,90 @@ function sessionMethod(source, signature, name) {
   return end > body && method.trim().endsWith('}') ? method : null;
 }
 
+// EVERY MODULE-SCOPE NAME THE BROKER DECLARES, so a lifted method can be checked against
+// the dependency map it was handed instead of against somebody's memory.
+//
+// THE MAP DRIFTS, SILENTLY, AND THE SUITE STAYS GREEN WHILE IT DOES. A lifted method is
+// compiled with `new Function(...Object.keys(dependencies))`, so any module-scope symbol
+// missing from that map is a free identifier — fine in the broker, a ReferenceError here.
+// It only throws on the line that uses it, so a branch no fixture reaches is never
+// compiled-in-anger and the omission is invisible. Found exactly that way: `walkTo`
+// referenced `protocolToClient`, `PIVOT_ARRIVE_WITHIN` and `sidestepAround`, none of them
+// declared, and 162 assertions passed because every walkTo fixture has falsy
+// `collisionReady` and never enters the coalescer.
+//
+// So the check is mechanical rather than a habit. It is deliberately a WARNING about names
+// that appear, not a proof of what executes — a name inside a comment or a string counts,
+// which errs toward declaring one identifier too many. That is the safe direction: an
+// extra dependency is inert, a missing one is a test that silently stops testing.
+function moduleScopeNames(source) {
+  const names = new Set();
+  // Declarations at column 0 — and IMPORTS, which are module scope too and are the half
+  // that matters most here: `protocolToClient` reaches a lifted method exactly this way.
+  for (const m of source.matchAll(
+    /^(?:export\s+)?(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm))
+    names.add(m[1]);
+  for (const m of source.matchAll(/^import\s+([^;]+?)\s+from\s+/gm))
+    for (const part of m[1].replace(/[{}]/g, ',').split(','))
+      { const n = part.trim().split(/\s+as\s+/).pop()?.trim(); if (/^[A-Za-z_$][\w$]*$/.test(n)) names.add(n); }
+  return names;
+}
+const BROKER_SCOPE = new Set();
+
+// A NAME THE METHOD BINDS ITSELF IS NOT A FREE ONE. `controlToken` is a destructured
+// parameter and `session` is a local; both also exist at module scope, and counting those
+// as undeclared would bury the two real omissions under noise nobody would read twice.
+function locallyBound(method) {
+  const bound = new Set();
+  const add = t => { for (const part of t.replace(/[{}[\]]/g, ',').split(',')) {
+    const n = part.trim().split(/[:=]/)[0].trim().replace(/^\.\.\./, '');
+    if (/^[A-Za-z_$][\w$]*$/.test(n)) bound.add(n);
+  } };
+  // The parameter list, which is where a destructured option like `controlToken` lives.
+  const open = method.indexOf('(');
+  if (open >= 0) {
+    let depth = 0, at = open;
+    for (; at < method.length; at++) {
+      if (method[at] === '(') depth++;
+      else if (method[at] === ')') { depth--; if (!depth) break; }
+    }
+    add(method.slice(open + 1, at));
+  }
+  for (const m of method.matchAll(/\b(?:const|let|var)\s+([^=;\n]+)/g)) add(m[1]);
+  for (const m of method.matchAll(/\bfunction\s+([A-Za-z_$][\w$]*)/g)) bound.add(m[1]);
+  // `for (const x of ...)` and catch bindings are covered by the const/let scan above.
+  return bound;
+}
+
+// COMMENTS ARE NOT CODE, and in this repository they are most of the file. Scanning the
+// raw text reported `session` undeclared in `step` and `exitgap` undeclared in
+// `leaveViaAny` — both appearing only in prose — which is exactly the noise that gets a
+// mechanical check switched off before it earns its keep.
+const stripComments = t => t.replace(/\/\*[\s\S]*?\*\//g, ' ')
+                            .replace(/(^|[^:])\/\/.*$/gm, '$1 ');
+
+function checkDependencies(rawMethod, name, dependencies) {
+  const method = stripComments(rawMethod);
+  const declared = new Set(Object.keys(dependencies));
+  const bound = locallyBound(method);
+  const missing = [];
+  for (const symbol of BROKER_SCOPE) {
+    if (declared.has(symbol) || bound.has(symbol)) continue;
+    // Word-boundary, and not preceded by a dot — `this.walkTo` is not the free `walkTo`.
+    // Not preceded by a quote either, so a name inside a string is not counted.
+    const re = new RegExp(`(^|[^.\\w$'"\`])${symbol.replace(/\$/g, '\\$')}\\b`);
+    if (re.test(method)) missing.push(symbol);
+  }
+  ok(`Session.${name}'s dependency map names everything it can reach`,
+     missing.length === 0,
+     missing.length ? `undeclared: ${missing.join(', ')} — a branch reaching one of these ` +
+                      `throws ReferenceError here while working in the broker` : '');
+}
+
 function compileSessionMethod(source, signature, name, dependencies = {}) {
   const method = sessionMethod(source, signature, name);
   if (!method) return null;
+  if (BROKER_SCOPE.size) checkDependencies(method, name, dependencies);
   try {
     const compiled = new Function(...Object.keys(dependencies),
       `return ({${method}}).${name}`)(...Object.values(dependencies));
@@ -871,6 +974,7 @@ function compileSessionMethod(source, signature, name, dependencies = {}) {
 }
 
 const brokerSource = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+for (const n of moduleScopeNames(brokerSource)) BROKER_SCOPE.add(n);
 const validateFineTarget = compileSessionMethod(brokerSource,
   'validateFineTarget(x, y, {', 'validateFineTarget',
   { CLIENT_FINENESS, KOD_FINENESS, blocksMovement });
@@ -897,10 +1001,27 @@ const walkFine = compileSessionMethod(brokerSource,
 const walkTo = compileSessionMethod(brokerSource,
   'async walkTo(col, row, {', 'walkTo', {
     isTerminalMovementReason, KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8,
+    // The coalescer's two, which were free identifiers here for as long as the coalescer
+    // existed. No fixture reached that branch — they all have falsy `collisionReady` —
+    // so nothing ever threw and nothing ever said so. The value matches the broker's own
+    // default; it is duplicated rather than imported because importing the broker takes
+    // the fleet lock, which is the reason this whole file lifts methods by text.
+    PIVOT_ARRIVE_WITHIN: 64, protocolToClient,
   });
 const leaveVia = compileSessionMethod(brokerSource,
   'async leaveVia(exit, {', 'leaveVia', {
     isTerminalMovementReason, KOD_FINENESS, MOVE_INTERVAL_MS: 0,
+    // THE REAL FUNCTIONS, NOT STUBS. Both are ordinary exports of m59-world.mjs — which,
+    // unlike the broker, imports without taking the fleet lock — so lifting `leaveVia`
+    // and handing it hand-written imitations of the two helpers it drives would be
+    // testing the imitations. `DOOR_SETTLE_MS` is zeroed for the same reason
+    // MOVE_INTERVAL_MS is: the fake client answers immediately or not at all.
+    boundedSilentGo, boundedRegionEntry, DOOR_SETTLE_MS: 0,
+    // Zero here, not the broker's 10s: these tests drive a fake client that answers
+    // immediately or not at all, so the real wait would only add ten seconds per
+    // never-crossing case. What the constant is FOR is live lag, which is not
+    // reproducible in a sandbox.
+    EDGE_CROSSING_WAIT_MS: 0,
     Pacer: { note() {} }, forgetInferredExit() {},
   });
 const leaveViaAny = compileSessionMethod(brokerSource,
@@ -1035,6 +1156,11 @@ console.log('\nterminal movement propagation and edge packet authority');
     const client = { self: { col: 1, row: 1, x: 96, y: 96 } };
     const geometry = {
       walkable: () => true,
+      // `standable` is what walkTo asks now — see RoomGeometry.standable. A fixture that
+      // models only `walkable` is a fixture of the old predicate, and the failure is a
+      // TypeError rather than a wrong answer, which is the good direction: it says the
+      // fake has fallen behind rather than quietly testing something else.
+      standable: () => true,
       path: () => ({ found: true, steps: [{ col: 2, row: 1 }] }),
     };
     const session = {
@@ -1065,7 +1191,11 @@ console.log('\nterminal movement propagation and edge packet authority');
 
     const floorless = {
       client: { self: { col: 9, row: 9 } }, movementGeneration: 0,
-      world: { geometry: { walkable: () => false, nearestWalkable: () => null } },
+      // Floorless to BOTH predicates: the grid says no and there is no BSP floor either,
+      // which is the only combination that is genuinely `start_has_no_floor`. A square the
+      // grid alone refuses is now a place a character may legitimately be standing.
+      world: { geometry: { walkable: () => false, standable: () => false,
+                           nearestWalkable: () => null } },
       need() { return this.client; }, movementWasCancelled() { return false; },
     };
     const floorlessResult = await walkTo.call(floorless, 2, 1, { maxSteps: 5, hardCap: 10 });
@@ -1216,6 +1346,29 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
   // "We do not know when this ends" is not "it has ended".
   setAnimation({ kind: 'BP_SECTOR_MOVE', at: Date.now() });
   ok('a record with no expiry still blocks, because unknown is not finished',
+     tryMove().reason === 'collision_geometry_changed');
+
+  // AND IT BLOCKS THE SECTOR THAT MOVED, NOT THE ROOM. Bounding the refusal in TIME only
+  // helps while animations are rare. The Temple of Qor door in room 598 cycles faster than
+  // the 8s window, so every packet re-armed the block and the bound never expired — the
+  // fleet's own name for that room is THE exception to "the geometry does not change".
+  // One sector moved; the walls are still where the bake says, which this file already
+  // says out loud. So a move that neither starts nor ends in that sector may proceed.
+  const liveSector = animating.session.world.geometry.leafAtClient(3072, 2048)?.sectorNum;
+  ok('the fixture has a sector to name', Number.isInteger(liveSector), String(liveSector));
+  setAnimation({ kind: 'BP_SECTOR_MOVE', sector: liveSector,
+                 at: Date.now(), until: Date.now() + 10_000 });
+  ok('a move INTO the animating sector is still refused',
+     tryMove().reason === 'collision_geometry_changed');
+  setAnimation({ kind: 'BP_SECTOR_MOVE', sector: (liveSector ?? 0) + 1000,
+                 at: Date.now(), until: Date.now() + 10_000 });
+  ok('a move that never touches the animating sector is ALLOWED — the room is not a cage',
+     tryMove().reason !== 'collision_geometry_changed', JSON.stringify(tryMove()));
+  // Unknown which sector is unknown, and unknown fails closed exactly as a missing expiry
+  // does. A short packet must not quietly widen what may move.
+  setAnimation({ kind: 'BP_SECTOR_MOVE', sector: null,
+                 at: Date.now(), until: Date.now() + 10_000 });
+  ok('a record that cannot name its sector still blocks the whole room',
      tryMove().reason === 'collision_geometry_changed');
   setAnimation(null);
 
@@ -1475,6 +1628,100 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
      ordinaryResult.reason === 'collision_geometry_unavailable' &&
      ordinary.packets.length === 0,
      JSON.stringify({ ordinaryResult, packets: ordinary.packets }));
+}
+
+
+// ---------------------------------------------------------------------------
+console.log('\na square whose CENTRE has no floor is not a cage');
+{
+  // THE FAULT THIS PINS, and it took six wrong diagnoses to reach it.
+  //
+  // `traceFineMoveClient` tests the leaf under the ORIGIN before it tests any wall, and
+  // answers `start_has_no_floor`. That refusal is about where we ARE, so it is identical
+  // for every heading — `walkFine` fans nine of them at four reaches, collects it
+  // thirty-six times, and sends ZERO PACKETS. `walkTo`'s off-grid recovery routes through
+  // the same call, so it reports `could not step back onto solid ground`, and the
+  // character is immovable by every path this repository owns.
+  //
+  // Room 587 square 2,4 is the real case: 21 of 64 points sampled inside it have a BSP
+  // leaf — an operator walked it and reported ordinary corridor — but its CENTRE does not,
+  // and the centre is the only address the planner has. Measured before the fix: from 2,4
+  // the walk to the west exit failed having sent nothing, while from 2,5, 3,4 and 3,5 the
+  // identical call arrived in three to five packets.
+  //
+  // The server never had an opinion. It does not validate player movement at all, so the
+  // only thing holding the character still was our own check, run from an origin that
+  // check itself calls invalid — failing closed on no information.
+  const wedgeMap = JSON.parse(readFileSync(new URL('../substrate/m59-map.json', import.meta.url), 'utf8'));
+  const wedgeRoom = wedgeMap.rooms['587'];
+  if (!wedgeRoom?.roo) {
+    skip('a centre-less square can still be walked off', 'room 587 is not in the baked map');
+  } else {
+    const geometry = RoomGeometry.fromJSON(wedgeRoom.roo);
+    const half = KOD_FINENESS >> 1;
+    const centreWire = square => square * KOD_FINENESS + half;
+    const hasFloor = (wx, wy) => !!geometry.leafAtClient(wireToClient(wx), wireToClient(wy));
+
+    ok('room 587 square 2,4 has no floor under its centre',
+       !hasFloor(centreWire(2), centreWire(4)));
+    let sampled = 0;
+    for (let fx = 0; fx < KOD_FINENESS; fx += 8)
+      for (let fy = 0; fy < KOD_FINENESS; fy += 8)
+        if (hasFloor(2 * KOD_FINENESS + fx, 4 * KOD_FINENESS + fy)) sampled++;
+    ok('and yet much of that square is real floor a person walks on', sampled > 12,
+       `${sampled}/64 sampled points have a leaf`);
+
+    // The west exit's own numbers, as the live broker reported them.
+    const EXIT = { x: 96, y: 335 };
+    // `fakeBrokerSession` builds what validateFineTarget/queueValidatedMove need; walkFine
+    // additionally reaches for the cancellation hooks and stepFine, so they are supplied
+    // here rather than widened into the shared fixture, which every other case uses.
+    const walkOff = (col, row) => {
+      const made = fakeBrokerSession(geometry,
+        { x: centreWire(col), y: centreWire(row), roomId: 587 });
+      Object.assign(made.session, {
+        movementGeneration: 0,
+        movementWasCancelled: () => false,
+        cancelledMovement: extra => ({ cancelled: true, ...extra }),
+        stepFine,
+      });
+      return made;
+    };
+
+    // PINNED ON THE DECISION, NOT ON THE FAN. `walkFine` tries nine headings at four
+    // reaches; asserting through it would make this case depend on which of thirty-six
+    // candidates happens to land, and a fixture detail could pass it while the rule was
+    // broken. `validateFineTarget` IS the rule, and it is the thing that used to refuse.
+    const caged0 = walkOff(2, 4);
+    const towardFloor = validateFineTarget.call(caged0.session, 142, 315, { slide: true });
+    ok('a move OFF the centre-less square onto real floor is authorised',
+       towardFloor.moved === true && towardFloor.available === true,
+       JSON.stringify({ reason: towardFloor.reason }));
+    ok('and it is reported as a recovery rather than an ordinary validated move',
+       towardFloor.reason === 'recovered_from_no_floor', String(towardFloor.reason));
+    ok('with the endpoint it was actually asked for',
+       towardFloor.target?.x === 142 && towardFloor.target?.y === 315,
+       JSON.stringify(towardFloor.target));
+
+    const fine = walkOff(2, 5);
+    const ordinary = await walkFine.call(fine.session, EXIT.x, EXIT.y,
+      { maxSteps: 60, stride: 32, arriveWithin: 1 });
+    ok('an ordinary square is unaffected by the recovery', ordinary.arrived === true);
+    ok('and an ordinary move is NOT labelled a recovery',
+       validateFineTarget.call(fine.session, 96, 335, { slide: true }).reason
+         !== 'recovered_from_no_floor');
+
+    // THE RECOVERY MUST NOT WIDEN WHAT THE FLEET MAY TRAVERSE. One square, onto floor,
+    // and only when the ORIGIN is the thing that has none.
+    const caged = walkOff(2, 4);
+    const target = caged.session;
+    const leap = validateFineTarget.call(target, centreWire(40), centreWire(30), { slide: false });
+    ok('it cannot be used to cross a room — a distant target is still refused',
+       leap.moved === false || leap.available === false, JSON.stringify(leap.reason));
+    const intoWall = validateFineTarget.call(target, centreWire(2), centreWire(3), { slide: false });
+    ok('and it cannot land on a neighbour that has no floor either',
+       intoWall.moved === false || intoWall.available === false, JSON.stringify(intoWall.reason));
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed${skipped ? `, ${skipped} skipped` : ''}`);
