@@ -218,7 +218,12 @@ export class GOAPKeeper {
     // internally (BFS, hazard avoidance, exit walking, etc.).
     let travelResult;
     try {
-      travelResult = await this.session.travel(to, { maxHops: 3 });
+      // maxHops: 1 — move to the NEXT room only. The GOAP keeper re-plans from the new
+      // room on the next pass (the _travelInFlight guard clears when the room changes),
+      // so a multi-room journey is a chain of single-hop travels, each re-planned. This
+      // is how we get past the broker's maxHops limit: we don't ask it to route the whole
+      // journey, we ask it for one room at a time.
+      travelResult = await this.session.travel(to, { maxHops: 1 });
       if (travelResult?.arrived)
         return { sent: true, reason: null };
     } catch (e) {
@@ -270,21 +275,45 @@ export class GOAPKeeper {
     const map = loadMap();
     const roomNum = room.num ?? room.id;
     const mapRoom = map?.rooms?.[roomNum];
-    if (!mapRoom)
-      return { sent: false, reason: 'room not in map' };
-
-    // Find the edge exit to the destination room.
-    const exit = (mapRoom.edgeExits ?? []).find(e => e.to === to);
+    let exit = null;
+    if (mapRoom) {
+      exit = (mapRoom.edgeExits ?? []).find(e => e.to === to);
+    } else {
+      // Unmapped room: use the broker's world.exits() which reads the room's actual
+      // geometry (edgeOpenings). This works for rooms not in the movement map.
+      const exits = this.session?.world?.exits?.() ?? [];
+      exit = exits.find(e => e.to === to || e.to === Number(to));
+      if (exit) {
+        // world.exits() gives us the exit but not the map-style fields. Adapt.
+        // exit has: to, kind, leaveName (direction), approach (square to stand on)
+      }
+    }
     if (!exit)
-      return { sent: false, reason: `no edge exit to room ${to}` };
+      return { sent: false, reason: `no exit to room ${to}` };
 
     // Get the character's current position (kod 1-based).
     const me = c.self;
     const myCol = me?.col ?? 1;
     const myRow = me?.row ?? 1;
-    const rows = mapRoom.rows ?? 1;
-    const cols = mapRoom.cols ?? 1;
-    const dir = exit.leaveName;
+    // For mapped rooms, use the map dimensions. For unmapped rooms, use the live room
+    // dimensions from the client (c.room.cols/rows) or the geometry.
+    const rows = mapRoom?.rows ?? c.room?.rows ?? 1;
+    const cols = mapRoom?.cols ?? c.room?.cols ?? 1;
+    // Direction: map edgeExits use leaveName; world.exits() may use a different field.
+    const dir = exit.leaveName ?? exit.dir ?? exit.direction ?? '';
+    if (!dir) {
+      // No explicit direction: try to infer from the exit's approach square or
+      // fall back to a simple heuristic (which edge the exit is near).
+      if (exit.approach) {
+        const ap = exit.approach;
+        const midC = cols / 2, midR = rows / 2;
+        if (ap.col >= cols - 2) dir = 'east';
+        else if (ap.col <= 1) dir = 'west';
+        else if (ap.row <= 1) dir = 'north';
+        else if (ap.row >= rows - 2) dir = 'south';
+      }
+      if (!dir) return { sent: false, reason: 'no exit direction available' };
+    }
 
     // Determine the target square: one past the boundary.
     // The server clips movement to the wall and triggers the
@@ -525,7 +554,24 @@ export class GOAPKeeper {
       // character is armed and the goal is has_money/has_loot
       // (scavenge to earn gold).
       const combatGoal = effectiveGoal === 'has_money' || effectiveGoal === 'has_loot';
-      if (ws.has_target === true || ws.hurt === true || (ws.armed === true && combatGoal)) {
+      // Only inject scavenge when there's actually a target to fight, or when we're
+      // hurt (and might need to engage), OR when we're in the hunt room (hops=0, mobs
+      // respawning). When we're armed, far from the hunt room, and have no target,
+      // scavenge is a dead action (no hostiles here) and the planner will pick it over
+      // travel_to because it directly achieves has_money — trapping the character in a
+      // mobless room. The travel_to injection below is the right action in that case.
+      const here = c.room?.num ?? c.room?.id;
+      const level = this.policy.huntLevel ?? 30;
+      let inHuntRoom = false;
+      if (ws.armed === true && combatGoal && ws.has_target === false && here != null) {
+        try {
+          const { nearestHuntRoom } = await import('./m59-hunt-room.mjs');
+          const resolvedHere = resolveMapRoom(here, this._roomName());
+          const hunt = nearestHuntRoom(resolvedHere, level);
+          inHuntRoom = !!(hunt && hunt.hops === 0);
+        } catch {}
+      }
+      if (ws.has_target === true || ws.hurt === true || (ws.armed === true && combatGoal && inHuntRoom)) {
         const { attackOf } = await import('./m59-act/attack.mjs');
         const { scavenge } = await import('./m59-act/scavenge.mjs');
         const { takeSafeSpot } = await import('./m59-act/take-safe-spot.mjs');
@@ -667,7 +713,11 @@ export class GOAPKeeper {
             };
             travelToHunt.atomic = 'travel_to';
             travelToHunt.pre = [];
-            travelToHunt.effects = ['has_target'];
+            // Reaching the hunt room is a step toward both has_target (mobs are there)
+            // and has_money (we scavenge there). Declaring both lets the planner chain
+            // travel_to directly for the has_money goal without needing scavenge to be
+            // injected in the destination room (the planner is room-local).
+            travelToHunt.effects = ['has_target', 'has_money'];
             travelToHunt.cost = 1;
             extra.push(travelToHunt);
             console.error(`[goap] ${who} hunting: room=${here} -> hunt=${hunt.room} (${hunt.creature} lv${hunt.level}) hops=${hunt.hops}`);
@@ -774,11 +824,20 @@ export class GOAPKeeper {
     // broker's travel() can take many seconds, and a new travel
     // issued during that time cancels the old one.
     const stepName = p.names?.[0] ?? result.action ?? '';
-    if (stepName === 'travel_to') {
+    // Only track travel in progress when the travel ACTUALLY SENT A PACKET
+    // (acted=true). If the travel was refused (acted=false), do NOT set the guard —
+    // let the next pass re-plan immediately, possibly with a different approach.
+    // A refused travel means nothing is in motion, so there is no movement to protect.
+    if (stepName === 'travel_to' && result.acted === true) {
       this._travelInFlight = true;
       this._travelFromRoom = c?.room?.num ?? c?.room?.id;
       this._travelStartedAt = Date.now();
       console.error(`[goap] ${who} travel in flight from room=${this._travelFromRoom}`);
+    } else if (stepName === 'travel_to' && result.acted !== true) {
+      // Travel refused: clear any stale guard so the next pass re-plans.
+      this._travelInFlight = false;
+      this._travelFromRoom = null;
+      this._travelStartedAt = null;
     }
 
     const actionName = result.action ?? p.names?.[0] ?? 'unknown';
